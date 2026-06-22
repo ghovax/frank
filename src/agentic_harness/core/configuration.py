@@ -160,11 +160,12 @@ class PermissionError(RuntimeError):
 
 
 class PromptLoader:
-    def __init__(self, prompts_directory: str | Path):
+    def __init__(self, prompts_directory: str | Path, extension: str = "md"):
         self._directory = Path(prompts_directory)
+        self._extension = extension
 
     def load(self, template_name: str, variables: dict[str, str]) -> str:
-        path = self._directory / f"{template_name}.md"
+        path = self._directory / f"{template_name}.{self._extension}"
         if not path.exists():
             return ""
         content = path.read_text()

@@ -1,1 +1,0 @@
-[bold magenta]Background agent:[/] {{ agent_name }} ({{ task_identifier }}) started

@@ -303,13 +303,24 @@ class AgentOrchestrator:
                 + self._conversation
             )
 
-            yield StreamEvent(StreamEvent.Type.THINKING, text="")
-
-            response = await self._bound_llm.ainvoke(messages)
-
-            reasoning_content = response.additional_kwargs.get("reasoning_content", "")
-            if reasoning_content:
-                yield StreamEvent(StreamEvent.Type.THINKING, text=reasoning_content)
+            accumulated_response = None
+            async for chunk in self._bound_llm.astream(messages):
+                if accumulated_response is None:
+                    accumulated_response = chunk
+                else:
+                    accumulated_response += chunk  # type: ignore[operator]
+                if chunk.content:
+                    yield StreamEvent(
+                        StreamEvent.Type.TEXT_CHUNK,
+                        text=chunk.content,
+                    )
+                reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
+                if reasoning_content:
+                    yield StreamEvent(
+                        StreamEvent.Type.THINKING,
+                        text=reasoning_content,
+                    )
+            response = accumulated_response
 
             if not response.tool_calls:
                 final_text = response.content or ""

@@ -29,6 +29,7 @@ _global_configuration: Optional[GlobalConfiguration] = None
 _sessions: dict[str, AgentOrchestrator] = {}
 _session_configurations: dict[str, str] = {}
 _pending_permissions: dict[str, asyncio.Future] = {}
+_abort_events: dict[str, asyncio.Event] = {}
 
 
 class ChatRequest(BaseModel):
@@ -130,17 +131,39 @@ async def session_status(session_id: str):
     }
 
 
+@app.post("/chat/{session_id}/abort")
+async def abort_session(session_id: str):
+    abort_event = _abort_events.get(session_id)
+    if abort_event:
+        abort_event.set()
+    return {"status": "aborted", "session_id": session_id}
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     session_id, orchestrator = _get_or_create_session(request.session_id, request.agent)
 
+    abort_event = asyncio.Event()
+    _abort_events[session_id] = abort_event
+
     async def event_generator():
-        yield {
-            "event": "session",
-            "data": json.dumps({"session_id": session_id}),
-        }
-        async for event in orchestrator.stream(request.message):
-            yield {"event": event.type.value, "data": event.to_json()}
+        try:
+            yield {
+                "event": "session",
+                "data": json.dumps({"type": "session", "session_id": session_id}),
+            }
+            async for event in orchestrator.stream(request.message):
+                if abort_event.is_set():
+                    yield {
+                        "event": "done",
+                        "data": json.dumps({"type": "done", "text": "\n\n[Interrupted by user]", "session_id": session_id}),
+                    }
+                    return
+                yield {"event": event.type.value, "data": event.to_json()}
+        except GeneratorExit:
+            pass
+        finally:
+            _abort_events.pop(session_id, None)
 
     return EventSourceResponse(event_generator())
 

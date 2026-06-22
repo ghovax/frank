@@ -1,1 +1,0 @@
-→ Switched to [bold {{ color }}]{{ agent_name }}[/]
