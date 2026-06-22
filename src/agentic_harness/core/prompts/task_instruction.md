@@ -1,0 +1,1 @@
+You have access to a task list to organize your work. Use write_tasks to break down complex requests into parallel and sequential steps. Use update_task to track progress. Tasks never get deleted — add new ones as work evolves.

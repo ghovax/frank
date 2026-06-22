@@ -341,6 +341,38 @@ class AgenticHarnessApp(App):
             )
             chat_view.scroll_end(animate=False)
 
+        elif data_type == "tasks_updated":
+            tasks = data.get("tasks", [])
+            if tasks:
+                status_icons = {
+                    "completed": "[green]✅ completed[/]",
+                    "in_progress": "[yellow]◌ in_progress[/]",
+                    "pending": "[blue]☐ pending[/]",
+                    "blocked": "[red]⊘ blocked[/]",
+                }
+                task_lines = []
+                for task in tasks:
+                    identifier = task.get("identifier", "")
+                    description = task.get("description", "")
+                    status = task.get("status", "pending")
+                    dependencies = task.get("dependencies", [])
+                    result_value = task.get("result", "")
+                    dependency_text = (
+                        f" (after {', '.join(dependencies)})" if dependencies else ""
+                    )
+                    result_text = f" -> {result_value}" if result_value else ""
+                    icon = status_icons.get(status, f"[blue]☐ {status}[/]")
+                    task_lines.append(
+                        f"{icon} {description}{dependency_text}{result_text}"
+                    )
+                await chat_view.mount(
+                    Static(
+                        _render("tasks_panel", task_lines="\n".join(task_lines)),
+                        classes="system-message",
+                    )
+                )
+                chat_view.scroll_end(animate=False)
+
         elif data_type == "permission_request":
             await self._cleanup_thinking(chat_view, spinner)
             request_identifier = data.get("request_id", "")

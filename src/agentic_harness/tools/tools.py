@@ -174,3 +174,33 @@ def collect_completed_agents() -> list[tuple[str, str]]:
             completed.append((task_identifier, result))
             del _spawned_agent_tasks[task_identifier]
     return completed
+
+
+@tool
+def write_tasks(tasks: list[dict]) -> str:
+    """Create new tasks in the task list. Tasks can depend on each other.
+
+    Use this to break down complex work into steps that can run in
+    parallel or sequentially. Tasks with no dependencies can be worked
+    on immediately. Tasks with dependencies must wait for their
+    dependencies to complete first.
+
+    Args:
+        tasks: List of task objects. Each object has:
+            - description (required): What needs to be done.
+            - dependencies (optional): List of task identifiers this
+              task depends on (e.g. ["task-1", "task-2"]).
+    """
+    return "Handled by orchestrator."
+
+
+@tool
+def update_task(task_id: str, status: str, result: str = "") -> str:
+    """Update the status of a task and optionally record a result.
+
+    Args:
+        task_id: The task identifier (e.g. 'task-1').
+        status: One of 'pending', 'in_progress', 'completed', 'blocked'.
+        result: Summary of what was accomplished when marking as completed.
+    """
+    return "Handled by orchestrator."

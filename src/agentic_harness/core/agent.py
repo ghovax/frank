@@ -15,6 +15,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.tools import BaseTool
+from pydantic import BaseModel
 
 from agentic_harness.core.configuration import (
     AgentConfiguration,
@@ -30,6 +31,8 @@ from agentic_harness.tools.tools import (
     read as read_tool,
     edit as edit_tool,
     spawn_agent as spawn_tool,
+    write_tasks as write_tasks_tool,
+    update_task as update_task_tool,
     register_spawned_task,
     collect_background_bash_results,
     collect_completed_agents,
@@ -47,6 +50,7 @@ class StreamEvent:
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
         PERMISSION_REQUEST = "permission_request"
+        TASKS_UPDATED = "tasks_updated"
         ERROR = "error"
 
     def __init__(self, event_type: Type, **data):
@@ -70,6 +74,8 @@ def _build_tools(tools_configuration) -> list[BaseTool]:
         available.append(edit_tool)
     if tools_configuration.spawn_agent.enabled:
         available.append(spawn_tool)
+    available.append(write_tasks_tool)
+    available.append(update_task_tool)
     return available
 
 
@@ -126,6 +132,65 @@ class BackgroundTaskManager:
         return len(collect_background_bash_results()) + len(collect_completed_agents())
 
 
+class Task(BaseModel):
+    identifier: str = ""
+    description: str
+    status: str = "pending"
+    dependencies: list[str] = []
+    result: str = ""
+
+
+class TaskManager:
+    def __init__(self):
+        self._tasks: list[Task] = []
+        self._next_identifier: int = 1
+
+    def add_tasks(self, task_definitions: list[dict]) -> list[str]:
+        created = []
+        for definition in task_definitions:
+            identifier = f"task-{self._next_identifier}"
+            self._next_identifier += 1
+            task = Task(
+                identifier=identifier,
+                description=definition.get("description", ""),
+                dependencies=definition.get("dependencies", []),
+            )
+            self._tasks.append(task)
+            created.append(identifier)
+        self._recalculate_statuses()
+        return created
+
+    def update_task(self, task_id: str, status: str, result: str = "") -> bool:
+        for task in self._tasks:
+            if task.identifier == task_id:
+                task.status = status
+                if result:
+                    task.result = result
+                self._recalculate_statuses()
+                return True
+        return False
+
+    def _recalculate_statuses(self) -> None:
+        for task in self._tasks:
+            if task.status == "blocked":
+                if all(self._is_dependency_met(dep) for dep in task.dependencies):
+                    task.status = "pending"
+
+    def _is_dependency_met(self, dependency_id: str) -> bool:
+        for task in self._tasks:
+            if task.identifier == dependency_id:
+                return task.status == "completed"
+        return True
+
+    def render_json(self) -> str:
+        if not self._tasks:
+            return ""
+        return json.dumps([task.model_dump() for task in self._tasks])
+
+    def to_dict_list(self) -> list[dict]:
+        return [task.model_dump() for task in self._tasks]
+
+
 class AgentOrchestrator:
     def __init__(
         self,
@@ -160,9 +225,10 @@ class AgentOrchestrator:
         self._recursion_depth: int = 0
         self._calls_this_turn: int = 0
 
-        prompts_directory = Path(global_configuration.agents_directory).parent / "core" / "prompts"
+        prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
         self._session_history: list[dict] = []
+        self._task_manager = TaskManager()
 
     @property
     def agent_name(self) -> str:
@@ -173,11 +239,16 @@ class AgentOrchestrator:
         available_agents = ", ".join(
             list_available_agents(self._global_configuration.agents_directory)
         )
-        context = self._prompt_loader.load("context", {
-            "current_working_directory": current_working_directory,
-            "available_agents": available_agents,
+        tasks_json = self._task_manager.render_json()
+        return self._prompt_loader.load("system_prompt", {
+            "SYSTEM_PROMPT": self._system_prompt,
+            "CONTEXT": self._prompt_loader.load("context", {
+                "current_working_directory": current_working_directory,
+                "available_agents": available_agents,
+            }),
+            "TASKS_SECTION": self._prompt_loader.load("task_section", {"TASKS_JSON": tasks_json}) if tasks_json else "",
+            "TASK_INSTRUCTION": self._prompt_loader.load("task_instruction", {}),
         })
-        return f"{self._system_prompt}\n\n{context}"
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
         history_directory = Path("history")
@@ -401,6 +472,39 @@ class AgentOrchestrator:
                         StreamEvent.Type.BACKGROUND_STARTED,
                         task_id=sub_agent_task_identifier,
                         agent=sub_agent_name,
+                    )
+                    turn_tool_results_log.append({
+                        "name": tool_name,
+                        "result": result_message,
+                    })
+
+                elif tool_name == "write_tasks":
+                    task_definitions = tool_arguments.get("tasks", [])
+                    identifiers = self._task_manager.add_tasks(task_definitions)
+                    result_message = f"Created tasks: {', '.join(identifiers)}"
+                    tool_call_results.append((tool_call_identifier, result_message))
+                    yield StreamEvent(
+                        StreamEvent.Type.TASKS_UPDATED,
+                        tasks=self._task_manager.to_dict_list(),
+                    )
+                    turn_tool_results_log.append({
+                        "name": tool_name,
+                        "result": result_message,
+                    })
+
+                elif tool_name == "update_task":
+                    task_id = tool_arguments.get("task_id", "")
+                    status = tool_arguments.get("status", "")
+                    result_value = tool_arguments.get("result", "")
+                    success = self._task_manager.update_task(task_id, status, result_value)
+                    if success:
+                        result_message = f"Updated task {task_id} to {status}."
+                    else:
+                        result_message = f"Task {task_id} not found."
+                    tool_call_results.append((tool_call_identifier, result_message))
+                    yield StreamEvent(
+                        StreamEvent.Type.TASKS_UPDATED,
+                        tasks=self._task_manager.to_dict_list(),
                     )
                     turn_tool_results_log.append({
                         "name": tool_name,
