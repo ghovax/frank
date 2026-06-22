@@ -1,5 +1,7 @@
 ---
 name: code
+label: Code Agent
+color: yellow
 description: Code writing and editing specialist
 model: deepseek-v4-flash
 reasoning_effort: high
@@ -9,10 +11,10 @@ tools:
   bash:
     enabled: true
     background_allowed: true
-    deny_commands:
-      - "rm"
-      - "sudo"
-      - "chmod"
+    permissions:
+      "rm *": ask
+      "sudo *": deny
+      "chmod *": ask
   read:
     enabled: true
     maximum_file_size: 1048576
@@ -36,6 +38,7 @@ Your workflow:
 3. Make focused, minimal edits
 4. Use bash to run tests, linters, and type-checkers to verify your changes
 5. For large or multi-file refactoring, spawn sub-agents to work in parallel
+6. Always provide a justification and risk assessment for bash commands
 
 Always verify your changes work by running the appropriate test or build command.
 Follow the existing code style and conventions of the project you're working on.

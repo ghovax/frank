@@ -1,0 +1,1 @@
+[bold red]Error:[/] {{ message }}

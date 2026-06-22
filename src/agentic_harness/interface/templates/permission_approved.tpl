@@ -1,0 +1,1 @@
+[bold green]Command approved by user. Executing...[/]

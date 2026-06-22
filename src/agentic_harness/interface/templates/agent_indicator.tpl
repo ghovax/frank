@@ -1,0 +1,1 @@
+Active agent: [bold {{ color }}]{{ agent_name }}[/] (Tab to switch)

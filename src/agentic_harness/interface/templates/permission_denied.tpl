@@ -1,0 +1,1 @@
+[bold red]Command denied by user.[/]

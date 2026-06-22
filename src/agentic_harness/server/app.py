@@ -10,12 +10,11 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from agentic_harness.core.agent import AgentOrchestrator, StreamEvent
-from agentic_harness.core.agent_configuration import (
-    AgentConfiguration,
+from agentic_harness.core.configuration import (
+    GlobalConfiguration,
     load_agent_configuration,
     list_available_agents,
 )
-from agentic_harness.core.configuration import GlobalConfiguration
 
 app = FastAPI(title="agentic-harness")
 
@@ -26,9 +25,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_global_config: Optional[GlobalConfiguration] = None
+_global_configuration: Optional[GlobalConfiguration] = None
 _sessions: dict[str, AgentOrchestrator] = {}
-_session_configs: dict[str, str] = {}
+_session_configurations: dict[str, str] = {}
+_pending_permissions: dict[str, asyncio.Future] = {}
 
 
 class ChatRequest(BaseModel):
@@ -37,10 +37,9 @@ class ChatRequest(BaseModel):
     agent: str = "main"
 
 
-class ChatResponse(BaseModel):
-    session_id: str
-    type: str
-    data: dict
+class PermissionRequest(BaseModel):
+    request_id: str
+    decision: str
 
 
 class AgentsList(BaseModel):
@@ -49,73 +48,104 @@ class AgentsList(BaseModel):
 
 @app.on_event("startup")
 async def startup():
-    global _global_config
-    config_path = Path("configuration.yaml")
-    if config_path.exists():
-        _global_config = GlobalConfiguration.from_yaml(config_path)
+    global _global_configuration
+    configuration_path = Path("configuration.yaml")
+    if configuration_path.exists():
+        _global_configuration = GlobalConfiguration.from_yaml(configuration_path)
     else:
-        _global_config = GlobalConfiguration.from_yaml("configuration.yaml")
+        _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
 
 
-def _get_or_create_session(session_id: Optional[str], agent_name: str) -> tuple[str, AgentOrchestrator]:
-    global _global_config
-    assert _global_config is not None
+def _get_or_create_session(
+    session_id: Optional[str], agent_name: str
+) -> tuple[str, AgentOrchestrator]:
+    global _global_configuration
+    assert _global_configuration is not None
 
     if session_id and session_id in _sessions:
         return session_id, _sessions[session_id]
 
-    new_id = session_id or uuid.uuid4().hex[:16]
-    agent_config = load_agent_configuration(agent_name, _global_config.agents_directory)
-    orchestrator = AgentOrchestrator(agent_config, _global_config)
-    _sessions[new_id] = orchestrator
-    _session_configs[new_id] = agent_name
-    return new_id, orchestrator
+    new_identifier = session_id or uuid.uuid4().hex[:16]
+    agent_configuration = load_agent_configuration(
+        agent_name, _global_configuration.agents_directory
+    )
+    orchestrator = AgentOrchestrator(
+        agent_configuration=agent_configuration,
+        global_configuration=_global_configuration,
+        pending_permissions=_pending_permissions,
+    )
+    _sessions[new_identifier] = orchestrator
+    _session_configurations[new_identifier] = agent_name
+    return new_identifier, orchestrator
 
 
 @app.get("/agents")
 async def agents():
-    global _global_config
-    assert _global_config is not None
-    return AgentsList(agents=list_available_agents(_global_config.agents_directory))
-
-
-@app.get("/chat/{session_id}/agent")
-async def get_session_agent(session_id: str):
-    agent_name = _session_configs.get(session_id, "main")
-    return {"agent": agent_name}
+    global _global_configuration
+    assert _global_configuration is not None
+    return AgentsList(
+        agents=list_available_agents(_global_configuration.agents_directory)
+    )
 
 
 @app.post("/chat/{session_id}/switch")
 async def switch_agent(session_id: str, agent: str):
-    global _global_config
-    assert _global_config is not None
+    global _global_configuration
+    assert _global_configuration is not None
 
     if session_id in _sessions:
         del _sessions[session_id]
 
-    agent_config = load_agent_configuration(agent, _global_config.agents_directory)
-    orchestrator = AgentOrchestrator(agent_config, _global_config)
+    agent_configuration = load_agent_configuration(
+        agent, _global_configuration.agents_directory
+    )
+    orchestrator = AgentOrchestrator(
+        agent_configuration=agent_configuration,
+        global_configuration=_global_configuration,
+        pending_permissions=_pending_permissions,
+    )
     _sessions[session_id] = orchestrator
-    _session_configs[session_id] = agent
+    _session_configurations[session_id] = agent
     return {"agent": agent}
 
 
+@app.post("/chat/{session_id}/permission")
+async def resolve_permission(session_id: str, request: PermissionRequest):
+    future = _pending_permissions.get(request.request_id)
+    if not future:
+        return {"status": "unknown", "error": "No pending permission request with that identifier."}
+    allowed = request.decision == "allow"
+    future.set_result(allowed)
+    return {"status": "resolved", "decision": request.decision}
+
+
+@app.get("/chat/{session_id}/status")
+async def session_status(session_id: str):
+    agent_name = _session_configurations.get(session_id, "unknown")
+    has_session = session_id in _sessions
+    return {
+        "session_id": session_id,
+        "agent": agent_name,
+        "active": has_session,
+    }
+
+
 @app.post("/chat")
-async def chat(req: ChatRequest):
-    session_id, orchestrator = _get_or_create_session(req.session_id, req.agent)
+async def chat(request: ChatRequest):
+    session_id, orchestrator = _get_or_create_session(request.session_id, request.agent)
 
     async def event_generator():
-        yield {"event": "session", "data": json.dumps({"session_id": session_id})}
-        async for event in orchestrator.stream(req.message):
+        yield {
+            "event": "session",
+            "data": json.dumps({"session_id": session_id}),
+        }
+        async for event in orchestrator.stream(request.message):
             yield {"event": event.type.value, "data": event.to_json()}
 
     return EventSourceResponse(event_generator())
 
 
-def create_server_app() -> FastAPI:
-    return app
-
-
 def run_server(host: str = "127.0.0.1", port: int = 8822):
     import uvicorn
+
     uvicorn.run(app, host=host, port=port)

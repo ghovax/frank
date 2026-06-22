@@ -1,5 +1,7 @@
 ---
 name: main
+label: Main Agent
+color: cyan
 description: General purpose assistant agent
 model: deepseek-v4-flash
 reasoning_effort: high
@@ -9,10 +11,10 @@ tools:
   bash:
     enabled: true
     background_allowed: true
-    deny_commands:
-      - "rm"
-      - "sudo"
-      - "chmod"
+    permissions:
+      "rm *": ask
+      "sudo *": deny
+      "chmod *": ask
   read:
     enabled: true
     maximum_file_size: 1048576
@@ -35,6 +37,6 @@ When given a task:
 2. Plan your approach before executing
 3. Use the right tool for each step
 4. For complex multi-step tasks, consider spawning sub-agents for parallel work
-5. Explain your reasoning as you go
+5. Always provide a justification and risk assessment when using bash
 
 Always verify your work after making changes.

@@ -1,0 +1,105 @@
+Screen {
+    background: $surface;
+}
+
+#chat-view {
+    height: 1fr;
+    border: solid $primary;
+    padding: 0 1;
+    overflow-y: scroll;
+}
+
+#input-container {
+    dock: bottom;
+    height: 3;
+    padding: 0 1;
+}
+
+#prompt-input {
+    width: 100%;
+}
+
+.user-message {
+    color: $text;
+    margin: 1 0;
+    padding: 0 1;
+}
+
+.agent-message {
+    color: $text;
+    margin: 1 0;
+    padding: 0 1;
+    border-left: solid $accent;
+}
+
+.tool-panel {
+    margin: 0 2;
+    padding: 0 1;
+    border: dashed $warning;
+    color: $warning;
+}
+
+.tool-result {
+    margin: 0 2;
+    padding: 0 1;
+    border: dashed $success;
+    color: $success;
+}
+
+.error-message {
+    color: $error;
+    margin: 1 0;
+    padding: 0 1;
+    border: solid $error;
+}
+
+.system-message {
+    color: $text-muted;
+    margin: 1 0;
+    padding: 0 1;
+    font-style: italic;
+}
+
+.thinking-message {
+    color: $text-muted;
+    margin: 1 0;
+    padding: 0 1;
+}
+
+.permission-dialog {
+    align: center middle;
+}
+
+.permission-dialog #dialog-box {
+    width: 80%;
+    height: auto;
+    min-height: 12;
+    border: thick $primary;
+    background: $surface;
+    padding: 1 2;
+}
+
+.permission-dialog #dialog-title {
+    text-style: bold;
+    color: $warning;
+    margin: 0 0 1 0;
+}
+
+.permission-dialog #dialog-message {
+    margin: 0 0 1 0;
+}
+
+.permission-dialog #dialog-actions {
+    align: center middle;
+    margin: 1 0 0 0;
+}
+
+.permission-dialog Button {
+    margin: 0 1;
+    min-width: 16;
+}
+
+#spinner-widget {
+    margin: 1 0;
+    padding: 0 1;
+}

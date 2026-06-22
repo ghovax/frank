@@ -1,19 +1,18 @@
-# Python-generated files
+
 __pycache__/
+.DS_Store
+.env
+.venv
+*.egg-info
+*.pem
 *.py[oc]
+*.swo
+*.swp
+# Editor
+# Environment
+# Python-generated files
+# Virtual environments
 build/
 dist/
+history/
 wheels/
-*.egg-info
-
-# Virtual environments
-.venv
-
-# Editor
-.DS_Store
-*.swp
-*.swo
-
-# Environment
-.env
-*.pem

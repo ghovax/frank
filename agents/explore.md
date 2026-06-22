@@ -1,5 +1,7 @@
 ---
 name: explore
+label: Explore Agent
+color: green
 description: Exploration specialist for investigating codebases
 model: deepseek-v4-flash
 reasoning_effort: high
@@ -9,12 +11,12 @@ tools:
   bash:
     enabled: true
     background_allowed: true
-    deny_commands:
-      - "rm"
-      - "sudo"
-      - "chmod"
-      - "dd"
-      - "mkfs"
+    permissions:
+      "rm *": deny
+      "sudo *": deny
+      "chmod *": deny
+      "dd *": deny
+      "mkfs *": deny
   read:
     enabled: true
     maximum_file_size: 5242880
@@ -36,5 +38,5 @@ You use:
 - **read** for reading file contents
 - **spawn_agent** for parallel research on independent questions
 
-You do NOT edit files — you are read-only. Focus on understanding and explaining.
+You do NOT edit files. Focus on understanding and explaining.
 Always cite specific file paths and line numbers in your findings.

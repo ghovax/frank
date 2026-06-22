@@ -1,0 +1,1 @@
+[bold {{ color }}]{{ agent_name }}:[/] {{ text }}
