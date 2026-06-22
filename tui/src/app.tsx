@@ -1,12 +1,17 @@
-import { render as renderTui, useRenderer, useTerminalDimensions } from "@opentui/solid"
+import { render, useTerminalDimensions } from "@opentui/solid"
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui"
+import {
+  registerCommaBindings,
+  registerEscapeClearsPendingSequence,
+  registerBackspacePopsPendingSequence,
+} from "@opentui/keymap/addons/opentui"
 import { KeymapProvider, useBindings } from "@opentui/keymap/solid"
-import { createSignal, Switch, Match, ErrorBoundary, batch, onCleanup } from "solid-js"
+import { createSignal, Switch, Match, ErrorBoundary, batch, onCleanup, createEffect } from "solid-js"
 import { createCliRenderer } from "@opentui/core"
 import { Home } from "./routes/home"
 import { Session } from "./routes/session"
 import { AgenticHarnessClient } from "./client"
-import { ThemeProvider, darkTheme, useTheme } from "./theme"
+import { ThemeProvider, useTheme, darkTheme } from "./theme"
 
 export type TuiInput = {
   url: string
@@ -15,29 +20,38 @@ export type TuiInput = {
 
 export async function run(input: TuiInput) {
   const renderer = await createCliRenderer({
+    externalOutputMode: "passthrough",
     targetFps: 30,
-    exitOnCtrlC: true,
+    gatherStats: false,
+    exitOnCtrlC: false,
+    useKittyKeyboard: {},
+    autoFocus: false,
+    openConsoleOnError: false,
     useMouse: true,
   })
 
   renderer.start()
 
   const keymap = createDefaultOpenTuiKeymap(renderer)
+  registerCommaBindings(keymap)
+  registerEscapeClearsPendingSequence(keymap)
+  registerBackspacePopsPendingSequence(keymap)
 
-  await renderTui(() => (
+  const shutdown = new Promise<void>((resolve) => {
+    renderer.once("destroy", () => resolve())
+  })
+
+  await render(() => (
     <KeymapProvider keymap={keymap}>
       <ThemeProvider theme={darkTheme}>
         <ErrorBoundary fallback={(error) => <text fg="#ef4444">Error: {String(error)}</text>}>
-          <TuiApplication input={input} />
+          <TuiApplication input={input} renderer={renderer} />
         </ErrorBoundary>
       </ThemeProvider>
     </KeymapProvider>
   ), renderer)
 
-  await new Promise<void>((resolve) => {
-    renderer.once("destroy", () => resolve())
-  })
-
+  await shutdown
   renderer.destroy()
 }
 
@@ -45,8 +59,7 @@ type ApplicationRoute =
   | { type: "home" }
   | { type: "session"; client: AgenticHarnessClient; message: string; agent: string }
 
-function TuiApplication(props: { input: TuiInput }) {
-  const renderer = useRenderer()
+function TuiApplication(props: { input: TuiInput; renderer: any }) {
   const terminalDimensions = useTerminalDimensions()
   const theme = useTheme()
 
@@ -56,10 +69,14 @@ function TuiApplication(props: { input: TuiInput }) {
     commands: [
       {
         name: "quit",
-        run() { renderer.destroy() },
+        run() { props.renderer.destroy() },
       },
     ],
     bindings: [{ key: "q", cmd: "quit" }],
+  }))
+
+  useBindings(() => ({
+    bindings: [{ key: "ctrl+c", cmd: "quit" }],
   }))
 
   function handleNavigateToSession(client: AgenticHarnessClient, message: string, agent: string) {

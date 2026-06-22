@@ -17,17 +17,8 @@ export function PermissionDialog(props: {
   return (
     <Show when={props.request}>
       {(request) => (
-        <box
-          flexDirection="column"
-          gap={1}
-          padding={1}
-          backgroundColor={theme.backgroundPanel}
-          border={["left"]}
-          borderColor={theme.warning}
-        >
-          <text fg={theme.warning} bold>
-            Permission Request
-          </text>
+        <box flexDirection="column" gap={1} padding={1} backgroundColor={theme.backgroundPanel} border={["left"]} borderColor={theme.warning}>
+          <text fg={theme.warning} bold>Permission Request</text>
           <Show when={request().command}>
             <text fg={theme.text}>{request().command}</text>
           </Show>
@@ -38,18 +29,10 @@ export function PermissionDialog(props: {
             <text fg={theme.error}>Risk: {request().risk}</text>
           </Show>
           <box flexDirection="row" gap={2}>
-            <text
-              fg={theme.success}
-              onMouseUp={() => props.onRespond(true)}
-              onClick={() => props.onRespond(true)}
-            >
+            <text fg={theme.success} onMouseUp={() => props.onRespond(true)} onClick={() => props.onRespond(true)}>
               [Y] Allow
             </text>
-            <text
-              fg={theme.error}
-              onMouseUp={() => props.onRespond(false)}
-              onClick={() => props.onRespond(false)}
-            >
+            <text fg={theme.error} onMouseUp={() => props.onRespond(false)} onClick={() => props.onRespond(false)}>
               [N] Deny
             </text>
           </box>

@@ -1,20 +1,25 @@
 import { For, Show } from "solid-js"
-import { useTheme, agentColors } from "../theme"
+import { useTheme } from "../theme"
 import type { ChatMessage } from "../client"
 
 export function ChatMessage(props: { message: ChatMessage }) {
   const theme = useTheme()
   const message = () => props.message
 
-  const agentColor = () => agentColors[message().agent ?? "main"] ?? theme.primary
+  const agentColor = () => {
+    const colors: Record<string, string> = {
+      main: "#06b6d4",
+      code: "#eab308",
+      explore: "#22c55e",
+    }
+    return colors[message().agent ?? "main"] ?? "#8b5cf6"
+  }
 
   return (
-    <box flexDirection="column" gap={0} paddingY={0}>
+    <box flexDirection="column" gap={0}>
       <Show when={message().role === "user"}>
         <box flexDirection="row" gap={1} paddingTop={1}>
-          <text fg={theme.textMuted} bold>
-            User
-          </text>
+          <text fg={theme.textMuted} bold>User</text>
           <text fg={theme.textMuted}>{message().timestamp}</text>
         </box>
         <box backgroundColor="#18181b" paddingX={1}>
@@ -24,29 +29,23 @@ export function ChatMessage(props: { message: ChatMessage }) {
 
       <Show when={message().role === "assistant"}>
         <box flexDirection="row" gap={1} paddingTop={1}>
-          <text fg={agentColor()} bold>
-            {message().agent ?? "Assistant"}
-          </text>
+          <text fg={agentColor()} bold>{message().agent ?? "Assistant"}</text>
           <text fg={theme.textMuted}>{message().timestamp}</text>
         </box>
 
         <Show when={message().toolCalls && message().toolCalls!.length > 0}>
           <For each={message().toolCalls}>
             {(toolCall) => (
-              <box flexDirection="column" paddingLeft={2} gap={0}>
+              <box flexDirection="column" paddingLeft={2}>
                 <box flexDirection="row" gap={1}>
                   <text fg={theme.primary}>Tool:</text>
                   <text fg={theme.text}>{toolCall.name}</text>
                 </box>
                 <Show when={toolCall.justification}>
-                  <text fg={theme.textMuted} paddingLeft={2}>
-                    {toolCall.justification}
-                  </text>
+                  <text fg={theme.textMuted} paddingLeft={2}>{toolCall.justification}</text>
                 </Show>
                 <Show when={toolCall.result}>
-                  <text fg={theme.textMuted} paddingLeft={2} wrapMode="none">
-                    Result: {toolCall.result!.slice(0, 300)}
-                  </text>
+                  <text fg={theme.textMuted} paddingLeft={2}>Result: {toolCall.result!.slice(0, 300)}</text>
                 </Show>
               </box>
             )}

@@ -1,4 +1,4 @@
-import { batch, createSignal, For, Show, createEffect, onCleanup, onMount } from "solid-js"
+import { batch, createSignal, For, Show, onCleanup, onMount } from "solid-js"
 import {
   AgenticHarnessClient,
   type AgenticHarnessEvent,
@@ -44,8 +44,8 @@ export function Session(props: {
 
   onMount(async () => {
     try {
-      const agentList = await props.client.listAgents()
-      if (agentList.length > 0) setAvailableAgents(agentList)
+      const agentsFromServer = await props.client.listAgents()
+      if (agentsFromServer.length > 0) setAvailableAgents(agentsFromServer)
     } catch {
       // fall back to default
     }
@@ -85,7 +85,7 @@ export function Session(props: {
     abortController = new AbortController()
 
     props.client
-      .sendMessage(text, currentAgent(), sessionId(), handleServerEvent, abortController.signal)
+      .sendMessage(text, currentAgent(), sessionId(), handleEventFromServer, abortController.signal)
       .then((newSessionId) => {
         if (newSessionId) setSessionId(newSessionId)
         finalizeAssistantMessage()
@@ -99,7 +99,7 @@ export function Session(props: {
       })
   }
 
-  function handleServerEvent(event: AgenticHarnessEvent) {
+  function handleEventFromServer(event: AgenticHarnessEvent) {
     switch (event.type) {
       case "session":
         setSessionId(event.session_id)
@@ -207,7 +207,7 @@ export function Session(props: {
     sendMessage(text)
   }
 
-  function handleKeyDown(event: KeyboardEvent) {
+  function handleSessionKeyPress(event: KeyboardEvent) {
     if (event.key === "Tab") {
       event.preventDefault()
       const agents = availableAgents()
@@ -223,7 +223,7 @@ export function Session(props: {
   const agentColor = () => agentColors[currentAgent()] ?? theme.primary
 
   return (
-    <box flexGrow={1} minHeight={0} onKeyDown={handleKeyDown}>
+    <box flexGrow={1} minHeight={0} onKeyDown={handleSessionKeyPress}>
       <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2}>
         <box flexGrow={1} flexDirection="column">
           <scrollbox

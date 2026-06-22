@@ -1,11 +1,15 @@
 import { createSignal, onMount, onCleanup } from "solid-js"
 import { useTheme } from "../theme"
 
-export function StatusBar(props: { serverUrl: string; agent?: string; agentColorOverride?: string }) {
+export function StatusBar(props: {
+  serverUrl: string
+  agentName?: string
+  agentColorOverride?: string
+}) {
   const [isConnected, setIsConnected] = createSignal(false)
   const theme = useTheme()
 
-  const agentLabel = () => props.agent ?? "main"
+  const agentLabel = () => props.agentName ?? "main"
   const agentColor = () => props.agentColorOverride ?? theme.primary
 
   let healthCheckInterval: ReturnType<typeof setInterval> | undefined
@@ -29,20 +33,10 @@ export function StatusBar(props: { serverUrl: string; agent?: string; agentColor
   }
 
   return (
-    <box
-      flexDirection="row"
-      justifyContent="space-between"
-      gap={1}
-      flexShrink={0}
-      paddingLeft={1}
-      paddingRight={1}
-      height={1}
-    >
+    <box flexDirection="row" justifyContent="space-between" gap={1} flexShrink={0} paddingLeft={1} paddingRight={1} height={1}>
       <box flexDirection="row" gap={1}>
         <text fg={isConnected() ? theme.success : theme.error}>●</text>
-        <text fg={agentColor()} bold>
-          {agentLabel()}
-        </text>
+        <text fg={agentColor()} bold>{agentLabel()}</text>
       </box>
       <text fg={theme.textMuted}>{props.serverUrl}</text>
     </box>
