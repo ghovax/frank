@@ -8,8 +8,58 @@ from exa_py import Exa
 from langchain.tools import tool
 
 
-_bash_background_tasks: dict[str, tuple[asyncio.Task, Path]] = {}
-_spawned_agent_tasks: dict[str, asyncio.Task] = {}
+class TaskRegistry:
+    """Manages a collection of background async tasks.
+
+    Each task writes its output to a file and is identified by a unique
+    string identifier prefixed with the registry's prefix.
+    """
+
+    def __init__(self, prefix: str):
+        self._prefix = prefix
+        self._output_directory = Path("/tmp")
+        self._tasks: dict[str, tuple[asyncio.Task, Path | None]] = {}
+
+    def start(self, coroutine, output_path: Path | None = None) -> tuple[str, Path]:
+        identifier = f"{self._prefix}-{uuid.uuid4().hex[:12]}"
+        if output_path is None:
+            output_path = self._output_directory / f"{self._prefix}-{uuid.uuid4().hex[:12]}.log"
+        task = asyncio.create_task(coroutine)
+        self._tasks[identifier] = (task, output_path)
+        return identifier, output_path
+
+    def register(self, task: asyncio.Task, output_path: Path | None = None, identifier: str | None = None) -> str:
+        if identifier is None:
+            identifier = f"{self._prefix}-{uuid.uuid4().hex[:12]}"
+        self._tasks[identifier] = (task, output_path)
+        return identifier
+
+    def collect_completed(self) -> list[tuple[str, str]]:
+        completed = []
+        for identifier, (task, output_path) in list(self._tasks.items()):
+            if task.done():
+                try:
+                    result = task.result()
+                except Exception as exception:
+                    result = str(exception)
+                completed.append((identifier, result))
+                del self._tasks[identifier]
+        return completed
+
+    def cancel_all(self) -> None:
+        for identifier, (task, _) in list(self._tasks.items()):
+            task.cancel()
+            del self._tasks[identifier]
+
+    @property
+    def active_count(self) -> int:
+        return len(self._tasks)
+
+
+bash_tasks = TaskRegistry("bg")
+web_tasks = TaskRegistry("search")
+spawned_tasks = TaskRegistry("agent")
+
 _exa_client: Exa | None = None
 
 
@@ -43,7 +93,6 @@ async def bash(
               Low for read-only commands, medium for modifications,
               high for destructive operations.
     """
-    task_identifier = f"bg-{uuid.uuid4().hex[:12]}"
     output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
 
     async def run() -> str:
@@ -97,7 +146,7 @@ async def bash(
                 return json.dumps({"code": "bash_error", "message": str(exception)})
         await asyncio.sleep(0.05)
 
-    _bash_background_tasks[task_identifier] = (task, output_path)
+    task_identifier = bash_tasks.register(task, output_path)
     return json.dumps({
         "code": "bash_started",
         "task_identifier": task_identifier,
@@ -106,52 +155,70 @@ async def bash(
 
 
 def collect_background_bash_results() -> list[tuple[str, str]]:
-    completed = []
-    for task_identifier, (task, output_path) in list(_bash_background_tasks.items()):
-        if task.done():
-            try:
-                result = task.result()
-            except Exception as exception:
-                result = str(exception)
-            completed.append((task_identifier, result))
-            del _bash_background_tasks[task_identifier]
-    return completed
+    return bash_tasks.collect_completed()
 
 
 @tool
-def web_search(
+async def web_search(
     query: str,
-    num_results: int = 5,
+    result_count: int = 5,
 ) -> str:
     """Search the web using Exa. Returns a list of results with titles, URLs, and summaries.
+
+    The search runs asynchronously — the result is auto-injected into the
+    conversation when ready. You can start multiple searches concurrently.
 
     Use this when you need current information from the internet, recent events,
     or external knowledge not available in the training data.
 
     Args:
         query: The search query.
-        num_results: Number of results to return (1-10, default 5).
+        result_count: Number of results to return (1-10, default 5).
     """
     client = _exa_client
     if client is None:
         return json.dumps({"code": "web_search_error", "message": "Web search is not configured."})
-    try:
-        results = client.search(
-            query,
-            num_results=min(num_results, 10),
-            contents={"text": True},
-        )
-        entries = []
-        for result in results.results:
-            entry = {"title": result.title, "url": result.url}
-            if result.text:
-                entry["summary"] = result.text[:500]
-            if result.published_date:
-                entry["published_date"] = result.published_date
-            entries.append(entry)
-        return json.dumps({"code": "web_search_completed", "query": query, "results": entries})
-    except Exception as exception:
-        return json.dumps({"code": "web_search_error", "message": str(exception)})
+
+    output_path = Path("/tmp") / f"search-{uuid.uuid4().hex[:12]}.log"
+
+    async def run() -> str:
+        try:
+            results = await asyncio.to_thread(
+                client.search,
+                query,
+                num_results=min(result_count, 10),
+                contents={"text": True},
+            )
+            entries = []
+            for result in results.results:
+                entry = {"title": result.title, "url": result.url}
+                if result.text:
+                    entry["summary"] = result.text[:500]
+                if result.published_date:
+                    entry["published_date"] = result.published_date
+                entries.append(entry)
+            payload = json.dumps({
+                "code": "web_search_completed",
+                "query": query,
+                "results": entries,
+            })
+            output_path.write_text(payload)
+            return payload
+        except Exception as exception:
+            payload = json.dumps({"code": "web_search_error", "message": str(exception)})
+            output_path.write_text(payload)
+            return payload
+
+    task_identifier, _ = web_tasks.start(run(), output_path=output_path)
+    return json.dumps({
+        "code": "web_search_started",
+        "task_identifier": task_identifier,
+        "output_file": str(output_path),
+    })
+
+
+def collect_web_search_results() -> list[tuple[str, str]]:
+    return web_tasks.collect_completed()
 
 
 @tool
@@ -175,20 +242,11 @@ def spawn_agent(prompt: str = "", agent: str = "main", tools: str = "") -> str:
 
 def register_spawned_task(task_identifier: str, coroutine):
     task = asyncio.create_task(coroutine)
-    _spawned_agent_tasks[task_identifier] = task
+    spawned_tasks.register(task, identifier=task_identifier)
 
 
 def collect_completed_agents() -> list[tuple[str, str]]:
-    completed = []
-    for task_identifier, task in list(_spawned_agent_tasks.items()):
-        if task.done():
-            try:
-                result = task.result()
-            except Exception as exception:
-                result = str(exception)
-            completed.append((task_identifier, result))
-            del _spawned_agent_tasks[task_identifier]
-    return completed
+    return spawned_tasks.collect_completed()
 
 
 @tool
@@ -253,9 +311,6 @@ def orchestrate(steps: list[dict]) -> str:
 
 
 def cancel_all_background_tasks() -> None:
-    for task_identifier, (task, _) in list(_bash_background_tasks.items()):
-        task.cancel()
-        del _bash_background_tasks[task_identifier]
-    for task_identifier, task in list(_spawned_agent_tasks.items()):
-        task.cancel()
-        del _spawned_agent_tasks[task_identifier]
+    bash_tasks.cancel_all()
+    web_tasks.cancel_all()
+    spawned_tasks.cancel_all()

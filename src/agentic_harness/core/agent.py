@@ -35,10 +35,12 @@ from agentic_harness.tools.tools import (
     orchestrate as orchestrate_tool,
     register_spawned_task,
     collect_background_bash_results,
+    collect_web_search_results,
     collect_completed_agents,
     cancel_all_background_tasks,
-    _bash_background_tasks,
-    _spawned_agent_tasks,
+    bash_tasks,
+    web_tasks,
+    spawned_tasks,
 )
 
 from agentic_harness.core.orchestrator_graph import (
@@ -149,30 +151,35 @@ class SubAgentRunner:
 class BackgroundTaskManager:
     def __init__(self):
         self._bash_results: list[tuple[str, str]] = []
+        self._web_results: list[tuple[str, str]] = []
         self._agent_results: list[tuple[str, str]] = []
 
     def poll(self):
         self._bash_results = collect_background_bash_results()
+        self._web_results = collect_web_search_results()
         self._agent_results = collect_completed_agents()
 
     def has_results(self) -> bool:
-        return bool(self._bash_results) or bool(self._agent_results)
+        return bool(self._bash_results) or bool(self._web_results) or bool(self._agent_results)
 
     def drain_results(self) -> list[tuple[str, str, str]]:
         results = []
         for task_identifier, result in self._bash_results:
             results.append(("bash", task_identifier, result))
+        for task_identifier, result in self._web_results:
+            results.append(("web_search", task_identifier, result))
         for task_identifier, result in self._agent_results:
             results.append(("agent", task_identifier, result))
         self._bash_results = []
+        self._web_results = []
         self._agent_results = []
         return results
 
     def has_pending(self) -> bool:
-        return bool(_bash_background_tasks) or bool(_spawned_agent_tasks)
+        return bash_tasks.active_count > 0 or web_tasks.active_count > 0 or spawned_tasks.active_count > 0
 
     def active_background_count(self) -> int:
-        return len(_bash_background_tasks) + len(_spawned_agent_tasks)
+        return bash_tasks.active_count + web_tasks.active_count + spawned_tasks.active_count
 
 
 class Task(BaseModel):
@@ -364,6 +371,10 @@ class AgentOrchestrator:
                     )
                     if tool_name == "bash":
                         self._record_event("background_bash_completed", {
+                            "task_identifier": task_identifier,
+                        })
+                    elif tool_name == "web_search":
+                        self._record_event("background_web_search_completed", {
                             "task_identifier": task_identifier,
                         })
                     else:
