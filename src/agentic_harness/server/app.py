@@ -139,6 +139,33 @@ async def abort_session(session_id: str):
     return {"status": "aborted", "session_id": session_id}
 
 
+@app.get("/sessions/{session_id}/history")
+async def get_execution_history(session_id: str):
+    orchestrator = _sessions.get(session_id)
+    if not orchestrator:
+        return {"error": "session not found"}
+    return {"history": orchestrator.get_execution_history()}
+
+
+@app.get("/sessions/{session_id}/orchestrations")
+async def list_orchestrations(session_id: str):
+    orchestrator = _sessions.get(session_id)
+    if not orchestrator:
+        return {"error": "session not found"}
+    history = orchestrator.get_execution_history()
+    orchestrations = [entry for entry in history if entry.get("type") == "orchestration"]
+    return {"orchestrations": orchestrations}
+
+
+@app.get("/sessions/{session_id}/orchestrations/{thread_id}")
+async def get_orchestration_detail(session_id: str, thread_id: str):
+    orchestrator = _sessions.get(session_id)
+    if not orchestrator:
+        return {"error": "session not found"}
+    checkpoints = orchestrator.get_orchestration_checkpoints(thread_id)
+    return {"thread_id": thread_id, "checkpoints": checkpoints}
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     session_id, orchestrator = _get_or_create_session(request.session_id, request.agent)

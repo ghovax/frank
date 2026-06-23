@@ -279,8 +279,10 @@ class AgentOrchestrator:
 
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
-        self._session_history: list[dict] = []
         self._task_manager = TaskManager()
+        self._execution_history: list[dict] = []
+        self._orchestration_graphs: dict[str, Any] = {}
+        self._orchestration_configs: dict[str, dict] = {}
 
     @property
     def agent_name(self) -> str:
@@ -357,6 +359,17 @@ class AgentOrchestrator:
                         result=_maybe_json(result),
                         task_id=task_identifier,
                     )
+                    if tool_name == "bash":
+                        self._execution_history.append({
+                            "type": "background_bash_completed",
+                            "task_identifier": task_identifier,
+                        })
+                    else:
+                        self._execution_history.append({
+                            "type": "agent_completed",
+                            "task_identifier": task_identifier,
+                            "result": result,
+                        })
 
             messages = (
                 [SystemMessage(content=self._build_system_prompt())]
@@ -557,6 +570,17 @@ class AgentOrchestrator:
                         StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
                     )
                     turn_tool_results_log.append({"name": tool_name, "result": result})
+                    if background:
+                        try:
+                            task_identifier = json.loads(result).get("task_identifier", "")
+                        except (json.JSONDecodeError, TypeError):
+                            task_identifier = ""
+                        if task_identifier:
+                            self._execution_history.append({
+                                "type": "background_bash_started",
+                                "task_identifier": task_identifier,
+                                "command": command[:200],
+                            })
 
                 elif tool_name == "read":
                     result = read_tool.invoke(tool_arguments)
@@ -620,6 +644,13 @@ class AgentOrchestrator:
 
                     register_spawned_task(sub_agent_task_identifier, runner.run())
 
+                    self._execution_history.append({
+                        "type": "agent_spawned",
+                        "task_identifier": sub_agent_task_identifier,
+                        "agent": sub_agent_name,
+                        "prompt": sub_agent_prompt[:200],
+                    })
+
                     result_message = (
                         f"Started sub-agent ({sub_agent_task_identifier}) using profile '{sub_agent_name}'."
                     )
@@ -646,17 +677,24 @@ class AgentOrchestrator:
                         continue
 
                     yield StreamEvent(StreamEvent.Type.STATUS, code="orchestrating")
+
+                    orchestration_id = f"orch-{uuid.uuid4().hex[:12]}"
+                    config = {"configurable": {"thread_id": orchestration_id}}
+
                     graph = compile_orchestration_graph(
                         steps=steps,
                         node_factory=self._make_orchestration_node,
                     )
+                    self._orchestration_graphs[orchestration_id] = graph
+                    self._orchestration_configs[orchestration_id] = config
+
                     initial_state: OrchestrationState = {
                         "steps": steps,
                         "results": [],
                     }
 
                     orchestration_results: list[dict] = []
-                    async for mode, data in graph.astream(initial_state, stream_mode=["updates", "custom"]):
+                    async for mode, data in graph.astream(initial_state, config, stream_mode=["updates", "custom"]):
                         if mode == "custom":
                             custom_type = data.pop("type", None)
                             if custom_type == "agent_text_chunk" or custom_type == "agent_result":
@@ -676,6 +714,14 @@ class AgentOrchestrator:
                                         StreamEvent.Type.AGENT_DONE,
                                         agent_id=f"orch-{new_results[-1]['id']}",
                                     )
+
+                    self._execution_history.append({
+                        "type": "orchestration",
+                        "orchestration_id": orchestration_id,
+                        "thread_id": orchestration_id,
+                        "steps": [{"id": step["id"], "agent": step["agent"]} for step in steps],
+                        "results": orchestration_results,
+                    })
 
                     result = json.dumps({"code": "orchestration_completed", "results": orchestration_results})
                     tool_call_results.append((tool_call_identifier, result))
@@ -771,6 +817,23 @@ class AgentOrchestrator:
                     if not isinstance(dependency_id, str):
                         return ("invalid_step", f"step '{step_id}' depends_on entries must be strings.")
         return None
+
+    def get_execution_history(self) -> list[dict]:
+        return self._execution_history
+
+    def get_orchestration_checkpoints(self, thread_id: str) -> list[dict]:
+        graph = self._orchestration_graphs.get(thread_id)
+        config = self._orchestration_configs.get(thread_id)
+        if not graph or not config:
+            return []
+        snapshots = list(graph.get_state_history(config))
+        return [
+            {
+                "step": index,
+                "state": snapshot.values,
+            }
+            for index, snapshot in enumerate(snapshots)
+        ]
 
     def _make_orchestration_node(self, step: dict, node_index: int):
         async def node(state: OrchestrationState) -> OrchestrationState:

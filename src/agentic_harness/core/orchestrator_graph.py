@@ -2,6 +2,7 @@ import operator
 from typing import Annotated, Any, Callable
 
 from langgraph.graph import StateGraph, START, END
+from langgraph.checkpoint.memory import MemorySaver
 from typing import NotRequired, TypedDict
 
 
@@ -80,4 +81,4 @@ def compile_orchestration_graph(
     for leaf_id in leaf_nodes:
         builder.add_edge(leaf_id, END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=MemorySaver())
