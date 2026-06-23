@@ -10,7 +10,7 @@ Mark commands that only read state (reading files, searching, listing directorie
 
 ## Response style
 
-Answer questions honestly and directly. Do not sugarcoat responses or add unnecessary pleasantries. Be concise and accurate.
+Justify your actions directly and move on — do not go in circles or over-explain. Do not entertain, sugarcoat, or add unnecessary pleasantries. Be concise and accurate.
 
 ## Background tasks
 
