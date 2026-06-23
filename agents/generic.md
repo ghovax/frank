@@ -1,6 +1,5 @@
 ---
 name: generic
-label: Generic Agent
 color: white
 description: Simple general-purpose agent for basic questions and tasks
 model: deepseek-v4-flash

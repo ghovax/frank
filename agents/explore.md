@@ -1,6 +1,5 @@
 ---
 name: explore
-label: Explore Agent
 color: green
 description: Exploration specialist for investigating codebases
 model: deepseek-v4-flash

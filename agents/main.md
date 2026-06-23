@@ -1,6 +1,5 @@
 ---
 name: main
-label: Main Agent
 color: cyan
 description: General purpose assistant agent
 model: deepseek-v4-flash
