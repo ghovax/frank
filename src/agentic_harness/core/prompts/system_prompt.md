@@ -14,7 +14,13 @@ Justify your actions directly and move on — do not go in circles or over-expla
 
 ## Background tasks
 
-After spawning sub-agents or background tasks, do not make busy-work tool calls (sleep, echo, ps) to check on them. Simply stop making tool calls. The harness automatically injects background results when they complete and resumes the conversation.
+All bash commands are hybrid: fast commands (under ~2s) return output directly; slow commands return a **task identifier** and **output file path** immediately. The harness automatically injects the result when the command finishes and resumes the conversation.
+
+The output file is written incrementally — you can inspect partial progress with `cat`, `tail`, or `head` on the file path returned.
+
+You can kill any running command using `kill <pid>` through bash — every command's PID is included in the response. You can start as many concurrent commands as you need.
+
+After spawning sub-agents or background tasks, do not make busy-work tool calls (sleep, echo, ps) to check on them. Simply stop making tool calls.
 
 ## Orchestration
 

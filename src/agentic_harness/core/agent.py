@@ -346,14 +346,13 @@ class AgentOrchestrator:
             self._background.poll()
             if self._background.has_results():
                 for tool_name, task_identifier, result in self._background.drain_results():
-                    message = ToolMessage(
+                    message = SystemMessage(
                         content=json.dumps({
                             "code": "background_completed",
                             "tool_name": tool_name,
                             "task_identifier": task_identifier,
                             "result": result,
                         }),
-                        tool_call_id=f"bg-{task_identifier}",
                     )
                     self._conversation.append(message)
                     yield StreamEvent(
@@ -454,14 +453,13 @@ class AgentOrchestrator:
                         self._background.poll()
                         if self._background.has_results():
                             for tool_name, task_identifier, result in self._background.drain_results():
-                                message = ToolMessage(
+                                message = SystemMessage(
                                     content=json.dumps({
                                         "code": "background_completed",
                                         "tool_name": tool_name,
                                         "task_identifier": task_identifier,
                                         "result": result,
                                     }),
-                                    tool_call_id=f"bg-{task_identifier}",
                                 )
                                 self._conversation.append(message)
                                 yield StreamEvent(
@@ -552,7 +550,6 @@ class AgentOrchestrator:
                     justification = tool_arguments.get("justification", "")
                     risk = tool_arguments.get("risk", "")
                     read_only = tool_arguments.get("read_only", True)
-                    background = tool_arguments.get("background", False)
 
                     permission_decision = self._permissions.evaluate_bash_permission(command)
                     if permission_decision == "deny":
@@ -587,17 +584,15 @@ class AgentOrchestrator:
                             turn_tool_results_log.append({"name": tool_name, "result": error_message})
                             continue
 
-                    result = bash_tool.invoke(tool_arguments)
+                    result = await bash_tool.ainvoke(tool_arguments)
+                    result_data = _maybe_json(result)
                     tool_call_results.append((tool_call_identifier, result))
                     yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
+                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=result_data
                     )
                     turn_tool_results_log.append({"name": tool_name, "result": result})
-                    if background:
-                        try:
-                            task_identifier = json.loads(result).get("task_identifier", "")
-                        except (json.JSONDecodeError, TypeError):
-                            task_identifier = ""
+                    if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
+                        task_identifier = result_data.get("task_identifier", "")
                         if task_identifier:
                             self._record_event("background_bash_started", {
                                 "task_identifier": task_identifier,

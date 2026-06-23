@@ -1,6 +1,5 @@
 import asyncio
 import json
-import subprocess
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -8,19 +7,22 @@ from typing import Literal
 from langchain.tools import tool
 
 
-_bash_background_tasks: dict[str, asyncio.Task] = {}
+_bash_background_tasks: dict[str, tuple[asyncio.Task, Path]] = {}
 _spawned_agent_tasks: dict[str, asyncio.Task] = {}
 
 
 @tool
-def bash(
+async def bash(
     command: str,
     read_only: bool = True,
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
-    background: bool = False,
 ) -> str:
     """Execute a bash command and return its output.
+
+    Fast commands (under ~2s) return output directly.
+    Slow commands return immediately with a task identifier and output file
+    path — the result is auto-injected into the conversation when finished.
 
     Always provide a clear justification and risk assessment for the command.
     Use read_only=True for commands that only read state (cat, head, tail, ls,
@@ -33,70 +35,72 @@ def bash(
         risk: One of "low", "medium", "high" — assess the potential damage.
               Low for read-only commands, medium for modifications,
               high for destructive operations.
-        background: If True, runs asynchronously and returns a task identifier.
     """
-    if background:
-        task_identifier = _start_background_bash(command)
-        return json.dumps({"code": "background_started", "task_identifier": task_identifier})
-    result = subprocess.run(
-        command,
-        shell=True,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    output = result.stdout + result.stderr
-    if not output:
-        return ""
-    if len(output) > 1 << 17:
-        output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
-        output_path.write_text(output)
-        return json.dumps({
-            "code": "bash_completed",
-            "output_file": str(output_path),
-            "size": len(output),
-        })
-    return json.dumps({
-        "code": "bash_completed",
-        "output": output,
-        "size": len(output),
-    })
+    task_identifier = f"bg-{uuid.uuid4().hex[:12]}"
+    output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
 
-
-def _start_background_bash(command: str) -> str:
-    task_identifier = f"bg-{len(_bash_background_tasks) + 1}-{id(command) % 10000}"
-
-    async def run():
+    async def run() -> str:
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
-        output = (stdout.decode() + stderr.decode()).strip()
+        pid = process.pid
+
+        async def write_stream(stream, handle):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                handle.write(line.decode())
+                handle.flush()
+
+        with output_path.open("w") as file_handle:
+            await asyncio.gather(
+                write_stream(process.stdout, file_handle),
+                write_stream(process.stderr, file_handle),
+            )
+
+        await process.wait()
+        output = output_path.read_text()
         if not output:
-            return ""
+            return json.dumps({"code": "bash_completed", "output": "", "pid": pid})
         if len(output) > 1 << 17:
-            output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
-            output_path.write_text(output)
             return json.dumps({
                 "code": "bash_completed",
                 "output_file": str(output_path),
+                "pid": pid,
                 "size": len(output),
             })
         return json.dumps({
             "code": "bash_completed",
             "output": output,
+            "pid": pid,
             "size": len(output),
         })
 
-    _bash_background_tasks[task_identifier] = asyncio.create_task(run())
-    return task_identifier
+    task = asyncio.create_task(run())
+
+    deadline = asyncio.get_event_loop().time() + 2
+    while asyncio.get_event_loop().time() < deadline:
+        if task.done():
+            try:
+                return task.result()
+            except Exception as exception:
+                return json.dumps({"code": "bash_error", "message": str(exception)})
+        await asyncio.sleep(0.05)
+
+    _bash_background_tasks[task_identifier] = (task, output_path)
+    return json.dumps({
+        "code": "bash_started",
+        "task_identifier": task_identifier,
+        "output_file": str(output_path),
+    })
 
 
 def collect_background_bash_results() -> list[tuple[str, str]]:
     completed = []
-    for task_identifier, task in list(_bash_background_tasks.items()):
+    for task_identifier, (task, output_path) in list(_bash_background_tasks.items()):
         if task.done():
             try:
                 result = task.result()
@@ -206,7 +210,7 @@ def orchestrate(steps: list[dict]) -> str:
 
 
 def cancel_all_background_tasks() -> None:
-    for task_identifier, task in list(_bash_background_tasks.items()):
+    for task_identifier, (task, _) in list(_bash_background_tasks.items()):
         task.cancel()
         del _bash_background_tasks[task_identifier]
     for task_identifier, task in list(_spawned_agent_tasks.items()):
