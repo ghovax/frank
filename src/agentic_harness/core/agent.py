@@ -120,25 +120,39 @@ class SubAgentRunner:
             global_configuration=global_configuration,
         )
 
-    async def run(self) -> str:
-        last_text = ""
+    async def run_stream(self) -> AsyncIterator[StreamEvent]:
+        """Yield each event as the sub-agent produces it.
+        Also pushes events to _agent_event_queues for background monitoring.
+        """
         async for event in self._orchestrator.stream(self.prompt):
             queue = _agent_event_queues.get(self.task_identifier)
             if event.type == StreamEvent.Type.TEXT_CHUNK:
-                last_text += event.data.get("text", "")
                 if queue is not None and self._stream_progress:
                     await queue.put(event)
+                if self._stream_progress:
+                    yield event
                 continue
             if queue is not None:
                 await queue.put(event)
-            if event.type == StreamEvent.Type.DONE:
-                last_text = event.data.get("text", last_text)
-            elif event.type == StreamEvent.Type.ERROR:
-                return event.data.get("message", "unknown")
+            yield event
+
         queue = _agent_event_queues.get(self.task_identifier)
         if queue is not None:
             await queue.put(None)
-        return last_text or "No response."
+
+    async def run(self) -> str:
+        """Collect final text (backwards-compatible for spawn_agent)."""
+        last_text = ""
+        async for event in self.run_stream():
+            if event.type == StreamEvent.Type.TEXT_CHUNK:
+                last_text += event.data.get("text", "")
+            elif event.type == StreamEvent.Type.DONE:
+                last_text = event.data.get("text", last_text)
+            elif event.type == StreamEvent.Type.ERROR:
+                return event.data.get("message", "unknown")
+        if not last_text:
+            return json.dumps({"code": "empty_response", "message": "Agent produced no output."})
+        return last_text
 
 
 class BackgroundTaskManager:
@@ -640,8 +654,30 @@ class AgentOrchestrator:
                         "steps": steps,
                         "results": [],
                     }
-                    final_state = await graph.ainvoke(initial_state)
-                    result = json.dumps({"code": "orchestration_completed", "results": final_state["results"]})
+
+                    orchestration_results: list[dict] = []
+                    async for mode, data in graph.astream(initial_state, stream_mode=["updates", "custom"]):
+                        if mode == "custom":
+                            custom_type = data.pop("type", None)
+                            if custom_type == "agent_text_chunk":
+                                yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, **data)
+                            elif custom_type == "agent_tool_call":
+                                yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, **data)
+                            elif custom_type == "agent_thinking":
+                                yield StreamEvent(StreamEvent.Type.AGENT_THINKING, **data)
+                            elif custom_type == "agent_status":
+                                yield StreamEvent(StreamEvent.Type.AGENT_STATUS, **data)
+                        elif mode == "updates":
+                            for node_name, state_update in data.items():
+                                if "results" in state_update:
+                                    new_results = state_update["results"]
+                                    orchestration_results.extend(new_results)
+                                    yield StreamEvent(
+                                        StreamEvent.Type.AGENT_DONE,
+                                        agent_id=f"orch-{new_results[-1]['id']}",
+                                    )
+
+                    result = json.dumps({"code": "orchestration_completed", "results": orchestration_results})
                     tool_call_results.append((tool_call_identifier, result))
                     yield StreamEvent(
                         StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result),
@@ -738,11 +774,12 @@ class AgentOrchestrator:
 
     def _make_orchestration_node(self, step: dict, node_index: int):
         async def node(state: OrchestrationState) -> OrchestrationState:
+            from langgraph.config import get_stream_writer
+            writer = get_stream_writer()
+
             agent_configuration = self._load_sub_agent(step["agent"])
 
-            # Collect dependency outputs
             if "depends_on" not in step:
-                # Chain mode: depends on the immediately preceding step
                 dependency_ids = [state["steps"][node_index - 1]["id"]] if node_index > 0 else []
             else:
                 dependency_ids = step["depends_on"]
@@ -756,23 +793,28 @@ class AgentOrchestrator:
             if dependency_outputs:
                 resolved_prompt += "\n\n" + json.dumps(dependency_outputs)
 
-            step_task_identifier = f"orch-{step['id']}"
-
-            agent_queue: asyncio.Queue[Optional[StreamEvent]] = asyncio.Queue()
-            _agent_event_queues[step_task_identifier] = agent_queue
-
             runner = SubAgentRunner(
                 agent_configuration=agent_configuration,
                 global_configuration=self._global_configuration,
-                task_identifier=step_task_identifier,
+                task_identifier=f"orch-{step['id']}",
                 prompt=resolved_prompt,
                 stream_progress=self._agent_configuration.stream_agent_progress,
             )
-            result = await runner.run()
 
-            _agent_event_queues.pop(step_task_identifier, None)
+            result = ""
+            async for event in runner.run_stream():
+                if event.type == StreamEvent.Type.TEXT_CHUNK:
+                    writer({"type": "agent_text_chunk", "step_id": step["id"], "text": event.data.get("text", "")})
+                elif event.type == StreamEvent.Type.THINKING:
+                    writer({"type": "agent_thinking", "step_id": step["id"], "text": event.data.get("text", "")})
+                elif event.type == StreamEvent.Type.TOOL_CALL:
+                    writer({"type": "agent_tool_call", "step_id": step["id"], "name": event.data.get("name", ""), "arguments": event.data.get("arguments", {})})
+                elif event.type == StreamEvent.Type.STATUS:
+                    writer({"type": "agent_status", "step_id": step["id"], "code": event.data.get("code", "")})
+                elif event.type == StreamEvent.Type.DONE:
+                    result = event.data.get("text", result)
+                elif event.type == StreamEvent.Type.ERROR:
+                    result = event.data.get("message", "unknown")
 
-            return {
-                "results": [{"id": step["id"], "agent": step["agent"], "output": result}],
-            }
+            return {"results": [{"id": step["id"], "agent": step["agent"], "output": result}]}
         return node
