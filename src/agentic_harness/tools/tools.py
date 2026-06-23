@@ -70,7 +70,7 @@ def collect_background_bash_results() -> list[tuple[str, str]]:
             try:
                 result = task.result()
             except Exception as exception:
-                result = f"Error: {exception}"
+                result = str(exception)
             completed.append((task_identifier, result))
             del _bash_background_tasks[task_identifier]
     return completed
@@ -170,7 +170,7 @@ def collect_completed_agents() -> list[tuple[str, str]]:
             try:
                 result = task.result()
             except Exception as exception:
-                result = f"Error: {exception}"
+                result = str(exception)
             completed.append((task_identifier, result))
             del _spawned_agent_tasks[task_identifier]
     return completed

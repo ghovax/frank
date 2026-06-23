@@ -102,7 +102,7 @@ class SubAgentRunner:
             elif event.type == StreamEvent.Type.DONE:
                 last_text = event.data.get("text", last_text)
             elif event.type == StreamEvent.Type.ERROR:
-                return f"Error: {event.data.get('message', 'unknown')}"
+                return event.data.get("message", "unknown")
         return last_text or "No response."
 
 
@@ -263,8 +263,8 @@ class AgentOrchestrator:
                 for tool_call_entry in tool_calls
             ],
             "tool_results": [
-                {"name": tr.get("name", ""), "result": tr.get("result", "")}
-                for tr in tool_results
+                {"name": tool_result.get("name", ""), "result": tool_result.get("result", "")}
+                for tool_result in tool_results
             ],
             "final_response": final_response,
         }
@@ -325,7 +325,7 @@ class AgentOrchestrator:
             if not response.tool_calls:
                 final_text = response.content or ""
                 turn_final_response = final_text
-                yield StreamEvent(StreamEvent.Type.DONE, text=final_text)
+                yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
                 self._conversation.append(response)
                 self._calls_this_turn = 0
                 self._record_turn(
@@ -475,8 +475,7 @@ class AgentOrchestrator:
                     register_spawned_task(sub_agent_task_identifier, runner.run())
 
                     result_message = (
-                        f"Started sub-agent ({sub_agent_task_identifier}) "
-                        f"using profile '{sub_agent_name}'."
+                        f"Started sub-agent ({sub_agent_task_identifier}) using profile '{sub_agent_name}'."
                     )
                     tool_call_results.append((tool_call_identifier, result_message))
                     yield StreamEvent(
@@ -529,9 +528,9 @@ class AgentOrchestrator:
 
             self._calls_this_turn += 1
 
-        final_text = "Stopped: reached maximum iterations without a final response."
+        final_text = "reached maximum iterations without a final response."
         turn_final_response = final_text
-        yield StreamEvent(StreamEvent.Type.DONE, text=final_text)
+        yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="maximum_iterations")
         self._record_turn(
             user_message, turn_tool_calls_log,
             turn_tool_results_log, turn_final_response,
