@@ -282,7 +282,6 @@ class AgentOrchestrator:
             "system_prompt": self._system_prompt,
             "context": context_json,
             "tasks_section": tasks_section,
-            "task_instruction": self._prompt_loader.load("task_instruction", {}),
         })
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):

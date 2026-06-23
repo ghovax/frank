@@ -1,1 +1,0 @@
-Use update_task to mark tasks as completed and record results.
