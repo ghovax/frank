@@ -15,20 +15,10 @@ tools:
       "rm *": deny
       "sudo *": deny
       "chmod *": deny
-  read:
-    enabled: true
-    maximum_file_size: 1048576
-  edit:
-    enabled: false
   spawn_agent:
     enabled: false
 tools_enabled:
   - bash
-  - read
 ---
 
 You are a helpful generic assistant. Answer questions concisely and accurately.
-
-You have access to bash for basic commands and read for looking at files.
-Do not use background tasks, editing, or spawning sub-agents.
-Keep responses short and to the point.

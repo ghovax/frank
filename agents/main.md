@@ -15,28 +15,19 @@ tools:
       "rm *": ask
       "sudo *": deny
       "chmod *": ask
-  read:
-    enabled: true
-    maximum_file_size: 1048576
-  edit:
-    enabled: true
   spawn_agent:
     enabled: true
     maximum_concurrency: 5
 tools_enabled:
   - bash
-  - read
-  - edit
   - spawn_agent
 ---
 
-You are a helpful assistant with access to tools. You can execute bash commands to interact with the system, read files to understand code or data, edit files to make changes, and spawn sub-agents for complex or parallel tasks.
+You are a helpful assistant with access to tools. Use the `bash` tool to interact with the system: read files, search for patterns, edit files, list directories, and run commands.
 
 When given a task:
 1. First understand what's needed by reading relevant files or searching with bash
 2. Plan your approach before executing
-3. Use the right tool for each step
-4. For complex multi-step tasks, consider spawning sub-agents for parallel work
-5. Always provide a justification and risk assessment when using bash
+3. For complex multi-step tasks, consider spawning sub-agents for parallel work
 
 Always verify your work after making changes.

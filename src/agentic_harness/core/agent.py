@@ -28,8 +28,6 @@ from agentic_harness.core.configuration import (
 )
 from agentic_harness.tools.tools import (
     bash as bash_tool,
-    read as read_tool,
-    edit as edit_tool,
     spawn_agent as spawn_tool,
     write_tasks as write_tasks_tool,
     update_task as update_task_tool,
@@ -37,6 +35,7 @@ from agentic_harness.tools.tools import (
     register_spawned_task,
     collect_background_bash_results,
     collect_completed_agents,
+    cancel_all_background_tasks,
     _bash_background_tasks,
     _spawned_agent_tasks,
 )
@@ -91,10 +90,6 @@ def _build_tools(tools_configuration) -> list[BaseTool]:
     available = []
     if tools_configuration.bash.enabled:
         available.append(bash_tool)
-    if tools_configuration.read.enabled:
-        available.append(read_tool)
-    if tools_configuration.edit.enabled:
-        available.append(edit_tool)
     if tools_configuration.spawn_agent.enabled:
         available.append(spawn_tool)
     available.append(write_tasks_tool)
@@ -252,7 +247,9 @@ class AgentOrchestrator:
         on_record_event: Optional[callable] = None,
         on_record_message: Optional[callable] = None,
         on_record_orchestration: Optional[callable] = None,
+        session_id: str = "",
     ):
+        self._session_id = session_id
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._pending_permissions = pending_permissions or {}
@@ -282,6 +279,7 @@ class AgentOrchestrator:
         self._system_prompt = agent_configuration.system_prompt
         self._recursion_depth: int = 0
         self._calls_this_turn: int = 0
+        self._abort_event = asyncio.Event()
 
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
@@ -293,6 +291,9 @@ class AgentOrchestrator:
     @property
     def agent_name(self) -> str:
         return self._agent_configuration.name
+
+    def abort(self) -> None:
+        self._abort_event.set()
 
     def _record_event(self, event_type: str, data: dict) -> None:
         record = {"type": event_type, **data}
@@ -343,6 +344,10 @@ class AgentOrchestrator:
         turn_final_response = ""
 
         while self._calls_this_turn < self._agent_configuration.maximum_iterations:
+            if self._abort_event.is_set():
+                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                return
+
             self._background.poll()
             if self._background.has_results():
                 for tool_name, task_identifier, result in self._background.drain_results():
@@ -379,6 +384,9 @@ class AgentOrchestrator:
 
             accumulated_response = None
             async for chunk in self._bound_llm.astream(messages):
+                if self._abort_event.is_set():
+                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                    return
                 if accumulated_response is None:
                     accumulated_response = chunk
                 else:
@@ -402,6 +410,12 @@ class AgentOrchestrator:
                     self._calls_this_turn += 1
                     yield StreamEvent(StreamEvent.Type.STATUS, code="waiting_background")
                     while self._background.has_pending():
+                        if self._abort_event.is_set():
+                            cancel_all_background_tasks()
+                            for key in list(_agent_event_queues):
+                                del _agent_event_queues[key]
+                            yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                            return
                         for task_identifier in list(_agent_event_queues):
                             queue = _agent_event_queues.get(task_identifier)
                             if queue is None:
@@ -479,6 +493,18 @@ class AgentOrchestrator:
             tool_call_results: list[tuple[str, str]] = []
 
             for tool_call_data in response.tool_calls:
+                if self._abort_event.is_set():
+                    cancel_all_background_tasks()
+                    for key in list(_agent_event_queues):
+                        del _agent_event_queues[key]
+                    self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "cancelled")
+                    self._record_event("session_cancelled", {
+                        "tool_calls_logged": len(turn_tool_calls_log),
+                        "tool_results_logged": len(turn_tool_results_log),
+                    })
+                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                    return
+
                 tool_name = tool_call_data["name"]
                 tool_arguments = tool_call_data["args"]
                 tool_call_identifier = tool_call_data["id"]
@@ -530,6 +556,7 @@ class AgentOrchestrator:
                     command = tool_arguments.get("command", "")
                     justification = tool_arguments.get("justification", "")
                     risk = tool_arguments.get("risk", "")
+                    read_only = tool_arguments.get("read_only", True)
                     background = tool_arguments.get("background", False)
 
                     permission_decision = self._permissions.evaluate_bash_permission(command)
@@ -541,8 +568,8 @@ class AgentOrchestrator:
                         yield StreamEvent(StreamEvent.Type.ERROR, message=error_message, tool=tool_name)
                         turn_tool_results_log.append({"name": tool_name, "result": error_message})
                         continue
-                    elif permission_decision == "ask" or risk in ("medium", "high"):
-                        request_identifier = f"perm-{uuid.uuid4().hex[:12]}"
+                    elif not read_only and (permission_decision == "ask" or risk in ("medium", "high")):
+                        request_identifier = f"perm-{self._session_id[:8]}-{uuid.uuid4().hex[:12]}"
                         future = asyncio.get_event_loop().create_future()
                         self._pending_permissions[request_identifier] = future
                         yield StreamEvent(
@@ -581,22 +608,6 @@ class AgentOrchestrator:
                                 "task_identifier": task_identifier,
                                 "command": command[:200],
                             })
-
-                elif tool_name == "read":
-                    result = read_tool.invoke(tool_arguments)
-                    tool_call_results.append((tool_call_identifier, result))
-                    yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
-                    )
-                    turn_tool_results_log.append({"name": tool_name, "result": result})
-
-                elif tool_name == "edit":
-                    result = edit_tool.invoke(tool_arguments)
-                    tool_call_results.append((tool_call_identifier, result))
-                    yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
-                    )
-                    turn_tool_results_log.append({"name": tool_name, "result": result})
 
                 elif tool_name == "spawn_agent":
                     self._recursion_depth += 1
@@ -790,17 +801,13 @@ class AgentOrchestrator:
         )
 
     def _validate_tool_call(self, tool_name: str, arguments: dict) -> tuple[str, str] | None:
-        if tool_name == "read":
-            first_line = arguments.get("first_line", 1)
-            last_line = arguments.get("last_line", 2000)
-            if not isinstance(first_line, int) or first_line < 1:
-                return ("invalid_range", "first_line must be a positive integer (>= 1).")
-            if not isinstance(last_line, int) or last_line < first_line:
-                return ("invalid_range", "last_line must be >= first_line.")
         if tool_name == "bash":
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):
                 return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
+            read_only = arguments.get("read_only", True)
+            if not isinstance(read_only, bool):
+                return ("invalid_read_only", "read_only must be a boolean.")
         if tool_name == "orchestrate":
             steps = arguments.get("steps", [])
             if not isinstance(steps, list) or len(steps) == 0:

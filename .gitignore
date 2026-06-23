@@ -1,19 +1,22 @@
-
+# Python
 __pycache__/
-.DS_Store
-.env
-.venv
-*.egg-info
-*.pem
 *.py[oc]
-*.swo
-*.swp
-# Editor
-# Environment
-# Python-generated files
-# Virtual environments
+*.egg-info
 build/
 dist/
-history/
 wheels/
+
+# Virtual environments
+.venv
+.env
 .direnv/
+
+# Editor
+.DS_Store
+*.pem
+*.swo
+*.swp
+
+# Application
+history/
+harness.db

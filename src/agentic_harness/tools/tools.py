@@ -15,6 +15,7 @@ _spawned_agent_tasks: dict[str, asyncio.Task] = {}
 @tool
 def bash(
     command: str,
+    read_only: bool = True,
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
@@ -22,9 +23,12 @@ def bash(
     """Execute a bash command and return its output.
 
     Always provide a clear justification and risk assessment for the command.
+    Use read_only=True for commands that only read state (cat, head, tail, ls,
+    grep, find, etc.). Set read_only=False for commands that modify state.
 
     Args:
         command: The shell command to execute.
+        read_only: Whether this command only reads state without modifying it.
         justification: Explain why this command is needed for the task.
         risk: One of "low", "medium", "high" — assess the potential damage.
               Low for read-only commands, medium for modifications,
@@ -89,81 +93,6 @@ def collect_background_bash_results() -> list[tuple[str, str]]:
             completed.append((task_identifier, result))
             del _bash_background_tasks[task_identifier]
     return completed
-
-
-@tool
-def read(path: str, first_line: int = 1, last_line: int = 2000) -> str:
-    """Read a file from the filesystem.
-
-    Args:
-        path: Absolute path to the file.
-        first_line: First line to read (1-indexed, default 1).
-        last_line: Last line to read (inclusive, default 2000).
-    """
-    if first_line < 1:
-        return "first_line must be >= 1"
-    if last_line < first_line:
-        return "last_line must be >= first_line"
-
-    resolved_path = Path(path).expanduser().resolve()
-    if not resolved_path.exists():
-        return json.dumps({"code": "file_not_found", "path": str(path)})
-    if not resolved_path.is_file():
-        return json.dumps({"code": "not_a_file", "path": str(path)})
-
-    file_size = resolved_path.stat().st_size
-    limit = last_line - first_line + 1
-
-    with open(resolved_path) as file_handle:
-        if first_line > 1:
-            for _ in range(first_line - 1):
-                next(file_handle)
-        lines = []
-        for line_index, line in enumerate(file_handle):
-            if line_index >= limit:
-                break
-            lines.append(line)
-
-    content = "".join(lines)
-    return json.dumps({
-        "path": str(resolved_path),
-        "size": file_size,
-        "line_count": len(lines),
-        "first_line": first_line,
-        "last_line": last_line,
-        "content": content.rstrip("\n"),
-    })
-
-
-@tool
-def edit(path: str, old_string: str, new_string: str) -> str:
-    """Edit a file by replacing the first occurrence of old_string with new_string.
-
-    Args:
-        path: Absolute path to the file.
-        old_string: Text to search for (must exist exactly once in the file).
-        new_string: Text to replace it with.
-    """
-    resolved_path = Path(path).expanduser().resolve()
-    if not resolved_path.exists():
-        return json.dumps({"code": "file_not_found", "message": f"File not found: {path}"})
-    if not resolved_path.is_file():
-        return json.dumps({"code": "not_a_file", "message": f"Not a file: {path}"})
-
-    content = resolved_path.read_text(encoding="utf-8")
-
-    occurrence_count = content.count(old_string)
-    if occurrence_count == 0:
-        return f"old_string not found in file: {path}"
-    if occurrence_count > 1:
-        return (
-            f"Found {occurrence_count} matches for old_string in {path}. "
-            "Provide more surrounding context."
-        )
-
-    new_content = content.replace(old_string, new_string, 1)
-    resolved_path.write_text(new_content, encoding="utf-8")
-    return f"Edited {path}: replaced 1 occurrence"
 
 
 @tool
@@ -262,3 +191,12 @@ def orchestrate(steps: list[dict]) -> str:
         "step_count": len(steps),
         "steps": [{"id": step["id"], "agent": step["agent"]} for step in steps],
     })
+
+
+def cancel_all_background_tasks() -> None:
+    for task_identifier, task in list(_bash_background_tasks.items()):
+        task.cancel()
+        del _bash_background_tasks[task_identifier]
+    for task_identifier, task in list(_spawned_agent_tasks.items()):
+        task.cancel()
+        del _spawned_agent_tasks[task_identifier]

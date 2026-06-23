@@ -2,6 +2,12 @@
 
 {{ context }}
 
+## File operations
+
+Use the `bash` tool for all file operations. There are no dedicated read or edit tools.
+
+Mark commands that only read state (reading files, searching, listing directories) with `read_only` set to true — these execute without approval. Mark commands that modify state with `read_only` set to false and set the appropriate `risk` level (low, medium, or high).
+
 ## Background tasks
 
 After spawning sub-agents or background tasks, do not make busy-work tool calls (sleep, echo, ps) to check on them. Simply stop making tool calls. The harness automatically injects background results when they complete and resumes the conversation.

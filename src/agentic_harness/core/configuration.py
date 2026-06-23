@@ -48,15 +48,6 @@ class BashToolConfiguration(BaseModel):
         return command == pattern
 
 
-class ReadToolConfiguration(BaseModel):
-    enabled: bool = True
-    maximum_file_size: int = 1_048_576
-
-
-class EditToolConfiguration(BaseModel):
-    enabled: bool = True
-
-
 class SpawnAgentToolConfiguration(BaseModel):
     enabled: bool = True
     maximum_concurrency: int = 5
@@ -64,8 +55,6 @@ class SpawnAgentToolConfiguration(BaseModel):
 
 class ToolsConfiguration(BaseModel):
     bash: BashToolConfiguration = BashToolConfiguration()
-    read: ReadToolConfiguration = ReadToolConfiguration()
-    edit: EditToolConfiguration = EditToolConfiguration()
     spawn_agent: SpawnAgentToolConfiguration = SpawnAgentToolConfiguration()
 
 
@@ -133,13 +122,6 @@ class PermissionEvaluator:
         if not self._configuration.tools.bash.background_allowed:
             raise PermissionError("Background bash execution is not allowed")
 
-    def check_read(self, file_size: int) -> None:
-        maximum = self._configuration.tools.read.maximum_file_size
-        if file_size > maximum:
-            raise PermissionError(
-                f"File size {file_size} exceeds maximum {maximum}"
-            )
-
     def check_spawn_agent(self, current_depth: int, current_concurrent: int) -> None:
         if current_depth >= self._configuration.recursion_limit:
             raise PermissionError(
@@ -153,9 +135,6 @@ class PermissionEvaluator:
 
     def check_tool(self, tool_name: str, **arguments) -> None:
         self.check_tool_enabled(tool_name)
-        if tool_name == "read":
-            file_size = arguments.get("file_size", 0)
-            self.check_read(file_size)
 
 
 class PermissionError(RuntimeError):

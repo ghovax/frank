@@ -38,7 +38,6 @@ _global_configuration: Optional[GlobalConfiguration] = None
 _sessions: dict[str, AgentOrchestrator] = {}
 _session_configurations: dict[str, str] = {}
 _pending_permissions: dict[str, asyncio.Future] = {}
-_abort_events: dict[str, asyncio.Event] = {}
 _database_engine = None
 _database_session_factory = None
 
@@ -58,7 +57,7 @@ class AgentsList(BaseModel):
     agents: list[str]
 
 
-def get_db() -> DBSessionType:
+def get_database() -> DBSessionType:
     return _database_session_factory()
 
 
@@ -88,7 +87,7 @@ def _get_or_create_session(
     )
 
     def record_event(event_type: str, data: dict) -> None:
-        database_session = get_db()
+        database_session = get_database()
         try:
             database_session.add(ExecutionEvent(
                 session_id=new_identifier,
@@ -101,7 +100,7 @@ def _get_or_create_session(
             database_session.close()
 
     def record_message(role: str, content: str, tool_call_id: str) -> None:
-        database_session = get_db()
+        database_session = get_database()
         try:
             database_session.add(Message(
                 session_id=new_identifier,
@@ -115,7 +114,7 @@ def _get_or_create_session(
             database_session.close()
 
     def record_orchestration(orchestration_id: str, thread_id: str, steps: list, results: list) -> None:
-        database_session = get_db()
+        database_session = get_database()
         try:
             database_session.add(Orchestration(
                 id=orchestration_id,
@@ -136,11 +135,12 @@ def _get_or_create_session(
         on_record_event=record_event,
         on_record_message=record_message,
         on_record_orchestration=record_orchestration,
+        session_id=new_identifier,
     )
     _sessions[new_identifier] = orchestrator
     _session_configurations[new_identifier] = agent_name
 
-    database_session = get_db()
+    database_session = get_database()
     try:
         database_session.add(DBSession(
             id=new_identifier,
@@ -178,6 +178,7 @@ async def switch_agent(session_id: str, agent: str):
         agent_configuration=agent_configuration,
         global_configuration=_global_configuration,
         pending_permissions=_pending_permissions,
+        session_id=session_id,
     )
     _sessions[session_id] = orchestrator
     _session_configurations[session_id] = agent
@@ -207,15 +208,35 @@ async def session_status(session_id: str):
 
 @app.post("/chat/{session_id}/abort")
 async def abort_session(session_id: str):
-    abort_event = _abort_events.get(session_id)
-    if abort_event:
-        abort_event.set()
+    orchestrator = _sessions.get(session_id)
+    if not orchestrator:
+        return {"status": "not_found", "session_id": session_id}
+
+    session_prefix = f"perm-{session_id[:8]}-"
+    for request_id, future in list(_pending_permissions.items()):
+        if request_id.startswith(session_prefix) and not future.done():
+            future.set_result(False)
+
+    orchestrator.abort()
+
+    database_session = get_database()
+    try:
+        database_session.add(ExecutionEvent(
+            session_id=session_id,
+            type="session_cancelled",
+            data=json.dumps({"stop_reason": "cancelled"}),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
+        database_session.commit()
+    finally:
+        database_session.close()
+
     return {"status": "aborted", "session_id": session_id}
 
 
 @app.get("/sessions/{session_id}/history")
 async def get_execution_history(session_id: str):
-    database_session = get_db()
+    database_session = get_database()
     try:
         rows = database_session.query(ExecutionEvent).filter(
             ExecutionEvent.session_id == session_id
@@ -232,7 +253,7 @@ async def get_execution_history(session_id: str):
 
 @app.get("/sessions/{session_id}/orchestrations")
 async def list_orchestrations(session_id: str):
-    database_session = get_db()
+    database_session = get_database()
     try:
         rows = database_session.query(Orchestration).filter(
             Orchestration.session_id == session_id
@@ -264,7 +285,7 @@ async def get_orchestration_detail(session_id: str, thread_id: str):
 
 @app.get("/sessions/{session_id}/conversation")
 async def get_conversation(session_id: str):
-    database_session = get_db()
+    database_session = get_database()
     try:
         rows = database_session.query(Message).filter(
             Message.session_id == session_id
@@ -288,9 +309,6 @@ async def get_conversation(session_id: str):
 async def chat(request: ChatRequest):
     session_id, orchestrator = _get_or_create_session(request.session_id, request.agent)
 
-    abort_event = asyncio.Event()
-    _abort_events[session_id] = abort_event
-
     async def event_generator():
         try:
             yield {
@@ -298,17 +316,9 @@ async def chat(request: ChatRequest):
                 "data": json.dumps({"type": "session", "session_id": session_id}),
             }
             async for event in orchestrator.stream(request.message):
-                if abort_event.is_set():
-                    yield {
-                        "event": "done",
-                        "data": json.dumps({"type": "done", "stop_reason": "interrupted", "text": "interrupted by user", "session_id": session_id}),
-                    }
-                    return
                 yield {"event": event.type.value, "data": event.to_json()}
         except GeneratorExit:
             pass
-        finally:
-            _abort_events.pop(session_id, None)
 
     return EventSourceResponse(event_generator())
 
