@@ -9,24 +9,68 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from sqlalchemy import Column, Integer, String, Text, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-from agentic_harness.core.agent import AgentOrchestrator, StreamEvent
-from agentic_harness.tools.tools import set_exa_client
-from agentic_harness.core.configuration import (
+from harness.core.agent import AgentOrchestrator, StreamEvent
+from harness.tools.tools import set_exa_client
+from harness.core.configuration import (
     GlobalConfiguration,
     load_agent_configuration,
     list_available_agents,
 )
-from agentic_harness.server.models import (
-    Session as DBSession,
-    Message,
-    ExecutionEvent,
-    Orchestration,
-    create_database,
-)
-from sqlalchemy.orm import Session as DBSessionType
 
-app = FastAPI(title="agentic-harness")
+Base = declarative_base()
+
+
+class SessionRecord(Base):
+    __tablename__ = "sessions"
+
+    id = Column(String, primary_key=True)
+    agent = Column(String, nullable=False)
+    created_at = Column(String, nullable=False)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, nullable=False, index=True)
+    role = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    tool_call_id = Column(String, default="")
+    timestamp = Column(String, nullable=False)
+
+
+class ExecutionEvent(Base):
+    __tablename__ = "execution_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, nullable=False, index=True)
+    type = Column(String, nullable=False)
+    data = Column(Text, nullable=False)
+    timestamp = Column(String, nullable=False)
+
+
+class Orchestration(Base):
+    __tablename__ = "orchestrations"
+
+    id = Column(String, primary_key=True)
+    session_id = Column(String, nullable=False, index=True)
+    thread_id = Column(String, nullable=False)
+    steps = Column(Text, nullable=False)
+    results = Column(Text, nullable=False)
+    created_at = Column(String, nullable=False)
+
+
+def create_database(database_path: str = "harness.db") -> tuple:
+    engine = create_engine(f"sqlite:///{database_path}")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine)
+    return engine, session_factory
+
+
+app = FastAPI(title="harness")
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +102,7 @@ class AgentsList(BaseModel):
     agents: list[str]
 
 
-def get_database() -> DBSessionType:
+def get_database() -> sessionmaker:
     return _database_session_factory()
 
 
@@ -148,7 +192,7 @@ def _get_or_create_session(
 
     database_session = get_database()
     try:
-        database_session.add(DBSession(
+        database_session.add(SessionRecord(
             id=new_identifier,
             agent=agent_name,
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -331,5 +375,9 @@ async def chat(request: ChatRequest):
 
 def run_server(host: str = "127.0.0.1", port: int = 8822):
     import uvicorn
-
     uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8822)

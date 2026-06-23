@@ -17,7 +17,7 @@ from langchain_core.messages import (
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
-from agentic_harness.core.configuration import (
+from harness.core.configuration import (
     AgentConfiguration,
     GlobalConfiguration,
     PermissionEvaluator,
@@ -26,7 +26,7 @@ from agentic_harness.core.configuration import (
     load_agent_configuration,
     list_available_agents,
 )
-from agentic_harness.tools.tools import (
+from harness.tools.tools import (
     bash as bash_tool,
     web_search as web_search_tool,
     spawn_agent as spawn_tool,
@@ -43,7 +43,7 @@ from agentic_harness.tools.tools import (
     spawned_tasks,
 )
 
-from agentic_harness.core.orchestrator_graph import (
+from harness.core.orchestrator_graph import (
     compile_orchestration_graph,
     OrchestrationState,
 )
