@@ -348,8 +348,8 @@ class AgentOrchestrator:
                 for tool_name, task_identifier, result in self._background.drain_results():
                     message = SystemMessage(
                         content=json.dumps({
-                            "code": "background_completed",
-                            "tool_name": tool_name,
+                            "type": "background_result",
+                            "tool": tool_name,
                             "task_identifier": task_identifier,
                             "result": result,
                         }),
@@ -455,8 +455,8 @@ class AgentOrchestrator:
                             for tool_name, task_identifier, result in self._background.drain_results():
                                 message = SystemMessage(
                                     content=json.dumps({
-                                        "code": "background_completed",
-                                        "tool_name": tool_name,
+                                        "type": "background_result",
+                                        "tool": tool_name,
                                         "task_identifier": task_identifier,
                                         "result": result,
                                     }),
