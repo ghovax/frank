@@ -76,7 +76,7 @@ def _start_background_bash(command: str) -> str:
         output = (stdout.decode() + stderr.decode()).strip()
         if not output:
             return ""
-    if len(output) > 1 << 17:
+        if len(output) > 1 << 17:
             output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
             output_path.write_text(output)
             return json.dumps({
