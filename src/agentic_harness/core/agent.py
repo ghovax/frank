@@ -33,11 +33,17 @@ from agentic_harness.tools.tools import (
     spawn_agent as spawn_tool,
     write_tasks as write_tasks_tool,
     update_task as update_task_tool,
+    orchestrate as orchestrate_tool,
     register_spawned_task,
     collect_background_bash_results,
     collect_completed_agents,
     _bash_background_tasks,
     _spawned_agent_tasks,
+)
+
+from agentic_harness.core.orchestrator_graph import (
+    compile_orchestration_graph,
+    OrchestrationState,
 )
 
 
@@ -93,6 +99,7 @@ def _build_tools(tools_configuration) -> list[BaseTool]:
         available.append(spawn_tool)
     available.append(write_tasks_tool)
     available.append(update_task_tool)
+    available.append(orchestrate_tool)
     return available
 
 
@@ -506,7 +513,7 @@ class AgentOrchestrator:
                         yield StreamEvent(StreamEvent.Type.ERROR, message=error_message, tool=tool_name)
                         turn_tool_results_log.append({"name": tool_name, "result": error_message})
                         continue
-                    elif permission_decision == "ask":
+                    elif permission_decision == "ask" or risk in ("medium", "high"):
                         request_identifier = f"perm-{uuid.uuid4().hex[:12]}"
                         future = asyncio.get_event_loop().create_future()
                         self._pending_permissions[request_identifier] = future
@@ -613,6 +620,36 @@ class AgentOrchestrator:
                         "result": result_message,
                     })
 
+                elif tool_name == "orchestrate":
+                    steps = tool_arguments.get("steps", [])
+                    if not steps:
+                        error_message = "orchestrate requires at least one step."
+                        tool_call_results.append((tool_call_identifier, error_message))
+                        yield StreamEvent(
+                            StreamEvent.Type.ERROR, message=error_message, tool=tool_name,
+                        )
+                        turn_tool_results_log.append({"name": tool_name, "result": error_message})
+                        continue
+
+                    yield StreamEvent(StreamEvent.Type.STATUS, code="orchestrating")
+                    graph = compile_orchestration_graph(
+                        steps=steps,
+                        node_factory=self._make_orchestration_node,
+                    )
+                    initial_state: OrchestrationState = {
+                        "steps": steps,
+                        "results": [],
+                        "accumulated": "",
+                        "current_step_index": 0,
+                    }
+                    final_state = await graph.ainvoke(initial_state)
+                    result = json.dumps({"code": "orchestration_completed", "results": final_state["results"]})
+                    tool_call_results.append((tool_call_identifier, result))
+                    yield StreamEvent(
+                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result),
+                    )
+                    turn_tool_results_log.append({"name": tool_name, "result": result})
+
                 elif tool_name == "write_tasks":
                     task_definitions = tool_arguments.get("tasks", [])
                     identifiers = self._task_manager.add_tasks(task_definitions)
@@ -679,5 +716,40 @@ class AgentOrchestrator:
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):
                 return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
+        if tool_name == "orchestrate":
+            steps = arguments.get("steps", [])
+            if not isinstance(steps, list) or len(steps) == 0:
+                return ("invalid_steps", "steps must be a non-empty list.")
+            for step_index, step in enumerate(steps):
+                if not isinstance(step, dict):
+                    return ("invalid_step", f"step {step_index} must be an object.")
+                if "id" not in step or "agent" not in step or "prompt" not in step:
+                    return ("invalid_step", f"step {step_index} must have 'id', 'agent', and 'prompt' fields.")
         return None
-        return None
+
+    def _make_orchestration_node(self, step: dict, node_index: int):
+        async def node(state: OrchestrationState) -> OrchestrationState:
+            agent_configuration = self._load_sub_agent(step["agent"])
+            prompt = step["prompt"].replace("{{ previous_output }}", state["accumulated"])
+            step_task_identifier = f"orch-{step['id']}"
+
+            agent_queue: asyncio.Queue[Optional[StreamEvent]] = asyncio.Queue()
+            _agent_event_queues[step_task_identifier] = agent_queue
+
+            runner = SubAgentRunner(
+                agent_configuration=agent_configuration,
+                global_configuration=self._global_configuration,
+                task_identifier=step_task_identifier,
+                prompt=prompt,
+                stream_progress=self._agent_configuration.stream_agent_progress,
+            )
+            result = await runner.run()
+
+            _agent_event_queues.pop(step_task_identifier, None)
+
+            return {
+                "results": [{"id": step["id"], "agent": step["agent"], "output": result}],
+                "accumulated": result,
+                "current_step_index": state["current_step_index"] + 1,
+            }
+        return node

@@ -231,3 +231,29 @@ def update_task(task_id: str, status: str, result: str = "") -> str:
         result: Summary of what was accomplished when marking as completed.
     """
     return "Handled by orchestrator."
+
+
+@tool
+def orchestrate(steps: list[dict]) -> str:
+    """Run a sequence of agents where each step receives the accumulated
+    output from all previous steps.
+
+    Each step defines an agent profile and a task description. Steps execute
+    in order. The output of step N is available to step N+1 via the
+    ``{{ previous_output }}`` placeholder in the step's prompt.
+
+    Args:
+        steps: List of step objects. Each step must have:
+            - id: A short unique name for this step (e.g. "research").
+            - agent: Agent profile name (e.g. "explore", "code", "main").
+            - prompt: Task description for this step. Use
+              ``{{ previous_output }}`` where the accumulated output from
+              earlier steps should be inserted.
+    """
+    task_identifier = f"orch-{uuid.uuid4().hex[:12]}"
+    return json.dumps({
+        "code": "orchestration_started",
+        "task_identifier": task_identifier,
+        "step_count": len(steps),
+        "steps": [{"id": step["id"], "agent": step["agent"]} for step in steps],
+    })
