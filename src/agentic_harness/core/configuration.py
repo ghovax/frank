@@ -13,8 +13,17 @@ class ApiConfiguration(BaseModel):
     api_key: str
 
 
+class ExaConfiguration(BaseModel):
+    api_key: str = ""
+
+    @property
+    def effective_api_key(self) -> str:
+        return os.environ.get("EXA_API_KEY") or self.api_key
+
+
 class GlobalConfiguration(BaseModel):
     api: ApiConfiguration
+    exa: ExaConfiguration = ExaConfiguration()
     default_agent: str = "main"
     agents_directory: str = "agents"
     maximum_history_age_days: int = 30

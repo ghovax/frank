@@ -4,11 +4,18 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
+from exa_py import Exa
 from langchain.tools import tool
 
 
 _bash_background_tasks: dict[str, tuple[asyncio.Task, Path]] = {}
 _spawned_agent_tasks: dict[str, asyncio.Task] = {}
+_exa_client: Exa | None = None
+
+
+def set_exa_client(client: Exa | None) -> None:
+    global _exa_client
+    _exa_client = client
 
 
 @tool
@@ -109,6 +116,42 @@ def collect_background_bash_results() -> list[tuple[str, str]]:
             completed.append((task_identifier, result))
             del _bash_background_tasks[task_identifier]
     return completed
+
+
+@tool
+def web_search(
+    query: str,
+    num_results: int = 5,
+) -> str:
+    """Search the web using Exa. Returns a list of results with titles, URLs, and summaries.
+
+    Use this when you need current information from the internet, recent events,
+    or external knowledge not available in the training data.
+
+    Args:
+        query: The search query.
+        num_results: Number of results to return (1-10, default 5).
+    """
+    client = _exa_client
+    if client is None:
+        return json.dumps({"code": "web_search_error", "message": "Web search is not configured."})
+    try:
+        results = client.search(
+            query,
+            num_results=min(num_results, 10),
+            contents={"text": True},
+        )
+        entries = []
+        for result in results.results:
+            entry = {"title": result.title, "url": result.url}
+            if result.text:
+                entry["summary"] = result.text[:500]
+            if result.published_date:
+                entry["published_date"] = result.published_date
+            entries.append(entry)
+        return json.dumps({"code": "web_search_completed", "query": query, "results": entries})
+    except Exception as exception:
+        return json.dumps({"code": "web_search_error", "message": str(exception)})
 
 
 @tool

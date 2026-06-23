@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from agentic_harness.core.agent import AgentOrchestrator, StreamEvent
+from agentic_harness.tools.tools import set_exa_client
 from agentic_harness.core.configuration import (
     GlobalConfiguration,
     load_agent_configuration,
@@ -70,6 +71,11 @@ async def startup():
     else:
         _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
     _database_engine, _database_session_factory = create_database()
+
+    exa_key = _global_configuration.exa.effective_api_key
+    if exa_key:
+        from exa_py import Exa
+        set_exa_client(Exa(api_key=exa_key))
 
 
 def _get_or_create_session(

@@ -2,6 +2,10 @@
 
 {{ context }}
 
+## Web search
+
+Use the `web_search` tool when you need current information from the internet, recent events, or external knowledge not available in your training data. The tool returns results with titles, URLs, and summaries.
+
 ## File operations
 
 Use the `bash` tool for all file operations. There are no dedicated read or edit tools. Make bash commands as efficient as possible — avoid redundant calls, read file contents directly in the search command when feasible.

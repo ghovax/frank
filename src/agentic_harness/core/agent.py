@@ -28,6 +28,7 @@ from agentic_harness.core.configuration import (
 )
 from agentic_harness.tools.tools import (
     bash as bash_tool,
+    web_search as web_search_tool,
     spawn_agent as spawn_tool,
     write_tasks as write_tasks_tool,
     update_task as update_task_tool,
@@ -87,7 +88,7 @@ def _maybe_json(value: str) -> Any:
 
 
 def _build_tools(tools_configuration) -> list[BaseTool]:
-    available = [bash_tool, write_tasks_tool, update_task_tool, orchestrate_tool]
+    available = [bash_tool, web_search_tool, write_tasks_tool, update_task_tool, orchestrate_tool]
     if tools_configuration.spawn_agent.enabled:
         available.append(spawn_tool)
     return available
@@ -768,6 +769,14 @@ class AgentOrchestrator:
                         "name": tool_name,
                         "result": result_message,
                     })
+
+                elif tool_name == "web_search":
+                    result = await web_search_tool.ainvoke(tool_arguments)
+                    tool_call_results.append((tool_call_identifier, result))
+                    yield StreamEvent(
+                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
+                    )
+                    turn_tool_results_log.append({"name": tool_name, "result": result})
 
             for call_identifier, result in tool_call_results:
                 self._conversation.append(
