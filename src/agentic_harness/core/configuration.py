@@ -70,7 +70,7 @@ class AgentConfiguration(BaseModel):
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
     system_prompt: str = ""
-    stream_agent_progress: bool = False
+    stream_agent_progress: bool = True
 
     @classmethod
     def from_markdown(cls, path: str | Path) -> "AgentConfiguration":
