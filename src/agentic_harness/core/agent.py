@@ -120,7 +120,7 @@ class SubAgentRunner:
             global_configuration=global_configuration,
         )
 
-    async def run_stream(self) -> AsyncIterator[StreamEvent]:
+    async def run_stream(self, always_yield_text: bool = False) -> AsyncIterator[StreamEvent]:
         """Yield each event as the sub-agent produces it.
         Also pushes events to _agent_event_queues for background monitoring.
         """
@@ -129,7 +129,7 @@ class SubAgentRunner:
             if event.type == StreamEvent.Type.TEXT_CHUNK:
                 if queue is not None and self._stream_progress:
                     await queue.put(event)
-                if self._stream_progress:
+                if self._stream_progress or always_yield_text:
                     yield event
                 continue
             if queue is not None:
@@ -659,7 +659,7 @@ class AgentOrchestrator:
                     async for mode, data in graph.astream(initial_state, stream_mode=["updates", "custom"]):
                         if mode == "custom":
                             custom_type = data.pop("type", None)
-                            if custom_type == "agent_text_chunk":
+                            if custom_type == "agent_text_chunk" or custom_type == "agent_result":
                                 yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, **data)
                             elif custom_type == "agent_tool_call":
                                 yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, **data)
@@ -801,10 +801,12 @@ class AgentOrchestrator:
                 stream_progress=self._agent_configuration.stream_agent_progress,
             )
 
-            result = ""
-            async for event in runner.run_stream():
+            step_text = ""
+            async for event in runner.run_stream(always_yield_text=True):
                 if event.type == StreamEvent.Type.TEXT_CHUNK:
-                    writer({"type": "agent_text_chunk", "step_id": step["id"], "text": event.data.get("text", "")})
+                    chunk_text = event.data.get("text", "")
+                    step_text += chunk_text
+                    writer({"type": "agent_text_chunk", "step_id": step["id"], "text": chunk_text})
                 elif event.type == StreamEvent.Type.THINKING:
                     writer({"type": "agent_thinking", "step_id": step["id"], "text": event.data.get("text", "")})
                 elif event.type == StreamEvent.Type.TOOL_CALL:
@@ -812,7 +814,8 @@ class AgentOrchestrator:
                 elif event.type == StreamEvent.Type.STATUS:
                     writer({"type": "agent_status", "step_id": step["id"], "code": event.data.get("code", "")})
                 elif event.type == StreamEvent.Type.DONE:
-                    result = event.data.get("text", result)
+                    result = event.data.get("text", step_text)
+                    writer({"type": "agent_result", "step_id": step["id"], "text": result})
                 elif event.type == StreamEvent.Type.ERROR:
                     result = event.data.get("message", "unknown")
 
