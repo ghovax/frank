@@ -48,11 +48,17 @@ def bash(
     output = result.stdout + result.stderr
     if not output:
         return ""
-    output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
-    output_path.write_text(output)
+    if len(output) > 1 << 17:
+        output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
+        output_path.write_text(output)
+        return json.dumps({
+            "code": "bash_completed",
+            "output_file": str(output_path),
+            "size": len(output),
+        })
     return json.dumps({
         "code": "bash_completed",
-        "output_file": str(output_path),
+        "output": output,
         "size": len(output),
     })
 
@@ -70,11 +76,17 @@ def _start_background_bash(command: str) -> str:
         output = (stdout.decode() + stderr.decode()).strip()
         if not output:
             return ""
-        output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
-        output_path.write_text(output)
+    if len(output) > 1 << 17:
+            output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
+            output_path.write_text(output)
+            return json.dumps({
+                "code": "bash_completed",
+                "output_file": str(output_path),
+                "size": len(output),
+            })
         return json.dumps({
             "code": "bash_completed",
-            "output_file": str(output_path),
+            "output": output,
             "size": len(output),
         })
 
