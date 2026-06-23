@@ -156,7 +156,7 @@ async def chat(request: ChatRequest):
                 if abort_event.is_set():
                     yield {
                         "event": "done",
-                        "data": json.dumps({"type": "done", "text": "\n\n[Interrupted by user]", "session_id": session_id}),
+                        "data": json.dumps({"type": "done", "stop_reason": "interrupted", "text": "interrupted by user", "session_id": session_id}),
                     }
                     return
                 yield {"event": event.type.value, "data": event.to_json()}

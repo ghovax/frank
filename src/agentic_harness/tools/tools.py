@@ -1,7 +1,9 @@
 import asyncio
+import json
 import subprocess
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from langchain.tools import tool
 
@@ -14,7 +16,7 @@ _spawned_agent_tasks: dict[str, asyncio.Task] = {}
 def bash(
     command: str,
     justification: str = "",
-    risk: str = "",
+    risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
 ) -> str:
     """Execute a bash command and return its output.
@@ -24,8 +26,9 @@ def bash(
     Args:
         command: The shell command to execute.
         justification: Explain why this command is needed for the task.
-        risk: Describe potential impact — for example "modifies files",
-              "deletes data", "no risk" for read-only commands.
+        risk: One of "low", "medium", "high" — assess the potential damage.
+              Low for read-only commands, medium for modifications,
+              high for destructive operations.
         background: If True, runs asynchronously and returns a task identifier.
     """
     if background:
@@ -77,25 +80,31 @@ def collect_background_bash_results() -> list[tuple[str, str]]:
 
 
 @tool
-def read(path: str, offset: int = 0, limit: int = 2000) -> str:
+def read(path: str, first_line: int = 1, last_line: int = 2000) -> str:
     """Read a file from the filesystem.
 
     Args:
         path: Absolute path to the file.
-        offset: Line number to start reading from (1-indexed, default 0 = start).
-        limit: Maximum number of lines to read (default 2000).
+        first_line: First line to read (1-indexed, default 1).
+        last_line: Last line to read (inclusive, default 2000).
     """
+    if first_line < 1:
+        return "first_line must be >= 1"
+    if last_line < first_line:
+        return "last_line must be >= first_line"
+
     resolved_path = Path(path).expanduser().resolve()
     if not resolved_path.exists():
-        return f"File not found: {path}"
+        return json.dumps({"code": "file_not_found", "path": str(path)})
     if not resolved_path.is_file():
-        return f"Not a file: {path}"
+        return json.dumps({"code": "not_a_file", "path": str(path)})
 
     file_size = resolved_path.stat().st_size
+    limit = last_line - first_line + 1
 
     with open(resolved_path) as file_handle:
-        if offset > 0:
-            for _ in range(offset - 1):
+        if first_line > 1:
+            for _ in range(first_line - 1):
                 next(file_handle)
         lines = []
         for line_index, line in enumerate(file_handle):
@@ -104,8 +113,14 @@ def read(path: str, offset: int = 0, limit: int = 2000) -> str:
             lines.append(line)
 
     content = "".join(lines)
-    header = f"File: {resolved_path} ({file_size} bytes, showing {len(lines)} lines from offset {offset})\n"
-    return header + content
+    return json.dumps({
+        "path": str(resolved_path),
+        "size": file_size,
+        "line_count": len(lines),
+        "first_line": first_line,
+        "last_line": last_line,
+        "content": content.rstrip("\n"),
+    })
 
 
 @tool
@@ -119,9 +134,9 @@ def edit(path: str, old_string: str, new_string: str) -> str:
     """
     resolved_path = Path(path).expanduser().resolve()
     if not resolved_path.exists():
-        return f"File not found: {path}"
+        return json.dumps({"code": "file_not_found", "message": f"File not found: {path}"})
     if not resolved_path.is_file():
-        return f"Not a file: {path}"
+        return json.dumps({"code": "not_a_file", "message": f"Not a file: {path}"})
 
     content = resolved_path.read_text(encoding="utf-8")
 

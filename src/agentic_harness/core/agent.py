@@ -36,6 +36,8 @@ from agentic_harness.tools.tools import (
     register_spawned_task,
     collect_background_bash_results,
     collect_completed_agents,
+    _bash_background_tasks,
+    _spawned_agent_tasks,
 )
 
 
@@ -52,6 +54,11 @@ class StreamEvent:
         PERMISSION_REQUEST = "permission_request"
         TASKS_UPDATED = "tasks_updated"
         ERROR = "error"
+        AGENT_TEXT_CHUNK = "agent_text_chunk"
+        AGENT_TOOL_CALL = "agent_tool_call"
+        AGENT_THINKING = "agent_thinking"
+        AGENT_STATUS = "agent_status"
+        AGENT_DONE = "agent_done"
 
     def __init__(self, event_type: Type, **data):
         self.type = event_type
@@ -62,6 +69,16 @@ class StreamEvent:
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
+
+
+_agent_event_queues: dict[str, asyncio.Queue["StreamEvent | None"]] = {}
+
+
+def _maybe_json(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return value
 
 
 def _build_tools(tools_configuration) -> list[BaseTool]:
@@ -86,9 +103,11 @@ class SubAgentRunner:
         global_configuration: GlobalConfiguration,
         task_identifier: str,
         prompt: str,
+        stream_progress: bool = True,
     ):
         self.task_identifier = task_identifier
         self.prompt = prompt
+        self._stream_progress = stream_progress
         self._orchestrator = AgentOrchestrator(
             agent_configuration=agent_configuration,
             global_configuration=global_configuration,
@@ -97,12 +116,21 @@ class SubAgentRunner:
     async def run(self) -> str:
         last_text = ""
         async for event in self._orchestrator.stream(self.prompt):
+            queue = _agent_event_queues.get(self.task_identifier)
             if event.type == StreamEvent.Type.TEXT_CHUNK:
                 last_text += event.data.get("text", "")
-            elif event.type == StreamEvent.Type.DONE:
+                if queue is not None and self._stream_progress:
+                    await queue.put(event)
+                continue
+            if queue is not None:
+                await queue.put(event)
+            if event.type == StreamEvent.Type.DONE:
                 last_text = event.data.get("text", last_text)
             elif event.type == StreamEvent.Type.ERROR:
                 return event.data.get("message", "unknown")
+        queue = _agent_event_queues.get(self.task_identifier)
+        if queue is not None:
+            await queue.put(None)
         return last_text or "No response."
 
 
@@ -128,8 +156,11 @@ class BackgroundTaskManager:
         self._agent_results = []
         return results
 
+    def has_pending(self) -> bool:
+        return bool(_bash_background_tasks) or bool(_spawned_agent_tasks)
+
     def active_background_count(self) -> int:
-        return len(collect_background_bash_results()) + len(collect_completed_agents())
+        return len(_bash_background_tasks) + len(_spawned_agent_tasks)
 
 
 class Task(BaseModel):
@@ -259,7 +290,7 @@ class AgentOrchestrator:
             "agent": self.agent_name,
             "user_message": user_message,
             "tool_calls": [
-                {"name": tool_call_entry.get("name", ""), "arguments": tool_call_entry.get("args", {})}
+                {"name": tool_call_entry.get("name", ""), "arguments": tool_call_entry.get("arguments", {})}
                 for tool_call_entry in tool_calls
             ],
             "tool_results": [
@@ -274,7 +305,7 @@ class AgentOrchestrator:
     async def stream(
         self, user_message: str
     ) -> AsyncIterator[StreamEvent]:
-        yield StreamEvent(StreamEvent.Type.STATUS, message="Sending message...")
+        yield StreamEvent(StreamEvent.Type.STATUS, code="sending")
 
         self._conversation.append(HumanMessage(content=user_message))
 
@@ -287,14 +318,19 @@ class AgentOrchestrator:
             if self._background.has_results():
                 for tool_name, task_identifier, result in self._background.drain_results():
                     message = ToolMessage(
-                        content=f"Background {tool_name} ({task_identifier}) completed.\n{result}",
+                        content=json.dumps({
+                            "code": "background_completed",
+                            "tool_name": tool_name,
+                            "task_identifier": task_identifier,
+                            "result": result,
+                        }),
                         tool_call_id=f"bg-{task_identifier}",
                     )
                     self._conversation.append(message)
                     yield StreamEvent(
                         StreamEvent.Type.TOOL_RESULT,
                         name=tool_name,
-                        result=result,
+                        result=_maybe_json(result),
                         task_id=task_identifier,
                     )
 
@@ -309,7 +345,7 @@ class AgentOrchestrator:
                     accumulated_response = chunk
                 else:
                     accumulated_response += chunk  # type: ignore[operator]
-                if chunk.content:
+                if chunk.content and self._agent_configuration.stream_agent_progress:
                     yield StreamEvent(
                         StreamEvent.Type.TEXT_CHUNK,
                         text=chunk.content,
@@ -323,6 +359,72 @@ class AgentOrchestrator:
             response = accumulated_response
 
             if not response.tool_calls:
+                if self._background.has_pending():
+                    self._conversation.append(response)
+                    self._calls_this_turn += 1
+                    yield StreamEvent(StreamEvent.Type.STATUS, code="waiting_background")
+                    while self._background.has_pending():
+                        for task_identifier in list(_agent_event_queues):
+                            queue = _agent_event_queues.get(task_identifier)
+                            if queue is None:
+                                continue
+                            while not queue.empty():
+                                event = queue.get_nowait()
+                                if event is None:
+                                    del _agent_event_queues[task_identifier]
+                                    break
+                                if event.type == StreamEvent.Type.TEXT_CHUNK:
+                                    yield StreamEvent(
+                                        StreamEvent.Type.AGENT_TEXT_CHUNK,
+                                        agent_id=task_identifier,
+                                        text=event.data.get("text", ""),
+                                    )
+                                elif event.type == StreamEvent.Type.TOOL_CALL:
+                                    yield StreamEvent(
+                                        StreamEvent.Type.AGENT_TOOL_CALL,
+                                        agent_id=task_identifier,
+                                        name=event.data.get("name", ""),
+                                        arguments=event.data.get("arguments", {}),
+                                    )
+                                elif event.type == StreamEvent.Type.THINKING:
+                                    yield StreamEvent(
+                                        StreamEvent.Type.AGENT_THINKING,
+                                        agent_id=task_identifier,
+                                        text=event.data.get("text", ""),
+                                    )
+                                elif event.type == StreamEvent.Type.STATUS:
+                                    yield StreamEvent(
+                                        StreamEvent.Type.AGENT_STATUS,
+                                        agent_id=task_identifier,
+                                        code=event.data.get("code", ""),
+                                    )
+                                elif event.type == StreamEvent.Type.DONE:
+                                    yield StreamEvent(
+                                        StreamEvent.Type.AGENT_DONE,
+                                        agent_id=task_identifier,
+                                    )
+                        await asyncio.sleep(1)
+                        self._background.poll()
+                        if self._background.has_results():
+                            for tool_name, task_identifier, result in self._background.drain_results():
+                                message = ToolMessage(
+                                    content=json.dumps({
+                                        "code": "background_completed",
+                                        "tool_name": tool_name,
+                                        "task_identifier": task_identifier,
+                                        "result": result,
+                                    }),
+                                    tool_call_id=f"bg-{task_identifier}",
+                                )
+                                self._conversation.append(message)
+                                yield StreamEvent(
+                                    StreamEvent.Type.TOOL_RESULT,
+                                    name=tool_name,
+                                    result=_maybe_json(result),
+                                    task_id=task_identifier,
+                                )
+                            break
+                    continue
                 final_text = response.content or ""
                 turn_final_response = final_text
                 yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
@@ -346,12 +448,12 @@ class AgentOrchestrator:
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_CALL,
                     name=tool_name,
-                    args=tool_arguments,
+                    arguments=tool_arguments,
                     id=tool_call_identifier,
                 )
                 turn_tool_calls_log.append({
                     "name": tool_name,
-                    "args": tool_arguments,
+                    "arguments": tool_arguments,
                 })
 
                 try:
@@ -361,6 +463,22 @@ class AgentOrchestrator:
                     tool_call_results.append((tool_call_identifier, error_message))
                     yield StreamEvent(
                         StreamEvent.Type.ERROR,
+                        message=error_message,
+                        tool=tool_name,
+                    )
+                    turn_tool_results_log.append({
+                        "name": tool_name,
+                        "result": error_message,
+                    })
+                    continue
+
+                validation_error = self._validate_tool_call(tool_name, tool_arguments)
+                if validation_error:
+                    error_code, error_message = validation_error
+                    tool_call_results.append((tool_call_identifier, error_message))
+                    yield StreamEvent(
+                        StreamEvent.Type.ERROR,
+                        code=error_code,
                         message=error_message,
                         tool=tool_name,
                     )
@@ -412,7 +530,7 @@ class AgentOrchestrator:
                     result = bash_tool.invoke(tool_arguments)
                     tool_call_results.append((tool_call_identifier, result))
                     yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=result
+                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
                     )
                     turn_tool_results_log.append({"name": tool_name, "result": result})
 
@@ -420,7 +538,7 @@ class AgentOrchestrator:
                     result = read_tool.invoke(tool_arguments)
                     tool_call_results.append((tool_call_identifier, result))
                     yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=result
+                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
                     )
                     turn_tool_results_log.append({"name": tool_name, "result": result})
 
@@ -428,7 +546,7 @@ class AgentOrchestrator:
                     result = edit_tool.invoke(tool_arguments)
                     tool_call_results.append((tool_call_identifier, result))
                     yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=result
+                        StreamEvent.Type.TOOL_RESULT, name=tool_name, result=_maybe_json(result)
                     )
                     turn_tool_results_log.append({"name": tool_name, "result": result})
 
@@ -470,7 +588,11 @@ class AgentOrchestrator:
                         global_configuration=self._global_configuration,
                         task_identifier=sub_agent_task_identifier,
                         prompt=sub_agent_prompt,
+                        stream_progress=self._agent_configuration.stream_agent_progress,
                     )
+
+                    agent_queue: asyncio.Queue[Optional[StreamEvent]] = asyncio.Queue()
+                    _agent_event_queues[sub_agent_task_identifier] = agent_queue
 
                     register_spawned_task(sub_agent_task_identifier, runner.run())
 
@@ -541,3 +663,18 @@ class AgentOrchestrator:
             name,
             self._global_configuration.agents_directory,
         )
+
+    def _validate_tool_call(self, tool_name: str, arguments: dict) -> tuple[str, str] | None:
+        if tool_name == "read":
+            first_line = arguments.get("first_line", 1)
+            last_line = arguments.get("last_line", 2000)
+            if not isinstance(first_line, int) or first_line < 1:
+                return ("invalid_range", "first_line must be a positive integer (>= 1).")
+            if not isinstance(last_line, int) or last_line < first_line:
+                return ("invalid_range", "last_line must be >= first_line.")
+        if tool_name == "bash":
+            risk = arguments.get("risk", "low")
+            if risk not in ("low", "medium", "high"):
+                return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
+        return None
+        return None
