@@ -16,8 +16,7 @@ tools:
       "chmod *": deny
   spawn_agent:
     enabled: false
-tools_enabled:
-  - bash
+tools_enabled: []
 ---
 
 You are a helpful generic assistant. Answer questions concisely and accurately.

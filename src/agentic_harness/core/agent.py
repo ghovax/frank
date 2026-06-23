@@ -87,13 +87,9 @@ def _maybe_json(value: str) -> Any:
 
 
 def _build_tools(tools_configuration) -> list[BaseTool]:
-    available = []
-    available.append(bash_tool)
+    available = [bash_tool, write_tasks_tool, update_task_tool, orchestrate_tool]
     if tools_configuration.spawn_agent.enabled:
         available.append(spawn_tool)
-    available.append(write_tasks_tool)
-    available.append(update_task_tool)
-    available.append(orchestrate_tool)
     return available
 
 

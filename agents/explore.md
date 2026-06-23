@@ -20,7 +20,6 @@ tools:
     enabled: true
     maximum_concurrency: 3
 tools_enabled:
-  - bash
   - spawn_agent
 ---
 

@@ -105,7 +105,7 @@ class PermissionEvaluator:
         self._configuration = agent_configuration
 
     def check_tool_enabled(self, tool_name: str) -> None:
-        if tool_name in ("write_tasks", "update_task", "orchestrate"):
+        if tool_name not in ("spawn_agent", "orchestrate"):
             return
         if (
             self._configuration.tools_enabled

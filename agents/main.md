@@ -18,8 +18,8 @@ tools:
     enabled: true
     maximum_concurrency: 5
 tools_enabled:
-  - bash
   - spawn_agent
+  - orchestrate
 ---
 
 You are a helpful assistant with access to tools. Use the `bash` tool to interact with the system: read files, search for patterns, edit files, list directories, and run commands.
