@@ -65,7 +65,7 @@ class StreamEvent:
         self.data = data
 
     def to_dict(self) -> dict:
-        return {"type": self.type.value, **self.data}
+        return {"type": self.type.value, "timestamp": datetime.now(timezone.utc).isoformat(), **self.data}
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
@@ -267,18 +267,22 @@ class AgentOrchestrator:
 
     def _build_system_prompt(self) -> str:
         current_working_directory = os.getcwd()
-        available_agents = ", ".join(
-            list_available_agents(self._global_configuration.agents_directory)
+        current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        available_agents = list_available_agents(
+            self._global_configuration.agents_directory
         )
-        tasks_json = self._task_manager.render_json()
+        tasks_data = self._task_manager.to_dict_list()
+        context_json = json.dumps({
+            "current_time": current_time,
+            "working_directory": current_working_directory,
+            "available_agents": available_agents,
+        })
+        tasks_section = json.dumps({"tasks": tasks_data}) if tasks_data else ""
         return self._prompt_loader.load("system_prompt", {
-            "SYSTEM_PROMPT": self._system_prompt,
-            "CONTEXT": self._prompt_loader.load("context", {
-                "current_working_directory": current_working_directory,
-                "available_agents": available_agents,
-            }),
-            "TASKS_SECTION": self._prompt_loader.load("task_section", {"TASKS_JSON": tasks_json}) if tasks_json else "",
-            "TASK_INSTRUCTION": self._prompt_loader.load("task_instruction", {}),
+            "system_prompt": self._system_prompt,
+            "context": context_json,
+            "tasks_section": tasks_section,
+            "task_instruction": self._prompt_loader.load("task_instruction", {}),
         })
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):

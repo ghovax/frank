@@ -33,7 +33,7 @@ def bash(
     """
     if background:
         task_identifier = _start_background_bash(command)
-        return f"Background task started ({task_identifier})."
+        return json.dumps({"code": "background_started", "task_identifier": task_identifier})
     result = subprocess.run(
         command,
         shell=True,
@@ -42,9 +42,15 @@ def bash(
         timeout=300,
     )
     output = result.stdout + result.stderr
-    if len(output) > 100_000:
-        output = output[:100_000] + "\n... [truncated]"
-    return output if output else "(no output)"
+    if not output:
+        return ""
+    output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
+    output_path.write_text(output)
+    return json.dumps({
+        "code": "bash_completed",
+        "output_file": str(output_path),
+        "size": len(output),
+    })
 
 
 def _start_background_bash(command: str) -> str:
@@ -58,9 +64,15 @@ def _start_background_bash(command: str) -> str:
         )
         stdout, stderr = await process.communicate()
         output = (stdout.decode() + stderr.decode()).strip()
-        if len(output) > 100_000:
-            output = output[:100_000] + "\n... [truncated]"
-        return output or "(no output)"
+        if not output:
+            return ""
+        output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
+        output_path.write_text(output)
+        return json.dumps({
+            "code": "bash_completed",
+            "output_file": str(output_path),
+            "size": len(output),
+        })
 
     _bash_background_tasks[task_identifier] = asyncio.create_task(run())
     return task_identifier
@@ -155,7 +167,7 @@ def edit(path: str, old_string: str, new_string: str) -> str:
 
 
 @tool
-def spawn_agent(prompt: str, agent: str = "main", tools: str = "") -> str:
+def spawn_agent(prompt: str = "", agent: str = "main", tools: str = "") -> str:
     """Spawn a sub-agent to work on a task in the background.
 
     The sub-agent runs asynchronously and its result will be injected
