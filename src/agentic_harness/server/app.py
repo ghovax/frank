@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,14 @@ from agentic_harness.core.configuration import (
     load_agent_configuration,
     list_available_agents,
 )
+from agentic_harness.server.models import (
+    Session as DBSession,
+    Message,
+    ExecutionEvent,
+    Orchestration,
+    create_database,
+)
+from sqlalchemy.orm import Session as DBSessionType
 
 app = FastAPI(title="agentic-harness")
 
@@ -30,6 +39,8 @@ _sessions: dict[str, AgentOrchestrator] = {}
 _session_configurations: dict[str, str] = {}
 _pending_permissions: dict[str, asyncio.Future] = {}
 _abort_events: dict[str, asyncio.Event] = {}
+_database_engine = None
+_database_session_factory = None
 
 
 class ChatRequest(BaseModel):
@@ -47,14 +58,19 @@ class AgentsList(BaseModel):
     agents: list[str]
 
 
+def get_db() -> DBSessionType:
+    return _database_session_factory()
+
+
 @app.on_event("startup")
 async def startup():
-    global _global_configuration
+    global _global_configuration, _database_engine, _database_session_factory
     configuration_path = Path("configuration.yaml")
     if configuration_path.exists():
         _global_configuration = GlobalConfiguration.from_yaml(configuration_path)
     else:
         _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
+    _database_engine, _database_session_factory = create_database()
 
 
 def _get_or_create_session(
@@ -70,13 +86,71 @@ def _get_or_create_session(
     agent_configuration = load_agent_configuration(
         agent_name, _global_configuration.agents_directory
     )
+
+    def record_event(event_type: str, data: dict) -> None:
+        database_session = get_db()
+        try:
+            database_session.add(ExecutionEvent(
+                session_id=new_identifier,
+                type=event_type,
+                data=json.dumps(data),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ))
+            database_session.commit()
+        finally:
+            database_session.close()
+
+    def record_message(role: str, content: str, tool_call_id: str) -> None:
+        database_session = get_db()
+        try:
+            database_session.add(Message(
+                session_id=new_identifier,
+                role=role,
+                content=content,
+                tool_call_id=tool_call_id,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ))
+            database_session.commit()
+        finally:
+            database_session.close()
+
+    def record_orchestration(orchestration_id: str, thread_id: str, steps: list, results: list) -> None:
+        database_session = get_db()
+        try:
+            database_session.add(Orchestration(
+                id=orchestration_id,
+                session_id=new_identifier,
+                thread_id=thread_id,
+                steps=json.dumps(steps),
+                results=json.dumps(results),
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+            database_session.commit()
+        finally:
+            database_session.close()
+
     orchestrator = AgentOrchestrator(
         agent_configuration=agent_configuration,
         global_configuration=_global_configuration,
         pending_permissions=_pending_permissions,
+        on_record_event=record_event,
+        on_record_message=record_message,
+        on_record_orchestration=record_orchestration,
     )
     _sessions[new_identifier] = orchestrator
     _session_configurations[new_identifier] = agent_name
+
+    database_session = get_db()
+    try:
+        database_session.add(DBSession(
+            id=new_identifier,
+            agent=agent_name,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        database_session.commit()
+    finally:
+        database_session.close()
+
     return new_identifier, orchestrator
 
 
@@ -141,20 +215,42 @@ async def abort_session(session_id: str):
 
 @app.get("/sessions/{session_id}/history")
 async def get_execution_history(session_id: str):
-    orchestrator = _sessions.get(session_id)
-    if not orchestrator:
-        return {"error": "session not found"}
-    return {"history": orchestrator.get_execution_history()}
+    database_session = get_db()
+    try:
+        rows = database_session.query(ExecutionEvent).filter(
+            ExecutionEvent.session_id == session_id
+        ).order_by(ExecutionEvent.id).all()
+        return {
+            "history": [
+                {"type": row.type, **json.loads(row.data), "timestamp": row.timestamp}
+                for row in rows
+            ]
+        }
+    finally:
+        database_session.close()
 
 
 @app.get("/sessions/{session_id}/orchestrations")
 async def list_orchestrations(session_id: str):
-    orchestrator = _sessions.get(session_id)
-    if not orchestrator:
-        return {"error": "session not found"}
-    history = orchestrator.get_execution_history()
-    orchestrations = [entry for entry in history if entry.get("type") == "orchestration"]
-    return {"orchestrations": orchestrations}
+    database_session = get_db()
+    try:
+        rows = database_session.query(Orchestration).filter(
+            Orchestration.session_id == session_id
+        ).order_by(Orchestration.created_at).all()
+        return {
+            "orchestrations": [
+                {
+                    "orchestration_id": row.id,
+                    "thread_id": row.thread_id,
+                    "steps": json.loads(row.steps),
+                    "results": json.loads(row.results),
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+        }
+    finally:
+        database_session.close()
 
 
 @app.get("/sessions/{session_id}/orchestrations/{thread_id}")
@@ -164,6 +260,28 @@ async def get_orchestration_detail(session_id: str, thread_id: str):
         return {"error": "session not found"}
     checkpoints = orchestrator.get_orchestration_checkpoints(thread_id)
     return {"thread_id": thread_id, "checkpoints": checkpoints}
+
+
+@app.get("/sessions/{session_id}/conversation")
+async def get_conversation(session_id: str):
+    database_session = get_db()
+    try:
+        rows = database_session.query(Message).filter(
+            Message.session_id == session_id
+        ).order_by(Message.id).all()
+        return {
+            "messages": [
+                {
+                    "role": row.role,
+                    "content": row.content,
+                    "tool_call_id": row.tool_call_id,
+                    "timestamp": row.timestamp,
+                }
+                for row in rows
+            ]
+        }
+    finally:
+        database_session.close()
 
 
 @app.post("/chat")

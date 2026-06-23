@@ -249,10 +249,16 @@ class AgentOrchestrator:
         agent_configuration: AgentConfiguration,
         global_configuration: GlobalConfiguration,
         pending_permissions: Optional[dict[str, asyncio.Future]] = None,
+        on_record_event: Optional[callable] = None,
+        on_record_message: Optional[callable] = None,
+        on_record_orchestration: Optional[callable] = None,
     ):
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._pending_permissions = pending_permissions or {}
+        self._on_record_event = on_record_event
+        self._on_record_message = on_record_message
+        self._on_record_orchestration = on_record_orchestration
 
         effective_model = agent_configuration.model or global_configuration.api.model
 
@@ -288,6 +294,16 @@ class AgentOrchestrator:
     def agent_name(self) -> str:
         return self._agent_configuration.name
 
+    def _record_event(self, event_type: str, data: dict) -> None:
+        record = {"type": event_type, **data}
+        self._execution_history.append(record)
+        if self._on_record_event:
+            self._on_record_event(event_type, data)
+
+    def _record_message(self, role: str, content: str, tool_call_id: str = "") -> None:
+        if self._on_record_message:
+            self._on_record_message(role, content, tool_call_id)
+
     def _build_system_prompt(self) -> str:
         current_working_directory = os.getcwd()
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -308,25 +324,12 @@ class AgentOrchestrator:
         })
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
-        history_directory = Path("history")
-        history_directory.mkdir(exist_ok=True)
-        history_file = history_directory / f"{self.agent_name}.jsonl"
-        record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "agent": self.agent_name,
-            "user_message": user_message,
-            "tool_calls": [
-                {"name": tool_call_entry.get("name", ""), "arguments": tool_call_entry.get("arguments", {})}
-                for tool_call_entry in tool_calls
-            ],
-            "tool_results": [
-                {"name": tool_result.get("name", ""), "result": tool_result.get("result", "")}
-                for tool_result in tool_results
-            ],
-            "final_response": final_response,
-        }
-        with open(history_file, "a") as file_handle:
-            file_handle.write(json.dumps(record) + "\n")
+        self._record_message("human", user_message)
+        for tool_call_entry in tool_calls:
+            self._record_message("tool", json.dumps(tool_call_entry.get("args", {})), tool_call_entry.get("name", ""))
+        for tool_result_entry in tool_results:
+            self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
+        self._record_message("ai", final_response)
 
     async def stream(
         self, user_message: str
@@ -360,13 +363,11 @@ class AgentOrchestrator:
                         task_id=task_identifier,
                     )
                     if tool_name == "bash":
-                        self._execution_history.append({
-                            "type": "background_bash_completed",
+                        self._record_event("background_bash_completed", {
                             "task_identifier": task_identifier,
                         })
                     else:
-                        self._execution_history.append({
-                            "type": "agent_completed",
+                        self._record_event("agent_completed", {
                             "task_identifier": task_identifier,
                             "result": result,
                         })
@@ -576,8 +577,7 @@ class AgentOrchestrator:
                         except (json.JSONDecodeError, TypeError):
                             task_identifier = ""
                         if task_identifier:
-                            self._execution_history.append({
-                                "type": "background_bash_started",
+                            self._record_event("background_bash_started", {
                                 "task_identifier": task_identifier,
                                 "command": command[:200],
                             })
@@ -644,8 +644,7 @@ class AgentOrchestrator:
 
                     register_spawned_task(sub_agent_task_identifier, runner.run())
 
-                    self._execution_history.append({
-                        "type": "agent_spawned",
+                    self._record_event("agent_spawned", {
                         "task_identifier": sub_agent_task_identifier,
                         "agent": sub_agent_name,
                         "prompt": sub_agent_prompt[:200],
@@ -715,13 +714,19 @@ class AgentOrchestrator:
                                         agent_id=f"orch-{new_results[-1]['id']}",
                                     )
 
-                    self._execution_history.append({
-                        "type": "orchestration",
+                    self._record_event("orchestration", {
                         "orchestration_id": orchestration_id,
                         "thread_id": orchestration_id,
                         "steps": [{"id": step["id"], "agent": step["agent"]} for step in steps],
                         "results": orchestration_results,
                     })
+                    if self._on_record_orchestration:
+                        self._on_record_orchestration(
+                            orchestration_id=orchestration_id,
+                            thread_id=orchestration_id,
+                            steps=[{"id": step["id"], "agent": step["agent"]} for step in steps],
+                            results=orchestration_results,
+                        )
 
                     result = json.dumps({"code": "orchestration_completed", "results": orchestration_results})
                     tool_call_results.append((tool_call_identifier, result))
