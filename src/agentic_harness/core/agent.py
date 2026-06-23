@@ -639,8 +639,6 @@ class AgentOrchestrator:
                     initial_state: OrchestrationState = {
                         "steps": steps,
                         "results": [],
-                        "accumulated": "",
-                        "current_step_index": 0,
                     }
                     final_state = await graph.ainvoke(initial_state)
                     result = json.dumps({"code": "orchestration_completed", "results": final_state["results"]})
@@ -720,17 +718,44 @@ class AgentOrchestrator:
             steps = arguments.get("steps", [])
             if not isinstance(steps, list) or len(steps) == 0:
                 return ("invalid_steps", "steps must be a non-empty list.")
+            step_ids = set()
             for step_index, step in enumerate(steps):
                 if not isinstance(step, dict):
                     return ("invalid_step", f"step {step_index} must be an object.")
                 if "id" not in step or "agent" not in step or "prompt" not in step:
                     return ("invalid_step", f"step {step_index} must have 'id', 'agent', and 'prompt' fields.")
+                step_id = step["id"]
+                if step_id in step_ids:
+                    return ("invalid_step", f"duplicate step id '{step_id}'.")
+                step_ids.add(step_id)
+                dependency_ids = step.get("depends_on", [])
+                if not isinstance(dependency_ids, list):
+                    return ("invalid_step", f"step '{step_id}' depends_on must be a list.")
+                for dependency_id in dependency_ids:
+                    if not isinstance(dependency_id, str):
+                        return ("invalid_step", f"step '{step_id}' depends_on entries must be strings.")
         return None
 
     def _make_orchestration_node(self, step: dict, node_index: int):
         async def node(state: OrchestrationState) -> OrchestrationState:
             agent_configuration = self._load_sub_agent(step["agent"])
-            prompt = step["prompt"].replace("{{ previous_output }}", state["accumulated"])
+
+            # Collect dependency outputs
+            if "depends_on" not in step:
+                # Chain mode: depends on the immediately preceding step
+                dependency_ids = [state["steps"][node_index - 1]["id"]] if node_index > 0 else []
+            else:
+                dependency_ids = step["depends_on"]
+
+            dependency_outputs = [
+                result for result in state["results"]
+                if result["id"] in dependency_ids
+            ]
+
+            resolved_prompt = step["prompt"]
+            if dependency_outputs:
+                resolved_prompt += "\n\n" + json.dumps(dependency_outputs)
+
             step_task_identifier = f"orch-{step['id']}"
 
             agent_queue: asyncio.Queue[Optional[StreamEvent]] = asyncio.Queue()
@@ -740,7 +765,7 @@ class AgentOrchestrator:
                 agent_configuration=agent_configuration,
                 global_configuration=self._global_configuration,
                 task_identifier=step_task_identifier,
-                prompt=prompt,
+                prompt=resolved_prompt,
                 stream_progress=self._agent_configuration.stream_agent_progress,
             )
             result = await runner.run()
@@ -749,7 +774,5 @@ class AgentOrchestrator:
 
             return {
                 "results": [{"id": step["id"], "agent": step["agent"], "output": result}],
-                "accumulated": result,
-                "current_step_index": state["current_step_index"] + 1,
             }
         return node

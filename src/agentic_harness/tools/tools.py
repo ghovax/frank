@@ -235,20 +235,25 @@ def update_task(task_id: str, status: str, result: str = "") -> str:
 
 @tool
 def orchestrate(steps: list[dict]) -> str:
-    """Run a sequence of agents where each step receives the accumulated
-    output from all previous steps.
+    """Run a graph of agents where each step's output is automatically
+    fed to its dependants as JSON appended to their prompts.
 
-    Each step defines an agent profile and a task description. Steps execute
-    in order. The output of step N is available to step N+1 via the
-    ``{{ previous_output }}`` placeholder in the step's prompt.
+    Use ``depends_on`` to define fan-out (parallel execution) and fan-in
+    (join barrier). Steps with no explicit ``depends_on`` run in sequence
+    (each step depends on the preceding one).
 
     Args:
         steps: List of step objects. Each step must have:
             - id: A short unique name for this step (e.g. "research").
             - agent: Agent profile name (e.g. "explore", "code", "main").
-            - prompt: Task description for this step. Use
-              ``{{ previous_output }}`` where the accumulated output from
-              earlier steps should be inserted.
+            - prompt: Task description for this step. The harness
+              automatically appends the outputs of all dependency steps
+              as JSON to this prompt.
+            - depends_on (optional): List of step IDs that this step
+              depends on. Omit for sequential execution. Set to an empty
+              list ``[]`` for a root step with no dependencies. Multiple
+              steps with the same dependency run in parallel; a step
+              depending on multiple steps waits for all of them (fan-in).
     """
     task_identifier = f"orch-{uuid.uuid4().hex[:12]}"
     return json.dumps({

@@ -2,13 +2,14 @@ import operator
 from typing import Annotated, Any, Callable
 
 from langgraph.graph import StateGraph, START, END
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class StepDefinition(TypedDict):
     id: str
     agent: str
     prompt: str
+    depends_on: NotRequired[list[str]]
 
 
 class StepResult(TypedDict):
@@ -20,8 +21,6 @@ class StepResult(TypedDict):
 class OrchestrationState(TypedDict):
     steps: list[StepDefinition]
     results: Annotated[list[StepResult], operator.add]
-    accumulated: str
-    current_step_index: int
 
 
 AsyncNodeFunction = Callable[[OrchestrationState], OrchestrationState]
@@ -34,19 +33,51 @@ def compile_orchestration_graph(
     if not steps:
         raise ValueError("orchestration requires at least one step")
 
+    step_ids = {step["id"] for step in steps}
+    outgoing_from: set[str] = set()
+    incoming_edges: dict[str, list[str]] = {}
+
+    for step in steps:
+        step_id = step["id"]
+
+        if "depends_on" not in step:
+            # Chain mode — depends on the previous step (if any)
+            previous_index = steps.index(step) - 1
+            if previous_index >= 0:
+                predecessor_id = steps[previous_index]["id"]
+                incoming_edges.setdefault(step_id, []).append(predecessor_id)
+                outgoing_from.add(predecessor_id)
+            else:
+                # First step, no explicit depends_on → root
+                pass
+        elif step["depends_on"]:
+            # Explicit fan-in
+            for dependency_id in step["depends_on"]:
+                incoming_edges.setdefault(step_id, []).append(dependency_id)
+                outgoing_from.add(dependency_id)
+        # else: depends_on is empty list → root step
+
     builder = StateGraph(OrchestrationState)
-    previous_node: str | None = None
 
     for index, step in enumerate(steps):
         node_function = node_factory(step, index)
         builder.add_node(step["id"], node_function)
 
-        if previous_node is None:
-            builder.add_edge(START, step["id"])
+    # Connect edges
+    for step in steps:
+        step_id = step["id"]
+        dependencies = incoming_edges.get(step_id, [])
+
+        if not dependencies:
+            builder.add_edge(START, step_id)
         else:
-            builder.add_edge(previous_node, step["id"])
+            for dependency_id in dependencies:
+                builder.add_edge(dependency_id, step_id)
 
-        previous_node = step["id"]
+    # Steps that no step depends on connect to END
+    all_step_ids = {step["id"] for step in steps}
+    leaf_nodes = all_step_ids - outgoing_from
+    for leaf_id in leaf_nodes:
+        builder.add_edge(leaf_id, END)
 
-    builder.add_edge(previous_node, END)
     return builder.compile()
