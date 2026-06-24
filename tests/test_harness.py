@@ -173,7 +173,8 @@ def make_repl_for_testing():
     repl._agent = "main"
     repl._shared_conversation = []
     repl._pending_permissions = {}
-    repl._permission_future = None
+    repl._permission_event = None
+    repl._permission_granted = False
 
     repl._printed: list[str] = []
 

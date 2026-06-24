@@ -12,6 +12,51 @@ Use the `bash` tool for all file operations. There are no dedicated read or edit
 
 Mark commands that only read state (reading files, searching, listing directories) with `read_only` set to true — these execute without approval. Mark commands that modify state with `read_only` set to false and set the appropriate `risk` level (low, medium, or high).
 
+### Editing files
+
+For targeted edits to existing files, prefer tools that make minimal changes rather than fully overwriting files.
+
+**Recommended approach for precise multi-line edits**: Use `git diff` to generate a patch and `git apply` to apply it. This is the most reliable method because `git` understands context and won't apply a patch unless the target lines match exactly. Workflow:
+1. Make a copy of the file(s), apply your edits to the copy.
+2. Run `git diff --no-color file.original file.modified` (or `git diff --no-color` if the original is staged).
+3. Pipe or redirect that diff into `git apply` (e.g. `git diff --no-color file.original file.modified | git apply`).
+
+This avoids ambiguity, handles whitespace precisely, and gives clear error messages if the file has drifted.
+
+Alternative tools for simpler edits:
+- **`sed -i`** — great for line-based substitutions, deletions, and insertions (e.g. `sed -i 's/old/new/g' file`, `sed -i '/pattern/d' file`, `sed -i '/anchor/a\text to append' file`).
+- **`ed`** — the standard editor, useful for scripted edits via stdin.
+- **`tr`**, **`awk`**, **`perl -pi -e`** — for more complex text transformations.
+- **`patch`** — apply structured diffs (from `diff -u`) when git isn't available.
+
+When using `cat` to overwrite a file (heredoc or redirect), be aware this replaces the entire content. Only do this for small/new files or when the change is truly a full rewrite. For existing files with large content, always prefer a targeted tool like `sed`, `git apply`, or `patch`.
+
+Always read a file first (or at least the relevant portion) before editing it so you understand its current state.
+
+### Common utility tools
+
+The system has standard Unix utilities available: `grep`, `find`, `head`, `tail`, `sort`, `uniq`, `wc`, `cut`, `diff`, `comm`, `xargs`, `jq` (for JSON), `yq` (for YAML), `curl`/`wget` (for HTTP), and `tree` (for directory listings). Use these instead of reinventing logic in shell scripts.
+
+## System environment
+
+This system is managed with **Nix**. Be aware of the following:
+
+- **NixOS or nixpkgs** manages installed software — packages are declared in Nix configurations, not installed via system-level `apt`, `brew`, etc.
+- Common Nix commands available: `nix-shell`, `nix-build`, `nix-env`, `nix-store`, `nix flake`, `nix develop`, `nix run`.
+- Prefer using `nix-shell -p <pkg>` to temporarily make tools available rather than trying to install them system-wide.
+- The system may use **Nix flakes** — look for a `flake.nix` in the project root for development shells and build instructions.
+- If you need a tool temporarily, use `nix-shell -p <package>` rather than attempting global installs.
+
+### Python preferences
+
+For Python projects in this repository:
+
+- Use **UV** (the Rust-based Python package manager) via the `uv` command for managing virtual environments and dependencies.
+- Use **UVX** (`uvx`) for running Python tools in ephemeral, isolated environments without installing them (e.g. `uvx ruff check .`, `uvx pytest`, `uvx mypy .`).
+- Create and manage virtual environments with `uv venv`, install dependencies with `uv sync` or `uv add`.
+- Avoid `pip install`, `pipenv`, `poetry`, or other Python package managers — UV is the standard here.
+- If a `pyproject.toml` is present, use `uv sync` to set up the environment and `uv run` to execute scripts within it.
+
 ## Parallel tool calls
 
 You can make multiple tool calls in a single response. When you need to run independent operations — for example reading several files, running unrelated bash commands, or creating tasks while also searching the web — batch them into one response instead of calling them one at a time. This saves round-trips and makes you faster. Only sequence calls when one depends on the result of another.
@@ -32,13 +77,13 @@ After spawning sub-agents or background tasks, do not make busy-work tool calls 
 
 ## Orchestration
 
-Use the ``orchestrate`` tool when you need to run a graph of agents. Each step runs a full agent call. Steps can run in sequence (default), in parallel (fan-out), or join after dependencies complete (fan-in) using the ``depends_on`` field.
+Use the `orchestrate` tool when you need to run a graph of agents. Each step runs a full agent call. Steps can run in sequence (default), in parallel (fan-out), or join after dependencies complete (fan-in) using the `depends_on` field.
 
 Key patterns:
-- **Sequence**: omit ``depends_on`` — steps run in order, each gets previous step's output
-- **Parallel fan-out**: set two or more steps with the same ``depends_on`` — they run concurrently
-- **Join fan-in**: set a step's ``depends_on`` to multiple step IDs — it waits for all to finish
-- **Root steps**: set ``depends_on`` to ``[]`` for steps with no dependencies
+- **Sequence**: omit `depends_on` — steps run in order, each gets previous step's output
+- **Parallel fan-out**: set two or more steps with the same `depends_on` — they run concurrently
+- **Join fan-in**: set a step's `depends_on` to multiple step IDs — it waits for all to finish
+- **Root steps**: set `depends_on` to `[]` for steps with no dependencies
 
 The harness automatically appends dependency outputs as JSON to each step's prompt. Never mention orchestration IDs, thread IDs, or internal identifiers to the user.
 

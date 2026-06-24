@@ -14,6 +14,14 @@ tools:
       "rm *": ask
       "sudo *": deny
       "chmod *": ask
+      "chown *": ask
+      "chattr *": ask
+      "dd *": ask
+      "mkfs *": ask
+      "mount *": ask
+      "git *": ask
+      "mv *": ask
+      "kill *": ask
   spawn_agent:
     enabled: true
     maximum_concurrency: 5

@@ -222,7 +222,8 @@ class HarnessApp(App):
         self._verbose_output = False
         self._shell_mode = False
 
-        self._permission_future: asyncio.Future | None = None
+        self._permission_event: asyncio.Event | None = None
+        self._permission_granted: bool = False
         self._tab_completer = TabCompleter()
 
         exa_api_key = self._config.exa.effective_api_key
@@ -261,7 +262,7 @@ class HarnessApp(App):
         shortcuts = f" {state_label} {self._agent}  [dim]esc[/dim] abort  [dim]^O[/dim] verbose  [dim]^C[/dim] quit  [dim]tab[/dim] complete/cycle  [dim]i[/dim] input"
         self.query_one("#shortcuts", ShortcutBar).update(shortcuts)
         prompt_input = self.query_one("#input", Input)
-        prompt_input.disabled = self._state == "busy" and self._permission_future is None
+        prompt_input.disabled = self._state == "busy" and self._permission_event is None
 
     def _log(self) -> RichLog:
         return self.query_one("#output", RichLog)
@@ -537,26 +538,35 @@ class HarnessApp(App):
         self._write(f"[bold yellow]permission required[/bold yellow]{label_suffix}")
         self._write(f"[dim]{self._format_args(permission_data)}[/dim]")
 
-        prompt_input = self.query_one("#input", Input)
-        prompt_input.placeholder = "enter to allow, esc to deny"
-        prompt_input.disabled = False
-        prompt_input.focus()
+        self._permission_event = asyncio.Event()
+        self._permission_granted = False
+        self._enable_permission_prompt()
 
-        self._permission_future = asyncio.get_event_loop().create_future()
-        try:
-            allowed = await self._permission_future
-        except asyncio.CancelledError:
-            allowed = False
-        finally:
-            self._permission_future = None
-            prompt_input.placeholder = "type a message or /help"
+        await self._permission_event.wait()
 
-        if allowed:
+        self._disable_permission_prompt()
+
+        if self._permission_granted:
             future.set_result(True)
             self._write("[green]approved[/green]")
         else:
             future.set_result(False)
             self._write("[red]denied[/red]")
+
+    def _enable_permission_prompt(self) -> None:
+        prompt_input = self.query_one("#input", Input)
+        prompt_input.placeholder = "enter to allow, esc to deny"
+        prompt_input.disabled = False
+        prompt_input.focus()
+        self.query_one("#shortcuts", ShortcutBar).update(
+            " [bold yellow]permission[/bold yellow]  [dim]enter[/dim] allow  [dim]esc[/dim] deny"
+        )
+
+    def _disable_permission_prompt(self) -> None:
+        prompt_input = self.query_one("#input", Input)
+        prompt_input.placeholder = "/help"
+        self._permission_event = None
+        self._update_shortcuts()
 
     # -- input handling --
 
@@ -650,8 +660,9 @@ class HarnessApp(App):
         if text:
             self._input_history.append(text)
 
-        if self._permission_future and not self._permission_future.done():
-            self._permission_future.set_result(True)
+        if self._permission_event and not self._permission_event.is_set():
+            self._permission_granted = True
+            self._permission_event.set()
             return
 
         if not text:
@@ -675,8 +686,9 @@ class HarnessApp(App):
             self._exit_shell_mode()
             self.query_one("#input", Input).value = ""
             return
-        if self._permission_future and not self._permission_future.done():
-            self._permission_future.set_result(False)
+        if self._permission_event and not self._permission_event.is_set():
+            self._permission_granted = False
+            self._permission_event.set()
             return
         orchestrator = self._orchestrators.get(self._agent)
         if orchestrator:

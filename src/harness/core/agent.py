@@ -505,72 +505,58 @@ class AgentOrchestrator:
             tool_call_results: list[tuple[str, str]] = []
             denied_commands: list[str] = []
 
-            if self._abort_event.is_set():
-                self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
-                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                return
-
             for tool_call_data in response.tool_calls:
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_CALL,
-                    name=tool_call_data["name"],
-                    arguments=tool_call_data["args"],
-                    id=tool_call_data["id"],
-                )
-                turn_tool_calls_log.append({
-                    "name": tool_call_data["name"],
-                    "arguments": tool_call_data["args"],
-                })
+                if self._abort_event.is_set():
+                    self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
+                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                    return
 
-            async def _drain_tool(tool_call_data: dict) -> list[StreamEvent]:
                 tool_name = tool_call_data["name"]
                 tool_arguments = tool_call_data["args"]
                 tool_call_identifier = tool_call_data["id"]
-                collected: list[StreamEvent] = []
+
+                yield StreamEvent(
+                    StreamEvent.Type.TOOL_CALL,
+                    name=tool_name,
+                    arguments=tool_arguments,
+                    id=tool_call_identifier,
+                )
+                turn_tool_calls_log.append({
+                    "name": tool_name,
+                    "arguments": tool_arguments,
+                })
+
                 try:
                     async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier):
-                        collected.append(event)
+                        yield event
+                        if event.type == StreamEvent.Type.TOOL_RESULT:
+                            result_str = event.data.get("result", "")
+                            if isinstance(result_str, dict):
+                                result_str = json.dumps(result_str)
+                            tool_call_results.append((tool_call_identifier, str(result_str)))
+                            turn_tool_results_log.append({"name": tool_name, "result": str(result_str)})
+                        elif event.type == StreamEvent.Type.ERROR:
+                            error_message = event.data.get("message", "unknown error")
+                            tool_call_results.append((tool_call_identifier, error_message))
+                            turn_tool_results_log.append({"name": tool_name, "result": error_message})
+                        elif event.type == StreamEvent.Type.DENIED_INJECTION:
+                            denied_commands.append(event.data.get("command", ""))
+                        elif event.type == StreamEvent.Type.TASKS_UPDATED:
+                            result_message = event.data.get("result_message", "")
+                            tool_call_results.append((tool_call_identifier, result_message))
+                            turn_tool_results_log.append({"name": tool_name, "result": result_message})
+                        elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
+                            result_message = event.data.get("result_message", "")
+                            tool_call_results.append((tool_call_identifier, result_message))
+                            turn_tool_results_log.append({"name": tool_name, "result": result_message})
                 except Exception as exception:
-                    has_result = any(
-                        event.type in (StreamEvent.Type.TOOL_RESULT, StreamEvent.Type.ERROR)
-                        for event in collected
-                    )
-                    if not has_result:
+                    if tool_call_identifier not in {cid for cid, _ in tool_call_results}:
                         error_message = f"Internal error processing {tool_name}: {exception}"
-                        collected.append(StreamEvent(
-                            StreamEvent.Type.ERROR, id=tool_call_identifier, message=error_message, tool=tool_name,
-                        ))
-                return collected
-
-            all_tool_events = await asyncio.gather(
-                *[_drain_tool(tc) for tc in response.tool_calls]
-            )
-
-            for tool_call_data, events_for_tool in zip(response.tool_calls, all_tool_events):
-                tool_name = tool_call_data["name"]
-                tool_call_identifier = tool_call_data["id"]
-                for event in events_for_tool:
-                    yield event
-                    if event.type == StreamEvent.Type.TOOL_RESULT:
-                        result_str = event.data.get("result", "")
-                        if isinstance(result_str, dict):
-                            result_str = json.dumps(result_str)
-                        tool_call_results.append((tool_call_identifier, str(result_str)))
-                        turn_tool_results_log.append({"name": tool_name, "result": str(result_str)})
-                    elif event.type == StreamEvent.Type.ERROR:
-                        error_message = event.data.get("message", "unknown error")
                         tool_call_results.append((tool_call_identifier, error_message))
+                        yield StreamEvent(
+                            StreamEvent.Type.ERROR, id=tool_call_identifier, message=error_message, tool=tool_name,
+                        )
                         turn_tool_results_log.append({"name": tool_name, "result": error_message})
-                    elif event.type == StreamEvent.Type.DENIED_INJECTION:
-                        denied_commands.append(event.data.get("command", ""))
-                    elif event.type == StreamEvent.Type.TASKS_UPDATED:
-                        result_message = event.data.get("result_message", "")
-                        tool_call_results.append((tool_call_identifier, result_message))
-                        turn_tool_results_log.append({"name": tool_name, "result": result_message})
-                    elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
-                        result_message = event.data.get("result_message", "")
-                        tool_call_results.append((tool_call_identifier, result_message))
-                        turn_tool_results_log.append({"name": tool_name, "result": result_message})
 
             for call_identifier, result in tool_call_results:
                 self._conversation.append(
@@ -680,9 +666,7 @@ class AgentOrchestrator:
                     risk=risk,
                 )
                 try:
-                    allowed = await asyncio.wait_for(future, timeout=60)
-                except asyncio.TimeoutError:
-                    allowed = False
+                    allowed = await future
                 finally:
                     self._pending_permissions.pop(request_identifier, None)
                 if not allowed:
