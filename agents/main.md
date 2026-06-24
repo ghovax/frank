@@ -5,7 +5,7 @@ description: General purpose assistant agent
 model: deepseek-v4-flash
 reasoning_effort: high
 maximum_iterations: 25
-recursion_limit: 3
+recursion_limit: 8
 tools:
   bash:
     enabled: true

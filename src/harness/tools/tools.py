@@ -1,5 +1,8 @@
 import asyncio
+import atexit
 import json
+import signal
+import sys
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -53,7 +56,10 @@ class TaskRegistry:
 
     @property
     def active_count(self) -> int:
-        return len(self._tasks)
+        return sum(1 for task, _ in self._tasks.values() if not task.done())
+
+    def list_active(self) -> list[str]:
+        return [identifier for identifier, (task, _) in self._tasks.items() if not task.done()]
 
 
 bash_tasks = TaskRegistry("bg")
@@ -268,13 +274,14 @@ def write_tasks(tasks: list[dict]) -> str:
 
 
 @tool
-def update_task(task_id: str, status: str, result: str = "") -> str:
-    """Update the status of a task and optionally record a result.
+def update_tasks(updates: list[dict]) -> str:
+    """Update the status of one or more tasks at once.
 
     Args:
-        task_id: The task identifier (e.g. 'task-1').
-        status: One of 'pending', 'in_progress', 'completed', 'blocked'.
-        result: Summary of what was accomplished when marking as completed.
+        updates: List of update objects. Each object has:
+            - task_id (required): The task identifier (e.g. 'task-1').
+            - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
+            - result (optional): Summary of what was accomplished when marking as completed.
     """
     return "Handled by orchestrator."
 
@@ -314,3 +321,13 @@ def cancel_all_background_tasks() -> None:
     bash_tasks.cancel_all()
     web_tasks.cancel_all()
     spawned_tasks.cancel_all()
+
+
+def _cleanup_on_exit():
+    cancel_all_background_tasks()
+
+
+atexit.register(_cleanup_on_exit)
+
+for _sig in (signal.SIGTERM, signal.SIGHUP):
+    signal.signal(_sig, lambda signum, frame: (cancel_all_background_tasks(), sys.exit(1)))

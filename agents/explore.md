@@ -5,7 +5,7 @@ description: Exploration specialist for investigating codebases
 model: deepseek-v4-flash
 reasoning_effort: high
 maximum_iterations: 20
-recursion_limit: 2
+recursion_limit: 8
 tools:
   bash:
     enabled: true

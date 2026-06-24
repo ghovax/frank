@@ -5,7 +5,7 @@ description: Simple general-purpose agent for basic questions and tasks
 model: deepseek-v4-flash
 reasoning_effort: low
 maximum_iterations: 10
-recursion_limit: 1
+recursion_limit: 8
 tools:
   bash:
     enabled: true

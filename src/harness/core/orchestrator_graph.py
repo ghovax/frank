@@ -52,10 +52,11 @@ def compile_orchestration_graph(
                 # First step, no explicit depends_on → root
                 pass
         elif step["depends_on"]:
-            # Explicit fan-in
+            # Explicit fan-in — skip references to IDs outside this graph
             for dependency_id in step["depends_on"]:
-                incoming_edges.setdefault(step_id, []).append(dependency_id)
-                outgoing_from.add(dependency_id)
+                if dependency_id in step_ids:
+                    incoming_edges.setdefault(step_id, []).append(dependency_id)
+                    outgoing_from.add(dependency_id)
         # else: depends_on is empty list → root step
 
     builder = StateGraph(OrchestrationState)

@@ -40,21 +40,42 @@ class BashToolConfiguration(BaseModel):
     background_allowed: bool = True
     permissions: dict[str, str] = {}
 
+    _SHELL_SPLIT = re.compile(r"\s*(?:&&|\|\||[;|])\s*")
+    _SUBSHELL = re.compile(r"\$\((.+?)\)|`(.+?)`")
+
     def evaluate_permission(self, command: str) -> str:
+        segments = self._extract_segments(command)
         best_match_length = 0
         best_decision = "allow"
-        for pattern, decision in self.permissions.items():
-            if self._pattern_matches(command, pattern):
-                if not best_match_length or len(pattern) > best_match_length:
-                    best_match_length = len(pattern)
-                    best_decision = decision.lower()
+        for segment in segments:
+            for pattern, decision in self.permissions.items():
+                if self._segment_matches(segment, pattern):
+                    if not best_match_length or len(pattern) > best_match_length:
+                        best_match_length = len(pattern)
+                        best_decision = decision.lower()
         return best_decision
 
+    def _extract_segments(self, command: str) -> list[str]:
+        """Split a command string into individual segments to check.
+
+        Splits on shell operators (&&, ||, ;, |) and extracts the contents
+        of subshells ($(...) and backticks).
+        """
+        segments = [s.strip() for s in self._SHELL_SPLIT.split(command) if s.strip()]
+        for match in self._SUBSHELL.finditer(command):
+            inner = (match.group(1) or match.group(2)).strip()
+            if inner:
+                segments.extend(self._extract_segments(inner))
+        return segments
+
     @staticmethod
-    def _pattern_matches(command: str, pattern: str) -> bool:
+    def _segment_matches(segment: str, pattern: str) -> bool:
         if pattern.endswith("*"):
-            return command.startswith(pattern[:-1].rstrip())
-        return command == pattern
+            keyword = pattern[:-1].rstrip()
+            if segment.startswith(keyword):
+                return True
+            return bool(re.search(r"(?:^|\s)" + re.escape(keyword) + r"(?:\s|$)", segment))
+        return segment == pattern
 
 
 class SpawnAgentToolConfiguration(BaseModel):
@@ -75,7 +96,7 @@ class AgentConfiguration(BaseModel):
     model: Optional[str] = None
     reasoning_effort: str = "high"
     maximum_iterations: int = 25
-    recursion_limit: int = 3
+    recursion_limit: int = 8
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
     system_prompt: str = ""

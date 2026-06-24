@@ -5,7 +5,7 @@ description: Code writing and editing specialist
 model: deepseek-v4-flash
 reasoning_effort: high
 maximum_iterations: 30
-recursion_limit: 3
+recursion_limit: 8
 tools:
   bash:
     enabled: true
