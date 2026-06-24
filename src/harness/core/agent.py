@@ -318,6 +318,7 @@ class AgentOrchestrator:
 
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
+        self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         self._execution_history: list[dict] = []
         self._orchestration_graphs: dict[str, Any] = {}
@@ -340,24 +341,32 @@ class AgentOrchestrator:
         if self._on_record_message:
             self._on_record_message(role, content, tool_call_id)
 
-    def _build_system_prompt(self) -> str:
-        current_working_directory = os.getcwd()
+    def _build_static_system_prompt(self) -> str:
+        """Build the static portion of the system prompt (cached across calls)."""
+        if self._cached_system_prompt is None:
+            available_agents = list_available_agents(
+                self._global_configuration.agents_directory
+            )
+            context_json = json.dumps({
+                "working_directory": os.getcwd(),
+                "available_agents": available_agents,
+            })
+            self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
+                "system_prompt": self._system_prompt,
+                "context": context_json,
+                "tasks_section": "",
+            })
+        return self._cached_system_prompt
+
+    def _build_dynamic_context(self) -> str:
+        """Build the dynamic context injected at the end of the message list."""
+        parts = []
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        available_agents = list_available_agents(
-            self._global_configuration.agents_directory
-        )
+        parts.append(f"Current time: {current_time}")
         tasks_data = self._task_manager.to_dict_list()
-        context_json = json.dumps({
-            "current_time": current_time,
-            "working_directory": current_working_directory,
-            "available_agents": available_agents,
-        })
-        tasks_section = json.dumps({"tasks": tasks_data}) if tasks_data else ""
-        return self._prompt_loader.load("system_prompt", {
-            "system_prompt": self._system_prompt,
-            "context": context_json,
-            "tasks_section": tasks_section,
-        })
+        if tasks_data:
+            parts.append(json.dumps({"tasks": tasks_data}))
+        return "\n".join(parts)
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
         self._record_message("human", user_message)
@@ -417,8 +426,9 @@ class AgentOrchestrator:
                         })
 
             messages = (
-                [SystemMessage(content=self._build_system_prompt())]
+                [SystemMessage(content=self._build_static_system_prompt())]
                 + self._conversation
+                + [SystemMessage(content=self._build_dynamic_context())]
             )
 
             yield StreamEvent(StreamEvent.Type.STATUS, code="thinking")
@@ -479,48 +489,6 @@ class AgentOrchestrator:
                     self._calls_this_turn += 1
                     continue
 
-                if self._background.has_pending():
-                    self._conversation.append(response)
-                    while self._background.has_pending() and not self._abort_event.is_set():
-                        await asyncio.sleep(0.5)
-                        self._background.poll()
-                        if self._background.has_results():
-                            for tool_name, task_identifier, result in self._background.drain_results():
-                                background_message = SystemMessage(
-                                    content=json.dumps({
-                                        "type": "background_result",
-                                        "tool": tool_name,
-                                        "task_identifier": task_identifier,
-                                        "result": result,
-                                    }),
-                                )
-                                self._conversation.append(background_message)
-                                yield StreamEvent(
-                                    StreamEvent.Type.TOOL_RESULT,
-                                    name=tool_name,
-                                    result=_maybe_json(result),
-                                    task_id=task_identifier,
-                                )
-                                if tool_name == "bash":
-                                    self._record_event("background_bash_completed", {
-                                        "task_identifier": task_identifier,
-                                    })
-                                elif tool_name == "web_search":
-                                    self._record_event("background_web_search_completed", {
-                                        "task_identifier": task_identifier,
-                                    })
-                                else:
-                                    self._record_event("agent_completed", {
-                                        "task_identifier": task_identifier,
-                                        "result": result,
-                                    })
-                            break
-                    if self._abort_event.is_set():
-                        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                        return
-                    self._calls_this_turn += 1
-                    continue
-
                 final_text = response.content or ""
                 turn_final_response = final_text
                 self._conversation.append(response)
@@ -537,58 +505,72 @@ class AgentOrchestrator:
             tool_call_results: list[tuple[str, str]] = []
             denied_commands: list[str] = []
 
-            for tool_call_data in response.tool_calls:
-                if self._abort_event.is_set():
-                    self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
-                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                    return
+            if self._abort_event.is_set():
+                self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
+                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                return
 
+            for tool_call_data in response.tool_calls:
+                yield StreamEvent(
+                    StreamEvent.Type.TOOL_CALL,
+                    name=tool_call_data["name"],
+                    arguments=tool_call_data["args"],
+                    id=tool_call_data["id"],
+                )
+                turn_tool_calls_log.append({
+                    "name": tool_call_data["name"],
+                    "arguments": tool_call_data["args"],
+                })
+
+            async def _drain_tool(tool_call_data: dict) -> list[StreamEvent]:
                 tool_name = tool_call_data["name"]
                 tool_arguments = tool_call_data["args"]
                 tool_call_identifier = tool_call_data["id"]
-
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_CALL,
-                    name=tool_name,
-                    arguments=tool_arguments,
-                    id=tool_call_identifier,
-                )
-                turn_tool_calls_log.append({
-                    "name": tool_name,
-                    "arguments": tool_arguments,
-                })
-
+                collected: list[StreamEvent] = []
                 try:
                     async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier):
-                        yield event
-                        if event.type == StreamEvent.Type.TOOL_RESULT:
-                            result_str = event.data.get("result", "")
-                            if isinstance(result_str, dict):
-                                result_str = json.dumps(result_str)
-                            tool_call_results.append((tool_call_identifier, str(result_str)))
-                            turn_tool_results_log.append({"name": tool_name, "result": str(result_str)})
-                        elif event.type == StreamEvent.Type.ERROR:
-                            error_message = event.data.get("message", "unknown error")
-                            tool_call_results.append((tool_call_identifier, error_message))
-                            turn_tool_results_log.append({"name": tool_name, "result": error_message})
-                        elif event.type == StreamEvent.Type.DENIED_INJECTION:
-                            denied_commands.append(event.data.get("command", ""))
-                        elif event.type == StreamEvent.Type.TASKS_UPDATED:
-                            result_message = event.data.get("result_message", "")
-                            tool_call_results.append((tool_call_identifier, result_message))
-                            turn_tool_results_log.append({"name": tool_name, "result": result_message})
-                        elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
-                            result_message = event.data.get("result_message", "")
-                            tool_call_results.append((tool_call_identifier, result_message))
-                            turn_tool_results_log.append({"name": tool_name, "result": result_message})
+                        collected.append(event)
                 except Exception as exception:
-                    if tool_call_identifier not in {cid for cid, _ in tool_call_results}:
+                    has_result = any(
+                        event.type in (StreamEvent.Type.TOOL_RESULT, StreamEvent.Type.ERROR)
+                        for event in collected
+                    )
+                    if not has_result:
                         error_message = f"Internal error processing {tool_name}: {exception}"
-                        tool_call_results.append((tool_call_identifier, error_message))
-                        yield StreamEvent(
+                        collected.append(StreamEvent(
                             StreamEvent.Type.ERROR, id=tool_call_identifier, message=error_message, tool=tool_name,
-                        )
+                        ))
+                return collected
+
+            all_tool_events = await asyncio.gather(
+                *[_drain_tool(tc) for tc in response.tool_calls]
+            )
+
+            for tool_call_data, events_for_tool in zip(response.tool_calls, all_tool_events):
+                tool_name = tool_call_data["name"]
+                tool_call_identifier = tool_call_data["id"]
+                for event in events_for_tool:
+                    yield event
+                    if event.type == StreamEvent.Type.TOOL_RESULT:
+                        result_str = event.data.get("result", "")
+                        if isinstance(result_str, dict):
+                            result_str = json.dumps(result_str)
+                        tool_call_results.append((tool_call_identifier, str(result_str)))
+                        turn_tool_results_log.append({"name": tool_name, "result": str(result_str)})
+                    elif event.type == StreamEvent.Type.ERROR:
+                        error_message = event.data.get("message", "unknown error")
+                        tool_call_results.append((tool_call_identifier, error_message))
                         turn_tool_results_log.append({"name": tool_name, "result": error_message})
+                    elif event.type == StreamEvent.Type.DENIED_INJECTION:
+                        denied_commands.append(event.data.get("command", ""))
+                    elif event.type == StreamEvent.Type.TASKS_UPDATED:
+                        result_message = event.data.get("result_message", "")
+                        tool_call_results.append((tool_call_identifier, result_message))
+                        turn_tool_results_log.append({"name": tool_name, "result": result_message})
+                    elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
+                        result_message = event.data.get("result_message", "")
+                        tool_call_results.append((tool_call_identifier, result_message))
+                        turn_tool_results_log.append({"name": tool_name, "result": result_message})
 
             for call_identifier, result in tool_call_results:
                 self._conversation.append(

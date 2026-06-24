@@ -16,7 +16,3 @@ wheels/
 *.pem
 *.swo
 *.swp
-
-# Application
-history/
-harness.db

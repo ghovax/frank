@@ -72,7 +72,7 @@ def make_text_chunk(text: str) -> AIMessageChunk:
 
 
 def make_tool_call_chunk(
-    tool_name: str, arguments: dict, call_id: str = "call_1"
+    tool_name: str, arguments: dict, call_id: str = "call_00_aB1cD2eF3gH4iJ5kL6mN7oP"
 ) -> AIMessageChunk:
     return AIMessageChunk(
         content="",
@@ -151,23 +151,18 @@ def events_of_type(
 
 
 def make_repl_for_testing():
-    """Build a HarnessREPL instance with mocked terminal output.
+    """Build a HarnessApp instance with mocked output for testing.
 
-    Returns the REPL instance with a _printed list capturing all output
-    and _md calls tagged with [MD]...[/MD].
+    Returns the app with a _printed list capturing all output.
+    _write appends Rich markup, _write_md appends [MD]...[/MD] tagged text.
     """
-    with patch("repl.HarnessREPL.__init__", lambda self: None):
-        from repl import HarnessREPL
+    with patch("repl.HarnessApp.__init__", lambda self: None):
+        from repl import HarnessApp
 
-        repl = HarnessREPL()
+        repl = HarnessApp()
 
-    from rich.console import Console
-
-    repl._rich_buffer = io.StringIO()
-    repl._console = Console(file=repl._rich_buffer, force_terminal=True, width=120)
     repl._stream_buffer = ""
     repl._streaming = False
-    repl._needs_newline = False
     repl._verbose_output = False
     repl._call_counter = 0
     repl._call_labels = {}
@@ -175,32 +170,48 @@ def make_repl_for_testing():
     repl._INTERNAL_KEYS = frozenset(
         {"code", "pid", "size", "task_identifier", "output_file", "query"}
     )
+    repl._agent = "main"
+    repl._shared_conversation = []
+    repl._pending_permissions = {}
+    repl._permission_future = None
 
     repl._printed: list[str] = []
 
-    def capture_rich(*args, **kwargs):
-        repl._rich_buffer.seek(0)
-        repl._rich_buffer.truncate(0)
-        repl._console.print(*args, **kwargs)
-        rendered = repl._rich_buffer.getvalue().rstrip("\n")
+    from rich.console import Console
+
+    _test_buffer = io.StringIO()
+    _test_console = Console(file=_test_buffer, force_terminal=True, width=120)
+
+    def capture_write(markup):
+        _test_buffer.seek(0)
+        _test_buffer.truncate(0)
+        from rich.text import Text
+        _test_console.print(Text.from_markup(markup))
+        rendered = _test_buffer.getvalue().rstrip("\n")
         if rendered:
             repl._printed.append(rendered)
 
-    repl._rich = capture_rich
+    repl._write = capture_write
 
-    def capture_md(text):
+    def capture_write_md(text):
         if text:
             repl._printed.append(f"[MD]{text}[/MD]")
 
-    repl._md = capture_md
+    repl._write_md = capture_write_md
 
     def flush_stream_buffer():
         text = repl._stream_buffer.strip()
         if text:
-            capture_md(text)
+            capture_write_md(text)
             repl._stream_buffer = ""
 
     repl._flush_stream_buffer = flush_stream_buffer
+
+    def noop_update():
+        pass
+
+    repl._update_status = noop_update
+    repl._update_shortcuts = noop_update
 
     return repl
 
@@ -355,7 +366,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "test task"}]},
-                    "call_1",
+                    "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 ),
             ],
             [make_text_chunk("All done.")],
@@ -431,7 +442,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "do X"}, {"description": "do Y"}]},
-                    "call_1",
+                    "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 )
             ],
             [make_text_chunk("created tasks")],
@@ -452,7 +463,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "A"}, {"description": "B"}]},
-                    "call_1",
+                    "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 )
             ],
             [
@@ -464,7 +475,7 @@ class TestOrchestratorStream:
                             {"task_id": "task-2", "status": "in_progress"},
                         ]
                     },
-                    "call_2",
+                    "call_01_bC7dE9fG1hI3jK5lM7nO9pQ",
                 )
             ],
             [make_text_chunk("done")],
@@ -527,7 +538,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "check files"}]},
-                    "call_abc",
+                    "call_05_nO5pQ7rS9tU1vW3xY5zA7bC",
                 )
             ],
             [make_text_chunk("done")],
@@ -537,14 +548,14 @@ class TestOrchestratorStream:
         tool_call_events = events_of_type(events, StreamEvent.Type.TOOL_CALL)
         assert len(tool_call_events) == 1
         assert tool_call_events[0].data["name"] == "write_tasks"
-        assert tool_call_events[0].data["id"] == "call_abc"
+        assert tool_call_events[0].data["id"] == "call_05_nO5pQ7rS9tU1vW3xY5zA7bC"
         assert "tasks" in tool_call_events[0].data["arguments"]
 
     @pytest.mark.asyncio
     async def test_unknown_tool_produces_error_event(self):
         """Calling a tool that doesn't exist yields an ERROR event."""
         orchestrator, mock_llm = make_orchestrator([
-            [make_tool_call_chunk("nonexistent_tool", {}, "call_bad")],
+            [make_tool_call_chunk("nonexistent_tool", {}, "call_02_rS1tU3vW5xY7zA9bC1dE3fG")],
             [make_text_chunk("ok")],
         ])
         events = await collect_events(orchestrator, "try bad tool")
@@ -561,8 +572,8 @@ class TestOrchestratorStream:
                 AIMessageChunk(
                     content="",
                     tool_calls=[
-                        {"name": "write_tasks", "args": {"tasks": [{"description": "A"}]}, "id": "call_1"},
-                        {"name": "write_tasks", "args": {"tasks": [{"description": "B"}]}, "id": "call_2"},
+                        {"name": "write_tasks", "args": {"tasks": [{"description": "A"}]}, "id": "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA"},
+                        {"name": "write_tasks", "args": {"tasks": [{"description": "B"}]}, "id": "call_01_bC7dE9fG1hI3jK5lM7nO9pQ"},
                     ],
                 )
             ],
@@ -585,7 +596,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "step 1"}]},
-                    "call_1",
+                    "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 ),
             ],
             [
@@ -593,7 +604,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "update_tasks",
                     {"updates": [{"task_id": "task-1", "status": "completed", "result": "done"}]},
-                    "call_2",
+                    "call_01_bC7dE9fG1hI3jK5lM7nO9pQ",
                 ),
             ],
             [make_text_chunk("After all tools.")],
@@ -614,7 +625,7 @@ class TestOrchestratorStream:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "task"}]},
-                    "call_1",
+                    "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 )
             ],
             [make_text_chunk("done")],
@@ -643,14 +654,14 @@ class TestOrchestratorStream:
                     make_tool_call_chunk(
                         "write_tasks",
                         {"tasks": [{"description": "A"}]},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [
                     make_tool_call_chunk(
                         "write_tasks",
                         {"tasks": [{"description": "B"}]},
-                        "call_2",
+                        "call_01_bC7dE9fG1hI3jK5lM7nO9pQ",
                     )
                 ],
                 [
@@ -763,7 +774,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_CALL,
                 name="bash",
-                id="c1",
+                id="call_10_zA1bC3dE5fG7hI9jK1lM3nO",
                 arguments={"command": "ls"},
             )
         )
@@ -779,7 +790,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_CALL,
                 name="bash",
-                id="c1",
+                id="call_10_zA1bC3dE5fG7hI9jK1lM3nO",
                 arguments={"command": "ls"},
             )
         )
@@ -875,7 +886,7 @@ class TestREPLEventHandler:
         await repl._handle_event(
             StreamEvent(
                 StreamEvent.Type.TASKS_UPDATED,
-                id="c1",
+                id="call_10_zA1bC3dE5fG7hI9jK1lM3nO",
                 tasks=[
                     {
                         "identifier": "task-1",
@@ -904,7 +915,7 @@ class TestREPLEventHandler:
         await repl._handle_event(
             StreamEvent(
                 StreamEvent.Type.TASKS_UPDATED,
-                id="c1",
+                id="call_10_zA1bC3dE5fG7hI9jK1lM3nO",
                 tasks=[],
                 result_message="No matching tasks found.",
             )
@@ -917,7 +928,7 @@ class TestREPLEventHandler:
         await repl._handle_event(
             StreamEvent(
                 StreamEvent.Type.ERROR,
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 tool="bash",
                 message="command not found",
             )
@@ -941,7 +952,7 @@ class TestREPLEventHandler:
         await repl._handle_event(
             StreamEvent(
                 StreamEvent.Type.BACKGROUND_STARTED,
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 agent="explorer",
             )
         )
@@ -978,19 +989,34 @@ class TestREPLEventHandler:
         assert counts["web_search"] == 1
 
     @pytest.mark.asyncio
-    async def test_tool_result_silenced_for_internal_codes(self):
-        """Results with internal codes like bash_completed are silently dropped."""
+    async def test_tool_result_started_codes_silenced(self):
+        """Results with _started codes are silenced (only for slow background tasks)."""
         repl = make_repl_for_testing()
-        repl._verbose_output = True
         await repl._handle_event(
             StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 name="bash",
-                id="call_1",
-                result={"code": "bash_completed", "output": "file1.txt\nfile2.txt"},
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
+                result={"code": "bash_started", "task_identifier": "bg-123"},
             )
         )
         assert not repl._printed
+
+    @pytest.mark.asyncio
+    async def test_tool_result_shown_for_completed_codes(self):
+        """Results with _completed codes show at least a header."""
+        repl = make_repl_for_testing()
+        await repl._handle_event(
+            StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                name="bash",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
+                result={"code": "bash_completed", "output": "file1.txt"},
+            )
+        )
+        output = printed_plain(repl)
+        assert "result" in output
+        assert "bash" in output
 
     @pytest.mark.asyncio
     async def test_tool_result_with_message_shows_error(self):
@@ -1000,7 +1026,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 name="bash",
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 result={"message": "permission denied"},
             )
         )
@@ -1017,7 +1043,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 name="web_search",
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 result={"status": "ok", "count": 3},
             )
         )
@@ -1034,7 +1060,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 name="web_search",
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 result={"status": "ok", "count": 3},
             )
         )
@@ -1052,7 +1078,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 name="custom_tool",
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 result="line one\nline two",
             )
         )
@@ -1069,7 +1095,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 name="custom_tool",
-                id="call_1",
+                id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 result="line one\nline two",
             )
         )
@@ -1084,7 +1110,7 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_CALL,
                 name="bash",
-                id="call_aaa",
+                id="call_06_dE9fG1hI3jK5lM7nO9pQ1rS",
                 arguments={"command": "ls"},
             )
         )
@@ -1092,12 +1118,49 @@ class TestREPLEventHandler:
             StreamEvent(
                 StreamEvent.Type.TOOL_CALL,
                 name="bash",
-                id="call_bbb",
+                id="call_07_tU3vW5xY7zA9bC1dE3fG5hI",
                 arguments={"command": "pwd"},
             )
         )
-        assert repl._call_labels["call_aaa"] == "#1"
-        assert repl._call_labels["call_bbb"] == "#2"
+        assert repl._call_labels["call_06_dE9fG1hI3jK5lM7nO9pQ1rS"] == "#1"
+        assert repl._call_labels["call_07_tU3vW5xY7zA9bC1dE3fG5hI"] == "#2"
+
+    @pytest.mark.asyncio
+    async def test_background_task_inherits_call_label(self):
+        """When a tool result contains a task_identifier, it maps to the original call label."""
+        repl = make_repl_for_testing()
+        await repl._handle_event(
+            StreamEvent(
+                StreamEvent.Type.TOOL_CALL,
+                name="web_search",
+                id="call_08_jK7lM9nO1pQ3rS5tU7vW9xY",
+                arguments={"query": "test"},
+            )
+        )
+        assert repl._call_labels["call_08_jK7lM9nO1pQ3rS5tU7vW9xY"] == "#1"
+
+        await repl._handle_event(
+            StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                name="web_search",
+                id="call_08_jK7lM9nO1pQ3rS5tU7vW9xY",
+                result={"code": "web_search_started", "task_identifier": "search-4a7b8c9d0e1f"},
+            )
+        )
+        assert repl._call_labels.get("search-4a7b8c9d0e1f") == "#1"
+
+        repl._printed.clear()
+        await repl._handle_event(
+            StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                name="web_search",
+                task_id="search-4a7b8c9d0e1f",
+                result={"code": "web_search_completed", "results": []},
+            )
+        )
+        output = printed_plain(repl)
+        assert "#1" in output
+        assert "result" in output
 
 
 class TestEventSequenceIntegration:
@@ -1112,7 +1175,7 @@ class TestEventSequenceIntegration:
                 make_tool_call_chunk(
                     "write_tasks",
                     {"tasks": [{"description": "check files"}]},
-                    "call_1",
+                    "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                 ),
             ],
             [
@@ -1128,7 +1191,7 @@ class TestEventSequenceIntegration:
                             }
                         ]
                     },
-                    "call_2",
+                    "call_01_bC7dE9fG1hI3jK5lM7nO9pQ",
                 ),
             ],
             [make_text_chunk("Everything looks good.")],
@@ -1221,7 +1284,7 @@ class TestEventSequenceIntegration:
                     make_tool_call_chunk(
                         "write_tasks",
                         {"tasks": [{"description": "test"}]},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [make_text_chunk("done")],
@@ -1248,14 +1311,14 @@ class TestEventSequenceIntegration:
             StreamEvent(
                 StreamEvent.Type.TOOL_CALL,
                 name="write_tasks",
-                id="c1",
+                id="call_10_zA1bC3dE5fG7hI9jK1lM3nO",
                 arguments={"tasks": [{"description": "analyze code"}]},
             )
         )
         await repl._handle_event(
             StreamEvent(
                 StreamEvent.Type.TASKS_UPDATED,
-                id="c1",
+                id="call_10_zA1bC3dE5fG7hI9jK1lM3nO",
                 tasks=[
                     {"identifier": "task-1", "status": "pending", "description": "analyze code", "result": ""},
                 ],
@@ -1287,9 +1350,9 @@ class TestMarkdownRendering:
 
     def _render(self, text: str) -> str:
         """Render text through the REPL's markdown pipeline and return plain text."""
-        from repl import HarnessREPL
+        from repl import HarnessApp
 
-        escaped = HarnessREPL._escape_html_tags(text)
+        escaped = HarnessApp._escape_html_tags(text)
 
         from rich.console import Console
         from rich.markdown import Markdown
@@ -1706,7 +1769,7 @@ class TestOrchestratorPermissions:
                     make_tool_call_chunk(
                         "bash",
                         {"command": "sudo rm -rf /", "read_only": False, "risk": "high"},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [make_text_chunk("ok")],
@@ -1737,7 +1800,7 @@ class TestOrchestratorPermissions:
                     make_tool_call_chunk(
                         "bash",
                         {"command": "sudo rm -rf /", "read_only": False, "risk": "high"},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [make_text_chunk("understood")],
@@ -1772,7 +1835,7 @@ class TestOrchestratorPermissions:
                     make_tool_call_chunk(
                         "bash",
                         {"command": "echo hello", "read_only": True, "risk": "low"},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [make_text_chunk("done")],
@@ -1803,7 +1866,7 @@ class TestOrchestratorPermissions:
                     make_tool_call_chunk(
                         "bash",
                         {"command": "echo safe && sudo rm -rf /", "read_only": False, "risk": "high"},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [make_text_chunk("done")],
@@ -1831,7 +1894,7 @@ class TestOrchestratorPermissions:
                     make_tool_call_chunk(
                         "orchestrate",
                         {"steps": [{"id": "s1", "agent": "main", "prompt": "test"}]},
-                        "call_1",
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
                     )
                 ],
                 [make_text_chunk("ok")],
@@ -1843,3 +1906,878 @@ class TestOrchestratorPermissions:
         error_events = events_of_type(events, StreamEvent.Type.ERROR)
         assert len(error_events) >= 1
         assert "not enabled" in error_events[0].data["message"]
+
+
+class TestSlashCommands:
+    """Tests for slash command handling via _command()."""
+
+    def test_help_lists_all_commands(self):
+        repl = make_repl_for_testing()
+        repl._command("/help")
+        output = printed_plain(repl)
+        assert "/help" in output
+        assert "/exit" in output
+        assert "/switch" in output
+
+    def test_switch_changes_agent(self):
+        repl = make_repl_for_testing()
+        repl._agents = ["main", "code", "explore"]
+        repl._command("/switch code")
+        assert repl._agent == "code"
+        output = printed_plain(repl)
+        assert "switched to code" in output
+
+    def test_switch_unknown_agent_shows_error(self):
+        repl = make_repl_for_testing()
+        repl._agents = ["main", "code"]
+        repl._command("/switch nonexistent")
+        output = printed_plain(repl)
+        assert "unknown agent" in output
+
+    def test_agents_lists_available(self):
+        repl = make_repl_for_testing()
+        repl._agents = ["main", "code", "explore"]
+        repl._command("/agents")
+        output = printed_plain(repl)
+        assert "main" in output
+        assert "code" in output
+        assert "explore" in output
+
+    def test_session_shows_short_id(self):
+        repl = make_repl_for_testing()
+        repl._session_id = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+        repl._orchestrators = {}
+        repl._command("/session")
+        output = printed_plain(repl)
+        assert "a1b2c3d4e5f6" in output
+        assert "a1b2c3d4e5f6a7b8" not in output
+
+    def test_exit_returns_false(self):
+        repl = make_repl_for_testing()
+        assert repl._command("/exit") is False
+
+    def test_unknown_command_shows_error(self):
+        repl = make_repl_for_testing()
+        repl._command("/foobar")
+        output = printed_plain(repl)
+        assert "unknown" in output
+
+    @pytest.mark.asyncio
+    async def test_clear_resets_session(self):
+        from repl import HarnessApp
+        from textual.widgets import Input
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            old_session = app._session_id
+            input_widget = app.query_one("#input", Input)
+            input_widget.value = "/clear"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._session_id != old_session
+            assert len(app._shared_conversation) == 0
+
+
+class TestSessionHistoryDisplay:
+    """Tests for visual conversation history on session resume.
+
+    The resumed display must produce the same format as the live view:
+    tool calls with name + #N label + arguments, results with name + #N label.
+    """
+
+    def test_display_human_messages_with_prompt_format(self):
+        repl = make_repl_for_testing()
+        repl._agent = "main"
+        repl._shared_conversation = [
+            HumanMessage(content="What is 2+2?"),
+            AIMessageChunk(content="The answer is 4."),
+            HumanMessage(content="And 3+3?"),
+            AIMessageChunk(content="That would be 6."),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+        assert ">" in output
+        assert "What is 2+2?" in output
+        assert "The answer is 4." in output or "[MD]The answer is 4.[/MD]" in "\n".join(repl._printed)
+        assert "And 3+3?" in output
+
+    def test_display_empty_conversation_prints_nothing(self):
+        repl = make_repl_for_testing()
+        repl._shared_conversation = []
+
+        repl._display_conversation_history()
+        assert not repl._printed
+
+    def test_display_tool_calls_with_labels_and_arguments(self):
+        repl = make_repl_for_testing()
+        repl._shared_conversation = [
+            HumanMessage(content="list files"),
+            AIMessageChunk(
+                content="",
+                tool_calls=[
+                    {"name": "bash", "args": {"command": "ls"}, "id": "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA"},
+                    {"name": "bash", "args": {"command": "pwd"}, "id": "call_01_bC7dE9fG1hI3jK5lM7nO9pQ"},
+                ],
+            ),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+        assert "tool: bash" in output
+        assert "#1" in output
+        assert "#2" in output
+        assert "ls" in output
+        assert "pwd" in output
+
+    def test_display_tool_results_with_matching_labels(self):
+        from langchain_core.messages import ToolMessage
+
+        repl = make_repl_for_testing()
+        repl._shared_conversation = [
+            HumanMessage(content="run echo"),
+            AIMessageChunk(
+                content="",
+                tool_calls=[{"name": "bash", "args": {"command": "echo hi"}, "id": "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA"}],
+            ),
+            ToolMessage(content='{"output": "hi"}', tool_call_id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA"),
+            AIMessageChunk(content="Done."),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+        assert "tool: bash" in output
+        assert "#1" in output
+        assert "result (bash)" in output
+        assert "result (bash)" in output and "#1" in output
+        assert '{"output"' not in output
+
+    def test_display_matches_live_format_exactly(self):
+        """The resumed display must produce output structurally identical to the live view."""
+        from langchain_core.messages import ToolMessage
+
+        repl = make_repl_for_testing()
+        repl._shared_conversation = [
+            HumanMessage(content="search for news"),
+            AIMessageChunk(
+                content="Let me search.",
+                tool_calls=[
+                    {"name": "web_search", "args": {"query": "latest news"}, "id": "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA"},
+                    {"name": "bash", "args": {"command": "echo test"}, "id": "call_01_bC7dE9fG1hI3jK5lM7nO9pQ"},
+                ],
+            ),
+            ToolMessage(content='{"code": "web_search_completed"}', tool_call_id="call_00_Xk9mR2vL4wN8pQ1sT3uY5zA"),
+            ToolMessage(content='{"code": "bash_completed"}', tool_call_id="call_01_bC7dE9fG1hI3jK5lM7nO9pQ"),
+            AIMessageChunk(content="Here are the results."),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+
+        lines_with_content = [line.strip() for line in output.split("\n") if line.strip()]
+        tool_web = [line for line in lines_with_content if "tool: web_search" in line]
+        tool_bash = [line for line in lines_with_content if "tool: bash" in line]
+        result_web = [line for line in lines_with_content if "result (web_search)" in line]
+        result_bash = [line for line in lines_with_content if "result (bash)" in line]
+
+        assert len(tool_web) == 1
+        assert "#1" in tool_web[0]
+        assert len(tool_bash) == 1
+        assert "#2" in tool_bash[0]
+        assert len(result_web) == 1
+        assert "#1" in result_web[0]
+        assert len(result_bash) == 1
+        assert "#2" in result_bash[0]
+
+    def test_display_cancelled_marker(self):
+        """Cancelled events saved in conversation appear as 'cancelled' in history."""
+        repl = make_repl_for_testing()
+        repl._agent = "main"
+        repl._shared_conversation = [
+            HumanMessage(content="do something"),
+            SystemMessage(content=json.dumps({"type": "cancelled"})),
+            HumanMessage(content="try again"),
+            AIMessageChunk(content="Here you go."),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+        assert "do something" in output
+        assert "cancelled" in output
+        assert "try again" in output
+
+    def test_display_max_iterations_marker(self):
+        repl = make_repl_for_testing()
+        repl._agent = "main"
+        repl._shared_conversation = [
+            HumanMessage(content="run forever"),
+            SystemMessage(content=json.dumps({"type": "max_iterations"})),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+        assert "max iterations" in output
+
+    def test_display_user_message_with_chevron_prefix(self):
+        """User messages in history show with > prefix."""
+        repl = make_repl_for_testing()
+        repl._shared_conversation = [
+            HumanMessage(content="search something"),
+        ]
+
+        repl._display_conversation_history()
+        output = printed_plain(repl)
+        assert ">" in output
+        assert "search something" in output
+
+
+class TestSessionLoadByPrefix:
+    """Tests for loading sessions by short (prefix) ID."""
+
+    def _make_repl_with_sessions_dir(self, tmp_path):
+        import repl as repl_module
+
+        original_sessions_dir = repl_module.SESSIONS_DIR
+        repl_module.SESSIONS_DIR = tmp_path
+
+        repl = make_repl_for_testing()
+        repl._shared_conversation = []
+        repl._session_id = "0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d"
+        repl._agent = "main"
+        repl._orchestrators = {}
+
+        return repl, original_sessions_dir, repl_module
+
+    def _write_session(self, tmp_path, session_id, messages=None):
+        data = {
+            "session_id": session_id,
+            "agent": "main",
+            "timestamp": "2026-06-24T12:00:00+00:00",
+            "messages": messages or [
+                {"type": "human", "content": f"hello from {session_id[:8]}"},
+                {"type": "ai", "content": f"response from {session_id[:8]}"},
+            ],
+        }
+        (tmp_path / f"{session_id}.json").write_text(json.dumps(data))
+
+    def test_load_by_full_id(self, tmp_path):
+        full_id = "7a3b9c2d1e4f56a8b0c3d7e9f1a24b6c"
+        self._write_session(tmp_path, full_id)
+        repl, original, module = self._make_repl_with_sessions_dir(tmp_path)
+        try:
+            assert repl._load_session(full_id)
+            assert repl._session_id == full_id
+            assert len(repl._shared_conversation) == 2
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_load_by_short_prefix(self, tmp_path):
+        full_id = "7a3b9c2d1e4f56a8b0c3d7e9f1a24b6c"
+        self._write_session(tmp_path, full_id)
+        repl, original, module = self._make_repl_with_sessions_dir(tmp_path)
+        try:
+            assert repl._load_session("7a3b9c2d1e4f")
+            assert repl._session_id == full_id
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_ambiguous_prefix_fails(self, tmp_path):
+        self._write_session(tmp_path, "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
+        self._write_session(tmp_path, "e5f6a7b8c9d01a2b3c4d5e6f7a8b9c0d")
+        repl, original, module = self._make_repl_with_sessions_dir(tmp_path)
+        try:
+            assert not repl._load_session("e5f6a7b8c9d0")
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_nonexistent_prefix_fails(self, tmp_path):
+        self._write_session(tmp_path, "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7")
+        repl, original, module = self._make_repl_with_sessions_dir(tmp_path)
+        try:
+            assert not repl._load_session("ff00112233aa")
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_loaded_session_restores_full_id(self, tmp_path):
+        full_id = "f4dcf1a5f6f3429e8b7c1d2e3a4f5b6c"
+        self._write_session(tmp_path, full_id)
+        repl, original, module = self._make_repl_with_sessions_dir(tmp_path)
+        try:
+            assert repl._load_session("f4dcf1a5f6f3")
+            assert repl._session_id == full_id
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_serialize_produces_clean_format(self, tmp_path):
+        """Saved messages use short type names and only essential fields."""
+        from repl import HarnessApp
+
+        entry = HarnessApp._serialize_message(HumanMessage(content="hello"))
+        assert entry == {"type": "human", "content": "hello"}
+
+        entry = HarnessApp._serialize_message(
+            AIMessageChunk(
+                content="answer",
+                additional_kwargs={"reasoning_content": "thinking"},
+                tool_calls=[{"name": "bash", "args": {}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"}],
+            )
+        )
+        assert entry["type"] == "ai"
+        assert entry["content"] == "answer"
+        assert entry["tool_calls"][0]["name"] == "bash"
+        assert entry["tool_calls"][0]["id"] == "call_10_zA1bC3dE5fG7hI9jK1lM3nO"
+        assert entry["additional_kwargs"]["reasoning_content"] == "thinking"
+        assert "response_metadata" not in entry
+        assert "usage_metadata" not in entry
+        assert "invalid_tool_calls" not in entry
+
+    def test_round_trip_save_and_load(self, tmp_path):
+        """Messages survive a save/load round trip with correct types and content."""
+        import repl as repl_module
+        from langchain_core.messages import ToolMessage
+
+        original_sessions_dir = repl_module.SESSIONS_DIR
+        repl_module.SESSIONS_DIR = tmp_path
+        try:
+            repl = make_repl_for_testing()
+            repl._session_id = "f8a9b0c1d2e34f4a5b6c7d8e9f0a1b2c"
+            repl._agent = "main"
+            repl._orchestrators = {}
+            repl._shared_conversation = [
+                HumanMessage(content="what is 2+2?"),
+                AIMessageChunk(
+                    content="",
+                    tool_calls=[{"name": "bash", "args": {"command": "echo 4"}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"}],
+                ),
+                ToolMessage(content="4", tool_call_id="call_10_zA1bC3dE5fG7hI9jK1lM3nO"),
+                AIMessageChunk(content="The answer is 4."),
+            ]
+
+            repl._save_session()
+
+            saved = json.loads((tmp_path / f"{repl._session_id}.json").read_text())
+            types = [message["type"] for message in saved["messages"]]
+            assert types == ["human", "ai", "tool", "ai"]
+
+            repl._shared_conversation.clear()
+            assert repl._load_session(repl._session_id)
+            assert len(repl._shared_conversation) == 4
+            assert repl._shared_conversation[0].content == "what is 2+2?"
+            assert repl._shared_conversation[2].content == "4"
+            assert repl._shared_conversation[3].content == "The answer is 4."
+        finally:
+            repl_module.SESSIONS_DIR = original_sessions_dir
+
+
+class TestCancellationAndRecovery:
+    """Tests for aborting mid-stream and recovering on the next query."""
+
+    @pytest.mark.asyncio
+    async def test_cancellation_during_llm_streaming_leaves_conversation_usable(self):
+        """Aborting while the LLM is streaming text should leave the conversation
+        in a state where the next query still works."""
+        conversation = []
+        orchestrator, mock_llm = make_orchestrator(
+            [
+                [make_text_chunk("partial "), make_text_chunk("response")],
+                [make_text_chunk("second answer")],
+            ],
+            conversation=conversation,
+        )
+
+        events = []
+        async for event in orchestrator.stream("first query"):
+            events.append(event)
+            if event.type == StreamEvent.Type.TEXT_CHUNK:
+                orchestrator._abort_event.set()
+
+        done_event = events_of_type(events, StreamEvent.Type.DONE)[0]
+        assert done_event.data["stop_reason"] == "cancelled"
+
+        second_events = await collect_events(orchestrator, "second query")
+        second_done = events_of_type(second_events, StreamEvent.Type.DONE)[0]
+        assert second_done.data["stop_reason"] == "completed"
+        assert "second answer" in second_done.data["text"]
+
+    @pytest.mark.asyncio
+    async def test_cancellation_during_tool_execution_leaves_conversation_usable(self):
+        """Aborting while tools are being executed should not corrupt conversation state."""
+        conversation = []
+        orchestrator, mock_llm = make_orchestrator(
+            [
+                [
+                    make_text_chunk("I'll create tasks. "),
+                    make_tool_call_chunk(
+                        "write_tasks",
+                        {"tasks": [{"description": "task A"}]},
+                        "call_00_Xk9mR2vL4wN8pQ1sT3uY5zA",
+                    ),
+                ],
+                [make_text_chunk("recovered")],
+            ],
+            conversation=conversation,
+        )
+
+        events = []
+        async for event in orchestrator.stream("do work"):
+            events.append(event)
+            if event.type == StreamEvent.Type.TASKS_UPDATED:
+                orchestrator._abort_event.set()
+
+        done_event = events_of_type(events, StreamEvent.Type.DONE)[0]
+        assert done_event.data["stop_reason"] == "cancelled"
+
+        second_events = await collect_events(orchestrator, "continue")
+        second_done = events_of_type(second_events, StreamEvent.Type.DONE)[0]
+        assert second_done.data["stop_reason"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_conversation_has_human_message_after_cancellation(self):
+        """Even after cancellation, the human message is in the conversation."""
+        conversation = []
+        orchestrator, mock_llm = make_orchestrator(
+            [
+                [make_text_chunk("response")],
+            ],
+            conversation=conversation,
+        )
+
+        orchestrator._abort_event.set()
+        await asyncio.sleep(0)
+        events = await collect_events(orchestrator, "my question")
+
+        human_messages = [
+            message for message in conversation
+            if isinstance(message, HumanMessage)
+        ]
+        assert len(human_messages) == 1
+        assert human_messages[0].content == "my question"
+
+    @pytest.mark.asyncio
+    async def test_multiple_cancellations_then_success(self):
+        """Multiple aborted queries followed by a successful one should all work."""
+        conversation = []
+        orchestrator, mock_llm = make_orchestrator(
+            [
+                [make_text_chunk("will be cancelled 1")],
+                [make_text_chunk("will be cancelled 2")],
+                [make_text_chunk("success")],
+            ],
+            conversation=conversation,
+        )
+
+        for query_number in range(1, 3):
+            events = []
+            async for event in orchestrator.stream(f"query {query_number}"):
+                events.append(event)
+                if event.type == StreamEvent.Type.STATUS:
+                    orchestrator._abort_event.set()
+
+        final_events = await collect_events(orchestrator, "final query")
+        final_done = events_of_type(final_events, StreamEvent.Type.DONE)[0]
+        assert final_done.data["stop_reason"] == "completed"
+        assert "success" in final_done.data["text"]
+
+
+class TestMultiTurnWithTools:
+    """Tests for complex multi-turn conversations with interleaved tool calls."""
+
+    @pytest.mark.asyncio
+    async def test_tool_calls_across_multiple_turns(self):
+        """Tool calls across multiple user queries accumulate correctly."""
+        conversation = []
+        orchestrator, mock_llm = make_orchestrator(
+            [
+                [
+                    make_tool_call_chunk(
+                        "write_tasks",
+                        {"tasks": [{"description": "from turn 1"}]},
+                        "call_03_hI5jK7lM9nO1pQ3rS5tU7vW",
+                    ),
+                ],
+                [make_text_chunk("Turn 1 done.")],
+                [
+                    make_tool_call_chunk(
+                        "update_tasks",
+                        {"updates": [{"task_id": "task-1", "status": "completed", "result": "done"}]},
+                        "call_04_xY1zA3bC5dE7fG9hI1jK3lM",
+                    ),
+                ],
+                [make_text_chunk("Turn 2 done.")],
+            ],
+            conversation=conversation,
+        )
+
+        events_1 = await collect_events(orchestrator, "create a task")
+        done_1 = events_of_type(events_1, StreamEvent.Type.DONE)[0]
+        assert done_1.data["stop_reason"] == "completed"
+
+        events_2 = await collect_events(orchestrator, "complete the task")
+        done_2 = events_of_type(events_2, StreamEvent.Type.DONE)[0]
+        assert done_2.data["stop_reason"] == "completed"
+
+        assert len(conversation) >= 4
+
+    @pytest.mark.asyncio
+    async def test_multiple_tool_types_in_single_turn(self):
+        """A turn with write_tasks + update_tasks produces correct events."""
+        orchestrator, mock_llm = make_orchestrator([
+            [
+                AIMessageChunk(
+                    content="Planning and updating.",
+                    tool_calls=[
+                        {"name": "write_tasks", "args": {"tasks": [{"description": "X"}]}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"},
+                        {"name": "update_tasks", "args": {"updates": [{"task_id": "task-1", "status": "in_progress"}]}, "id": "call_11_pQ5rS7tU9vW1xY3zA5bC7dE"},
+                    ],
+                ),
+            ],
+            [make_text_chunk("All done.")],
+        ])
+        events = await collect_events(orchestrator, "do both")
+
+        tool_calls = events_of_type(events, StreamEvent.Type.TOOL_CALL)
+        assert len(tool_calls) == 2
+        assert tool_calls[0].data["name"] == "write_tasks"
+        assert tool_calls[1].data["name"] == "update_tasks"
+
+        task_updates = events_of_type(events, StreamEvent.Type.TASKS_UPDATED)
+        assert len(task_updates) == 2
+
+    @pytest.mark.asyncio
+    async def test_denied_command_does_not_corrupt_next_turn(self):
+        """A denied command in one turn doesn't break the next turn."""
+        agent_config = make_agent_configuration()
+        agent_config.tools = ToolsConfiguration(
+            bash=BashToolConfiguration(permissions={"sudo *": "deny"}),
+            spawn_agent=SpawnAgentToolConfiguration(enabled=False),
+        )
+
+        conversation = []
+        orchestrator, mock_llm = make_orchestrator(
+            [
+                [
+                    make_tool_call_chunk(
+                        "bash",
+                        {"command": "sudo rm -rf /", "read_only": False, "risk": "high"},
+                        "call_02_rS1tU3vW5xY7zA9bC1dE3fG",
+                    ),
+                ],
+                [make_text_chunk("Sorry, I can't do that.")],
+                [make_text_chunk("Here's a safe answer.")],
+            ],
+            agent_configuration=agent_config,
+            conversation=conversation,
+        )
+
+        events_1 = await collect_events(orchestrator, "delete everything")
+        error_events = events_of_type(events_1, StreamEvent.Type.ERROR)
+        assert any("not permitted" in event.data.get("message", "") for event in error_events)
+
+        events_2 = await collect_events(orchestrator, "try something safe")
+        done_2 = events_of_type(events_2, StreamEvent.Type.DONE)[0]
+        assert done_2.data["stop_reason"] == "completed"
+        assert "safe answer" in done_2.data["text"]
+
+
+class TestResumeConsistency:
+    """Tests verifying that save → load → display produces output matching the live session."""
+
+    def _make_repl_with_tmp_sessions(self, tmp_path):
+        import repl as repl_module
+        original = repl_module.SESSIONS_DIR
+        repl_module.SESSIONS_DIR = tmp_path
+        return original, repl_module
+
+    def _collect_display_output(self, repl) -> str:
+        repl._printed.clear()
+        repl._display_conversation_history()
+        return printed_plain(repl)
+
+    def test_simple_conversation_round_trip_display(self, tmp_path):
+        """A simple human→ai conversation displays identically after round-trip."""
+        original, module = self._make_repl_with_tmp_sessions(tmp_path)
+        try:
+            repl = make_repl_for_testing()
+            repl._session_id = "a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d"
+            repl._agent = "main"
+            repl._orchestrators = {}
+            repl._shared_conversation = [
+                HumanMessage(content="hello"),
+                AIMessageChunk(content="Hi there!"),
+            ]
+
+            repl._save_session()
+            original_output = self._collect_display_output(repl)
+
+            repl._shared_conversation.clear()
+            repl._printed.clear()
+            assert repl._load_session(repl._session_id)
+            resumed_output = self._collect_display_output(repl)
+
+            assert original_output == resumed_output
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_tool_call_round_trip_display(self, tmp_path):
+        """Tool calls with labels display identically after round-trip."""
+        from langchain_core.messages import ToolMessage
+        original, module = self._make_repl_with_tmp_sessions(tmp_path)
+        try:
+            repl = make_repl_for_testing()
+            repl._session_id = "d6e7f8a9b0c14d2e3f4a5b6c7d8e9f0a"
+            repl._agent = "main"
+            repl._orchestrators = {}
+            repl._shared_conversation = [
+                HumanMessage(content="search news"),
+                AIMessageChunk(
+                    content="Searching.",
+                    tool_calls=[
+                        {"name": "web_search", "args": {"query": "news"}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"},
+                        {"name": "bash", "args": {"command": "echo test"}, "id": "call_11_pQ5rS7tU9vW1xY3zA5bC7dE"},
+                    ],
+                ),
+                ToolMessage(content='{"results": []}', tool_call_id="call_10_zA1bC3dE5fG7hI9jK1lM3nO"),
+                ToolMessage(content='{"output": "test"}', tool_call_id="call_11_pQ5rS7tU9vW1xY3zA5bC7dE"),
+                AIMessageChunk(content="Here are the results."),
+            ]
+
+            repl._save_session()
+            original_output = self._collect_display_output(repl)
+
+            repl._shared_conversation.clear()
+            repl._printed.clear()
+            assert repl._load_session(repl._session_id)
+            resumed_output = self._collect_display_output(repl)
+
+            assert original_output == resumed_output
+
+            assert "tool: web_search" in resumed_output
+            assert "#1" in resumed_output
+            assert "tool: bash" in resumed_output
+            assert "#2" in resumed_output
+            assert "result (web_search)" in resumed_output
+            assert "result (bash)" in resumed_output
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_multi_turn_round_trip_display(self, tmp_path):
+        """A multi-turn conversation with tools displays identically after round-trip."""
+        from langchain_core.messages import ToolMessage
+        original, module = self._make_repl_with_tmp_sessions(tmp_path)
+        try:
+            repl = make_repl_for_testing()
+            repl._session_id = "1b2c3d4e5f6a47b8c9d0e1f2a3b4c5d6"
+            repl._agent = "main"
+            repl._orchestrators = {}
+            repl._shared_conversation = [
+                HumanMessage(content="first question"),
+                AIMessageChunk(
+                    content="Let me check.",
+                    tool_calls=[{"name": "bash", "args": {"command": "ls"}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"}],
+                ),
+                ToolMessage(content="file.txt", tool_call_id="call_10_zA1bC3dE5fG7hI9jK1lM3nO"),
+                AIMessageChunk(content="Found file.txt."),
+                HumanMessage(content="second question"),
+                AIMessageChunk(
+                    content="",
+                    tool_calls=[{"name": "bash", "args": {"command": "cat file.txt"}, "id": "call_11_pQ5rS7tU9vW1xY3zA5bC7dE"}],
+                ),
+                ToolMessage(content="hello world", tool_call_id="call_11_pQ5rS7tU9vW1xY3zA5bC7dE"),
+                AIMessageChunk(content="The file contains hello world."),
+            ]
+
+            repl._save_session()
+            original_output = self._collect_display_output(repl)
+
+            repl._shared_conversation.clear()
+            repl._printed.clear()
+            assert repl._load_session(repl._session_id)
+            resumed_output = self._collect_display_output(repl)
+
+            assert original_output == resumed_output
+
+            assert "first question" in resumed_output
+            assert "second question" in resumed_output
+            assert "#1" in resumed_output
+            assert "#2" in resumed_output
+            assert "result (bash)" in resumed_output
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_cancelled_session_round_trip(self, tmp_path):
+        """A session saved after cancellation loads and displays correctly."""
+        original, module = self._make_repl_with_tmp_sessions(tmp_path)
+        try:
+            repl = make_repl_for_testing()
+            repl._session_id = "e7f8a9b0c1d24e3f4a5b6c7d8e9f0a1b"
+            repl._agent = "main"
+            repl._orchestrators = {}
+            repl._shared_conversation = [
+                HumanMessage(content="do something"),
+                AIMessageChunk(
+                    content="Starting.",
+                    tool_calls=[{"name": "bash", "args": {"command": "sleep 60"}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"}],
+                ),
+                SystemMessage(content=json.dumps({"type": "cancelled"})),
+                HumanMessage(content="try again"),
+                AIMessageChunk(content="Here you go."),
+            ]
+
+            repl._save_session()
+            original_output = self._collect_display_output(repl)
+
+            repl._shared_conversation.clear()
+            repl._printed.clear()
+            assert repl._load_session(repl._session_id)
+            resumed_output = self._collect_display_output(repl)
+
+            assert original_output == resumed_output
+            assert "do something" in resumed_output
+            assert "cancelled" in resumed_output
+            assert "try again" in resumed_output
+            assert "tool: bash" in resumed_output
+        finally:
+            module.SESSIONS_DIR = original
+
+    def test_label_numbering_consistent_across_turns(self, tmp_path):
+        """Tool call labels in a multi-turn session are numbered sequentially across turns."""
+        from langchain_core.messages import ToolMessage
+        original, module = self._make_repl_with_tmp_sessions(tmp_path)
+        try:
+            repl = make_repl_for_testing()
+            repl._session_id = "2c3d4e5f6a7b48c9d0e1f2a3b4c5d6e7"
+            repl._agent = "main"
+            repl._orchestrators = {}
+            repl._shared_conversation = [
+                HumanMessage(content="turn 1"),
+                AIMessageChunk(
+                    content="",
+                    tool_calls=[{"name": "bash", "args": {"command": "echo 1"}, "id": "call_10_zA1bC3dE5fG7hI9jK1lM3nO"}],
+                ),
+                ToolMessage(content="1", tool_call_id="call_10_zA1bC3dE5fG7hI9jK1lM3nO"),
+                AIMessageChunk(content="Got 1."),
+                HumanMessage(content="turn 2"),
+                AIMessageChunk(
+                    content="",
+                    tool_calls=[{"name": "bash", "args": {"command": "echo 2"}, "id": "call_11_pQ5rS7tU9vW1xY3zA5bC7dE"}],
+                ),
+                ToolMessage(content="2", tool_call_id="call_11_pQ5rS7tU9vW1xY3zA5bC7dE"),
+                AIMessageChunk(content="Got 2."),
+                HumanMessage(content="turn 3"),
+                AIMessageChunk(
+                    content="",
+                    tool_calls=[
+                        {"name": "bash", "args": {"command": "echo 3"}, "id": "call_12_fG9hI1jK3lM5nO7pQ9rS1tU"},
+                        {"name": "bash", "args": {"command": "echo 4"}, "id": "call_13_vW3xY5zA7bC9dE1fG3hI5jK"},
+                    ],
+                ),
+                ToolMessage(content="3", tool_call_id="call_12_fG9hI1jK3lM5nO7pQ9rS1tU"),
+                ToolMessage(content="4", tool_call_id="call_13_vW3xY5zA7bC9dE1fG3hI5jK"),
+                AIMessageChunk(content="Got 3 and 4."),
+            ]
+
+            repl._save_session()
+            repl._shared_conversation.clear()
+            assert repl._load_session(repl._session_id)
+
+            repl._printed.clear()
+            repl._display_conversation_history()
+            output = printed_plain(repl)
+
+            assert "#1" in output
+            assert "#2" in output
+            assert "#3" in output
+            assert "#4" in output
+
+            lines = output.split("\n")
+            tool_lines = [line for line in lines if "tool: bash" in line]
+            result_lines = [line for line in lines if "result (bash)" in line]
+            assert len(tool_lines) == 4
+            assert len(result_lines) == 4
+        finally:
+            module.SESSIONS_DIR = original
+
+
+class TestTextualTUI:
+    """Integration tests using Textual's run_test() to exercise the actual TUI."""
+
+    @pytest.mark.asyncio
+    async def test_app_mounts_with_all_widgets(self):
+        from repl import HarnessApp
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            assert app.query_one("#status") is not None
+            assert app.query_one("#output") is not None
+            assert app.query_one("#input") is not None
+
+    @pytest.mark.asyncio
+    async def test_status_bar_shows_agent_and_session(self):
+        from repl import HarnessApp
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            status = app.query_one("#status")
+            status_text = str(status.render())
+            assert app._agent in status_text
+            assert app._session_id[:12] in status_text
+
+    @pytest.mark.asyncio
+    async def test_slash_help_writes_to_output(self):
+        from repl import HarnessApp
+        from textual.widgets import Input, RichLog
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            input_widget = app.query_one("#input", Input)
+            input_widget.value = "/help"
+            await pilot.press("enter")
+            await pilot.pause()
+            output_log = app.query_one("#output", RichLog)
+            assert len(output_log.lines) > 0
+
+    @pytest.mark.asyncio
+    async def test_slash_agents_writes_to_output(self):
+        from repl import HarnessApp
+        from textual.widgets import Input, RichLog
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            input_widget = app.query_one("#input", Input)
+            input_widget.value = "/agents"
+            await pilot.press("enter")
+            await pilot.pause()
+            output_log = app.query_one("#output", RichLog)
+            assert len(output_log.lines) > 0
+
+    @pytest.mark.asyncio
+    async def test_input_clears_after_submission(self):
+        from repl import HarnessApp
+        from textual.widgets import Input
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            input_widget = app.query_one("#input", Input)
+            input_widget.value = "/help"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert input_widget.value == ""
+
+    @pytest.mark.asyncio
+    async def test_slash_switch_changes_agent(self):
+        from repl import HarnessApp
+        from textual.widgets import Input
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            original_agent = app._agent
+            target_agent = [a for a in app._agents if a != original_agent][0]
+            input_widget = app.query_one("#input", Input)
+            input_widget.value = f"/switch {target_agent}"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app._agent == target_agent
+
+    @pytest.mark.asyncio
+    async def test_slash_exit_closes_app(self):
+        from repl import HarnessApp
+        from textual.widgets import Input
+        app = HarnessApp()
+        async with app.run_test(size=(120, 30)) as pilot:
+            input_widget = app.query_one("#input", Input)
+            input_widget.value = "/exit"
+            await pilot.press("enter")
+            await pilot.pause()
