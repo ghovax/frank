@@ -2,7 +2,7 @@
 
 import { Box, Button, Code, Flex, HStack, Text } from "@chakra-ui/react";
 import { useEffect, useRef } from "react";
-import { LuTerminal } from "react-icons/lu";
+import { LuNetwork, LuTerminal } from "react-icons/lu";
 import type { ChatMessage } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
@@ -12,6 +12,7 @@ import { ThinkingIndicator } from "./thinking-indicator";
 interface ChatMessageProps {
   message: ChatMessage;
   onPermission?: (requestId: string, decision: "allow" | "deny") => void;
+  onOpenAgents?: (orchestrationId: string) => void;
 }
 
 function PermissionBox({ message, onPermission }: { message: ChatMessage; onPermission?: ChatMessageProps["onPermission"] }) {
@@ -84,7 +85,7 @@ function PermissionBox({ message, onPermission }: { message: ChatMessage; onPerm
   );
 }
 
-export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
+export function ChatMessageItem({ message, onPermission, onOpenAgents }: ChatMessageProps) {
   switch (message.role) {
     case "user":
       return (
@@ -106,7 +107,8 @@ export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
     case "thinking":
       return <ThinkingIndicator content={message.content} />;
 
-    case "tool_call":
+    case "tool_call": {
+      const orchestrationId = message.meta?.orchestrationId as string | undefined;
       return (
         <Box alignSelf="flex-start" w="100%">
           <ToolCall
@@ -114,8 +116,24 @@ export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
             arguments={message.meta?.arguments as Record<string, unknown> | undefined}
             sequenceNumber={message.meta?.sequenceNumber as number | undefined}
           />
+          {orchestrationId && onOpenAgents && (
+            <Button
+              size="xs"
+              variant="ghost"
+              colorPalette="orange"
+              borderRadius="sm"
+              mt={1}
+              h="24px"
+              fontSize="xs"
+              onClick={() => onOpenAgents(orchestrationId)}
+            >
+              <LuNetwork size={12} />
+              View agents
+            </Button>
+          )}
         </Box>
       );
+    }
 
     case "tool_result":
       return (

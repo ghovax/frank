@@ -86,6 +86,7 @@ export type StreamEventType =
   | "tasks_updated"
   | "error"
   | "denied_injection"
+  | "orchestration_started"
   | "agent_text_chunk"
   | "agent_tool_call"
   | "agent_thinking"

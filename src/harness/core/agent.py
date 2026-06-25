@@ -86,6 +86,7 @@ class StreamEvent:
         TASKS_UPDATED = "tasks_updated"
         ERROR = "error"
         DENIED_INJECTION = "denied_injection"
+        ORCHESTRATION_STARTED = "orchestration_started"
         AGENT_TEXT_CHUNK = "agent_text_chunk"
         AGENT_TOOL_CALL = "agent_tool_call"
         AGENT_THINKING = "agent_thinking"
@@ -795,12 +796,26 @@ class AgentOrchestrator:
             self._orchestration_graphs[orchestration_id] = graph
             self._orchestration_configs[orchestration_id] = config
 
+            # Announce the orchestration so the UI can group all of its sub-agent
+            # activity into a dedicated panel and link it back to this tool call.
+            yield StreamEvent(
+                StreamEvent.Type.ORCHESTRATION_STARTED,
+                orchestration_id=orchestration_id,
+                tool_call_id=tool_call_identifier,
+                justification=tool_arguments.get("justification", ""),
+                steps=[{"id": step["id"], "agent": step["agent"]} for step in steps],
+            )
+
             initial_state: OrchestrationState = {"steps": steps, "results": []}
             orchestration_results: list[dict] = []
 
             async for mode, data in graph.astream(initial_state, config, stream_mode=["updates", "custom"]):
                 if mode == "custom":
                     custom_type = data.pop("type", None)
+                    # Every sub-agent event carries its orchestration so the UI
+                    # can route it to the right group/step without ambiguity
+                    # when several orchestrations run in one session.
+                    data["orchestration_id"] = orchestration_id
                     if custom_type == "agent_text_chunk":
                         # Only incremental chunks are displayed. The final
                         # ``agent_result`` carries the full text again and must
@@ -818,7 +833,12 @@ class AgentOrchestrator:
                             new_results = state_update["results"]
                             orchestration_results.extend(new_results)
                             result_id = new_results[-1]["id"]
-                            yield StreamEvent(StreamEvent.Type.AGENT_DONE, agent_id=result_id, step_id=result_id)
+                            yield StreamEvent(
+                                StreamEvent.Type.AGENT_DONE,
+                                agent_id=result_id,
+                                step_id=result_id,
+                                orchestration_id=orchestration_id,
+                            )
 
             self._record_event("orchestration", {
                 "orchestration_id": orchestration_id, "thread_id": orchestration_id,

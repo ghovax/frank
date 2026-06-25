@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
-from sqlalchemy import Column, Integer, String, Text, create_engine, func
+from sqlalchemy import Column, Integer, String, Text, create_engine, func, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from langchain_openai import ChatOpenAI
@@ -78,9 +78,32 @@ class Orchestration(Base):
     created_at = Column(String, nullable=False)
 
 
+def _ensure_schema(engine) -> None:
+    """Add columns that exist on the models but are missing from an older
+    database. ``create_all`` only creates absent tables — it never alters
+    existing ones — so a database created before a column was introduced (e.g.
+    ``sessions.title``) would otherwise raise OperationalError on every query
+    that references it, breaking ``/sessions`` and aborting the chat stream.
+    """
+    inspector = inspect(engine)
+    for table in Base.metadata.sorted_tables:
+        if not inspector.has_table(table.name):
+            continue
+        existing_columns = {column["name"] for column in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in existing_columns:
+                continue
+            column_type = column.type.compile(engine.dialect)
+            with engine.begin() as connection:
+                connection.execute(
+                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}')
+                )
+
+
 def create_database(database_path: str = "harness.db") -> tuple:
     engine = create_engine(f"sqlite:///{database_path}")
     Base.metadata.create_all(engine)
+    _ensure_schema(engine)
     session_factory = sessionmaker(bind=engine)
     return engine, session_factory
 
@@ -472,6 +495,8 @@ async def chat(request: ChatRequest):
     async def event_generator():
         pending_text = ""
         pending_thinking = ""
+        # Keyed by "orchestration_id::step_id" so steps from different
+        # orchestrations never share a buffer.
         pending_agent_buffers: dict[str, dict[str, str]] = {}
         database_session = get_database()
         try:
@@ -495,16 +520,17 @@ async def chat(request: ChatRequest):
                 record_stream_event(session_id, "thinking", {"text": pending_thinking}, sequence_number)
                 pending_thinking = ""
 
-        def flush_agent(step_id: str):
+        def flush_agent(orchestration_id: str, step_id: str):
             nonlocal sequence_number
-            buffer = pending_agent_buffers.pop(step_id, None)
+            buffer = pending_agent_buffers.pop(f"{orchestration_id}::{step_id}", None)
             if buffer:
+                common = {"step_id": step_id, "orchestration_id": orchestration_id}
                 if buffer.get("text"):
                     sequence_number += 1
-                    record_stream_event(session_id, "agent_text_chunk", {"text": buffer["text"], "step_id": step_id}, sequence_number)
+                    record_stream_event(session_id, "agent_text_chunk", {"text": buffer["text"], **common}, sequence_number)
                 if buffer.get("thinking"):
                     sequence_number += 1
-                    record_stream_event(session_id, "agent_thinking", {"text": buffer["thinking"], "step_id": step_id}, sequence_number)
+                    record_stream_event(session_id, "agent_thinking", {"text": buffer["thinking"], **common}, sequence_number)
 
         try:
             yield {
@@ -575,28 +601,44 @@ async def chat(request: ChatRequest):
                                     database_session.commit()
                             finally:
                                 database_session.close()
+                elif event.type == StreamEvent.Type.ORCHESTRATION_STARTED:
+                    flush_main()
+                    sequence_number += 1
+                    record_stream_event(session_id, "orchestration_started", event.data, sequence_number)
                 elif event.type == StreamEvent.Type.AGENT_TEXT_CHUNK:
-                    step_id = event.data.get("step_id", "")
-                    if step_id not in pending_agent_buffers:
-                        pending_agent_buffers[step_id] = {"text": "", "thinking": ""}
-                    pending_agent_buffers[step_id]["text"] += event.data.get("text", "")
+                    key = f"{event.data.get('orchestration_id', '')}::{event.data.get('step_id', '')}"
+                    if key not in pending_agent_buffers:
+                        pending_agent_buffers[key] = {"text": "", "thinking": ""}
+                    pending_agent_buffers[key]["text"] += event.data.get("text", "")
                 elif event.type == StreamEvent.Type.AGENT_THINKING:
-                    step_id = event.data.get("step_id", "")
-                    if step_id not in pending_agent_buffers:
-                        pending_agent_buffers[step_id] = {"text": "", "thinking": ""}
-                    pending_agent_buffers[step_id]["thinking"] += event.data.get("text", "")
+                    key = f"{event.data.get('orchestration_id', '')}::{event.data.get('step_id', '')}"
+                    if key not in pending_agent_buffers:
+                        pending_agent_buffers[key] = {"text": "", "thinking": ""}
+                    pending_agent_buffers[key]["thinking"] += event.data.get("text", "")
                 elif event.type == StreamEvent.Type.AGENT_TOOL_CALL:
-                    flush_agent(event.data.get("step_id", ""))
+                    flush_agent(event.data.get("orchestration_id", ""), event.data.get("step_id", ""))
                     sequence_number += 1
                     record_stream_event(session_id, "agent_tool_call", event.data, sequence_number)
                 elif event.type == StreamEvent.Type.AGENT_DONE:
-                    flush_agent(event.data.get("step_id", ""))
+                    flush_agent(event.data.get("orchestration_id", ""), event.data.get("step_id", ""))
                     sequence_number += 1
                     record_stream_event(session_id, "agent_done", event.data, sequence_number)
 
                 yield {"event": event.type.value, "data": event.to_json()}
         except GeneratorExit:
             pass
+        except Exception as exception:
+            # Surface the failure to the client as a normal error event and a
+            # terminal done event, so the EventSource closes gracefully instead
+            # of the browser seeing ERR_INCOMPLETE_CHUNKED_ENCODING.
+            yield {
+                "event": "error",
+                "data": json.dumps({"type": "error", "message": f"Server error: {exception}"}),
+            }
+            yield {
+                "event": "done",
+                "data": json.dumps({"type": "done", "stop_reason": "error"}),
+            }
 
     return EventSourceResponse(event_generator())
 

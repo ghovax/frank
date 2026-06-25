@@ -1,4 +1,4 @@
-import type { IconType } from "react-icons/lu";
+import type { IconType } from "react-icons";
 import {
   LuGlobe,
   LuTerminal,

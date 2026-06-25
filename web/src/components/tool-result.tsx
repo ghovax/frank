@@ -2,11 +2,9 @@
 
 import { Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { LuChevronRight, LuChevronDown } from "react-icons/lu";
-import { MarkdownContent } from "./markdown-content";
 import { getToolResultDisplay } from "@/lib/tool-display";
+import { ToolResultView } from "./tool-views";
 
 interface ToolResultProps {
   name?: string;
@@ -14,21 +12,8 @@ interface ToolResultProps {
   sequenceNumber?: number;
 }
 
-function isJson(text: string): boolean {
-  try {
-    const parsed = JSON.parse(text);
-    return typeof parsed === "object" && parsed !== null;
-  } catch {
-    return false;
-  }
-}
-
 export function ToolResult({ name, content, sequenceNumber }: ToolResultProps) {
   const [open, setOpen] = useState(false);
-  const contentIsJson = isJson(content);
-  const formattedContent = contentIsJson
-    ? JSON.stringify(JSON.parse(content), null, 2)
-    : content;
 
   const { icon: Icon, iconColor, label } = getToolResultDisplay(name, content);
 
@@ -61,25 +46,8 @@ export function ToolResult({ name, content, sequenceNumber }: ToolResultProps) {
       </Flex>
 
       {open && (
-        <Box maxH="250px" overflowY="auto" borderTop="1px solid" borderColor="border" fontSize="xs">
-          {contentIsJson ? (
-            <SyntaxHighlighter
-              style={oneDark}
-              language="json"
-              PreTag="div"
-              customStyle={{
-                margin: 0,
-                borderRadius: 0,
-                fontSize: "1em",
-              }}
-            >
-              {formattedContent}
-            </SyntaxHighlighter>
-          ) : (
-            <Box px={2} py={1.5} fontSize="sm">
-              <MarkdownContent content={formattedContent} />
-            </Box>
-          )}
+        <Box maxH="320px" overflowY="auto" borderTop="1px solid" borderColor="border" px={2} py={2}>
+          <ToolResultView name={name ?? ""} content={content} />
         </Box>
       )}
     </Box>

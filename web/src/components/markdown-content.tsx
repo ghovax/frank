@@ -33,16 +33,19 @@ const markdownComponents: Components = {
     if (isDisplayMathParagraph(node)) {
       return <Box py={2.5} textAlign="center" fontSize="sm">{children}</Box>;
     }
-    return <Text mb={0} fontSize="sm" lineHeight="base" _notLast={{ mb: 1 }}>{children}</Text>;
+    return <Text fontSize="sm" lineHeight="1.65" mb={0} _notLast={{ mb: 2.5 }}>{children}</Text>;
   },
   h1({ children }) {
-    return <Heading as="h1" size="md" mb={1.5} mt={2} borderBottom="1px solid" borderColor="border" pb={1}>{children}</Heading>;
+    return <Heading as="h1" fontSize="lg" fontWeight="bold" lineHeight="1.3" mt={5} mb={2} _first={{ mt: 0 }}>{children}</Heading>;
   },
   h2({ children }) {
-    return <Heading as="h2" size="sm" mb={1} mt={2} borderBottom="1px solid" borderColor="border" pb={0.5}>{children}</Heading>;
+    return <Heading as="h2" fontSize="md" fontWeight="bold" lineHeight="1.3" mt={4} mb={1.5} _first={{ mt: 0 }}>{children}</Heading>;
   },
   h3({ children }) {
-    return <Heading as="h3" fontSize="sm" fontWeight="bold" mb={1} mt={1.5}>{children}</Heading>;
+    return <Heading as="h3" fontSize="sm" fontWeight="bold" lineHeight="1.4" mt={3} mb={1} _first={{ mt: 0 }}>{children}</Heading>;
+  },
+  h4({ children }) {
+    return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted" mt={2.5} mb={1} _first={{ mt: 0 }}>{children}</Heading>;
   },
   a({ href, children }) {
     return (
@@ -52,13 +55,13 @@ const markdownComponents: Components = {
     );
   },
   ul({ children }) {
-    return <Box as="ul" pl={5} mb={1} fontSize="sm" listStyleType="disc">{children}</Box>;
+    return <Box as="ul" pl={5} mb={2.5} fontSize="sm" listStyleType="disc" lineHeight="1.5">{children}</Box>;
   },
   ol({ children }) {
-    return <Box as="ol" pl={5} mb={1} fontSize="sm" listStyleType="decimal">{children}</Box>;
+    return <Box as="ol" pl={5} mb={2.5} fontSize="sm" listStyleType="decimal" lineHeight="1.5">{children}</Box>;
   },
   li({ children }) {
-    return <Box as="li" mb={0.5} fontSize="sm" display="list-item">{children}</Box>;
+    return <Box as="li" mb={0.5} fontSize="sm" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
   },
   blockquote({ children }) {
     return (
@@ -90,7 +93,7 @@ const markdownComponents: Components = {
   },
   table({ children }) {
     return (
-      <Box my={1} borderRadius="sm" border="1px solid" borderColor="border" overflow="hidden">
+      <Box my={2.5} borderRadius="md" border="1px solid" borderColor="border" overflow="hidden">
         <Box overflowX="auto">
           <Box as="table" w="100%" fontSize="xs" borderCollapse="collapse">
             {children}
@@ -100,24 +103,24 @@ const markdownComponents: Components = {
     );
   },
   tr({ children }) {
-    return <Box as="tr" _even={{ bg: "bg.muted" }}>{children}</Box>;
+    return <Box as="tr" _notLast={{ borderBottom: "1px solid", borderColor: "border" }}>{children}</Box>;
   },
   th({ children }) {
     return (
-      <Box as="th" textAlign="left" px={2} py={1} fontWeight="bold" bg="bg.emphasized" color="fg">
+      <Box as="th" textAlign="left" px={2.5} py={1.5} fontWeight="semibold" bg="bg.emphasized" color="fg" whiteSpace="nowrap">
         {children}
       </Box>
     );
   },
   td({ children }) {
     return (
-      <Box as="td" px={2} py={1}>
+      <Box as="td" px={2.5} py={1.5} verticalAlign="top">
         {children}
       </Box>
     );
   },
   hr() {
-    return <Box as="hr" my={2} borderColor="border" />;
+    return <Box as="hr" my={4} border="none" borderTop="1px solid" borderColor="border" opacity={0.6} />;
   },
   strong({ children }) {
     return <Text as="strong" fontWeight="bold">{children}</Text>;
