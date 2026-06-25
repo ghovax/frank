@@ -45,7 +45,7 @@ function StepCard({ step }: { step: AgentStep }) {
               userSelect="none"
             >
               {thinkingOpen ? <LuChevronDown size={11} /> : <LuChevronRight size={11} />}
-              <Text fontSize="11px" fontWeight="medium">Reasoning</Text>
+              <Text fontSize="xs" fontWeight="medium">Reasoning</Text>
             </Flex>
             {thinkingOpen && (
               <Box mt={1} pl={3} borderLeft="2px solid" borderColor="border" color="fg.muted" fontSize="xs" whiteSpace="pre-wrap">

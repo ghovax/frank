@@ -100,9 +100,9 @@ function OrchestrateCallView({ args }: { args: Record<string, unknown> }) {
           <Card key={asString(step.id) || index}>
             <Flex align="center" gap={2} mb={1}>
               <Pill colorPalette="orange">{asString(step.agent)}</Pill>
-              <Text fontSize="11px" color="fg.muted">{asString(step.id)}</Text>
+              <Text fontSize="xs" color="fg.muted">{asString(step.id)}</Text>
               {dependencies.length > 0 && (
-                <Text fontSize="10px" color="fg.subtle">depends on {dependencies.join(", ")}</Text>
+                <Text fontSize="2xs" color="fg.subtle">depends on {dependencies.join(", ")}</Text>
               )}
             </Flex>
             <Text fontSize="xs" whiteSpace="pre-wrap" color="fg.muted">{asString(step.prompt)}</Text>
@@ -123,7 +123,7 @@ function WriteTasksCallView({ args }: { args: Record<string, unknown> }) {
           <Card key={index}>
             <Text fontSize="xs">{asString(task.description)}</Text>
             {dependencies.length > 0 && (
-              <Text fontSize="10px" color="fg.subtle" mt={1}>depends on {dependencies.join(", ")}</Text>
+              <Text fontSize="2xs" color="fg.subtle" mt={1}>depends on {dependencies.join(", ")}</Text>
             )}
           </Card>
         );
@@ -139,7 +139,7 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
       {updates.map((update, index) => (
         <Card key={index}>
           <Flex align="center" gap={2}>
-            <Text fontSize="11px" color="fg.muted">{asString(update.task_id)}</Text>
+            <Text fontSize="xs" color="fg.muted">{asString(update.task_id)}</Text>
             <Pill colorPalette="blue">{asString(update.status)}</Pill>
           </Flex>
           {asString(update.result) && (
@@ -230,10 +230,10 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
         <Text fontSize="xs" fontWeight="medium">{title}</Text>
       )}
       {url && (
-        <Text fontSize="10px" color="fg.subtle" truncate>{url}</Text>
+        <Text fontSize="2xs" color="fg.subtle" truncate>{url}</Text>
       )}
       {date && (
-        <Text fontSize="10px" color="fg.subtle">{date}</Text>
+        <Text fontSize="2xs" color="fg.subtle">{date}</Text>
       )}
       {summary && (
         <Box mt={1}>
@@ -273,7 +273,7 @@ function OrchestrationResultView({ data }: { data: Record<string, unknown> }) {
           <Card key={asString(result.id) || index}>
             <Flex align="center" gap={2} mb={1}>
               <Pill colorPalette="orange">{asString(result.agent)}</Pill>
-              <Text fontSize="11px" color="fg.muted">{asString(result.id)}</Text>
+              <Text fontSize="xs" color="fg.muted">{asString(result.id)}</Text>
             </Flex>
             <MarkdownContent content={asString(result.output)} />
           </Card>

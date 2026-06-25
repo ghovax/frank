@@ -58,8 +58,8 @@ export function MonoBlock({ children, maxH = "260px" }: { children: ReactNode; m
     <Box
       as="pre"
       m={0}
-      fontFamily="mono"
-      fontSize="11px"
+      fontFamily="var(--app-font-mono)"
+      fontSize="xs"
       lineHeight="1.5"
       bg="bg.muted"
       border="1px solid"
@@ -132,11 +132,11 @@ export function Collapsible({
         onClick={() => setOpen((current) => !current)}
       >
         {open ? <LuChevronDown size={11} /> : <LuChevronRight size={11} />}
-        <Text fontSize="11px" fontWeight="medium">
+        <Text fontSize="xs" fontWeight="medium">
           {title}
         </Text>
         {count != null && (
-          <Text fontSize="10px" color="fg.subtle">
+          <Text fontSize="2xs" color="fg.subtle">
             ({count})
           </Text>
         )}

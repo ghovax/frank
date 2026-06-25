@@ -53,7 +53,7 @@ const markdownComponents: Components = {
   },
   a({ href, children }) {
     return (
-      <Link href={href} colorPalette="blue" fontSize="sm" target="_blank" rel="noopener noreferrer">
+      <Link href={href} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
         {children}
       </Link>
     );
@@ -88,9 +88,10 @@ const markdownComponents: Components = {
             customStyle={{
               margin: 0,
               borderRadius: "var(--chakra-radii-sm)",
-              fontSize: "0.75em",
+              fontFamily: "var(--app-font-mono)",
+              fontSize: "var(--chakra-font-sizes-sm)",
             }}
-            codeTagProps={{ style: { fontSize: "inherit" } }}
+            codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit" } }}
           >
             {codeString}
           </SyntaxHighlighter>
@@ -98,7 +99,11 @@ const markdownComponents: Components = {
       );
     }
 
-    return <Code fontSize="xs" px={1} bg="bg.subtle">{children}</Code>;
+    return (
+      <Code fontFamily="var(--app-font-mono)" fontSize="inherit" lineHeight="inherit" px={1} bg="bg.subtle">
+        {children}
+      </Code>
+    );
   },
   pre({ children }) {
     return <Box>{children}</Box>;
@@ -135,10 +140,10 @@ const markdownComponents: Components = {
     return <Box as="hr" border="none" borderTop="1px solid" borderColor="border" opacity={0.6} />;
   },
   strong({ children }) {
-    return <Text as="strong" fontWeight="bold">{children}</Text>;
+    return <Text as="strong" fontSize="inherit" lineHeight="inherit" fontWeight="bold">{children}</Text>;
   },
   em({ children }) {
-    return <Text as="em" fontStyle="italic">{children}</Text>;
+    return <Text as="em" fontSize="inherit" lineHeight="inherit" fontStyle="italic">{children}</Text>;
   },
 };
 
@@ -163,6 +168,13 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
         },
         "& li > p + p, & li > ul, & li > ol": {
           marginBlockStart: headingGap,
+        },
+        "& :not(pre) > code, & strong, & em, & a": {
+          fontSize: "inherit",
+          lineHeight: "inherit",
+        },
+        "& code, & pre, & kbd, & samp": {
+          fontFamily: "var(--app-font-mono)",
         },
       }}
     >

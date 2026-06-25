@@ -192,7 +192,7 @@ function HomeContent() {
                   <Text fontSize="xs" fontWeight="medium" truncate>
                     {entry.title}
                   </Text>
-                  <Text fontSize="11px" color="fg.subtle" truncate>
+                  <Text fontSize="xs" color="fg.subtle" truncate>
                     {entry.sessionId.slice(0, 8)}
                   </Text>
                 </Box>

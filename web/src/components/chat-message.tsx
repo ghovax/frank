@@ -6,7 +6,6 @@ import { LuNetwork, LuTerminal } from "react-icons/lu";
 import type { ChatMessage } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
-import { ToolResult } from "./tool-result";
 import { ThinkingIndicator } from "./thinking-indicator";
 
 interface ChatMessageProps {
@@ -62,19 +61,19 @@ function PermissionBox({ message, onPermission }: { message: ChatMessage; onPerm
           </Text>
         </Flex>
         <Box px={2} py={1.5} borderTop="1px solid" borderColor="border">
-          <Code display="block" fontSize="xs" p={1.5} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="sm">
+          <Code display="block" fontFamily="var(--app-font-mono)" fontSize="xs" p={1.5} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="sm">
             {message.content}
           </Code>
         </Box>
         {resolved ? (
-          <Box px={2} pb={1.5}>
+          <Box px={2} pb={2}>
             <Text fontSize="xs" fontWeight="bold" color={resolved === "allow" ? "green.fg" : "red.fg"}>
               {resolved === "allow" ? "Allowed" : "Denied"}
             </Text>
           </Box>
         ) : (
-          <Box borderTop="1px solid" borderColor="border" px={2} py={1.5}>
-            <HStack gap={1.5}>
+          <Box borderTop="1px solid" borderColor="border" px={2} py={2}>
+            <HStack gap={2}>
               <Button size="xs" colorPalette="green" onClick={() => onPermission?.(String(requestId), "allow")}>Allow</Button>
               <Button size="xs" colorPalette="red" onClick={() => onPermission?.(String(requestId), "deny")}>Deny</Button>
             </HStack>
@@ -135,17 +134,6 @@ export function ChatMessageItem({ message, onPermission, onOpenAgents }: ChatMes
         </Box>
       );
     }
-
-    case "tool_result":
-      return (
-        <Box alignSelf="flex-start" w="100%">
-          <ToolResult
-            name={message.meta?.name as string | undefined}
-            content={message.content}
-            sequenceNumber={message.meta?.sequenceNumber as number | undefined}
-          />
-        </Box>
-      );
 
     case "permission":
       return <PermissionBox message={message} onPermission={onPermission} />;

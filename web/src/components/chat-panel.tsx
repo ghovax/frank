@@ -173,7 +173,7 @@ export function ChatPanel({
               >
                 <Flex align="center" gap={1.5}>
                   <LuClock size={11} />
-                  <Text fontSize="11px" color="fg.subtle" fontWeight="medium">Queued</Text>
+                  <Text fontSize="xs" color="fg.subtle" fontWeight="medium">Queued</Text>
                 </Flex>
                 <Text fontSize="sm" color="fg.muted">{text}</Text>
               </Box>

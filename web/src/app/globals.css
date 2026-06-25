@@ -5,3 +5,19 @@ body {
   margin: 0;
   padding: 0;
 }
+
+body {
+  --app-font-sans: var(--font-sans), system-ui, sans-serif;
+  --app-font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-sans);
+  --chakra-fonts-body: var(--app-font-sans);
+  --chakra-fonts-heading: var(--app-font-sans);
+  --chakra-fonts-mono: var(--app-font-mono);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--app-font-mono);
+}

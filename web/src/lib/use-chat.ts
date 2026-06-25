@@ -16,7 +16,6 @@ export interface ChatMessage {
     | "user"
     | "assistant"
     | "tool_call"
-    | "tool_result"
     | "thinking"
     | "error"
     | "permission"
@@ -299,16 +298,6 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
             message.meta = { ...message.meta, status: "completed" };
           }
         }
-        messages.push({
-          id: `history-${messages.length}-${Math.random()}`,
-          role: "tool_result",
-          content:
-            typeof event.result === "string"
-              ? event.result
-              : JSON.stringify(event.result, null, 2),
-          timestamp: event.timestamp ?? fallbackTimestamp,
-          meta: { name: event.name, task_id: event.task_id, sequenceNumber: resultSequence },
-        });
         break;
       }
 
@@ -642,26 +631,13 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                 (event.task_id ? taskIdToSequenceRef.current.get(event.task_id) : undefined) ??
                 ++toolSequenceRef.current;
               flushSync(() => {
-                setMessages((current) => {
-                  const updated = current.map((message) =>
+                setMessages((current) =>
+                  current.map((message) =>
                     message.role === "tool_call" && message.meta?.sequenceNumber === resultSequence
                       ? { ...message, meta: { ...message.meta, status: "completed" } }
                       : message
-                  );
-                  return [
-                    ...updated,
-                    {
-                      id: `toolresult-${event.id ?? Date.now()}-${Math.random()}`,
-                      role: "tool_result",
-                      content:
-                        typeof event.result === "string"
-                          ? event.result
-                          : JSON.stringify(event.result, null, 2),
-                      timestamp: event.timestamp ?? new Date().toISOString(),
-                      meta: { name: event.name, task_id: event.task_id, sequenceNumber: resultSequence },
-                    },
-                  ];
-                });
+                  )
+                );
               });
               break;
             }

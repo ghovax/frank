@@ -66,8 +66,8 @@ export function ChatInput({
   const bypassCollection = useMemo(
     () => createListCollection({
       items: [
-        { label: "Default", value: "default" },
-        { label: "Bypass", value: "bypass" },
+        { label: "Default permissions", value: "default" },
+        { label: "Bypass permissions", value: "bypass" },
       ],
     }),
     []
@@ -134,21 +134,28 @@ export function ChatInput({
             if (details.value[0] === "default" && bypassPermissions) onToggleBypass();
           }}
           size="xs"
-          w="80px"
+          w="max-content"
+          minW="max-content"
+          maxW="none"
           flexShrink={0}
         >
-          <Select.Control>
+          <Select.Control w="max-content" minW="max-content" maxW="none">
             <Select.Trigger
+              w="max-content"
               borderRadius="sm"
               fontSize="xs"
               px={2}
+              pe={7}
               bg={bypassPermissions ? "red.subtle" : "bg"}
               border="1px solid"
               borderColor={bypassPermissions ? "red.muted" : "border"}
               colorPalette={bypassPermissions ? "red" : undefined}
+              minW="max-content"
+              maxW="none"
+              whiteSpace="nowrap"
               style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
             >
-              <Select.ValueText />
+              <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
             </Select.Trigger>
             <Select.IndicatorGroup>
               <Select.Indicator />
@@ -156,9 +163,9 @@ export function ChatInput({
           </Select.Control>
           <Portal>
             <Select.Positioner>
-              <Select.Content borderRadius="sm" minW="100px">
+              <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                 {bypassCollection.items.map((item) => (
-                  <Select.Item item={item} key={item.value}>
+                  <Select.Item item={item} key={item.value} whiteSpace="nowrap">
                     {item.label}
                     <Select.ItemIndicator />
                   </Select.Item>
@@ -177,20 +184,27 @@ export function ChatInput({
             if (details.value[0]) onAgentChange(details.value[0]);
           }}
           size="xs"
-          w="80px"
+          w="max-content"
+          minW="max-content"
+          maxW="none"
           flexShrink={0}
         >
-          <Select.Control>
+          <Select.Control w="max-content" minW="max-content" maxW="none">
             <Select.Trigger
+              w="max-content"
               borderRadius="sm"
               fontSize="xs"
               px={2}
+              pe={7}
               bg="bg"
               border="1px solid"
               borderColor="border"
+              minW="max-content"
+              maxW="none"
+              whiteSpace="nowrap"
               style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
             >
-              <Select.ValueText placeholder="Agent" />
+              <Select.ValueText placeholder="Agent" maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
             </Select.Trigger>
             <Select.IndicatorGroup>
               <Select.Indicator />
@@ -198,9 +212,9 @@ export function ChatInput({
           </Select.Control>
           <Portal>
             <Select.Positioner>
-              <Select.Content borderRadius="sm" minW="100px">
+              <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                 {agentCollection.items.map((item) => (
-                  <Select.Item item={item} key={item.value}>
+                  <Select.Item item={item} key={item.value} whiteSpace="nowrap">
                     {item.label}
                     <Select.ItemIndicator />
                   </Select.Item>
