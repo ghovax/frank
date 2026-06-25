@@ -16,10 +16,10 @@ const markdownComponents: Components = {
     return <Text mb={0} fontSize="sm" lineHeight="base" _notLast={{ mb: 1 }}>{children}</Text>;
   },
   h1({ children }) {
-    return <Heading as="h1" size="md" mb={1.5} mt={2}>{children}</Heading>;
+    return <Heading as="h1" size="md" mb={1.5} mt={2} borderBottom="1px solid" borderColor="border" pb={1}>{children}</Heading>;
   },
   h2({ children }) {
-    return <Heading as="h2" size="sm" mb={1} mt={2}>{children}</Heading>;
+    return <Heading as="h2" size="sm" mb={1} mt={2} borderBottom="1px solid" borderColor="border" pb={0.5}>{children}</Heading>;
   },
   h3({ children }) {
     return <Heading as="h3" fontSize="sm" fontWeight="bold" mb={1} mt={1.5}>{children}</Heading>;
@@ -53,7 +53,7 @@ const markdownComponents: Components = {
 
     if (languageMatch) {
       return (
-        <Box my={1} borderRadius="sm" overflow="hidden">
+        <Box my={1} borderRadius="sm" overflow="hidden" border="1px solid" borderColor="border">
           <SyntaxHighlighter
             style={oneDark}
             language={languageMatch[1]}
@@ -66,16 +66,22 @@ const markdownComponents: Components = {
       );
     }
 
-    return <Code fontSize="xs" px={1}>{children}</Code>;
+    return <Code fontSize="xs" px={1} bg="bg.subtle">{children}</Code>;
   },
   table({ children }) {
     return (
-      <Box overflowX="auto" my={1}>
-        <Box as="table" w="100%" fontSize="xs">
+      <Box overflowX="auto" my={1} borderRadius="sm" border="1px solid" borderColor="border">
+        <Box as="table" w="100%" fontSize="xs" borderCollapse="collapse">
           {children}
         </Box>
       </Box>
     );
+  },
+  thead({ children }) {
+    return <Box as="thead" bg="bg.emphasized">{children}</Box>;
+  },
+  tr({ children }) {
+    return <Box as="tr" _even={{ bg: "bg.muted" }}>{children}</Box>;
   },
   th({ children }) {
     return (
