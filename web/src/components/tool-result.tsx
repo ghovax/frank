@@ -4,12 +4,14 @@ import { Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { LuChevronRight, LuChevronDown, LuCheck } from "react-icons/lu";
+import { LuChevronRight, LuChevronDown } from "react-icons/lu";
 import { MarkdownContent } from "./markdown-content";
+import { getToolResultDisplay } from "@/lib/tool-display";
 
 interface ToolResultProps {
   name?: string;
   content: string;
+  seq?: number;
 }
 
 function isJson(text: string): boolean {
@@ -21,12 +23,14 @@ function isJson(text: string): boolean {
   }
 }
 
-export function ToolResult({ name, content }: ToolResultProps) {
+export function ToolResult({ name, content, seq }: ToolResultProps) {
   const [open, setOpen] = useState(false);
   const contentIsJson = isJson(content);
   const formattedContent = contentIsJson
     ? JSON.stringify(JSON.parse(content), null, 2)
     : content;
+
+  const { icon: Icon, iconColor, label } = getToolResultDisplay(name, content);
 
   return (
     <Box borderRadius="lg" overflow="hidden" bg="bg.subtle">
@@ -40,10 +44,17 @@ export function ToolResult({ name, content }: ToolResultProps) {
         onClick={() => setOpen((current) => !current)}
         userSelect="none"
       >
-        <Box color="green.fg" fontSize="sm">
-          <LuCheck size={12} />
+        {seq != null && (
+          <Text fontSize="xs" color="fg.subtle" fontWeight="medium" flexShrink={0}>
+            #{seq}
+          </Text>
+        )}
+        <Box color={iconColor} fontSize="sm" flexShrink={0}>
+          <Icon size={12} />
         </Box>
-        {name && <Text fontSize="xs" color="fg.muted" fontWeight="medium" flex={1}>{name}</Text>}
+        <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+          {label}
+        </Text>
         <Box color="fg.muted" fontSize="xs" ml="auto" flexShrink={0}>
           {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
         </Box>

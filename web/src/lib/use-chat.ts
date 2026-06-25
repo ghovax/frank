@@ -29,6 +29,7 @@ export interface ChatMessage {
 function replayEvents(events: StreamEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   let needsNewAssistant = false;
+  let toolSeq = 0;
   const fallbackTimestamp = new Date().toISOString();
 
   for (const event of events) {
@@ -109,11 +110,19 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
           meta: {
             arguments: event.arguments,
             step_id: event.step_id,
+            seq: ++toolSeq,
           },
         });
         break;
 
-      case "tool_result":
+      case "tool_result": {
+        const resultData =
+          typeof event.result === "string"
+            ? (() => { try { return JSON.parse(event.result); } catch { return null; } })()
+            : event.result;
+        if (typeof resultData?.code === "string" && resultData.code.endsWith("_started")) {
+          break;
+        }
         needsNewAssistant = true;
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
@@ -123,9 +132,10 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
               ? event.result
               : JSON.stringify(event.result, null, 2),
           timestamp: event.timestamp ?? fallbackTimestamp,
-          meta: { name: event.name, task_id: event.task_id },
+          meta: { name: event.name, task_id: event.task_id, seq: ++toolSeq },
         });
         break;
+      }
 
       case "user":
         needsNewAssistant = true;
@@ -174,6 +184,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   const assistantMessageIdRef = useRef("");
   const needsNewAssistantRef = useRef(false);
   const historyLoadedForRef = useRef<string | null>(null);
+  const toolSequenceRef = useRef(0);
 
   useEffect(() => {
     if (!initialSessionId) return;
@@ -212,6 +223,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
       assistantTextRef.current = "";
       assistantMessageIdRef.current = "";
       needsNewAssistantRef.current = true;
+      toolSequenceRef.current = 0;
 
       setMessages((current) => [...current, userMessage]);
 
@@ -303,8 +315,9 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
               break;
 
             case "tool_call":
-            case "agent_tool_call":
+            case "agent_tool_call": {
               needsNewAssistantRef.current = true;
+              const seq = ++toolSequenceRef.current;
               flushSync(() => {
                 setMessages((current) => [
                   ...current,
@@ -316,14 +329,26 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                     meta: {
                       arguments: event.arguments,
                       step_id: event.step_id,
+                      seq,
                     },
                   },
                 ]);
               });
               break;
+            }
 
-            case "tool_result":
+            case "tool_result": {
+              const resultData =
+                typeof event.result === "object" && event.result !== null
+                  ? event.result
+                  : typeof event.result === "string"
+                    ? (() => { try { return JSON.parse(event.result); } catch { return null; } })()
+                    : null;
+              if (typeof resultData?.code === "string" && resultData.code.endsWith("_started")) {
+                break;
+              }
               needsNewAssistantRef.current = true;
+              const resultSeq = ++toolSequenceRef.current;
               flushSync(() => {
                 setMessages((current) => [
                   ...current,
@@ -335,11 +360,12 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                         ? event.result
                         : JSON.stringify(event.result, null, 2),
                     timestamp: event.timestamp ?? new Date().toISOString(),
-                    meta: { name: event.name, task_id: event.task_id },
+                    meta: { name: event.name, task_id: event.task_id, seq: resultSeq },
                   },
                 ]);
               });
               break;
+            }
 
             case "permission_request":
               flushSync(() => {

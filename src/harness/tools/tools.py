@@ -157,6 +157,7 @@ def collect_background_bash_results() -> list[tuple[str, str]]:
 @tool
 async def web_search(
     query: str,
+    justification: str = "",
     result_count: int = 5,
 ) -> str:
     """Search the web using Exa. Returns a list of results with titles, URLs, and summaries.
@@ -169,6 +170,7 @@ async def web_search(
 
     Args:
         query: The search query.
+        justification: A concise, user-facing description of why this search is needed.
         result_count: Number of results to return (1-10, default 5).
     """
     client = _exa_client

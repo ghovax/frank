@@ -372,6 +372,18 @@ class AgentOrchestrator:
         tasks_data = self._task_manager.to_dict_list()
         if tasks_data:
             parts.append(json.dumps({"tasks": tasks_data}))
+        pending_info = {}
+        bash_active = bash_tasks.list_active()
+        web_active = web_tasks.list_active()
+        agent_active = spawned_tasks.list_active()
+        if bash_active:
+            pending_info["pending_bash_commands"] = bash_active
+        if web_active:
+            pending_info["pending_web_searches"] = web_active
+        if agent_active:
+            pending_info["pending_agents"] = agent_active
+        if pending_info:
+            parts.append(json.dumps({"background_tasks_in_progress": pending_info}))
         return "\n".join(parts)
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):

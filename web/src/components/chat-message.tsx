@@ -40,6 +40,7 @@ export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
           <ToolCall
             name={message.content}
             arguments={message.meta?.arguments as Record<string, unknown> | undefined}
+            seq={message.meta?.seq as number | undefined}
           />
         </Box>
       );
@@ -50,6 +51,7 @@ export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
           <ToolResult
             name={message.meta?.name as string | undefined}
             content={message.content}
+            seq={message.meta?.seq as number | undefined}
           />
         </Box>
       );

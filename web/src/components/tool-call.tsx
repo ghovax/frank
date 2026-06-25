@@ -4,23 +4,22 @@ import { Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { LuChevronRight, LuChevronDown, LuWrench } from "react-icons/lu";
+import { LuChevronRight, LuChevronDown } from "react-icons/lu";
+import { getToolCallDisplay } from "@/lib/tool-display";
 
 interface ToolCallProps {
   name: string;
   arguments?: Record<string, unknown>;
+  seq?: number;
 }
 
-export function ToolCall({ name, arguments: toolArguments }: ToolCallProps) {
+export function ToolCall({ name, arguments: toolArguments, seq }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const formattedArguments = toolArguments
     ? JSON.stringify(toolArguments, null, 2)
     : null;
 
-  const displayTitle =
-    name === "bash" && typeof toolArguments?.command === "string"
-      ? toolArguments.command
-      : name;
+  const { icon: Icon, iconColor, label } = getToolCallDisplay(name, toolArguments);
 
   return (
     <Box borderRadius="lg" overflow="hidden" bg="bg.subtle">
@@ -34,14 +33,19 @@ export function ToolCall({ name, arguments: toolArguments }: ToolCallProps) {
         onClick={() => formattedArguments && setOpen((current) => !current)}
         userSelect="none"
       >
-        <Box color="fg.muted" fontSize="sm">
-          <LuWrench size={12} />
+        {seq != null && (
+          <Text fontSize="xs" color="fg.subtle" fontWeight="medium" flexShrink={0}>
+            #{seq}
+          </Text>
+        )}
+        <Box color={iconColor} fontSize="sm" flexShrink={0}>
+          <Icon size={12} />
         </Box>
-        <Text fontSize="xs" fontFamily="monospace" fontWeight="medium" truncate flex={1}>
-          {displayTitle}
+        <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+          {label}
         </Text>
         {formattedArguments && (
-          <Box color="fg.muted" fontSize="xs" ml="auto">
+          <Box color="fg.muted" fontSize="xs" ml="auto" flexShrink={0}>
             {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
           </Box>
         )}
