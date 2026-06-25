@@ -70,29 +70,28 @@ const markdownComponents: Components = {
   },
   table({ children }) {
     return (
-      <Box overflowX="auto" my={1} borderRadius="sm" border="1px solid" borderColor="border">
-        <Box as="table" w="100%" fontSize="xs" borderCollapse="collapse">
-          {children}
+      <Box my={1} borderRadius="sm" border="1px solid" borderColor="border" overflow="hidden">
+        <Box overflowX="auto">
+          <Box as="table" w="100%" fontSize="xs" borderCollapse="collapse">
+            {children}
+          </Box>
         </Box>
       </Box>
     );
-  },
-  thead({ children }) {
-    return <Box as="thead" bg="bg.emphasized">{children}</Box>;
   },
   tr({ children }) {
     return <Box as="tr" _even={{ bg: "bg.muted" }}>{children}</Box>;
   },
   th({ children }) {
     return (
-      <Box as="th" textAlign="left" px={2} py={1} borderBottom="2px solid" borderColor="border" fontWeight="bold">
+      <Box as="th" textAlign="left" px={2} py={1} fontWeight="bold" bg="bg.emphasized" color="fg">
         {children}
       </Box>
     );
   },
   td({ children }) {
     return (
-      <Box as="td" px={2} py={1} borderBottom="1px solid" borderColor="border">
+      <Box as="td" px={2} py={1}>
         {children}
       </Box>
     );
