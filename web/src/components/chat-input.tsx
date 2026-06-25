@@ -9,11 +9,10 @@ import {
   Input,
   Portal,
   Select,
-  Text,
-  Textarea,
 } from "@chakra-ui/react";
-import { useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuFolder, LuNetwork, LuShield, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { LuArrowUp, LuBan, LuCheck, LuFolder, LuNetwork, LuShield, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
+import { validateWorkingDirectory } from "@/lib/api";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -38,7 +37,6 @@ export function ChatInput({
   onAbort,
   isStreaming,
   disabled,
-  sessionId,
   workingDirectory,
   onWorkingDirectoryChange,
   onBrowseFolder,
@@ -50,8 +48,13 @@ export function ChatInput({
   agentsCount = 0,
   onShowAgents,
 }: ChatInputProps) {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [directoryState, setDirectoryState] = useState({
+    path: workingDirectory ?? "",
+    valid: true,
+    checking: false,
+  });
 
   const agentCollection = useMemo(
     () => createListCollection({
@@ -70,9 +73,41 @@ export function ChatInput({
     []
   );
 
+  const currentDirectory = (workingDirectory ?? "").trim();
+  const directoryValid = !!currentDirectory && directoryState.path === currentDirectory && directoryState.valid;
+  const directoryChecking = directoryState.path !== currentDirectory || directoryState.checking;
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      if (!currentDirectory) {
+        setDirectoryState({ path: currentDirectory, valid: false, checking: false });
+        return;
+      }
+      setDirectoryState({ path: currentDirectory, valid: false, checking: true });
+      validateWorkingDirectory(currentDirectory)
+        .then((result) => {
+          if (!cancelled) {
+            setDirectoryState({ path: currentDirectory, valid: result.valid, checking: false });
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setDirectoryState({ path: currentDirectory, valid: false, checking: false });
+          }
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [currentDirectory]);
+
   function handleSubmit() {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
+    if (!directoryValid) return;
     // While the agent is busy this enqueues for the next turn (handled upstream).
     onSend(trimmed);
     setInputValue("");
@@ -87,7 +122,7 @@ export function ChatInput({
 
   return (
     <Box borderTop="1px solid" borderColor="border" bg="bg.subtle">
-      <Flex gap={2} px={2} pt={2} pb={1.5} align="center">
+      <Flex gap={2} px={2} pt={2} pb={2} align="center">
         <Box color={bypassPermissions ? "red.fg" : "fg.subtle"} fontSize="sm" flexShrink={0} display="flex" alignItems="center">
           {bypassPermissions ? <LuShieldOff size={16} /> : <LuShield size={16} />}
         </Box>
@@ -175,6 +210,17 @@ export function ChatInput({
           </Portal>
         </Select.Root>
         <Box flex={1} />
+        <Box
+          color={directoryValid ? "green.fg" : "red.fg"}
+          opacity={directoryChecking ? 0.45 : 1}
+          fontSize="sm"
+          flexShrink={0}
+          display="flex"
+          alignItems="center"
+          title={directoryValid ? "Valid directory" : "Invalid directory"}
+        >
+          {directoryValid ? <LuCheck size={16} /> : <LuBan size={16} />}
+        </Box>
         <Input
           size="xs"
           h="28px"
@@ -182,9 +228,8 @@ export function ChatInput({
           placeholder="/path"
           value={workingDirectory ?? ""}
           onChange={(event) => onWorkingDirectoryChange?.(event.target.value)}
-          disabled={!!sessionId}
           border="1px solid"
-          borderColor="border"
+          borderColor={directoryValid ? "border" : "red.muted"}
           bg="bg"
           borderRadius="sm"
           w="200px"
@@ -217,44 +262,40 @@ export function ChatInput({
           </Button>
         )}
       </Flex>
-      <Box px={2} pb={2}>
+      <Box px={2} pb={2.5}>
         <Box
           bg="bg"
           border="1px solid"
-          borderColor="border"
-          borderRadius="md"
+          borderColor={directoryValid ? "border" : "red.muted"}
+          borderRadius="sm"
           _focusWithin={{ borderColor: "border.emphasized" }}
         >
-          <Textarea
-            ref={inputRef}
-            placeholder={
-              disabled
-                ? "Connecting to server..."
-                : isStreaming
-                  ? "Queue a message — it's sent on the next turn..."
-                  : "Send a message..."
-            }
-            value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={disabled}
-            fontSize="sm"
-            border="none"
-            outline="none"
-            resize="none"
-            px={3}
-            py={2}
-            _focus={{ boxShadow: "none", borderColor: "transparent" }}
-            _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
-          />
-          <Flex align="center" justify="space-between" px={3} pt={1} pb={2.5} gap={2}>
-            <Text fontSize="xs" color="fg.subtle" truncate>
-              {isStreaming
-                ? "Agent is working — messages queue for the next turn"
-                : "Enter to send — Shift+Enter for newline"}
-            </Text>
+          <Flex align="center" gap={2} px={2} py={1.5}>
+            <Input
+              ref={inputRef}
+              placeholder={
+                disabled
+                  ? "Connecting to server..."
+                  : !directoryValid
+                    ? "Choose a valid project path before sending..."
+                    : isStreaming
+                      ? "Queue a message for the next turn..."
+                      : "Send a message..."
+              }
+              value={inputValue}
+              onChange={(event) => setInputValue(event.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={disabled}
+              fontSize="sm"
+              h="32px"
+              border="none"
+              outline="none"
+              px={1}
+              _focus={{ boxShadow: "none", borderColor: "transparent" }}
+              _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
+            />
             <Flex gap={1.5} flexShrink={0}>
-              {isStreaming && (
+              {isStreaming ? (
                 <IconButton
                   aria-label="Stop"
                   onClick={onAbort}
@@ -266,19 +307,20 @@ export function ChatInput({
                 >
                   <LuSquare size={14} />
                 </IconButton>
+              ) : (
+                <IconButton
+                  aria-label="Send"
+                  onClick={handleSubmit}
+                  colorPalette="blue"
+                  variant="solid"
+                  borderRadius="sm"
+                  minW="32px"
+                  h="32px"
+                  disabled={disabled || !directoryValid || !inputValue.trim()}
+                >
+                  <LuArrowUp size={16} />
+                </IconButton>
               )}
-              <IconButton
-                aria-label="Send"
-                onClick={handleSubmit}
-                colorPalette="blue"
-                variant="solid"
-                borderRadius="sm"
-                minW="32px"
-                h="32px"
-                disabled={disabled || !inputValue.trim()}
-              >
-                <LuArrowUp size={16} />
-              </IconButton>
             </Flex>
           </Flex>
         </Box>

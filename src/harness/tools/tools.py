@@ -5,7 +5,7 @@ import signal
 import sys
 import uuid
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 from exa_py import Exa
 from langchain.tools import tool
@@ -37,9 +37,12 @@ class TaskRegistry:
         self._tasks[identifier] = (task, output_path)
         return identifier
 
-    def collect_completed(self) -> list[tuple[str, str]]:
+    def collect_completed(self, identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
+        allowed_identifiers = set(identifiers) if identifiers is not None else None
         completed = []
         for identifier, (task, output_path) in list(self._tasks.items()):
+            if allowed_identifiers is not None and identifier not in allowed_identifiers:
+                continue
             if task.done():
                 try:
                     result = task.result()
@@ -58,8 +61,21 @@ class TaskRegistry:
     def active_count(self) -> int:
         return sum(1 for task, _ in self._tasks.values() if not task.done())
 
-    def list_active(self) -> list[str]:
-        return [identifier for identifier, (task, _) in self._tasks.items() if not task.done()]
+    def active_count_for(self, identifiers: Iterable[str]) -> int:
+        allowed_identifiers = set(identifiers)
+        return sum(
+            1
+            for identifier, (task, _) in self._tasks.items()
+            if identifier in allowed_identifiers and not task.done()
+        )
+
+    def list_active(self, identifiers: Iterable[str] | None = None) -> list[str]:
+        allowed_identifiers = set(identifiers) if identifiers is not None else None
+        return [
+            identifier
+            for identifier, (task, _) in self._tasks.items()
+            if (allowed_identifiers is None or identifier in allowed_identifiers) and not task.done()
+        ]
 
 
 bash_tasks = TaskRegistry("bg")
@@ -150,8 +166,8 @@ async def bash(
     })
 
 
-def collect_background_bash_results() -> list[tuple[str, str]]:
-    return bash_tasks.collect_completed()
+def collect_background_bash_results(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
+    return bash_tasks.collect_completed(identifiers)
 
 
 @tool
@@ -216,8 +232,8 @@ async def web_search(
     })
 
 
-def collect_web_search_results() -> list[tuple[str, str]]:
-    return web_tasks.collect_completed()
+def collect_web_search_results(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
+    return web_tasks.collect_completed(identifiers)
 
 
 @tool
@@ -246,8 +262,8 @@ def register_spawned_task(task_identifier: str, coroutine):
     spawned_tasks.register(task, identifier=task_identifier)
 
 
-def collect_completed_agents() -> list[tuple[str, str]]:
-    return spawned_tasks.collect_completed()
+def collect_completed_agents(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
+    return spawned_tasks.collect_completed(identifiers)
 
 
 @tool

@@ -171,6 +171,10 @@ class DirectoryUpdateRequest(BaseModel):
     directory: str
 
 
+class DirectoryValidationRequest(BaseModel):
+    directory: str
+
+
 class BypassPermissionsRequest(BaseModel):
     bypass: bool
 
@@ -217,6 +221,8 @@ def _get_or_create_session(
     assert _global_configuration is not None
 
     if session_id and session_id in _sessions:
+        if working_directory is not None:
+            _sessions[session_id]._working_directory = working_directory
         return session_id, _sessions[session_id]
 
     new_identifier = session_id or uuid.uuid4().hex[:16]
@@ -295,6 +301,24 @@ async def agents():
 async def home_directory():
     from pathlib import Path
     return {"home_directory": str(Path.home())}
+
+
+@app.post("/directory/validate")
+async def validate_directory(request: DirectoryValidationRequest):
+    directory = request.directory.strip()
+    if not directory:
+        return {"valid": False, "exists": False, "is_directory": False, "is_absolute": False, "path": ""}
+    path = Path(directory).expanduser()
+    is_absolute = path.is_absolute()
+    exists = path.exists()
+    is_directory = path.is_dir()
+    return {
+        "valid": is_absolute and exists and is_directory,
+        "exists": exists,
+        "is_directory": is_directory,
+        "is_absolute": is_absolute,
+        "path": str(path),
+    }
 
 
 @app.post("/chat/{session_id}/switch")

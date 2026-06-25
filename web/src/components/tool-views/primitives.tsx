@@ -21,10 +21,8 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   return (
     <Box>
       <Text
-        fontSize="10px"
-        fontWeight="bold"
-        letterSpacing="0.04em"
-        textTransform="uppercase"
+        fontSize="xs"
+        fontWeight="medium"
         color="fg.subtle"
         mb={1}
       >
@@ -40,10 +38,8 @@ export function InlineField({ label, children }: { label: string; children: Reac
   return (
     <Flex align="baseline" gap={2}>
       <Text
-        fontSize="10px"
-        fontWeight="bold"
-        letterSpacing="0.04em"
-        textTransform="uppercase"
+        fontSize="xs"
+        fontWeight="medium"
         color="fg.subtle"
         minW="70px"
         flexShrink={0}

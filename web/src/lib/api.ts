@@ -57,6 +57,15 @@ export async function updateWorkingDirectory(sessionId: string, directory: strin
   });
 }
 
+export async function validateWorkingDirectory(directory: string): Promise<{ valid: boolean; exists: boolean; is_directory: boolean; is_absolute: boolean; path: string }> {
+  const response = await fetch(`${API_BASE}/directory/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ directory }),
+  });
+  return response.json();
+}
+
 export async function setBypassPermissions(sessionId: string, bypass: boolean): Promise<void> {
   await fetch(`${API_BASE}/chat/${sessionId}/permissions/bypass`, {
     method: "POST",

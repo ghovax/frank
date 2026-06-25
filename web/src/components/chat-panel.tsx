@@ -8,7 +8,7 @@ import {
   VStack,
 } from "@chakra-ui/react";
 import { LuClock, LuSend } from "react-icons/lu";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useChat } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
@@ -35,19 +35,19 @@ export function ChatPanel({
   onAgentChange,
   initialSessionId,
   onSessionCreated,
-  onSlashCommand,
   workingDirectory,
   onWorkingDirectoryChange,
   onBrowseFolder,
   isConnected = false,
   onStreamingChange,
 }: ChatPanelProps) {
-  const { messages, orchestrations, queuedMessages, sessionId, isStreaming, send, abort, dequeueMessage, handlePermission } =
+  const { messages, orchestrations, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, abort, dequeueMessage, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContentRef = useRef<HTMLDivElement>(null);
+  const scrollFrameRef = useRef<number | null>(null);
   const isPinnedRef = useRef(true);
   const onStreamingChangeRef = useRef(onStreamingChange);
-  onStreamingChangeRef.current = onStreamingChange;
   const [bypassPermissions, setBypassPermissionsState] = useState(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedOrchestrationId, setFocusedOrchestrationId] = useState<string | null>(null);
@@ -60,32 +60,56 @@ export function ChatPanel({
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const threshold = 30;
+    const threshold = 80;
     isPinnedRef.current = container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+  }, []);
+
+  useEffect(() => {
+    onStreamingChangeRef.current = onStreamingChange;
+  }, [onStreamingChange]);
+
+  const scheduleScrollToBottom = useCallback(() => {
+    if (!isPinnedRef.current) return;
+    if (scrollFrameRef.current != null) return;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const container = scrollContainerRef.current;
+      if (!container || !isPinnedRef.current) return;
+      container.scrollTop = container.scrollHeight;
+    });
   }, []);
 
   useEffect(() => {
     if (sessionId) onSessionCreated(sessionId);
   }, [sessionId, onSessionCreated]);
 
+  useLayoutEffect(() => {
+    scheduleScrollToBottom();
+  }, [messages, queuedMessages, scheduleScrollToBottom]);
+
   useEffect(() => {
-    if (!isPinnedRef.current) return;
-    scrollContainerRef.current?.scrollTo({
-      top: scrollContainerRef.current.scrollHeight,
-      behavior: "instant",
-    });
-  }, [messages, queuedMessages]);
+    const content = scrollContentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(() => scheduleScrollToBottom());
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scheduleScrollToBottom]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current != null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (isStreaming) {
       isPinnedRef.current = true;
-      scrollContainerRef.current?.scrollTo({
-        top: scrollContainerRef.current.scrollHeight,
-        behavior: "instant",
-      });
+      scheduleScrollToBottom();
     }
     onStreamingChangeRef.current?.(isStreaming);
-  }, [isStreaming]);
+  }, [isStreaming, scheduleScrollToBottom]);
 
   async function handleToggleBypass() {
     if (!sessionId) return;
@@ -102,8 +126,10 @@ export function ChatPanel({
 
   return (
     <Flex direction="column" h="100%" position="relative">
-      <Box ref={scrollContainerRef} flex={1} overflowY="auto" px={2} py={2} onScroll={handleScroll}>
-        {messages.length === 0 ? (
+      <Box ref={scrollContainerRef} flex={1} overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none" }}>
+        {isHistoryLoading ? (
+          <Flex h="100%" />
+        ) : messages.length === 0 ? (
           <Flex direction="column" align="center" justify="center" h="100%">
             <EmptyState.Root>
               <EmptyState.Content>
@@ -120,7 +146,7 @@ export function ChatPanel({
             </EmptyState.Root>
           </Flex>
         ) : (
-          <VStack gap={2} align="stretch">
+          <VStack ref={scrollContentRef} gap={2} align="stretch">
             {messages.map((message) => (
               <ChatMessageItem
                 key={message.id}

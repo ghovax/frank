@@ -206,6 +206,24 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
             content: "",
             timestamp: event.timestamp ?? fallbackTimestamp,
           });
+        } else if (event.code === "waiting_for_tools") {
+          const thinkingIndex = messages.findLastIndex(
+            (message) => message.role === "thinking"
+          );
+          if (thinkingIndex !== -1) {
+            messages[thinkingIndex] = {
+              ...messages[thinkingIndex],
+              content: "Waiting for tool results...",
+              timestamp: event.timestamp ?? fallbackTimestamp,
+            };
+          } else {
+            messages.push({
+              id: `history-${messages.length}-${Math.random()}`,
+              role: "thinking",
+              content: "Waiting for tool results...",
+              timestamp: event.timestamp ?? fallbackTimestamp,
+            });
+          }
         }
         break;
 
@@ -259,6 +277,16 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
           if (startedSequence !== undefined && typeof taskId === "string") {
             taskIdToSequence.set(taskId, startedSequence);
           }
+          for (const message of messages) {
+            if (message.role === "tool_call" && message.meta?.toolCallId === event.id) {
+              message.meta = {
+                ...message.meta,
+                status: "running",
+                task_id: taskId,
+                output_file: resultData.output_file,
+              };
+            }
+          }
           break;
         }
         lanes.delete("main");
@@ -266,6 +294,11 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
           toolIdToSequence.get(event.id) ??
           (event.task_id ? taskIdToSequence.get(event.task_id) : undefined) ??
           ++toolSequence;
+        for (const message of messages) {
+          if (message.role === "tool_call" && message.meta?.sequenceNumber === resultSequence) {
+            message.meta = { ...message.meta, status: "completed" };
+          }
+        }
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
           role: "tool_result",
@@ -322,6 +355,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(!!initialSessionId);
   const abortControllerRef = useRef<AbortController | null>(null);
   // One independent assistant text block per concurrent stream. The main
   // agent uses lane "main"; each orchestration step uses its step_id. Without
@@ -357,12 +391,16 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
     fetchConversation(initialSessionId)
       .then((events) => {
         if (cancelled) return;
+        setSessionId(initialSessionId);
         const replayed = replayEvents(events);
-        setMessages((current) => (current.length === 0 ? replayed.messages : current));
-        setOrchestrations((current) => (current.length === 0 ? replayed.orchestrations : current));
+        setMessages(replayed.messages);
+        setOrchestrations(replayed.orchestrations);
       })
       .catch(() => {
         // session may no longer exist on the server
+      })
+      .finally(() => {
+        if (!cancelled) setIsHistoryLoading(false);
       });
 
     return () => { 
@@ -412,6 +450,30 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                       timestamp: event.timestamp ?? new Date().toISOString(),
                     },
                   ]);
+                });
+              } else if (event.code === "waiting_for_tools") {
+                setMessages((current) => {
+                  const thinkingIndex = current.findLastIndex(
+                    (message) => message.role === "thinking"
+                  );
+                  if (thinkingIndex !== -1) {
+                    const updated = [...current];
+                    updated[thinkingIndex] = {
+                      ...current[thinkingIndex],
+                      content: "Waiting for tool results...",
+                      timestamp: event.timestamp ?? new Date().toISOString(),
+                    };
+                    return updated;
+                  }
+                  return [
+                    ...current,
+                    {
+                      id: `thinking-${Date.now()}-${Math.random()}`,
+                      role: "thinking" as const,
+                      content: "Waiting for tool results...",
+                      timestamp: event.timestamp ?? new Date().toISOString(),
+                    },
+                  ];
                 });
               }
               break;
@@ -555,6 +617,21 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                 if (startedSequence != null && typeof taskId === "string") {
                   taskIdToSequenceRef.current.set(taskId, startedSequence);
                 }
+                setMessages((current) =>
+                  current.map((message) =>
+                    message.role === "tool_call" && message.meta?.toolCallId === event.id
+                      ? {
+                          ...message,
+                          meta: {
+                            ...message.meta,
+                            status: "running",
+                            task_id: taskId,
+                            output_file: resultData.output_file,
+                          },
+                        }
+                      : message
+                  )
+                );
                 break;
               }
               // A tool result is the main agent's; close its lane so the
@@ -565,19 +642,26 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                 (event.task_id ? taskIdToSequenceRef.current.get(event.task_id) : undefined) ??
                 ++toolSequenceRef.current;
               flushSync(() => {
-                setMessages((current) => [
-                  ...current,
-                  {
-                    id: `toolresult-${event.id ?? Date.now()}-${Math.random()}`,
-                    role: "tool_result",
-                    content:
-                      typeof event.result === "string"
-                        ? event.result
-                        : JSON.stringify(event.result, null, 2),
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                    meta: { name: event.name, task_id: event.task_id, sequenceNumber: resultSequence },
-                  },
-                ]);
+                setMessages((current) => {
+                  const updated = current.map((message) =>
+                    message.role === "tool_call" && message.meta?.sequenceNumber === resultSequence
+                      ? { ...message, meta: { ...message.meta, status: "completed" } }
+                      : message
+                  );
+                  return [
+                    ...updated,
+                    {
+                      id: `toolresult-${event.id ?? Date.now()}-${Math.random()}`,
+                      role: "tool_result",
+                      content:
+                        typeof event.result === "string"
+                          ? event.result
+                          : JSON.stringify(event.result, null, 2),
+                      timestamp: event.timestamp ?? new Date().toISOString(),
+                      meta: { name: event.name, task_id: event.task_id, sequenceNumber: resultSequence },
+                    },
+                  ];
+                });
               });
               break;
             }
@@ -677,7 +761,10 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
     },
     [agent, sessionId, workingDirectory, setQueue]
   );
-  runStreamRef.current = runStream;
+
+  useEffect(() => {
+    runStreamRef.current = runStream;
+  }, [runStream]);
 
   const send = useCallback(
     (text: string) => {
@@ -711,10 +798,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   const abort = useCallback(() => {
     abortControllerRef.current?.abort();
     if (sessionId) abortSession(sessionId);
-    isStreamingRef.current = false;
-    setIsStreaming(false);
-    setQueue([]);
-  }, [sessionId, setQueue]);
+  }, [sessionId]);
 
   const dequeueMessage = useCallback((index: number) => {
     setQueue(queuedMessagesRef.current.filter((_, i) => i !== index));
@@ -733,6 +817,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
     queuedMessages,
     sessionId,
     isStreaming,
+    isHistoryLoading,
     send,
     abort,
     reset,

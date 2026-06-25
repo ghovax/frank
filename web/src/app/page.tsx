@@ -2,7 +2,7 @@
 
 import { Box, Button, EmptyState, Flex, Text, VStack } from "@chakra-ui/react";
 import { LuMessageSquare, LuPlus } from "react-icons/lu";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchAgents, fetchHomeDirectory, fetchSessions } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
@@ -14,28 +14,16 @@ interface SessionEntry {
   createdAt: string;
 }
 
-export default function Home() {
+function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    const fromUrl = searchParams.get("session");
-    if (fromUrl) {
-      setActiveSessionId(fromUrl);
-    }
-  }, []);
 
   const [agents, setAgents] = useState<{ name: string; label: string }[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
 
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [chatKey, setChatKey] = useState(0);
   const [workingDirectory, setWorkingDirectory] = useState("");
 
@@ -102,7 +90,7 @@ export default function Home() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [router]
+    [refreshSessions, router]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -144,10 +132,6 @@ export default function Home() {
     }
   }
 
-  if (!mounted) {
-    return <Flex h="100vh" />;
-  }
-
   return (
     <Flex h="100vh">
       <Flex
@@ -157,7 +141,7 @@ export default function Home() {
         borderColor="border"
         flexShrink={0}
       >
-        <Box px={2} py={2}>
+        <Box px={2.5} py={2.5}>
           <Button
             w="100%"
             size="xs"
@@ -235,5 +219,13 @@ export default function Home() {
         />
       </Box>
     </Flex>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<Flex h="100vh" />}>
+      <HomeContent />
+    </Suspense>
   );
 }

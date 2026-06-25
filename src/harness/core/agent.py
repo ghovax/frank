@@ -3,9 +3,10 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Callable, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import (
@@ -57,9 +58,6 @@ from harness.tools.tools import (
     update_tasks as update_tasks_tool,
     orchestrate as orchestrate_tool,
     register_spawned_task,
-    collect_background_bash_results,
-    collect_web_search_results,
-    collect_completed_agents,
     cancel_all_background_tasks,
     bash_tasks,
     web_tasks,
@@ -173,38 +171,122 @@ class SubAgentRunner:
         return last_text
 
 
+@dataclass(frozen=True)
+class BackgroundKind:
+    registry: Any
+    active_context_key: str
+    completed_event_type: str
+    include_result_in_event: bool = False
+
+
+@dataclass(frozen=True)
+class PendingBackgroundMessage:
+    tool_call_id: str
+    conversation_index: int
+
+
+@dataclass(frozen=True)
+class BackgroundCompletion:
+    tool_name: str
+    task_identifier: str
+    result: str
+    pending_message: PendingBackgroundMessage | None = None
+
+
+BACKGROUND_KINDS: dict[str, BackgroundKind] = {
+    "bash": BackgroundKind(
+        registry=bash_tasks,
+        active_context_key="pending_bash_commands",
+        completed_event_type="background_bash_completed",
+    ),
+    "web_search": BackgroundKind(
+        registry=web_tasks,
+        active_context_key="pending_web_searches",
+        completed_event_type="background_web_search_completed",
+    ),
+    "agent": BackgroundKind(
+        registry=spawned_tasks,
+        active_context_key="pending_agents",
+        completed_event_type="agent_completed",
+        include_result_in_event=True,
+    ),
+}
+
+
 class BackgroundTaskManager:
-    def __init__(self):
-        self._bash_results: list[tuple[str, str]] = []
-        self._web_results: list[tuple[str, str]] = []
-        self._agent_results: list[tuple[str, str]] = []
+    def __init__(self, record_event: Callable[[str, dict], None]):
+        self._record_event = record_event
+        self._tracked_ids: dict[str, set[str]] = {
+            tool_name: set() for tool_name in BACKGROUND_KINDS
+        }
+        self._completed_results: dict[str, list[tuple[str, str]]] = {
+            tool_name: [] for tool_name in BACKGROUND_KINDS
+        }
+        self._pending_messages: dict[str, PendingBackgroundMessage] = {}
+
+    def track(self, tool_name: str, task_identifier: str) -> None:
+        if not task_identifier:
+            return
+        self._tracked_ids.setdefault(tool_name, set()).add(task_identifier)
+        self._completed_results.setdefault(tool_name, [])
+
+    def bind_model_message(
+        self, task_identifier: str, tool_call_id: str, conversation_index: int,
+    ) -> None:
+        if not task_identifier:
+            return
+        self._pending_messages[task_identifier] = PendingBackgroundMessage(
+            tool_call_id=tool_call_id,
+            conversation_index=conversation_index,
+        )
 
     def poll(self):
-        self._bash_results = collect_background_bash_results()
-        self._web_results = collect_web_search_results()
-        self._agent_results = collect_completed_agents()
+        for tool_name, kind in BACKGROUND_KINDS.items():
+            tracked_ids = self._tracked_ids[tool_name]
+            completed = kind.registry.collect_completed(tracked_ids)
+            self._completed_results[tool_name].extend(completed)
+            for task_identifier, _ in completed:
+                tracked_ids.discard(task_identifier)
 
     def has_results(self) -> bool:
-        return bool(self._bash_results) or bool(self._web_results) or bool(self._agent_results)
+        return any(self._completed_results.values())
 
-    def drain_results(self) -> list[tuple[str, str, str]]:
+    def drain_results(self) -> list[BackgroundCompletion]:
         results = []
-        for task_identifier, result in self._bash_results:
-            results.append(("bash", task_identifier, result))
-        for task_identifier, result in self._web_results:
-            results.append(("web_search", task_identifier, result))
-        for task_identifier, result in self._agent_results:
-            results.append(("agent", task_identifier, result))
-        self._bash_results = []
-        self._web_results = []
-        self._agent_results = []
+        for tool_name, completed in self._completed_results.items():
+            for task_identifier, result in completed:
+                results.append(BackgroundCompletion(
+                    tool_name=tool_name,
+                    task_identifier=task_identifier,
+                    result=result,
+                    pending_message=self._pending_messages.pop(task_identifier, None),
+                ))
+            completed.clear()
         return results
 
     def has_pending(self) -> bool:
-        return bash_tasks.active_count > 0 or web_tasks.active_count > 0 or spawned_tasks.active_count > 0
+        return self.active_background_count() > 0
 
     def active_background_count(self) -> int:
-        return bash_tasks.active_count + web_tasks.active_count + spawned_tasks.active_count
+        return sum(
+            kind.registry.active_count_for(self._tracked_ids[tool_name])
+            for tool_name, kind in BACKGROUND_KINDS.items()
+        )
+
+    def active_tasks(self) -> dict[str, list[str]]:
+        active = {}
+        for tool_name, kind in BACKGROUND_KINDS.items():
+            active_ids = kind.registry.list_active(self._tracked_ids[tool_name])
+            if active_ids:
+                active[kind.active_context_key] = active_ids
+        return active
+
+    def record_completed(self, tool_name: str, task_identifier: str, result: str) -> None:
+        kind = BACKGROUND_KINDS[tool_name]
+        data = {"task_identifier": task_identifier}
+        if kind.include_result_in_event:
+            data["result"] = result
+        self._record_event(kind.completed_event_type, data)
 
 
 class Task(BaseModel):
@@ -315,7 +397,7 @@ class AgentOrchestrator:
             parallel_tool_calls=True,
         )
         self._permissions = PermissionEvaluator(agent_configuration)
-        self._background = BackgroundTaskManager()
+        self._background = BackgroundTaskManager(self._record_event)
 
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
@@ -386,19 +468,48 @@ class AgentOrchestrator:
         tasks_data = self._task_manager.to_dict_list()
         if tasks_data:
             parts.append(json.dumps({"tasks": tasks_data}))
-        pending_info = {}
-        bash_active = bash_tasks.list_active()
-        web_active = web_tasks.list_active()
-        agent_active = spawned_tasks.list_active()
-        if bash_active:
-            pending_info["pending_bash_commands"] = bash_active
-        if web_active:
-            pending_info["pending_web_searches"] = web_active
-        if agent_active:
-            pending_info["pending_agents"] = agent_active
+        pending_info = self._background.active_tasks()
         if pending_info:
             parts.append(json.dumps({"background_tasks_in_progress": pending_info}))
         return "\n".join(parts)
+
+    def _background_result_events(self) -> list[StreamEvent]:
+        self._background.poll()
+        events: list[StreamEvent] = []
+        if not self._background.has_results():
+            return events
+
+        for completion in self._background.drain_results():
+            if (
+                completion.pending_message is not None
+                and completion.pending_message.conversation_index < len(self._conversation)
+            ):
+                self._conversation[completion.pending_message.conversation_index] = ToolMessage(
+                    content=completion.result,
+                    tool_call_id=completion.pending_message.tool_call_id,
+                )
+            else:
+                message = SystemMessage(
+                    content=json.dumps({
+                        "type": "background_result",
+                        "tool": completion.tool_name,
+                        "task_identifier": completion.task_identifier,
+                        "result": completion.result,
+                    }),
+                )
+                self._conversation.append(message)
+            events.append(StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                name=completion.tool_name,
+                result=_maybe_json(completion.result),
+                task_id=completion.task_identifier,
+            ))
+            self._background.record_completed(
+                completion.tool_name,
+                completion.task_identifier,
+                completion.result,
+            )
+        return events
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
         self._record_message("human", user_message)
@@ -425,52 +536,27 @@ class AgentOrchestrator:
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
 
-            if self._background.has_pending():
-                # Block until at least one background result lands (or all
-                # pending work drains). Invoking the model while a search or
-                # sub-agent is still running makes it speculate a premature
-                # answer, then answer again once the real result arrives —
-                # the user sees the same summary twice. Waiting here keeps the
-                # model from being called in an information-poor state.
-                waited = 0.0
-                while waited < self._BACKGROUND_WAIT_SECONDS and not self._abort_event.is_set():
+            while self._background.has_pending():
+                yield StreamEvent(
+                    StreamEvent.Type.STATUS,
+                    code="waiting_for_tools",
+                    active=self._background.active_tasks(),
+                )
+                while (
+                    self._background.has_pending()
+                    and not self._background.has_results()
+                    and not self._abort_event.is_set()
+                ):
                     await asyncio.sleep(0.05)
-                    waited += 0.05
                     self._background.poll()
-                    if self._background.has_results() or not self._background.has_pending():
-                        break
-            else:
-                self._background.poll()
-            if self._background.has_results():
-                for tool_name, task_identifier, result in self._background.drain_results():
-                    message = SystemMessage(
-                        content=json.dumps({
-                            "type": "background_result",
-                            "tool": tool_name,
-                            "task_identifier": task_identifier,
-                            "result": result,
-                        }),
-                    )
-                    self._conversation.append(message)
-                    yield StreamEvent(
-                        StreamEvent.Type.TOOL_RESULT,
-                        name=tool_name,
-                        result=_maybe_json(result),
-                        task_id=task_identifier,
-                    )
-                    if tool_name == "bash":
-                        self._record_event("background_bash_completed", {
-                            "task_identifier": task_identifier,
-                        })
-                    elif tool_name == "web_search":
-                        self._record_event("background_web_search_completed", {
-                            "task_identifier": task_identifier,
-                        })
-                    else:
-                        self._record_event("agent_completed", {
-                            "task_identifier": task_identifier,
-                            "result": result,
-                        })
+                if self._abort_event.is_set():
+                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                    return
+                for background_event in self._background_result_events():
+                    yield background_event
+
+            for background_event in self._background_result_events():
+                yield background_event
 
             messages = (
                 [SystemMessage(content=self._build_static_system_prompt())]
@@ -502,37 +588,10 @@ class AgentOrchestrator:
             response = accumulated_response
 
             if not response.tool_calls:
-                self._background.poll()
-                if self._background.has_results():
-                    for tool_name, task_identifier, result in self._background.drain_results():
-                        background_message = SystemMessage(
-                            content=json.dumps({
-                                "type": "background_result",
-                                "tool": tool_name,
-                                "task_identifier": task_identifier,
-                                "result": result,
-                            }),
-                        )
-                        self._conversation.append(background_message)
-                        yield StreamEvent(
-                            StreamEvent.Type.TOOL_RESULT,
-                            name=tool_name,
-                            result=_maybe_json(result),
-                            task_id=task_identifier,
-                        )
-                        if tool_name == "bash":
-                            self._record_event("background_bash_completed", {
-                                "task_identifier": task_identifier,
-                            })
-                        elif tool_name == "web_search":
-                            self._record_event("background_web_search_completed", {
-                                "task_identifier": task_identifier,
-                            })
-                        else:
-                            self._record_event("agent_completed", {
-                                "task_identifier": task_identifier,
-                                "result": result,
-                            })
+                background_events = self._background_result_events()
+                if background_events:
+                    for background_event in background_events:
+                        yield background_event
                     self._calls_this_turn += 1
                     continue
 
@@ -549,7 +608,7 @@ class AgentOrchestrator:
 
             self._conversation.append(response)
 
-            tool_call_results: list[tuple[str, str]] = []
+            tool_call_results: list[tuple[str, str, str | None]] = []
             denied_commands: list[str] = []
 
             for tool_call_data in response.tool_calls:
@@ -578,37 +637,67 @@ class AgentOrchestrator:
                         yield event
                         if event.type == StreamEvent.Type.TOOL_RESULT:
                             result_str = event.data.get("result", "")
+                            if (
+                                isinstance(result_str, dict)
+                                and isinstance(result_str.get("code"), str)
+                                and result_str["code"].endswith("_started")
+                            ):
+                                raw_task_identifier = result_str.get("task_identifier")
+                                task_identifier = raw_task_identifier if isinstance(raw_task_identifier, str) else None
+                                model_result = json.dumps({
+                                    "code": "background_task_scheduled",
+                                    "task_identifier": task_identifier,
+                                })
+                                tool_call_results.append((tool_call_identifier, model_result, task_identifier))
+                                turn_tool_results_log.append({"name": tool_name, "result": json.dumps(result_str)})
+                                continue
                             if isinstance(result_str, dict):
                                 result_str = json.dumps(result_str)
-                            tool_call_results.append((tool_call_identifier, str(result_str)))
+                            tool_call_results.append((tool_call_identifier, str(result_str), None))
                             turn_tool_results_log.append({"name": tool_name, "result": str(result_str)})
                         elif event.type == StreamEvent.Type.ERROR:
                             error_message = event.data.get("message", "unknown error")
-                            tool_call_results.append((tool_call_identifier, error_message))
+                            tool_call_results.append((tool_call_identifier, error_message, None))
                             turn_tool_results_log.append({"name": tool_name, "result": error_message})
                         elif event.type == StreamEvent.Type.DENIED_INJECTION:
                             denied_commands.append(event.data.get("command", ""))
                         elif event.type == StreamEvent.Type.TASKS_UPDATED:
                             result_message = event.data.get("result_message", "")
-                            tool_call_results.append((tool_call_identifier, result_message))
+                            tool_call_results.append((tool_call_identifier, result_message, None))
                             turn_tool_results_log.append({"name": tool_name, "result": result_message})
                         elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
                             result_message = event.data.get("result_message", "")
-                            tool_call_results.append((tool_call_identifier, result_message))
+                            raw_task_identifier = event.data.get("task_id")
+                            task_identifier = raw_task_identifier if isinstance(raw_task_identifier, str) else None
+                            tool_call_results.append((
+                                tool_call_identifier,
+                                json.dumps({
+                                    "code": "background_task_scheduled",
+                                    "task_identifier": task_identifier,
+                                }),
+                                task_identifier,
+                            ))
                             turn_tool_results_log.append({"name": tool_name, "result": result_message})
                 except Exception as exception:
-                    if tool_call_identifier not in {cid for cid, _ in tool_call_results}:
+                    if tool_call_identifier not in {cid for cid, _, _ in tool_call_results}:
                         error_message = f"Internal error processing {tool_name}: {exception}"
-                        tool_call_results.append((tool_call_identifier, error_message))
+                        tool_call_results.append((tool_call_identifier, error_message, None))
                         yield StreamEvent(
                             StreamEvent.Type.ERROR, id=tool_call_identifier, message=error_message, tool=tool_name,
                         )
                         turn_tool_results_log.append({"name": tool_name, "result": error_message})
 
-            for call_identifier, result in tool_call_results:
+            for call_identifier, result, background_task_identifier in tool_call_results:
+                conversation_index = len(self._conversation)
                 self._conversation.append(
                     ToolMessage(content=result, tool_call_id=call_identifier)
                 )
+                if background_task_identifier:
+                    self._background.bind_model_message(
+                        background_task_identifier,
+                        call_identifier,
+                        conversation_index,
+                    )
 
             if denied_commands:
                 commands_list = ", ".join(f"'{cmd}'" for cmd in denied_commands)
@@ -687,8 +776,27 @@ class AgentOrchestrator:
             raw_command = tool_arguments.get("command", "")
             directory = self._working_directory
             if directory:
+                directory_path = Path(directory).expanduser()
+                if not directory_path.is_absolute():
+                    yield StreamEvent(
+                        StreamEvent.Type.ERROR,
+                        id=tool_call_identifier,
+                        code="invalid_working_directory",
+                        message=f"Working directory must be an absolute path: {directory}",
+                        tool=tool_name,
+                    )
+                    return
+                if not directory_path.is_dir():
+                    yield StreamEvent(
+                        StreamEvent.Type.ERROR,
+                        id=tool_call_identifier,
+                        code="invalid_working_directory",
+                        message=f"Working directory does not exist: {directory}",
+                        tool=tool_name,
+                    )
+                    return
                 tool_arguments = dict(tool_arguments)
-                tool_arguments["command"] = f"cd {shlex.quote(directory)} && {raw_command}"
+                tool_arguments["command"] = f"cd {shlex.quote(str(directory_path))} && {raw_command}"
             command = tool_arguments.get("command", "")
             justification = tool_arguments.get("justification", "")
             risk = tool_arguments.get("risk", "")
@@ -732,6 +840,7 @@ class AgentOrchestrator:
             if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
                 task_identifier = result_data.get("task_identifier", "")
                 if task_identifier:
+                    self._background.track("bash", task_identifier)
                     self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command[:200]})
 
         elif tool_name == "spawn_agent":
@@ -772,6 +881,7 @@ class AgentOrchestrator:
             agent_queue: asyncio.Queue[Optional[StreamEvent]] = asyncio.Queue()
             _agent_event_queues[sub_agent_task_identifier] = agent_queue
             register_spawned_task(sub_agent_task_identifier, _run_and_cleanup())
+            self._background.track("agent", sub_agent_task_identifier)
             self._record_event("agent_spawned", {"task_identifier": sub_agent_task_identifier, "agent": sub_agent_name, "prompt": sub_agent_prompt[:200]})
 
             result_message = f"Started sub-agent ({sub_agent_task_identifier}) using profile '{sub_agent_name}'."
@@ -886,7 +996,12 @@ class AgentOrchestrator:
 
         elif tool_name == "web_search":
             result = await web_search_tool.ainvoke(tool_arguments)
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result))
+            result_data = _maybe_json(result)
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
+            if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
+                task_identifier = result_data.get("task_identifier", "")
+                if task_identifier:
+                    self._background.track("web_search", task_identifier)
 
         else:
             yield StreamEvent(

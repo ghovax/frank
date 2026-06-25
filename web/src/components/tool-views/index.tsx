@@ -22,6 +22,12 @@ function riskPalette(risk: string): string {
   return "green";
 }
 
+function riskLabel(risk: string): string {
+  if (risk === "high") return "High risk";
+  if (risk === "medium") return "Medium risk";
+  return "Low risk";
+}
+
 function stripCdPrefix(command: string): string {
   const match = command.match(/^cd\s+'[^']*'\s+&&\s+(.*)/s);
   return match ? match[1] : command;
@@ -49,8 +55,10 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
         <MonoBlock>{command}</MonoBlock>
       </Field>
       <Flex gap={2}>
-        <Pill colorPalette={readOnly ? "gray" : "orange"}>{readOnly ? "Read-only" : "Writes state"}</Pill>
-        <Pill colorPalette={riskPalette(risk)}>Risk: {risk}</Pill>
+        <Pill colorPalette={readOnly ? "gray" : "orange"}>
+          {readOnly ? "Read-only command" : "Can modify files"}
+        </Pill>
+        <Pill colorPalette={riskPalette(risk)}>{riskLabel(risk)}</Pill>
       </Flex>
     </FieldList>
   );
@@ -283,7 +291,7 @@ function ErrorView({ message }: { message: string }) {
   );
 }
 
-export function ToolResultView({ name, content }: { name: string; content: string }) {
+export function ToolResultView({ content }: { name: string; content: string }) {
   const parsed = tryParse(content);
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {

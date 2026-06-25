@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Text } from "@chakra-ui/react";
+import { Badge, Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { LuChevronRight, LuChevronDown } from "react-icons/lu";
 import { getToolCallDisplay } from "@/lib/tool-display";
@@ -10,9 +10,10 @@ interface ToolCallProps {
   name: string;
   arguments?: Record<string, unknown>;
   sequenceNumber?: number;
+  status?: string;
 }
 
-export function ToolCall({ name, arguments: toolArguments, sequenceNumber }: ToolCallProps) {
+export function ToolCall({ name, arguments: toolArguments, sequenceNumber, status }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
 
@@ -41,6 +42,16 @@ export function ToolCall({ name, arguments: toolArguments, sequenceNumber }: Too
         <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
           {label}
         </Text>
+        {status === "running" && (
+          <Badge size="sm" variant="subtle" colorPalette="blue" borderRadius="sm">
+            Running
+          </Badge>
+        )}
+        {status === "completed" && (
+          <Badge size="sm" variant="subtle" colorPalette="green" borderRadius="sm">
+            Done
+          </Badge>
+        )}
         {hasArguments && (
           <Box color="fg.muted" fontSize="xs" ml="auto" flexShrink={0}>
             {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
