@@ -142,16 +142,6 @@ async def bash(
         })
 
     task = asyncio.create_task(run())
-
-    deadline = asyncio.get_event_loop().time() + 2
-    while asyncio.get_event_loop().time() < deadline:
-        if task.done():
-            try:
-                return task.result()
-            except Exception as exception:
-                return json.dumps({"code": "bash_error", "message": str(exception)})
-        await asyncio.sleep(0.05)
-
     task_identifier = bash_tasks.register(task, output_path)
     return json.dumps({
         "code": "bash_started",
@@ -216,16 +206,6 @@ async def web_search(
             return payload
 
     task = asyncio.create_task(run())
-
-    deadline = asyncio.get_event_loop().time() + 10
-    while asyncio.get_event_loop().time() < deadline:
-        if task.done():
-            try:
-                return task.result()
-            except Exception as exception:
-                return json.dumps({"code": "web_search_error", "message": str(exception)})
-        await asyncio.sleep(0.05)
-
     task_identifier = web_tasks.register(task, output_path)
     return json.dumps({
         "code": "web_search_started",

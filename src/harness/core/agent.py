@@ -393,7 +393,14 @@ class AgentOrchestrator:
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
 
-            self._background.poll()
+            if self._background.has_pending():
+                for _ in range(15):
+                    await asyncio.sleep(0.01)
+                    self._background.poll()
+                    if self._background.has_results() or not self._background.has_pending():
+                        break
+            else:
+                self._background.poll()
             if self._background.has_results():
                 for tool_name, task_identifier, result in self._background.drain_results():
                     message = SystemMessage(
