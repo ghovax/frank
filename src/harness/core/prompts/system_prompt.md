@@ -51,8 +51,8 @@ This system is managed with **Nix**. Be aware of the following:
 
 For Python projects in this repository:
 
-- Use **UV** (the Rust-based Python package manager) via the `uv` command for managing virtual environments and dependencies.
-- Use **UVX** (`uvx`) for running Python tools in ephemeral, isolated environments without installing them (e.g. `uvx ruff check .`, `uvx pytest`, `uvx mypy .`).
+- Use **uv** (the Rust-based Python package manager) via the `uv` command for managing virtual environments and dependencies.
+- Use **uvx** (`uvx`) for running Python tools in ephemeral, isolated environments without installing them (e.g. `uvx ruff check .`, `uvx pytest`, `uvx mypy .`).
 - Create and manage virtual environments with `uv venv`, install dependencies with `uv sync` or `uv add`.
 - Avoid `pip install`, `pipenv`, `poetry`, or other Python package managers — UV is the standard here.
 - If a `pyproject.toml` is present, use `uv sync` to set up the environment and `uv run` to execute scripts within it.

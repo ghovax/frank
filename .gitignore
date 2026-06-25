@@ -16,3 +16,6 @@ wheels/
 *.pem
 *.swo
 *.swp
+
+# Database
+harness.db

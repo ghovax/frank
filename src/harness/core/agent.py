@@ -283,6 +283,7 @@ class AgentOrchestrator:
         on_record_orchestration: Optional[callable] = None,
         session_id: str = "",
         conversation: Optional[list] = None,
+        working_directory: str = "",
     ):
         self._session_id = session_id
         self._agent_configuration = agent_configuration
@@ -291,6 +292,7 @@ class AgentOrchestrator:
         self._on_record_event = on_record_event
         self._on_record_message = on_record_message
         self._on_record_orchestration = on_record_orchestration
+        self._working_directory = working_directory or str(Path.home())
 
         effective_model = agent_configuration.model or global_configuration.api.model
 
@@ -328,6 +330,10 @@ class AgentOrchestrator:
     def agent_name(self) -> str:
         return self._agent_configuration.name
 
+    @property
+    def working_directory(self) -> str:
+        return self._working_directory
+
     def abort(self) -> None:
         self._abort_event.set()
 
@@ -348,7 +354,7 @@ class AgentOrchestrator:
                 self._global_configuration.agents_directory
             )
             context_json = json.dumps({
-                "working_directory": os.getcwd(),
+                "working_directory": self._working_directory,
                 "available_agents": available_agents,
             })
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
@@ -643,6 +649,12 @@ class AgentOrchestrator:
             return
 
         if tool_name == "bash":
+            import shlex
+            raw_command = tool_arguments.get("command", "")
+            directory = self._working_directory
+            if directory:
+                tool_arguments = dict(tool_arguments)
+                tool_arguments["command"] = f"cd {shlex.quote(directory)} && {raw_command}"
             command = tool_arguments.get("command", "")
             justification = tool_arguments.get("justification", "")
             risk = tool_arguments.get("risk", "")

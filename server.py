@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
-from sqlalchemy import Column, Integer, String, Text, create_engine
+from sqlalchemy import Column, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from harness.core.agent import AgentOrchestrator, StreamEvent
@@ -28,6 +28,7 @@ class SessionRecord(Base):
 
     id = Column(String, primary_key=True)
     agent = Column(String, nullable=False)
+    working_directory = Column(Text, default="")
     created_at = Column(String, nullable=False)
 
 
@@ -47,6 +48,17 @@ class ExecutionEvent(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String, nullable=False, index=True)
+    type = Column(String, nullable=False)
+    data = Column(Text, nullable=False)
+    timestamp = Column(String, nullable=False)
+
+
+class StreamEventRecord(Base):
+    __tablename__ = "stream_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, nullable=False, index=True)
+    sequence = Column(Integer, nullable=False)
     type = Column(String, nullable=False)
     data = Column(Text, nullable=False)
     timestamp = Column(String, nullable=False)
@@ -77,6 +89,7 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 _global_configuration: Optional[GlobalConfiguration] = None
@@ -85,12 +98,14 @@ _session_configurations: dict[str, str] = {}
 _pending_permissions: dict[str, asyncio.Future] = {}
 _database_engine = None
 _database_session_factory = None
+_saved_sessions: set[str] = set()
 
 
 class ChatRequest(BaseModel):
     session_id: Optional[str] = None
     message: str
     agent: str = "main"
+    working_directory: Optional[str] = None
 
 
 class PermissionRequest(BaseModel):
@@ -104,6 +119,21 @@ class AgentsList(BaseModel):
 
 def get_database() -> sessionmaker:
     return _database_session_factory()
+
+
+def record_stream_event(session_id: str, event_type: str, data: dict, sequence: int) -> None:
+    database_session = get_database()
+    try:
+        database_session.add(StreamEventRecord(
+            session_id=session_id,
+            sequence=sequence,
+            type=event_type,
+            data=json.dumps(data),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        ))
+        database_session.commit()
+    finally:
+        database_session.close()
 
 
 @app.on_event("startup")
@@ -123,7 +153,7 @@ async def startup():
 
 
 def _get_or_create_session(
-    session_id: Optional[str], agent_name: str
+    session_id: Optional[str], agent_name: str, working_directory: Optional[str] = None
 ) -> tuple[str, AgentOrchestrator]:
     global _global_configuration
     assert _global_configuration is not None
@@ -186,21 +216,10 @@ def _get_or_create_session(
         on_record_message=record_message,
         on_record_orchestration=record_orchestration,
         session_id=new_identifier,
+        working_directory=working_directory or "",
     )
     _sessions[new_identifier] = orchestrator
     _session_configurations[new_identifier] = agent_name
-
-    database_session = get_database()
-    try:
-        database_session.add(SessionRecord(
-            id=new_identifier,
-            agent=agent_name,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        ))
-        database_session.commit()
-    finally:
-        database_session.close()
-
     return new_identifier, orchestrator
 
 
@@ -211,6 +230,12 @@ async def agents():
     return AgentsList(
         agents=list_available_agents(_global_configuration.agents_directory)
     )
+
+
+@app.get("/home")
+async def home_directory():
+    from pathlib import Path
+    return {"home_directory": str(Path.home())}
 
 
 @app.post("/chat/{session_id}/switch")
@@ -249,10 +274,14 @@ async def resolve_permission(session_id: str, request: PermissionRequest):
 async def session_status(session_id: str):
     agent_name = _session_configurations.get(session_id, "unknown")
     has_session = session_id in _sessions
+    working_directory_path = ""
+    if has_session:
+        working_directory_path = _sessions[session_id].working_directory
     return {
         "session_id": session_id,
         "agent": agent_name,
         "active": has_session,
+        "working_directory": working_directory_path,
     }
 
 
@@ -282,6 +311,27 @@ async def abort_session(session_id: str):
         database_session.close()
 
     return {"status": "aborted", "session_id": session_id}
+
+
+@app.get("/sessions")
+async def list_sessions():
+    database_session = get_database()
+    try:
+        rows = database_session.query(SessionRecord).order_by(
+            SessionRecord.created_at.desc()
+        ).limit(50).all()
+        return {
+            "sessions": [
+                {
+                    "session_id": row.id,
+                    "agent": row.agent,
+                    "created_at": row.created_at,
+                }
+                for row in rows
+            ]
+        }
+    finally:
+        database_session.close()
 
 
 @app.get("/sessions/{session_id}/history")
@@ -337,17 +387,12 @@ async def get_orchestration_detail(session_id: str, thread_id: str):
 async def get_conversation(session_id: str):
     database_session = get_database()
     try:
-        rows = database_session.query(Message).filter(
-            Message.session_id == session_id
-        ).order_by(Message.id).all()
+        rows = database_session.query(StreamEventRecord).filter(
+            StreamEventRecord.session_id == session_id
+        ).order_by(StreamEventRecord.sequence).all()
         return {
-            "messages": [
-                {
-                    "role": row.role,
-                    "content": row.content,
-                    "tool_call_id": row.tool_call_id,
-                    "timestamp": row.timestamp,
-                }
+            "events": [
+                {"type": row.type, **json.loads(row.data), "timestamp": row.timestamp}
                 for row in rows
             ]
         }
@@ -357,15 +402,123 @@ async def get_conversation(session_id: str):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    session_id, orchestrator = _get_or_create_session(request.session_id, request.agent)
+    session_id, orchestrator = _get_or_create_session(
+        request.session_id, request.agent, request.working_directory,
+    )
 
     async def event_generator():
+        pending_text = ""
+        pending_thinking = ""
+        pending_agent_buffers: dict[str, dict[str, str]] = {}
+        database_session = get_database()
+        try:
+            row = database_session.query(
+                func.max(StreamEventRecord.sequence)
+            ).filter(
+                StreamEventRecord.session_id == session_id
+            ).first()
+            sequence_number = row[0] if row and row[0] is not None else 0
+        finally:
+            database_session.close()
+
+        def flush_main():
+            nonlocal pending_text, pending_thinking, sequence_number
+            if pending_text:
+                sequence_number += 1
+                record_stream_event(session_id, "text_chunk", {"text": pending_text}, sequence_number)
+                pending_text = ""
+            if pending_thinking:
+                sequence_number += 1
+                record_stream_event(session_id, "thinking", {"text": pending_thinking}, sequence_number)
+                pending_thinking = ""
+
+        def flush_agent(step_id: str):
+            nonlocal sequence_number
+            buffer = pending_agent_buffers.pop(step_id, None)
+            if buffer:
+                if buffer.get("text"):
+                    sequence_number += 1
+                    record_stream_event(session_id, "agent_text_chunk", {"text": buffer["text"], "step_id": step_id}, sequence_number)
+                if buffer.get("thinking"):
+                    sequence_number += 1
+                    record_stream_event(session_id, "agent_thinking", {"text": buffer["thinking"], "step_id": step_id}, sequence_number)
+
         try:
             yield {
                 "event": "session",
                 "data": json.dumps({"type": "session", "session_id": session_id}),
             }
+
+            sequence_number += 1
+            record_stream_event(session_id, "user", {"text": request.message}, sequence_number)
+
+            if session_id not in _saved_sessions:
+                _saved_sessions.add(session_id)
+                database_session = get_database()
+                try:
+                    database_session.add(SessionRecord(
+                        id=session_id,
+                        agent=request.agent,
+                        working_directory=request.working_directory or "",
+                        created_at=datetime.now(timezone.utc).isoformat(),
+                    ))
+                    database_session.commit()
+                finally:
+                    database_session.close()
+
             async for event in orchestrator.stream(request.message):
+                if event.type == StreamEvent.Type.TEXT_CHUNK:
+                    pending_text += event.data.get("text", "")
+                elif event.type == StreamEvent.Type.THINKING:
+                    pending_thinking += event.data.get("text", "")
+                elif event.type == StreamEvent.Type.STATUS:
+                    flush_main()
+                    sequence_number += 1
+                    record_stream_event(session_id, "status", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.TOOL_CALL:
+                    flush_main()
+                    sequence_number += 1
+                    record_stream_event(session_id, "tool_call", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.TOOL_RESULT:
+                    flush_main()
+                    sequence_number += 1
+                    record_stream_event(session_id, "tool_result", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.PERMISSION_REQUEST:
+                    sequence_number += 1
+                    record_stream_event(session_id, "permission_request", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.ERROR:
+                    sequence_number += 1
+                    record_stream_event(session_id, "error", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.DENIED_INJECTION:
+                    sequence_number += 1
+                    record_stream_event(session_id, "denied_injection", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
+                    sequence_number += 1
+                    record_stream_event(session_id, "background_started", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.TASKS_UPDATED:
+                    sequence_number += 1
+                    record_stream_event(session_id, "tasks_updated", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.DONE:
+                    flush_main()
+                elif event.type == StreamEvent.Type.AGENT_TEXT_CHUNK:
+                    step_id = event.data.get("step_id", "")
+                    if step_id not in pending_agent_buffers:
+                        pending_agent_buffers[step_id] = {"text": "", "thinking": ""}
+                    pending_agent_buffers[step_id]["text"] += event.data.get("text", "")
+                elif event.type == StreamEvent.Type.AGENT_THINKING:
+                    step_id = event.data.get("step_id", "")
+                    if step_id not in pending_agent_buffers:
+                        pending_agent_buffers[step_id] = {"text": "", "thinking": ""}
+                    pending_agent_buffers[step_id]["thinking"] += event.data.get("text", "")
+                elif event.type == StreamEvent.Type.AGENT_TOOL_CALL:
+                    flush_agent(event.data.get("step_id", ""))
+                    sequence_number += 1
+                    record_stream_event(session_id, "agent_tool_call", event.data, sequence_number)
+                elif event.type == StreamEvent.Type.AGENT_DONE:
+                    flush_agent(event.data.get("step_id", ""))
+                    sequence_number += 1
+                    record_stream_event(session_id, "agent_done", event.data, sequence_number)
+
                 yield {"event": event.type.value, "data": event.to_json()}
         except GeneratorExit:
             pass
