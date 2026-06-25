@@ -12,6 +12,8 @@ from sse_starlette.sse import EventSourceResponse
 from sqlalchemy import Column, Integer, String, Text, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from langchain_openai import ChatOpenAI
+
 from harness.core.agent import AgentOrchestrator, StreamEvent
 from harness.tools.tools import set_exa_client
 from harness.core.configuration import (
@@ -29,6 +31,7 @@ class SessionRecord(Base):
     id = Column(String, primary_key=True)
     agent = Column(String, nullable=False)
     working_directory = Column(Text, default="")
+    title = Column(Text, default="")
     created_at = Column(String, nullable=False)
 
 
@@ -99,6 +102,25 @@ _pending_permissions: dict[str, asyncio.Future] = {}
 _database_engine = None
 _database_session_factory = None
 _saved_sessions: set[str] = set()
+_titles_generated: set[str] = set()
+
+
+def generate_session_title(user_message: str) -> str:
+    try:
+        llm = ChatOpenAI(
+            model=_global_configuration.api.model,
+            base_url=_global_configuration.api.endpoint,
+            api_key=_global_configuration.api.api_key,
+            temperature=0,
+        ).bind(response_format={"type": "json_object"})
+        response = llm.invoke([
+            {"role": "system", "content": "Generate a concise title (at most 6 words) for a chat session based on the user's first message. Respond with a JSON object containing a 'title' field."},
+            {"role": "user", "content": user_message},
+        ])
+        data = json.loads(response.content)
+        return data.get("title", "")
+    except Exception:
+        return ""
 
 
 class ChatRequest(BaseModel):
@@ -145,6 +167,14 @@ async def startup():
     else:
         _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
     _database_engine, _database_session_factory = create_database()
+
+    try:
+        database_session = get_database()
+        database_session.execute("ALTER TABLE sessions ADD COLUMN title TEXT DEFAULT ''")
+        database_session.commit()
+        database_session.close()
+    except Exception:
+        pass
 
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
@@ -325,6 +355,7 @@ async def list_sessions():
                 {
                     "session_id": row.id,
                     "agent": row.agent,
+                    "title": row.title,
                     "created_at": row.created_at,
                 }
                 for row in rows
@@ -500,6 +531,18 @@ async def chat(request: ChatRequest):
                     record_stream_event(session_id, "tasks_updated", event.data, sequence_number)
                 elif event.type == StreamEvent.Type.DONE:
                     flush_main()
+                    if session_id in _saved_sessions and session_id not in _titles_generated:
+                        _titles_generated.add(session_id)
+                        title = generate_session_title(request.message)
+                        if title:
+                            database_session = get_database()
+                            try:
+                                session_row = database_session.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+                                if session_row:
+                                    session_row.title = title
+                                    database_session.commit()
+                            finally:
+                                database_session.close()
                 elif event.type == StreamEvent.Type.AGENT_TEXT_CHUNK:
                     step_id = event.data.get("step_id", "")
                     if step_id not in pending_agent_buffers:

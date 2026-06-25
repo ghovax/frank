@@ -12,7 +12,7 @@ export async function fetchHomeDirectory(): Promise<string> {
   return data.home_directory;
 }
 
-export async function fetchSessions(): Promise<{ session_id: string; agent: string; created_at: string }[]> {
+export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string }[]> {
   const response = await fetch(`${API_BASE}/sessions`);
   const data = await response.json();
   return data.sessions;

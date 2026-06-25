@@ -10,6 +10,7 @@ import { ChatPanel } from "@/components/chat-panel";
 interface SessionEntry {
   sessionId: string;
   agent: string;
+  title: string;
   createdAt: string;
 }
 
@@ -69,6 +70,22 @@ export default function Home() {
           serverSessions.map((session) => ({
             sessionId: session.session_id,
             agent: session.agent,
+            title: session.title,
+            createdAt: session.created_at,
+          }))
+        )
+      )
+      .catch(() => {});
+  }, []);
+
+  const refreshSessions = useCallback(() => {
+    fetchSessions()
+      .then((serverSessions) =>
+        setSessions(
+          serverSessions.map((session) => ({
+            sessionId: session.session_id,
+            agent: session.agent,
+            title: session.title,
             createdAt: session.created_at,
           }))
         )
@@ -82,17 +99,8 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
-      fetchSessions()
-        .then((serverSessions) =>
-          setSessions(
-            serverSessions.map((session) => ({
-              sessionId: session.session_id,
-              agent: session.agent,
-              createdAt: session.created_at,
-            }))
-          )
-        )
-        .catch(() => {});
+      refreshSessions();
+      setTimeout(refreshSessions, 5000);
     },
     [router]
   );
@@ -192,7 +200,7 @@ export default function Home() {
                   onClick={() => handleResumeSession(entry)}
                 >
                   <Text fontSize="xs" fontWeight="medium" truncate>
-                    {entry.agent}
+                    {entry.title || entry.agent}
                   </Text>
                   <Text fontSize="11px" color="fg.subtle" truncate>
                     {entry.sessionId.slice(0, 8)}
