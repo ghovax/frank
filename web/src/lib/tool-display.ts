@@ -5,7 +5,6 @@ import {
   LuUsers,
   LuNetwork,
   LuListChecks,
-  LuRefreshCw,
   LuWrench,
   LuCheck,
 } from "react-icons/lu";
@@ -86,31 +85,33 @@ function parseResultContent(content?: string): Record<string, unknown> | null {
 export function getToolResultDisplay(name?: string, content?: string): ToolDisplayInfo {
   const toolName = name ?? "";
   const data = parseResultContent(content);
+  const icon = LuCheck;
+  const iconColor = "green.fg";
 
   switch (toolName) {
     case "web_search": {
       const query = data?.query ? String(data.query) : "";
       return {
-        icon: LuGlobe,
-        iconColor: "blue.fg",
+        icon,
+        iconColor,
         label: query ? `Results for "${query}" received` : "Browse results received",
       };
     }
     case "bash":
-      return { icon: LuTerminal, iconColor: "green.fg", label: "Command finished" };
+      return { icon, iconColor, label: "Command finished" };
     case "spawn_agent":
     case "agent":
-      return { icon: LuUsers, iconColor: "purple.fg", label: "Agent finished" };
+      return { icon, iconColor, label: "Agent finished" };
     case "orchestrate":
-      return { icon: LuNetwork, iconColor: "orange.fg", label: "Orchestration finished" };
+      return { icon, iconColor, label: "Orchestration finished" };
     case "write_tasks":
-      return { icon: LuListChecks, iconColor: "teal.fg", label: "Tasks created" };
+      return { icon, iconColor, label: "Tasks created" };
     case "update_tasks":
-      return { icon: LuRefreshCw, iconColor: "teal.fg", label: "Tasks updated" };
+      return { icon, iconColor, label: "Tasks updated" };
     default:
       return {
-        icon: LuCheck,
-        iconColor: "green.fg",
+        icon,
+        iconColor,
         label: toolName ? `${toolName} finished` : "Finished",
       };
   }

@@ -270,7 +270,7 @@ export function ChatInput({
           borderRadius="sm"
           _focusWithin={{ borderColor: "border.emphasized" }}
         >
-          <Flex align="center" gap={2} px={2} py={1.5}>
+          <Flex align="center" gap={2} px={1.5} py={1.5}>
             <Input
               ref={inputRef}
               placeholder={
