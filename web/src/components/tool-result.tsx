@@ -70,7 +70,7 @@ export function ToolResult({ name, content, sequenceNumber }: ToolResultProps) {
               customStyle={{
                 margin: 0,
                 borderRadius: 0,
-                fontSize: "0.75em",
+                fontSize: "1em",
               }}
             >
               {formattedContent}

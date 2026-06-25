@@ -19,7 +19,7 @@ from harness.tools.tools import set_exa_client
 from harness.core.configuration import (
     GlobalConfiguration,
     load_agent_configuration,
-    list_available_agents,
+    list_agents_with_labels,
 )
 
 Base = declarative_base()
@@ -135,8 +135,21 @@ class PermissionRequest(BaseModel):
     decision: str
 
 
+class AgentInfo(BaseModel):
+    name: str
+    label: str
+
+
 class AgentsList(BaseModel):
-    agents: list[str]
+    agents: list[AgentInfo]
+
+
+class DirectoryUpdateRequest(BaseModel):
+    directory: str
+
+
+class BypassPermissionsRequest(BaseModel):
+    bypass: bool
 
 
 def get_database() -> sessionmaker:
@@ -249,8 +262,9 @@ def _get_or_create_session(
 async def agents():
     global _global_configuration
     assert _global_configuration is not None
+    agent_data = list_agents_with_labels(_global_configuration.agents_directory)
     return AgentsList(
-        agents=list_available_agents(_global_configuration.agents_directory)
+        agents=[AgentInfo(name=a["name"], label=a["label"]) for a in agent_data]
     )
 
 
@@ -333,6 +347,32 @@ async def abort_session(session_id: str):
         database_session.close()
 
     return {"status": "aborted", "session_id": session_id}
+
+
+@app.patch("/chat/{session_id}/directory")
+async def update_directory(session_id: str, request: DirectoryUpdateRequest):
+    orchestrator = _sessions.get(session_id)
+    if not orchestrator:
+        return {"status": "not_found"}
+    orchestrator._working_directory = request.directory
+    database_session = get_database()
+    try:
+        database_session.query(SessionRecord).filter(
+            SessionRecord.id == session_id
+        ).update({"working_directory": request.directory})
+        database_session.commit()
+    finally:
+        database_session.close()
+    return {"status": "updated", "directory": request.directory}
+
+
+@app.post("/chat/{session_id}/permissions/bypass")
+async def toggle_bypass_permissions(session_id: str, request: BypassPermissionsRequest):
+    orchestrator = _sessions.get(session_id)
+    if not orchestrator:
+        return {"status": "not_found"}
+    orchestrator.set_bypass_permissions(request.bypass)
+    return {"status": "updated", "bypass": request.bypass}
 
 
 @app.get("/sessions")

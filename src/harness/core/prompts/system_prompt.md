@@ -100,7 +100,9 @@ Key patterns:
 - **Join fan-in**: set a step's `depends_on` to multiple step IDs — it waits for all to finish
 - **Root steps**: set `depends_on` to `[]` for steps with no dependencies
 
-The harness automatically appends dependency outputs as JSON to each step's prompt. Never mention orchestration IDs, thread IDs, or internal identifiers to the user.
+Always provide a `justification` for the `orchestrate` call — a short, user-facing phrase describing what the whole orchestration accomplishes (e.g. "Gathering BBC news across four sections"). It is shown as the label for the call, so do not leave it empty or generic.
+
+The harness automatically appends dependency outputs as JSON to each step's prompt. Never mention orchestration IDs, thread IDs, or internal identifiers to the user. The user already sees each sub-agent's output as it streams — when the orchestration finishes, do not repeat or re-summarize what the agents already produced. Add only a brief synthesis or wrap-up if it genuinely helps; otherwise stop.
 
 {{ tasks_section }}
 

@@ -221,7 +221,7 @@ def collect_web_search_results() -> list[tuple[str, str]]:
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "main", tools: str = "") -> str:
+def spawn_agent(prompt: str = "", agent: str = "main", tools: str = "", justification: str = "") -> str:
     """Spawn a sub-agent to work on a task in the background.
 
     The sub-agent runs asynchronously and its result will be injected
@@ -231,6 +231,8 @@ def spawn_agent(prompt: str = "", agent: str = "main", tools: str = "") -> str:
         prompt: The task description for the sub-agent.
         agent: Name of the agent profile to use (default: main).
         tools: Comma-separated list of tool names to restrict (leave empty for all).
+        justification: A concise, user-facing description of what this
+            sub-agent will do — shown directly as the label for this call.
     """
     task_identifier = f"agent-{uuid.uuid4().hex[:12]}"
     return (
@@ -280,7 +282,7 @@ def update_tasks(updates: list[dict]) -> str:
 
 
 @tool
-def orchestrate(steps: list[dict]) -> str:
+def orchestrate(steps: list[dict], justification: str = "") -> str:
     """Run a graph of agents where each step's output is automatically
     fed to its dependants as JSON appended to their prompts.
 
@@ -289,6 +291,10 @@ def orchestrate(steps: list[dict]) -> str:
     (each step depends on the preceding one).
 
     Args:
+        justification: A concise, user-facing description of what this
+            orchestration accomplishes — it is shown directly as the label
+            for this call (e.g. "Gathering BBC news across four sections").
+            Write a short phrase, not a generic placeholder.
         steps: List of step objects. Each step must have:
             - id: A short unique name for this step (e.g. "research").
             - agent: Agent profile name (e.g. "explore", "code", "main").

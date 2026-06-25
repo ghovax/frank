@@ -28,7 +28,9 @@ export interface ChatMessage {
 
 function replayEvents(events: StreamEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
-  let needsNewAssistant = false;
+  // laneKey -> index in `messages` of that lane's open assistant block. Mirrors
+  // the live streaming logic so reloaded history matches what was shown live.
+  const lanes = new Map<string, number>();
   let toolSequence = 0;
   const toolIdToSequence = new Map<string, number>();
   const fallbackTimestamp = new Date().toISOString();
@@ -38,34 +40,29 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
       case "text_chunk":
       case "agent_text_chunk": {
         const text = event.text ?? "";
-        if (needsNewAssistant) {
+        const laneKey =
+          event.type === "agent_text_chunk" ? event.step_id ?? "agent" : "main";
+        const laneIndex = lanes.get(laneKey);
+        if (laneIndex === undefined) {
+          lanes.set(laneKey, messages.length);
           messages.push({
             id: `history-${messages.length}-${Math.random()}`,
             role: "assistant",
             content: text,
             timestamp: event.timestamp ?? fallbackTimestamp,
           });
-          needsNewAssistant = false;
         } else {
-          const lastAssistantIndex = messages.findLastIndex(
-            (message) => message.role === "assistant"
-          );
-          if (lastAssistantIndex !== -1) {
-            messages[lastAssistantIndex] = {
-              ...messages[lastAssistantIndex],
-              content: messages[lastAssistantIndex].content + text,
-            };
-          } else {
-            messages.push({
-              id: `history-${messages.length}-${Math.random()}`,
-              role: "assistant",
-              content: text,
-              timestamp: event.timestamp ?? fallbackTimestamp,
-            });
-          }
+          messages[laneIndex] = {
+            ...messages[laneIndex],
+            content: messages[laneIndex].content + text,
+          };
         }
         break;
       }
+
+      case "agent_done":
+        if (event.step_id) lanes.delete(event.step_id);
+        break;
 
       case "status":
         if (event.code === "thinking") {
@@ -101,8 +98,10 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
       }
 
       case "tool_call":
-      case "agent_tool_call":
-        needsNewAssistant = true;
+      case "agent_tool_call": {
+        const laneKey =
+          event.type === "agent_tool_call" ? event.step_id ?? "agent" : "main";
+        lanes.delete(laneKey);
         const toolCallSequence = ++toolSequence;
         if (event.id) toolIdToSequence.set(event.id, toolCallSequence);
         messages.push({
@@ -117,6 +116,7 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
           },
         });
         break;
+      }
 
       case "tool_result": {
         const resultData =
@@ -126,7 +126,7 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
         if (typeof resultData?.code === "string" && resultData.code.endsWith("_started")) {
           break;
         }
-        needsNewAssistant = true;
+        lanes.delete("main");
         const resultSequence = toolIdToSequence.get(event.id) ?? ++toolSequence;
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
@@ -142,7 +142,7 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
       }
 
       case "user":
-        needsNewAssistant = true;
+        lanes.clear();
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
           role: "user",
@@ -184,9 +184,10 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const assistantTextRef = useRef("");
-  const assistantMessageIdRef = useRef("");
-  const needsNewAssistantRef = useRef(false);
+  // One independent assistant text block per concurrent stream. The main
+  // agent uses lane "main"; each orchestration step uses its step_id. Without
+  // this, parallel sub-agents would all append into one block and interleave.
+  const lanesRef = useRef<Map<string, { id: string; text: string }>>(new Map());
   const historyLoadedForRef = useRef<string | null>(null);
   const toolSequenceRef = useRef(0);
   const toolIdToSequenceRef = useRef<Map<string, number>>(new Map());
@@ -225,9 +226,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
         timestamp: new Date().toISOString(),
       };
 
-      assistantTextRef.current = "";
-      assistantMessageIdRef.current = "";
-      needsNewAssistantRef.current = true;
+      lanesRef.current = new Map();
       toolSequenceRef.current = 0;
       toolIdToSequenceRef.current = new Map();
 
@@ -264,11 +263,12 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
             case "text_chunk":
             case "agent_text_chunk": {
               const chunkText = event.text ?? "";
-              if (needsNewAssistantRef.current) {
-                const newId = `assistant-${Date.now()}-${Math.random()}`;
-                assistantMessageIdRef.current = newId;
-                assistantTextRef.current = chunkText;
-                needsNewAssistantRef.current = false;
+              const laneKey =
+                event.type === "agent_text_chunk" ? event.step_id ?? "agent" : "main";
+              const lane = lanesRef.current.get(laneKey);
+              if (!lane) {
+                const newId = `assistant-${laneKey}-${Date.now()}-${Math.random()}`;
+                lanesRef.current.set(laneKey, { id: newId, text: chunkText });
                 setMessages((current) => [
                   ...current,
                   {
@@ -279,9 +279,9 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                   },
                 ]);
               } else {
-                assistantTextRef.current += chunkText;
-                const targetId = assistantMessageIdRef.current;
-                const updatedText = assistantTextRef.current;
+                lane.text += chunkText;
+                const targetId = lane.id;
+                const updatedText = lane.text;
                 setMessages((current) =>
                   current.map((message) =>
                     message.id === targetId
@@ -322,7 +322,11 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
 
             case "tool_call":
             case "agent_tool_call": {
-              needsNewAssistantRef.current = true;
+              // Close the lane this call belongs to so the agent's next text
+              // starts a fresh block after the tool call, in order.
+              const laneKey =
+                event.type === "agent_tool_call" ? event.step_id ?? "agent" : "main";
+              lanesRef.current.delete(laneKey);
               const sequence = ++toolSequenceRef.current;
               if (event.id) toolIdToSequenceRef.current.set(event.id, sequence);
               flushSync(() => {
@@ -354,7 +358,9 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
               if (typeof resultData?.code === "string" && resultData.code.endsWith("_started")) {
                 break;
               }
-              needsNewAssistantRef.current = true;
+              // A tool result is the main agent's; close its lane so the
+              // follow-up text appears after the result.
+              lanesRef.current.delete("main");
               const resultSequence = toolIdToSequenceRef.current.get(event.id) ?? ++toolSequenceRef.current;
               flushSync(() => {
                 setMessages((current) => [
@@ -407,9 +413,10 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
               });
               break;
 
-            case "done":
-            case "agent_done":
-              if (event.text && !assistantTextRef.current) {
+            case "done": {
+              // Fallback: if the turn produced final text but nothing was
+              // streamed (e.g. progress streaming disabled), render it once.
+              if (event.text && !lanesRef.current.get("main")) {
                 setMessages((current) => [
                   ...current,
                   {
@@ -420,13 +427,18 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                   },
                 ]);
               }
-              needsNewAssistantRef.current = false;
+              lanesRef.current.delete("main");
+              break;
+            }
+
+            case "agent_done":
+              if (event.step_id) lanesRef.current.delete(event.step_id);
               break;
           }
         },
         () => {
           setIsStreaming(false);
-          needsNewAssistantRef.current = false;
+          lanesRef.current.clear();
           setMessages((current) =>
             current.filter(
               (message) =>

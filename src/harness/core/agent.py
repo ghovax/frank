@@ -273,6 +273,10 @@ class TaskManager:
 
 
 class AgentOrchestrator:
+    # Maximum time to block a turn waiting for in-flight background tasks
+    # (searches, sub-agents, slow bash) before invoking the model anyway.
+    _BACKGROUND_WAIT_SECONDS = 300.0
+
     def __init__(
         self,
         agent_configuration: AgentConfiguration,
@@ -325,6 +329,7 @@ class AgentOrchestrator:
         self._execution_history: list[dict] = []
         self._orchestration_graphs: dict[str, Any] = {}
         self._orchestration_configs: dict[str, dict] = {}
+        self._bypass_permissions: bool = False
 
     @property
     def agent_name(self) -> str:
@@ -336,6 +341,14 @@ class AgentOrchestrator:
 
     def abort(self) -> None:
         self._abort_event.set()
+
+    def set_bypass_permissions(self, bypass: bool) -> None:
+        self._bypass_permissions = bypass
+
+    def _evaluate_bash_permission(self, command: str) -> str:
+        if self._bypass_permissions:
+            return "allow"
+        return self._permissions.evaluate_bash_permission(command)
 
     def _record_event(self, event_type: str, data: dict) -> None:
         record = {"type": event_type, **data}
@@ -412,8 +425,16 @@ class AgentOrchestrator:
                 return
 
             if self._background.has_pending():
-                for _ in range(15):
-                    await asyncio.sleep(0.01)
+                # Block until at least one background result lands (or all
+                # pending work drains). Invoking the model while a search or
+                # sub-agent is still running makes it speculate a premature
+                # answer, then answer again once the real result arrives —
+                # the user sees the same summary twice. Waiting here keeps the
+                # model from being called in an information-poor state.
+                waited = 0.0
+                while waited < self._BACKGROUND_WAIT_SECONDS and not self._abort_event.is_set():
+                    await asyncio.sleep(0.05)
+                    waited += 0.05
                     self._background.poll()
                     if self._background.has_results() or not self._background.has_pending():
                         break
@@ -674,7 +695,7 @@ class AgentOrchestrator:
             if isinstance(read_only, str):
                 read_only = read_only.lower() == "true"
 
-            permission_decision = self._permissions.evaluate_bash_permission(command)
+            permission_decision = self._evaluate_bash_permission(command)
             if permission_decision == "deny":
                 deny_message = f"Command '{command}' is not permitted."
                 yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
@@ -780,7 +801,10 @@ class AgentOrchestrator:
             async for mode, data in graph.astream(initial_state, config, stream_mode=["updates", "custom"]):
                 if mode == "custom":
                     custom_type = data.pop("type", None)
-                    if custom_type in ("agent_text_chunk", "agent_result"):
+                    if custom_type == "agent_text_chunk":
+                        # Only incremental chunks are displayed. The final
+                        # ``agent_result`` carries the full text again and must
+                        # not be re-streamed, or each step would render twice.
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, **data)
                     elif custom_type == "agent_tool_call":
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, **data)
@@ -897,6 +921,7 @@ class AgentOrchestrator:
             )
 
             step_text = ""
+            result = ""
             async for event in runner.run_stream(always_yield_text=True):
                 if event.type == StreamEvent.Type.TEXT_CHUNK:
                     chunk_text = event.data.get("text", "")
@@ -909,8 +934,9 @@ class AgentOrchestrator:
                 elif event.type == StreamEvent.Type.STATUS:
                     writer({"type": "agent_status", "step_id": step["id"], "code": event.data.get("code", "")})
                 elif event.type == StreamEvent.Type.DONE:
+                    # Captured for the orchestration's structured result only;
+                    # the incremental chunks already streamed it to the user.
                     result = event.data.get("text", step_text)
-                    writer({"type": "agent_result", "step_id": step["id"], "text": result})
                 elif event.type == StreamEvent.Type.ERROR:
                     result = event.data.get("message", "unknown")
 

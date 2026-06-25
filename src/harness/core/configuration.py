@@ -203,3 +203,14 @@ def load_agent_configuration(
 
 def list_available_agents(agents_directory: str | Path) -> list[str]:
     return sorted(p.stem for p in Path(agents_directory).glob("*.md"))
+
+
+def list_agents_with_labels(agents_directory: str | Path) -> list[dict[str, str]]:
+    agents = []
+    for path in sorted(Path(agents_directory).glob("*.md")):
+        try:
+            config = load_agent_configuration(path.stem, agents_directory)
+            agents.append({"name": config.name, "label": config.label or config.name})
+        except Exception:
+            agents.append({"name": path.stem, "label": path.stem})
+    return agents

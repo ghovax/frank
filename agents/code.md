@@ -1,5 +1,6 @@
 ---
 name: code
+label: Code
 color: yellow
 description: Code writing and editing specialist
 model: deepseek-v4-flash

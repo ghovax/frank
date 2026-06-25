@@ -8,126 +8,69 @@ import {
   Input,
   Portal,
   Select,
-  Text,
-  VStack,
 } from "@chakra-ui/react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuSquare } from "react-icons/lu";
-
-interface SlashCommand {
-  name: string;
-  description: string;
-}
-
-const SLASH_COMMANDS: SlashCommand[] = [
-  { name: "/new", description: "Start a new conversation" },
-  { name: "/agent", description: "Switch to a different agent" },
-  { name: "/abort", description: "Stop the current response" },
-  { name: "/clear", description: "Clear the conversation" },
-  { name: "/history", description: "Show conversation history" },
-];
+import { useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { LuArrowUp, LuFolder, LuShield, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
   onAbort: () => void;
-  onSlashCommand?: (command: string) => void;
   isStreaming: boolean;
   disabled?: boolean;
-  agents: string[];
+  sessionId?: string | null;
+  workingDirectory?: string;
+  onWorkingDirectoryChange?: (dir: string) => void;
+  onBrowseFolder?: () => void;
+  agents: { name: string; label: string }[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
+  bypassPermissions: boolean;
+  onToggleBypass: () => void;
 }
 
 export function ChatInput({
   onSend,
   onAbort,
-  onSlashCommand,
   isStreaming,
   disabled,
+  sessionId,
+  workingDirectory,
+  onWorkingDirectoryChange,
+  onBrowseFolder,
   agents,
   selectedAgent,
   onAgentChange,
+  bypassPermissions,
+  onToggleBypass,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
-  const [showCommands, setShowCommands] = useState(false);
-  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
   const agentCollection = useMemo(
-    () =>
-      createListCollection({
-        items: agents.map((agentName) => ({
-          label: agentName,
-          value: agentName,
-        })),
-      }),
+    () => createListCollection({
+      items: agents.map((agent) => ({ label: agent.label, value: agent.name })),
+    }),
     [agents]
   );
 
-  const filteredCommands = inputValue.startsWith("/")
-    ? SLASH_COMMANDS.filter((command) =>
-        command.name.startsWith(inputValue.toLowerCase())
-      )
-    : [];
-
-  useEffect(() => {
-    setShowCommands(filteredCommands.length > 0 && inputValue.startsWith("/"));
-    setSelectedCommandIndex(0);
-  }, [inputValue, filteredCommands.length]);
+  const bypassCollection = useMemo(
+    () => createListCollection({
+      items: [
+        { label: "Default", value: "default" },
+        { label: "Bypass", value: "bypass" },
+      ],
+    }),
+    []
+  );
 
   function handleSubmit() {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
-
-    if (trimmed.startsWith("/")) {
-      onSlashCommand?.(trimmed);
-      setInputValue("");
-      setShowCommands(false);
-      return;
-    }
-
     onSend(trimmed);
     setInputValue("");
   }
 
-  function handleSelectCommand(command: SlashCommand) {
-    if (command.name === "/agent") {
-      setInputValue("/agent ");
-      inputRef.current?.focus();
-      return;
-    }
-    onSlashCommand?.(command.name);
-    setInputValue("");
-    setShowCommands(false);
-  }
-
   function handleKeyDown(event: KeyboardEvent) {
-    if (showCommands) {
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSelectedCommandIndex((current) =>
-          current < filteredCommands.length - 1 ? current + 1 : 0
-        );
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSelectedCommandIndex((current) =>
-          current > 0 ? current - 1 : filteredCommands.length - 1
-        );
-        return;
-      }
-      if (event.key === "Tab" || (event.key === "Enter" && filteredCommands.length > 0)) {
-        event.preventDefault();
-        handleSelectCommand(filteredCommands[selectedCommandIndex]);
-        return;
-      }
-      if (event.key === "Escape") {
-        setShowCommands(false);
-        return;
-      }
-    }
-
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (isStreaming) return;
@@ -136,43 +79,55 @@ export function ChatInput({
   }
 
   return (
-    <Box position="relative" borderTop="1px solid" borderColor="border" bg="bg.subtle">
-      {showCommands && (
-        <Box
-          position="absolute"
-          bottom="100%"
-          left={3}
-          right={3}
-          mb={1}
-          bg="bg.panel"
-          border="1px solid"
-          borderColor="border"
-          borderRadius="sm"
-          boxShadow="md"
-          overflow="hidden"
-        >
-          <VStack gap={0} align="stretch">
-            {filteredCommands.map((command, index) => (
-              <Flex
-                key={command.name}
-                align="center"
-                gap={3}
-                px={3}
-                py={1.5}
-                cursor="pointer"
-                bg={index === selectedCommandIndex ? "bg.emphasized" : undefined}
-                _hover={{ bg: "bg.muted" }}
-                onClick={() => handleSelectCommand(command)}
-              >
-                <Text fontSize="sm" fontWeight="medium">{command.name}</Text>
-                <Text fontSize="xs" color="fg.muted">{command.description}</Text>
-              </Flex>
-            ))}
-          </VStack>
+    <Box borderTop="1px solid" borderColor="border" bg="bg.subtle">
+      <Flex gap={2} px={2} pt={2} pb={1.5} align="center">
+        <Box color={bypassPermissions ? "red.fg" : "fg.subtle"} fontSize="sm" flexShrink={0} display="flex" alignItems="center">
+          {bypassPermissions ? <LuShieldOff size={16} /> : <LuShield size={16} />}
         </Box>
-      )}
-
-      <Flex gap={1.5} p={2} align="center">
+        <Select.Root
+          collection={bypassCollection}
+          value={[bypassPermissions ? "bypass" : "default"]}
+          onValueChange={(details) => {
+            if (details.value[0] === "bypass" && !bypassPermissions) onToggleBypass();
+            if (details.value[0] === "default" && bypassPermissions) onToggleBypass();
+          }}
+          size="xs"
+          w="80px"
+          flexShrink={0}
+        >
+          <Select.Control>
+            <Select.Trigger
+              borderRadius="sm"
+              fontSize="xs"
+              px={1}
+              bg={bypassPermissions ? "red.subtle" : "bg"}
+              border="1px solid"
+              borderColor={bypassPermissions ? "red.muted" : "border"}
+              colorPalette={bypassPermissions ? "red" : undefined}
+              style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
+            >
+              <Select.ValueText />
+            </Select.Trigger>
+            <Select.IndicatorGroup>
+              <Select.Indicator />
+            </Select.IndicatorGroup>
+          </Select.Control>
+          <Portal>
+            <Select.Positioner>
+              <Select.Content borderRadius="sm" minW="100px">
+                {bypassCollection.items.map((item) => (
+                  <Select.Item item={item} key={item.value}>
+                    {item.label}
+                    <Select.ItemIndicator />
+                  </Select.Item>
+                ))}
+              </Select.Content>
+            </Select.Positioner>
+          </Portal>
+        </Select.Root>
+        <Box color="fg.muted" fontSize="sm" flexShrink={0} display="flex" alignItems="center">
+          <LuUser size={16} />
+        </Box>
         <Select.Root
           collection={agentCollection}
           value={[selectedAgent]}
@@ -180,10 +135,19 @@ export function ChatInput({
             if (details.value[0]) onAgentChange(details.value[0]);
           }}
           size="xs"
-          w="100px"
+          w="80px"
+          flexShrink={0}
         >
           <Select.Control>
-            <Select.Trigger borderRadius="sm" fontSize="sm" h="30px">
+            <Select.Trigger
+              borderRadius="sm"
+              fontSize="xs"
+              px={1}
+              bg="bg"
+              border="1px solid"
+              borderColor="border"
+              style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
+            >
               <Select.ValueText placeholder="Agent" />
             </Select.Trigger>
             <Select.IndicatorGroup>
@@ -192,7 +156,7 @@ export function ChatInput({
           </Select.Control>
           <Portal>
             <Select.Positioner>
-              <Select.Content borderRadius="sm">
+              <Select.Content borderRadius="sm" minW="100px">
                 {agentCollection.items.map((item) => (
                   <Select.Item item={item} key={item.value}>
                     {item.label}
@@ -203,55 +167,78 @@ export function ChatInput({
             </Select.Positioner>
           </Portal>
         </Select.Root>
-
-        <Box position="relative" flex={1} bg="bg" borderRadius="sm" border="1px solid" borderColor="border">
+        <Box flex={1} />
+        <Input
+          size="xs"
+          h="28px"
+          fontSize="xs"
+          placeholder="/path"
+          value={workingDirectory ?? ""}
+          onChange={(event) => onWorkingDirectoryChange?.(event.target.value)}
+          disabled={!!sessionId}
+          border="1px solid"
+          borderColor="border"
+          bg="bg"
+          borderRadius="sm"
+          w="200px"
+          flexShrink={0}
+        />
+        <IconButton
+          aria-label="Browse folder"
+          size="xs"
+          variant="ghost"
+          borderRadius="sm"
+          minW="28px"
+          h="28px"
+          onClick={onBrowseFolder}
+        >
+          <LuFolder size={16} />
+        </IconButton>
+      </Flex>
+      <Flex gap={2} px={2} pb={2} align="center">
+        <Box flex={1} bg="bg" borderRadius="sm">
           <Input
             ref={inputRef}
-            placeholder={disabled ? "Connecting to server..." : "Send a message or type / for commands..."}
+            placeholder={disabled ? "Connecting to server..." : "Send a message..."}
             value={inputValue}
             onChange={(event) => setInputValue(event.target.value)}
             onKeyDown={handleKeyDown}
             disabled={isStreaming || disabled}
             fontSize="sm"
             size="sm"
-            h="30px"
-            border="none"
-            _focus={{ outline: "none", boxShadow: "none" }}
-            pr="36px"
+            h="34px"
+            borderRadius="sm"
+            border="1px solid"
+            borderColor="border"
+            _focus={{ borderColor: "border.emphasized", boxShadow: "none" }}
           />
-          <Box position="absolute" right="5px" top="50%" transform="translateY(-50%)">
-            {isStreaming ? (
-              <IconButton
-                aria-label="Stop"
-                onClick={onAbort}
-                colorPalette="red"
-                variant="ghost"
-                size="sm"
-                borderRadius="sm"
-                minW="24px"
-                h="24px"
-                p={0}
-              >
-                <LuSquare size={12} />
-              </IconButton>
-            ) : (
-              <IconButton
-                aria-label="Send"
-                onClick={handleSubmit}
-                colorPalette="blue"
-                variant="ghost"
-                size="sm"
-                borderRadius="sm"
-                minW="24px"
-                h="24px"
-                p={0}
-                disabled={disabled}
-              >
-                <LuArrowUp size={12} />
-              </IconButton>
-            )}
-          </Box>
         </Box>
+        {isStreaming ? (
+          <IconButton
+            aria-label="Stop"
+            onClick={onAbort}
+            colorPalette="red"
+            variant="solid"
+            borderRadius="sm"
+            minW="34px"
+            h="34px"
+          >
+            <LuSquare size={16} />
+          </IconButton>
+        ) : (
+          <IconButton
+            aria-label="Send"
+            onClick={handleSubmit}
+            colorPalette="blue"
+            variant="solid"
+            borderRadius="sm"
+            minW="34px"
+            h="34px"
+            disabled={disabled}
+          >
+            <LuArrowUp size={16} />
+          </IconButton>
+        )}
       </Flex>
     </Box>
   );

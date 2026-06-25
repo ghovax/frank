@@ -1,5 +1,6 @@
 ---
 name: explore
+label: Explore
 color: green
 description: Exploration specialist for investigating codebases
 model: deepseek-v4-flash

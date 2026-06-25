@@ -1,6 +1,6 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
-export async function fetchAgents(): Promise<string[]> {
+export async function fetchAgents(): Promise<{ name: string; label: string }[]> {
   const response = await fetch(`${API_BASE}/agents`);
   const data = await response.json();
   return data.agents;
@@ -47,6 +47,22 @@ export async function fetchSessionStatus(
 ): Promise<{ session_id: string; agent: string; active: boolean }> {
   const response = await fetch(`${API_BASE}/chat/${sessionId}/status`);
   return response.json();
+}
+
+export async function updateWorkingDirectory(sessionId: string, directory: string): Promise<void> {
+  await fetch(`${API_BASE}/chat/${sessionId}/directory`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ directory }),
+  });
+}
+
+export async function setBypassPermissions(sessionId: string, bypass: boolean): Promise<void> {
+  await fetch(`${API_BASE}/chat/${sessionId}/permissions/bypass`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bypass }),
+  });
 }
 
 export async function fetchExecutionHistory(

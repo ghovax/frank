@@ -30,7 +30,7 @@ export default function Home() {
     }
   }, []);
 
-  const [agents, setAgents] = useState<string[]>([]);
+  const [agents, setAgents] = useState<{ name: string; label: string }[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
 
@@ -55,7 +55,7 @@ export default function Home() {
     fetchAgents()
       .then((agentList) => {
         setAgents(agentList);
-        if (agentList.length > 0) setSelectedAgent(agentList[0]);
+        if (agentList.length > 0) setSelectedAgent(agentList[0].name);
         setIsConnected(true);
       })
       .catch(() => {
@@ -105,6 +105,12 @@ export default function Home() {
     [router]
   );
 
+  const handleStreamingChange = useCallback((streaming: boolean) => {
+    if (!streaming) {
+      setTimeout(refreshSessions, 1000);
+    }
+  }, [refreshSessions]);
+
   function handleNewChat() {
     setActiveSessionId(null);
     setChatKey((current) => current + 1);
@@ -132,7 +138,7 @@ export default function Home() {
       handleNewChat();
     } else if (command.startsWith("/agent ")) {
       const agentName = command.slice(7).trim();
-      if (agents.includes(agentName)) {
+      if (agents.some((agent) => agent.name === agentName)) {
         handleAgentChange(agentName);
       }
     }
@@ -200,7 +206,7 @@ export default function Home() {
                   onClick={() => handleResumeSession(entry)}
                 >
                   <Text fontSize="xs" fontWeight="medium" truncate>
-                    {entry.title || entry.agent}
+                    {entry.title}
                   </Text>
                   <Text fontSize="11px" color="fg.subtle" truncate>
                     {entry.sessionId.slice(0, 8)}
@@ -225,6 +231,7 @@ export default function Home() {
           onWorkingDirectoryChange={setWorkingDirectory}
           onBrowseFolder={handleBrowseFolder}
           isConnected={isConnected}
+          onStreamingChange={handleStreamingChange}
         />
       </Box>
     </Flex>

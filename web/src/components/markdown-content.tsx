@@ -3,16 +3,36 @@
 import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import type { Components } from "react-markdown";
+import type { Element } from "hast";
 
 interface MarkdownContentProps {
   content: string;
 }
 
+// A single-line `$$...$$` is parsed by remark-math as *inline* math, so it lands
+// inside a paragraph without KaTeX's `katex-display` wrapper and never centers.
+// Detect the case where a paragraph's only child is the KaTeX span and render it
+// as centered display math instead.
+function isDisplayMathParagraph(node: Element | undefined): boolean {
+  if (!node || node.children.length !== 1) return false;
+  const [child] = node.children;
+  return (
+    child.type === "element" &&
+    Array.isArray(child.properties?.className) &&
+    child.properties.className.includes("katex")
+  );
+}
+
 const markdownComponents: Components = {
-  p({ children }) {
+  p({ node, children }) {
+    if (isDisplayMathParagraph(node)) {
+      return <Box py={2.5} textAlign="center" fontSize="sm">{children}</Box>;
+    }
     return <Text mb={0} fontSize="sm" lineHeight="base" _notLast={{ mb: 1 }}>{children}</Text>;
   },
   h1({ children }) {
@@ -58,7 +78,7 @@ const markdownComponents: Components = {
             style={oneDark}
             language={languageMatch[1]}
             PreTag="div"
-            customStyle={{ margin: 0, borderRadius: "var(--chakra-radii-sm)", fontSize: "0.8em" }}
+            customStyle={{ margin: 0, borderRadius: "var(--chakra-radii-sm)" }}
           >
             {codeString}
           </SyntaxHighlighter>
@@ -109,7 +129,7 @@ const markdownComponents: Components = {
 
 export function MarkdownContent({ content }: MarkdownContentProps) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
       {content}
     </ReactMarkdown>
   );

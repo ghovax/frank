@@ -1,15 +1,21 @@
 "use client";
 
-import { Box, Button, EmptyState, Field, Flex, Input, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuSend } from "react-icons/lu";
-import { useCallback, useEffect, useRef } from "react";
+import {
+  Box,
+  EmptyState,
+  Flex,
+  VStack,
+} from "@chakra-ui/react";
+import { LuSend } from "react-icons/lu";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
+import { setBypassPermissions } from "@/lib/api";
 
 interface ChatPanelProps {
   agent: string;
-  agents: string[];
+  agents: { name: string; label: string }[];
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
   onSessionCreated: (sessionId: string) => void;
@@ -18,6 +24,7 @@ interface ChatPanelProps {
   onWorkingDirectoryChange?: (dir: string) => void;
   onBrowseFolder?: () => void;
   isConnected?: boolean;
+  onStreamingChange?: (isStreaming: boolean) => void;
 }
 
 export function ChatPanel({
@@ -31,11 +38,15 @@ export function ChatPanel({
   onWorkingDirectoryChange,
   onBrowseFolder,
   isConnected = false,
+  onStreamingChange,
 }: ChatPanelProps) {
   const { messages, sessionId, isStreaming, send, abort, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isPinnedRef = useRef(true);
+  const onStreamingChangeRef = useRef(onStreamingChange);
+  onStreamingChangeRef.current = onStreamingChange;
+  const [bypassPermissions, setBypassPermissionsState] = useState(false);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -64,14 +75,18 @@ export function ChatPanel({
         behavior: "instant",
       });
     }
+    onStreamingChangeRef.current?.(isStreaming);
   }, [isStreaming]);
 
-  function dispatchSlashCommand(command: string) {
-    if (command === "/abort") {
-      abort();
-      return;
+  async function handleToggleBypass() {
+    if (!sessionId) return;
+    const newValue = !bypassPermissions;
+    setBypassPermissionsState(newValue);
+    try {
+      await setBypassPermissions(sessionId, newValue);
+    } catch {
+      setBypassPermissionsState(!newValue);
     }
-    onSlashCommand?.(command);
   }
 
   return (
@@ -79,49 +94,19 @@ export function ChatPanel({
       <Box ref={scrollContainerRef} flex={1} overflowY="auto" px={2} py={2} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <Flex direction="column" align="center" justify="center" h="100%">
-            <VStack align="center" gap={6} maxW="360px" w="100%">
-              <EmptyState.Root>
-                <EmptyState.Content>
-                  <EmptyState.Indicator>
-                    <LuSend />
-                  </EmptyState.Indicator>
-                  <VStack gap={1}>
-                    <EmptyState.Title>No messages yet</EmptyState.Title>
-                    <EmptyState.Description>
-                      Send a message or type / for commands
-                    </EmptyState.Description>
-                  </VStack>
-                </EmptyState.Content>
-              </EmptyState.Root>
-
-              <Field.Root w="100%">
-                <Field.Label fontSize="xs" color="fg.muted" textAlign="center" w="100%">
-                  Working directory
-                </Field.Label>
-                <Flex gap={1} w="100%">
-                  <Input
-                    size="xs"
-                    fontSize="xs"
-                    placeholder="/path/to/project"
-                    value={workingDirectory ?? ""}
-                    onChange={(e) => onWorkingDirectoryChange?.(e.target.value)}
-                    borderRadius="sm"
-                  />
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    borderRadius="sm"
-                    fontSize="xs"
-                    px={2}
-                    minW="unset"
-                    onClick={onBrowseFolder}
-                    title="Browse..."
-                  >
-                    <LuFolder size={14} />
-                  </Button>
-                </Flex>
-              </Field.Root>
-            </VStack>
+            <EmptyState.Root>
+              <EmptyState.Content>
+                <EmptyState.Indicator>
+                  <LuSend />
+                </EmptyState.Indicator>
+                <VStack gap={1}>
+                  <EmptyState.Title>No messages yet</EmptyState.Title>
+                  <EmptyState.Description>
+                    Send a message to start
+                  </EmptyState.Description>
+                </VStack>
+              </EmptyState.Content>
+            </EmptyState.Root>
           </Flex>
         ) : (
           <VStack gap={2} align="stretch">
@@ -139,12 +124,17 @@ export function ChatPanel({
       <ChatInput
         onSend={send}
         onAbort={abort}
-        onSlashCommand={dispatchSlashCommand}
         isStreaming={isStreaming}
+        disabled={!isConnected}
+        sessionId={sessionId}
+        workingDirectory={workingDirectory}
+        onWorkingDirectoryChange={onWorkingDirectoryChange}
+        onBrowseFolder={onBrowseFolder}
         agents={agents}
         selectedAgent={agent}
         onAgentChange={onAgentChange}
-        disabled={!isConnected}
+        bypassPermissions={bypassPermissions}
+        onToggleBypass={handleToggleBypass}
       />
     </Flex>
   );
