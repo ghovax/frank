@@ -53,12 +53,12 @@ const markdownComponents: Components = {
 
     if (languageMatch) {
       return (
-        <Box my={1} borderRadius="lg" overflow="hidden">
+        <Box my={1} borderRadius="sm" overflow="hidden">
           <SyntaxHighlighter
             style={oneDark}
             language={languageMatch[1]}
             PreTag="div"
-            customStyle={{ margin: 0, borderRadius: "var(--chakra-radii-lg)", fontSize: "0.8em" }}
+            customStyle={{ margin: 0, borderRadius: "var(--chakra-radii-sm)", fontSize: "0.8em" }}
           >
             {codeString}
           </SyntaxHighlighter>

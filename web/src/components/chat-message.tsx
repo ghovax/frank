@@ -1,6 +1,8 @@
 "use client";
 
 import { Box, Button, Code, Flex, HStack, Text } from "@chakra-ui/react";
+import { useEffect, useRef } from "react";
+import { LuTerminal } from "react-icons/lu";
 import type { ChatMessage } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
@@ -12,11 +14,81 @@ interface ChatMessageProps {
   onPermission?: (requestId: string, decision: "allow" | "deny") => void;
 }
 
+function PermissionBox({ message, onPermission }: { message: ChatMessage; onPermission?: ChatMessageProps["onPermission"] }) {
+  const resolved = message.meta?.resolved as string | undefined;
+  const requestId = message.meta?.request_id as string | undefined;
+  const justification = message.meta?.justification as string | undefined;
+  const risk = message.meta?.risk as string | undefined;
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const headerBg = risk === "high" ? "red.subtle" : risk === "medium" ? "yellow.subtle" : undefined;
+
+  function handleKeyDown(event: React.KeyboardEvent) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      onPermission?.(String(requestId), "allow");
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      onPermission?.(String(requestId), "deny");
+    }
+  }
+
+  useEffect(() => {
+    if (!resolved && boxRef.current) {
+      boxRef.current.focus();
+    }
+  }, []);
+
+  return (
+    <Box alignSelf="flex-start" w="100%">
+      <Box
+        ref={boxRef}
+        tabIndex={resolved ? undefined : 0}
+        onKeyDown={resolved ? undefined : handleKeyDown}
+        borderRadius="sm"
+        overflow="hidden"
+        bg="bg.subtle"
+        border="1px solid"
+        borderColor="border"
+        _focus={{ boxShadow: "outline" }}
+      >
+        <Flex align="center" gap={1.5} px={2} py={1.5} minH="8" userSelect="none" bg={headerBg}>
+          <Box color="green.fg" fontSize="sm" flexShrink={0}>
+            <LuTerminal size={12} />
+          </Box>
+          <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+            {justification || "Run command"}
+          </Text>
+        </Flex>
+        <Box px={2} py={1.5} borderTop="1px solid" borderColor="border">
+          <Code display="block" fontSize="xs" p={1.5} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="sm">
+            {message.content}
+          </Code>
+        </Box>
+        {resolved ? (
+          <Box px={2} pb={1.5}>
+            <Text fontSize="xs" fontWeight="bold" color={resolved === "allow" ? "green.fg" : "red.fg"}>
+              {resolved === "allow" ? "Allowed" : "Denied"}
+            </Text>
+          </Box>
+        ) : (
+          <Box borderTop="1px solid" borderColor="border" px={2} py={1.5}>
+            <HStack gap={1.5}>
+              <Button size="xs" colorPalette="green" onClick={() => onPermission?.(String(requestId), "allow")}>Allow</Button>
+              <Button size="xs" colorPalette="red" onClick={() => onPermission?.(String(requestId), "deny")}>Deny</Button>
+            </HStack>
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
   switch (message.role) {
     case "user":
       return (
-        <Box alignSelf="flex-end" bg="bg.muted" border="1px solid" borderColor="border" px={3} py={2} borderRadius="lg" maxW="80%">
+        <Box alignSelf="flex-end" bg="bg.muted" border="1px solid" borderColor="border" px={2} py={1.5} borderRadius="sm" maxW="80%">
           <MarkdownContent content={message.content} />
         </Box>
       );
@@ -40,7 +112,7 @@ export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
           <ToolCall
             name={message.content}
             arguments={message.meta?.arguments as Record<string, unknown> | undefined}
-            seq={message.meta?.seq as number | undefined}
+            sequenceNumber={message.meta?.sequenceNumber as number | undefined}
           />
         </Box>
       );
@@ -51,55 +123,17 @@ export function ChatMessageItem({ message, onPermission }: ChatMessageProps) {
           <ToolResult
             name={message.meta?.name as string | undefined}
             content={message.content}
-            seq={message.meta?.seq as number | undefined}
+            sequenceNumber={message.meta?.sequenceNumber as number | undefined}
           />
         </Box>
       );
 
-    case "permission": {
-      const resolved = message.meta?.resolved as string | undefined;
-      return (
-        <Box
-          alignSelf="flex-start"
-          border="1px solid"
-          borderColor="yellow.muted"
-          borderRadius="lg"
-          overflow="hidden"
-          maxW="90%"
-        >
-          <Flex align="center" gap={2} px={2} py={1.5} bg="yellow.subtle">
-            <Text fontSize="xs" fontWeight="bold" color="yellow.fg">PERMISSION</Text>
-            {message.meta?.risk && (
-              <Code fontSize="xs" colorPalette="red">{String(message.meta.risk)}</Code>
-            )}
-          </Flex>
-          <Box px={2} py={1.5}>
-            <Code display="block" fontSize="xs" p={1.5} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="lg">
-              {message.content}
-            </Code>
-            {message.meta?.justification && (
-              <Text fontSize="xs" color="fg.muted" mt={1}>{String(message.meta.justification)}</Text>
-            )}
-            <Box mt={1.5}>
-              {resolved ? (
-                <Text fontSize="xs" fontWeight="bold" color={resolved === "allow" ? "green.fg" : "red.fg"}>
-                  {resolved === "allow" ? "Allowed" : "Denied"}
-                </Text>
-              ) : (
-                <HStack gap={1.5}>
-                  <Button size="xs" colorPalette="green" onClick={() => onPermission?.(String(message.meta?.request_id), "allow")}>Allow</Button>
-                  <Button size="xs" colorPalette="red" variant="outline" onClick={() => onPermission?.(String(message.meta?.request_id), "deny")}>Deny</Button>
-                </HStack>
-              )}
-            </Box>
-          </Box>
-        </Box>
-      );
-    }
+    case "permission":
+      return <PermissionBox message={message} onPermission={onPermission} />;
 
     case "error":
       return (
-        <Box alignSelf="flex-start" bg="red.subtle" border="1px solid" borderColor="red.muted" px={3} py={1.5} borderRadius="lg" maxW="80%">
+        <Box alignSelf="flex-start" bg="red.subtle" border="1px solid" borderColor="red.muted" px={2} py={1.5} borderRadius="sm" maxW="80%">
           <Text fontSize="xs" color="red.fg">{message.content}</Text>
         </Box>
       );

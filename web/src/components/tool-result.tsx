@@ -11,7 +11,7 @@ import { getToolResultDisplay } from "@/lib/tool-display";
 interface ToolResultProps {
   name?: string;
   content: string;
-  seq?: number;
+  sequenceNumber?: number;
 }
 
 function isJson(text: string): boolean {
@@ -23,7 +23,7 @@ function isJson(text: string): boolean {
   }
 }
 
-export function ToolResult({ name, content, seq }: ToolResultProps) {
+export function ToolResult({ name, content, sequenceNumber }: ToolResultProps) {
   const [open, setOpen] = useState(false);
   const contentIsJson = isJson(content);
   const formattedContent = contentIsJson
@@ -33,7 +33,7 @@ export function ToolResult({ name, content, seq }: ToolResultProps) {
   const { icon: Icon, iconColor, label } = getToolResultDisplay(name, content);
 
   return (
-    <Box borderRadius="lg" overflow="hidden" bg="bg.subtle">
+    <Box borderRadius="sm" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
       <Flex
         align="center"
         gap={1.5}
@@ -44,9 +44,9 @@ export function ToolResult({ name, content, seq }: ToolResultProps) {
         onClick={() => setOpen((current) => !current)}
         userSelect="none"
       >
-        {seq != null && (
+        {sequenceNumber != null && (
           <Text fontSize="xs" color="fg.subtle" fontWeight="medium" flexShrink={0}>
-            #{seq}
+            #{sequenceNumber}
           </Text>
         )}
         <Box color={iconColor} fontSize="sm" flexShrink={0}>
@@ -61,7 +61,7 @@ export function ToolResult({ name, content, seq }: ToolResultProps) {
       </Flex>
 
       {open && (
-        <Box maxH="250px" overflowY="auto" borderTop="1px solid" borderColor="border">
+        <Box maxH="250px" overflowY="auto" borderTop="1px solid" borderColor="border" fontSize="xs">
           {contentIsJson ? (
             <SyntaxHighlighter
               style={oneDark}

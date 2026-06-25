@@ -29,7 +29,8 @@ export interface ChatMessage {
 function replayEvents(events: StreamEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   let needsNewAssistant = false;
-  let toolSeq = 0;
+  let toolSequence = 0;
+  const toolIdToSequence = new Map<string, number>();
   const fallbackTimestamp = new Date().toISOString();
 
   for (const event of events) {
@@ -102,6 +103,8 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
       case "tool_call":
       case "agent_tool_call":
         needsNewAssistant = true;
+        const toolCallSequence = ++toolSequence;
+        if (event.id) toolIdToSequence.set(event.id, toolCallSequence);
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
           role: "tool_call",
@@ -110,7 +113,7 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
           meta: {
             arguments: event.arguments,
             step_id: event.step_id,
-            seq: ++toolSeq,
+            sequenceNumber: toolCallSequence,
           },
         });
         break;
@@ -124,6 +127,7 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
           break;
         }
         needsNewAssistant = true;
+        const resultSequence = toolIdToSequence.get(event.id) ?? ++toolSequence;
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
           role: "tool_result",
@@ -132,7 +136,7 @@ function replayEvents(events: StreamEvent[]): ChatMessage[] {
               ? event.result
               : JSON.stringify(event.result, null, 2),
           timestamp: event.timestamp ?? fallbackTimestamp,
-          meta: { name: event.name, task_id: event.task_id, seq: ++toolSeq },
+          meta: { name: event.name, task_id: event.task_id, sequenceNumber: resultSequence },
         });
         break;
       }
@@ -185,6 +189,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   const needsNewAssistantRef = useRef(false);
   const historyLoadedForRef = useRef<string | null>(null);
   const toolSequenceRef = useRef(0);
+  const toolIdToSequenceRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!initialSessionId) return;
@@ -224,6 +229,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
       assistantMessageIdRef.current = "";
       needsNewAssistantRef.current = true;
       toolSequenceRef.current = 0;
+      toolIdToSequenceRef.current = new Map();
 
       setMessages((current) => [...current, userMessage]);
 
@@ -317,7 +323,8 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
             case "tool_call":
             case "agent_tool_call": {
               needsNewAssistantRef.current = true;
-              const seq = ++toolSequenceRef.current;
+              const sequence = ++toolSequenceRef.current;
+              if (event.id) toolIdToSequenceRef.current.set(event.id, sequence);
               flushSync(() => {
                 setMessages((current) => [
                   ...current,
@@ -329,7 +336,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                     meta: {
                       arguments: event.arguments,
                       step_id: event.step_id,
-                      seq,
+                      sequenceNumber: sequence,
                     },
                   },
                 ]);
@@ -348,7 +355,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                 break;
               }
               needsNewAssistantRef.current = true;
-              const resultSeq = ++toolSequenceRef.current;
+              const resultSequence = toolIdToSequenceRef.current.get(event.id) ?? ++toolSequenceRef.current;
               flushSync(() => {
                 setMessages((current) => [
                   ...current,
@@ -360,7 +367,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                         ? event.result
                         : JSON.stringify(event.result, null, 2),
                     timestamp: event.timestamp ?? new Date().toISOString(),
-                    meta: { name: event.name, task_id: event.task_id, seq: resultSeq },
+                    meta: { name: event.name, task_id: event.task_id, sequenceNumber: resultSequence },
                   },
                 ]);
               });

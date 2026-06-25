@@ -2,7 +2,7 @@
 
 import { Box, Button, EmptyState, Field, Flex, Input, Text, VStack } from "@chakra-ui/react";
 import { LuFolder, LuSend } from "react-icons/lu";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useChat } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
@@ -35,17 +35,36 @@ export function ChatPanel({
   const { messages, sessionId, isStreaming, send, abort, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isPinnedRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const threshold = 30;
+    isPinnedRef.current = container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+  }, []);
 
   useEffect(() => {
     if (sessionId) onSessionCreated(sessionId);
   }, [sessionId, onSessionCreated]);
 
   useEffect(() => {
+    if (!isPinnedRef.current) return;
     scrollContainerRef.current?.scrollTo({
       top: scrollContainerRef.current.scrollHeight,
-      behavior: "smooth",
+      behavior: "instant",
     });
   }, [messages]);
+
+  useEffect(() => {
+    if (isStreaming) {
+      isPinnedRef.current = true;
+      scrollContainerRef.current?.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: "instant",
+      });
+    }
+  }, [isStreaming]);
 
   function dispatchSlashCommand(command: string) {
     if (command === "/abort") {
@@ -57,7 +76,7 @@ export function ChatPanel({
 
   return (
     <Flex direction="column" h="100%">
-      <Box ref={scrollContainerRef} flex={1} overflowY="auto" px={3} py={3}>
+      <Box ref={scrollContainerRef} flex={1} overflowY="auto" px={2} py={2} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <Flex direction="column" align="center" justify="center" h="100%">
             <VStack align="center" gap={6} maxW="360px" w="100%">
@@ -86,12 +105,12 @@ export function ChatPanel({
                     placeholder="/path/to/project"
                     value={workingDirectory ?? ""}
                     onChange={(e) => onWorkingDirectoryChange?.(e.target.value)}
-                    borderRadius="lg"
+                    borderRadius="sm"
                   />
                   <Button
                     size="xs"
                     variant="outline"
-                    borderRadius="lg"
+                    borderRadius="sm"
                     fontSize="xs"
                     px={2}
                     minW="unset"
@@ -105,7 +124,7 @@ export function ChatPanel({
             </VStack>
           </Flex>
         ) : (
-          <VStack gap={4} align="stretch">
+          <VStack gap={2} align="stretch">
             {messages.map((message) => (
               <ChatMessageItem
                 key={message.id}

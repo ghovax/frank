@@ -147,7 +147,7 @@ export function ChatInput({
           bg="bg.panel"
           border="1px solid"
           borderColor="border"
-          borderRadius="lg"
+          borderRadius="sm"
           boxShadow="md"
           overflow="hidden"
         >
@@ -172,18 +172,18 @@ export function ChatInput({
         </Box>
       )}
 
-      <Flex gap={2} p={3} align="center">
+      <Flex gap={1.5} p={2} align="center">
         <Select.Root
           collection={agentCollection}
           value={[selectedAgent]}
           onValueChange={(details) => {
             if (details.value[0]) onAgentChange(details.value[0]);
           }}
-          size="sm"
-          w="110px"
+          size="xs"
+          w="100px"
         >
           <Select.Control>
-            <Select.Trigger borderRadius="lg" fontSize="sm">
+            <Select.Trigger borderRadius="sm" fontSize="sm" h="30px">
               <Select.ValueText placeholder="Agent" />
             </Select.Trigger>
             <Select.IndicatorGroup>
@@ -192,7 +192,7 @@ export function ChatInput({
           </Select.Control>
           <Portal>
             <Select.Positioner>
-              <Select.Content borderRadius="lg">
+              <Select.Content borderRadius="sm">
                 {agentCollection.items.map((item) => (
                   <Select.Item item={item} key={item.value}>
                     {item.label}
@@ -204,7 +204,7 @@ export function ChatInput({
           </Portal>
         </Select.Root>
 
-        <Box position="relative" flex={1} bg="bg" borderRadius="lg" border="1px solid" borderColor="border">
+        <Box position="relative" flex={1} bg="bg" borderRadius="sm" border="1px solid" borderColor="border">
           <Input
             ref={inputRef}
             placeholder={disabled ? "Connecting to server..." : "Send a message or type / for commands..."}
@@ -214,7 +214,7 @@ export function ChatInput({
             disabled={isStreaming || disabled}
             fontSize="sm"
             size="sm"
-            h="34px"
+            h="30px"
             border="none"
             _focus={{ outline: "none", boxShadow: "none" }}
             pr="36px"
@@ -227,12 +227,12 @@ export function ChatInput({
                 colorPalette="red"
                 variant="ghost"
                 size="sm"
-                borderRadius="md"
-                minW="26px"
-                h="26px"
+                borderRadius="sm"
+                minW="24px"
+                h="24px"
                 p={0}
               >
-                <LuSquare />
+                <LuSquare size={12} />
               </IconButton>
             ) : (
               <IconButton
@@ -241,13 +241,13 @@ export function ChatInput({
                 colorPalette="blue"
                 variant="ghost"
                 size="sm"
-                borderRadius="md"
-                minW="26px"
-                h="26px"
+                borderRadius="sm"
+                minW="24px"
+                h="24px"
                 p={0}
                 disabled={disabled}
               >
-                <LuArrowUp />
+                <LuArrowUp size={12} />
               </IconButton>
             )}
           </Box>

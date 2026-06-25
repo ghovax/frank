@@ -1,9 +1,9 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Text, VStack } from "@chakra-ui/react";
+import { LuMessageSquare, LuPlus } from "react-icons/lu";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LuMessageSquare } from "react-icons/lu";
 import { fetchAgents, fetchHomeDirectory, fetchSessions } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
@@ -138,26 +138,28 @@ export default function Home() {
     <Flex h="100vh">
       <Flex
         direction="column"
-        w="260px"
+        w="220px"
         borderRight="1px solid"
         borderColor="border"
         flexShrink={0}
       >
-        <Box px={3} py={3}>
+        <Box px={2} py={2}>
           <Button
             w="100%"
-            size="sm"
-            variant="surface"
-            borderRadius="lg"
+            size="xs"
+            variant="solid"
+            colorPalette="blue"
+            borderRadius="sm"
             fontSize="xs"
             onClick={handleNewChat}
           >
+            <LuPlus size={12} />
             New conversation
           </Button>
         </Box>
 
-        <Box flex={1} overflowY="auto" px={3} pb={3}>
-          <Text fontSize="sm" color="fg.muted" fontWeight="bold" mb={1.5}>
+        <Box flex={1} overflowY="auto" px={2} pb={2}>
+          <Text fontSize="xs" color="fg.muted" fontWeight="bold" mb={1}>
             Sessions
           </Text>
           {sessions.length === 0 ? (
@@ -175,27 +177,25 @@ export default function Home() {
               </EmptyState.Content>
             </EmptyState.Root>
           ) : (
-            <VStack gap={1} align="stretch">
+            <VStack gap={2} align="stretch">
               {sessions.map((entry) => (
                 <Box
                   key={entry.sessionId}
-                  px={2}
-                  py={1.5}
-                  borderRadius="lg"
+                  px={1.5}
+                  py={1}
+                  borderRadius="sm"
+                  border="1px solid"
+                  borderColor="border"
                   cursor="pointer"
-                  bg={
-                    entry.sessionId === activeSessionId
-                      ? "bg.emphasized"
-                      : undefined
-                  }
+                  bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
                   _hover={{ bg: "bg.muted" }}
                   onClick={() => handleResumeSession(entry)}
                 >
-                  <Text fontSize="sm" fontWeight="medium" truncate>
+                  <Text fontSize="xs" fontWeight="medium" truncate>
                     {entry.agent}
                   </Text>
-                  <Text fontSize="xs" color="fg.subtle" truncate>
-                    {entry.sessionId}
+                  <Text fontSize="11px" color="fg.subtle" truncate>
+                    {entry.sessionId.slice(0, 8)}
                   </Text>
                 </Box>
               ))}

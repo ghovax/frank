@@ -10,10 +10,10 @@ import { getToolCallDisplay } from "@/lib/tool-display";
 interface ToolCallProps {
   name: string;
   arguments?: Record<string, unknown>;
-  seq?: number;
+  sequenceNumber?: number;
 }
 
-export function ToolCall({ name, arguments: toolArguments, seq }: ToolCallProps) {
+export function ToolCall({ name, arguments: toolArguments, sequenceNumber }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const formattedArguments = toolArguments
     ? JSON.stringify(toolArguments, null, 2)
@@ -22,7 +22,7 @@ export function ToolCall({ name, arguments: toolArguments, seq }: ToolCallProps)
   const { icon: Icon, iconColor, label } = getToolCallDisplay(name, toolArguments);
 
   return (
-    <Box borderRadius="lg" overflow="hidden" bg="bg.subtle">
+    <Box borderRadius="sm" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
       <Flex
         align="center"
         gap={1.5}
@@ -33,9 +33,9 @@ export function ToolCall({ name, arguments: toolArguments, seq }: ToolCallProps)
         onClick={() => formattedArguments && setOpen((current) => !current)}
         userSelect="none"
       >
-        {seq != null && (
+        {sequenceNumber != null && (
           <Text fontSize="xs" color="fg.subtle" fontWeight="medium" flexShrink={0}>
-            #{seq}
+            #{sequenceNumber}
           </Text>
         )}
         <Box color={iconColor} fontSize="sm" flexShrink={0}>

@@ -12,7 +12,7 @@ export function ThinkingIndicator({ content }: ThinkingIndicatorProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <Box borderRadius="lg" overflow="hidden" bg="bg.subtle">
+    <Box borderRadius="sm" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
       <Flex
         align="center"
         gap={1.5}
