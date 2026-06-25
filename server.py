@@ -168,14 +168,6 @@ async def startup():
         _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
     _database_engine, _database_session_factory = create_database()
 
-    try:
-        database_session = get_database()
-        database_session.execute("ALTER TABLE sessions ADD COLUMN title TEXT DEFAULT ''")
-        database_session.commit()
-        database_session.close()
-    except Exception:
-        pass
-
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
         from exa_py import Exa
