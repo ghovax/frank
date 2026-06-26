@@ -2,7 +2,7 @@
 
 import { Badge, Box, Flex, IconButton, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { LuChevronDown, LuChevronRight, LuNetwork, LuX } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuNetwork, LuTarget, LuX } from "react-icons/lu";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
 import { isStepDone } from "@/lib/use-chat";
 import { AgentTimeline } from "./agent-timeline";
@@ -42,17 +42,8 @@ interface AgentsPanelProps {
 
 function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: string; agents: { name: string; label: string }[] }) {
   const done = isStepDone(step);
-  const [open, setOpen] = useState(!done);
+  const [open, setOpen] = useState(true);
   const [thinkingOpen, setThinkingOpen] = useState(false);
-
-  // Collapse the card when the step transitions to done. Adjusted during render
-  // via a previous-value tracker rather than in an effect (avoids a cascading
-  // re-render) while still leaving the card manually toggleable afterwards.
-  const [wasDone, setWasDone] = useState(done);
-  if (done !== wasDone) {
-    setWasDone(done);
-    if (done) setOpen(false);
-  }
 
   return (
     <ToolCard>
@@ -90,7 +81,8 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
               userSelect="none"
             >
               {thinkingOpen ? <LuChevronDown size={11} /> : <LuChevronRight size={11} />}
-              <Text fontSize="xs" fontWeight="medium">Reasoning</Text>
+              {step.icon === "goal" && <LuTarget size={11} />}
+              <Text fontSize="xs" fontWeight="medium">{step.focus || "Reasoning"}</Text>
             </Flex>
             {thinkingOpen && (
               <Box mt={1} pl={3} borderLeft="2px solid" borderColor="border" color="fg.muted" fontSize="xs" whiteSpace="pre-wrap">
@@ -104,7 +96,10 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
           <AgentTimeline parts={step.parts} agents={agents} />
         ) : (
           !done && !step.thinking && (
-            <Text fontSize="xs" color="fg.subtle">Working…</Text>
+            <Flex align="center" gap={1} color="fg.subtle">
+              {step.icon === "goal" && <LuTarget size={11} />}
+              <Text fontSize="xs">{step.focus || "Working…"}</Text>
+            </Flex>
           )
         )}
       </ToolCardBody>}
@@ -124,15 +119,7 @@ function AgentGroupCard({
   const completed = group.steps.filter((step) => isStepDone(step)).length;
   const total = group.steps.length;
   const active = total - completed;
-  const [open, setOpen] = useState(active > 0);
-
-  // Follow the active count — open while work remains, collapse once every step
-  // finishes — tracked during render rather than in an effect.
-  const [previousActive, setPreviousActive] = useState(active);
-  if (active !== previousActive) {
-    setPreviousActive(active);
-    setOpen(active > 0);
-  }
+  const [open, setOpen] = useState(true);
 
   return (
     <ToolCard>

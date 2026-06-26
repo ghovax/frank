@@ -251,9 +251,9 @@ class HarnessAgentExecutor(AgentExecutor):
                 if kind == StreamEvent.Type.TEXT_CHUNK:
                     await emit(_text_part(data.get("text", "")))
                 elif kind == StreamEvent.Type.THINKING:
-                    await emit(_data_part("thinking", text=data.get("text", "")))
+                    await emit(_data_part("thinking", text=data.get("text", ""), label=data.get("label", ""), icon=data.get("icon", "")))
                 elif kind == StreamEvent.Type.STATUS:
-                    await emit(_data_part("status", code=data.get("code", "")))
+                    await emit(_data_part("status", code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", "")))
                 elif kind == StreamEvent.Type.TOOL_CALL:
                     await emit(_data_part(
                         "tool_call", name=data.get("name", ""),
@@ -284,11 +284,13 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.AGENT_TEXT_CHUNK:
                     await emit_sub("sub_task_text", data, text=data.get("text", ""))
                 elif kind == StreamEvent.Type.AGENT_THINKING:
-                    await emit_sub("sub_task_thinking", data, text=data.get("text", ""))
+                    await emit_sub("sub_task_thinking", data, text=data.get("text", ""), label=data.get("label", ""), icon=data.get("icon", ""))
                 elif kind == StreamEvent.Type.AGENT_TOOL_CALL:
-                    await emit_sub("sub_task_tool_call", data, name=data.get("name", ""), arguments=data.get("arguments", {}))
+                    await emit_sub("sub_task_tool_call", data, name=data.get("name", ""), arguments=data.get("arguments", {}), toolCallId=data.get("toolCallId", ""))
+                elif kind == StreamEvent.Type.AGENT_TOOL_RESULT:
+                    await emit_sub("sub_task_tool_result", data, name=data.get("name", ""), result=data.get("result"), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_STATUS:
-                    await emit_sub("sub_task_status", data, code=data.get("code", ""))
+                    await emit_sub("sub_task_status", data, code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", ""))
                 elif kind == StreamEvent.Type.AGENT_DONE:
                     await emit_sub("sub_task_done", data, task=data.get("task"))
                 elif kind == StreamEvent.Type.DONE:
@@ -385,12 +387,23 @@ class AgentRegistry:
                             elif isinstance(root, DataPart):
                                 data_kind = root.data.get(PART_KIND)
                                 if data_kind == "thinking":
-                                    yield {"type": "thinking", "text": root.data.get("text", ""), "child_task_id": child_task_id}
+                                    yield {"type": "thinking", "text": root.data.get("text", ""), "label": root.data.get("label", ""), "icon": root.data.get("icon", ""), "child_task_id": child_task_id}
+                                elif data_kind == "status":
+                                    yield {"type": "status", "code": root.data.get("code", ""), "label": root.data.get("label", ""), "icon": root.data.get("icon", ""), "child_task_id": child_task_id}
                                 elif data_kind == "tool_call":
                                     yield {
                                         "type": "tool_call",
                                         "name": root.data.get("name", ""),
                                         "arguments": root.data.get("arguments", {}),
+                                        "toolCallId": root.data.get("toolCallId", ""),
+                                        "child_task_id": child_task_id,
+                                    }
+                                elif data_kind == "tool_result":
+                                    yield {
+                                        "type": "tool_result",
+                                        "name": root.data.get("name", ""),
+                                        "result": root.data.get("result"),
+                                        "toolCallId": root.data.get("toolCallId", ""),
                                         "child_task_id": child_task_id,
                                     }
                 elif isinstance(event, TaskArtifactUpdateEvent):

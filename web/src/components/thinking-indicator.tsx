@@ -2,18 +2,26 @@
 
 import { Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
-import { LuBrain, LuChevronRight, LuChevronDown, LuHourglass } from "react-icons/lu";
+import { LuBrain, LuChevronRight, LuChevronDown, LuHourglass, LuTarget } from "react-icons/lu";
 
 interface ThinkingIndicatorProps {
   content?: string;
+  focus?: string;
+  icon?: string;
   status?: string;
 }
 
-export function ThinkingIndicator({ content, status }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ content, focus, icon, status }: ThinkingIndicatorProps) {
   const [open, setOpen] = useState(false);
-  const isWaitingForTools = content === "Waiting for tool results...";
-  const isTransientStatus = !content || content === "Thinking" || isWaitingForTools;
-  const isRunning = status === "running" || !content;
+  const title = focus || content || "Thinking";
+  const isWaiting = icon === "waiting" || title === "Waiting for tools...";
+  const isGoal = icon === "goal";
+  // `content` holds the reasoning body (if any); a real label means we are not
+  // showing a bare placeholder, so the shimmer only applies before any focus.
+  const hasReasoning = !!content && content !== "Thinking";
+  const showShimmer = !focus && status === "running" && !isWaiting;
+
+  const iconColor = isWaiting ? "blue.fg" : isGoal ? "teal.fg" : "purple.fg";
 
   return (
     <Box borderRadius="sm" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
@@ -23,30 +31,30 @@ export function ThinkingIndicator({ content, status }: ThinkingIndicatorProps) {
         px={2}
         py={1.5}
         minH="8"
-        cursor={!isTransientStatus ? "pointer" : undefined}
-        onClick={() => !isTransientStatus && setOpen((current) => !current)}
+        cursor={hasReasoning ? "pointer" : undefined}
+        onClick={() => hasReasoning && setOpen((current) => !current)}
         userSelect="none"
       >
-        <Box color={isWaitingForTools ? "blue.fg" : "purple.fg"} fontSize="sm">
-          {isWaitingForTools ? <LuHourglass size={12} /> : <LuBrain size={12} />}
+        <Box color={iconColor} fontSize="sm" flexShrink={0}>
+          {isWaiting ? <LuHourglass size={12} /> : isGoal ? <LuTarget size={12} /> : <LuBrain size={12} />}
         </Box>
         <Text
           fontSize="xs"
           fontWeight="medium"
           truncate
           flex={1}
-          className={isTransientStatus && isRunning ? "running-title-shimmer" : undefined}
+          className={showShimmer ? "running-title-shimmer" : undefined}
         >
-          {content || "Thinking"}
+          {title}
         </Text>
-        {!isTransientStatus && (
-          <Box color="fg.muted" fontSize="xs" ml="auto">
+        {hasReasoning && (
+          <Box color="fg.muted" fontSize="xs" ml="auto" flexShrink={0}>
             {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
           </Box>
         )}
       </Flex>
 
-      {!isTransientStatus && open && (
+      {hasReasoning && open && (
         <Box maxH="250px" overflowY="auto" borderTop="1px solid" borderColor="border" px={2} py={1.5} fontSize="sm" whiteSpace="pre-wrap">
           {content}
         </Box>

@@ -104,7 +104,7 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
       );
 
     case "thinking":
-      return <ThinkingIndicator content={message.content} status={message.meta?.status as string | undefined} />;
+      return <ThinkingIndicator content={message.content} focus={message.meta?.focus as string | undefined} icon={message.meta?.icon as string | undefined} status={message.meta?.status as string | undefined} />;
 
     case "tool_call": {
       return (

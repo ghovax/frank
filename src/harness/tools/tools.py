@@ -342,6 +342,23 @@ def update_goal(
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
+@tool
+def set_focus(focus: str) -> str:
+    """MUST be your FIRST tool call on every response, before any other tool.
+
+    Names what you are about to figure out or do in this step (for example
+    "finding where the error is raised"). The harness shows it to the user as
+    the live label for your thinking. Call it exactly once per step, first,
+    every time — even when the next action seems obvious. It is not a task or a
+    goal, just a one-line note on the current step.
+
+    Args:
+        focus: A short phrase (roughly eight words or fewer) describing the
+            immediate step you are about to take.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
 def cancel_all_background_tasks() -> None:
     bash_tasks.cancel_all()
     web_tasks.cancel_all()

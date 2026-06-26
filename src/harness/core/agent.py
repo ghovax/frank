@@ -58,6 +58,7 @@ from harness.tools.tools import (
     write_tasks as write_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
+    set_focus as set_focus_tool,
     bash_tasks,
     web_tasks,
     spawned_tasks,
@@ -89,6 +90,7 @@ class StreamEvent:
         AGENT_GROUP_STARTED = "agent_group_started"
         AGENT_TEXT_CHUNK = "agent_text_chunk"
         AGENT_TOOL_CALL = "agent_tool_call"
+        AGENT_TOOL_RESULT = "agent_tool_result"
         AGENT_THINKING = "agent_thinking"
         AGENT_STATUS = "agent_status"
         AGENT_DONE = "agent_done"
@@ -121,6 +123,7 @@ def _build_tools(tools_configuration) -> list[BaseTool]:
         write_tasks_tool,
         update_tasks_tool,
         update_goal_tool,
+        set_focus_tool,
         read_task_tool,
     ]
     if tools_configuration.spawn_agent.enabled:
@@ -222,6 +225,10 @@ class SubAgentRunner:
             state = TaskState.failed
         elif stop_reason == "cancelled":
             state = TaskState.canceled
+        elif stop_reason == "maximum_iterations":
+            state = TaskState.failed
+            if not final_text.strip():
+                final_text = "Reached the tool-call cap without producing a final answer."
         if not final_text.strip():
             final_text = "Agent produced no output."
             state = TaskState.failed
@@ -424,6 +431,26 @@ class AgentRuntime:
     # (searches, sub-agents, slow bash) before invoking the model anyway.
     _BACKGROUND_WAIT_SECONDS = 300.0
     _GOAL_CONTINUATION_LIMIT = 3
+    # Sub-agents (delegation depth > 0) get a tighter iteration budget than the
+    # top-level chat agent so a looping sub-agent fails fast instead of burning
+    # the full budget on redundant calls.
+    _SUB_AGENT_MAXIMUM_ITERATIONS = 15
+
+    # Rotating fallback labels for the thinking phase, shown before the model
+    # calls set_focus (or if it omits it). Variety keeps the live trace from
+    # flashing the same word on every step.
+    _FOCUS_FALLBACKS_START = (
+        "Mapping out the approach",
+        "Reading the request carefully",
+        "Planning the next step",
+        "Weighing the options",
+    )
+    _FOCUS_FALLBACKS_AFTER_TOOL = (
+        "Processing the results",
+        "Making sense of the output",
+        "Checking this against the goal",
+        "Deciding what to do next",
+    )
 
     def __init__(
         self,
@@ -474,6 +501,7 @@ class AgentRuntime:
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         self._active_goal: str = ""
+        self._focus_rotation = 0
         self._execution_history: list[dict] = []
         self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
@@ -569,6 +597,22 @@ class AgentRuntime:
             })
         return self._cached_system_prompt
 
+    def _fallback_focus_label(self) -> tuple[str, str]:
+        """A transient label for the thinking phase before the model's own
+        ``<focus>`` arrives (or if it omits the opener). Returns the label and an
+        icon variant (``"goal"`` when an active goal is set, else ``"thinking"``).
+        The UI truncates the text, so no truncation is done here."""
+        if self._active_goal:
+            return (self._active_goal.strip(), "goal")
+        pool = (
+            self._FOCUS_FALLBACKS_AFTER_TOOL
+            if self._calls_this_turn > 0
+            else self._FOCUS_FALLBACKS_START
+        )
+        label = pool[self._focus_rotation % len(pool)]
+        self._focus_rotation += 1
+        return (label, "thinking")
+
     def _build_dynamic_context(self) -> str:
         """Build the dynamic context injected at the end of the message list."""
         parts = []
@@ -611,6 +655,7 @@ class AgentRuntime:
                 self._conversation.append(message)
             events.append(StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
+                id=(completion.pending_message.tool_call_id if completion.pending_message else ""),
                 name=completion.tool_name,
                 result=_maybe_json(completion.result),
                 task_id=completion.task_identifier,
@@ -643,7 +688,13 @@ class AgentRuntime:
         turn_final_response = ""
         goal_continuations = 0
 
-        while self._calls_this_turn < self._agent_configuration.maximum_iterations:
+        effective_maximum_iterations = self._agent_configuration.maximum_iterations
+        if self._delegation_depth > 0:
+            effective_maximum_iterations = min(
+                effective_maximum_iterations, self._SUB_AGENT_MAXIMUM_ITERATIONS
+            )
+
+        while self._calls_this_turn < effective_maximum_iterations:
             if self._abort_event.is_set():
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
@@ -676,7 +727,8 @@ class AgentRuntime:
                 + [SystemMessage(content=self._build_dynamic_context())]
             )
 
-            yield StreamEvent(StreamEvent.Type.STATUS, code="thinking")
+            fallback_label, fallback_icon = self._fallback_focus_label()
+            yield StreamEvent(StreamEvent.Type.STATUS, code="thinking", label=fallback_label, icon=fallback_icon)
             accumulated_response = None
             async for chunk in self._bound_llm.astream(messages):
                 if self._abort_event.is_set():
@@ -728,105 +780,59 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
                 return
 
-            tool_call_results: list[tuple[str, str, str | None]] = []
-            denied_commands: list[str] = []
+            # Collect each tool's outcome as it runs, then append the AIMessage
+            # and all ToolMessages afterward. Appending together (rather than as
+            # tools finish) keeps the conversation valid even if a tool is
+            # aborted mid-flight — every tool_call always gets a ToolMessage.
+            outcomes: dict[str, dict] = {}
 
-            for tool_call_data in response.tool_calls:
+            # set_focus only updates the thinking label (no tool card), so run it
+            # first (sequential, instant) to surface labels before other work;
+            # every other tool runs concurrently below.
+            focus_calls = [call for call in response.tool_calls if call["name"] == "set_focus"]
+            other_calls = [call for call in response.tool_calls if call["name"] != "set_focus"]
+
+            for tool_call_data in focus_calls:
                 if self._abort_event.is_set():
-                    self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
-                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                    return
+                    break
+                async for event in self._run_one_tool(
+                    tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                ):
+                    yield event
 
-                tool_name = tool_call_data["name"]
-                tool_arguments = tool_call_data["args"]
-                tool_call_identifier = tool_call_data["id"]
+            if other_calls and not self._abort_event.is_set():
+                async for event in self._drain_tools_concurrently(
+                    other_calls, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                ):
+                    yield event
 
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_CALL,
-                    name=tool_name,
-                    arguments=tool_arguments,
-                    id=tool_call_identifier,
-                )
-                turn_tool_calls_log.append({
-                    "name": tool_name,
-                    "arguments": tool_arguments,
-                })
-
-                try:
-                    async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier):
-                        yield event
-                        if event.type == StreamEvent.Type.TOOL_RESULT:
-                            result_str = event.data.get("result", "")
-                            if (
-                                isinstance(result_str, dict)
-                                and isinstance(result_str.get("code"), str)
-                                and result_str["code"].endswith("_started")
-                            ):
-                                raw_task_identifier = result_str.get("task_identifier")
-                                task_identifier = raw_task_identifier if isinstance(raw_task_identifier, str) else None
-                                model_result = json.dumps({
-                                    "code": "background_task_scheduled",
-                                    "task_identifier": task_identifier,
-                                })
-                                tool_call_results.append((tool_call_identifier, model_result, task_identifier))
-                                turn_tool_results_log.append({"name": tool_name, "result": json.dumps(result_str)})
-                                continue
-                            if isinstance(result_str, dict):
-                                result_str = json.dumps(result_str)
-                            tool_call_results.append((tool_call_identifier, str(result_str), None))
-                            turn_tool_results_log.append({"name": tool_name, "result": str(result_str)})
-                        elif event.type == StreamEvent.Type.ERROR:
-                            error_message = event.data.get("message", "unknown error")
-                            tool_call_results.append((tool_call_identifier, error_message, None))
-                            turn_tool_results_log.append({"name": tool_name, "result": error_message})
-                        elif event.type == StreamEvent.Type.DENIED_INJECTION:
-                            denied_commands.append(event.data.get("command", ""))
-                        elif event.type == StreamEvent.Type.TASKS_UPDATED:
-                            result_message = event.data.get("result_message", "")
-                            tool_call_results.append((tool_call_identifier, result_message, None))
-                            turn_tool_results_log.append({"name": tool_name, "result": result_message})
-                        elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
-                            result_message = event.data.get("result_message", "")
-                            raw_task_identifier = event.data.get("task_id")
-                            task_identifier = raw_task_identifier if isinstance(raw_task_identifier, str) else None
-                            tool_call_results.append((
-                                tool_call_identifier,
-                                json.dumps({
-                                    "code": "background_task_scheduled",
-                                    "task_identifier": task_identifier,
-                                }),
-                                task_identifier,
-                            ))
-                            turn_tool_results_log.append({"name": tool_name, "result": result_message})
-                except Exception as exception:
-                    if tool_call_identifier not in {cid for cid, _, _ in tool_call_results}:
-                        error_message = f"Internal error processing {tool_name}: {exception}"
-                        tool_call_results.append((tool_call_identifier, error_message, None))
-                        yield StreamEvent(
-                            StreamEvent.Type.ERROR, id=tool_call_identifier, message=error_message, tool=tool_name,
-                        )
-                        turn_tool_results_log.append({"name": tool_name, "result": error_message})
-
+            # Append the initiating AIMessage, then a ToolMessage for every call.
             self._conversation.append(response)
-
-            for call_identifier, result, background_task_identifier in tool_call_results:
+            for tool_call_data in response.tool_calls:
+                tool_call_identifier = tool_call_data["id"]
+                outcome = outcomes.get(tool_call_identifier, {})
+                content = outcome.get("content", "")
+                if not content:
+                    content = "(interrupted)" if self._abort_event.is_set() else ""
                 conversation_index = len(self._conversation)
                 self._conversation.append(
-                    ToolMessage(content=result, tool_call_id=call_identifier)
+                    ToolMessage(content=content, tool_call_id=tool_call_identifier)
                 )
+                background_task_identifier = outcome.get("background_task_identifier")
                 if background_task_identifier:
                     self._background.bind_model_message(
-                        background_task_identifier,
-                        call_identifier,
-                        conversation_index,
+                        background_task_identifier, tool_call_identifier, conversation_index,
                     )
+                denied_commands = outcome.get("denied_commands", [])
+                if denied_commands:
+                    commands_list = ", ".join(f"'{command}'" for command in denied_commands)
+                    denied_message = self._prompt_loader.load("command_denied", {"commands": commands_list})
+                    self._conversation.append(SystemMessage(content=denied_message))
 
-            if denied_commands:
-                commands_list = ", ".join(f"'{command}'" for command in denied_commands)
-                denied_message = self._prompt_loader.load("command_denied", {
-                    "commands": commands_list,
-                })
-                self._conversation.append(SystemMessage(content=denied_message))
+            if self._abort_event.is_set():
+                self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
+                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                return
 
             self._calls_this_turn += 1
 
@@ -834,13 +840,153 @@ class AgentRuntime:
             user_message, turn_tool_calls_log,
             turn_tool_results_log, "",
         )
-        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="maximum_iterations")
+        yield StreamEvent(
+            StreamEvent.Type.DONE,
+            text="Reached the tool-call limit without producing a final answer.",
+            stop_reason="maximum_iterations",
+        )
 
     def _load_sub_agent(self, name: str) -> AgentConfiguration:
         return load_agent_configuration(
             name,
             self._global_configuration.agents_directory,
         )
+
+    async def _run_one_tool(
+        self,
+        tool_call_data: dict,
+        turn_tool_calls_log: list[dict],
+        turn_tool_results_log: list[dict],
+        outcomes: dict[str, dict],
+    ) -> AsyncIterator[StreamEvent]:
+        """Run a single tool call, yielding its events and recording its outcome
+        in ``outcomes`` (keyed by tool_call_id). The caller appends ToolMessages
+        afterward so the conversation stays consistent even on abort.
+
+        Self-contained so it can run concurrently with other tools: each owns its
+        TOOL_CALL emit, result collection, and outcome record.
+        """
+        tool_name = tool_call_data["name"]
+        tool_arguments = tool_call_data["args"]
+        tool_call_identifier = tool_call_data["id"]
+        is_focus_call = tool_name == "set_focus"
+
+        if not is_focus_call:
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_CALL,
+                name=tool_name,
+                arguments=tool_arguments,
+                id=tool_call_identifier,
+            )
+            turn_tool_calls_log.append({"name": tool_name, "arguments": tool_arguments})
+
+        result_content: str = ""
+        background_task_identifier: str | None = None
+        denied_commands: list[str] = []
+
+        try:
+            async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier):
+                yield event
+                if event.type == StreamEvent.Type.TOOL_RESULT:
+                    result_str = event.data.get("result", "")
+                    if (
+                        isinstance(result_str, dict)
+                        and isinstance(result_str.get("code"), str)
+                        and result_str["code"].endswith("_started")
+                    ):
+                        raw_task_identifier = result_str.get("task_identifier")
+                        background_task_identifier = (
+                            raw_task_identifier if isinstance(raw_task_identifier, str) else None
+                        )
+                        result_content = json.dumps({
+                            "code": "background_task_scheduled",
+                            "task_identifier": background_task_identifier,
+                        })
+                        turn_tool_results_log.append({"name": tool_name, "result": json.dumps(result_str)})
+                    else:
+                        if isinstance(result_str, dict):
+                            result_str = json.dumps(result_str)
+                        result_content = str(result_str)
+                        turn_tool_results_log.append({"name": tool_name, "result": result_content})
+                elif event.type == StreamEvent.Type.ERROR:
+                    result_content = event.data.get("message", "unknown error")
+                    turn_tool_results_log.append({"name": tool_name, "result": result_content})
+                elif event.type == StreamEvent.Type.DENIED_INJECTION:
+                    denied_commands.append(event.data.get("command", ""))
+                elif event.type == StreamEvent.Type.TASKS_UPDATED:
+                    result_content = event.data.get("result_message", "")
+                    turn_tool_results_log.append({"name": tool_name, "result": result_content})
+                elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
+                    raw_task_identifier = event.data.get("task_id")
+                    background_task_identifier = (
+                        raw_task_identifier if isinstance(raw_task_identifier, str) else None
+                    )
+                    result_content = json.dumps({
+                        "code": "background_task_scheduled",
+                        "task_identifier": background_task_identifier,
+                    })
+                    turn_tool_results_log.append(
+                        {"name": tool_name, "result": event.data.get("result_message", "")}
+                    )
+        except Exception as exception:
+            result_content = f"Internal error processing {tool_name}: {exception}"
+            yield StreamEvent(
+                StreamEvent.Type.ERROR, id=tool_call_identifier, message=result_content, tool=tool_name,
+            )
+            turn_tool_results_log.append({"name": tool_name, "result": result_content})
+
+        outcomes[tool_call_identifier] = {
+            "content": result_content,
+            "background_task_identifier": background_task_identifier,
+            "denied_commands": denied_commands,
+        }
+
+    async def _drain_tools_concurrently(
+        self,
+        tool_calls: list[dict],
+        turn_tool_calls_log: list[dict],
+        turn_tool_results_log: list[dict],
+        outcomes: dict[str, dict],
+    ) -> AsyncIterator[StreamEvent]:
+        """Run independent tool calls concurrently, yielding their events as they
+        arrive (interleaved). With ``parallel_tool_calls=True`` the model emits
+        several calls in one response; running them concurrently means multiple
+        spawned agents (and other tools) progress in parallel rather than
+        sequentially."""
+        if not tool_calls:
+            return
+
+        queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+        remaining = len(tool_calls)
+
+        async def runner(tool_call_data: dict) -> None:
+            nonlocal remaining
+            try:
+                async for event in self._run_one_tool(
+                    tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                ):
+                    await queue.put(event)
+            except Exception:
+                # _run_one_tool handles its own errors; this guards the merge.
+                pass
+            finally:
+                remaining -= 1
+                if remaining == 0:
+                    await queue.put(None)
+
+        tasks = [asyncio.create_task(runner(call)) for call in tool_calls]
+        try:
+            while True:
+                if self._abort_event.is_set():
+                    break
+                event = await queue.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def _validate_tool_call(self, tool_name: str, arguments: dict) -> tuple[str, str] | None:
         if tool_name == "bash":
@@ -1016,9 +1162,13 @@ class AgentRuntime:
                     elif delegated_kind == "text":
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=delegated.get("text", ""), **common)
                     elif delegated_kind == "thinking":
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), label=delegated.get("label", ""), icon=delegated.get("icon", ""), **common)
+                    elif delegated_kind == "status":
+                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=delegated.get("code", ""), label=delegated.get("label", ""), icon=delegated.get("icon", ""), **common)
                     elif delegated_kind == "tool_call":
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), toolCallId=delegated.get("toolCallId", ""), **common)
+                    elif delegated_kind == "tool_result":
+                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=delegated.get("name", ""), result=delegated.get("result"), toolCallId=delegated.get("toolCallId", ""), **common)
                     elif delegated_kind == "done":
                         child_task = delegated.get("task")
                         yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
@@ -1037,9 +1187,13 @@ class AgentRuntime:
                     if event.type == StreamEvent.Type.TEXT_CHUNK:
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=event.data.get("text", ""), **common)
                     elif event.type == StreamEvent.Type.THINKING:
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), label=event.data.get("label", ""), icon=event.data.get("icon", ""), **common)
+                    elif event.type == StreamEvent.Type.STATUS:
+                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=event.data.get("code", ""), label=event.data.get("label", ""), icon=event.data.get("icon", ""), **common)
                     elif event.type == StreamEvent.Type.TOOL_CALL:
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=event.data.get("name", ""), arguments=event.data.get("arguments", {}), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=event.data.get("name", ""), arguments=event.data.get("arguments", {}), toolCallId=event.data.get("id", ""), **common)
+                    elif event.type == StreamEvent.Type.TOOL_RESULT:
+                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=event.data.get("name", ""), result=event.data.get("result"), toolCallId=event.data.get("id", ""), **common)
                     elif event.type == StreamEvent.Type.DONE:
                         final_text = event.data.get("text", final_text)
                 child_task = serialize_task(build_task(spawn_step_id, sub_agent_name, TaskState.completed, final_text))
@@ -1107,6 +1261,17 @@ class AgentRuntime:
                     "message": "status must be one of 'active', 'satisfied', or 'cleared'.",
                 }
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+
+        elif tool_name == "set_focus":
+            focus = str(tool_arguments.get("focus", "")).strip()
+            if focus:
+                yield StreamEvent(StreamEvent.Type.THINKING, label=focus, icon="focus")
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                id=tool_call_identifier,
+                name=tool_name,
+                result={"code": "focus_set", "focus": focus},
+            )
 
         elif tool_name == "web_search":
             result = await web_search_tool.ainvoke(tool_arguments)

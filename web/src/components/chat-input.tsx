@@ -130,22 +130,156 @@ export function ChatInput({
 
   return (
     <Box borderTop="1px solid" borderColor="border" bg="bg.subtle">
-      <Flex gap={2} rowGap={1.5} px={2} pt={2} pb={2} align="center" flexWrap="wrap">
-        {onToggleHistory && (
-          <Button
+      {/* Top row (above the input): history button on the left, working
+          directory and the Agents button on the right (Agents far right).
+          Each "unit" is an atomic flex group so it never splits across rows
+          when the row wraps; space-between keeps the row filling the full
+          width. */}
+      <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5, md: 2 }} flexWrap="wrap" px={2} pt={2}>
+        <Flex align="center" gap={{ base: 1.5, md: 2 }} flexShrink={0}>
+          {onToggleHistory && (
+            <Button
+              size="xs"
+              variant={historyOpen ? "solid" : "outline"}
+              colorPalette={historyOpen ? "blue" : undefined}
+              borderRadius="sm"
+              fontSize="xs"
+              h="28px"
+              flexShrink={0}
+              onClick={onToggleHistory}
+            >
+              <LuHistory size={13} />
+              History
+            </Button>
+          )}
+        </Flex>
+
+        <Flex align="center" gap={1.5} flexShrink={0}>
+          <Box
+            color={directoryValid ? "green.fg" : "red.fg"}
+            opacity={directoryChecking ? 0.45 : 1}
+            fontSize="sm"
+            flexShrink={0}
+            display="flex"
+            alignItems="center"
+            title={directoryValid ? "Valid directory" : "Invalid directory"}
+          >
+            {directoryValid ? <LuCheck size={16} /> : <LuBan size={16} />}
+          </Box>
+          <Input
             size="xs"
-            variant={historyOpen ? "solid" : "outline"}
-            colorPalette={historyOpen ? "blue" : undefined}
-            borderRadius="sm"
+            h="28px"
             fontSize="xs"
+            placeholder="Working directory"
+            value={workingDirectory ?? ""}
+            onChange={(event) => onWorkingDirectoryChange?.(event.target.value)}
+            border="1px solid"
+            borderColor={directoryValid ? "border" : "red.muted"}
+            bg="bg"
+            borderRadius="sm"
+            w={{ base: "100%", sm: "200px" }}
+            maxW={{ base: "100%", sm: "280px" }}
+          />
+          <IconButton
+            aria-label="Browse folder"
+            size="xs"
+            variant="ghost"
+            borderRadius="sm"
+            minW="28px"
             h="28px"
             flexShrink={0}
-            onClick={onToggleHistory}
+            onClick={onBrowseFolder}
           >
-            <LuHistory size={13} />
-            History
-          </Button>
-        )}
+            <LuFolder size={16} />
+          </IconButton>
+          {agentsAvailable && (
+            <Button
+              size="xs"
+              variant={agentsOpen ? "solid" : "outline"}
+              colorPalette={agentsCount > 0 || agentsOpen ? "gray" : undefined}
+              borderRadius="sm"
+              fontSize="xs"
+              h="28px"
+              flexShrink={0}
+              onClick={onShowAgents}
+            >
+              <LuNetwork size={13} />
+              {agentsCount > 0 ? `Agents (${agentsCount})` : "Agents"}
+            </Button>
+          )}
+        </Flex>
+      </Flex>
+
+      {/* Message input */}
+      <Box px={2} pt={1.5} pb={1.5}>
+        <Box
+          bg="bg"
+          border="1px solid"
+          borderColor={directoryValid ? "border" : "red.muted"}
+          borderRadius="sm"
+          _focusWithin={{ borderColor: "border.emphasized" }}
+        >
+          <Flex align="center" gap={2} px={1.5} py={1.5}>
+            <Input
+              ref={inputRef}
+              placeholder={
+                disabled
+                  ? "Connecting to server..."
+                  : !directoryValid
+                    ? "Choose a valid project path before sending..."
+                    : isStreaming
+                      ? "Queue a message for the next turn..."
+                      : "Send a message..."
+              }
+              value={inputValue}
+              onChange={(event) => setInputValue(event.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={disabled}
+              fontSize="sm"
+              h="32px"
+              lineHeight="32px"
+              border="none"
+              outline="none"
+              px={1}
+              py={0}
+              _focus={{ boxShadow: "none", borderColor: "transparent" }}
+              _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
+            />
+            <Flex gap={1.5} flexShrink={0}>
+              {isStreaming ? (
+                <IconButton
+                  aria-label="Stop"
+                  onClick={onAbort}
+                  colorPalette="red"
+                  variant="solid"
+                  borderRadius="sm"
+                  minW="32px"
+                  h="32px"
+                >
+                  <LuSquare size={14} />
+                </IconButton>
+              ) : (
+                <IconButton
+                  aria-label="Send"
+                  onClick={handleSubmit}
+                  colorPalette="blue"
+                  variant="solid"
+                  borderRadius="sm"
+                  minW="32px"
+                  h="32px"
+                  disabled={disabled || !directoryValid || !inputValue.trim()}
+                >
+                  <LuArrowUp size={16} />
+                </IconButton>
+              )}
+            </Flex>
+          </Flex>
+        </Box>
+      </Box>
+
+      {/* Bottom row (below the input): permissions on the left, persona choice
+          next to it. */}
+      <Flex justify="flex-start" align="center" gap={1.5} px={2} pb={2}>
         <Box color={bypassPermissions ? "red.fg" : "fg.subtle"} fontSize="sm" flexShrink={0} display="flex" alignItems="center">
           {bypassPermissions ? <LuShieldOff size={16} /> : <LuShield size={16} />}
         </Box>
@@ -246,125 +380,7 @@ export function ChatInput({
             </Select.Positioner>
           </Portal>
         </Select.Root>
-        <Box flex="1 1 24px" minW="12px" />
-        <Box
-          color={directoryValid ? "green.fg" : "red.fg"}
-          opacity={directoryChecking ? 0.45 : 1}
-          fontSize="sm"
-          flexShrink={0}
-          display="flex"
-          alignItems="center"
-          title={directoryValid ? "Valid directory" : "Invalid directory"}
-        >
-          {directoryValid ? <LuCheck size={16} /> : <LuBan size={16} />}
-        </Box>
-        <Input
-          size="xs"
-          h="28px"
-          fontSize="xs"
-          placeholder="/path"
-          value={workingDirectory ?? ""}
-          onChange={(event) => onWorkingDirectoryChange?.(event.target.value)}
-          border="1px solid"
-          borderColor={directoryValid ? "border" : "red.muted"}
-          bg="bg"
-          borderRadius="sm"
-          w={{ base: "100%", sm: "220px" }}
-          maxW={{ base: "100%", sm: "280px" }}
-          flex="1 1 200px"
-        />
-        <IconButton
-          aria-label="Browse folder"
-          size="xs"
-          variant="ghost"
-          borderRadius="sm"
-          minW="28px"
-          h="28px"
-          onClick={onBrowseFolder}
-        >
-          <LuFolder size={16} />
-        </IconButton>
-        {agentsAvailable && (
-          <Button
-            size="xs"
-            variant={agentsOpen ? "solid" : "outline"}
-            colorPalette={agentsCount > 0 || agentsOpen ? "gray" : undefined}
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            flexShrink={0}
-            onClick={onShowAgents}
-          >
-            <LuNetwork size={13} />
-            {agentsCount > 0 ? `Agents (${agentsCount})` : "Agents"}
-          </Button>
-        )}
       </Flex>
-      <Box px={2} pb={2.5}>
-        <Box
-          bg="bg"
-          border="1px solid"
-          borderColor={directoryValid ? "border" : "red.muted"}
-          borderRadius="sm"
-          _focusWithin={{ borderColor: "border.emphasized" }}
-        >
-          <Flex align="center" gap={2} px={1.5} py={1.5}>
-            <Input
-              ref={inputRef}
-              placeholder={
-                disabled
-                  ? "Connecting to server..."
-                  : !directoryValid
-                    ? "Choose a valid project path before sending..."
-                    : isStreaming
-                      ? "Queue a message for the next turn..."
-                      : "Send a message..."
-              }
-              value={inputValue}
-              onChange={(event) => setInputValue(event.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={disabled}
-              fontSize="sm"
-              h="32px"
-              lineHeight="32px"
-              border="none"
-              outline="none"
-              px={1}
-              py={0}
-              _focus={{ boxShadow: "none", borderColor: "transparent" }}
-              _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
-            />
-            <Flex gap={1.5} flexShrink={0}>
-              {isStreaming ? (
-                <IconButton
-                  aria-label="Stop"
-                  onClick={onAbort}
-                  colorPalette="red"
-                  variant="solid"
-                  borderRadius="sm"
-                  minW="32px"
-                  h="32px"
-                >
-                  <LuSquare size={14} />
-                </IconButton>
-              ) : (
-                <IconButton
-                  aria-label="Send"
-                  onClick={handleSubmit}
-                  colorPalette="blue"
-                  variant="solid"
-                  borderRadius="sm"
-                  minW="32px"
-                  h="32px"
-                  disabled={disabled || !directoryValid || !inputValue.trim()}
-                >
-                  <LuArrowUp size={16} />
-                </IconButton>
-              )}
-            </Flex>
-          </Flex>
-        </Box>
-      </Box>
     </Box>
   );
 }

@@ -45,7 +45,7 @@ export interface ChatMessage {
 // the main chat. Built from the A2A sub-task DataPart envelopes.
 export type AgentPart =
   | { kind: "text"; content: string }
-  | { kind: "tool"; name: string; arguments?: Record<string, unknown>; sequenceNumber: number };
+  | { kind: "tool"; name: string; arguments?: Record<string, unknown>; sequenceNumber: number; toolCallId?: string; result?: unknown };
 
 export interface AgentStep {
   stepId: string;
@@ -54,6 +54,8 @@ export interface AgentStep {
   childTaskId: string;
   parts: AgentPart[];
   thinking: string;
+  focus: string;
+  icon: string;
   state: TaskState;
   task?: A2ATask;
 }
@@ -82,7 +84,7 @@ export function taskArtifactText(task: A2ATask | undefined): string {
 }
 
 function emptyStep(stepId: string, agent = "", goal = "", childTaskId = ""): AgentStep {
-  return { stepId, agent, goal, childTaskId, parts: [], thinking: "", state: "working" };
+  return { stepId, agent, goal, childTaskId, parts: [], thinking: "", focus: "", icon: "", state: "working" };
 }
 
 function appendAgentText(step: AgentStep, text: string): AgentStep {
@@ -96,11 +98,11 @@ function appendAgentText(step: AgentStep, text: string): AgentStep {
   return { ...step, parts: [...step.parts, { kind: "text", content: text }] };
 }
 
-function appendAgentToolCall(step: AgentStep, name: string, toolArguments?: Record<string, unknown>): AgentStep {
+function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Record<string, unknown> | undefined, toolCallId: string): AgentStep {
   const toolCount = step.parts.filter((part) => part.kind === "tool").length;
   return {
     ...step,
-    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, sequenceNumber: toolCount + 1 }],
+    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, sequenceNumber: toolCount + 1, toolCallId }],
   };
 }
 
@@ -198,11 +200,11 @@ function finishRunningThinking(state: ReduceState): void {
   );
 }
 
-function setRunningThinking(state: ReduceState, content: string): void {
+function setRunningThinking(state: ReduceState, focus: string, icon: string): void {
   const index = state.messages.findLastIndex(isRunningThinkingMessage);
   if (index !== -1) {
     state.messages = state.messages.map((message, messageIndex) =>
-      messageIndex === index ? { ...message, content } : message
+      messageIndex === index ? { ...message, meta: { ...message.meta, focus, icon } } : message
     );
     return;
   }
@@ -211,11 +213,19 @@ function setRunningThinking(state: ReduceState, content: string): void {
     {
       id: `status-${state.messages.length}-${Math.random()}`,
       role: "thinking",
-      content,
+      content: "",
       timestamp: new Date().toISOString(),
-      meta: { status: "running" },
+      meta: { status: "running", focus, icon },
     },
   ];
+}
+
+function setThinkingFocus(state: ReduceState, focus: string, icon: string): void {
+  const index = state.messages.findLastIndex((message) => message.role === "thinking");
+  if (index === -1) return;
+  state.messages = state.messages.map((message, messageIndex) =>
+    messageIndex === index ? { ...message, meta: { ...message.meta, focus, icon } } : message
+  );
 }
 
 function hasAssistantTextAfterLastUser(state: ReduceState): boolean {
@@ -241,7 +251,7 @@ function pushAssistantText(state: ReduceState, text: string): void {
 }
 
 function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
-  const text = (message.parts ?? []).filter((p) => p.kind === "text").map((p) => p.text ?? "").join("");
+  const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
   state.lane = null;
   state.messages = [
     ...state.messages,
@@ -266,18 +276,25 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     case "status": {
       const code = String(data.code ?? "");
       if (code === "thinking") {
-        setRunningThinking(state, "Thinking");
+        setRunningThinking(state, String(data.label ?? "Thinking"), String(data.icon ?? ""));
+      } else if (code === "waiting_for_tools") {
+        setRunningThinking(state, "Waiting for tools...", "waiting");
       }
       break;
     }
     case "thinking": {
+      const label = data.label ? String(data.label) : "";
+      const icon = String(data.icon ?? "");
       const text = String(data.text ?? "");
-      finishRunningThinking(state);
-      const index = state.messages.findLastIndex((m) => m.role === "thinking");
-      if (index !== -1) {
-        state.messages = state.messages.map((m, i) => (i === index ? { ...m, content: m.content + text } : m));
-      } else {
-        state.messages = [...state.messages, { id: `thinking-${state.messages.length}-${Math.random()}`, role: "thinking", content: text, timestamp: new Date().toISOString() }];
+      if (label) setThinkingFocus(state, label, icon || "focus");
+      if (text) {
+        finishRunningThinking(state);
+        const index = state.messages.findLastIndex((message) => message.role === "thinking");
+        if (index !== -1) {
+          state.messages = state.messages.map((message, messageIndex) => (messageIndex === index ? { ...message, content: message.content + text } : message));
+        } else {
+          state.messages = [...state.messages, { id: `thinking-${state.messages.length}-${Math.random()}`, role: "thinking", content: text, timestamp: new Date().toISOString(), meta: { focus: label, icon: icon || "focus" } }];
+        }
       }
       break;
     }
@@ -337,16 +354,42 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentText(step, String(data.text ?? "")));
       break;
     case "sub_task_thinking":
-      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({ ...step, thinking: step.thinking + String(data.text ?? "") }));
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
+        ...step,
+        thinking: step.thinking + String(data.text ?? ""),
+        focus: data.label ? String(data.label) : step.focus,
+        icon: data.icon ? String(data.icon) : step.icon,
+      }));
+      break;
+    case "sub_task_status":
+      if (data.label) {
+        state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
+          ...step,
+          focus: String(data.label),
+          icon: data.icon ? String(data.icon) : step.icon,
+        }));
+      }
       break;
     case "sub_task_tool_call":
-      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentToolCall(step, String(data.name ?? "unknown"), data.arguments as Record<string, unknown> | undefined));
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentToolCall(step, String(data.name ?? "unknown"), data.arguments as Record<string, unknown> | undefined, String(data.toolCallId ?? "")));
       break;
+    case "sub_task_tool_result": {
+      const toolCallId = String(data.toolCallId ?? "");
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
+        ...step,
+        parts: step.parts.map((part) =>
+          part.kind === "tool" && toolCallId && part.toolCallId === toolCallId
+            ? { ...part, result: data.result }
+            : part
+        ),
+      }));
+      break;
+    }
     case "sub_task_done":
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => finishAgentStep(step, data.task as A2ATask | undefined));
       break;
     default:
-      break; // status, sub_task_status — no UI change
+      break; // status (non-thinking), other — no UI change
   }
 }
 
@@ -367,7 +410,7 @@ function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, 
 function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[] } {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
-    .sort((a, b) => String(a.status?.timestamp ?? "").localeCompare(String(b.status?.timestamp ?? "")));
+    .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
   const state: ReduceState = { messages: [], agentGroups: [], lane: null, toolSequence: 0 };
   for (const task of mainTasks) {
     state.lane = null;

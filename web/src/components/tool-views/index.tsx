@@ -271,6 +271,10 @@ export function ToolResultView({ content }: { name: string; content: string }) {
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;
     const code = asString(data.code);
+    // "scheduled" notices (web_search_started, bash_started, background_task_scheduled)
+    // are transient implementation details — the matching *_completed result arrives
+    // shortly and renders instead. Don't render the raw scheduling payload.
+    if (code.endsWith("_started") || code === "background_task_scheduled") return null;
     if (code === "web_search_completed") return <WebSearchResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || "Search failed"} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
