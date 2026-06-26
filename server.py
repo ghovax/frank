@@ -1,6 +1,6 @@
 import asyncio
 import json
-import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -8,108 +8,201 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sse_starlette.sse import EventSourceResponse
-from sqlalchemy import Column, Integer, String, Text, create_engine, func, inspect, text
+from sqlalchemy import Column, String, Text, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine
+from sse_starlette.sse import EventSourceResponse
+from watchfiles import awatch
 
-from langchain_openai import ChatOpenAI
+from a2a.server.apps.jsonrpc import A2AFastAPIApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import DatabaseTaskStore
 
-from harness.core.agent import AgentOrchestrator, StreamEvent
-from harness.tools.tools import set_exa_client
+from harness.core.a2a_executor import (
+    AgentRegistry,
+    HarnessAgentExecutor,
+    agent_rpc_path,
+    build_agent_card,
+)
 from harness.core.configuration import (
     GlobalConfiguration,
-    load_agent_configuration,
+    list_available_agents,
     list_agents_with_labels,
+    load_agent_configuration,
 )
+from harness.core.skills import load_skills, skills_for_agent
+from harness.tools.tools import cancel_all_background_tasks, set_exa_client
+
+DATABASE_PATH = "harness.db"
+PUBLIC_BASE_URL = "http://localhost:8822"
+AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 Base = declarative_base()
 
 
 class SessionRecord(Base):
+    """A chat session — one A2A context. Tasks live in the A2A task store; this
+    table only indexes sessions for the sidebar."""
+
     __tablename__ = "sessions"
 
-    id = Column(String, primary_key=True)
+    id = Column(String, primary_key=True)  # == A2A contextId
     agent = Column(String, nullable=False)
     working_directory = Column(Text, default="")
     title = Column(Text, default="")
     created_at = Column(String, nullable=False)
 
 
-class Message(Base):
-    __tablename__ = "messages"
+class Broadcaster:
+    """A tiny in-process pub/sub. Subscribers receive every broadcast event,
+    which is how live changes (e.g. edited agents) reach connected clients."""
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, nullable=False, index=True)
-    role = Column(String, nullable=False)
-    content = Column(Text, nullable=False)
-    tool_call_id = Column(String, default="")
-    timestamp = Column(String, nullable=False)
+    def __init__(self):
+        self._subscribers: set[asyncio.Queue] = set()
 
+    def subscribe(self) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue()
+        self._subscribers.add(queue)
+        return queue
 
-class ExecutionEvent(Base):
-    __tablename__ = "execution_events"
+    def unsubscribe(self, queue: asyncio.Queue) -> None:
+        self._subscribers.discard(queue)
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, nullable=False, index=True)
-    type = Column(String, nullable=False)
-    data = Column(Text, nullable=False)
-    timestamp = Column(String, nullable=False)
-
-
-class StreamEventRecord(Base):
-    __tablename__ = "stream_events"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, nullable=False, index=True)
-    sequence = Column(Integer, nullable=False)
-    type = Column(String, nullable=False)
-    data = Column(Text, nullable=False)
-    timestamp = Column(String, nullable=False)
+    def publish(self, event: dict) -> None:
+        for queue in list(self._subscribers):
+            queue.put_nowait(event)
 
 
-class Orchestration(Base):
-    __tablename__ = "orchestrations"
-
-    id = Column(String, primary_key=True)
-    session_id = Column(String, nullable=False, index=True)
-    thread_id = Column(String, nullable=False)
-    steps = Column(Text, nullable=False)
-    results = Column(Text, nullable=False)
-    created_at = Column(String, nullable=False)
-
-
-def _ensure_schema(engine) -> None:
-    """Add columns that exist on the models but are missing from an older
-    database. ``create_all`` only creates absent tables — it never alters
-    existing ones — so a database created before a column was introduced (e.g.
-    ``sessions.title``) would otherwise raise OperationalError on every query
-    that references it, breaking ``/sessions`` and aborting the chat stream.
-    """
-    inspector = inspect(engine)
-    for table in Base.metadata.sorted_tables:
-        if not inspector.has_table(table.name):
-            continue
-        existing_columns = {column["name"] for column in inspector.get_columns(table.name)}
-        for column in table.columns:
-            if column.name in existing_columns:
-                continue
-            column_type = column.type.compile(engine.dialect)
-            with engine.begin() as connection:
-                connection.execute(
-                    text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}')
-                )
+_global_configuration: Optional[GlobalConfiguration] = None
+_session_factory: Optional[sessionmaker] = None
+_async_engine = None
+_task_store: Optional[DatabaseTaskStore] = None
+_registry: Optional[AgentRegistry] = None
+_executors: dict[str, HarnessAgentExecutor] = {}
+_mounted_agents: set[str] = set()
+_pending_permissions: dict[str, asyncio.Future] = {}
+_broadcaster = Broadcaster()
 
 
-def create_database(database_path: str = "harness.db") -> tuple:
-    engine = create_engine(f"sqlite:///{database_path}")
-    Base.metadata.create_all(engine)
-    _ensure_schema(engine)
-    session_factory = sessionmaker(bind=engine)
-    return engine, session_factory
+def _record_session(context_id: str, agent: str, working_directory: str, first_message: str) -> None:
+    assert _session_factory is not None
+    database_session = _session_factory()
+    try:
+        if database_session.get(SessionRecord, context_id) is not None:
+            return
+        title = first_message.strip().split("\n", 1)[0][:80]
+        database_session.add(SessionRecord(
+            id=context_id,
+            agent=agent,
+            working_directory=working_directory or "",
+            title=title,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        ))
+        database_session.commit()
+    finally:
+        database_session.close()
 
 
-app = FastAPI(title="harness")
+def _card_for(agent_name: str):
+    """Build an agent's AgentCard from its config and the skills available to it."""
+    assert _global_configuration is not None
+    configuration = load_agent_configuration(agent_name, _global_configuration.agents_directory)
+    all_skills = load_skills(_global_configuration.skills_directory)
+    agent_skills = skills_for_agent(all_skills, configuration.skills)
+    return configuration, build_agent_card(configuration, agent_skills, PUBLIC_BASE_URL)
 
+
+def _mount_agent(application: FastAPI, agent_name: str) -> None:
+    """Serve one agent profile as its own A2A endpoint: its own executor, request
+    handler, and AgentCard, mounted at a per-agent path. Idempotent."""
+    assert _global_configuration is not None and _task_store is not None and _registry is not None
+    _configuration, card = _card_for(agent_name)
+    if agent_name in _mounted_agents:
+        _registry.register(agent_name, _registry._handlers[agent_name], card)
+        return
+    executor = HarnessAgentExecutor(
+        agent_name=agent_name,
+        global_configuration=_global_configuration,
+        task_store=_task_store,
+        pending_permissions=_pending_permissions,
+        registry=_registry,
+        on_new_context=_record_session,
+    )
+    handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
+    _executors[agent_name] = executor
+    _registry.register(agent_name, handler, card)
+    rpc_path = agent_rpc_path(agent_name)
+    A2AFastAPIApplication(agent_card=card, http_handler=handler).add_routes_to_app(
+        application,
+        rpc_url=rpc_path,
+        agent_card_url=f"{rpc_path}{AGENT_CARD_PATH}",
+    )
+    _mounted_agents.add(agent_name)
+
+
+def _reload_agent_cards() -> None:
+    """Recompile AgentCards from the agent markdown and skill files so discovery
+    reflects edits without a restart. Agent behaviour itself is already live,
+    since each turn loads its configuration and skills fresh."""
+    assert _global_configuration is not None and _registry is not None
+    for agent_name in list_available_agents(_global_configuration.agents_directory):
+        handler = _registry._handlers.get(agent_name)
+        if handler is not None:
+            _configuration, card = _card_for(agent_name)
+            _registry.register(agent_name, handler, card)
+
+
+async def _watch_agents_and_skills(application: FastAPI) -> None:
+    """Watch the agents and skills directories; on any change, mount newly added
+    agents, refresh cards, and broadcast so connected clients refetch immediately.
+    Skill files are also picked up here so new/edited skills are broadcast live."""
+    assert _global_configuration is not None
+    watched = [str(Path(_global_configuration.agents_directory).resolve())]
+    skills_path = Path(_global_configuration.skills_directory)
+    if skills_path.is_dir():
+        watched.append(str(skills_path.resolve()))
+    try:
+        async for _changes in awatch(*watched):
+            for agent_name in list_available_agents(_global_configuration.agents_directory):
+                if agent_name not in _mounted_agents:
+                    _mount_agent(application, agent_name)
+            _reload_agent_cards()
+            _broadcaster.publish({"type": "agents_changed"})
+    except asyncio.CancelledError:
+        pass
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry
+    _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
+
+    sync_engine = create_engine(f"sqlite:///{DATABASE_PATH}")
+    Base.metadata.create_all(sync_engine)
+    _session_factory = sessionmaker(bind=sync_engine)
+
+    exa_key = _global_configuration.exa.effective_api_key
+    if exa_key:
+        from exa_py import Exa
+        set_exa_client(Exa(api_key=exa_key))
+
+    _async_engine = create_async_engine(f"sqlite+aiosqlite:///{DATABASE_PATH}")
+    _task_store = DatabaseTaskStore(_async_engine, create_table=True)
+    await _task_store.initialize()
+
+    _registry = AgentRegistry(_task_store)
+    for agent_name in list_available_agents(_global_configuration.agents_directory):
+        _mount_agent(application, agent_name)
+
+    watcher = asyncio.create_task(_watch_agents_and_skills(application))
+    try:
+        yield
+    finally:
+        watcher.cancel()
+        cancel_all_background_tasks()
+
+
+app = FastAPI(title="harness", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -117,46 +210,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
-_global_configuration: Optional[GlobalConfiguration] = None
-_sessions: dict[str, AgentOrchestrator] = {}
-_session_configurations: dict[str, str] = {}
-_session_locks: dict[str, asyncio.Lock] = {}
-_pending_permissions: dict[str, asyncio.Future] = {}
-_database_engine = None
-_database_session_factory = None
-_saved_sessions: set[str] = set()
-_titles_generated: set[str] = set()
-
-
-def generate_session_title(user_message: str) -> str:
-    try:
-        llm = ChatOpenAI(
-            model=_global_configuration.api.model,
-            base_url=_global_configuration.api.endpoint,
-            api_key=_global_configuration.api.api_key,
-            temperature=0,
-        ).bind(response_format={"type": "json_object"})
-        response = llm.invoke([
-            {"role": "system", "content": "Generate a concise title (at most 6 words) for a chat session based on the user's first message. Respond with a JSON object containing a 'title' field."},
-            {"role": "user", "content": user_message},
-        ])
-        data = json.loads(response.content)
-        return data.get("title", "")
-    except Exception:
-        return ""
-
-
-class ChatRequest(BaseModel):
-    session_id: Optional[str] = None
-    message: str
-    agent: str = "main"
-    working_directory: Optional[str] = None
-
-
-class PermissionRequest(BaseModel):
-    request_id: str
-    decision: str
 
 
 class AgentInfo(BaseModel):
@@ -168,508 +221,150 @@ class AgentsList(BaseModel):
     agents: list[AgentInfo]
 
 
-class DirectoryUpdateRequest(BaseModel):
-    directory: str
-
-
 class DirectoryValidationRequest(BaseModel):
     directory: str
+
+
+class PermissionRequest(BaseModel):
+    request_id: str
+    decision: str
 
 
 class BypassPermissionsRequest(BaseModel):
     bypass: bool
 
 
-def get_database() -> sessionmaker:
-    return _database_session_factory()
-
-
-def record_next_stream_event(session_id: str, event_type: str, data: dict) -> None:
-    database_session = get_database()
-    try:
-        row = database_session.query(
-            func.max(StreamEventRecord.sequence)
-        ).filter(
-            StreamEventRecord.session_id == session_id
-        ).first()
-        sequence_number = (row[0] if row and row[0] is not None else 0) + 1
-        database_session.add(StreamEventRecord(
-            session_id=session_id,
-            sequence=sequence_number,
-            type=event_type,
-            data=json.dumps(data),
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        ))
-        database_session.commit()
-    finally:
-        database_session.close()
-
-
-@app.on_event("startup")
-async def startup():
-    global _global_configuration, _database_engine, _database_session_factory
-    configuration_path = Path("configuration.yaml")
-    if configuration_path.exists():
-        _global_configuration = GlobalConfiguration.from_yaml(configuration_path)
-    else:
-        _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
-    _database_engine, _database_session_factory = create_database()
-
-    exa_key = _global_configuration.exa.effective_api_key
-    if exa_key:
-        from exa_py import Exa
-        set_exa_client(Exa(api_key=exa_key))
-
-
-def _get_or_create_session(
-    session_id: Optional[str], agent_name: str, working_directory: Optional[str] = None
-) -> tuple[str, AgentOrchestrator]:
-    global _global_configuration
-    assert _global_configuration is not None
-
-    if session_id and session_id in _sessions:
-        if working_directory is not None:
-            _sessions[session_id]._working_directory = working_directory
-        return session_id, _sessions[session_id]
-
-    new_identifier = session_id or uuid.uuid4().hex[:16]
-    agent_configuration = load_agent_configuration(
-        agent_name, _global_configuration.agents_directory
-    )
-
-    def record_event(event_type: str, data: dict) -> None:
-        database_session = get_database()
-        try:
-            database_session.add(ExecutionEvent(
-                session_id=new_identifier,
-                type=event_type,
-                data=json.dumps(data),
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            ))
-            database_session.commit()
-        finally:
-            database_session.close()
-
-    def record_message(role: str, content: str, tool_call_id: str) -> None:
-        database_session = get_database()
-        try:
-            database_session.add(Message(
-                session_id=new_identifier,
-                role=role,
-                content=content,
-                tool_call_id=tool_call_id,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            ))
-            database_session.commit()
-        finally:
-            database_session.close()
-
-    def record_orchestration(orchestration_id: str, thread_id: str, steps: list, results: list) -> None:
-        database_session = get_database()
-        try:
-            database_session.add(Orchestration(
-                id=orchestration_id,
-                session_id=new_identifier,
-                thread_id=thread_id,
-                steps=json.dumps(steps),
-                results=json.dumps(results),
-                created_at=datetime.now(timezone.utc).isoformat(),
-            ))
-            database_session.commit()
-        finally:
-            database_session.close()
-
-    def record_background_stream_event(event_type: str, data: dict) -> None:
-        record_next_stream_event(new_identifier, event_type, data)
-
-    orchestrator = AgentOrchestrator(
-        agent_configuration=agent_configuration,
-        global_configuration=_global_configuration,
-        pending_permissions=_pending_permissions,
-        on_record_event=record_event,
-        on_record_message=record_message,
-        on_record_orchestration=record_orchestration,
-        on_record_stream_event=record_background_stream_event,
-        session_id=new_identifier,
-        working_directory=working_directory or "",
-    )
-    _sessions[new_identifier] = orchestrator
-    _session_configurations[new_identifier] = agent_name
-    return new_identifier, orchestrator
-
-
 @app.get("/agents")
 async def agents():
-    global _global_configuration
+    """List agent profiles for the UI selector."""
     assert _global_configuration is not None
     agent_data = list_agents_with_labels(_global_configuration.agents_directory)
-    return AgentsList(
-        agents=[AgentInfo(name=a["name"], label=a["label"]) for a in agent_data]
+    return AgentsList(agents=[AgentInfo(name=agent["name"], label=agent["label"]) for agent in agent_data])
+
+
+@app.get("/agents/cards")
+async def agent_cards():
+    """Discovery: the full A2A AgentCard for every served agent, including their
+    skills, so the UI can broadcast what each agent can do."""
+    assert _registry is not None
+    return {
+        "cards": [card.model_dump(by_alias=True, exclude_none=True, mode="json") for card in _registry.cards()]
+    }
+
+
+@app.get(AGENT_CARD_PATH)
+async def default_agent_card():
+    """Serve the default agent's card at the well-known path for spec compliance."""
+    assert _registry is not None and _global_configuration is not None
+    card = _registry.card(_global_configuration.default_agent) or (
+        _registry.cards()[0] if _registry.cards() else None
     )
+    if card is None:
+        return {}
+    return card.model_dump(by_alias=True, exclude_none=True, mode="json")
 
 
 @app.get("/home")
 async def home_directory():
-    from pathlib import Path
+    """Return the server user's home directory (default working directory)."""
     return {"home_directory": str(Path.home())}
 
 
 @app.post("/directory/validate")
 async def validate_directory(request: DirectoryValidationRequest):
+    """Validate that a path is an existing absolute directory."""
     directory = request.directory.strip()
     if not directory:
         return {"valid": False, "exists": False, "is_directory": False, "is_absolute": False, "path": ""}
     path = Path(directory).expanduser()
-    is_absolute = path.is_absolute()
-    exists = path.exists()
-    is_directory = path.is_dir()
     return {
-        "valid": is_absolute and exists and is_directory,
-        "exists": exists,
-        "is_directory": is_directory,
-        "is_absolute": is_absolute,
+        "valid": path.is_absolute() and path.exists() and path.is_dir(),
+        "exists": path.exists(),
+        "is_directory": path.is_dir(),
+        "is_absolute": path.is_absolute(),
         "path": str(path),
     }
 
 
-@app.post("/chat/{session_id}/switch")
-async def switch_agent(session_id: str, agent: str):
-    global _global_configuration
-    assert _global_configuration is not None
+@app.get("/sessions")
+async def list_sessions():
+    """List recent chat sessions for the sidebar."""
+    assert _session_factory is not None
+    database_session = _session_factory()
+    try:
+        rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).limit(50).all()
+        return {
+            "sessions": [
+                {"session_id": row.id, "agent": row.agent, "title": row.title, "created_at": row.created_at}
+                for row in rows
+            ]
+        }
+    finally:
+        database_session.close()
 
-    working_directory = ""
-    if session_id in _sessions:
-        working_directory = _sessions[session_id].working_directory
-        del _sessions[session_id]
 
-    _get_or_create_session(session_id, agent, working_directory)
-    return {"agent": agent}
+@app.get("/sessions/{context_id}/tasks")
+async def session_tasks(context_id: str):
+    """All A2A tasks for a context — the main turn tasks (with history and
+    artifacts) plus related sub-agent tasks — for replaying a session."""
+    assert _task_store is not None and _async_engine is not None
+    async with _async_engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT id FROM tasks WHERE context_id = :context_id"), {"context_id": context_id}
+        )
+        task_ids = [row[0] for row in result.fetchall()]
+    tasks = []
+    for task_id in task_ids:
+        task = await _task_store.get(task_id)
+        if task is not None:
+            tasks.append(task.model_dump(by_alias=True, exclude_none=True, mode="json"))
+    return {"tasks": tasks}
 
 
-@app.post("/chat/{session_id}/permission")
-async def resolve_permission(session_id: str, request: PermissionRequest):
+@app.get("/events")
+async def events():
+    """Server-sent live events (e.g. agents changed) for the UI to react to."""
+    queue = _broadcaster.subscribe()
+
+    async def event_generator():
+        try:
+            while True:
+                event = await queue.get()
+                yield {"event": "message", "data": json.dumps(event)}
+        finally:
+            _broadcaster.unsubscribe(queue)
+
+    return EventSourceResponse(event_generator())
+
+
+@app.post("/chat/{context_id}/permission")
+async def resolve_permission(context_id: str, request: PermissionRequest):
+    """Resolve a pending human-in-the-loop permission request."""
     future = _pending_permissions.get(request.request_id)
     if not future:
         return {"status": "unknown", "error": "No pending permission request with that identifier."}
     if future.done():
         return {"status": "stale", "error": "Permission request was already resolved."}
-    allowed = request.decision == "allow"
-    future.set_result(allowed)
+    future.set_result(request.decision == "allow")
     return {"status": "resolved", "decision": request.decision}
 
 
-@app.get("/chat/{session_id}/status")
-async def session_status(session_id: str):
-    agent_name = _session_configurations.get(session_id, "unknown")
-    has_session = session_id in _sessions
-    working_directory_path = ""
-    if has_session:
-        working_directory_path = _sessions[session_id].working_directory
-    return {
-        "session_id": session_id,
-        "agent": agent_name,
-        "active": has_session,
-        "working_directory": working_directory_path,
-    }
-
-
-@app.post("/chat/{session_id}/abort")
-async def abort_session(session_id: str):
-    orchestrator = _sessions.get(session_id)
-    if not orchestrator:
-        return {"status": "not_found", "session_id": session_id}
-
-    session_prefix = f"perm-{session_id[:8]}-"
+@app.post("/chat/{context_id}/abort")
+async def abort_session(context_id: str):
+    """Abort the running turn for a context and reject any pending permissions."""
+    prefix = f"perm-{context_id[:8]}-"
     for request_id, future in list(_pending_permissions.items()):
-        if request_id.startswith(session_prefix) and not future.done():
+        if request_id.startswith(prefix) and not future.done():
             future.set_result(False)
-
-    orchestrator.abort()
-
-    database_session = get_database()
-    try:
-        database_session.add(ExecutionEvent(
-            session_id=session_id,
-            type="session_cancelled",
-            data=json.dumps({"stop_reason": "cancelled"}),
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        ))
-        database_session.commit()
-    finally:
-        database_session.close()
-
-    return {"status": "aborted", "session_id": session_id}
+    aborted = any(executor.abort_context(context_id) for executor in _executors.values())
+    return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
 
 
-@app.patch("/chat/{session_id}/directory")
-async def update_directory(session_id: str, request: DirectoryUpdateRequest):
-    orchestrator = _sessions.get(session_id)
-    if not orchestrator:
-        return {"status": "not_found"}
-    orchestrator._working_directory = request.directory
-    database_session = get_database()
-    try:
-        database_session.query(SessionRecord).filter(
-            SessionRecord.id == session_id
-        ).update({"working_directory": request.directory})
-        database_session.commit()
-    finally:
-        database_session.close()
-    return {"status": "updated", "directory": request.directory}
-
-
-@app.post("/chat/{session_id}/permissions/bypass")
-async def toggle_bypass_permissions(session_id: str, request: BypassPermissionsRequest):
-    orchestrator = _sessions.get(session_id)
-    if not orchestrator:
-        return {"status": "not_found"}
-    orchestrator.set_bypass_permissions(request.bypass)
-    return {"status": "updated", "bypass": request.bypass}
-
-
-@app.get("/sessions")
-async def list_sessions():
-    database_session = get_database()
-    try:
-        rows = database_session.query(SessionRecord).order_by(
-            SessionRecord.created_at.desc()
-        ).limit(50).all()
-        return {
-            "sessions": [
-                {
-                    "session_id": row.id,
-                    "agent": row.agent,
-                    "title": row.title,
-                    "created_at": row.created_at,
-                }
-                for row in rows
-            ]
-        }
-    finally:
-        database_session.close()
-
-
-@app.get("/sessions/{session_id}/history")
-async def get_execution_history(session_id: str):
-    database_session = get_database()
-    try:
-        rows = database_session.query(ExecutionEvent).filter(
-            ExecutionEvent.session_id == session_id
-        ).order_by(ExecutionEvent.id).all()
-        return {
-            "history": [
-                {"type": row.type, **json.loads(row.data), "timestamp": row.timestamp}
-                for row in rows
-            ]
-        }
-    finally:
-        database_session.close()
-
-
-@app.get("/sessions/{session_id}/orchestrations")
-async def list_orchestrations(session_id: str):
-    database_session = get_database()
-    try:
-        rows = database_session.query(Orchestration).filter(
-            Orchestration.session_id == session_id
-        ).order_by(Orchestration.created_at).all()
-        return {
-            "orchestrations": [
-                {
-                    "orchestration_id": row.id,
-                    "thread_id": row.thread_id,
-                    "steps": json.loads(row.steps),
-                    "results": json.loads(row.results),
-                    "created_at": row.created_at,
-                }
-                for row in rows
-            ]
-        }
-    finally:
-        database_session.close()
-
-
-@app.get("/sessions/{session_id}/orchestrations/{thread_id}")
-async def get_orchestration_detail(session_id: str, thread_id: str):
-    orchestrator = _sessions.get(session_id)
-    if not orchestrator:
-        return {"error": "session not found"}
-    checkpoints = orchestrator.get_orchestration_checkpoints(thread_id)
-    return {"thread_id": thread_id, "checkpoints": checkpoints}
-
-
-@app.get("/sessions/{session_id}/conversation")
-async def get_conversation(session_id: str):
-    database_session = get_database()
-    try:
-        rows = database_session.query(StreamEventRecord).filter(
-            StreamEventRecord.session_id == session_id
-        ).order_by(StreamEventRecord.sequence, StreamEventRecord.id).all()
-        return {
-            "events": [
-                {"type": row.type, **json.loads(row.data), "timestamp": row.timestamp}
-                for row in rows
-            ]
-        }
-    finally:
-        database_session.close()
-
-
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    session_id, orchestrator = _get_or_create_session(
-        request.session_id, request.agent, request.working_directory,
-    )
-
-    async def event_generator():
-        lock = _session_locks.setdefault(session_id, asyncio.Lock())
-        if lock.locked():
-            yield {
-                "event": "session",
-                "data": json.dumps({"type": "session", "session_id": session_id}),
-            }
-            yield {
-                "event": "error",
-                "data": json.dumps({
-                    "type": "error",
-                    "code": "session_busy",
-                    "message": "This session already has a running turn. Resolve any pending permission request or stop the current turn before sending another message.",
-                }),
-            }
-            yield {
-                "event": "done",
-                "data": json.dumps({"type": "done", "stop_reason": "session_busy"}),
-            }
-            return
-
-        await lock.acquire()
-        pending_text = ""
-        pending_thinking = ""
-        # Keyed by "orchestration_id::step_id" so steps from different
-        # orchestrations never share a buffer.
-        pending_agent_buffers: dict[str, dict[str, str]] = {}
-        def flush_main():
-            nonlocal pending_text, pending_thinking
-            if pending_text:
-                record_next_stream_event(session_id, "text_chunk", {"text": pending_text})
-                pending_text = ""
-            if pending_thinking:
-                record_next_stream_event(session_id, "thinking", {"text": pending_thinking})
-                pending_thinking = ""
-
-        def flush_agent(orchestration_id: str, step_id: str):
-            buffer = pending_agent_buffers.pop(f"{orchestration_id}::{step_id}", None)
-            if buffer:
-                common = {"step_id": step_id, "orchestration_id": orchestration_id}
-                if buffer.get("text"):
-                    record_next_stream_event(session_id, "agent_text_chunk", {"text": buffer["text"], **common})
-                if buffer.get("thinking"):
-                    record_next_stream_event(session_id, "agent_thinking", {"text": buffer["thinking"], **common})
-
-        try:
-            yield {
-                "event": "session",
-                "data": json.dumps({"type": "session", "session_id": session_id}),
-            }
-
-            record_next_stream_event(session_id, "user", {"text": request.message})
-
-            if session_id not in _saved_sessions:
-                _saved_sessions.add(session_id)
-                database_session = get_database()
-                try:
-                    database_session.add(SessionRecord(
-                        id=session_id,
-                        agent=request.agent,
-                        working_directory=request.working_directory or "",
-                        created_at=datetime.now(timezone.utc).isoformat(),
-                    ))
-                    database_session.commit()
-                finally:
-                    database_session.close()
-
-            async for event in orchestrator.stream(request.message):
-                if event.type == StreamEvent.Type.TEXT_CHUNK:
-                    pending_text += event.data.get("text", "")
-                elif event.type == StreamEvent.Type.THINKING:
-                    pending_thinking += event.data.get("text", "")
-                elif event.type == StreamEvent.Type.STATUS:
-                    flush_main()
-                    record_next_stream_event(session_id, "status", event.data)
-                elif event.type == StreamEvent.Type.TOOL_CALL:
-                    flush_main()
-                    record_next_stream_event(session_id, "tool_call", event.data)
-                elif event.type == StreamEvent.Type.TOOL_RESULT:
-                    flush_main()
-                    record_next_stream_event(session_id, "tool_result", event.data)
-                elif event.type == StreamEvent.Type.PERMISSION_REQUEST:
-                    record_next_stream_event(session_id, "permission_request", event.data)
-                elif event.type == StreamEvent.Type.ERROR:
-                    record_next_stream_event(session_id, "error", event.data)
-                elif event.type == StreamEvent.Type.DENIED_INJECTION:
-                    record_next_stream_event(session_id, "denied_injection", event.data)
-                elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
-                    record_next_stream_event(session_id, "background_started", event.data)
-                elif event.type == StreamEvent.Type.TASKS_UPDATED:
-                    record_next_stream_event(session_id, "tasks_updated", event.data)
-                elif event.type == StreamEvent.Type.DONE:
-                    flush_main()
-                    if session_id in _saved_sessions and session_id not in _titles_generated:
-                        _titles_generated.add(session_id)
-                        title = generate_session_title(request.message)
-                        if title:
-                            database_session = get_database()
-                            try:
-                                session_row = database_session.query(SessionRecord).filter(SessionRecord.id == session_id).first()
-                                if session_row:
-                                    session_row.title = title
-                                    database_session.commit()
-                            finally:
-                                database_session.close()
-                elif event.type == StreamEvent.Type.ORCHESTRATION_STARTED:
-                    flush_main()
-                    record_next_stream_event(session_id, "orchestration_started", event.data)
-                elif event.type == StreamEvent.Type.AGENT_TEXT_CHUNK:
-                    key = f"{event.data.get('orchestration_id', '')}::{event.data.get('step_id', '')}"
-                    if key not in pending_agent_buffers:
-                        pending_agent_buffers[key] = {"text": "", "thinking": ""}
-                    pending_agent_buffers[key]["text"] += event.data.get("text", "")
-                elif event.type == StreamEvent.Type.AGENT_THINKING:
-                    key = f"{event.data.get('orchestration_id', '')}::{event.data.get('step_id', '')}"
-                    if key not in pending_agent_buffers:
-                        pending_agent_buffers[key] = {"text": "", "thinking": ""}
-                    pending_agent_buffers[key]["thinking"] += event.data.get("text", "")
-                elif event.type == StreamEvent.Type.AGENT_TOOL_CALL:
-                    flush_agent(event.data.get("orchestration_id", ""), event.data.get("step_id", ""))
-                    record_next_stream_event(session_id, "agent_tool_call", event.data)
-                elif event.type == StreamEvent.Type.AGENT_DONE:
-                    flush_agent(event.data.get("orchestration_id", ""), event.data.get("step_id", ""))
-                    record_next_stream_event(session_id, "agent_done", event.data)
-
-                yield {"event": event.type.value, "data": event.to_json()}
-        except GeneratorExit:
-            pass
-        except Exception as exception:
-            # Surface the failure to the client as a normal error event and a
-            # terminal done event, so the EventSource closes gracefully instead
-            # of the browser seeing ERR_INCOMPLETE_CHUNKED_ENCODING.
-            error_payload = {"type": "error", "message": f"Server error: {exception}"}
-            try:
-                record_next_stream_event(session_id, "error", error_payload)
-            except Exception:
-                pass
-            yield {
-                "event": "error",
-                "data": json.dumps(error_payload),
-            }
-            yield {
-                "event": "done",
-                "data": json.dumps({"type": "done", "stop_reason": "error"}),
-            }
-        finally:
-            lock.release()
-
-    return EventSourceResponse(event_generator())
+@app.post("/chat/{context_id}/permissions/bypass")
+async def toggle_bypass_permissions(context_id: str, request: BypassPermissionsRequest):
+    """Toggle bypass-permissions for a context's agent."""
+    updated = any(executor.set_bypass(context_id, request.bypass) for executor in _executors.values())
+    return {"status": "updated" if updated else "not_found", "bypass": request.bypass}
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8822):

@@ -28,7 +28,7 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuTerminal, iconColor: "green.fg" };
     case "spawn_agent":
       return { icon: LuUsers, iconColor: "purple.fg" };
-    case "orchestrate":
+    case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
     case "write_tasks":
     case "update_tasks":
@@ -45,11 +45,9 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
     case "bash":
       return args?.command ? stripCdPrefix(String(args.command)) : "Running command";
     case "spawn_agent":
-      return args?.agent ? `Spawning "${String(args.agent)}" agent` : "Spawning agent";
-    case "orchestrate": {
-      const steps = Array.isArray(args?.steps) ? args.steps : [];
-      return `Orchestrating ${steps.length} step${steps.length !== 1 ? "s" : ""}`;
-    }
+      return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
+    case "read_task":
+      return "Reading a related task";
     case "write_tasks": {
       const tasks = Array.isArray(args?.tasks) ? args.tasks : [];
       return `Creating ${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
@@ -102,8 +100,8 @@ export function getToolResultDisplay(name?: string, content?: string): ToolDispl
     case "spawn_agent":
     case "agent":
       return { icon, iconColor, label: "Agent finished" };
-    case "orchestrate":
-      return { icon, iconColor, label: "Orchestration finished" };
+    case "read_task":
+      return { icon, iconColor, label: "Task read" };
     case "write_tasks":
       return { icon, iconColor, label: "Tasks created" };
     case "update_tasks":

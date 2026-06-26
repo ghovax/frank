@@ -9,15 +9,17 @@ import {
 } from "@chakra-ui/react";
 import { LuClock, LuSend } from "react-icons/lu";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { useChat } from "@/lib/use-chat";
+import { useChat, isStepDone } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
-import { setBypassPermissions } from "@/lib/api";
+import { AgentSkills } from "./agent-skills";
+import { setBypassPermissions, type AgentCard } from "@/lib/api";
 
 interface ChatPanelProps {
   agent: string;
   agents: { name: string; label: string }[];
+  agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
   onSessionCreated: (sessionId: string) => void;
@@ -34,6 +36,7 @@ interface ChatPanelProps {
 export function ChatPanel({
   agent,
   agents,
+  agentCard,
   onAgentChange,
   initialSessionId,
   onSessionCreated,
@@ -45,7 +48,7 @@ export function ChatPanel({
   historyOpen = false,
   onToggleHistory,
 }: ChatPanelProps) {
-  const { messages, orchestrations, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, abort, dequeueMessage, handlePermission } =
+  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, abort, dequeueMessage, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -54,7 +57,7 @@ export function ChatPanel({
   const onStreamingChangeRef = useRef(onStreamingChange);
   const [bypassPermissions, setBypassPermissionsState] = useState(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
-  const [focusedOrchestrationId, setFocusedOrchestrationId] = useState<string | null>(null);
+  const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
 
   const handleScroll = useCallback(() => {
@@ -142,17 +145,22 @@ export function ChatPanel({
     }
   }
 
-  const activeSteps = orchestrations.reduce(
-    (sum, orchestration) => sum + orchestration.steps.filter((step) => !step.done).length,
+  const activeSteps = agentGroups.reduce(
+    (sum, group) => sum + group.steps.filter((step) => !isStepDone(step)).length,
     0
   );
-  const hasAgentActivity = orchestrations.length > 0;
+  const hasAgentActivity = agentGroups.length > 0;
 
-  useEffect(() => {
+  // Auto-open the agents panel on desktop when agent activity begins. Tracked
+  // during render (skipped on the first render, so window is only read
+  // client-side after a change) rather than in an effect.
+  const [previousActiveSteps, setPreviousActiveSteps] = useState(activeSteps);
+  if (activeSteps !== previousActiveSteps) {
+    setPreviousActiveSteps(activeSteps);
     if (activeSteps > 0 && window.matchMedia("(min-width: 768px)").matches) {
       setAgentsPanelOpen(true);
     }
-  }, [activeSteps]);
+  }
 
   const handleAgentsResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -184,7 +192,7 @@ export function ChatPanel({
           {isHistoryLoading ? (
             <Flex h="100%" />
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" h="100%">
+            <Flex direction="column" align="center" justify="center" h="100%" gap={6} px={2}>
               <EmptyState.Root>
                 <EmptyState.Content>
                   <EmptyState.Indicator>
@@ -198,6 +206,7 @@ export function ChatPanel({
                   </VStack>
                 </EmptyState.Content>
               </EmptyState.Root>
+              <AgentSkills card={agentCard ?? null} />
             </Flex>
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">
@@ -254,7 +263,7 @@ export function ChatPanel({
           agentsAvailable={hasAgentActivity}
           agentsOpen={agentsPanelOpen}
           onShowAgents={() => {
-            setFocusedOrchestrationId(null);
+            setFocusedGroupId(null);
             setAgentsPanelOpen((current) => !current);
           }}
           historyOpen={historyOpen}
@@ -263,11 +272,11 @@ export function ChatPanel({
       </Flex>
 
       <AgentsPanel
-        orchestrations={orchestrations}
+        agentGroups={agentGroups}
         agents={agents}
         open={agentsPanelOpen}
         onClose={() => setAgentsPanelOpen(false)}
-        focusedOrchestrationId={focusedOrchestrationId}
+        focusedGroupId={focusedGroupId}
         width={agentsSidebarWidth}
         onResizeStart={handleAgentsResizeStart}
       />

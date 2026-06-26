@@ -77,13 +77,18 @@ const markdownComponents: Components = {
   code({ className, children }) {
     const languageMatch = /language-(\w+)/.exec(className || "");
     const codeString = String(children).replace(/\n$/, "");
+    // A fenced block is block-level whenever it declares a language OR spans
+    // multiple lines. Without this, a fenced block with no language falls
+    // through to the inline branch and inherits the document base font size —
+    // which is why a multi-line code block rendered oversized.
+    const isBlock = !!languageMatch || codeString.includes("\n");
 
-    if (languageMatch) {
+    if (isBlock) {
       return (
         <Box borderRadius="sm" overflow="hidden" border="1px solid" borderColor="border">
           <SyntaxHighlighter
             style={oneDark}
-            language={languageMatch[1]}
+            language={languageMatch ? languageMatch[1] : "text"}
             PreTag="div"
             customStyle={{
               margin: 0,
@@ -100,7 +105,7 @@ const markdownComponents: Components = {
     }
 
     return (
-      <Code fontFamily="var(--app-font-mono)" fontSize="inherit" lineHeight="inherit" px={1} bg="bg.subtle">
+      <Code fontFamily="var(--app-font-mono)" lineHeight="inherit" px={1} bg="bg.subtle">
         {children}
       </Code>
     );
@@ -169,7 +174,14 @@ export function MarkdownContent({ content }: MarkdownContentProps) {
         "& li > p + p, & li > ul, & li > ol": {
           marginBlockStart: headingGap,
         },
-        "& :not(pre) > code, & strong, & em, & a": {
+        // Inline code is sized relative to its surrounding text (monospace runs
+        // visually larger than proportional text at the same px, so 0.9em keeps
+        // it from looking oversized in prose, headings, and tables alike).
+        "& :not(pre) > code": {
+          fontSize: "0.9em",
+          lineHeight: "inherit",
+        },
+        "& strong, & em, & a": {
           fontSize: "inherit",
           lineHeight: "inherit",
         },

@@ -1,8 +1,8 @@
 "use client";
 
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
+import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { MarkdownContent } from "../markdown-content";
-import { ToolCard, ToolCardSection, ToolMetaRow } from "../tool-card";
 import {
   asArray,
   asRecord,
@@ -42,9 +42,7 @@ function tryParse(content: string): unknown {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Tool call (input) views
-// ---------------------------------------------------------------------------
 
 function BashCallView({ args }: { args: Record<string, unknown> }) {
   const command = stripCdPrefix(asString(args.command));
@@ -90,53 +88,12 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
         <Pill colorPalette="purple">{agentLabelFor(agentName, agents)}</Pill>
       </InlineField>
       <Field label="Prompt">
-        <Text fontSize="xs" whiteSpace="pre-wrap">{asString(args.prompt)}</Text>
+        <MarkdownContent content={asString(args.prompt)} />
       </Field>
     </FieldList>
   );
 }
 
-function OrchestrateCallView({ args, agents }: { args: Record<string, unknown>; agents: { name: string; label: string }[] }) {
-  const steps = asArray(args.steps).map(asRecord);
-  return (
-    <FieldList>
-      {steps.map((step, index) => {
-        const dependencies = asArray(step.depends_on).map(asString);
-        const stepId = asString(step.id);
-        const displayStep = stepId || `Step ${index + 1}`;
-        const agentName = asString(step.agent);
-        const agent = agentLabelFor(agentName, agents);
-        const prompt = asString(step.prompt) || "Agent task";
-        return (
-          <ToolCard key={stepId || index}>
-            <ToolCardSection>
-              <ToolMetaRow label="Step">
-                <Flex align="center" gap={2}>
-                  <Text truncate flex={1}>
-                    {displayStep}
-                  </Text>
-                  <Pill colorPalette="purple">{agent}</Pill>
-                </Flex>
-              </ToolMetaRow>
-              {dependencies.length > 0 && (
-                <ToolMetaRow label="Depends on" mt={1}>
-                  <Text>
-                    {dependencies.join(", ")}
-                  </Text>
-                </ToolMetaRow>
-              )}
-            </ToolCardSection>
-            <ToolCardSection borderTop>
-              <Text fontSize="xs" fontWeight="normal" color="fg.muted" whiteSpace="pre-wrap">
-                {prompt}
-              </Text>
-            </ToolCardSection>
-          </ToolCard>
-        );
-      })}
-    </FieldList>
-  );
-}
 
 function WriteTasksCallView({ args }: { args: Record<string, unknown> }) {
   const tasks = asArray(args.tasks).map(asRecord);
@@ -203,8 +160,6 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <WebSearchCallView args={args} />;
     case "spawn_agent":
       return <SpawnAgentCallView args={args} agents={agents} />;
-    case "orchestrate":
-      return <OrchestrateCallView args={args} agents={agents} />;
     case "write_tasks":
       return <WriteTasksCallView args={args} />;
     case "update_tasks":
@@ -214,9 +169,7 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
   }
 }
 
-// ---------------------------------------------------------------------------
 // Tool result (output) views
-// ---------------------------------------------------------------------------
 
 function BashResultView({ data }: { data: Record<string, unknown> }) {
   const output = asString(data.output);
@@ -289,22 +242,18 @@ function WebSearchResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function OrchestrationResultView({ data }: { data: Record<string, unknown> }) {
-  const results = asArray(data.results).map(asRecord);
+// A spawned sub-agent returns its A2A task as the tool result; show its terminal
+// state and its deliverable (artifact).
+function AgentTaskResultView({ data }: { data: Record<string, unknown> }) {
+  const task = data as unknown as A2ATask;
+  const state = task.status?.state;
   return (
-    <Collapsible title="Agent results" count={results.length} defaultOpen>
-      <Flex direction="column" gap={1.5}>
-        {results.map((result, index) => (
-          <Card key={asString(result.id) || index}>
-            <Flex align="center" gap={2} mb={1}>
-              <Pill colorPalette="orange">{asString(result.agent)}</Pill>
-              <Text fontSize="xs" color="fg.muted">{asString(result.id)}</Text>
-            </Flex>
-            <MarkdownContent content={asString(result.output)} />
-          </Card>
-        ))}
+    <FieldList>
+      <Flex align="center" gap={2}>
+        {state && <Pill colorPalette={state === "completed" ? "green" : state === "failed" ? "red" : "gray"}>{state}</Pill>}
       </Flex>
-    </Collapsible>
+      <MarkdownContent content={taskArtifactText(task)} />
+    </FieldList>
   );
 }
 
@@ -325,7 +274,7 @@ export function ToolResultView({ content }: { name: string; content: string }) {
     if (code === "web_search_completed") return <WebSearchResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || "Search failed"} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
-    if (code === "orchestration_completed") return <OrchestrationResultView data={data} />;
+    if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
     if (code === "empty_response") return <EmptyHint>{asString(data.message) || "No output"}</EmptyHint>;
     return <GenericView data={data} />;
   }

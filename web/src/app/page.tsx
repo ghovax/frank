@@ -4,7 +4,7 @@ import { Box, Button, EmptyState, Flex, Text, VStack } from "@chakra-ui/react";
 import { LuGripVertical, LuMessageSquare, LuPlus } from "react-icons/lu";
 import { Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { fetchAgents, fetchHomeDirectory, fetchSessions } from "@/lib/api";
+import { fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchSessions, subscribeEvents, type AgentCard } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
 interface SessionEntry {
@@ -19,6 +19,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
 
   const [agents, setAgents] = useState<{ name: string; label: string }[]>([]);
+  const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
 
@@ -46,15 +47,17 @@ function HomeContent() {
   }
 
   useEffect(() => {
-    fetchAgents()
-      .then((agentList) => {
-        setAgents(agentList);
-        if (agentList.length > 0) setSelectedAgent(agentList[0].name);
-        setIsConnected(true);
-      })
-      .catch(() => {
-        setIsConnected(false);
-      });
+    const loadAgents = () => {
+      fetchAgents()
+        .then((agentList) => {
+          setAgents(agentList);
+          setSelectedAgent((current) => current || (agentList[0]?.name ?? ""));
+          setIsConnected(true);
+        })
+        .catch(() => setIsConnected(false));
+      fetchAgentCards().then(setAgentCards).catch(() => {});
+    };
+    loadAgents();
     fetchHomeDirectory()
       .then((home) => setWorkingDirectory(home))
       .catch(() => {});
@@ -70,13 +73,28 @@ function HomeContent() {
         )
       )
       .catch(() => {});
+
+    // Live reload: when agents change on disk, refresh the list and their cards.
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "agents_changed") loadAgents();
+    });
+    return unsubscribe;
   }, []);
 
-  useEffect(() => {
+  const selectedCard =
+    agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
+
+  // When a session becomes active on a compact viewport, collapse the sidebar
+  // so the chat takes the screen. Adjusted during render (skipped on the first
+  // render, so the viewport check only runs client-side after a change) rather
+  // than in an effect.
+  const [previousActiveSessionId, setPreviousActiveSessionId] = useState(activeSessionId);
+  if (activeSessionId !== previousActiveSessionId) {
+    setPreviousActiveSessionId(activeSessionId);
     if (activeSessionId && isCompactViewport()) {
       setHistoryOpen(false);
     }
-  }, [activeSessionId]);
+  }
 
   const refreshSessions = useCallback(() => {
     fetchSessions()
@@ -271,6 +289,7 @@ function HomeContent() {
           key={chatKey}
           agent={selectedAgent}
           agents={agents}
+          agentCard={selectedCard}
           onAgentChange={handleAgentChange}
           initialSessionId={activeSessionId}
           onSessionCreated={handleSessionCreated}

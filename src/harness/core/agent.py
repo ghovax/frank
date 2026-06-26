@@ -54,20 +54,21 @@ from harness.tools.tools import (
     bash as bash_tool,
     web_search as web_search_tool,
     spawn_agent as spawn_tool,
+    read_task as read_task_tool,
     write_tasks as write_tasks_tool,
     update_tasks as update_tasks_tool,
-    orchestrate as orchestrate_tool,
-    register_spawned_task,
-    cancel_all_background_tasks,
     bash_tasks,
     web_tasks,
     spawned_tasks,
 )
 
-from harness.core.orchestrator_graph import (
-    compile_orchestration_graph,
-    OrchestrationState,
+from harness.core.handoff import (
+    build_task,
+    serialize_task,
 )
+from harness.core.skills import load_skills, skills_for_agent, skills_payload
+
+from a2a.types import Task, TaskState
 
 
 class StreamEvent:
@@ -84,7 +85,7 @@ class StreamEvent:
         TASKS_UPDATED = "tasks_updated"
         ERROR = "error"
         DENIED_INJECTION = "denied_injection"
-        ORCHESTRATION_STARTED = "orchestration_started"
+        AGENT_GROUP_STARTED = "agent_group_started"
         AGENT_TEXT_CHUNK = "agent_text_chunk"
         AGENT_TOOL_CALL = "agent_tool_call"
         AGENT_THINKING = "agent_thinking"
@@ -113,7 +114,7 @@ def _maybe_json(value: str) -> Any:
 
 
 def _build_tools(tools_configuration) -> list[BaseTool]:
-    available = [bash_tool, web_search_tool, write_tasks_tool, update_tasks_tool, orchestrate_tool]
+    available = [bash_tool, web_search_tool, write_tasks_tool, update_tasks_tool, read_task_tool]
     if tools_configuration.spawn_agent.enabled:
         available.append(spawn_tool)
     return available
@@ -127,48 +128,103 @@ class SubAgentRunner:
         task_identifier: str,
         prompt: str,
         stream_progress: bool = True,
+        read_only_override: Optional[bool] = None,
     ):
         self.task_identifier = task_identifier
         self.prompt = prompt
         self._stream_progress = stream_progress
-        self._orchestrator = AgentOrchestrator(
+        self._agent_name = agent_configuration.name
+        self._runtime = AgentRuntime(
             agent_configuration=agent_configuration,
             global_configuration=global_configuration,
         )
+        # An explicit override (from the spawning call or step)
+        # wins over the agent profile's own permission_mode.
+        if read_only_override is not None:
+            self._runtime.set_read_only(read_only_override)
 
     async def run_stream(self, always_yield_text: bool = False) -> AsyncIterator[StreamEvent]:
-        """Yield each event as the sub-agent produces it.
-        Also pushes events to _agent_event_queues for background monitoring.
+        """Yield each event as the sub-agent produces it, guaranteeing the run
+        ends with a non-empty final report.
+
+        Also pushes events to ``_agent_event_queues`` for background monitoring.
+        The final DONE event always carries the artifact text in ``text``.
         """
-        async for event in self._orchestrator.stream(self.prompt):
+        outcome = {"text": "", "stop_reason": "completed"}
+        async for event in self._drain(self.prompt, always_yield_text, outcome):
+            yield event
+
+        # If the agent produced no deliverable (and was not cancelled), force one
+        # by re-prompting for a self-contained conclusion. The conversation is
+        # preserved, so the agent still has all the context it gathered.
+        if not outcome["text"].strip() and outcome["stop_reason"] != "cancelled":
+            conclusion_prompt = self._runtime._prompt_loader.load("conclusion", {})
+            async for event in self._drain(conclusion_prompt, always_yield_text, outcome):
+                yield event
+
+        done_event = StreamEvent(
+            StreamEvent.Type.DONE, text=outcome["text"], stop_reason=outcome["stop_reason"],
+        )
+        queue = _agent_event_queues.get(self.task_identifier)
+        if queue is not None:
+            await queue.put(done_event)
+        yield done_event
+
+        if queue is not None:
+            await queue.put(None)
+
+    async def _drain(
+        self, prompt: str, always_yield_text: bool, outcome: dict,
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream one turn through the inner runtime, forwarding events and
+        recording ``(text, stop_reason)`` into ``outcome``. DONE events are
+        swallowed so :meth:`run_stream` can emit a single terminal DONE."""
+        async for event in self._runtime.stream(prompt):
             queue = _agent_event_queues.get(self.task_identifier)
+            if event.type == StreamEvent.Type.DONE:
+                text = event.data.get("text", "")
+                if text.strip():
+                    outcome["text"] = text
+                outcome["stop_reason"] = event.data.get("stop_reason", outcome["stop_reason"])
+                continue
             if event.type == StreamEvent.Type.TEXT_CHUNK:
                 if queue is not None and self._stream_progress:
                     await queue.put(event)
                 if self._stream_progress or always_yield_text:
                     yield event
                 continue
+            if event.type == StreamEvent.Type.ERROR:
+                outcome["stop_reason"] = "error"
+                if not outcome["text"]:
+                    outcome["text"] = event.data.get("message", "unknown")
             if queue is not None:
                 await queue.put(event)
             yield event
 
-        queue = _agent_event_queues.get(self.task_identifier)
-        if queue is not None:
-            await queue.put(None)
+    async def run_to_task(self) -> Task:
+        """Run the agent to completion and return its outcome as an A2A Task."""
+        final_text = ""
+        stop_reason = "completed"
+        async for event in self.run_stream():
+            if event.type == StreamEvent.Type.DONE:
+                final_text = event.data.get("text", final_text)
+                stop_reason = event.data.get("stop_reason", stop_reason)
+        state = TaskState.completed
+        if stop_reason == "error":
+            state = TaskState.failed
+        elif stop_reason == "cancelled":
+            state = TaskState.canceled
+        if not final_text.strip():
+            final_text = "Agent produced no output."
+            state = TaskState.failed
+        return build_task(self.task_identifier, self._agent_name, state, final_text)
 
     async def run(self) -> str:
-        """Collect final text (backwards-compatible for spawn_agent)."""
-        last_text = ""
-        async for event in self.run_stream():
-            if event.type == StreamEvent.Type.TEXT_CHUNK:
-                last_text += event.data.get("text", "")
-            elif event.type == StreamEvent.Type.DONE:
-                last_text = event.data.get("text", last_text)
-            elif event.type == StreamEvent.Type.ERROR:
-                return event.data.get("message", "unknown")
-        if not last_text:
-            return json.dumps({"code": "empty_response", "message": "Agent produced no output."})
-        return last_text
+        """Return the agent's outcome as a serialized A2A Task (used by
+        spawn_agent). The structured task — status + artifacts — is handed to the
+        parent verbatim rather than flattened to a bare string."""
+        task = await self.run_to_task()
+        return json.dumps(serialize_task(task))
 
 
 @dataclass(frozen=True)
@@ -355,7 +411,7 @@ class TaskManager:
         return [task.model_dump() for task in self._tasks]
 
 
-class AgentOrchestrator:
+class AgentRuntime:
     # Maximum time to block a turn waiting for in-flight background tasks
     # (searches, sub-agents, slow bash) before invoking the model anyway.
     _BACKGROUND_WAIT_SECONDS = 300.0
@@ -367,8 +423,6 @@ class AgentOrchestrator:
         pending_permissions: Optional[dict[str, asyncio.Future]] = None,
         on_record_event: Optional[callable] = None,
         on_record_message: Optional[callable] = None,
-        on_record_orchestration: Optional[callable] = None,
-        on_record_stream_event: Optional[callable] = None,
         session_id: str = "",
         conversation: Optional[list] = None,
         working_directory: str = "",
@@ -379,8 +433,6 @@ class AgentOrchestrator:
         self._pending_permissions = pending_permissions if pending_permissions is not None else {}
         self._on_record_event = on_record_event
         self._on_record_message = on_record_message
-        self._on_record_orchestration = on_record_orchestration
-        self._on_record_stream_event = on_record_stream_event
         self._working_directory = working_directory or str(Path.home())
 
         effective_model = agent_configuration.model or global_configuration.api.model
@@ -403,7 +455,8 @@ class AgentOrchestrator:
 
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
-        self._recursion_depth: int = 0
+        # How many delegation hops led to this runtime (0 = top-level chat agent).
+        self._delegation_depth: int = 0
         self._calls_this_turn: int = 0
         self._abort_event = asyncio.Event()
 
@@ -412,9 +465,16 @@ class AgentOrchestrator:
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         self._execution_history: list[dict] = []
-        self._orchestration_graphs: dict[str, Any] = {}
-        self._orchestration_configs: dict[str, dict] = {}
-        self._bypass_permissions: bool = False
+        self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
+        self._read_only: bool = agent_configuration.permission_mode == "read_only"
+        # When set, sub-agents (spawn_agent calls) are invoked
+        # through this delegate — an A2A call to the target agent's served
+        # endpoint — instead of being run in-process. Bound to the A2A context.
+        self._delegate: Optional[Callable] = None
+        self._a2a_task_id: str = ""
+        # Reads another A2A task (sibling/sub-agent) by id from the shared store,
+        # so context-aware agents can coordinate. Injected by the executor.
+        self._task_reader: Optional[Callable] = None
 
     @property
     def agent_name(self) -> str:
@@ -424,11 +484,41 @@ class AgentOrchestrator:
     def working_directory(self) -> str:
         return self._working_directory
 
+    @property
+    def is_read_only(self) -> bool:
+        return self._read_only
+
     def abort(self) -> None:
         self._abort_event.set()
 
     def set_bypass_permissions(self, bypass: bool) -> None:
         self._bypass_permissions = bypass
+        if bypass:
+            self._read_only = False
+
+    def set_read_only(self, read_only: bool) -> None:
+        self._read_only = read_only
+        if read_only:
+            self._bypass_permissions = False
+
+    def set_delegate(self, delegate: Callable) -> None:
+        """Install the A2A delegate used to invoke sub-agents as related tasks."""
+        self._delegate = delegate
+
+    def set_a2a_task_id(self, task_id: str) -> None:
+        """Record the A2A task id of the current turn so delegated sub-agent
+        tasks can reference it as their parent."""
+        self._a2a_task_id = task_id
+
+    def set_task_reader(self, task_reader: Callable) -> None:
+        """Install the reader used by the read_task tool to fetch sibling/sub-agent
+        A2A tasks from the shared store."""
+        self._task_reader = task_reader
+
+    def set_delegation_depth(self, depth: int) -> None:
+        """Record how many delegation hops led to this runtime, so it can refuse
+        to delegate past the configured maximum depth."""
+        self._delegation_depth = depth
 
     def _evaluate_bash_permission(self, command: str) -> str:
         if self._bypass_permissions:
@@ -446,11 +536,18 @@ class AgentOrchestrator:
             self._on_record_message(role, content, tool_call_id)
 
     def _build_static_system_prompt(self) -> str:
-        """Build the static portion of the system prompt (cached across calls)."""
+        """Build the static portion of the system prompt (cached across calls).
+
+        Every agent — main or spawned — is built through this same path, so they
+        all share the baseline system prompt, the working-directory/agents
+        context, and the available-skills awareness.
+        """
         if self._cached_system_prompt is None:
             available_agents = list_available_agents(
                 self._global_configuration.agents_directory
             )
+            all_skills = load_skills(self._global_configuration.skills_directory)
+            agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             context_json = json.dumps({
                 "working_directory": self._working_directory,
                 "available_agents": available_agents,
@@ -458,6 +555,7 @@ class AgentOrchestrator:
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
+                "skills": json.dumps(skills_payload(agent_skills)),
                 "tasks_section": "",
             })
         return self._cached_system_prompt
@@ -730,29 +828,6 @@ class AgentOrchestrator:
             read_only = arguments.get("read_only", True)
             if not isinstance(read_only, bool):
                 return ("invalid_read_only", "read_only must be a boolean.")
-        if tool_name == "orchestrate":
-            steps = arguments.get("steps", [])
-            if not isinstance(steps, list) or len(steps) == 0:
-                return ("invalid_steps", "steps must be a non-empty list.")
-            all_step_ids: set[str] = set()
-            for step_index, step in enumerate(steps):
-                if not isinstance(step, dict):
-                    return ("invalid_step", f"step {step_index} must be an object.")
-                if "id" not in step or "agent" not in step or "prompt" not in step:
-                    return ("invalid_step", f"step {step_index} must have 'id', 'agent', and 'prompt' fields.")
-                step_id = step["id"]
-                if step_id in all_step_ids:
-                    return ("invalid_step", f"duplicate step id '{step_id}'.")
-                all_step_ids.add(step_id)
-            for step in steps:
-                dependency_ids = step.get("depends_on", [])
-                if not isinstance(dependency_ids, list):
-                    return ("invalid_step", f"step '{step['id']}' depends_on must be a list.")
-                for dependency_id in dependency_ids:
-                    if not isinstance(dependency_id, str):
-                        return ("invalid_step", f"step '{step['id']}' depends_on entries must be strings.")
-                    if dependency_id not in all_step_ids:
-                        return ("invalid_dependency", f"step '{step['id']}' depends_on references '{dependency_id}' which is not a step in this orchestration. depends_on must reference other step IDs, not task IDs.")
         return None
 
     async def _execute_tool(
@@ -806,6 +881,28 @@ class AgentOrchestrator:
             if isinstance(read_only, str):
                 read_only = read_only.lower() == "true"
 
+            # Read-only agents may only run read-only commands. Static analysis
+            # classifies the command; a detected mutation is always blocked, and
+            # a command that can't be classified is blocked only when the model
+            # itself marked it as a write. This is a hard block — sub-agents have
+            # no human in the loop to approve.
+            if self._read_only:
+                classification, detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
+                violation = None
+                if classification == "mutating":
+                    violation = detail
+                elif classification == "unknown" and not read_only:
+                    violation = "a command not recognized as read-only that you marked as modifying state"
+                if violation:
+                    deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
+                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
+                    yield StreamEvent(
+                        StreamEvent.Type.DENIED_INJECTION,
+                        id=tool_call_identifier,
+                        command=command,
+                    )
+                    return
+
             permission_decision = self._evaluate_bash_permission(command)
             if permission_decision == "deny":
                 deny_message = f"Command '{command}' is not permitted."
@@ -846,181 +943,88 @@ class AgentOrchestrator:
                     self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command[:200]})
 
         elif tool_name == "spawn_agent":
-            self._recursion_depth += 1
-            try:
-                self._permissions.check_spawn_agent(self._recursion_depth, self._background.active_background_count())
-            except PermissionError as exception:
-                self._recursion_depth -= 1
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
+            child_depth = self._delegation_depth + 1
+            maximum_depth = self._global_configuration.maximum_delegation_depth
+            if child_depth > maximum_depth:
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                    message=f"Maximum delegation depth ({maximum_depth}) reached; cannot spawn another agent.",
+                )
                 return
 
             sub_agent_prompt = tool_arguments.get("prompt", "")
             sub_agent_name = tool_arguments.get("agent", "main")
-            sub_agent_task_identifier = f"agent-{uuid.uuid4().hex[:12]}"
+            sub_agent_read_only = tool_arguments.get("read_only", None)
+            if isinstance(sub_agent_read_only, str):
+                sub_agent_read_only = sub_agent_read_only.lower() == "true"
+            spawn_step_id = f"agent-{uuid.uuid4().hex[:12]}"
 
             try:
                 sub_configuration = self._load_sub_agent(sub_agent_name)
             except FileNotFoundError as exception:
-                self._recursion_depth -= 1
                 yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
                 return
 
-            runner = SubAgentRunner(
-                agent_configuration=sub_configuration,
-                global_configuration=self._global_configuration,
-                task_identifier=sub_agent_task_identifier,
-                prompt=sub_agent_prompt,
-                stream_progress=self._agent_configuration.stream_agent_progress,
-            )
-
-            async def _run_and_cleanup(runner=runner, tid=sub_agent_task_identifier):
-                try:
-                    return await runner.run()
-                finally:
-                    self._recursion_depth = max(0, self._recursion_depth - 1)
-                    _agent_event_queues.pop(tid, None)
-
-            agent_queue: asyncio.Queue[Optional[StreamEvent]] = asyncio.Queue()
-            _agent_event_queues[sub_agent_task_identifier] = agent_queue
-            register_spawned_task(sub_agent_task_identifier, _run_and_cleanup())
-            self._background.track("agent", sub_agent_task_identifier)
-            self._record_event("agent_spawned", {"task_identifier": sub_agent_task_identifier, "agent": sub_agent_name, "prompt": sub_agent_prompt[:200]})
-
-            result_message = f"Started sub-agent ({sub_agent_task_identifier}) using profile '{sub_agent_name}'."
+            # Spawning runs the sub-agent as a related A2A task and streams its
+            # activity live into the agents panel (grouped per turn). Its
+            # structured deliverable (the child task) returns immediately as this
+            # tool's result, so the parent can reason over it and spawn further
+            # agents — peer-to-peer, with the dependency shape emerging from the
+            # parent's reasoning rather than a declared graph.
+            group_id = f"agents-{self._a2a_task_id or self._session_id}"
             yield StreamEvent(
-                StreamEvent.Type.BACKGROUND_STARTED,
-                id=tool_call_identifier,
-                task_id=sub_agent_task_identifier,
-                agent=sub_agent_name,
-                result_message=result_message,
-            )
-
-        elif tool_name == "orchestrate":
-            steps = tool_arguments.get("steps", [])
-            if not steps:
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="orchestrate requires at least one step.", tool=tool_name)
-                return
-
-            orchestration_id = f"orch-{uuid.uuid4().hex[:12]}"
-            config = {"configurable": {"thread_id": orchestration_id}}
-
-            graph = compile_orchestration_graph(steps=steps, node_factory=self._make_orchestration_node)
-            self._orchestration_graphs[orchestration_id] = graph
-            self._orchestration_configs[orchestration_id] = config
-            step_summaries = [
-                {
-                    "id": step["id"],
-                    "agent": step["agent"],
-                    "prompt": step.get("prompt", ""),
-                }
-                for step in steps
-            ]
-
-            # Announce the orchestration so the UI can group all of its sub-agent
-            # activity into a dedicated panel and link it back to this tool call.
-            yield StreamEvent(
-                StreamEvent.Type.ORCHESTRATION_STARTED,
-                orchestration_id=orchestration_id,
+                StreamEvent.Type.AGENT_GROUP_STARTED,
+                group_id=group_id,
                 tool_call_id=tool_call_identifier,
-                justification=tool_arguments.get("justification", ""),
-                steps=step_summaries,
+                justification="Sub-agents",
+                steps=[{"id": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt}],
             )
+            self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt[:200]})
+            child_task = None
+            if self._delegate is not None:
+                async for delegated in self._delegate(sub_agent_name, sub_agent_prompt, self._a2a_task_id, sub_agent_read_only, child_depth):
+                    delegated_kind = delegated.get("type")
+                    common = {
+                        "group_id": group_id,
+                        "step_id": spawn_step_id,
+                        "child_task_id": delegated.get("child_task_id", ""),
+                    }
+                    if delegated_kind == "started":
+                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code="started", **common)
+                    elif delegated_kind == "text":
+                        yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=delegated.get("text", ""), **common)
+                    elif delegated_kind == "thinking":
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), **common)
+                    elif delegated_kind == "tool_call":
+                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), **common)
+                    elif delegated_kind == "done":
+                        child_task = delegated.get("task")
+                        yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
+            else:
+                runner = SubAgentRunner(
+                    agent_configuration=sub_configuration,
+                    global_configuration=self._global_configuration,
+                    task_identifier=spawn_step_id,
+                    prompt=sub_agent_prompt,
+                    stream_progress=self._agent_configuration.stream_agent_progress,
+                    read_only_override=sub_agent_read_only,
+                )
+                final_text = ""
+                common = {"group_id": group_id, "step_id": spawn_step_id, "child_task_id": ""}
+                async for event in runner.run_stream(always_yield_text=True):
+                    if event.type == StreamEvent.Type.TEXT_CHUNK:
+                        yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=event.data.get("text", ""), **common)
+                    elif event.type == StreamEvent.Type.THINKING:
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), **common)
+                    elif event.type == StreamEvent.Type.TOOL_CALL:
+                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=event.data.get("name", ""), arguments=event.data.get("arguments", {}), **common)
+                    elif event.type == StreamEvent.Type.DONE:
+                        final_text = event.data.get("text", final_text)
+                child_task = serialize_task(build_task(spawn_step_id, sub_agent_name, TaskState.completed, final_text))
+                yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
 
-            async def _run_orchestration_background():
-                initial_state: OrchestrationState = {"steps": steps, "results": []}
-                orchestration_results: list[dict] = []
-                completed_step_ids: set[str] = set()
-
-                def record_stream(event_type: StreamEvent.Type, **data):
-                    if self._on_record_stream_event:
-                        self._on_record_stream_event(event_type.value, data)
-
-                try:
-                    async for mode, data in graph.astream(initial_state, config, stream_mode=["updates", "custom"]):
-                        if mode == "custom":
-                            payload = dict(data)
-                            custom_type = payload.pop("type", None)
-                            payload["orchestration_id"] = orchestration_id
-                            if custom_type == "agent_text_chunk":
-                                record_stream(StreamEvent.Type.AGENT_TEXT_CHUNK, **payload)
-                            elif custom_type == "agent_tool_call":
-                                record_stream(StreamEvent.Type.AGENT_TOOL_CALL, **payload)
-                            elif custom_type == "agent_thinking":
-                                record_stream(StreamEvent.Type.AGENT_THINKING, **payload)
-                            elif custom_type == "agent_status":
-                                record_stream(StreamEvent.Type.AGENT_STATUS, **payload)
-                        elif mode == "updates":
-                            for node_name, state_update in data.items():
-                                if "results" in state_update:
-                                    new_results = state_update["results"]
-                                    if not new_results:
-                                        continue
-                                    orchestration_results.extend(new_results)
-                                    result_id = new_results[-1]["id"]
-                                    completed_step_ids.add(result_id)
-                                    record_stream(
-                                        StreamEvent.Type.AGENT_DONE,
-                                        agent_id=result_id,
-                                        step_id=result_id,
-                                        orchestration_id=orchestration_id,
-                                    )
-
-                    self._record_event("orchestration", {
-                        "orchestration_id": orchestration_id,
-                        "thread_id": orchestration_id,
-                        "steps": step_summaries,
-                        "results": orchestration_results,
-                    })
-                    if self._on_record_orchestration:
-                        self._on_record_orchestration(
-                            orchestration_id=orchestration_id,
-                            thread_id=orchestration_id,
-                            steps=step_summaries,
-                            results=orchestration_results,
-                        )
-                    record_stream(
-                        StreamEvent.Type.TOOL_RESULT,
-                        id=tool_call_identifier,
-                        name=tool_name,
-                        result={"code": "orchestration_completed", "results": orchestration_results},
-                    )
-                except Exception as exception:
-                    for step in step_summaries:
-                        step_id = step["id"]
-                        if step_id in completed_step_ids:
-                            continue
-                        record_stream(
-                            StreamEvent.Type.AGENT_DONE,
-                            agent_id=step_id,
-                            step_id=step_id,
-                            orchestration_id=orchestration_id,
-                        )
-                    record_stream(
-                        StreamEvent.Type.ERROR,
-                        message=f"Orchestration failed: {exception}",
-                        tool=tool_name,
-                        orchestration_id=orchestration_id,
-                    )
-                    record_stream(
-                        StreamEvent.Type.TOOL_RESULT,
-                        id=tool_call_identifier,
-                        name=tool_name,
-                        result={"code": "orchestration_failed", "message": str(exception)},
-                    )
-
-            asyncio.create_task(_run_orchestration_background())
-
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result={
-                    "code": "orchestration_started",
-                    "task_identifier": orchestration_id,
-                    "step_count": len(steps),
-                    "steps": step_summaries,
-                },
-            )
+            result_payload = child_task or {"code": "empty_response", "message": "Sub-agent produced no task."}
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_payload)
 
         elif tool_name == "write_tasks":
             task_definitions = tool_arguments.get("tasks", [])
@@ -1060,6 +1064,18 @@ class AgentOrchestrator:
                 if task_identifier:
                     self._background.track("web_search", task_identifier)
 
+        elif tool_name == "read_task":
+            requested_task_id = tool_arguments.get("task_id", "")
+            if self._task_reader is None:
+                result = {"code": "read_task_unavailable", "message": "Reading tasks is not available in this context."}
+            else:
+                task = await self._task_reader(requested_task_id)
+                if task is None:
+                    result = {"code": "task_not_found", "task_id": requested_task_id}
+                else:
+                    result = task
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+
         else:
             yield StreamEvent(
                 StreamEvent.Type.ERROR, id=tool_call_identifier,
@@ -1068,69 +1084,3 @@ class AgentOrchestrator:
 
     def get_execution_history(self) -> list[dict]:
         return self._execution_history
-
-    def get_orchestration_checkpoints(self, thread_id: str) -> list[dict]:
-        graph = self._orchestration_graphs.get(thread_id)
-        config = self._orchestration_configs.get(thread_id)
-        if not graph or not config:
-            return []
-        snapshots = list(graph.get_state_history(config))
-        return [
-            {
-                "step": index,
-                "state": snapshot.values,
-            }
-            for index, snapshot in enumerate(snapshots)
-        ]
-
-    def _make_orchestration_node(self, step: dict, node_index: int):
-        async def node(state: OrchestrationState) -> OrchestrationState:
-            from langgraph.config import get_stream_writer
-            writer = get_stream_writer()
-
-            agent_configuration = self._load_sub_agent(step["agent"])
-
-            if "depends_on" not in step:
-                dependency_ids = [state["steps"][node_index - 1]["id"]] if node_index > 0 else []
-            else:
-                dependency_ids = step["depends_on"]
-
-            dependency_outputs = [
-                result for result in state["results"]
-                if result["id"] in dependency_ids
-            ]
-
-            resolved_prompt = step["prompt"]
-            if dependency_outputs:
-                resolved_prompt += "\n\n" + json.dumps(dependency_outputs)
-
-            runner = SubAgentRunner(
-                agent_configuration=agent_configuration,
-                global_configuration=self._global_configuration,
-                task_identifier=f"orch-{step['id']}",
-                prompt=resolved_prompt,
-                stream_progress=self._agent_configuration.stream_agent_progress,
-            )
-
-            step_text = ""
-            result = ""
-            async for event in runner.run_stream(always_yield_text=True):
-                if event.type == StreamEvent.Type.TEXT_CHUNK:
-                    chunk_text = event.data.get("text", "")
-                    step_text += chunk_text
-                    writer({"type": "agent_text_chunk", "step_id": step["id"], "text": chunk_text})
-                elif event.type == StreamEvent.Type.THINKING:
-                    writer({"type": "agent_thinking", "step_id": step["id"], "text": event.data.get("text", "")})
-                elif event.type == StreamEvent.Type.TOOL_CALL:
-                    writer({"type": "agent_tool_call", "step_id": step["id"], "name": event.data.get("name", ""), "arguments": event.data.get("arguments", {})})
-                elif event.type == StreamEvent.Type.STATUS:
-                    writer({"type": "agent_status", "step_id": step["id"], "code": event.data.get("code", "")})
-                elif event.type == StreamEvent.Type.DONE:
-                    # Captured for the orchestration's structured result only;
-                    # the incremental chunks already streamed it to the user.
-                    result = event.data.get("text", step_text)
-                elif event.type == StreamEvent.Type.ERROR:
-                    result = event.data.get("message", "unknown")
-
-            return {"results": [{"id": step["id"], "agent": step["agent"], "output": result}]}
-        return node

@@ -3,28 +3,56 @@
 import { Badge, Box, Flex, IconButton, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { LuChevronDown, LuChevronRight, LuNetwork, LuX } from "react-icons/lu";
-import type { AgentStep, Orchestration } from "@/lib/use-chat";
-import { MarkdownContent } from "./markdown-content";
-import { ToolCall } from "./tool-call";
-import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow, ToolStatusBadge } from "./tool-card";
+import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
+import { isStepDone } from "@/lib/use-chat";
+import { AgentTimeline } from "./agent-timeline";
+import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
+
+// Maps an A2A TaskState to a status badge. The badge is the canonical lifecycle
+// state, so a failed or cancelled step reads differently from a clean finish.
+function AgentStateBadge({ state }: { state: TaskState }) {
+  const { label, palette } =
+    state === "completed"
+      ? { label: "Done", palette: "green" }
+      : state === "failed"
+        ? { label: "Failed", palette: "red" }
+        : state === "rejected"
+          ? { label: "Rejected", palette: "red" }
+          : state === "canceled"
+            ? { label: "Canceled", palette: "gray" }
+            : state === "input-required" || state === "auth-required"
+              ? { label: "Waiting", palette: "yellow" }
+              : { label: "Running", palette: "blue" };
+  return (
+    <Badge size="sm" variant="subtle" colorPalette={palette} borderRadius="sm" flexShrink={0}>
+      {label}
+    </Badge>
+  );
+}
 
 interface AgentsPanelProps {
-  orchestrations: Orchestration[];
+  agentGroups: AgentGroup[];
   agents: { name: string; label: string }[];
   open: boolean;
   onClose: () => void;
-  focusedOrchestrationId: string | null;
+  focusedGroupId: string | null;
   width: number;
   onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
 }
 
 function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: string; agents: { name: string; label: string }[] }) {
-  const [open, setOpen] = useState(!step.done);
+  const done = isStepDone(step);
+  const [open, setOpen] = useState(!done);
   const [thinkingOpen, setThinkingOpen] = useState(false);
 
-  useEffect(() => {
-    if (step.done) setOpen(false);
-  }, [step.done]);
+  // Collapse the card when the step transitions to done. Adjusted during render
+  // via a previous-value tracker rather than in an effect (avoids a cascading
+  // re-render) while still leaving the card manually toggleable afterwards.
+  const [wasDone, setWasDone] = useState(done);
+  if (done !== wasDone) {
+    setWasDone(done);
+    if (done) setOpen(false);
+  }
 
   return (
     <ToolCard>
@@ -35,7 +63,7 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
             <Badge size="sm" variant="surface" colorPalette="purple" borderRadius="sm" flexShrink={0}>
               {agentLabel || "Agent"}
             </Badge>
-            <ToolStatusBadge status={step.done ? "done" : "running"} />
+            <AgentStateBadge state={step.state} />
           </>
         }
         open={open}
@@ -52,7 +80,7 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
           </Box>
         )}
         {step.thinking && (
-          <Box mb={step.toolCalls.length > 0 || step.text ? 2 : 0}>
+          <Box mb={step.parts.length > 0 ? 2 : 0}>
             <Flex
               align="center"
               gap={1}
@@ -72,24 +100,10 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
           </Box>
         )}
 
-        {step.toolCalls.length > 0 && (
-          <Flex direction="column" gap={1.5} mb={step.text ? 2 : 0}>
-            {step.toolCalls.map((toolCall, index) => (
-              <ToolCall
-                key={`${step.stepId}-tool-${index}`}
-                name={toolCall.name}
-                arguments={toolCall.arguments}
-                sequenceNumber={toolCall.sequenceNumber}
-                agents={agents}
-              />
-            ))}
-          </Flex>
-        )}
-
-        {step.text ? (
-          <MarkdownContent content={step.text} />
+        {step.parts.length > 0 ? (
+          <AgentTimeline parts={step.parts} agents={agents} />
         ) : (
-          !step.done && step.toolCalls.length === 0 && !step.thinking && (
+          !done && !step.thinking && (
             <Text fontSize="xs" color="fg.subtle">Working…</Text>
           )
         )}
@@ -98,30 +112,33 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
   );
 }
 
-function OrchestrationCard({
-  orchestration,
+function AgentGroupCard({
+  group,
   agentLabels,
   agents,
 }: {
-  orchestration: Orchestration;
+  group: AgentGroup;
   agentLabels: Map<string, string>;
   agents: { name: string; label: string }[];
 }) {
-  const completed = orchestration.steps.filter((step) => step.done).length;
-  const total = orchestration.steps.length;
+  const completed = group.steps.filter((step) => isStepDone(step)).length;
+  const total = group.steps.length;
   const active = total - completed;
   const [open, setOpen] = useState(active > 0);
 
-  useEffect(() => {
-    if (active === 0) setOpen(false);
-    else setOpen(true);
-  }, [active]);
+  // Follow the active count — open while work remains, collapse once every step
+  // finishes — tracked during render rather than in an effect.
+  const [previousActive, setPreviousActive] = useState(active);
+  if (active !== previousActive) {
+    setPreviousActive(active);
+    setOpen(active > 0);
+  }
 
   return (
     <ToolCard>
       <ToolCardHeader
         icon={<Box color="orange.fg"><LuNetwork size={12} /></Box>}
-        title={orchestration.justification || "Orchestration"}
+        title={group.justification || "Sub-agents"}
         badges={
           <Badge size="sm" variant="surface" colorPalette={active > 0 ? "blue" : "green"} borderRadius="sm" flexShrink={0}>
             {active > 0 ? `${active} running` : "Done"}
@@ -133,7 +150,7 @@ function OrchestrationCard({
       />
       {open && <ToolCardBody>
         <Flex direction="column" gap={2}>
-          {orchestration.steps.map((step) => (
+          {group.steps.map((step) => (
             <StepCard
               key={step.stepId}
               step={step}
@@ -148,11 +165,11 @@ function OrchestrationCard({
 }
 
 export function AgentsPanel({
-  orchestrations,
+  agentGroups,
   agents,
   open,
   onClose,
-  focusedOrchestrationId,
+  focusedGroupId,
   width,
   onResizeStart,
 }: AgentsPanelProps) {
@@ -160,10 +177,10 @@ export function AgentsPanel({
   const agentLabels = new Map(agents.map((agent) => [agent.name, agent.label]));
 
   useEffect(() => {
-    if (!open || !focusedOrchestrationId) return;
-    const node = cardRefs.current.get(focusedOrchestrationId);
+    if (!open || !focusedGroupId) return;
+    const node = cardRefs.current.get(focusedGroupId);
     node?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [open, focusedOrchestrationId]);
+  }, [open, focusedGroupId]);
 
   if (!open) return null;
 
@@ -204,21 +221,21 @@ export function AgentsPanel({
       </Flex>
 
       <Box flex={1} minH={0} overflowY="auto" px={3} py={3}>
-        {orchestrations.length === 0 ? (
+        {agentGroups.length === 0 ? (
           <Flex h="100%" align="center" justify="center">
             <Text fontSize="xs" color="fg.muted">No agent activity yet.</Text>
           </Flex>
         ) : (
           <Flex direction="column" gap={3}>
-            {orchestrations.map((orchestration) => (
+            {agentGroups.map((group) => (
               <Box
-                key={orchestration.orchestrationId}
+                key={group.groupId}
                 ref={(node: HTMLDivElement | null) => {
-                  if (node) cardRefs.current.set(orchestration.orchestrationId, node);
-                  else cardRefs.current.delete(orchestration.orchestrationId);
+                  if (node) cardRefs.current.set(group.groupId, node);
+                  else cardRefs.current.delete(group.groupId);
                 }}
               >
-                <OrchestrationCard orchestration={orchestration} agentLabels={agentLabels} agents={agents} />
+                <AgentGroupCard group={group} agentLabels={agentLabels} agents={agents} />
               </Box>
             ))}
           </Flex>

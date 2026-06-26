@@ -237,24 +237,28 @@ def collect_web_search_results(identifiers: Iterable[str] | None = None) -> list
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "main", tools: str = "", justification: str = "") -> str:
-    """Spawn a sub-agent to work on a task in the background.
+def spawn_agent(prompt: str = "", agent: str = "main", read_only: bool = False, justification: str = "") -> str:
+    """Delegate a task to another agent (a real A2A call to its endpoint).
 
-    The sub-agent runs asynchronously and its result will be injected
-    into the conversation when complete.
+    The sub-agent runs as a related A2A task in the same context. Its activity
+    streams live, and its structured deliverable (the completed A2A task with its
+    artifact) is returned as this tool's result, so you can read it and decide
+    what to do next — including spawning further agents that build on it. To run
+    several agents at once, call this tool multiple times in one response.
 
     Args:
-        prompt: The task description for the sub-agent.
-        agent: Name of the agent profile to use (default: main).
-        tools: Comma-separated list of tool names to restrict (leave empty for all).
-        justification: A concise, user-facing description of what this
-            sub-agent will do — shown directly as the label for this call.
+        prompt: The task for the sub-agent. State the goal clearly and, when it
+            should build on or coordinate with other agents, name their task ids.
+        agent: Name of the agent profile to delegate to (e.g. 'explorer',
+            'coder', 'researcher').
+        read_only: Force the sub-agent into read-only mode — it may only run
+            read-only commands and cannot modify the system or write files. Use
+            for investigation/research sub-agents that should report back rather
+            than make changes.
+        justification: A concise, user-facing description of what this sub-agent
+            will do — shown directly as the label for this call.
     """
-    task_identifier = f"agent-{uuid.uuid4().hex[:12]}"
-    return (
-        f"Started sub-agent ({task_identifier}) using profile '{agent}'.\n"
-        f"Task: {prompt[:200]}"
-    )
+    return "Handled by the harness."
 
 
 def register_spawned_task(task_identifier: str, coroutine):
@@ -264,6 +268,23 @@ def register_spawned_task(task_identifier: str, coroutine):
 
 def collect_completed_agents(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
     return spawned_tasks.collect_completed(identifiers)
+
+
+@tool
+def read_task(task_id: str = "", justification: str = "") -> str:
+    """Read another A2A task in this context — a sibling or sub-agent task — by
+    its id, returning its current status and artifact (deliverable).
+
+    Use this to coordinate with agents working alongside you in the same context:
+    check whether a sibling has finished and read what it produced, then build on
+    it. Task ids are the ones returned when an agent is spawned.
+
+    Args:
+        task_id: The id of the task to read.
+        justification: A concise, user-facing description of why you are reading
+            this task — shown as the label for this call.
+    """
+    return "Handled by the harness."
 
 
 @tool
@@ -281,7 +302,7 @@ def write_tasks(tasks: list[dict]) -> str:
             - dependencies (optional): List of task identifiers this
               task depends on (e.g. ["task-1", "task-2"]).
     """
-    return "Handled by orchestrator."
+    return "Handled by the harness."
 
 
 @tool
@@ -294,49 +315,7 @@ def update_tasks(updates: list[dict]) -> str:
             - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
             - result (optional): Summary of what was accomplished when marking as completed.
     """
-    return "Handled by orchestrator."
-
-
-@tool
-def orchestrate(steps: list[dict], justification: str = "") -> str:
-    """Run a graph of agents where each step's output is automatically
-    fed to its dependants as JSON appended to their prompts.
-
-    Use ``depends_on`` to define fan-out (parallel execution) and fan-in
-    (join barrier). Steps with no explicit ``depends_on`` run in sequence
-    (each step depends on the preceding one).
-
-    Args:
-        justification: A concise, user-facing description of what this
-            orchestration accomplishes — it is shown directly as the label
-            for this call (e.g. "Gathering BBC news across four sections").
-            Write a short phrase, not a generic placeholder.
-        steps: List of step objects. Each step must have:
-            - id: A short unique name for this step (e.g. "research").
-            - agent: Agent profile name (e.g. "explore", "code", "main").
-            - prompt: Task description for this step. The harness
-              automatically appends the outputs of all dependency steps
-              as JSON to this prompt.
-            - depends_on (optional): List of step IDs that this step
-              depends on. Omit for sequential execution. Set to an empty
-              list ``[]`` for a root step with no dependencies. Multiple
-              steps with the same dependency run in parallel; a step
-              depending on multiple steps waits for all of them (fan-in).
-    """
-    task_identifier = f"orch-{uuid.uuid4().hex[:12]}"
-    return json.dumps({
-        "code": "orchestration_started",
-        "task_identifier": task_identifier,
-        "step_count": len(steps),
-        "steps": [
-            {
-                "id": step["id"],
-                "agent": step["agent"],
-                "prompt": step.get("prompt", ""),
-            }
-            for step in steps
-        ],
-    })
+    return "Handled by the harness."
 
 
 def cancel_all_background_tasks() -> None:

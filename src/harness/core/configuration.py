@@ -1,7 +1,8 @@
 import os
 import re
+import shlex
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel
@@ -26,6 +27,10 @@ class GlobalConfiguration(BaseModel):
     exa: ExaConfiguration = ExaConfiguration()
     default_agent: str = "main"
     agents_directory: str = "agents"
+    skills_directory: str = "skills"
+    # How deep a chain of agents delegating to other agents may go, to bound
+    # runaway delegation (agent A spawns B spawns C ...).
+    maximum_delegation_depth: int = 8
     maximum_history_age_days: int = 30
 
     @classmethod
@@ -42,6 +47,147 @@ class BashToolConfiguration(BaseModel):
 
     _SHELL_SPLIT = re.compile(r"\s*(?:&&|\|\||[;|])\s*")
     _SUBSHELL = re.compile(r"\$\((.+?)\)|`(.+?)`")
+
+    # File-writing output redirection: `> f`, `>> f`, `&> f`, `>| f`, `1> f` —
+    # but not fd duplications (`2>&1`, `>&2`) or throwaway devices.
+    _REDIRECT = re.compile(
+        r"(?<![0-9>&<])(?:&>{1,2}|>\||[0-9]?>{1,2})\s*(?!&)(?!/dev/(?:null|stderr|stdout|fd/))\S"
+    )
+
+    # Heads that only read state. Dual-use tools (sed/find/curl/wget/tar/git/
+    # xargs) and runtimes (python/node/...) are handled separately, not here.
+    _READ_ONLY_HEADS = frozenset({
+        "cat", "bat", "tac", "nl", "less", "more", "head", "tail", "ls", "dir",
+        "vdir", "tree", "wc", "sort", "uniq", "cut", "paste", "comm", "join",
+        "column", "fold", "rev", "tr", "expand", "unexpand", "grep", "egrep",
+        "fgrep", "rg", "ag", "ack", "fd", "fdfind", "locate", "mlocate", "stat",
+        "file", "du", "df", "pwd", "echo", "printf", "date", "cal", "which",
+        "type", "whereis", "printenv", "ps", "pgrep", "uname", "whoami", "id",
+        "groups", "hostname", "uptime", "free", "vmstat", "lsof", "netstat",
+        "ss", "dig", "nslookup", "host", "ping", "traceroute", "mtr", "md5sum",
+        "sha1sum", "sha256sum", "sha512sum", "b2sum", "cksum", "diff", "cmp",
+        "colordiff", "basename", "dirname", "realpath", "readlink", "test",
+        "true", "false", "sleep", "seq", "jq", "yq", "xxd", "od", "strings",
+        "hexdump", "ldd", "nm", "objdump", "readelf", "size", "man", "tldr",
+        "info", "history", "help", "base64",
+    })
+    # Heads that always modify state (writes, installs, privileged operations).
+    _MUTATING_HEADS = frozenset({
+        "rm", "rmdir", "mv", "cp", "link", "ln", "mkdir", "touch", "install",
+        "truncate", "dd", "chmod", "chown", "chgrp", "chattr", "shred",
+        "mkfifo", "mknod", "rsync", "scp", "sftp", "ftp", "tee", "ed", "ex",
+        "vi", "vim", "nano", "emacs", "zip", "unzip", "gzip", "gunzip", "bzip2",
+        "bunzip2", "xz", "unxz", "7z", "kill", "killall", "pkill", "mount",
+        "umount", "mkfs", "fdisk", "parted", "crontab", "at", "systemctl",
+        "service", "launchctl", "reboot", "shutdown", "halt", "poweroff",
+        "pip", "pip3", "pipx", "npm", "pnpm", "yarn", "cargo", "gem",
+        "composer", "brew", "apt", "apt-get", "dpkg", "yum", "dnf", "zypper",
+        "pacman", "apk", "nix-env", "make", "cmake", "ninja", "gradle", "mvn",
+        "psql", "mysql", "mongo", "redis-cli", "sqlite3", "useradd", "userdel",
+        "groupadd", "passwd", "uv",
+    })
+    # git subcommands that only read.
+    _GIT_READ_SUBCOMMANDS = frozenset({
+        "log", "show", "diff", "status", "branch", "tag", "blame", "rev-parse",
+        "ls-files", "ls-tree", "cat-file", "describe", "remote", "config",
+        "grep", "shortlog", "reflog", "whatchanged", "name-rev", "for-each-ref",
+        "symbolic-ref", "rev-list", "count-objects", "var", "show-ref",
+        "merge-base", "help", "version",
+    })
+    # Benign wrappers that prefix the real command and can be skipped over.
+    _COMMAND_WRAPPERS = frozenset({
+        "env", "nohup", "nice", "time", "stdbuf", "command", "builtin", "exec",
+        "setsid", "ionice", "timeout", "watch", "xargs",
+    })
+
+    def read_only_assessment(self, command: str) -> tuple[str, str]:
+        """Classify a command for read-only enforcement.
+
+        Returns ``(classification, detail)`` where classification is one of:
+        ``"read_only"`` — provably non-mutating; ``"mutating"`` — a write,
+        install, or privileged action was detected (``detail`` names it); or
+        ``"unknown"`` — could not be classified statically (e.g. a script or
+        runtime), in which case the caller defers to the model's own
+        ``read_only`` declaration. Stronger than a flat prefix denylist: it
+        tokenises each segment (including subshells), understands dual-use tools
+        (sed/find/curl/wget/tar/git/xargs) and file redirections, and treats
+        unrecognised commands as unknown rather than silently allowing them.
+        """
+        seen_unknown = False
+        for segment in self._extract_segments(command):
+            classification, detail = self._assess_segment(segment)
+            if classification == "mutating":
+                return ("mutating", detail)
+            if classification == "unknown":
+                seen_unknown = True
+        return ("unknown", "") if seen_unknown else ("read_only", "")
+
+    def _assess_segment(self, segment: str) -> tuple[str, str]:
+        if self._REDIRECT.search(segment):
+            return ("mutating", "output redirection to a file")
+        try:
+            tokens = shlex.split(segment)
+        except ValueError:
+            tokens = segment.split()
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", token):  # FOO=bar env prefix
+                index += 1
+                continue
+            if token in self._COMMAND_WRAPPERS and token != "xargs":
+                index += 1
+                continue
+            break
+        if index >= len(tokens):
+            return ("read_only", "")
+        head = tokens[index].split("/")[-1]
+        arguments = tokens[index + 1:]
+        return self._classify_command(head, arguments)
+
+    def _classify_command(self, head: str, arguments: list[str]) -> tuple[str, str]:
+        if head in ("sudo", "su", "doas"):
+            return ("mutating", head)
+        if head in self._MUTATING_HEADS:
+            return ("mutating", head)
+        if head in ("sed", "perl"):
+            if any(re.match(r"^-[A-Za-z]*i", a) or a.startswith("--in-place") for a in arguments):
+                return ("mutating", f"{head} in-place edit")
+            return ("read_only", "")
+        if head == "gawk":
+            return ("mutating", "gawk in-place") if any("inplace" in a for a in arguments) else ("read_only", "")
+        if head == "awk":
+            return ("read_only", "")
+        if head == "find":
+            mutating_actions = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"}
+            return ("mutating", "find with -delete/-exec") if any(a in mutating_actions for a in arguments) else ("read_only", "")
+        if head == "curl":
+            writers = {"-o", "-O", "--output", "--remote-name", "-J", "--remote-header-name", "--create-dirs", "--dump-header"}
+            return ("mutating", "curl writing to a file") if any(a in writers for a in arguments) else ("read_only", "")
+        if head == "wget":
+            for position, argument in enumerate(arguments):
+                if argument in ("-O-", "-qO-", "--output-document=-"):
+                    return ("read_only", "")
+                if argument in ("-O", "--output-document") and position + 1 < len(arguments) and arguments[position + 1] == "-":
+                    return ("read_only", "")
+            return ("mutating", "wget writing to a file")
+        if head == "tar":
+            if any((a.startswith("-") and "t" in a and "x" not in a and "c" not in a) or a == "--list" for a in arguments):
+                return ("read_only", "")
+            return ("mutating", "tar create/extract")
+        if head == "git":
+            subcommand = next((a for a in arguments if not a.startswith("-")), "")
+            return ("read_only", "") if subcommand in self._GIT_READ_SUBCOMMANDS else ("mutating", f"git {subcommand}".strip())
+        if head == "xargs":
+            inner = next((a for a in arguments if not a.startswith("-")), "").split("/")[-1]
+            if inner and (inner in self._MUTATING_HEADS or inner in ("sed", "tee", "sudo", "rm")):
+                return ("mutating", f"xargs {inner}")
+            if inner in self._READ_ONLY_HEADS:
+                return ("read_only", "")
+            return ("unknown", "")
+        if head in self._READ_ONLY_HEADS:
+            return ("read_only", "")
+        return ("unknown", "")
 
     def evaluate_permission(self, command: str) -> str:
         segments = self._extract_segments(command)
@@ -80,7 +226,6 @@ class BashToolConfiguration(BaseModel):
 
 class SpawnAgentToolConfiguration(BaseModel):
     enabled: bool = True
-    maximum_concurrency: int = 5
 
 
 class ToolsConfiguration(BaseModel):
@@ -93,10 +238,17 @@ class AgentConfiguration(BaseModel):
     label: str = ""
     color: str = ""
     description: str = ""
+    # Names of the skills (files in the skills directory) this agent may use.
+    # Empty means every available skill is offered to the agent by default.
+    skills: list[str] = []
     model: Optional[str] = None
     reasoning_effort: str = "high"
+    # Safety bound on the per-turn tool-calling loop. A runtime detail, defaulted
+    # here rather than restated in every agent file.
     maximum_iterations: int = 25
-    recursion_limit: int = 8
+    # default: per-command permission rules. read_only: hard-block all writes
+    # (investigation agents). bypass: allow everything.
+    permission_mode: Literal["default", "read_only", "bypass"] = "default"
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
     system_prompt: str = ""
@@ -135,7 +287,7 @@ class PermissionEvaluator:
         self._configuration = agent_configuration
 
     def check_tool_enabled(self, tool_name: str) -> None:
-        if tool_name not in ("spawn_agent", "orchestrate"):
+        if tool_name != "spawn_agent":
             return
         if (
             self._configuration.tools_enabled
@@ -151,17 +303,6 @@ class PermissionEvaluator:
     def check_bash_background(self) -> None:
         if not self._configuration.tools.bash.background_allowed:
             raise PermissionError("Background bash execution is not allowed")
-
-    def check_spawn_agent(self, current_depth: int, current_concurrent: int) -> None:
-        if current_depth >= self._configuration.recursion_limit:
-            raise PermissionError(
-                f"Recursion limit ({self._configuration.recursion_limit}) reached"
-            )
-        maximum = self._configuration.tools.spawn_agent.maximum_concurrency
-        if current_concurrent >= maximum:
-            raise PermissionError(
-                f"Maximum concurrent sub-agents ({maximum}) reached"
-            )
 
     def check_tool(self, tool_name: str, **arguments) -> None:
         self.check_tool_enabled(tool_name)

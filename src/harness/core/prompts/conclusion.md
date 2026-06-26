@@ -1,0 +1,1 @@
+You have finished gathering information and must not call any more tools. Write your final report now as your response: a complete, self-contained conclusion that stands on its own. This message is your deliverable and is the only thing passed on to whoever requested this work.

@@ -1,368 +1,331 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import {
-  streamChat,
-  resolvePermission,
+  streamA2A,
   abortSession,
-  fetchConversation,
-  type StreamEvent,
+  resolvePermission,
+  fetchSessionTasks,
+  type A2AStreamResult,
+  type A2AMessage,
+  type A2ATask as A2ATaskWire,
 } from "./api";
+
+// Re-export the A2A task shape so components can consume it from one place.
+export type A2ATask = A2ATaskWire;
+
+export type TaskState =
+  | "submitted"
+  | "working"
+  | "input-required"
+  | "completed"
+  | "canceled"
+  | "failed"
+  | "rejected"
+  | "auth-required"
+  | "unknown";
+
+const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
+  "completed",
+  "canceled",
+  "failed",
+  "rejected",
+]);
 
 export interface ChatMessage {
   id: string;
-  role:
-    | "user"
-    | "assistant"
-    | "tool_call"
-    | "thinking"
-    | "error"
-    | "permission";
+  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "permission";
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
 }
 
-export interface AgentToolCall {
-  name: string;
-  arguments?: Record<string, unknown>;
-  sequenceNumber: number;
-}
+// An agent step's ordered timeline — prose and tool calls interleaved, mirroring
+// the main chat. Built from the A2A sub-task DataPart envelopes.
+export type AgentPart =
+  | { kind: "text"; content: string }
+  | { kind: "tool"; name: string; arguments?: Record<string, unknown>; sequenceNumber: number };
 
 export interface AgentStep {
   stepId: string;
   agent: string;
   goal: string;
-  text: string;
+  childTaskId: string;
+  parts: AgentPart[];
   thinking: string;
-  toolCalls: AgentToolCall[];
-  done: boolean;
+  state: TaskState;
+  task?: A2ATask;
 }
 
-export interface Orchestration {
-  orchestrationId: string;
+export interface AgentGroup {
+  groupId: string;
   toolCallId: string;
   justification: string;
   steps: AgentStep[];
 }
 
-function emptyStep(stepId: string, agent = "", goal = ""): AgentStep {
-  return { stepId, agent, goal, text: "", thinking: "", toolCalls: [], done: false };
+export function isStepDone(step: AgentStep): boolean {
+  return TERMINAL_STATES.has(step.state);
 }
 
-// Immutable update of one step inside one orchestration. Creates the step (and,
-// defensively, the orchestration) if a sub-agent event arrives before its
-// declaration — though `orchestration_started` always precedes them.
+// Concatenate the text parts of an A2A task's artifacts.
+export function taskArtifactText(task: A2ATask | undefined): string {
+  if (!task?.artifacts) return "";
+  const texts: string[] = [];
+  for (const artifact of task.artifacts) {
+    for (const part of artifact.parts ?? []) {
+      if (part.kind === "text" && part.text) texts.push(part.text);
+    }
+  }
+  return texts.join("\n");
+}
+
+function emptyStep(stepId: string, agent = "", goal = "", childTaskId = ""): AgentStep {
+  return { stepId, agent, goal, childTaskId, parts: [], thinking: "", state: "working" };
+}
+
+function appendAgentText(step: AgentStep, text: string): AgentStep {
+  if (!text) return step;
+  const last = step.parts[step.parts.length - 1];
+  if (last && last.kind === "text") {
+    const parts = step.parts.slice(0, -1);
+    parts.push({ kind: "text", content: last.content + text });
+    return { ...step, parts };
+  }
+  return { ...step, parts: [...step.parts, { kind: "text", content: text }] };
+}
+
+function appendAgentToolCall(step: AgentStep, name: string, toolArguments?: Record<string, unknown>): AgentStep {
+  const toolCount = step.parts.filter((part) => part.kind === "tool").length;
+  return {
+    ...step,
+    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, sequenceNumber: toolCount + 1 }],
+  };
+}
+
+function finishAgentStep(step: AgentStep, task: A2ATask | undefined): AgentStep {
+  const state = (task?.status?.state as TaskState) ?? "completed";
+  const artifactText = taskArtifactText(task);
+  const hasText = step.parts.some((part) => part.kind === "text");
+  const next = !hasText && artifactText ? appendAgentText(step, artifactText) : step;
+  return { ...next, state, task };
+}
+
 function withStep(
-  list: Orchestration[],
-  orchestrationId: string,
+  list: AgentGroup[],
+  groupId: string,
   stepId: string,
   updater: (step: AgentStep) => AgentStep
-): Orchestration[] {
-  let found = false;
-  const next = list.map((orchestration) => {
-    if (orchestration.orchestrationId !== orchestrationId) return orchestration;
-    found = true;
-    const hasStep = orchestration.steps.some((step) => step.stepId === stepId);
+): AgentGroup[] {
+  return list.map((group) => {
+    if (group.groupId !== groupId) return group;
+    const hasStep = group.steps.some((step) => step.stepId === stepId);
     const steps = hasStep
-      ? orchestration.steps.map((step) => (step.stepId === stepId ? updater(step) : step))
-      : [...orchestration.steps, updater(emptyStep(stepId))];
-    return { ...orchestration, steps };
+      ? group.steps.map((step) => (step.stepId === stepId ? updater(step) : step))
+      : [...group.steps, updater(emptyStep(stepId))];
+    return { ...group, steps };
   });
-  if (!found) {
-    next.push({
-      orchestrationId,
-      toolCallId: "",
-      justification: "",
-      steps: [updater(emptyStep(stepId))],
-    });
-  }
-  return next;
 }
 
-function startOrchestration(list: Orchestration[], event: StreamEvent): Orchestration[] {
-  const orchestrationId = String(event.orchestration_id ?? "");
-  if (!orchestrationId || list.some((orchestration) => orchestration.orchestrationId === orchestrationId)) {
-    return list;
+// A2A stream reduction — turn agent message parts into chat + group UI
+// state. Shared by the live stream and the replay path so both render identically.
+
+interface ReduceState {
+  messages: ChatMessage[];
+  agentGroups: AgentGroup[];
+  lane: string | null; // id of the open assistant prose block, if any
+  toolSequence: number;
+}
+
+function startAgentGroup(state: ReduceState, data: Record<string, unknown>): void {
+  const groupId = String(data.groupId ?? "");
+  if (!groupId) return;
+  const rawSteps = Array.isArray(data.steps) ? (data.steps as Record<string, unknown>[]) : [];
+  const newSteps = rawSteps.map((step) =>
+    emptyStep(String(step.id ?? ""), String(step.agent ?? ""), String(step.prompt ?? ""), String(step.childTaskId ?? ""))
+  );
+  const existing = state.agentGroups.find((group) => group.groupId === groupId);
+  if (existing) {
+    // A per-turn group of spawned agents grows as more agents are spawned —
+    // merge in any steps not already present.
+    const knownIds = new Set(existing.steps.map((step) => step.stepId));
+    const added = newSteps.filter((step) => !knownIds.has(step.stepId));
+    if (added.length > 0) {
+      state.agentGroups = state.agentGroups.map((group) =>
+        group.groupId === groupId ? { ...group, steps: [...group.steps, ...added] } : group
+      );
+    }
+  } else {
+    state.agentGroups = [
+      ...state.agentGroups,
+      {
+        groupId,
+        toolCallId: String(data.toolCallId ?? ""),
+        justification: String(data.justification ?? ""),
+        steps: newSteps,
+      },
+    ];
   }
-  const declaredSteps: AgentStep[] = Array.isArray(event.steps)
-    ? event.steps.map((step: { id?: string; agent?: string; prompt?: string }) =>
-        emptyStep(String(step.id ?? ""), String(step.agent ?? ""), String(step.prompt ?? ""))
-      )
-    : [];
-  return [
-    ...list,
-    {
-      orchestrationId,
-      toolCallId: String(event.tool_call_id ?? ""),
-      justification: String(event.justification ?? ""),
-      steps: declaredSteps,
-    },
+  // Link the spawning tool-call row to this group.
+  state.messages = state.messages.map((message) =>
+    message.role === "tool_call" && message.meta?.toolCallId === data.toolCallId
+      ? { ...message, meta: { ...message.meta, groupId, status: "running" } }
+      : message
+  );
+}
+
+function pushAssistantText(state: ReduceState, text: string): void {
+  if (!text) return;
+  if (state.lane === null) {
+    const id = `assistant-${state.messages.length}-${Math.random()}`;
+    state.lane = id;
+    state.messages = [...state.messages, { id, role: "assistant", content: text, timestamp: new Date().toISOString() }];
+  } else {
+    const laneId = state.lane;
+    state.messages = state.messages.map((message) =>
+      message.id === laneId ? { ...message, content: message.content + text } : message
+    );
+  }
+}
+
+function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
+  const text = (message.parts ?? []).filter((p) => p.kind === "text").map((p) => p.text ?? "").join("");
+  state.lane = null;
+  state.messages = [
+    ...state.messages,
+    { id: `user-${state.messages.length}-${Math.random()}`, role: "user", content: text, timestamp: new Date().toISOString() },
   ];
 }
 
-interface ReplayResult {
-  messages: ChatMessage[];
-  orchestrations: Orchestration[];
+function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
+  for (const part of message.parts ?? []) {
+    if (part.kind === "text") {
+      pushAssistantText(state, part.text ?? "");
+      continue;
+    }
+    if (part.kind !== "data" || !part.data) continue;
+    reduceDataPart(state, part.data);
+  }
 }
 
-function replayEvents(events: StreamEvent[]): ReplayResult {
-  const messages: ChatMessage[] = [];
-  // laneKey -> index in `messages` of that lane's open assistant block. Mirrors
-  // the live streaming logic so reloaded history matches what was shown live.
-  const lanes = new Map<string, number>();
-  let toolSequence = 0;
-  const toolIdToSequence = new Map<string, number>();
-  const taskIdToSequence = new Map<string, number>();
-  let orchestrations: Orchestration[] = [];
-  const fallbackTimestamp = new Date().toISOString();
-
-  for (const event of events) {
-    switch (event.type) {
-      case "text_chunk": {
-        const text = event.text ?? "";
-        const laneIndex = lanes.get("main");
-        if (laneIndex === undefined) {
-          lanes.set("main", messages.length);
-          messages.push({
-            id: `history-${messages.length}-${Math.random()}`,
-            role: "assistant",
-            content: text,
-            timestamp: event.timestamp ?? fallbackTimestamp,
-          });
-        } else {
-          messages[laneIndex] = {
-            ...messages[laneIndex],
-            content: messages[laneIndex].content + text,
-          };
-        }
-        break;
+function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void {
+  const kind = String(data.kind ?? "");
+  switch (kind) {
+    case "thinking": {
+      const text = String(data.text ?? "");
+      const index = state.messages.findLastIndex((m) => m.role === "thinking");
+      if (index !== -1) {
+        state.messages = state.messages.map((m, i) => (i === index ? { ...m, content: m.content + text } : m));
+      } else {
+        state.messages = [...state.messages, { id: `thinking-${state.messages.length}-${Math.random()}`, role: "thinking", content: text, timestamp: new Date().toISOString() }];
       }
-
-      case "orchestration_started":
-        orchestrations = startOrchestration(orchestrations, event);
-        for (const message of messages) {
-          if (message.role === "tool_call" && message.meta?.toolCallId === event.tool_call_id) {
-            message.meta = {
-              ...message.meta,
-              orchestrationId: event.orchestration_id,
-              status: "running",
-            };
-          }
-        }
-        break;
-
-      case "agent_text_chunk":
-        orchestrations = withStep(
-          orchestrations,
-          String(event.orchestration_id ?? ""),
-          String(event.step_id ?? ""),
-          (step) => ({ ...step, text: step.text + (event.text ?? "") })
-        );
-        break;
-
-      case "agent_thinking":
-        orchestrations = withStep(
-          orchestrations,
-          String(event.orchestration_id ?? ""),
-          String(event.step_id ?? ""),
-          (step) => ({ ...step, thinking: step.thinking + (event.text ?? "") })
-        );
-        break;
-
-      case "agent_tool_call":
-        orchestrations = withStep(
-          orchestrations,
-          String(event.orchestration_id ?? ""),
-          String(event.step_id ?? ""),
-          (step) => ({
-            ...step,
-            toolCalls: [
-              ...step.toolCalls,
-              { name: event.name ?? "unknown", arguments: event.arguments, sequenceNumber: step.toolCalls.length + 1 },
-            ],
-          })
-        );
-        break;
-
-      case "agent_done":
-        orchestrations = withStep(
-          orchestrations,
-          String(event.orchestration_id ?? ""),
-          String(event.step_id ?? ""),
-          (step) => ({ ...step, done: true })
-        );
-        break;
-
-      case "background_started": {
-        const startedSequence = event.id ? toolIdToSequence.get(event.id) : undefined;
-        if (startedSequence !== undefined && typeof event.task_id === "string") {
-          taskIdToSequence.set(event.task_id, startedSequence);
-        }
-        break;
-      }
-
-      case "status":
-        if (event.code === "thinking") {
-          messages.push({
-            id: `history-${messages.length}-${Math.random()}`,
-            role: "thinking",
-            content: "",
-            timestamp: event.timestamp ?? fallbackTimestamp,
-          });
-        }
-        break;
-
-      case "thinking": {
-        const text = event.text ?? "";
-        const thinkingIndex = messages.findLastIndex(
-          (message) => message.role === "thinking"
-        );
-        if (thinkingIndex !== -1) {
-          messages[thinkingIndex] = {
-            ...messages[thinkingIndex],
-            content: text,
-          };
-        } else {
-          messages.push({
-            id: `history-${messages.length}-${Math.random()}`,
-            role: "thinking",
-            content: text,
-            timestamp: event.timestamp ?? fallbackTimestamp,
-          });
-        }
-        break;
-      }
-
-      case "tool_call": {
-        lanes.delete("main");
-        const toolCallSequence = ++toolSequence;
-        if (event.id) toolIdToSequence.set(event.id, toolCallSequence);
-        messages.push({
-          id: `history-${messages.length}-${Math.random()}`,
+      break;
+    }
+    case "tool_call": {
+      state.lane = null;
+      const sequence = ++state.toolSequence;
+      state.messages = [
+        ...state.messages,
+        {
+          id: `toolcall-${data.toolCallId ?? sequence}-${Math.random()}`,
           role: "tool_call",
-          content: event.name ?? "unknown",
-          timestamp: event.timestamp ?? fallbackTimestamp,
-          meta: {
-            arguments: event.arguments,
-            toolCallId: event.id,
-            sequenceNumber: toolCallSequence,
-          },
-        });
-        break;
-      }
-
-      case "tool_result": {
-        const resultData =
-          typeof event.result === "string"
-            ? (() => { try { return JSON.parse(event.result); } catch { return null; } })()
-            : event.result;
-        if (typeof resultData?.code === "string" && resultData.code.endsWith("_started")) {
-          const startedSequence = toolIdToSequence.get(event.id);
-          const taskId = resultData?.task_identifier;
-          if (startedSequence !== undefined && typeof taskId === "string") {
-            taskIdToSequence.set(taskId, startedSequence);
-          }
-          for (const message of messages) {
-            if (message.role === "tool_call" && message.meta?.toolCallId === event.id) {
-              message.meta = {
-                ...message.meta,
-                status: "running",
-                task_id: taskId,
-                output_file: resultData.output_file,
-              };
-            }
-          }
-          break;
-        }
-        lanes.delete("main");
-        const resultSequence =
-          toolIdToSequence.get(event.id) ??
-          (event.task_id ? taskIdToSequence.get(event.task_id) : undefined) ??
-          ++toolSequence;
-        for (const message of messages) {
-          if (message.role === "tool_call" && message.meta?.sequenceNumber === resultSequence) {
-            message.meta = { ...message.meta, status: "completed" };
-          }
-        }
-        break;
-      }
-
-      case "user":
-        lanes.clear();
-        for (const message of messages) {
-          if (message.role === "permission" && !message.meta?.resolved) {
-            message.meta = { ...message.meta, resolved: "interrupted" };
-          }
-        }
-        messages.push({
-          id: `history-${messages.length}-${Math.random()}`,
-          role: "user",
-          content: event.text ?? "",
-          timestamp: event.timestamp ?? fallbackTimestamp,
-        });
-        break;
-
-      case "permission_request":
-        messages.push({
-          id: `perm-${event.request_id}`,
+          content: String(data.name ?? "unknown"),
+          timestamp: new Date().toISOString(),
+          meta: { arguments: data.arguments, toolCallId: String(data.toolCallId ?? ""), sequenceNumber: sequence, status: "running" },
+        },
+      ];
+      break;
+    }
+    case "tool_result": {
+      state.lane = null;
+      const toolCallId = String(data.toolCallId ?? "");
+      state.messages = state.messages.map((message) =>
+        message.role === "tool_call" && message.meta?.toolCallId === toolCallId
+          ? { ...message, meta: { ...message.meta, status: "completed" } }
+          : message
+      );
+      break;
+    }
+    case "permission_request": {
+      state.messages = [
+        ...state.messages,
+        {
+          id: `perm-${data.requestId}`,
           role: "permission",
-          content: event.command ?? "",
-          timestamp: event.timestamp ?? fallbackTimestamp,
-          meta: {
-            request_id: event.request_id,
-            justification: event.justification,
-            risk: event.risk,
-          },
-        });
-        break;
+          content: String(data.command ?? ""),
+          timestamp: new Date().toISOString(),
+          meta: { request_id: String(data.requestId ?? ""), justification: data.justification, risk: data.risk },
+        },
+      ];
+      break;
+    }
+    case "error": {
+      state.messages = [
+        ...state.messages,
+        { id: `error-${state.messages.length}-${Math.random()}`, role: "error", content: String(data.message ?? "Unknown error"), timestamp: new Date().toISOString() },
+      ];
+      break;
+    }
+    case "agent_group_started":
+      startAgentGroup(state, data);
+      break;
+    case "sub_task_text":
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentText(step, String(data.text ?? "")));
+      break;
+    case "sub_task_thinking":
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({ ...step, thinking: step.thinking + String(data.text ?? "") }));
+      break;
+    case "sub_task_tool_call":
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentToolCall(step, String(data.name ?? "unknown"), data.arguments as Record<string, unknown> | undefined));
+      break;
+    case "sub_task_done":
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => finishAgentStep(step, data.task as A2ATask | undefined));
+      break;
+    default:
+      break; // status, sub_task_status — no UI change
+  }
+}
 
-      case "error":
-        messages.push({
-          id: `error-${messages.length}`,
-          role: "error",
-          content: event.message ?? "Unknown error",
-          timestamp: event.timestamp ?? fallbackTimestamp,
-        });
-        break;
+// Reconstruct messages + agentGroups from a session's persisted A2A tasks.
+function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[] } {
+  const mainTasks = tasks
+    .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
+    .sort((a, b) => String(a.status?.timestamp ?? "").localeCompare(String(b.status?.timestamp ?? "")));
+  const state: ReduceState = { messages: [], agentGroups: [], lane: null, toolSequence: 0 };
+  for (const task of mainTasks) {
+    state.lane = null;
+    for (const message of task.history ?? []) {
+      if (message.role === "user") reduceUserMessage(state, message);
+      else reduceAgentMessage(state, message);
     }
   }
-
-  return { messages, orchestrations };
+  return { messages: state.messages, agentGroups: state.agentGroups };
 }
 
 export function useChat(agent: string, initialSessionId: string | null = null, workingDirectory?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
+  const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(!!initialSessionId);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  // One independent assistant text block per concurrent stream. The main
-  // agent uses lane "main"; each orchestration step uses its step_id. Without
-  // this, parallel sub-agents would all append into one block and interleave.
-  const lanesRef = useRef<Map<string, { id: string; text: string }>>(new Map());
-  const historyLoadedForRef = useRef<string | null>(null);
-  const toolSequenceRef = useRef(0);
-  const toolIdToSequenceRef = useRef<Map<string, number>>(new Map());
-  // Background work (searches, sub-agents, slow bash) finishes in a later event
-  // that carries only a task_id, not the original tool-call id. Map the task_id
-  // back to the call's number so a "#N started" and "#N finished" share one N.
-  const taskIdToSequenceRef = useRef<Map<string, number>>(new Map());
-
-  // Messages typed while the agent is busy. They are sent automatically, one at
-  // a time, as the current turn finishes — appended to the same session so the
-  // server-side conversation (and its prompt cache) only grows, never resets.
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], lane: null, toolSequence: 0 });
+  const sessionIdRef = useRef<string | null>(initialSessionId);
+  const historyLoadedForRef = useRef<string | null>(null);
   const queuedMessagesRef = useRef<string[]>([]);
   const isStreamingRef = useRef(false);
   const runStreamRef = useRef<(text: string) => void>(() => {});
-  const polledEventCountRef = useRef(0);
 
   const setQueue = useCallback((next: string[]) => {
     queuedMessagesRef.current = next;
     setQueuedMessages(next);
+  }, []);
+
+  const flush = useCallback(() => {
+    setMessages(stateRef.current.messages);
+    setAgentGroups(stateRef.current.agentGroups);
   }, []);
 
   useEffect(() => {
@@ -370,336 +333,70 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
     if (historyLoadedForRef.current === initialSessionId) return;
     historyLoadedForRef.current = initialSessionId;
     let cancelled = false;
-
-    fetchConversation(initialSessionId)
-      .then((events) => {
+    fetchSessionTasks(initialSessionId)
+      .then((tasks) => {
         if (cancelled) return;
+        const replayed = replayTasks(tasks);
+        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null, toolSequence: 0 };
         setSessionId(initialSessionId);
-        polledEventCountRef.current = events.length;
-        const replayed = replayEvents(events);
-        setMessages(replayed.messages);
-        setOrchestrations(replayed.orchestrations);
+        sessionIdRef.current = initialSessionId;
+        flush();
       })
-      .catch(() => {
-        // session may no longer exist on the server
-      })
+      .catch(() => {})
       .finally(() => {
         if (!cancelled) setIsHistoryLoading(false);
       });
-
-    return () => { 
-      cancelled = true; 
+    return () => {
+      cancelled = true;
       historyLoadedForRef.current = null;
     };
-  }, [initialSessionId]);
+  }, [initialSessionId, flush]);
 
   const runStream = useCallback(
     (text: string) => {
-      const userMessage: ChatMessage = {
-        id: `user-${Date.now()}`,
-        role: "user",
-        content: text,
-        timestamp: new Date().toISOString(),
-      };
-
-      lanesRef.current = new Map();
-      toolSequenceRef.current = 0;
-      toolIdToSequenceRef.current = new Map();
-      taskIdToSequenceRef.current = new Map();
-
-      setMessages((current) => [...current, userMessage]);
+      // Optimistic user message + reset the open prose lane.
+      stateRef.current.lane = null;
+      stateRef.current.toolSequence = 0;
+      stateRef.current.messages = [
+        ...stateRef.current.messages,
+        { id: `user-${Date.now()}`, role: "user", content: text, timestamp: new Date().toISOString() },
+      ];
+      flush();
 
       isStreamingRef.current = true;
       setIsStreaming(true);
 
-      abortControllerRef.current = streamChat(
+      abortControllerRef.current = streamA2A(
         text,
         agent,
-        sessionId,
-        (event: StreamEvent) => {
-          switch (event.type) {
-            case "session":
-              if (event.session_id) setSessionId(event.session_id);
-              break;
-
-            case "status":
-              if (event.code === "thinking") {
-                flushSync(() => {
-                  setMessages((current) => [
-                    ...current,
-                    {
-                      id: `thinking-${Date.now()}-${Math.random()}`,
-                      role: "thinking" as const,
-                      content: "",
-                      timestamp: event.timestamp ?? new Date().toISOString(),
-                    },
-                  ]);
-                });
-              }
-              break;
-
-            case "text_chunk": {
-              const chunkText = event.text ?? "";
-              const lane = lanesRef.current.get("main");
-              if (!lane) {
-                const newId = `assistant-main-${Date.now()}-${Math.random()}`;
-                lanesRef.current.set("main", { id: newId, text: chunkText });
-                setMessages((current) => [
-                  ...current,
-                  {
-                    id: newId,
-                    role: "assistant" as const,
-                    content: chunkText,
-                    timestamp: new Date().toISOString(),
-                  },
-                ]);
-              } else {
-                lane.text += chunkText;
-                const targetId = lane.id;
-                const updatedText = lane.text;
-                setMessages((current) =>
-                  current.map((message) =>
-                    message.id === targetId
-                      ? { ...message, content: updatedText }
-                      : message
-                  )
-                );
-              }
-              break;
+        sessionIdRef.current,
+        (result: A2AStreamResult) => {
+          const kind = (result as { kind?: string }).kind;
+          if (kind === "status-update") {
+            const update = result as Extract<A2AStreamResult, { kind: "status-update" }>;
+            if (update.contextId && !sessionIdRef.current) {
+              sessionIdRef.current = update.contextId;
+              setSessionId(update.contextId);
             }
-
-            case "orchestration_started": {
-              setOrchestrations((current) => startOrchestration(current, event));
-              // Link the originating orchestrate tool-call row to this group.
-              setMessages((current) =>
-                current.map((message) =>
-                  message.role === "tool_call" && message.meta?.toolCallId === event.tool_call_id
-                    ? {
-                        ...message,
-                        meta: {
-                          ...message.meta,
-                          orchestrationId: event.orchestration_id,
-                          status: "running",
-                        },
-                      }
-                    : message
-                )
-              );
-              break;
+            if (update.status?.message) {
+              reduceAgentMessage(stateRef.current, update.status.message);
+              flush();
             }
-
-            case "agent_text_chunk":
-              setOrchestrations((current) =>
-                withStep(current, String(event.orchestration_id ?? ""), String(event.step_id ?? ""), (step) => ({
-                  ...step,
-                  text: step.text + (event.text ?? ""),
-                }))
-              );
-              break;
-
-            case "thinking":
-              setMessages((current) => {
-                const thinkingIndex = current.findLastIndex(
-                  (message) => message.role === "thinking"
-                );
-                if (thinkingIndex !== -1) {
-                  const updated = [...current];
-                  updated[thinkingIndex] = {
-                    ...current[thinkingIndex],
-                    content: event.text ?? "",
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                  };
-                  return updated;
-                }
-                return [
-                  ...current,
-                  {
-                    id: `thinking-${Date.now()}-${Math.random()}`,
-                    role: "thinking",
-                    content: event.text ?? "",
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                  },
-                ];
-              });
-              break;
-
-            case "agent_thinking":
-              setOrchestrations((current) =>
-                withStep(current, String(event.orchestration_id ?? ""), String(event.step_id ?? ""), (step) => ({
-                  ...step,
-                  thinking: step.thinking + (event.text ?? ""),
-                }))
-              );
-              break;
-
-            case "agent_tool_call":
-              setOrchestrations((current) =>
-                withStep(current, String(event.orchestration_id ?? ""), String(event.step_id ?? ""), (step) => ({
-                  ...step,
-                  toolCalls: [
-                    ...step.toolCalls,
-                    { name: event.name ?? "unknown", arguments: event.arguments, sequenceNumber: step.toolCalls.length + 1 },
-                  ],
-                }))
-              );
-              break;
-
-            case "tool_call": {
-              // Close the main lane so the agent's next text starts a fresh
-              // block after the tool call, in order.
-              lanesRef.current.delete("main");
-              const sequence = ++toolSequenceRef.current;
-              if (event.id) toolIdToSequenceRef.current.set(event.id, sequence);
-              flushSync(() => {
-                setMessages((current) => [
-                  ...current,
-                  {
-                    id: `toolcall-${event.id ?? Date.now()}-${Math.random()}`,
-                    role: "tool_call",
-                    content: event.name ?? "unknown",
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                    meta: {
-                      arguments: event.arguments,
-                      toolCallId: event.id,
-                      sequenceNumber: sequence,
-                    },
-                  },
-                ]);
-              });
-              break;
+          } else if (kind === "artifact-update") {
+            // The deliverable; its text already streamed as working messages.
+          } else if (!kind || kind === "task") {
+            const task = result as A2ATask;
+            if (task.contextId && !sessionIdRef.current) {
+              sessionIdRef.current = task.contextId;
+              setSessionId(task.contextId);
             }
-
-            case "tool_result": {
-              const resultData =
-                typeof event.result === "object" && event.result !== null
-                  ? event.result
-                  : typeof event.result === "string"
-                    ? (() => { try { return JSON.parse(event.result); } catch { return null; } })()
-                    : null;
-              if (typeof resultData?.code === "string" && resultData.code.endsWith("_started")) {
-                // Remember which number this background task belongs to so its
-                // eventual completion reuses it instead of taking a new number.
-                const startedSequence = toolIdToSequenceRef.current.get(event.id);
-                const taskId = resultData?.task_identifier;
-                if (startedSequence != null && typeof taskId === "string") {
-                  taskIdToSequenceRef.current.set(taskId, startedSequence);
-                }
-                setMessages((current) =>
-                  current.map((message) =>
-                    message.role === "tool_call" && message.meta?.toolCallId === event.id
-                      ? {
-                          ...message,
-                          meta: {
-                            ...message.meta,
-                            status: "running",
-                            task_id: taskId,
-                            output_file: resultData.output_file,
-                          },
-                        }
-                      : message
-                  )
-                );
-                break;
-              }
-              // A tool result is the main agent's; close its lane so the
-              // follow-up text appears after the result.
-              lanesRef.current.delete("main");
-              const resultSequence =
-                toolIdToSequenceRef.current.get(event.id) ??
-                (event.task_id ? taskIdToSequenceRef.current.get(event.task_id) : undefined) ??
-                ++toolSequenceRef.current;
-              flushSync(() => {
-                setMessages((current) =>
-                  current.map((message) =>
-                    message.role === "tool_call" && message.meta?.sequenceNumber === resultSequence
-                      ? { ...message, meta: { ...message.meta, status: "completed" } }
-                      : message
-                  )
-                );
-              });
-              break;
-            }
-
-            case "permission_request":
-              flushSync(() => {
-                setMessages((current) => [
-                  ...current,
-                  {
-                    id: `perm-${event.request_id}`,
-                    role: "permission",
-                    content: event.command ?? "",
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                    meta: {
-                      request_id: event.request_id,
-                      justification: event.justification,
-                      risk: event.risk,
-                    },
-                  },
-                ]);
-              });
-              break;
-
-            case "error":
-              flushSync(() => {
-                setMessages((current) => [
-                  ...current,
-                  {
-                    id: `error-${Date.now()}`,
-                    role: "error",
-                    content: event.message ?? "Unknown error",
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                  },
-                ]);
-              });
-              break;
-
-            case "background_started": {
-              // A sub-agent was launched; link its task to the spawning call's
-              // number so its completion result reuses it.
-              const startedSequence = event.id ? toolIdToSequenceRef.current.get(event.id) : undefined;
-              if (startedSequence != null && typeof event.task_id === "string") {
-                taskIdToSequenceRef.current.set(event.task_id, startedSequence);
-              }
-              break;
-            }
-
-            case "done": {
-              // Fallback: if the turn produced final text but nothing was
-              // streamed (e.g. progress streaming disabled), render it once.
-              if (event.text && !lanesRef.current.get("main")) {
-                setMessages((current) => [
-                  ...current,
-                  {
-                    id: `assistant-${Date.now()}-${Math.random()}`,
-                    role: "assistant" as const,
-                    content: event.text,
-                    timestamp: event.timestamp ?? new Date().toISOString(),
-                  },
-                ]);
-              }
-              lanesRef.current.delete("main");
-              break;
-            }
-
-            case "agent_done":
-              setOrchestrations((current) =>
-                withStep(current, String(event.orchestration_id ?? ""), String(event.step_id ?? ""), (step) => ({
-                  ...step,
-                  done: true,
-                }))
-              );
-              break;
+          } else if (kind === "message") {
+            reduceAgentMessage(stateRef.current, result as unknown as A2AMessage);
+            flush();
           }
         },
         () => {
-          lanesRef.current.clear();
-          setMessages((current) =>
-            current.filter(
-              (message) =>
-                !(message.role === "assistant" && !message.content)
-            )
-          );
-          // Drain the next queued message into a fresh turn, or go idle.
+          stateRef.current.lane = null;
           const pending = queuedMessagesRef.current;
           if (pending.length > 0) {
             const [next, ...rest] = pending;
@@ -710,44 +407,20 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
             setIsStreaming(false);
           }
         },
-        workingDirectory,
+        workingDirectory
       );
     },
-    [agent, sessionId, workingDirectory, setQueue]
+    [agent, workingDirectory, flush, setQueue]
   );
 
   useEffect(() => {
     runStreamRef.current = runStream;
   }, [runStream]);
 
-  useEffect(() => {
-    const hasActiveOrchestration = orchestrations.some((orchestration) =>
-      orchestration.steps.some((step) => !step.done)
-    );
-    if (!sessionId || isStreaming || !hasActiveOrchestration) return;
-
-    const refresh = () => {
-      fetchConversation(sessionId)
-        .then((events) => {
-          if (events.length === polledEventCountRef.current) return;
-          polledEventCountRef.current = events.length;
-          const replayed = replayEvents(events);
-          setMessages(replayed.messages);
-          setOrchestrations(replayed.orchestrations);
-        })
-        .catch(() => {});
-    };
-
-    refresh();
-    const interval = window.setInterval(refresh, 1200);
-    return () => window.clearInterval(interval);
-  }, [sessionId, isStreaming, orchestrations]);
-
   const send = useCallback(
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      // Busy → queue it for the next turn rather than dropping it.
       if (isStreamingRef.current) {
         setQueue([...queuedMessagesRef.current, trimmed]);
         return;
@@ -759,23 +432,22 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
 
   const handlePermission = useCallback(
     async (requestId: string, decision: "allow" | "deny") => {
-      if (!sessionId) return;
-      await resolvePermission(sessionId, requestId, decision);
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === `perm-${requestId}`
-            ? { ...message, meta: { ...message.meta, resolved: decision } }
-            : message
-        )
+      const ctx = sessionIdRef.current;
+      if (!ctx) return;
+      await resolvePermission(ctx, requestId, decision);
+      stateRef.current.messages = stateRef.current.messages.map((message) =>
+        message.id === `perm-${requestId}` ? { ...message, meta: { ...message.meta, resolved: decision } } : message
       );
+      flush();
     },
-    [sessionId]
+    [flush]
   );
 
   const abort = useCallback(() => {
     abortControllerRef.current?.abort();
-    if (sessionId) abortSession(sessionId);
-  }, [sessionId]);
+    const ctx = sessionIdRef.current;
+    if (ctx) abortSession(ctx);
+  }, []);
 
   const dequeueMessage = useCallback((index: number) => {
     setQueue(queuedMessagesRef.current.filter((_, i) => i !== index));
@@ -783,14 +455,16 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
 
   const reset = useCallback(() => {
     abort();
+    stateRef.current = { messages: [], agentGroups: [], lane: null, toolSequence: 0 };
     setMessages([]);
-    setOrchestrations([]);
+    setAgentGroups([]);
     setSessionId(null);
+    sessionIdRef.current = null;
   }, [abort]);
 
   return {
     messages,
-    orchestrations,
+    agentGroups,
     queuedMessages,
     sessionId,
     isStreaming,

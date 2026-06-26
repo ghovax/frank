@@ -1,9 +1,48 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
+// Metadata key understood by the harness A2A executor.
+export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
+
 export async function fetchAgents(): Promise<{ name: string; label: string }[]> {
   const response = await fetch(`${API_BASE}/agents`);
   const data = await response.json();
   return data.agents;
+}
+
+export interface AgentSkill {
+  id: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  examples?: string[];
+}
+
+export interface AgentCard {
+  name: string;
+  description?: string;
+  url: string;
+  version?: string;
+  skills: AgentSkill[];
+}
+
+// Discovery: every served agent's A2A AgentCard (with its skills).
+export async function fetchAgentCards(): Promise<AgentCard[]> {
+  const response = await fetch(`${API_BASE}/agents/cards`);
+  const data = await response.json();
+  return data.cards ?? [];
+}
+
+// Subscribe to live server events (e.g. agents changed). Returns an unsubscribe.
+export function subscribeEvents(onEvent: (event: { type: string }) => void): () => void {
+  const source = new EventSource(`${API_BASE}/events`);
+  source.onmessage = (message) => {
+    try {
+      onEvent(JSON.parse(message.data));
+    } catch {
+      // ignore malformed
+    }
+  };
+  return () => source.close();
 }
 
 export async function fetchHomeDirectory(): Promise<string> {
@@ -18,12 +57,12 @@ export async function fetchSessions(): Promise<{ session_id: string; agent: stri
   return data.sessions;
 }
 
-export async function fetchConversation(
-  sessionId: string
-): Promise<StreamEvent[]> {
-  const response = await fetch(`${API_BASE}/sessions/${sessionId}/conversation`);
+// All A2A tasks for a session (context): the main turn tasks (with history +
+// artifacts) and related sub-agent tasks. Used to replay a session.
+export async function fetchSessionTasks(sessionId: string): Promise<A2ATask[]> {
+  const response = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`);
   const data = await response.json();
-  return data.events;
+  return data.tasks ?? [];
 }
 
 export async function resolvePermission(
@@ -40,21 +79,6 @@ export async function resolvePermission(
 
 export async function abortSession(sessionId: string): Promise<void> {
   await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
-}
-
-export async function fetchSessionStatus(
-  sessionId: string
-): Promise<{ session_id: string; agent: string; active: boolean }> {
-  const response = await fetch(`${API_BASE}/chat/${sessionId}/status`);
-  return response.json();
-}
-
-export async function updateWorkingDirectory(sessionId: string, directory: string): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/directory`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ directory }),
-  });
 }
 
 export async function validateWorkingDirectory(directory: string): Promise<{ valid: boolean; exists: boolean; is_directory: boolean; is_absolute: boolean; path: string }> {
@@ -74,116 +98,140 @@ export async function setBypassPermissions(sessionId: string, bypass: boolean): 
   });
 }
 
-export async function fetchExecutionHistory(
-  sessionId: string
-): Promise<{ history: Record<string, unknown>[] }> {
-  const response = await fetch(`${API_BASE}/sessions/${sessionId}/history`);
-  return response.json();
+// A2A protocol types (the subset the client consumes)
+
+export type A2APartKind = "text" | "data" | "file";
+
+export interface A2APart {
+  kind: A2APartKind;
+  text?: string;
+  data?: Record<string, unknown>;
 }
 
-export type StreamEventType =
-  | "session"
-  | "status"
-  | "user"
-  | "thinking"
-  | "text_chunk"
-  | "tool_call"
-  | "tool_result"
-  | "done"
-  | "background_started"
-  | "permission_request"
-  | "tasks_updated"
-  | "error"
-  | "denied_injection"
-  | "orchestration_started"
-  | "agent_text_chunk"
-  | "agent_tool_call"
-  | "agent_thinking"
-  | "agent_status"
-  | "agent_done";
-
-export interface StreamEvent {
-  type: StreamEventType;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
+export interface A2AMessage {
+  role: "user" | "agent";
+  parts: A2APart[];
+  messageId?: string;
+  contextId?: string;
+  taskId?: string;
+  referenceTaskIds?: string[];
+  metadata?: Record<string, unknown>;
 }
 
-export function streamChat(
-  message: string,
+export interface A2AArtifact {
+  artifactId?: string;
+  name?: string;
+  parts: A2APart[];
+}
+
+export interface A2ATaskStatus {
+  state: string;
+  message?: A2AMessage;
+  timestamp?: string;
+}
+
+export interface A2ATask {
+  id: string;
+  contextId: string;
+  kind?: string;
+  status: A2ATaskStatus;
+  artifacts?: A2AArtifact[];
+  history?: A2AMessage[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface A2AStatusUpdate {
+  kind: "status-update";
+  taskId: string;
+  contextId: string;
+  status: A2ATaskStatus;
+  final?: boolean;
+}
+
+export interface A2AArtifactUpdate {
+  kind: "artifact-update";
+  taskId: string;
+  contextId: string;
+  artifact: A2AArtifact;
+  lastChunk?: boolean;
+}
+
+// Any object the message/stream method yields.
+export type A2AStreamResult =
+  | (A2ATask & { kind?: "task" })
+  | A2AStatusUpdate
+  | A2AArtifactUpdate
+  | (A2AMessage & { kind: "message" });
+
+// Sends a user message via the A2A `message/stream` JSON-RPC method and invokes
+// `onResult` for each streamed A2A object (Task, status-update, artifact-update,
+// message). Returns an AbortController so the caller can cancel.
+export function streamA2A(
+  text: string,
   agent: string,
-  sessionId: string | null,
-  onEvent: (event: StreamEvent) => void,
+  contextId: string | null,
+  onResult: (result: A2AStreamResult) => void | Promise<void>,
   onDone: () => void,
-  workingDirectory?: string,
+  workingDirectory?: string
 ): AbortController {
   const controller = new AbortController();
 
-  const body: Record<string, string> = { message, agent };
-  if (sessionId) body.session_id = sessionId;
-  if (workingDirectory) body.working_directory = workingDirectory;
+  const message: A2AMessage = {
+    role: "user",
+    parts: [{ kind: "text", text }],
+    messageId: crypto.randomUUID(),
+    metadata: workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : undefined,
+  };
+  if (contextId) message.contextId = contextId;
 
-  fetch(`${API_BASE}/chat`, {
+  const body = {
+    jsonrpc: "2.0",
+    id: crypto.randomUUID(),
+    method: "message/stream",
+    params: { message },
+  };
+
+  // Each agent is its own A2A endpoint; selecting an agent means addressing it.
+  fetch(`${API_BASE}/a2a/agents/${agent}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify(body),
     signal: controller.signal,
   })
     .then(async (response) => {
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         const errorText = await response.text().catch(() => "Unknown error");
-        onEvent({ type: "error", message: `Server error (${response.status}): ${errorText}` });
+        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", message: `Server error (${response.status}): ${errorText}` } }] } }, final: true });
         return;
       }
-
-      const reader = response.body?.getReader();
-      if (!reader) return;
-
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
-        let currentEventType = "";
-
         for (const line of lines) {
-          if (line.startsWith("event:")) {
-            currentEventType = line.slice(6).trim();
-          } else if (line.startsWith("data:")) {
-            const raw = line.slice(5).trim();
-            if (!raw) continue;
-            try {
-              const parsed = JSON.parse(raw);
-              if (currentEventType) parsed.type = currentEventType;
-              onEvent(parsed);
-              const type = parsed.type;
-              if (
-                type === "tool_call" ||
-                type === "tool_result" ||
-                type === "error" ||
-                type === "permission_request" ||
-                type === "agent_tool_call" ||
-                (type === "status" && parsed.code === "thinking")
-              ) {
-                await new Promise<void>((resolve) => {
-                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-                });
-              }
-            } catch {
-              // skip malformed json
+          if (!line.startsWith("data:")) continue;
+          const raw = line.slice(5).trim();
+          if (!raw) continue;
+          try {
+            const parsed = JSON.parse(raw);
+            const result = parsed.result ?? parsed;
+            if (result && typeof result === "object") {
+              await onResult(result as A2AStreamResult);
             }
+          } catch {
+            // skip malformed json
           }
         }
       }
     })
     .catch((error) => {
       if (error.name !== "AbortError") {
-        onEvent({ type: "error", message: String(error) });
+        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", message: String(error) } }] } }, final: true });
       }
     })
     .finally(onDone);

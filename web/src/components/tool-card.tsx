@@ -76,6 +76,10 @@ export function ToolCardBody({
       py={2}
       borderTop="1px solid"
       borderColor="border"
+      // Recess the expanded body below the card shell (bg.subtle) so its content
+      // — especially nested tool cards in the agents view — reads as raised
+      // against it and gains contrast.
+      bg="bg"
       maxH={maxH}
       overflowY={maxH ? "auto" : undefined}
       overflowX={maxH ? "auto" : undefined}
