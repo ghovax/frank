@@ -2,7 +2,8 @@
 
 import { Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
-import { LuBrain, LuChevronRight, LuChevronDown, LuHourglass, LuTarget } from "react-icons/lu";
+import { LuChevronRight, LuChevronDown } from "react-icons/lu";
+import { getFocusIcon } from "@/lib/focus-icon";
 
 interface ThinkingIndicatorProps {
   content?: string;
@@ -15,13 +16,12 @@ export function ThinkingIndicator({ content, focus, icon, status }: ThinkingIndi
   const [open, setOpen] = useState(false);
   const title = focus || content || "Thinking";
   const isWaiting = icon === "waiting" || title === "Waiting for tools...";
-  const isGoal = icon === "goal";
   // `content` holds the reasoning body (if any); a real label means we are not
   // showing a bare placeholder, so the shimmer only applies before any focus.
   const hasReasoning = !!content && content !== "Thinking";
   const showShimmer = !focus && status === "running" && !isWaiting;
 
-  const iconColor = isWaiting ? "blue.fg" : isGoal ? "teal.fg" : "purple.fg";
+  const { icon: FocusIcon, color: iconColor } = getFocusIcon(icon, title);
 
   return (
     <Box borderRadius="sm" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
@@ -36,7 +36,7 @@ export function ThinkingIndicator({ content, focus, icon, status }: ThinkingIndi
         userSelect="none"
       >
         <Box color={iconColor} fontSize="sm" flexShrink={0}>
-          {isWaiting ? <LuHourglass size={12} /> : isGoal ? <LuTarget size={12} /> : <LuBrain size={12} />}
+          <FocusIcon size={12} />
         </Box>
         <Text
           fontSize="xs"

@@ -2,9 +2,10 @@
 
 import { Badge, Box, Flex, IconButton, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { LuChevronDown, LuChevronRight, LuNetwork, LuTarget, LuX } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight, LuNetwork, LuX } from "react-icons/lu";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
 import { isStepDone } from "@/lib/use-chat";
+import { getFocusIcon } from "@/lib/focus-icon";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
 
@@ -44,6 +45,7 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
   const done = isStepDone(step);
   const [open, setOpen] = useState(true);
   const [thinkingOpen, setThinkingOpen] = useState(false);
+  const { icon: FocusIcon, color: focusColor } = getFocusIcon(step.icon, step.focus);
 
   return (
     <ToolCard>
@@ -81,8 +83,10 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
               userSelect="none"
             >
               {thinkingOpen ? <LuChevronDown size={11} /> : <LuChevronRight size={11} />}
-              {step.icon === "goal" && <LuTarget size={11} />}
-              <Text fontSize="xs" fontWeight="medium">{step.focus || "Reasoning"}</Text>
+              <Box color={focusColor} fontSize="sm" flexShrink={0}>
+                <FocusIcon size={11} />
+              </Box>
+              {step.focus && <Text fontSize="xs" fontWeight="medium">{step.focus}</Text>}
             </Flex>
             {thinkingOpen && (
               <Box mt={1} pl={3} borderLeft="2px solid" borderColor="border" color="fg.muted" fontSize="xs" whiteSpace="pre-wrap">
@@ -95,10 +99,12 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
         {step.parts.length > 0 ? (
           <AgentTimeline parts={step.parts} agents={agents} />
         ) : (
-          !done && !step.thinking && (
+          !done && !step.thinking && step.focus && (
             <Flex align="center" gap={1} color="fg.subtle">
-              {step.icon === "goal" && <LuTarget size={11} />}
-              <Text fontSize="xs">{step.focus || "Working…"}</Text>
+              <Box color={focusColor} fontSize="sm" flexShrink={0}>
+                <FocusIcon size={11} />
+              </Box>
+              <Text fontSize="xs">{step.focus}</Text>
             </Flex>
           )
         )}
@@ -111,10 +117,12 @@ function AgentGroupCard({
   group,
   agentLabels,
   agents,
+  sequenceNumber,
 }: {
   group: AgentGroup;
   agentLabels: Map<string, string>;
   agents: { name: string; label: string }[];
+  sequenceNumber?: number;
 }) {
   const completed = group.steps.filter((step) => isStepDone(step)).length;
   const total = group.steps.length;
@@ -124,6 +132,7 @@ function AgentGroupCard({
   return (
     <ToolCard>
       <ToolCardHeader
+        sequenceNumber={sequenceNumber}
         icon={<Box color="fg.muted"><LuNetwork size={12} /></Box>}
         title={group.justification || "Sub-agents"}
         badges={
@@ -214,7 +223,7 @@ export function AgentsPanel({
           </Flex>
         ) : (
           <Flex direction="column" gap={3}>
-            {agentGroups.map((group) => (
+            {agentGroups.map((group, index) => (
               <Box
                 key={group.groupId}
                 ref={(node: HTMLDivElement | null) => {
@@ -222,7 +231,7 @@ export function AgentsPanel({
                   else cardRefs.current.delete(group.groupId);
                 }}
               >
-                <AgentGroupCard group={group} agentLabels={agentLabels} agents={agents} />
+                <AgentGroupCard group={group} agentLabels={agentLabels} agents={agents} sequenceNumber={index + 1} />
               </Box>
             ))}
           </Flex>

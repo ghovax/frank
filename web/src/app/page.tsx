@@ -261,7 +261,7 @@ function HomeContent() {
                   return (
                     <Box
                       key={entry.sessionId}
-                      px={1.5}
+                      px={2}
                       py={1}
                       borderRadius="sm"
                       border="1px solid"
