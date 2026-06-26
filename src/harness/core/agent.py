@@ -368,6 +368,7 @@ class AgentOrchestrator:
         on_record_event: Optional[callable] = None,
         on_record_message: Optional[callable] = None,
         on_record_orchestration: Optional[callable] = None,
+        on_record_stream_event: Optional[callable] = None,
         session_id: str = "",
         conversation: Optional[list] = None,
         working_directory: str = "",
@@ -379,6 +380,7 @@ class AgentOrchestrator:
         self._on_record_event = on_record_event
         self._on_record_message = on_record_message
         self._on_record_orchestration = on_record_orchestration
+        self._on_record_stream_event = on_record_stream_event
         self._working_directory = working_directory or str(Path.home())
 
         effective_model = agent_configuration.model or global_configuration.api.model
@@ -606,8 +608,6 @@ class AgentOrchestrator:
                 yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
                 return
 
-            self._conversation.append(response)
-
             tool_call_results: list[tuple[str, str, str | None]] = []
             denied_commands: list[str] = []
 
@@ -686,6 +686,8 @@ class AgentOrchestrator:
                             StreamEvent.Type.ERROR, id=tool_call_identifier, message=error_message, tool=tool_name,
                         )
                         turn_tool_results_log.append({"name": tool_name, "result": error_message})
+
+            self._conversation.append(response)
 
             for call_identifier, result, background_task_identifier in tool_call_results:
                 conversation_index = len(self._conversation)
@@ -818,15 +820,15 @@ class AgentOrchestrator:
                 request_identifier = f"perm-{self._session_id[:8]}-{uuid.uuid4().hex[:12]}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
-                yield StreamEvent(
-                    StreamEvent.Type.PERMISSION_REQUEST,
-                    id=tool_call_identifier,
-                    request_id=request_identifier,
-                    command=command,
-                    justification=justification,
-                    risk=risk,
-                )
                 try:
+                    yield StreamEvent(
+                        StreamEvent.Type.PERMISSION_REQUEST,
+                        id=tool_call_identifier,
+                        request_id=request_identifier,
+                        command=command,
+                        justification=justification,
+                        risk=risk,
+                    )
                     allowed = await future
                 finally:
                     self._pending_permissions.pop(request_identifier, None)
@@ -905,6 +907,14 @@ class AgentOrchestrator:
             graph = compile_orchestration_graph(steps=steps, node_factory=self._make_orchestration_node)
             self._orchestration_graphs[orchestration_id] = graph
             self._orchestration_configs[orchestration_id] = config
+            step_summaries = [
+                {
+                    "id": step["id"],
+                    "agent": step["agent"],
+                    "prompt": step.get("prompt", ""),
+                }
+                for step in steps
+            ]
 
             # Announce the orchestration so the UI can group all of its sub-agent
             # activity into a dedicated panel and link it back to this tool call.
@@ -913,57 +923,104 @@ class AgentOrchestrator:
                 orchestration_id=orchestration_id,
                 tool_call_id=tool_call_identifier,
                 justification=tool_arguments.get("justification", ""),
-                steps=[{"id": step["id"], "agent": step["agent"]} for step in steps],
+                steps=step_summaries,
             )
 
-            initial_state: OrchestrationState = {"steps": steps, "results": []}
-            orchestration_results: list[dict] = []
+            async def _run_orchestration_background():
+                initial_state: OrchestrationState = {"steps": steps, "results": []}
+                orchestration_results: list[dict] = []
+                completed_step_ids: set[str] = set()
 
-            async for mode, data in graph.astream(initial_state, config, stream_mode=["updates", "custom"]):
-                if mode == "custom":
-                    custom_type = data.pop("type", None)
-                    # Every sub-agent event carries its orchestration so the UI
-                    # can route it to the right group/step without ambiguity
-                    # when several orchestrations run in one session.
-                    data["orchestration_id"] = orchestration_id
-                    if custom_type == "agent_text_chunk":
-                        # Only incremental chunks are displayed. The final
-                        # ``agent_result`` carries the full text again and must
-                        # not be re-streamed, or each step would render twice.
-                        yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, **data)
-                    elif custom_type == "agent_tool_call":
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, **data)
-                    elif custom_type == "agent_thinking":
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, **data)
-                    elif custom_type == "agent_status":
-                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, **data)
-                elif mode == "updates":
-                    for node_name, state_update in data.items():
-                        if "results" in state_update:
-                            new_results = state_update["results"]
-                            orchestration_results.extend(new_results)
-                            result_id = new_results[-1]["id"]
-                            yield StreamEvent(
-                                StreamEvent.Type.AGENT_DONE,
-                                agent_id=result_id,
-                                step_id=result_id,
-                                orchestration_id=orchestration_id,
-                            )
+                def record_stream(event_type: StreamEvent.Type, **data):
+                    if self._on_record_stream_event:
+                        self._on_record_stream_event(event_type.value, data)
 
-            self._record_event("orchestration", {
-                "orchestration_id": orchestration_id, "thread_id": orchestration_id,
-                "steps": [{"id": step["id"], "agent": step["agent"]} for step in steps],
-                "results": orchestration_results,
-            })
-            if self._on_record_orchestration:
-                self._on_record_orchestration(
-                    orchestration_id=orchestration_id, thread_id=orchestration_id,
-                    steps=[{"id": step["id"], "agent": step["agent"]} for step in steps],
-                    results=orchestration_results,
-                )
+                try:
+                    async for mode, data in graph.astream(initial_state, config, stream_mode=["updates", "custom"]):
+                        if mode == "custom":
+                            payload = dict(data)
+                            custom_type = payload.pop("type", None)
+                            payload["orchestration_id"] = orchestration_id
+                            if custom_type == "agent_text_chunk":
+                                record_stream(StreamEvent.Type.AGENT_TEXT_CHUNK, **payload)
+                            elif custom_type == "agent_tool_call":
+                                record_stream(StreamEvent.Type.AGENT_TOOL_CALL, **payload)
+                            elif custom_type == "agent_thinking":
+                                record_stream(StreamEvent.Type.AGENT_THINKING, **payload)
+                            elif custom_type == "agent_status":
+                                record_stream(StreamEvent.Type.AGENT_STATUS, **payload)
+                        elif mode == "updates":
+                            for node_name, state_update in data.items():
+                                if "results" in state_update:
+                                    new_results = state_update["results"]
+                                    if not new_results:
+                                        continue
+                                    orchestration_results.extend(new_results)
+                                    result_id = new_results[-1]["id"]
+                                    completed_step_ids.add(result_id)
+                                    record_stream(
+                                        StreamEvent.Type.AGENT_DONE,
+                                        agent_id=result_id,
+                                        step_id=result_id,
+                                        orchestration_id=orchestration_id,
+                                    )
 
-            result = json.dumps({"code": "orchestration_completed", "results": orchestration_results})
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result))
+                    self._record_event("orchestration", {
+                        "orchestration_id": orchestration_id,
+                        "thread_id": orchestration_id,
+                        "steps": step_summaries,
+                        "results": orchestration_results,
+                    })
+                    if self._on_record_orchestration:
+                        self._on_record_orchestration(
+                            orchestration_id=orchestration_id,
+                            thread_id=orchestration_id,
+                            steps=step_summaries,
+                            results=orchestration_results,
+                        )
+                    record_stream(
+                        StreamEvent.Type.TOOL_RESULT,
+                        id=tool_call_identifier,
+                        name=tool_name,
+                        result={"code": "orchestration_completed", "results": orchestration_results},
+                    )
+                except Exception as exception:
+                    for step in step_summaries:
+                        step_id = step["id"]
+                        if step_id in completed_step_ids:
+                            continue
+                        record_stream(
+                            StreamEvent.Type.AGENT_DONE,
+                            agent_id=step_id,
+                            step_id=step_id,
+                            orchestration_id=orchestration_id,
+                        )
+                    record_stream(
+                        StreamEvent.Type.ERROR,
+                        message=f"Orchestration failed: {exception}",
+                        tool=tool_name,
+                        orchestration_id=orchestration_id,
+                    )
+                    record_stream(
+                        StreamEvent.Type.TOOL_RESULT,
+                        id=tool_call_identifier,
+                        name=tool_name,
+                        result={"code": "orchestration_failed", "message": str(exception)},
+                    )
+
+            asyncio.create_task(_run_orchestration_background())
+
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                id=tool_call_identifier,
+                name=tool_name,
+                result={
+                    "code": "orchestration_started",
+                    "task_identifier": orchestration_id,
+                    "step_count": len(steps),
+                    "steps": step_summaries,
+                },
+            )
 
         elif tool_name == "write_tasks":
             task_definitions = tool_arguments.get("tasks", [])

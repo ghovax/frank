@@ -328,7 +328,14 @@ def orchestrate(steps: list[dict], justification: str = "") -> str:
         "code": "orchestration_started",
         "task_identifier": task_identifier,
         "step_count": len(steps),
-        "steps": [{"id": step["id"], "agent": step["agent"]} for step in steps],
+        "steps": [
+            {
+                "id": step["id"],
+                "agent": step["agent"],
+                "prompt": step.get("prompt", ""),
+            }
+            for step in steps
+        ],
     })
 
 

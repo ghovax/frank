@@ -121,6 +121,7 @@ app.add_middleware(
 _global_configuration: Optional[GlobalConfiguration] = None
 _sessions: dict[str, AgentOrchestrator] = {}
 _session_configurations: dict[str, str] = {}
+_session_locks: dict[str, asyncio.Lock] = {}
 _pending_permissions: dict[str, asyncio.Future] = {}
 _database_engine = None
 _database_session_factory = None
@@ -183,12 +184,18 @@ def get_database() -> sessionmaker:
     return _database_session_factory()
 
 
-def record_stream_event(session_id: str, event_type: str, data: dict, sequence: int) -> None:
+def record_next_stream_event(session_id: str, event_type: str, data: dict) -> None:
     database_session = get_database()
     try:
+        row = database_session.query(
+            func.max(StreamEventRecord.sequence)
+        ).filter(
+            StreamEventRecord.session_id == session_id
+        ).first()
+        sequence_number = (row[0] if row and row[0] is not None else 0) + 1
         database_session.add(StreamEventRecord(
             session_id=session_id,
-            sequence=sequence,
+            sequence=sequence_number,
             type=event_type,
             data=json.dumps(data),
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -272,6 +279,9 @@ def _get_or_create_session(
         finally:
             database_session.close()
 
+    def record_background_stream_event(event_type: str, data: dict) -> None:
+        record_next_stream_event(new_identifier, event_type, data)
+
     orchestrator = AgentOrchestrator(
         agent_configuration=agent_configuration,
         global_configuration=_global_configuration,
@@ -279,6 +289,7 @@ def _get_or_create_session(
         on_record_event=record_event,
         on_record_message=record_message,
         on_record_orchestration=record_orchestration,
+        on_record_stream_event=record_background_stream_event,
         session_id=new_identifier,
         working_directory=working_directory or "",
     )
@@ -326,20 +337,12 @@ async def switch_agent(session_id: str, agent: str):
     global _global_configuration
     assert _global_configuration is not None
 
+    working_directory = ""
     if session_id in _sessions:
+        working_directory = _sessions[session_id].working_directory
         del _sessions[session_id]
 
-    agent_configuration = load_agent_configuration(
-        agent, _global_configuration.agents_directory
-    )
-    orchestrator = AgentOrchestrator(
-        agent_configuration=agent_configuration,
-        global_configuration=_global_configuration,
-        pending_permissions=_pending_permissions,
-        session_id=session_id,
-    )
-    _sessions[session_id] = orchestrator
-    _session_configurations[session_id] = agent
+    _get_or_create_session(session_id, agent, working_directory)
     return {"agent": agent}
 
 
@@ -348,6 +351,8 @@ async def resolve_permission(session_id: str, request: PermissionRequest):
     future = _pending_permissions.get(request.request_id)
     if not future:
         return {"status": "unknown", "error": "No pending permission request with that identifier."}
+    if future.done():
+        return {"status": "stale", "error": "Permission request was already resolved."}
     allowed = request.decision == "allow"
     future.set_result(allowed)
     return {"status": "resolved", "decision": request.decision}
@@ -499,7 +504,7 @@ async def get_conversation(session_id: str):
     try:
         rows = database_session.query(StreamEventRecord).filter(
             StreamEventRecord.session_id == session_id
-        ).order_by(StreamEventRecord.sequence).all()
+        ).order_by(StreamEventRecord.sequence, StreamEventRecord.id).all()
         return {
             "events": [
                 {"type": row.type, **json.loads(row.data), "timestamp": row.timestamp}
@@ -517,44 +522,49 @@ async def chat(request: ChatRequest):
     )
 
     async def event_generator():
+        lock = _session_locks.setdefault(session_id, asyncio.Lock())
+        if lock.locked():
+            yield {
+                "event": "session",
+                "data": json.dumps({"type": "session", "session_id": session_id}),
+            }
+            yield {
+                "event": "error",
+                "data": json.dumps({
+                    "type": "error",
+                    "code": "session_busy",
+                    "message": "This session already has a running turn. Resolve any pending permission request or stop the current turn before sending another message.",
+                }),
+            }
+            yield {
+                "event": "done",
+                "data": json.dumps({"type": "done", "stop_reason": "session_busy"}),
+            }
+            return
+
+        await lock.acquire()
         pending_text = ""
         pending_thinking = ""
         # Keyed by "orchestration_id::step_id" so steps from different
         # orchestrations never share a buffer.
         pending_agent_buffers: dict[str, dict[str, str]] = {}
-        database_session = get_database()
-        try:
-            row = database_session.query(
-                func.max(StreamEventRecord.sequence)
-            ).filter(
-                StreamEventRecord.session_id == session_id
-            ).first()
-            sequence_number = row[0] if row and row[0] is not None else 0
-        finally:
-            database_session.close()
-
         def flush_main():
-            nonlocal pending_text, pending_thinking, sequence_number
+            nonlocal pending_text, pending_thinking
             if pending_text:
-                sequence_number += 1
-                record_stream_event(session_id, "text_chunk", {"text": pending_text}, sequence_number)
+                record_next_stream_event(session_id, "text_chunk", {"text": pending_text})
                 pending_text = ""
             if pending_thinking:
-                sequence_number += 1
-                record_stream_event(session_id, "thinking", {"text": pending_thinking}, sequence_number)
+                record_next_stream_event(session_id, "thinking", {"text": pending_thinking})
                 pending_thinking = ""
 
         def flush_agent(orchestration_id: str, step_id: str):
-            nonlocal sequence_number
             buffer = pending_agent_buffers.pop(f"{orchestration_id}::{step_id}", None)
             if buffer:
                 common = {"step_id": step_id, "orchestration_id": orchestration_id}
                 if buffer.get("text"):
-                    sequence_number += 1
-                    record_stream_event(session_id, "agent_text_chunk", {"text": buffer["text"], **common}, sequence_number)
+                    record_next_stream_event(session_id, "agent_text_chunk", {"text": buffer["text"], **common})
                 if buffer.get("thinking"):
-                    sequence_number += 1
-                    record_stream_event(session_id, "agent_thinking", {"text": buffer["thinking"], **common}, sequence_number)
+                    record_next_stream_event(session_id, "agent_thinking", {"text": buffer["thinking"], **common})
 
         try:
             yield {
@@ -562,8 +572,7 @@ async def chat(request: ChatRequest):
                 "data": json.dumps({"type": "session", "session_id": session_id}),
             }
 
-            sequence_number += 1
-            record_stream_event(session_id, "user", {"text": request.message}, sequence_number)
+            record_next_stream_event(session_id, "user", {"text": request.message})
 
             if session_id not in _saved_sessions:
                 _saved_sessions.add(session_id)
@@ -586,31 +595,23 @@ async def chat(request: ChatRequest):
                     pending_thinking += event.data.get("text", "")
                 elif event.type == StreamEvent.Type.STATUS:
                     flush_main()
-                    sequence_number += 1
-                    record_stream_event(session_id, "status", event.data, sequence_number)
+                    record_next_stream_event(session_id, "status", event.data)
                 elif event.type == StreamEvent.Type.TOOL_CALL:
                     flush_main()
-                    sequence_number += 1
-                    record_stream_event(session_id, "tool_call", event.data, sequence_number)
+                    record_next_stream_event(session_id, "tool_call", event.data)
                 elif event.type == StreamEvent.Type.TOOL_RESULT:
                     flush_main()
-                    sequence_number += 1
-                    record_stream_event(session_id, "tool_result", event.data, sequence_number)
+                    record_next_stream_event(session_id, "tool_result", event.data)
                 elif event.type == StreamEvent.Type.PERMISSION_REQUEST:
-                    sequence_number += 1
-                    record_stream_event(session_id, "permission_request", event.data, sequence_number)
+                    record_next_stream_event(session_id, "permission_request", event.data)
                 elif event.type == StreamEvent.Type.ERROR:
-                    sequence_number += 1
-                    record_stream_event(session_id, "error", event.data, sequence_number)
+                    record_next_stream_event(session_id, "error", event.data)
                 elif event.type == StreamEvent.Type.DENIED_INJECTION:
-                    sequence_number += 1
-                    record_stream_event(session_id, "denied_injection", event.data, sequence_number)
+                    record_next_stream_event(session_id, "denied_injection", event.data)
                 elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
-                    sequence_number += 1
-                    record_stream_event(session_id, "background_started", event.data, sequence_number)
+                    record_next_stream_event(session_id, "background_started", event.data)
                 elif event.type == StreamEvent.Type.TASKS_UPDATED:
-                    sequence_number += 1
-                    record_stream_event(session_id, "tasks_updated", event.data, sequence_number)
+                    record_next_stream_event(session_id, "tasks_updated", event.data)
                 elif event.type == StreamEvent.Type.DONE:
                     flush_main()
                     if session_id in _saved_sessions and session_id not in _titles_generated:
@@ -627,8 +628,7 @@ async def chat(request: ChatRequest):
                                 database_session.close()
                 elif event.type == StreamEvent.Type.ORCHESTRATION_STARTED:
                     flush_main()
-                    sequence_number += 1
-                    record_stream_event(session_id, "orchestration_started", event.data, sequence_number)
+                    record_next_stream_event(session_id, "orchestration_started", event.data)
                 elif event.type == StreamEvent.Type.AGENT_TEXT_CHUNK:
                     key = f"{event.data.get('orchestration_id', '')}::{event.data.get('step_id', '')}"
                     if key not in pending_agent_buffers:
@@ -641,12 +641,10 @@ async def chat(request: ChatRequest):
                     pending_agent_buffers[key]["thinking"] += event.data.get("text", "")
                 elif event.type == StreamEvent.Type.AGENT_TOOL_CALL:
                     flush_agent(event.data.get("orchestration_id", ""), event.data.get("step_id", ""))
-                    sequence_number += 1
-                    record_stream_event(session_id, "agent_tool_call", event.data, sequence_number)
+                    record_next_stream_event(session_id, "agent_tool_call", event.data)
                 elif event.type == StreamEvent.Type.AGENT_DONE:
                     flush_agent(event.data.get("orchestration_id", ""), event.data.get("step_id", ""))
-                    sequence_number += 1
-                    record_stream_event(session_id, "agent_done", event.data, sequence_number)
+                    record_next_stream_event(session_id, "agent_done", event.data)
 
                 yield {"event": event.type.value, "data": event.to_json()}
         except GeneratorExit:
@@ -655,14 +653,21 @@ async def chat(request: ChatRequest):
             # Surface the failure to the client as a normal error event and a
             # terminal done event, so the EventSource closes gracefully instead
             # of the browser seeing ERR_INCOMPLETE_CHUNKED_ENCODING.
+            error_payload = {"type": "error", "message": f"Server error: {exception}"}
+            try:
+                record_next_stream_event(session_id, "error", error_payload)
+            except Exception:
+                pass
             yield {
                 "event": "error",
-                "data": json.dumps({"type": "error", "message": f"Server error: {exception}"}),
+                "data": json.dumps(error_payload),
             }
             yield {
                 "event": "done",
                 "data": json.dumps({"type": "done", "stop_reason": "error"}),
             }
+        finally:
+            lock.release()
 
     return EventSourceResponse(event_generator())
 

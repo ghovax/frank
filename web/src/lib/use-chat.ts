@@ -18,8 +18,7 @@ export interface ChatMessage {
     | "tool_call"
     | "thinking"
     | "error"
-    | "permission"
-    | "status";
+    | "permission";
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
@@ -34,6 +33,7 @@ export interface AgentToolCall {
 export interface AgentStep {
   stepId: string;
   agent: string;
+  goal: string;
   text: string;
   thinking: string;
   toolCalls: AgentToolCall[];
@@ -47,8 +47,8 @@ export interface Orchestration {
   steps: AgentStep[];
 }
 
-function emptyStep(stepId: string, agent = ""): AgentStep {
-  return { stepId, agent, text: "", thinking: "", toolCalls: [], done: false };
+function emptyStep(stepId: string, agent = "", goal = ""): AgentStep {
+  return { stepId, agent, goal, text: "", thinking: "", toolCalls: [], done: false };
 }
 
 // Immutable update of one step inside one orchestration. Creates the step (and,
@@ -87,7 +87,9 @@ function startOrchestration(list: Orchestration[], event: StreamEvent): Orchestr
     return list;
   }
   const declaredSteps: AgentStep[] = Array.isArray(event.steps)
-    ? event.steps.map((step: { id?: string; agent?: string }) => emptyStep(String(step.id ?? ""), String(step.agent ?? "")))
+    ? event.steps.map((step: { id?: string; agent?: string; prompt?: string }) =>
+        emptyStep(String(step.id ?? ""), String(step.agent ?? ""), String(step.prompt ?? ""))
+      )
     : [];
   return [
     ...list,
@@ -142,7 +144,11 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
         orchestrations = startOrchestration(orchestrations, event);
         for (const message of messages) {
           if (message.role === "tool_call" && message.meta?.toolCallId === event.tool_call_id) {
-            message.meta = { ...message.meta, orchestrationId: event.orchestration_id };
+            message.meta = {
+              ...message.meta,
+              orchestrationId: event.orchestration_id,
+              status: "running",
+            };
           }
         }
         break;
@@ -205,24 +211,6 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
             content: "",
             timestamp: event.timestamp ?? fallbackTimestamp,
           });
-        } else if (event.code === "waiting_for_tools") {
-          const thinkingIndex = messages.findLastIndex(
-            (message) => message.role === "thinking"
-          );
-          if (thinkingIndex !== -1) {
-            messages[thinkingIndex] = {
-              ...messages[thinkingIndex],
-              content: "Waiting for tool results...",
-              timestamp: event.timestamp ?? fallbackTimestamp,
-            };
-          } else {
-            messages.push({
-              id: `history-${messages.length}-${Math.random()}`,
-              role: "thinking",
-              content: "Waiting for tool results...",
-              timestamp: event.timestamp ?? fallbackTimestamp,
-            });
-          }
         }
         break;
 
@@ -303,6 +291,11 @@ function replayEvents(events: StreamEvent[]): ReplayResult {
 
       case "user":
         lanes.clear();
+        for (const message of messages) {
+          if (message.role === "permission" && !message.meta?.resolved) {
+            message.meta = { ...message.meta, resolved: "interrupted" };
+          }
+        }
         messages.push({
           id: `history-${messages.length}-${Math.random()}`,
           role: "user",
@@ -365,6 +358,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   const queuedMessagesRef = useRef<string[]>([]);
   const isStreamingRef = useRef(false);
   const runStreamRef = useRef<(text: string) => void>(() => {});
+  const polledEventCountRef = useRef(0);
 
   const setQueue = useCallback((next: string[]) => {
     queuedMessagesRef.current = next;
@@ -381,6 +375,7 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
       .then((events) => {
         if (cancelled) return;
         setSessionId(initialSessionId);
+        polledEventCountRef.current = events.length;
         const replayed = replayEvents(events);
         setMessages(replayed.messages);
         setOrchestrations(replayed.orchestrations);
@@ -440,30 +435,6 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
                     },
                   ]);
                 });
-              } else if (event.code === "waiting_for_tools") {
-                setMessages((current) => {
-                  const thinkingIndex = current.findLastIndex(
-                    (message) => message.role === "thinking"
-                  );
-                  if (thinkingIndex !== -1) {
-                    const updated = [...current];
-                    updated[thinkingIndex] = {
-                      ...current[thinkingIndex],
-                      content: "Waiting for tool results...",
-                      timestamp: event.timestamp ?? new Date().toISOString(),
-                    };
-                    return updated;
-                  }
-                  return [
-                    ...current,
-                    {
-                      id: `thinking-${Date.now()}-${Math.random()}`,
-                      role: "thinking" as const,
-                      content: "Waiting for tool results...",
-                      timestamp: event.timestamp ?? new Date().toISOString(),
-                    },
-                  ];
-                });
               }
               break;
 
@@ -503,7 +474,14 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
               setMessages((current) =>
                 current.map((message) =>
                   message.role === "tool_call" && message.meta?.toolCallId === event.tool_call_id
-                    ? { ...message, meta: { ...message.meta, orchestrationId: event.orchestration_id } }
+                    ? {
+                        ...message,
+                        meta: {
+                          ...message.meta,
+                          orchestrationId: event.orchestration_id,
+                          status: "running",
+                        },
+                      }
                     : message
                 )
               );
@@ -741,6 +719,29 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
   useEffect(() => {
     runStreamRef.current = runStream;
   }, [runStream]);
+
+  useEffect(() => {
+    const hasActiveOrchestration = orchestrations.some((orchestration) =>
+      orchestration.steps.some((step) => !step.done)
+    );
+    if (!sessionId || isStreaming || !hasActiveOrchestration) return;
+
+    const refresh = () => {
+      fetchConversation(sessionId)
+        .then((events) => {
+          if (events.length === polledEventCountRef.current) return;
+          polledEventCountRef.current = events.length;
+          const replayed = replayEvents(events);
+          setMessages(replayed.messages);
+          setOrchestrations(replayed.orchestrations);
+        })
+        .catch(() => {});
+    };
+
+    refresh();
+    const interval = window.setInterval(refresh, 1200);
+    return () => window.clearInterval(interval);
+  }, [sessionId, isStreaming, orchestrations]);
 
   const send = useCallback(
     (text: string) => {

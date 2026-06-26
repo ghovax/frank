@@ -2,6 +2,7 @@
 
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
 import { MarkdownContent } from "../markdown-content";
+import { ToolCard, ToolCardSection, ToolMetaRow } from "../tool-card";
 import {
   asArray,
   asRecord,
@@ -77,11 +78,16 @@ function WebSearchCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function SpawnAgentCallView({ args }: { args: Record<string, unknown> }) {
+function agentLabelFor(agentName: string, agents: { name: string; label: string }[]): string {
+  return agents.find((agent) => agent.name === agentName)?.label || agentName || "Agent";
+}
+
+function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { name: string; label: string }[] }) {
+  const agentName = asString(args.agent) || "main";
   return (
     <FieldList>
       <InlineField label="Agent">
-        <Pill colorPalette="purple">{asString(args.agent) || "main"}</Pill>
+        <Pill colorPalette="purple">{agentLabelFor(agentName, agents)}</Pill>
       </InlineField>
       <Field label="Prompt">
         <Text fontSize="xs" whiteSpace="pre-wrap">{asString(args.prompt)}</Text>
@@ -90,23 +96,42 @@ function SpawnAgentCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function OrchestrateCallView({ args }: { args: Record<string, unknown> }) {
+function OrchestrateCallView({ args, agents }: { args: Record<string, unknown>; agents: { name: string; label: string }[] }) {
   const steps = asArray(args.steps).map(asRecord);
   return (
     <FieldList>
       {steps.map((step, index) => {
         const dependencies = asArray(step.depends_on).map(asString);
+        const stepId = asString(step.id);
+        const displayStep = stepId || `Step ${index + 1}`;
+        const agentName = asString(step.agent);
+        const agent = agentLabelFor(agentName, agents);
+        const prompt = asString(step.prompt) || "Agent task";
         return (
-          <Card key={asString(step.id) || index}>
-            <Flex align="center" gap={2} mb={1}>
-              <Pill colorPalette="orange">{asString(step.agent)}</Pill>
-              <Text fontSize="xs" color="fg.muted">{asString(step.id)}</Text>
+          <ToolCard key={stepId || index}>
+            <ToolCardSection>
+              <ToolMetaRow label="Step">
+                <Flex align="center" gap={2}>
+                  <Text truncate flex={1}>
+                    {displayStep}
+                  </Text>
+                  <Pill colorPalette="purple">{agent}</Pill>
+                </Flex>
+              </ToolMetaRow>
               {dependencies.length > 0 && (
-                <Text fontSize="2xs" color="fg.subtle">depends on {dependencies.join(", ")}</Text>
+                <ToolMetaRow label="Depends on" mt={1}>
+                  <Text>
+                    {dependencies.join(", ")}
+                  </Text>
+                </ToolMetaRow>
               )}
-            </Flex>
-            <Text fontSize="xs" whiteSpace="pre-wrap" color="fg.muted">{asString(step.prompt)}</Text>
-          </Card>
+            </ToolCardSection>
+            <ToolCardSection borderTop>
+              <Text fontSize="xs" fontWeight="normal" color="fg.muted" whiteSpace="pre-wrap">
+                {prompt}
+              </Text>
+            </ToolCardSection>
+          </ToolCard>
         );
       })}
     </FieldList>
@@ -169,7 +194,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export function ToolCallView({ name, args }: { name: string; args?: Record<string, unknown> }) {
+export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { name: string; label: string }[] }) {
   if (!args) return null;
   switch (name) {
     case "bash":
@@ -177,9 +202,9 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
     case "web_search":
       return <WebSearchCallView args={args} />;
     case "spawn_agent":
-      return <SpawnAgentCallView args={args} />;
+      return <SpawnAgentCallView args={args} agents={agents} />;
     case "orchestrate":
-      return <OrchestrateCallView args={args} />;
+      return <OrchestrateCallView args={args} agents={agents} />;
     case "write_tasks":
       return <WriteTasksCallView args={args} />;
     case "update_tasks":

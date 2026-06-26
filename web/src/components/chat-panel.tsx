@@ -8,7 +8,7 @@ import {
   VStack,
 } from "@chakra-ui/react";
 import { LuClock, LuSend } from "react-icons/lu";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { useChat } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
@@ -27,6 +27,8 @@ interface ChatPanelProps {
   onBrowseFolder?: () => void;
   isConnected?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
+  historyOpen?: boolean;
+  onToggleHistory?: () => void;
 }
 
 export function ChatPanel({
@@ -40,6 +42,8 @@ export function ChatPanel({
   onBrowseFolder,
   isConnected = false,
   onStreamingChange,
+  historyOpen = false,
+  onToggleHistory,
 }: ChatPanelProps) {
   const { messages, orchestrations, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, abort, dequeueMessage, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory);
@@ -51,11 +55,7 @@ export function ChatPanel({
   const [bypassPermissions, setBypassPermissionsState] = useState(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedOrchestrationId, setFocusedOrchestrationId] = useState<string | null>(null);
-
-  const openAgents = useCallback((orchestrationId: string) => {
-    setFocusedOrchestrationId(orchestrationId);
-    setAgentsPanelOpen(true);
-  }, []);
+  const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -78,6 +78,26 @@ export function ChatPanel({
       container.scrollTop = container.scrollHeight;
     });
   }, []);
+
+  const forceScrollToBottom = useCallback(() => {
+    isPinnedRef.current = true;
+    if (scrollFrameRef.current != null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
+  const handleSend = useCallback((text: string) => {
+    forceScrollToBottom();
+    send(text);
+    forceScrollToBottom();
+  }, [forceScrollToBottom, send]);
 
   useEffect(() => {
     if (sessionId) onSessionCreated(sessionId);
@@ -122,92 +142,134 @@ export function ChatPanel({
     }
   }
 
-  const totalSteps = orchestrations.reduce((sum, orchestration) => sum + orchestration.steps.length, 0);
+  const activeSteps = orchestrations.reduce(
+    (sum, orchestration) => sum + orchestration.steps.filter((step) => !step.done).length,
+    0
+  );
+  const hasAgentActivity = orchestrations.length > 0;
+
+  useEffect(() => {
+    if (activeSteps > 0 && window.matchMedia("(min-width: 768px)").matches) {
+      setAgentsPanelOpen(true);
+    }
+  }, [activeSteps]);
+
+  const handleAgentsResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = agentsSidebarWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(720, Math.max(300, startWidth + startX - moveEvent.clientX));
+      setAgentsSidebarWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, [agentsSidebarWidth]);
 
   return (
-    <Flex direction="column" h="100%" position="relative">
-      <Box ref={scrollContainerRef} flex={1} overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none" }}>
-        {isHistoryLoading ? (
-          <Flex h="100%" />
-        ) : messages.length === 0 ? (
-          <Flex direction="column" align="center" justify="center" h="100%">
-            <EmptyState.Root>
-              <EmptyState.Content>
-                <EmptyState.Indicator>
-                  <LuSend />
-                </EmptyState.Indicator>
-                <VStack gap={1}>
-                  <EmptyState.Title>No messages yet</EmptyState.Title>
-                  <EmptyState.Description>
-                    Send a message to start
-                  </EmptyState.Description>
-                </VStack>
-              </EmptyState.Content>
-            </EmptyState.Root>
-          </Flex>
-        ) : (
-          <VStack ref={scrollContentRef} gap={2} align="stretch">
-            {messages.map((message) => (
-              <ChatMessageItem
-                key={message.id}
-                message={message}
-                onPermission={handlePermission}
-                onOpenAgents={openAgents}
-              />
-            ))}
-            {queuedMessages.map((text, index) => (
-              <Box
-                key={`queued-${index}`}
-                alignSelf="flex-end"
-                maxW="80%"
-                px={2}
-                py={1.5}
-                borderRadius="sm"
-                border="1px dashed"
-                borderColor="border"
-                bg="bg.subtle"
-                opacity={0.55}
-                cursor="pointer"
-                title="Queued — click to remove"
-                onClick={() => dequeueMessage(index)}
-              >
-                <Flex align="center" gap={1.5}>
-                  <LuClock size={11} />
-                  <Text fontSize="xs" color="fg.subtle" fontWeight="medium">Queued</Text>
-                </Flex>
-                <Text fontSize="sm" color="fg.muted">{text}</Text>
-              </Box>
-            ))}
-          </VStack>
-        )}
-      </Box>
+    <Flex h="100%" minW={0} position="relative">
+      <Flex direction="column" flex={1} minW={0} h="100%">
+        <Box ref={scrollContainerRef} flex={1} minH={0} overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none" }}>
+          {isHistoryLoading ? (
+            <Flex h="100%" />
+          ) : messages.length === 0 ? (
+            <Flex direction="column" align="center" justify="center" h="100%">
+              <EmptyState.Root>
+                <EmptyState.Content>
+                  <EmptyState.Indicator>
+                    <LuSend />
+                  </EmptyState.Indicator>
+                  <VStack gap={1}>
+                    <EmptyState.Title>No messages yet</EmptyState.Title>
+                    <EmptyState.Description>
+                      Send a message to start
+                    </EmptyState.Description>
+                  </VStack>
+                </EmptyState.Content>
+              </EmptyState.Root>
+            </Flex>
+          ) : (
+            <VStack ref={scrollContentRef} gap={2} align="stretch">
+              {messages.map((message) => (
+                <ChatMessageItem
+                  key={message.id}
+                  message={message}
+                  onPermission={handlePermission}
+                  agents={agents}
+                />
+              ))}
+              {queuedMessages.map((text, index) => (
+                <Box
+                  key={`queued-${index}`}
+                  alignSelf="flex-end"
+                  maxW="80%"
+                  px={2}
+                  py={1.5}
+                  borderRadius="sm"
+                  border="1px dashed"
+                  borderColor="border"
+                  bg="bg.subtle"
+                  opacity={0.55}
+                  cursor="pointer"
+                  title="Queued — click to remove"
+                  onClick={() => dequeueMessage(index)}
+                >
+                  <Flex align="center" gap={1.5}>
+                    <LuClock size={11} />
+                    <Text fontSize="xs" color="fg.subtle" fontWeight="medium">Queued</Text>
+                  </Flex>
+                  <Text fontSize="sm" color="fg.muted">{text}</Text>
+                </Box>
+              ))}
+            </VStack>
+          )}
+        </Box>
 
-      <ChatInput
-        onSend={send}
-        onAbort={abort}
-        isStreaming={isStreaming}
-        disabled={!isConnected}
-        sessionId={sessionId}
-        workingDirectory={workingDirectory}
-        onWorkingDirectoryChange={onWorkingDirectoryChange}
-        onBrowseFolder={onBrowseFolder}
-        agents={agents}
-        selectedAgent={agent}
-        onAgentChange={onAgentChange}
-        bypassPermissions={bypassPermissions}
-        onToggleBypass={handleToggleBypass}
-        agentsCount={totalSteps}
-        onShowAgents={() => {
-          setFocusedOrchestrationId(null);
-          setAgentsPanelOpen(true);
-        }}
-      />
+        <ChatInput
+          onSend={handleSend}
+          onAbort={abort}
+          isStreaming={isStreaming}
+          disabled={!isConnected}
+          sessionId={sessionId}
+          workingDirectory={workingDirectory}
+          onWorkingDirectoryChange={onWorkingDirectoryChange}
+          onBrowseFolder={onBrowseFolder}
+          agents={agents}
+          selectedAgent={agent}
+          onAgentChange={onAgentChange}
+          bypassPermissions={bypassPermissions}
+          onToggleBypass={handleToggleBypass}
+          agentsCount={activeSteps}
+          agentsAvailable={hasAgentActivity}
+          agentsOpen={agentsPanelOpen}
+          onShowAgents={() => {
+            setFocusedOrchestrationId(null);
+            setAgentsPanelOpen((current) => !current);
+          }}
+          historyOpen={historyOpen}
+          onToggleHistory={onToggleHistory}
+        />
+      </Flex>
 
       <AgentsPanel
         orchestrations={orchestrations}
+        agents={agents}
         open={agentsPanelOpen}
         onClose={() => setAgentsPanelOpen(false)}
         focusedOrchestrationId={focusedOrchestrationId}
+        width={agentsSidebarWidth}
+        onResizeStart={handleAgentsResizeStart}
       />
     </Flex>
   );
