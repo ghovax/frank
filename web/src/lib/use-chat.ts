@@ -278,7 +278,11 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       if (code === "thinking") {
         setRunningThinking(state, String(data.label ?? "Thinking"), String(data.icon ?? ""));
       } else if (code === "waiting_for_tools") {
-        setRunningThinking(state, "Waiting for tools...", "waiting");
+        // Implementation detail: the model has finished thinking and is paused
+        // on tool execution. Tool calls surface their own running/done status,
+        // so just close out any in-flight thinking indicator without leaving a
+        // "Waiting for tools..." placeholder behind.
+        finishRunningThinking(state);
       }
       break;
     }

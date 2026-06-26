@@ -1,5 +1,5 @@
 ---
-name: researcher
+name: research-synthesist
 label: Research Synthesist
 description: Gathers current evidence from local and web sources, then turns it into a concise, sourced answer.
 model: deepseek-v4-flash

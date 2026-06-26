@@ -1121,7 +1121,7 @@ class AgentRuntime:
                 return
 
             sub_agent_prompt = tool_arguments.get("prompt", "")
-            sub_agent_name = tool_arguments.get("agent", "researcher")
+            sub_agent_name = tool_arguments.get("agent", "research-synthesist")
             sub_agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(sub_agent_read_only, str):
                 sub_agent_read_only = sub_agent_read_only.lower() == "true"

@@ -1,5 +1,5 @@
 ---
-name: coder
+name: implementation-engineer
 label: Implementation Engineer
 description: Implements focused code changes, coordinates targeted investigation, and verifies the result before reporting.
 model: deepseek-v4-flash

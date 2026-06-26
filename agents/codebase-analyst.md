@@ -1,5 +1,5 @@
 ---
-name: explorer
+name: codebase-analyst
 label: Codebase Analyst
 description: Investigates code paths, architecture, and behavior with evidence-backed findings and no file modifications.
 model: deepseek-v4-flash

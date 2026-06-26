@@ -237,7 +237,7 @@ def collect_web_search_results(identifiers: Iterable[str] | None = None) -> list
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "researcher", read_only: bool = False, justification: str = "") -> str:
+def spawn_agent(prompt: str = "", agent: str = "research-synthesist", read_only: bool = False, justification: str = "") -> str:
     """Delegate a task to another agent (a real A2A call to its endpoint).
 
     The sub-agent runs as a related A2A task in the same context. Its activity
@@ -249,8 +249,8 @@ def spawn_agent(prompt: str = "", agent: str = "researcher", read_only: bool = F
     Args:
         prompt: The task for the sub-agent. State the goal clearly and, when it
             should build on or coordinate with other agents, name their task ids.
-        agent: Name of the agent profile to delegate to (e.g. 'explorer',
-            'coder', 'researcher').
+        agent: Name of the agent profile to delegate to (e.g. 'codebase-analyst',
+            'implementation-engineer', 'research-synthesist').
         read_only: Force the sub-agent into read-only mode — it may only run
             read-only commands and cannot modify the system or write files. Use
             for investigation/research sub-agents that should report back rather

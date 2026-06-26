@@ -136,7 +136,7 @@ export function Collapsible({
           {title}
         </Text>
         {count != null && (
-          <Text fontSize="2xs" color="fg.subtle">
+          <Text fontSize="xs" color="fg.subtle">
             ({count})
           </Text>
         )}

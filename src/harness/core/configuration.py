@@ -29,7 +29,7 @@ class ExaConfiguration(BaseModel):
 class GlobalConfiguration(BaseModel):
     api: ApiConfiguration
     exa: ExaConfiguration = ExaConfiguration()
-    default_agent: str = "researcher"
+    default_agent: str = "research-synthesist"
     agents_directory: str = "agents"
     skills_directory: str = "skills"
     # How deep a chain of agents delegating to other agents may go, to bound
