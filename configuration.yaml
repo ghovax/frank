@@ -1,10 +1,10 @@
 api:
   endpoint: "https://opencode.ai/zen/go/v1"
   model: "deepseek-v4-flash"
-  api_key: "sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92"
+  api_key: ""
 
 exa:
-  api_key: "a485a327-82ac-4e26-9731-4018efc90e68"
+  api_key: ""
 
-default_agent: main
+default_agent: researcher
 agents_directory: agents

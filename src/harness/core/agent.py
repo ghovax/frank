@@ -57,6 +57,7 @@ from harness.tools.tools import (
     read_task as read_task_tool,
     write_tasks as write_tasks_tool,
     update_tasks as update_tasks_tool,
+    update_goal as update_goal_tool,
     bash_tasks,
     web_tasks,
     spawned_tasks,
@@ -114,7 +115,14 @@ def _maybe_json(value: str) -> Any:
 
 
 def _build_tools(tools_configuration) -> list[BaseTool]:
-    available = [bash_tool, web_search_tool, write_tasks_tool, update_tasks_tool, read_task_tool]
+    available = [
+        bash_tool,
+        web_search_tool,
+        write_tasks_tool,
+        update_tasks_tool,
+        update_goal_tool,
+        read_task_tool,
+    ]
     if tools_configuration.spawn_agent.enabled:
         available.append(spawn_tool)
     return available
@@ -415,6 +423,7 @@ class AgentRuntime:
     # Maximum time to block a turn waiting for in-flight background tasks
     # (searches, sub-agents, slow bash) before invoking the model anyway.
     _BACKGROUND_WAIT_SECONDS = 300.0
+    _GOAL_CONTINUATION_LIMIT = 3
 
     def __init__(
         self,
@@ -440,7 +449,7 @@ class AgentRuntime:
         self._llm = ReasoningChatOpenAI(
             model=effective_model,
             base_url=global_configuration.api.endpoint,
-            api_key=global_configuration.api.api_key,
+            api_key=global_configuration.api.effective_api_key,
             reasoning_effort=agent_configuration.reasoning_effort,
             temperature=0,
         )
@@ -464,6 +473,7 @@ class AgentRuntime:
         self._prompt_loader = PromptLoader(prompts_directory)
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
+        self._active_goal: str = ""
         self._execution_history: list[dict] = []
         self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
@@ -556,7 +566,6 @@ class AgentRuntime:
                 "system_prompt": self._system_prompt,
                 "context": context_json,
                 "skills": json.dumps(skills_payload(agent_skills)),
-                "tasks_section": "",
             })
         return self._cached_system_prompt
 
@@ -565,6 +574,8 @@ class AgentRuntime:
         parts = []
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         parts.append(f"Current time: {current_time}")
+        if self._active_goal:
+            parts.append(json.dumps({"active_goal": self._active_goal}))
         tasks_data = self._task_manager.to_dict_list()
         if tasks_data:
             parts.append(json.dumps({"tasks": tasks_data}))
@@ -630,6 +641,7 @@ class AgentRuntime:
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
         turn_final_response = ""
+        goal_continuations = 0
 
         while self._calls_this_turn < self._agent_configuration.maximum_iterations:
             if self._abort_event.is_set():
@@ -698,6 +710,16 @@ class AgentRuntime:
                 final_text = response.content or ""
                 turn_final_response = final_text
                 self._conversation.append(response)
+                if self._active_goal and goal_continuations < self._GOAL_CONTINUATION_LIMIT:
+                    goal_continuations += 1
+                    self._calls_this_turn += 1
+                    goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
+                    self._conversation.append(SystemMessage(content=goal_continuation))
+                    yield StreamEvent(
+                        StreamEvent.Type.STATUS,
+                        code="goal_check",
+                    )
+                    continue
                 self._calls_this_turn = 0
                 self._record_turn(
                     user_message, turn_tool_calls_log,
@@ -800,7 +822,7 @@ class AgentRuntime:
                     )
 
             if denied_commands:
-                commands_list = ", ".join(f"'{cmd}'" for cmd in denied_commands)
+                commands_list = ", ".join(f"'{command}'" for command in denied_commands)
                 denied_message = self._prompt_loader.load("command_denied", {
                     "commands": commands_list,
                 })
@@ -953,7 +975,7 @@ class AgentRuntime:
                 return
 
             sub_agent_prompt = tool_arguments.get("prompt", "")
-            sub_agent_name = tool_arguments.get("agent", "main")
+            sub_agent_name = tool_arguments.get("agent", "researcher")
             sub_agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(sub_agent_read_only, str):
                 sub_agent_read_only = sub_agent_read_only.lower() == "true"
@@ -1045,8 +1067,8 @@ class AgentRuntime:
             else:
                 result_message = "No matching tasks found."
             updated_tasks = [
-                t for t in self._task_manager.to_dict_list()
-                if t["identifier"] in updated_ids
+                task for task in self._task_manager.to_dict_list()
+                if task["identifier"] in updated_ids
             ]
             yield StreamEvent(
                 StreamEvent.Type.TASKS_UPDATED,
@@ -1054,6 +1076,37 @@ class AgentRuntime:
                 tasks=updated_tasks,
                 result_message=result_message,
             )
+
+        elif tool_name == "update_goal":
+            status = tool_arguments.get("status", "active")
+            goal = str(tool_arguments.get("goal", "")).strip()
+            if status == "active":
+                if not goal:
+                    result = {
+                        "code": "goal_update_error",
+                        "message": "A non-empty goal is required when status is 'active'.",
+                    }
+                else:
+                    self._active_goal = goal
+                    result = {
+                        "code": "goal_active",
+                        "goal": self._active_goal,
+                    }
+                    self._record_event("goal_updated", result)
+            elif status in ("satisfied", "cleared"):
+                previous_goal = self._active_goal
+                self._active_goal = ""
+                result = {
+                    "code": f"goal_{status}",
+                    "previous_goal": previous_goal,
+                }
+                self._record_event("goal_updated", result)
+            else:
+                result = {
+                    "code": "goal_update_error",
+                    "message": "status must be one of 'active', 'satisfied', or 'cleared'.",
+                }
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
         elif tool_name == "web_search":
             result = await web_search_tool.ainvoke(tool_arguments)

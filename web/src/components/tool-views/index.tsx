@@ -81,7 +81,7 @@ function agentLabelFor(agentName: string, agents: { name: string; label: string 
 }
 
 function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { name: string; label: string }[] }) {
-  const agentName = asString(args.agent) || "main";
+  const agentName = asString(args.agent) || "researcher";
   return (
     <FieldList>
       <InlineField label="Agent">

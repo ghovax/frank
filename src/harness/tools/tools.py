@@ -123,7 +123,7 @@ async def bash(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        pid = process.pid
+        process_id = process.pid
 
         async def write_stream(stream, handle):
             while True:
@@ -142,18 +142,18 @@ async def bash(
         await process.wait()
         output = output_path.read_text()
         if not output:
-            return json.dumps({"code": "bash_completed", "output": "", "pid": pid})
+            return json.dumps({"code": "bash_completed", "output": "", "pid": process_id})
         if len(output) > 1 << 17:
             return json.dumps({
                 "code": "bash_completed",
                 "output_file": str(output_path),
-                "pid": pid,
+                "pid": process_id,
                 "size": len(output),
             })
         return json.dumps({
             "code": "bash_completed",
             "output": output,
-            "pid": pid,
+            "pid": process_id,
             "size": len(output),
         })
 
@@ -237,7 +237,7 @@ def collect_web_search_results(identifiers: Iterable[str] | None = None) -> list
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "main", read_only: bool = False, justification: str = "") -> str:
+def spawn_agent(prompt: str = "", agent: str = "researcher", read_only: bool = False, justification: str = "") -> str:
     """Delegate a task to another agent (a real A2A call to its endpoint).
 
     The sub-agent runs as a related A2A task in the same context. Its activity
@@ -258,7 +258,7 @@ def spawn_agent(prompt: str = "", agent: str = "main", read_only: bool = False, 
         justification: A concise, user-facing description of what this sub-agent
             will do — shown directly as the label for this call.
     """
-    return "Handled by the harness."
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 def register_spawned_task(task_identifier: str, coroutine):
@@ -284,7 +284,7 @@ def read_task(task_id: str = "", justification: str = "") -> str:
         justification: A concise, user-facing description of why you are reading
             this task — shown as the label for this call.
     """
-    return "Handled by the harness."
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
@@ -302,7 +302,7 @@ def write_tasks(tasks: list[dict]) -> str:
             - dependencies (optional): List of task identifiers this
               task depends on (e.g. ["task-1", "task-2"]).
     """
-    return "Handled by the harness."
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
@@ -315,7 +315,31 @@ def update_tasks(updates: list[dict]) -> str:
             - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
             - result (optional): Summary of what was accomplished when marking as completed.
     """
-    return "Handled by the harness."
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+@tool
+def update_goal(
+    goal: str = "",
+    status: Literal["active", "satisfied", "cleared"] = "active",
+    justification: str = "",
+) -> str:
+    """Set, replace, satisfy, or clear the single active goal for this turn.
+
+    A goal is not a task list. It is the top-level completion contract the
+    harness injects back into your context until you explicitly satisfy or clear
+    it. Use it when a user request has a concrete outcome that must not be lost
+    while you run tools, delegate, or continue across multiple model passes.
+
+    Args:
+        goal: The goal text to set when status is "active". Leave empty when
+            marking the current goal as "satisfied" or "cleared".
+        status: "active" sets/replaces the goal, "satisfied" removes it because
+            the requested outcome is done, and "cleared" removes it because it
+            is obsolete or no longer applicable.
+        justification: A concise, user-facing reason for this update.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 def cancel_all_background_tasks() -> None:
@@ -330,5 +354,5 @@ def _cleanup_on_exit():
 
 atexit.register(_cleanup_on_exit)
 
-for _sig in (signal.SIGTERM, signal.SIGHUP):
-    signal.signal(_sig, lambda signum, frame: (cancel_all_background_tasks(), sys.exit(1)))
+for termination_signal in (signal.SIGTERM, signal.SIGHUP):
+    signal.signal(termination_signal, lambda signum, frame: (cancel_all_background_tasks(), sys.exit(1)))

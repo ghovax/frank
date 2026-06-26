@@ -11,7 +11,11 @@ from pydantic import BaseModel
 class ApiConfiguration(BaseModel):
     endpoint: str
     model: str
-    api_key: str
+    api_key: str = ""
+
+    @property
+    def effective_api_key(self) -> str:
+        return os.environ.get("OPENCODE_API_KEY") or self.api_key
 
 
 class ExaConfiguration(BaseModel):
@@ -25,7 +29,7 @@ class ExaConfiguration(BaseModel):
 class GlobalConfiguration(BaseModel):
     api: ApiConfiguration
     exa: ExaConfiguration = ExaConfiguration()
-    default_agent: str = "main"
+    default_agent: str = "researcher"
     agents_directory: str = "agents"
     skills_directory: str = "skills"
     # How deep a chain of agents delegating to other agents may go, to bound
@@ -151,19 +155,19 @@ class BashToolConfiguration(BaseModel):
         if head in self._MUTATING_HEADS:
             return ("mutating", head)
         if head in ("sed", "perl"):
-            if any(re.match(r"^-[A-Za-z]*i", a) or a.startswith("--in-place") for a in arguments):
+            if any(re.match(r"^-[A-Za-z]*i", argument) or argument.startswith("--in-place") for argument in arguments):
                 return ("mutating", f"{head} in-place edit")
             return ("read_only", "")
         if head == "gawk":
-            return ("mutating", "gawk in-place") if any("inplace" in a for a in arguments) else ("read_only", "")
+            return ("mutating", "gawk in-place") if any("inplace" in argument for argument in arguments) else ("read_only", "")
         if head == "awk":
             return ("read_only", "")
         if head == "find":
             mutating_actions = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls"}
-            return ("mutating", "find with -delete/-exec") if any(a in mutating_actions for a in arguments) else ("read_only", "")
+            return ("mutating", "find with -delete/-exec") if any(argument in mutating_actions for argument in arguments) else ("read_only", "")
         if head == "curl":
             writers = {"-o", "-O", "--output", "--remote-name", "-J", "--remote-header-name", "--create-dirs", "--dump-header"}
-            return ("mutating", "curl writing to a file") if any(a in writers for a in arguments) else ("read_only", "")
+            return ("mutating", "curl writing to a file") if any(argument in writers for argument in arguments) else ("read_only", "")
         if head == "wget":
             for position, argument in enumerate(arguments):
                 if argument in ("-O-", "-qO-", "--output-document=-"):
@@ -172,14 +176,14 @@ class BashToolConfiguration(BaseModel):
                     return ("read_only", "")
             return ("mutating", "wget writing to a file")
         if head == "tar":
-            if any((a.startswith("-") and "t" in a and "x" not in a and "c" not in a) or a == "--list" for a in arguments):
+            if any((argument.startswith("-") and "t" in argument and "x" not in argument and "c" not in argument) or argument == "--list" for argument in arguments):
                 return ("read_only", "")
             return ("mutating", "tar create/extract")
         if head == "git":
-            subcommand = next((a for a in arguments if not a.startswith("-")), "")
+            subcommand = next((argument for argument in arguments if not argument.startswith("-")), "")
             return ("read_only", "") if subcommand in self._GIT_READ_SUBCOMMANDS else ("mutating", f"git {subcommand}".strip())
         if head == "xargs":
-            inner = next((a for a in arguments if not a.startswith("-")), "").split("/")[-1]
+            inner = next((argument for argument in arguments if not argument.startswith("-")), "").split("/")[-1]
             if inner and (inner in self._MUTATING_HEADS or inner in ("sed", "tee", "sudo", "rm")):
                 return ("mutating", f"xargs {inner}")
             if inner in self._READ_ONLY_HEADS:
@@ -207,7 +211,7 @@ class BashToolConfiguration(BaseModel):
         Splits on shell operators (&&, ||, ;, |) and extracts the contents
         of subshells ($(...) and backticks).
         """
-        segments = [s.strip() for s in self._SHELL_SPLIT.split(command) if s.strip()]
+        segments = [segment.strip() for segment in self._SHELL_SPLIT.split(command) if segment.strip()]
         for match in self._SUBSHELL.finditer(command):
             inner = (match.group(1) or match.group(2)).strip()
             if inner:
@@ -343,7 +347,7 @@ def load_agent_configuration(
 
 
 def list_available_agents(agents_directory: str | Path) -> list[str]:
-    return sorted(p.stem for p in Path(agents_directory).glob("*.md"))
+    return sorted(path.stem for path in Path(agents_directory).glob("*.md"))
 
 
 def list_agents_with_labels(agents_directory: str | Path) -> list[dict[str, str]]:
