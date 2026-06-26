@@ -8,6 +8,7 @@ import {
   fetchSessionTasks,
   type A2AStreamResult,
   type A2AMessage,
+  type A2APart,
   type A2ATask as A2ATaskWire,
 } from "./api";
 
@@ -103,6 +104,17 @@ function appendAgentToolCall(step: AgentStep, name: string, toolArguments?: Reco
   };
 }
 
+function artifactPartsText(parts: A2APart[] | undefined): string {
+  return (parts ?? [])
+    .filter((part) => part.kind === "text" && part.text)
+    .map((part) => part.text ?? "")
+    .join("");
+}
+
+function streamArtifactText(result: Extract<A2AStreamResult, { kind: "artifact-update" }>): string {
+  return artifactPartsText(result.artifact?.parts);
+}
+
 function finishAgentStep(step: AgentStep, task: A2ATask | undefined): AgentStep {
   const state = (task?.status?.state as TaskState) ?? "completed";
   const artifactText = taskArtifactText(task);
@@ -174,8 +186,48 @@ function startAgentGroup(state: ReduceState, data: Record<string, unknown>): voi
   );
 }
 
+function isRunningThinkingMessage(message: ChatMessage): boolean {
+  return message.role === "thinking" && message.meta?.status === "running";
+}
+
+function finishRunningThinking(state: ReduceState): void {
+  state.messages = state.messages.map((message) =>
+    isRunningThinkingMessage(message)
+      ? { ...message, meta: { ...message.meta, status: "done" } }
+      : message
+  );
+}
+
+function setRunningThinking(state: ReduceState, content: string): void {
+  const index = state.messages.findLastIndex(isRunningThinkingMessage);
+  if (index !== -1) {
+    state.messages = state.messages.map((message, messageIndex) =>
+      messageIndex === index ? { ...message, content } : message
+    );
+    return;
+  }
+  state.messages = [
+    ...state.messages,
+    {
+      id: `status-${state.messages.length}-${Math.random()}`,
+      role: "thinking",
+      content,
+      timestamp: new Date().toISOString(),
+      meta: { status: "running" },
+    },
+  ];
+}
+
+function hasAssistantTextAfterLastUser(state: ReduceState): boolean {
+  const lastUserIndex = state.messages.findLastIndex((message) => message.role === "user");
+  return state.messages
+    .slice(lastUserIndex + 1)
+    .some((message) => message.role === "assistant" && message.content.trim());
+}
+
 function pushAssistantText(state: ReduceState, text: string): void {
   if (!text) return;
+  finishRunningThinking(state);
   if (state.lane === null) {
     const id = `assistant-${state.messages.length}-${Math.random()}`;
     state.lane = id;
@@ -211,8 +263,16 @@ function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void {
   const kind = String(data.kind ?? "");
   switch (kind) {
+    case "status": {
+      const code = String(data.code ?? "");
+      if (code === "thinking") {
+        setRunningThinking(state, "Thinking");
+      }
+      break;
+    }
     case "thinking": {
       const text = String(data.text ?? "");
+      finishRunningThinking(state);
       const index = state.messages.findLastIndex((m) => m.role === "thinking");
       if (index !== -1) {
         state.messages = state.messages.map((m, i) => (i === index ? { ...m, content: m.content + text } : m));
@@ -222,6 +282,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "tool_call": {
+      finishRunningThinking(state);
       state.lane = null;
       const sequence = ++state.toolSequence;
       state.messages = [
@@ -237,6 +298,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "tool_result": {
+      finishRunningThinking(state);
       state.lane = null;
       const toolCallId = String(data.toolCallId ?? "");
       state.messages = state.messages.map((message) =>
@@ -247,6 +309,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "permission_request": {
+      finishRunningThinking(state);
       state.messages = [
         ...state.messages,
         {
@@ -260,6 +323,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "error": {
+      finishRunningThinking(state);
       state.messages = [
         ...state.messages,
         { id: `error-${state.messages.length}-${Math.random()}`, role: "error", content: String(data.message ?? "Unknown error"), timestamp: new Date().toISOString() },
@@ -283,6 +347,19 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     default:
       break; // status, sub_task_status — no UI change
+  }
+}
+
+function reduceArtifactUpdate(state: ReduceState, result: Extract<A2AStreamResult, { kind: "artifact-update" }>): void {
+  const text = streamArtifactText(result);
+  if (!text.trim()) return;
+  if (hasAssistantTextAfterLastUser(state)) return;
+  pushAssistantText(state, text);
+}
+
+function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, { kind: "status-update" }>): void {
+  if (result.final || TERMINAL_STATES.has(result.status?.state as TaskState)) {
+    finishRunningThinking(state);
   }
 }
 
@@ -330,6 +407,14 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
 
   useEffect(() => {
     if (!initialSessionId) return;
+    if (initialSessionId === sessionIdRef.current && stateRef.current.messages.length > 0) {
+      setIsHistoryLoading(false);
+      return;
+    }
+    if (initialSessionId === sessionIdRef.current && isStreamingRef.current) {
+      setIsHistoryLoading(false);
+      return;
+    }
     if (historyLoadedForRef.current === initialSessionId) return;
     historyLoadedForRef.current = initialSessionId;
     let cancelled = false;
@@ -380,10 +465,12 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
             }
             if (update.status?.message) {
               reduceAgentMessage(stateRef.current, update.status.message);
-              flush();
             }
+            reduceFinalStatus(stateRef.current, update);
+            flush();
           } else if (kind === "artifact-update") {
-            // The deliverable; its text already streamed as working messages.
+            reduceArtifactUpdate(stateRef.current, result as Extract<A2AStreamResult, { kind: "artifact-update" }>);
+            flush();
           } else if (!kind || kind === "task") {
             const task = result as A2ATask;
             if (task.contextId && !sessionIdRef.current) {

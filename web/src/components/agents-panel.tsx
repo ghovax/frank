@@ -60,7 +60,7 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
         title={step.goal || "Agent task"}
         badges={
           <>
-            <Badge size="sm" variant="surface" colorPalette="purple" borderRadius="sm" flexShrink={0}>
+            <Badge size="sm" variant="surface" colorPalette="gray" borderRadius="sm" flexShrink={0}>
               {agentLabel || "Agent"}
             </Badge>
             <AgentStateBadge state={step.state} />
@@ -137,7 +137,7 @@ function AgentGroupCard({
   return (
     <ToolCard>
       <ToolCardHeader
-        icon={<Box color="orange.fg"><LuNetwork size={12} /></Box>}
+        icon={<Box color="fg.muted"><LuNetwork size={12} /></Box>}
         title={group.justification || "Sub-agents"}
         badges={
           <Badge size="sm" variant="surface" colorPalette={active > 0 ? "blue" : "green"} borderRadius="sm" flexShrink={0}>
@@ -213,7 +213,7 @@ export function AgentsPanel({
         onPointerDown={onResizeStart}
       />
       <Flex align="center" gap={2} px={3} py={2} borderBottom="1px solid" borderColor="border" flexShrink={0}>
-        <Box color="orange.fg"><LuNetwork size={15} /></Box>
+        <Box color="fg.muted"><LuNetwork size={15} /></Box>
         <Text fontSize="sm" fontWeight="bold" flex={1}>Agents</Text>
         <IconButton aria-label="Collapse agents sidebar" size="xs" variant="ghost" borderRadius="sm" onClick={onClose}>
           <LuX size={15} />

@@ -2,20 +2,16 @@
 
 import type { IconButtonProps, SpanProps } from "@chakra-ui/react"
 import { ClientOnly, IconButton, Skeleton, Span } from "@chakra-ui/react"
-import { ThemeProvider, useTheme } from "next-themes"
-import type { ThemeProviderProps } from "next-themes"
 import * as React from "react"
 import { LuMoon, LuSun } from "react-icons/lu"
 
-export type ColorModeProviderProps = ThemeProviderProps
-
-export function ColorModeProvider(props: ColorModeProviderProps) {
-  return (
-    <ThemeProvider attribute="class" disableTransitionOnChange {...props} />
-  )
-}
-
 export type ColorMode = "light" | "dark"
+
+export interface ColorModeProviderProps extends React.PropsWithChildren {
+  defaultTheme?: ColorMode | "system"
+  forcedTheme?: ColorMode
+  storageKey?: string
+}
 
 export interface UseColorModeReturn {
   colorMode: ColorMode
@@ -23,17 +19,90 @@ export interface UseColorModeReturn {
   toggleColorMode: () => void
 }
 
+const ColorModeContext = React.createContext<UseColorModeReturn | null>(null)
+const colorModeStorageKey = "theme"
+
+function isStoredTheme(value: string | null): value is ColorMode | "system" {
+  return value === "light" || value === "dark" || value === "system"
+}
+
+export function ColorModeProvider({
+  children,
+  defaultTheme = "system",
+  forcedTheme,
+  storageKey = colorModeStorageKey,
+}: ColorModeProviderProps) {
+  const [theme, setTheme] = React.useState<ColorMode | "system">(() => {
+    if (typeof window === "undefined") return forcedTheme ?? defaultTheme
+
+    try {
+      const storedTheme = localStorage.getItem(storageKey)
+      if (!forcedTheme && isStoredTheme(storedTheme)) return storedTheme
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
+
+    return forcedTheme ?? defaultTheme
+  })
+  const [systemColorMode, setSystemColorMode] = React.useState<ColorMode>("light")
+
+  React.useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)")
+    const syncSystemColorMode = () => setSystemColorMode(query.matches ? "dark" : "light")
+    syncSystemColorMode()
+
+    query.addEventListener("change", syncSystemColorMode)
+    return () => query.removeEventListener("change", syncSystemColorMode)
+  }, [])
+
+  const colorMode = forcedTheme ?? (theme === "system" ? systemColorMode : theme)
+
+  React.useEffect(() => {
+    document.documentElement.classList.remove("light", "dark")
+    document.documentElement.classList.add(colorMode)
+    document.documentElement.style.colorScheme = colorMode
+  }, [colorMode])
+
+  const setColorMode = React.useCallback(
+    (nextColorMode: ColorMode) => {
+      if (forcedTheme) return
+
+      setTheme(nextColorMode)
+      try {
+        localStorage.setItem(storageKey, nextColorMode)
+      } catch {
+        // localStorage can be unavailable in restricted browser contexts.
+      }
+    },
+    [forcedTheme, storageKey],
+  )
+
+  const toggleColorMode = React.useCallback(() => {
+    setColorMode(colorMode === "dark" ? "light" : "dark")
+  }, [colorMode, setColorMode])
+
+  const value = React.useMemo(
+    () => ({ colorMode, setColorMode, toggleColorMode }),
+    [colorMode, setColorMode, toggleColorMode],
+  )
+
+  return (
+    <ColorModeContext.Provider value={value}>
+      {children}
+    </ColorModeContext.Provider>
+  )
+}
+
 export function useColorMode(): UseColorModeReturn {
-  const { resolvedTheme, setTheme, forcedTheme } = useTheme()
-  const colorMode = forcedTheme || resolvedTheme
-  const toggleColorMode = () => {
-    setTheme(resolvedTheme === "dark" ? "light" : "dark")
+  const context = React.useContext(ColorModeContext)
+  if (!context) {
+    return {
+      colorMode: "light",
+      setColorMode: () => {},
+      toggleColorMode: () => {},
+    }
   }
-  return {
-    colorMode: colorMode as ColorMode,
-    setColorMode: setTheme,
-    toggleColorMode,
-  }
+  return context
 }
 
 export function useColorModeValue<T>(light: T, dark: T) {

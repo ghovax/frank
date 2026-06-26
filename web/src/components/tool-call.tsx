@@ -33,6 +33,7 @@ export function ToolCall({ name, arguments: toolArguments, sequenceNumber, statu
         badges={status === "running" || status === "completed" ? <ToolStatusBadge status={status} /> : undefined}
         open={open}
         collapsible={hasArguments}
+        shimmer={status === "running"}
         onToggle={() => setOpen((current) => !current)}
       />
 

@@ -55,6 +55,7 @@ export function ChatPanel({
   const scrollFrameRef = useRef<number | null>(null);
   const isPinnedRef = useRef(true);
   const onStreamingChangeRef = useRef(onStreamingChange);
+  const notifiedSessionIdRef = useRef<string | null>(null);
   const [bypassPermissions, setBypassPermissionsState] = useState(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
@@ -103,7 +104,9 @@ export function ChatPanel({
   }, [forceScrollToBottom, send]);
 
   useEffect(() => {
-    if (sessionId) onSessionCreated(sessionId);
+    if (!sessionId || notifiedSessionIdRef.current === sessionId) return;
+    notifiedSessionIdRef.current = sessionId;
+    onSessionCreated(sessionId);
   }, [sessionId, onSessionCreated]);
 
   useLayoutEffect(() => {

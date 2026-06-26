@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+const API_BASE = "http://localhost:8822";
 
 // Metadata key understood by the harness A2A executor.
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
@@ -163,6 +163,32 @@ export type A2AStreamResult =
   | A2AArtifactUpdate
   | (A2AMessage & { kind: "message" });
 
+function parseSseFrame(frame: string): string {
+  return frame
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n")
+    .trim();
+}
+
+async function emitSseFrame(
+  frame: string,
+  onResult: (result: A2AStreamResult) => void | Promise<void>
+) {
+  const raw = parseSseFrame(frame);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    const result = parsed.result ?? parsed;
+    if (result && typeof result === "object") {
+      await onResult(result as A2AStreamResult);
+    }
+  } catch {
+    // skip malformed json
+  }
+}
+
 // Sends a user message via the A2A `message/stream` JSON-RPC method and invokes
 // `onResult` for each streamed A2A object (Task, status-update, artifact-update,
 // message). Returns an AbortController so the caller can cancel.
@@ -209,24 +235,16 @@ export function streamA2A(
       let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          const raw = line.slice(5).trim();
-          if (!raw) continue;
-          try {
-            const parsed = JSON.parse(raw);
-            const result = parsed.result ?? parsed;
-            if (result && typeof result === "object") {
-              await onResult(result as A2AStreamResult);
-            }
-          } catch {
-            // skip malformed json
-          }
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          await emitSseFrame(frame, onResult);
         }
+        if (done) break;
+      }
+      if (buffer.trim()) {
+        await emitSseFrame(buffer, onResult);
       }
     })
     .catch((error) => {

@@ -288,7 +288,7 @@ export function ChatInput({
           <Button
             size="xs"
             variant={agentsOpen ? "solid" : "outline"}
-            colorPalette={agentsCount > 0 || agentsOpen ? "orange" : undefined}
+            colorPalette={agentsCount > 0 || agentsOpen ? "gray" : undefined}
             borderRadius="sm"
             fontSize="xs"
             h="28px"
@@ -326,9 +326,11 @@ export function ChatInput({
               disabled={disabled}
               fontSize="sm"
               h="32px"
+              lineHeight="32px"
               border="none"
               outline="none"
               px={1}
+              py={0}
               _focus={{ boxShadow: "none", borderColor: "transparent" }}
               _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />

@@ -14,6 +14,17 @@ interface SessionEntry {
   createdAt: string;
 }
 
+function formatSessionTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,9 +41,9 @@ function HomeContent() {
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyWidth, setHistoryWidth] = useState(280);
 
-  function isCompactViewport() {
+  const isCompactViewport = useCallback(() => {
     return window.matchMedia("(max-width: 767px)").matches;
-  }
+  }, []);
 
   async function handleBrowseFolder() {
     try {
@@ -83,18 +94,7 @@ function HomeContent() {
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
-
-  // When a session becomes active on a compact viewport, collapse the sidebar
-  // so the chat takes the screen. Adjusted during render (skipped on the first
-  // render, so the viewport check only runs client-side after a change) rather
-  // than in an effect.
-  const [previousActiveSessionId, setPreviousActiveSessionId] = useState(activeSessionId);
-  if (activeSessionId !== previousActiveSessionId) {
-    setPreviousActiveSessionId(activeSessionId);
-    if (activeSessionId && isCompactViewport()) {
-      setHistoryOpen(false);
-    }
-  }
+  const agentLabels = new Map(agents.map((agent) => [agent.name, agent.label]));
 
   const refreshSessions = useCallback(() => {
     fetchSessions()
@@ -117,10 +117,11 @@ function HomeContent() {
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
+      if (isCompactViewport()) setHistoryOpen(false);
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [refreshSessions, router]
+    [isCompactViewport, refreshSessions, router]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -252,27 +253,33 @@ function HomeContent() {
               </EmptyState.Root>
             ) : (
               <VStack gap={2} align="stretch">
-                {sessions.map((entry) => (
-                  <Box
-                    key={entry.sessionId}
-                    px={1.5}
-                    py={1}
-                    borderRadius="sm"
-                    border="1px solid"
-                    borderColor="border"
-                    cursor="pointer"
-                    bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
-                    _hover={{ bg: "bg.muted" }}
-                    onClick={() => handleResumeSession(entry)}
-                  >
-                    <Text fontSize="xs" fontWeight="medium" truncate>
-                      {entry.title || "Untitled conversation"}
-                    </Text>
-                    <Text fontSize="xs" color="fg.subtle" truncate>
-                      {entry.sessionId.slice(0, 8)}
-                    </Text>
-                  </Box>
-                ))}
+                {sessions.map((entry) => {
+                  const sessionTimestamp = formatSessionTimestamp(entry.createdAt);
+                  const sessionAgent = agentLabels.get(entry.agent) ?? entry.agent;
+                  const sessionMeta = [sessionTimestamp, sessionAgent].filter(Boolean).join(" — ");
+
+                  return (
+                    <Box
+                      key={entry.sessionId}
+                      px={1.5}
+                      py={1}
+                      borderRadius="sm"
+                      border="1px solid"
+                      borderColor="border"
+                      cursor="pointer"
+                      bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
+                      _hover={{ bg: "bg.muted" }}
+                      onClick={() => handleResumeSession(entry)}
+                    >
+                      <Text fontSize="sm" fontWeight="medium" truncate>
+                        {entry.title || "Untitled conversation"}
+                      </Text>
+                      <Text fontSize="xs" color="fg.subtle" truncate>
+                        {sessionMeta}
+                      </Text>
+                    </Box>
+                  );
+                })}
               </VStack>
             )}
           </Box>

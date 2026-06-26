@@ -19,6 +19,7 @@ export function ToolCardHeader({
   badges,
   open,
   collapsible = false,
+  shimmer = false,
   onToggle,
 }: {
   icon?: ReactNode;
@@ -27,6 +28,7 @@ export function ToolCardHeader({
   badges?: ReactNode;
   open?: boolean;
   collapsible?: boolean;
+  shimmer?: boolean;
   onToggle?: () => void;
 }) {
   return (
@@ -50,7 +52,13 @@ export function ToolCardHeader({
           {icon}
         </Box>
       )}
-      <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+      <Text
+        fontSize="xs"
+        fontWeight="medium"
+        truncate
+        flex={1}
+        className={shimmer ? "running-title-shimmer" : undefined}
+      >
         {title}
       </Text>
       {badges}
