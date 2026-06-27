@@ -254,7 +254,7 @@ function HomeContent() {
                 </EmptyState.Content>
               </EmptyState.Root>
             ) : (
-              <VStack gap={2} align="stretch">
+              <VStack gap={1.5} align="stretch">
                 {sessions.map((entry) => {
                   const sessionTimestamp = formatSessionTimestamp(entry.createdAt);
                   const sessionAgent = agentNames.get(entry.agent) ?? entry.agent;

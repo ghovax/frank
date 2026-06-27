@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { LuListChecks, LuPlug, LuWrench } from "react-icons/lu";
 import { fetchMcpTools, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
+import { MarkdownContent } from "./markdown-content";
 
 // Renders a capability's display title: the human title when present, otherwise a
 // fallback to its identifier rendered in monospace to signal it is an id, not a
@@ -13,6 +14,16 @@ function CapabilityTitle({ title, identifier }: { title?: string | null; identif
   const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
   return <Box as="span" fontFamily="var(--app-font-mono)">{identifier}</Box>;
+}
+
+// MCP tool descriptions come from Python docstrings, which carry an Args:/
+// Returns:/etc. section that duplicates the tool's input schema. For the
+// capability browser we only show the human-readable summary above it.
+const DOCSTRING_SECTION = /\n[ \t]*(Args|Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
+
+function docstringSummary(description: string): string {
+  const match = description.match(DOCSTRING_SECTION);
+  return match ? description.slice(0, match.index ?? 0).trim() : description.trim();
 }
 
 // Shows the selected agent's A2A AgentCard skills — broadcast from the served
@@ -48,7 +59,9 @@ export function AgentSkills({ card }: { card: AgentCard | null }) {
             <Text fontSize="xs" fontWeight="bold">Available capabilities</Text>
           </Flex>
           {card!.description && (
-            <Text fontSize="xs" color="fg.muted" mb={2}>{card!.description}</Text>
+            <Box mb={2} color="fg.muted">
+              <MarkdownContent content={card!.description} fontSize="xs" />
+            </Box>
           )}
           <Flex direction="column" gap={2}>
             {card!.skills.map((skill) => (
@@ -91,7 +104,9 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
       {open && hasBody && (
         <ToolCardBody>
           {skill.description && (
-            <Text fontSize="xs" color="fg.muted">{skill.description}</Text>
+            <Box color="fg.muted">
+              <MarkdownContent content={skill.description} fontSize="xs" />
+            </Box>
           )}
           {skill.examples && skill.examples.length > 0 && (
             <Box mt={2}>
@@ -148,7 +163,9 @@ function McpToolRow({ tool }: { tool: McpTool }) {
         <CapabilityTitle title={tool.title} identifier={tool.name} />
       </Text>
       {tool.description && (
-        <Text fontSize="xs" color="fg.muted">{tool.description}</Text>
+        <Box color="fg.muted">
+          <MarkdownContent content={docstringSummary(tool.description)} fontSize="xs" />
+        </Box>
       )}
     </Box>
   );

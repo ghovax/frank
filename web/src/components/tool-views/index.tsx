@@ -211,21 +211,23 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
 function BashResultView({ data }: { data: Record<string, unknown> }) {
   const output = asString(data.output);
   const outputFile = asString(data.output_file);
+  const hasPills = data.pid != null || data.size != null;
+  if (!output && !outputFile && !hasPills) return null;
   return (
     <FieldList>
-      <Flex gap={2}>
-        {data.pid != null && <Pill>pid {asString(data.pid)}</Pill>}
-        {data.size != null && <Pill>{asString(data.size)} bytes</Pill>}
-      </Flex>
+      {hasPills && (
+        <Flex gap={2}>
+          {data.pid != null && <Pill>pid {asString(data.pid)}</Pill>}
+          {data.size != null && <Pill>{asString(data.size)} bytes</Pill>}
+        </Flex>
+      )}
       {output ? (
         <Field label="Output">
           <MonoBlock>{output}</MonoBlock>
         </Field>
       ) : outputFile ? (
         <InlineField label="Output">written to {outputFile}</InlineField>
-      ) : (
-        <EmptyHint>No output</EmptyHint>
-      )}
+      ) : null}
     </FieldList>
   );
 }
@@ -517,7 +519,7 @@ function McpResultView({ data }: { data: Record<string, unknown> }) {
   const structuredContent = data.structured_content;
   const output = structuredContent != null ? structuredContent : compactMcpContent(data.content ?? data.contents);
   if (output == null || (Array.isArray(output) && output.length === 0)) {
-    return <EmptyHint>No output</EmptyHint>;
+    return null;
   }
   return (
     <FieldList>
@@ -545,7 +547,10 @@ export function ToolResultView({ name, content }: { name: string; content: strin
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
     if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
-    if (code === "empty_response") return <EmptyHint>{asString(data.message) || "No output"}</EmptyHint>;
+    if (code === "empty_response") {
+      const message = asString(data.message);
+      return message ? <EmptyHint>{message}</EmptyHint> : null;
+    }
     return <GenericView data={data} />;
   }
 
