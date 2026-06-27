@@ -24,7 +24,7 @@ interface ChatInputProps {
   workingDirectory?: string;
   onWorkingDirectoryChange?: (dir: string) => void;
   onBrowseFolder?: () => void;
-  agents: { id: string; name: string }[];
+  agents: { id: string; name: string; title?: string }[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
   permissionMode: PermissionMode;
@@ -66,7 +66,7 @@ export function ChatInput({
 
   const agentCollection = useMemo(
     () => createListCollection({
-      items: agents.map((agent) => ({ label: agent.name, value: agent.id })),
+      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
     }),
     [agents]
   );

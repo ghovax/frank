@@ -86,8 +86,8 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
     skills = [
         AgentSkill(
             id=skill.identifier,
-            name=skill.name,
-            description=skill.description or skill.name,
+            name=skill.identifier,
+            description=skill.description or skill.display_title,
             tags=["harness", "skill"],
         )
         for skill in available_skills
@@ -96,14 +96,14 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
         skills.append(
             AgentSkill(
                 id=configuration.identifier,
-                name=display_name,
+                name=configuration.identifier,
                 description=(configuration.description or display_name) + f" {capability}",
                 tags=["harness", configuration.permission_mode, configuration.model or "default-model"],
                 examples=[f"Ask {display_name} to help with a task in its domain."],
             )
         )
     return AgentCard(
-        name=display_name,
+        name=configuration.identifier,
         description=configuration.description or f"The '{display_name}' agent.",
         url=f"{base_url.rstrip('/')}{agent_rpc_path(configuration.identifier)}",
         version="1.0.0",

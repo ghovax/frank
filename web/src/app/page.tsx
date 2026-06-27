@@ -4,7 +4,7 @@ import { Box, Button, EmptyState, Flex, Text, VStack } from "@chakra-ui/react";
 import { LuGripVertical, LuMessageSquare, LuPlus } from "react-icons/lu";
 import { Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchSessions, subscribeEvents, type AgentCard } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchSessions, subscribeEvents, type AgentCard, type AgentSummary } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
 interface SessionEntry {
@@ -29,7 +29,7 @@ function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
@@ -96,7 +96,7 @@ function HomeContent() {
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
-  const agentNames = new Map(agents.map((agent) => [agent.id, agent.name]));
+  const agentNames = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
 
   const refreshSessions = useCallback(() => {
     fetchSessions()

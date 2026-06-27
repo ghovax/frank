@@ -21,7 +21,7 @@ export function AgentTimeline({
   agents = [],
 }: {
   parts: AgentPart[];
-  agents?: { id: string; name: string }[];
+  agents?: { id: string; name: string; title?: string }[];
 }) {
   return (
     <Flex direction="column" gap={1.5} align="stretch">

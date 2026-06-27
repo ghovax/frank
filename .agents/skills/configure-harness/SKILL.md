@@ -1,6 +1,6 @@
 ---
-id: configure-harness
-name: Configure the agentic harness
+name: configure-harness
+title: Configure the agentic harness
 description: Configure the agentic harness — API credentials and model, sub-agents, skills, MCP servers, and memories. Use when the user wants to add/change an agent, add a skill, connect an MCP server, set API keys, or change the model/endpoint.
 enabled: true
 ---

@@ -1,5 +1,5 @@
 ---
-id: harness-layout
+name: harness-layout
 title: Harness configuration layout
 importance: high
 tags: configuration, dotagents, mcp

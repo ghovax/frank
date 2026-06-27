@@ -14,7 +14,7 @@ interface ToolCallProps {
   result?: unknown;
   sequenceNumber?: number;
   status?: string;
-  agents?: { id: string; name: string }[];
+  agents?: { id: string; name: string; title?: string }[];
 }
 
 export function ToolCall({ name, arguments: toolArguments, result, sequenceNumber, status, agents = [] }: ToolCallProps) {

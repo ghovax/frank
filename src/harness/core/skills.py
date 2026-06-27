@@ -1,11 +1,12 @@
 """File-based skills.
 
 A skill is just a file: ``.agents/skills/<name>.md`` or
-``.agents/skills/<id>/SKILL.md`` with a ``name`` and ``description`` in its
-frontmatter and instructions in its body. Skills are auto-discovered, broadcast
-on every agent's A2A AgentCard, and listed in every agent's system context so
-agents are aware of them by default. To use a skill, an agent reads its file
-(progressive disclosure) and follows the instructions.
+``.agents/skills/<name>/SKILL.md`` with a stable ``name``, human-facing
+``title``, and ``description`` in its frontmatter and instructions in its body.
+Skills are auto-discovered, broadcast on every agent's A2A AgentCard, and listed
+in every agent's system context so agents are aware of them by default. To use a
+skill, an agent reads its file (progressive disclosure) and follows the
+instructions.
 """
 
 from collections.abc import Iterable
@@ -19,8 +20,8 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 
 
 class Skill(BaseModel):
-    id: str = ""  # stable identifier
-    name: str = ""  # human-friendly display name, advertised on cards and the UI
+    name: str = ""  # stable identifier
+    title: str = ""  # human-friendly display title
     description: str = ""
     enabled: bool = True
     body: str = ""
@@ -28,7 +29,11 @@ class Skill(BaseModel):
 
     @property
     def identifier(self) -> str:
-        return self.id or self.name
+        return self.name
+
+    @property
+    def display_title(self) -> str:
+        return self.title or self.name
 
 
 def _parse_skill(path: Path) -> Skill:
@@ -38,17 +43,17 @@ def _parse_skill(path: Path) -> Skill:
         frontmatter = yaml.safe_load(match.group(1)) or {}
         body = match.group(2).strip()
         default_identifier = path.parent.name if path.name.upper() == "SKILL.MD" else path.stem
-        identifier = str(frontmatter.get("id") or default_identifier)
-        name = str(frontmatter.get("name") or identifier)
+        identifier = str(frontmatter.get("name") or default_identifier)
+        title = str(frontmatter.get("title") or identifier)
         description = str(frontmatter.get("description", ""))
         enabled = bool(frontmatter.get("enabled", True))
     else:
         identifier = path.parent.name if path.name.upper() == "SKILL.MD" else path.stem
-        name = identifier
+        title = identifier
         description = ""
         enabled = True
         body = content.strip()
-    return Skill(id=identifier, name=name, description=description, enabled=enabled, body=body, path=str(path))
+    return Skill(name=identifier, title=title, description=description, enabled=enabled, body=body, path=str(path))
 
 
 def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path]:
@@ -90,9 +95,13 @@ def skills_for_agent(skills: list[Skill], allowed_names: list[str]) -> list[Skil
 
 
 def skills_payload(skills: list[Skill]) -> list[dict]:
-    """The structured skills data injected into an agent's system context — name,
-    name, description, and the path to read for full instructions."""
+    """The structured skills data injected into an agent's system context."""
     return [
-        {"id": skill.identifier, "name": skill.name, "description": skill.description, "path": skill.path}
+        {
+            "name": skill.identifier,
+            "title": skill.display_title,
+            "description": skill.description,
+            "path": skill.path,
+        }
         for skill in skills
     ]

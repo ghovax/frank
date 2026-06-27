@@ -33,7 +33,7 @@ function AgentStateBadge({ state }: { state: TaskState }) {
 
 interface AgentsPanelProps {
   agentGroups: AgentGroup[];
-  agents: { id: string; name: string }[];
+  agents: { id: string; name: string; title?: string }[];
   open: boolean;
   onClose: () => void;
   focusedGroupId: string | null;
@@ -41,7 +41,7 @@ interface AgentsPanelProps {
   onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
 }
 
-function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: string; agents: { id: string; name: string }[] }) {
+function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: string; agents: { id: string; name: string; title?: string }[] }) {
   const done = isStepDone(step);
   const [open, setOpen] = useState(true);
   const [thinkingOpen, setThinkingOpen] = useState(false);
@@ -121,7 +121,7 @@ function AgentGroupCard({
 }: {
   group: AgentGroup;
   agentLabels: Map<string, string>;
-  agents: { id: string; name: string }[];
+  agents: { id: string; name: string; title?: string }[];
   sequenceNumber?: number;
 }) {
   const completed = group.steps.filter((step) => isStepDone(step)).length;
@@ -170,7 +170,7 @@ export function AgentsPanel({
   onResizeStart,
 }: AgentsPanelProps) {
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const agentLabels = new Map(agents.map((agent) => [agent.id, agent.name]));
+  const agentLabels = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
 
   useEffect(() => {
     if (!open || !focusedGroupId) return;

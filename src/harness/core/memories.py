@@ -9,7 +9,7 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 
 
 class Memory(BaseModel):
-    id: str
+    name: str
     title: str = ""
     importance: str = ""
     tags: list[str] = []
@@ -27,7 +27,7 @@ def _parse_memory(path: Path) -> Memory:
     content = path.read_text()
     match = _FRONTMATTER.match(content)
     if not match:
-        return Memory(id=path.stem, title=path.stem, body=content.strip(), path=str(path))
+        return Memory(name=path.stem, title=path.stem, body=content.strip(), path=str(path))
     frontmatter = yaml.safe_load(match.group(1)) or {}
     raw_tags = frontmatter.get("tags", [])
     if isinstance(raw_tags, str):
@@ -35,8 +35,8 @@ def _parse_memory(path: Path) -> Memory:
     else:
         tags = [str(tag) for tag in raw_tags]
     return Memory(
-        id=str(frontmatter.get("id") or path.stem),
-        title=str(frontmatter.get("title") or frontmatter.get("name") or path.stem),
+        name=str(frontmatter.get("name") or path.stem),
+        title=str(frontmatter.get("title") or path.stem),
         importance=str(frontmatter.get("importance", "")),
         tags=tags,
         body=match.group(2).strip(),
@@ -51,14 +51,14 @@ def load_memories(memory_directories: str | Path | Iterable[str | Path]) -> list
             continue
         for path in sorted(directory.glob("*.md")):
             memory = _parse_memory(path)
-            memories[memory.id] = memory
+            memories[memory.name] = memory
     return [memories[identifier] for identifier in sorted(memories)]
 
 
 def memories_payload(memories: list[Memory]) -> list[dict]:
     return [
         {
-            "id": memory.id,
+            "name": memory.name,
             "title": memory.title,
             "importance": memory.importance,
             "tags": memory.tags,

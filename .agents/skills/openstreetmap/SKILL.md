@@ -1,6 +1,6 @@
 ---
-id: openstreetmap
-name: Create and update OpenStreetMap map artifacts
+name: openstreetmap
+title: Create and update OpenStreetMap map artifacts
 description: Use the configured OpenStreetMap MCP server to create and update interactive Leaflet/OpenStreetMap map artifacts for itineraries, stops, routes, flights, and GeoJSON overlays.
 enabled: true
 ---

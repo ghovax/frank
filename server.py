@@ -317,6 +317,7 @@ app.add_middleware(
 class AgentInfo(BaseModel):
     id: str
     name: str
+    title: str = ""
 
 
 class AgentsList(BaseModel):
@@ -357,18 +358,33 @@ async def agents():
     """List agent profiles for the UI selector."""
     assert _global_configuration is not None
     agent_data = list_agents(_global_configuration.agent_directories())
-    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"]) for agent in agent_data])
+    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"])) for agent in agent_data])
 
 
 @app.get("/agents/cards")
 async def agent_cards():
     """Discovery: the full A2A AgentCard for every served agent, including their
     skills, so the UI can broadcast what each agent can do."""
-    assert _registry is not None
+    assert _registry is not None and _global_configuration is not None
+    skill_titles = {
+        skill.identifier: skill.display_title
+        for skill in load_skills(_global_configuration.skill_directories())
+    }
     cards_by_url = {
         card.url: card.model_dump(by_alias=True, exclude_none=True, mode="json")
         for card in _registry.cards()
     }
+    for card in cards_by_url.values():
+        agent_name = str(card.get("name") or "")
+        try:
+            configuration = load_agent_configuration(agent_name, _global_configuration.agent_directories())
+            card["title"] = configuration.display_name
+        except Exception:
+            card["title"] = agent_name
+        for skill in card.get("skills", []):
+            if isinstance(skill, dict):
+                skill_name = str(skill.get("name") or skill.get("id") or "")
+                skill["title"] = skill_titles.get(skill_name, skill_name)
     return {
         "cards": list(cards_by_url.values())
     }

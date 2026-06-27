@@ -400,8 +400,8 @@ class ToolsConfiguration(BaseModel):
 
 
 class AgentConfiguration(BaseModel):
-    id: str = ""
-    name: str
+    name: str = ""
+    title: str = ""
     aliases: list[str] = []
     color: str = ""
     description: str = ""
@@ -426,11 +426,11 @@ class AgentConfiguration(BaseModel):
 
     @property
     def identifier(self) -> str:
-        return self.id or self.name
+        return self.name
 
     @property
     def display_name(self) -> str:
-        return self.name or self.identifier
+        return self.title or self.name
 
     @classmethod
     def from_markdown(cls, path: str | Path) -> "AgentConfiguration":
@@ -446,7 +446,9 @@ class AgentConfiguration(BaseModel):
 
         frontmatter = yaml.safe_load(frontmatter_match.group(1)) or {}
         markdown_body = frontmatter_match.group(2).strip()
-        frontmatter.setdefault("id", path.parent.name if path.name == "agent.md" else path.stem)
+        default_identifier = path.parent.name if path.name == "agent.md" else path.stem
+        frontmatter.setdefault("name", default_identifier)
+        frontmatter.setdefault("title", frontmatter["name"])
         if "connection-type" in frontmatter:
             frontmatter["connection_type"] = frontmatter.pop("connection-type")
 
@@ -572,9 +574,9 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
     for name, path in sorted(_agent_paths(agents_directory).items()):
         try:
             config = AgentConfiguration.from_markdown(path)
-            agents.append({"id": config.identifier, "name": config.display_name})
+            agents.append({"id": config.identifier, "name": config.identifier, "title": config.display_name})
         except Exception:
-            agents.append({"id": name, "name": name})
+            agents.append({"id": name, "name": name, "title": name})
     return agents
 
 

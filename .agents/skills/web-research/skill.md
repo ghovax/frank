@@ -1,6 +1,6 @@
 ---
-id: web-research
-name: Research current web sources
+name: web-research
+title: Research current web sources
 description: Gather current, well-cited information from the web — search broadly, read primary sources, and report findings with citations.
 enabled: true
 ---

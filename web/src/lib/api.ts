@@ -6,7 +6,13 @@ export const PERMISSION_MODE_METADATA_KEY = "harness/permissionMode";
 
 export type PermissionMode = "default" | "read_only" | "bypass";
 
-export async function fetchAgents(): Promise<{ id: string; name: string }[]> {
+export interface AgentSummary {
+  id: string;
+  name: string;
+  title?: string;
+}
+
+export async function fetchAgents(): Promise<AgentSummary[]> {
   const response = await fetch(`${API_BASE}/agents`);
   const data = await response.json();
   return data.agents;
@@ -15,6 +21,7 @@ export async function fetchAgents(): Promise<{ id: string; name: string }[]> {
 export interface AgentSkill {
   id: string;
   name?: string;
+  title?: string;
   description?: string;
   tags?: string[];
   examples?: string[];
@@ -22,6 +29,7 @@ export interface AgentSkill {
 
 export interface AgentCard {
   name: string;
+  title?: string;
   description?: string;
   url: string;
   version?: string;

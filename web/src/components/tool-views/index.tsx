@@ -77,11 +77,12 @@ function WebSearchCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function agentLabelFor(agentName: string, agents: { id: string; name: string }[]): string {
-  return agents.find((agent) => agent.id === agentName)?.name || agentName || "Agent";
+function agentLabelFor(agentName: string, agents: { id: string; name: string; title?: string }[]): string {
+  const agent = agents.find((candidate) => candidate.id === agentName);
+  return agent?.title || agent?.name || agentName || "Agent";
 }
 
-function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { id: string; name: string }[] }) {
+function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { id: string; name: string; title?: string }[] }) {
   const agentName = asString(args.agent) || "assistant";
   return (
     <FieldList>

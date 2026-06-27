@@ -1,6 +1,6 @@
 ---
-id: codebase-exploration
-name: Explore codebases without editing files
+name: codebase-exploration
+title: Explore codebases without editing files
 description: Investigate a codebase and explain how it works, citing exact files and line numbers, without modifying anything.
 enabled: true
 ---

@@ -14,11 +14,11 @@ import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { setPermissionMode, type AgentCard, type PermissionMode } from "@/lib/api";
+import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode } from "@/lib/api";
 
 interface ChatPanelProps {
   agent: string;
-  agents: { id: string; name: string }[];
+  agents: AgentSummary[];
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;

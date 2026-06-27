@@ -1,6 +1,6 @@
 ---
-id: reader
-name: Reader
+name: reader
+title: Reader
 aliases:
   - codebase-analyst
 description: Investigates code paths, architecture, and behavior with evidence-backed findings and no file modifications.

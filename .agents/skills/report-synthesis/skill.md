@@ -1,6 +1,6 @@
 ---
-id: report-synthesis
-name: Synthesize findings into a report
+name: report-synthesis
+title: Synthesize findings into a report
 description: Combine findings from several sources or sub-agents into one coherent, non-repetitive report.
 enabled: true
 ---

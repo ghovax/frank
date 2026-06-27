@@ -6,12 +6,11 @@ import { LuListChecks, LuPlug, LuWrench } from "react-icons/lu";
 import { fetchMcpTools, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
 
-// Renders a capability's display title: the human name when present, otherwise a
+// Renders a capability's display title: the human title when present, otherwise a
 // fallback to its identifier rendered in monospace to signal it is an id, not a
-// name. A name equal to the identifier is treated as a fallback (the backend
-// defaults a missing name to the id), so it too renders in monospace.
-function CapabilityTitle({ name, identifier }: { name?: string | null; identifier: string }) {
-  const display = (name ?? "").trim();
+// display title.
+function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
+  const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
   return <Box as="span" fontFamily="var(--app-font-mono)">{identifier}</Box>;
 }
@@ -87,7 +86,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
         open={open}
         onToggle={() => setOpen((value) => !value)}
         icon={<Box color="fg.muted"><LuWrench size={12} /></Box>}
-        title={<CapabilityTitle name={skill.name} identifier={skill.id} />}
+        title={<CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} />}
       />
       {open && hasBody && (
         <ToolCardBody>
@@ -146,7 +145,7 @@ function McpToolRow({ tool }: { tool: McpTool }) {
   return (
     <Box>
       <Text fontSize="xs" fontWeight="medium">
-        <CapabilityTitle name={tool.title} identifier={tool.name} />
+        <CapabilityTitle title={tool.title} identifier={tool.name} />
       </Text>
       {tool.description && (
         <Text fontSize="xs" color="fg.muted">{tool.description}</Text>
