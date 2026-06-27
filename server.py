@@ -1,9 +1,10 @@
 import asyncio
 import json
+import subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,12 +27,13 @@ from harness.core.a2a_executor import (
 )
 from harness.core.configuration import (
     GlobalConfiguration,
-    list_available_agents,
-    list_agents_with_labels,
+    list_agent_route_names,
+    list_agents,
     load_agent_configuration,
 )
+from harness.core.mcp_client import MCPClientManager
 from harness.core.skills import load_skills, skills_for_agent
-from harness.tools.tools import cancel_all_background_tasks, set_exa_client
+from harness.tools.tools import cancel_all_background_tasks, set_exa_client, set_mcp_client_manager
 
 DATABASE_PATH = "harness.db"
 PUBLIC_BASE_URL = "http://localhost:8822"
@@ -78,6 +80,7 @@ _session_factory: Optional[sessionmaker] = None
 _async_engine = None
 _task_store: Optional[DatabaseTaskStore] = None
 _registry: Optional[AgentRegistry] = None
+_mcp_manager: Optional[MCPClientManager] = None
 _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
 _pending_permissions: dict[str, asyncio.Future] = {}
@@ -106,8 +109,8 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
 def _card_for(agent_name: str):
     """Build an agent's AgentCard from its config and the skills available to it."""
     assert _global_configuration is not None
-    configuration = load_agent_configuration(agent_name, _global_configuration.agents_directory)
-    all_skills = load_skills(_global_configuration.skills_directory)
+    configuration = load_agent_configuration(agent_name, _global_configuration.agent_directories())
+    all_skills = load_skills(_global_configuration.skill_directories())
     agent_skills = skills_for_agent(all_skills, configuration.skills)
     return configuration, build_agent_card(configuration, agent_skills, PUBLIC_BASE_URL)
 
@@ -145,11 +148,30 @@ def _reload_agent_cards() -> None:
     reflects edits without a restart. Agent behaviour itself is already live,
     since each turn loads its configuration and skills fresh."""
     assert _global_configuration is not None and _registry is not None
-    for agent_name in list_available_agents(_global_configuration.agents_directory):
+    for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         handler = _registry._handlers.get(agent_name)
         if handler is not None:
             _configuration, card = _card_for(agent_name)
             _registry.register(agent_name, handler, card)
+
+
+def _watched_a2a_paths() -> list[str]:
+    assert _global_configuration is not None
+    directories = [
+        *_global_configuration.agent_directories(),
+        *_global_configuration.skill_directories(),
+    ]
+    watched: list[str] = []
+    seen: set[Path] = set()
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        key = directory.resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        watched.append(str(key))
+    return watched
 
 
 async def _watch_agents_and_skills(application: FastAPI) -> None:
@@ -157,13 +179,12 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
     agents, refresh cards, and broadcast so connected clients refetch immediately.
     Skill files are also picked up here so new/edited skills are broadcast live."""
     assert _global_configuration is not None
-    watched = [str(Path(_global_configuration.agents_directory).resolve())]
-    skills_path = Path(_global_configuration.skills_directory)
-    if skills_path.is_dir():
-        watched.append(str(skills_path.resolve()))
+    watched = _watched_a2a_paths()
+    if not watched:
+        return
     try:
         async for _changes in awatch(*watched):
-            for agent_name in list_available_agents(_global_configuration.agents_directory):
+            for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
                 if agent_name not in _mounted_agents:
                     _mount_agent(application, agent_name)
             _reload_agent_cards()
@@ -174,7 +195,7 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager
     _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
 
     sync_engine = create_engine(f"sqlite:///{DATABASE_PATH}")
@@ -186,12 +207,16 @@ async def lifespan(application: FastAPI):
         from exa_py import Exa
         set_exa_client(Exa(api_key=exa_key))
 
+    mcp_servers = _global_configuration.mcp.enabled_servers()
+    _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    set_mcp_client_manager(_mcp_manager)
+
     _async_engine = create_async_engine(f"sqlite+aiosqlite:///{DATABASE_PATH}")
     _task_store = DatabaseTaskStore(_async_engine, create_table=True)
     await _task_store.initialize()
 
     _registry = AgentRegistry(_task_store)
-    for agent_name in list_available_agents(_global_configuration.agents_directory):
+    for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
     watcher = asyncio.create_task(_watch_agents_and_skills(application))
@@ -213,8 +238,8 @@ app.add_middleware(
 
 
 class AgentInfo(BaseModel):
+    id: str
     name: str
-    label: str
 
 
 class AgentsList(BaseModel):
@@ -230,16 +255,27 @@ class PermissionRequest(BaseModel):
     decision: str
 
 
-class BypassPermissionsRequest(BaseModel):
-    bypass: bool
+class PermissionModeRequest(BaseModel):
+    mode: Literal["default", "read_only", "bypass"]
+
+
+class MCPToolCallRequest(BaseModel):
+    server: str
+    tool_name: str
+    arguments: dict = {}
+
+
+class MCPResourceReadRequest(BaseModel):
+    server: str
+    uri: str
 
 
 @app.get("/agents")
 async def agents():
     """List agent profiles for the UI selector."""
     assert _global_configuration is not None
-    agent_data = list_agents_with_labels(_global_configuration.agents_directory)
-    return AgentsList(agents=[AgentInfo(name=agent["name"], label=agent["label"]) for agent in agent_data])
+    agent_data = list_agents(_global_configuration.agent_directories())
+    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"]) for agent in agent_data])
 
 
 @app.get("/agents/cards")
@@ -247,8 +283,12 @@ async def agent_cards():
     """Discovery: the full A2A AgentCard for every served agent, including their
     skills, so the UI can broadcast what each agent can do."""
     assert _registry is not None
+    cards_by_url = {
+        card.url: card.model_dump(by_alias=True, exclude_none=True, mode="json")
+        for card in _registry.cards()
+    }
     return {
-        "cards": [card.model_dump(by_alias=True, exclude_none=True, mode="json") for card in _registry.cards()]
+        "cards": list(cards_by_url.values())
     }
 
 
@@ -270,6 +310,38 @@ async def home_directory():
     return {"home_directory": str(Path.home())}
 
 
+@app.get("/mcp/tools")
+async def mcp_tools(server: str = ""):
+    """List tools exposed by configured MCP servers."""
+    if _mcp_manager is None:
+        return {"servers": []}
+    return await _mcp_manager.list_tools(server)
+
+
+@app.get("/mcp/resources")
+async def mcp_resources(server: str = ""):
+    """List resources exposed by configured MCP servers."""
+    if _mcp_manager is None:
+        return {"servers": []}
+    return await _mcp_manager.list_resources(server)
+
+
+@app.post("/mcp/tools/call")
+async def mcp_call_tool(request: MCPToolCallRequest):
+    """Call a configured MCP server tool. Intended for smoke tests and UI discovery."""
+    if _mcp_manager is None:
+        return {"error": "MCP is not configured."}
+    return await _mcp_manager.call_tool(request.server, request.tool_name, request.arguments)
+
+
+@app.post("/mcp/resources/read")
+async def mcp_read_resource(request: MCPResourceReadRequest):
+    """Read a configured MCP resource. Intended for smoke tests and UI discovery."""
+    if _mcp_manager is None:
+        return {"error": "MCP is not configured."}
+    return await _mcp_manager.read_resource(request.server, request.uri)
+
+
 @app.post("/directory/validate")
 async def validate_directory(request: DirectoryValidationRequest):
     """Validate that a path is an existing absolute directory."""
@@ -284,6 +356,25 @@ async def validate_directory(request: DirectoryValidationRequest):
         "is_absolute": path.is_absolute(),
         "path": str(path),
     }
+
+
+@app.post("/directory/browse")
+async def browse_directory():
+    """Open a native folder picker on the local server machine and return a POSIX path."""
+    script = 'POSIX path of (choose folder with prompt "Choose a working directory")'
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:
+        return {"path": "", "cancelled": True, "error": "Folder selection timed out."}
+    if result.returncode != 0:
+        return {"path": "", "cancelled": True, "error": result.stderr.strip()}
+    return {"path": result.stdout.strip(), "cancelled": False}
 
 
 @app.get("/sessions")
@@ -360,11 +451,11 @@ async def abort_session(context_id: str):
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
 
 
-@app.post("/chat/{context_id}/permissions/bypass")
-async def toggle_bypass_permissions(context_id: str, request: BypassPermissionsRequest):
-    """Toggle bypass-permissions for a context's agent."""
-    updated = any(executor.set_bypass(context_id, request.bypass) for executor in _executors.values())
-    return {"status": "updated" if updated else "not_found", "bypass": request.bypass}
+@app.post("/chat/{context_id}/permissions/mode")
+async def set_permission_mode(context_id: str, request: PermissionModeRequest):
+    """Set the permission mode for a context's agent."""
+    updated = any(executor.set_permission_mode(context_id, request.mode) for executor in _executors.values())
+    return {"status": "updated" if updated else "not_found", "mode": request.mode}
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8822):

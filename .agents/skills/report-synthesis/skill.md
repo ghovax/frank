@@ -1,7 +1,8 @@
 ---
-name: report-synthesis
-label: Report synthesis
+id: report-synthesis
+name: Report synthesis
 description: Combine findings from several sources or sub-agents into one coherent, non-repetitive report.
+enabled: true
 ---
 
 # Report Synthesis

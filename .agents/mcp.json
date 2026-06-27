@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "demo": {
+      "transport": "stdio",
+      "command": "uv",
+      "args": ["run", "python", "examples/mcp/echo_server.py"],
+      "env": {
+        "UV_CACHE_DIR": "/private/tmp/uv-cache"
+      },
+      "cwd": "."
+    }
+  }
+}

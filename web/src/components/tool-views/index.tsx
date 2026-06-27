@@ -76,12 +76,12 @@ function WebSearchCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function agentLabelFor(agentName: string, agents: { name: string; label: string }[]): string {
-  return agents.find((agent) => agent.name === agentName)?.label || agentName || "Agent";
+function agentLabelFor(agentName: string, agents: { id: string; name: string }[]): string {
+  return agents.find((agent) => agent.id === agentName)?.name || agentName || "Agent";
 }
 
-function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { name: string; label: string }[] }) {
-  const agentName = asString(args.agent) || "research-synthesist";
+function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { id: string; name: string }[] }) {
+  const agentName = asString(args.agent) || "assistant";
   return (
     <FieldList>
       <InlineField label="Agent">
@@ -151,7 +151,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { name: string; label: string }[] }) {
+export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string }[] }) {
   if (!args) return null;
   switch (name) {
     case "bash":

@@ -10,6 +10,7 @@ import {
   type A2AMessage,
   type A2APart,
   type A2ATask as A2ATaskWire,
+  type PermissionMode,
 } from "./api";
 
 // Re-export the A2A task shape so components can consume it from one place.
@@ -221,11 +222,24 @@ function setRunningThinking(state: ReduceState, focus: string, icon: string): vo
 }
 
 function setThinkingFocus(state: ReduceState, focus: string, icon: string): void {
-  const index = state.messages.findLastIndex((message) => message.role === "thinking");
-  if (index === -1) return;
-  state.messages = state.messages.map((message, messageIndex) =>
-    messageIndex === index ? { ...message, meta: { ...message.meta, focus, icon } } : message
-  );
+  // A focus-set starts a new thinking step. Finalize whatever is currently
+  // running so it persists in the timeline — an entry that was already shown
+  // (e.g. the generic "Thinking" placeholder) must never be replaced or removed.
+  // If the running step already shows this exact focus, leave it as-is.
+  const lastIndex = state.messages.findLastIndex(isRunningThinkingMessage);
+  const last = lastIndex !== -1 ? state.messages[lastIndex] : undefined;
+  if (last && last.meta?.focus === focus && last.meta?.icon === icon) return;
+  finishRunningThinking(state);
+  state.messages = [
+    ...state.messages,
+    {
+      id: `status-${state.messages.length}-${Math.random()}`,
+      role: "thinking",
+      content: "",
+      timestamp: new Date().toISOString(),
+      meta: { status: "running", focus, icon },
+    },
+  ];
 }
 
 function hasAssistantTextAfterLastUser(state: ReduceState): boolean {
@@ -426,7 +440,12 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
   return { messages: state.messages, agentGroups: state.agentGroups };
 }
 
-export function useChat(agent: string, initialSessionId: string | null = null, workingDirectory?: string) {
+export function useChat(
+  agent: string,
+  initialSessionId: string | null = null,
+  workingDirectory?: string,
+  permissionMode: PermissionMode = "default"
+) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -541,10 +560,11 @@ export function useChat(agent: string, initialSessionId: string | null = null, w
             setIsStreaming(false);
           }
         },
-        workingDirectory
+        workingDirectory,
+        permissionMode
       );
     },
-    [agent, workingDirectory, flush, setQueue]
+    [agent, workingDirectory, permissionMode, flush, setQueue]
   );
 
   useEffect(() => {

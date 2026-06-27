@@ -53,6 +53,8 @@ WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory"
 DELEGATED_METADATA_KEY = "harness/delegated"
 # Forces a delegated sub-agent into read-only mode for this call.
 READ_ONLY_METADATA_KEY = "harness/readOnly"
+# Sets the permission mode for a top-level user turn.
+PERMISSION_MODE_METADATA_KEY = "harness/permissionMode"
 # The delegation depth of a sub-agent call (how many hops from the chat agent).
 DEPTH_METADATA_KEY = "harness/depth"
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
@@ -75,7 +77,7 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
     advertised on the card; if there are none, a single default skill describing
     the agent's role is synthesised so the card always carries at least one skill.
     """
-    label = configuration.label or configuration.name
+    display_name = configuration.display_name
     capability = (
         "Investigates and reports read-only — cannot modify the system."
         if configuration.permission_mode == "read_only"
@@ -83,8 +85,8 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
     )
     skills = [
         AgentSkill(
-            id=skill.name,
-            name=skill.label or skill.name,
+            id=skill.identifier,
+            name=skill.name,
             description=skill.description or skill.name,
             tags=["harness", "skill"],
         )
@@ -93,17 +95,17 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
     if not skills:
         skills.append(
             AgentSkill(
-                id=configuration.name,
-                name=label,
-                description=(configuration.description or label) + f" {capability}",
+                id=configuration.identifier,
+                name=display_name,
+                description=(configuration.description or display_name) + f" {capability}",
                 tags=["harness", configuration.permission_mode, configuration.model or "default-model"],
-                examples=[f"Ask {label} to help with a task in its domain."],
+                examples=[f"Ask {display_name} to help with a task in its domain."],
             )
         )
     return AgentCard(
-        name=label,
-        description=configuration.description or f"The '{label}' agent.",
-        url=f"{base_url.rstrip('/')}{agent_rpc_path(configuration.name)}",
+        name=display_name,
+        description=configuration.description or f"The '{display_name}' agent.",
+        url=f"{base_url.rstrip('/')}{agent_rpc_path(configuration.identifier)}",
         version="1.0.0",
         protocol_version="0.3.0",
         preferred_transport="JSONRPC",
@@ -152,16 +154,16 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime.abort()
         return True
 
-    def set_bypass(self, context_id: str, bypass: bool) -> bool:
+    def set_permission_mode(self, context_id: str, mode: str) -> bool:
         runtime = self._runtimes.get(context_id)
         if runtime is None:
             return False
-        runtime.set_bypass_permissions(bypass)
+        runtime.set_permission_mode(mode)
         return True
 
     def _build_runtime(self, context_id: str, working_directory: str) -> AgentRuntime:
         configuration = load_agent_configuration(
-            self._agent_name, self._global_configuration.agents_directory
+            self._agent_name, self._global_configuration.agent_directories()
         )
         runtime = AgentRuntime(
             agent_configuration=configuration,
@@ -196,6 +198,7 @@ class HarnessAgentExecutor(AgentExecutor):
         user_text = context.get_user_input()
         metadata = context.message.metadata or {}
         working_directory = metadata.get(WORKING_DIRECTORY_METADATA_KEY, "")
+        permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
 
         task = context.current_task
@@ -219,6 +222,8 @@ class HarnessAgentExecutor(AgentExecutor):
         else:
             is_new_context = task.context_id not in self._runtimes
             runtime = self._runtime_for(task.context_id, working_directory)
+            if permission_mode:
+                runtime.set_permission_mode(permission_mode)
             if is_new_context and self._on_new_context is not None:
                 self._on_new_context(task.context_id, self._agent_name, working_directory, user_text)
         self._aborts[task.id] = runtime

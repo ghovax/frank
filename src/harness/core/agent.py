@@ -59,6 +59,10 @@ from harness.tools.tools import (
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
     set_focus as set_focus_tool,
+    list_mcp_tools as list_mcp_tools_tool,
+    call_mcp_tool as call_mcp_tool_tool,
+    list_mcp_resources as list_mcp_resources_tool,
+    read_mcp_resource as read_mcp_resource_tool,
     bash_tasks,
     web_tasks,
     spawned_tasks,
@@ -68,6 +72,7 @@ from harness.core.handoff import (
     build_task,
     serialize_task,
 )
+from harness.core.memories import load_memories, memories_payload
 from harness.core.skills import load_skills, skills_for_agent, skills_payload
 
 from a2a.types import Task, TaskState
@@ -116,7 +121,7 @@ def _maybe_json(value: str) -> Any:
         return value
 
 
-def _build_tools(tools_configuration) -> list[BaseTool]:
+def _build_tools(agent_configuration: AgentConfiguration, global_configuration: GlobalConfiguration) -> list[BaseTool]:
     available = [
         bash_tool,
         web_search_tool,
@@ -126,8 +131,15 @@ def _build_tools(tools_configuration) -> list[BaseTool]:
         set_focus_tool,
         read_task_tool,
     ]
-    if tools_configuration.spawn_agent.enabled:
+    if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
+    if global_configuration.mcp.enabled_servers():
+        available.extend([
+            list_mcp_tools_tool,
+            call_mcp_tool_tool,
+            list_mcp_resources_tool,
+            read_mcp_resource_tool,
+        ])
     return available
 
 
@@ -144,7 +156,7 @@ class SubAgentRunner:
         self.task_identifier = task_identifier
         self.prompt = prompt
         self._stream_progress = stream_progress
-        self._agent_name = agent_configuration.name
+        self._agent_name = agent_configuration.identifier
         self._runtime = AgentRuntime(
             agent_configuration=agent_configuration,
             global_configuration=global_configuration,
@@ -429,28 +441,14 @@ class TaskManager:
 class AgentRuntime:
     # Maximum time to block a turn waiting for in-flight background tasks
     # (searches, sub-agents, slow bash) before invoking the model anyway.
-    _BACKGROUND_WAIT_SECONDS = 300.0
+    _BACKGROUND_WAIT_SECONDS = 60.0
     _GOAL_CONTINUATION_LIMIT = 3
     # Sub-agents (delegation depth > 0) get a tighter iteration budget than the
     # top-level chat agent so a looping sub-agent fails fast instead of burning
     # the full budget on redundant calls.
-    _SUB_AGENT_MAXIMUM_ITERATIONS = 15
+    _SUB_AGENT_MAXIMUM_ITERATIONS = 512
 
-    # Rotating fallback labels for the thinking phase, shown before the model
-    # calls set_focus (or if it omits it). Variety keeps the live trace from
-    # flashing the same word on every step.
-    _FOCUS_FALLBACKS_START = (
-        "Mapping out the approach",
-        "Reading the request carefully",
-        "Planning the next step",
-        "Weighing the options",
-    )
-    _FOCUS_FALLBACKS_AFTER_TOOL = (
-        "Processing the results",
-        "Making sense of the output",
-        "Checking this against the goal",
-        "Deciding what to do next",
-    )
+    _THINKING_LABEL = "Thinking"
 
     def __init__(
         self,
@@ -481,7 +479,7 @@ class AgentRuntime:
             temperature=0,
         )
 
-        self._tools = _build_tools(agent_configuration.tools)
+        self._tools = _build_tools(agent_configuration, global_configuration)
         self._bound_llm = self._llm.bind_tools(
             self._tools,
             parallel_tool_calls=True,
@@ -501,7 +499,6 @@ class AgentRuntime:
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         self._active_goal: str = ""
-        self._focus_rotation = 0
         self._execution_history: list[dict] = []
         self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
@@ -516,7 +513,7 @@ class AgentRuntime:
 
     @property
     def agent_name(self) -> str:
-        return self._agent_configuration.name
+        return self._agent_configuration.identifier
 
     @property
     def working_directory(self) -> str:
@@ -529,15 +526,20 @@ class AgentRuntime:
     def abort(self) -> None:
         self._abort_event.set()
 
-    def set_bypass_permissions(self, bypass: bool) -> None:
-        self._bypass_permissions = bypass
-        if bypass:
-            self._read_only = False
-
     def set_read_only(self, read_only: bool) -> None:
         self._read_only = read_only
         if read_only:
             self._bypass_permissions = False
+
+    def set_permission_mode(self, mode: str) -> None:
+        if mode not in ("default", "read_only", "bypass"):
+            return
+        if mode == "default":
+            self._bypass_permissions = self._agent_configuration.permission_mode == "bypass"
+            self._read_only = self._agent_configuration.permission_mode == "read_only"
+            return
+        self._bypass_permissions = mode == "bypass"
+        self._read_only = mode == "read_only"
 
     def set_delegate(self, delegate: Callable) -> None:
         """Install the A2A delegate used to invoke sub-agents as related tasks."""
@@ -582,10 +584,11 @@ class AgentRuntime:
         """
         if self._cached_system_prompt is None:
             available_agents = list_available_agents(
-                self._global_configuration.agents_directory
+                self._global_configuration.agent_directories()
             )
-            all_skills = load_skills(self._global_configuration.skills_directory)
+            all_skills = load_skills(self._global_configuration.skill_directories())
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
+            memories = load_memories(self._global_configuration.memory_directories())
             context_json = json.dumps({
                 "working_directory": self._working_directory,
                 "available_agents": available_agents,
@@ -594,6 +597,7 @@ class AgentRuntime:
                 "system_prompt": self._system_prompt,
                 "context": context_json,
                 "skills": json.dumps(skills_payload(agent_skills)),
+                "memories": json.dumps(memories_payload(memories)),
             })
         return self._cached_system_prompt
 
@@ -604,14 +608,7 @@ class AgentRuntime:
         The UI truncates the text, so no truncation is done here."""
         if self._active_goal:
             return (self._active_goal.strip(), "goal")
-        pool = (
-            self._FOCUS_FALLBACKS_AFTER_TOOL
-            if self._calls_this_turn > 0
-            else self._FOCUS_FALLBACKS_START
-        )
-        label = pool[self._focus_rotation % len(pool)]
-        self._focus_rotation += 1
-        return (label, "thinking")
+        return (self._THINKING_LABEL, "thinking")
 
     def _build_dynamic_context(self) -> str:
         """Build the dynamic context injected at the end of the message list."""
@@ -849,7 +846,7 @@ class AgentRuntime:
     def _load_sub_agent(self, name: str) -> AgentConfiguration:
         return load_agent_configuration(
             name,
-            self._global_configuration.agents_directory,
+            self._global_configuration.agent_directories(),
         )
 
     async def _run_one_tool(
@@ -989,13 +986,18 @@ class AgentRuntime:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     def _validate_tool_call(self, tool_name: str, arguments: dict) -> tuple[str, str] | None:
-        if tool_name == "bash":
+        if tool_name in ("bash", "call_mcp_tool"):
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):
                 return ("invalid_risk", f"risk must be one of 'low', 'medium', 'high', got '{risk}'.")
             read_only = arguments.get("read_only", True)
             if not isinstance(read_only, bool):
                 return ("invalid_read_only", "read_only must be a boolean.")
+        if tool_name == "call_mcp_tool":
+            if not arguments.get("server"):
+                return ("invalid_mcp_server", "server is required.")
+            if not arguments.get("tool_name"):
+                return ("invalid_mcp_tool", "tool_name is required.")
         return None
 
     async def _execute_tool(
@@ -1110,6 +1112,46 @@ class AgentRuntime:
                     self._background.track("bash", task_identifier)
                     self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command[:200]})
 
+        elif tool_name == "call_mcp_tool":
+            read_only = tool_arguments.get("read_only", True)
+            risk = tool_arguments.get("risk", "low")
+            if self._read_only and not read_only:
+                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
+                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
+                return
+            if not self._bypass_permissions and not read_only and risk in ("medium", "high"):
+                request_identifier = f"perm-{self._session_id[:8]}-{uuid.uuid4().hex[:12]}"
+                future = asyncio.get_event_loop().create_future()
+                self._pending_permissions[request_identifier] = future
+                try:
+                    yield StreamEvent(
+                        StreamEvent.Type.PERMISSION_REQUEST,
+                        id=tool_call_identifier,
+                        request_id=request_identifier,
+                        command=f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}",
+                        justification=tool_arguments.get("justification", ""),
+                        risk=risk,
+                    )
+                    allowed = await future
+                finally:
+                    self._pending_permissions.pop(request_identifier, None)
+                if not allowed:
+                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
+                    return
+            result = await call_mcp_tool_tool.ainvoke(tool_arguments)
+            result_data = _maybe_json(result)
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
+
+        elif tool_name in ("list_mcp_tools", "list_mcp_resources", "read_mcp_resource"):
+            tool_map = {
+                "list_mcp_tools": list_mcp_tools_tool,
+                "list_mcp_resources": list_mcp_resources_tool,
+                "read_mcp_resource": read_mcp_resource_tool,
+            }
+            result = await tool_map[tool_name].ainvoke(tool_arguments)
+            result_data = _maybe_json(result)
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
+
         elif tool_name == "spawn_agent":
             child_depth = self._delegation_depth + 1
             maximum_depth = self._global_configuration.maximum_delegation_depth
@@ -1121,7 +1163,7 @@ class AgentRuntime:
                 return
 
             sub_agent_prompt = tool_arguments.get("prompt", "")
-            sub_agent_name = tool_arguments.get("agent", "research-synthesist")
+            sub_agent_name = tool_arguments.get("agent", self._global_configuration.default_agent)
             sub_agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(sub_agent_read_only, str):
                 sub_agent_read_only = sub_agent_read_only.lower() == "true"
@@ -1205,7 +1247,7 @@ class AgentRuntime:
         elif tool_name == "write_tasks":
             task_definitions = tool_arguments.get("tasks", [])
             identifiers = self._task_manager.add_tasks(task_definitions)
-            result_message = f"Created tasks: {', '.join(identifiers)}"
+            result_message = f"Created the tasks {', '.join(identifiers)}"
             yield StreamEvent(
                 StreamEvent.Type.TASKS_UPDATED,
                 id=tool_call_identifier,
@@ -1217,7 +1259,7 @@ class AgentRuntime:
             updates = tool_arguments.get("updates", [])
             updated_ids = self._task_manager.update_tasks(updates)
             if updated_ids:
-                result_message = f"Updated tasks: {', '.join(updated_ids)}"
+                result_message = f"Updated the tasks {', '.join(updated_ids)}"
             else:
                 result_message = "No matching tasks found."
             updated_tasks = [
@@ -1297,7 +1339,7 @@ class AgentRuntime:
         else:
             yield StreamEvent(
                 StreamEvent.Type.ERROR, id=tool_call_identifier,
-                message=f"Unknown tool: {tool_name}", tool=tool_name,
+                message=f"Unknown tool '{tool_name}'", tool=tool_name,
             )
 
     def get_execution_history(self) -> list[dict]:

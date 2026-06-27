@@ -2,8 +2,11 @@ const API_BASE = "http://localhost:8822";
 
 // Metadata key understood by the harness A2A executor.
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
+export const PERMISSION_MODE_METADATA_KEY = "harness/permissionMode";
 
-export async function fetchAgents(): Promise<{ name: string; label: string }[]> {
+export type PermissionMode = "default" | "read_only" | "bypass";
+
+export async function fetchAgents(): Promise<{ id: string; name: string }[]> {
   const response = await fetch(`${API_BASE}/agents`);
   const data = await response.json();
   return data.agents;
@@ -90,11 +93,16 @@ export async function validateWorkingDirectory(directory: string): Promise<{ val
   return response.json();
 }
 
-export async function setBypassPermissions(sessionId: string, bypass: boolean): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/permissions/bypass`, {
+export async function browseWorkingDirectory(): Promise<{ path: string; cancelled: boolean; error?: string }> {
+  const response = await fetch(`${API_BASE}/directory/browse`, { method: "POST" });
+  return response.json();
+}
+
+export async function setPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
+  await fetch(`${API_BASE}/chat/${sessionId}/permissions/mode`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ bypass }),
+    body: JSON.stringify({ mode }),
   });
 }
 
@@ -198,7 +206,8 @@ export function streamA2A(
   contextId: string | null,
   onResult: (result: A2AStreamResult) => void | Promise<void>,
   onDone: () => void,
-  workingDirectory?: string
+  workingDirectory?: string,
+  permissionMode: PermissionMode = "default"
 ): AbortController {
   const controller = new AbortController();
 
@@ -206,7 +215,10 @@ export function streamA2A(
     role: "user",
     parts: [{ kind: "text", text }],
     messageId: crypto.randomUUID(),
-    metadata: workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : undefined,
+    metadata: {
+      ...(workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : {}),
+      [PERMISSION_MODE_METADATA_KEY]: permissionMode,
+    },
   };
   if (contextId) message.contextId = contextId;
 

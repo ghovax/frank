@@ -1,7 +1,8 @@
 ---
-name: codebase-exploration
-label: Codebase exploration
+id: codebase-exploration
+name: Codebase exploration
 description: Investigate a codebase and explain how it works, citing exact files and line numbers, without modifying anything.
+enabled: true
 ---
 
 # Codebase Exploration

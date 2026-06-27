@@ -11,7 +11,7 @@ import { ThinkingIndicator } from "./thinking-indicator";
 interface ChatMessageProps {
   message: ChatMessage;
   onPermission?: (requestId: string, decision: "allow" | "deny") => void;
-  agents?: { name: string; label: string }[];
+  agents?: { id: string; name: string }[];
 }
 
 function PermissionBox({ message, onPermission }: { message: ChatMessage; onPermission?: ChatMessageProps["onPermission"] }) {

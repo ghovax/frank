@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+import json
 import os
 import re
 import shlex
@@ -26,12 +28,54 @@ class ExaConfiguration(BaseModel):
         return os.environ.get("EXA_API_KEY") or self.api_key
 
 
+class MCPServerConfiguration(BaseModel):
+    enabled: bool = True
+    transport: Literal["stdio", "streamable_http"] = "stdio"
+    command: str = ""
+    args: list[str] = []
+    env: dict[str, str] = {}
+    cwd: str = ""
+    url: str = ""
+    headers: dict[str, str] = {}
+    timeout_seconds: float = 30
+
+
+class MCPConfiguration(BaseModel):
+    servers: dict[str, MCPServerConfiguration] = {}
+
+    def enabled_servers(self) -> dict[str, MCPServerConfiguration]:
+        return {
+            name: server
+            for name, server in self.servers.items()
+            if server.enabled
+        }
+
+    @classmethod
+    def from_dotagents_roots(cls, roots: Iterable[Path]) -> "MCPConfiguration":
+        servers: dict[str, MCPServerConfiguration] = {}
+        for root in roots:
+            path = root / "mcp.json"
+            if not path.exists():
+                continue
+            data = json.loads(path.read_text())
+            raw_servers = data.get("mcpServers", data.get("servers", {}))
+            for name, raw_configuration in raw_servers.items():
+                configuration = dict(raw_configuration)
+                if "type" in configuration and "transport" not in configuration:
+                    configuration["transport"] = configuration.pop("type")
+                servers[name] = MCPServerConfiguration(**configuration)
+        return cls(servers=servers)
+
+
 class GlobalConfiguration(BaseModel):
     api: ApiConfiguration
     exa: ExaConfiguration = ExaConfiguration()
-    default_agent: str = "research-synthesist"
-    agents_directory: str = "agents"
-    skills_directory: str = "skills"
+    mcp: MCPConfiguration = MCPConfiguration()
+    default_agent: str = "assistant"
+    agents_root_directory: str = ".agents"
+    home_agents_root_directory: str = "~/.agents"
+    agents_directory: str = ".agents/agents"
+    skills_directory: str = ".agents/skills"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).
     maximum_delegation_depth: int = 8
@@ -41,7 +85,48 @@ class GlobalConfiguration(BaseModel):
     def from_yaml(cls, path: str | Path) -> "GlobalConfiguration":
         with open(path) as file_handle:
             data = yaml.safe_load(file_handle)
-        return cls(**data)
+        configuration = cls(**data)
+        configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
+        return configuration
+
+    def agents_root_directories(self) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser(),
+            Path(self.agents_root_directory),
+        ])
+
+    def agent_directories(self) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "agents",
+            Path(self.agents_root_directory) / "agents",
+            Path(self.agents_directory),
+        ])
+
+    def skill_directories(self) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "skills",
+            Path(self.agents_root_directory) / "skills",
+            Path(self.skills_directory),
+        ])
+
+    def memory_directories(self) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "memories",
+            Path(self.agents_root_directory) / "memories",
+        ])
+
+
+def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
+    result: list[Path] = []
+    seen: set[Path] = set()
+    for path in paths:
+        resolved = path.expanduser()
+        key = resolved.resolve() if resolved.exists() else resolved.absolute()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(resolved)
+    return result
 
 
 class BashToolConfiguration(BaseModel):
@@ -238,10 +323,14 @@ class ToolsConfiguration(BaseModel):
 
 
 class AgentConfiguration(BaseModel):
+    id: str = ""
     name: str
-    label: str = ""
+    aliases: list[str] = []
     color: str = ""
     description: str = ""
+    role: str = ""
+    enabled: bool = True
+    connection_type: str = "internal"
     # Names of the skills (files in the skills directory) this agent may use.
     # Empty means every available skill is offered to the agent by default.
     skills: list[str] = []
@@ -258,8 +347,17 @@ class AgentConfiguration(BaseModel):
     system_prompt: str = ""
     stream_agent_progress: bool = True
 
+    @property
+    def identifier(self) -> str:
+        return self.id or self.name
+
+    @property
+    def display_name(self) -> str:
+        return self.name or self.identifier
+
     @classmethod
     def from_markdown(cls, path: str | Path) -> "AgentConfiguration":
+        path = Path(path)
         with open(path) as file_handle:
             content = file_handle.read()
 
@@ -269,8 +367,15 @@ class AgentConfiguration(BaseModel):
         if not frontmatter_match:
             raise ValueError(f"No YAML frontmatter found in {path}")
 
-        frontmatter = yaml.safe_load(frontmatter_match.group(1))
+        frontmatter = yaml.safe_load(frontmatter_match.group(1)) or {}
         markdown_body = frontmatter_match.group(2).strip()
+        frontmatter.setdefault("id", path.parent.name if path.name == "agent.md" else path.stem)
+        if "connection-type" in frontmatter:
+            frontmatter["connection_type"] = frontmatter.pop("connection-type")
+
+        configuration_path = path.with_name("config.json")
+        if configuration_path.exists():
+            frontmatter = _merge_agent_config(frontmatter, json.loads(configuration_path.read_text()))
 
         tools_data = frontmatter.pop("tools", {})
         tools_configuration = (
@@ -298,7 +403,7 @@ class PermissionEvaluator:
             and tool_name not in self._configuration.tools_enabled
         ):
             raise PermissionError(
-                f"Tool '{tool_name}' is not enabled for agent '{self._configuration.name}'"
+                f"Tool '{tool_name}' is not enabled for agent '{self._configuration.identifier}'"
             )
 
     def evaluate_bash_permission(self, command: str) -> str:
@@ -337,25 +442,91 @@ class PromptLoader:
         return re.sub(r"\{\{\s*(\w+)\s*\}\}", replacer, template)
 
 
+def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path]:
+    if isinstance(directories, (str, Path)):
+        return [Path(directories).expanduser()]
+    return [Path(directory).expanduser() for directory in directories]
+
+
+def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_aliases: bool = False) -> dict[str, Path]:
+    paths: dict[str, Path] = {}
+    for directory in _as_directories(agents_directories):
+        if not directory.is_dir():
+            continue
+        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/agent.md"))]
+        for path in candidates:
+            try:
+                configuration = AgentConfiguration.from_markdown(path)
+                if not configuration.enabled:
+                    continue
+                paths[configuration.identifier] = path
+                if include_aliases:
+                    for alias in configuration.aliases:
+                        paths[alias] = path
+            except Exception:
+                fallback = path.parent.name if path.name == "agent.md" else path.stem
+                paths[fallback] = path
+    return paths
+
+
 def load_agent_configuration(
-    name: str, agents_directory: str | Path
+    name: str, agents_directory: str | Path | Iterable[str | Path]
 ) -> AgentConfiguration:
-    path = Path(agents_directory) / f"{name}.md"
-    if not path.exists():
-        raise FileNotFoundError(f"Agent configuration not found: {path}")
+    paths = _agent_paths(agents_directory, include_aliases=True)
+    path = paths.get(name)
+    if path is None:
+        searched = ", ".join(str(directory) for directory in _as_directories(agents_directory))
+        raise FileNotFoundError(f"Agent configuration not found: {name} (searched: {searched})")
     return AgentConfiguration.from_markdown(path)
 
 
-def list_available_agents(agents_directory: str | Path) -> list[str]:
-    return sorted(path.stem for path in Path(agents_directory).glob("*.md"))
+def list_available_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[str]:
+    return sorted(_agent_paths(agents_directory))
 
 
-def list_agents_with_labels(agents_directory: str | Path) -> list[dict[str, str]]:
+def list_agent_route_names(agents_directory: str | Path | Iterable[str | Path]) -> list[str]:
+    return sorted(_agent_paths(agents_directory, include_aliases=True))
+
+
+def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dict[str, str]]:
     agents = []
-    for path in sorted(Path(agents_directory).glob("*.md")):
+    for name, path in sorted(_agent_paths(agents_directory).items()):
         try:
-            config = load_agent_configuration(path.stem, agents_directory)
-            agents.append({"name": config.name, "label": config.label or config.name})
+            config = AgentConfiguration.from_markdown(path)
+            agents.append({"id": config.identifier, "name": config.display_name})
         except Exception:
-            agents.append({"name": path.stem, "label": path.stem})
+            agents.append({"id": name, "name": name})
     return agents
+
+
+def _merge_agent_config(frontmatter: dict, configuration: dict) -> dict:
+    merged = dict(frontmatter)
+    model_configuration = configuration.get("modelConfig", {})
+    if "model" in model_configuration:
+        merged["model"] = model_configuration["model"]
+    if "reasoningEffort" in model_configuration:
+        merged["reasoning_effort"] = model_configuration["reasoningEffort"]
+    if "reasoning_effort" in model_configuration:
+        merged["reasoning_effort"] = model_configuration["reasoning_effort"]
+    if "permissionMode" in configuration:
+        merged["permission_mode"] = configuration["permissionMode"]
+    if "permission_mode" in configuration:
+        merged["permission_mode"] = configuration["permission_mode"]
+    if "streamAgentProgress" in configuration:
+        merged["stream_agent_progress"] = configuration["streamAgentProgress"]
+    tool_configuration = configuration.get("toolConfig", {})
+    if tool_configuration:
+        tools = dict(merged.get("tools", {}))
+        if "enabledBuiltinTools" in tool_configuration:
+            merged["tools_enabled"] = tool_configuration["enabledBuiltinTools"]
+        if "bash" in tool_configuration:
+            bash = dict(tool_configuration["bash"])
+            if "backgroundAllowed" in bash:
+                bash["background_allowed"] = bash.pop("backgroundAllowed")
+            tools["bash"] = bash
+        if "spawnAgent" in tool_configuration:
+            tools["spawn_agent"] = tool_configuration["spawnAgent"]
+        if "spawn_agent" in tool_configuration:
+            tools["spawn_agent"] = tool_configuration["spawn_agent"]
+        merged["tools"] = tools
+    return merged

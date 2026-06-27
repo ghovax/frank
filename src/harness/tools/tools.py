@@ -5,7 +5,7 @@ import signal
 import sys
 import uuid
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Any, Iterable, Literal
 
 from exa_py import Exa
 from langchain.tools import tool
@@ -83,11 +83,23 @@ web_tasks = TaskRegistry("search")
 spawned_tasks = TaskRegistry("agent")
 
 _exa_client: Exa | None = None
+_mcp_client_manager: Any | None = None
 
 
 def set_exa_client(client: Exa | None) -> None:
     global _exa_client
     _exa_client = client
+
+
+def set_mcp_client_manager(manager: Any | None) -> None:
+    global _mcp_client_manager
+    _mcp_client_manager = manager
+
+
+def _require_mcp_client_manager():
+    if _mcp_client_manager is None:
+        raise RuntimeError("MCP is not configured.")
+    return _mcp_client_manager
 
 
 @tool
@@ -237,7 +249,81 @@ def collect_web_search_results(identifiers: Iterable[str] | None = None) -> list
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "research-synthesist", read_only: bool = False, justification: str = "") -> str:
+async def list_mcp_tools(server: str = "", justification: str = "") -> str:
+    """List tools exposed by configured MCP servers.
+
+    Args:
+        server: Optional configured MCP server name. Leave empty to list every
+            enabled server.
+        justification: A concise, user-facing reason for inspecting MCP tools.
+    """
+    try:
+        result = await _require_mcp_client_manager().list_tools(server)
+        return json.dumps(result)
+    except Exception as exception:
+        return json.dumps({"code": "mcp_list_tools_error", "message": str(exception)})
+
+
+@tool
+async def call_mcp_tool(
+    server: str,
+    tool_name: str,
+    arguments: dict[str, Any] | None = None,
+    read_only: bool = True,
+    justification: str = "",
+    risk: Literal["low", "medium", "high"] = "low",
+) -> str:
+    """Call a tool exposed by a configured MCP server.
+
+    Args:
+        server: Configured MCP server name.
+        tool_name: Tool name as advertised by list_mcp_tools.
+        arguments: JSON object matching the MCP tool input schema.
+        read_only: Whether this MCP tool call only reads state.
+        justification: A concise, user-facing reason for the tool call.
+        risk: One of "low", "medium", "high" for non-read-only calls.
+    """
+    try:
+        result = await _require_mcp_client_manager().call_tool(server, tool_name, arguments or {})
+        return json.dumps(result)
+    except Exception as exception:
+        return json.dumps({"code": "mcp_call_tool_error", "message": str(exception)})
+
+
+@tool
+async def list_mcp_resources(server: str = "", justification: str = "") -> str:
+    """List resources exposed by configured MCP servers.
+
+    Args:
+        server: Optional configured MCP server name. Leave empty to list every
+            enabled server.
+        justification: A concise, user-facing reason for inspecting resources.
+    """
+    try:
+        result = await _require_mcp_client_manager().list_resources(server)
+        return json.dumps(result)
+    except Exception as exception:
+        return json.dumps({"code": "mcp_list_resources_error", "message": str(exception)})
+
+
+@tool
+async def read_mcp_resource(server: str, uri: str, justification: str = "") -> str:
+    """Read a resource exposed by a configured MCP server.
+
+    Args:
+        server: Configured MCP server name.
+        uri: Resource URI as advertised by list_mcp_resources.
+        justification: A concise, user-facing reason for reading the resource.
+    """
+    try:
+        result = await _require_mcp_client_manager().read_resource(server, uri)
+        return json.dumps(result)
+    except Exception as exception:
+        return json.dumps({"code": "mcp_read_resource_error", "message": str(exception)})
+
+
+@tool
+def spawn_agent(prompt: str = "", agent: str = "assistant", read_only: bool = False, justification: str = "") -> str:
     """Delegate a task to another agent (a real A2A call to its endpoint).
 
     The sub-agent runs as a related A2A task in the same context. Its activity
@@ -249,8 +335,8 @@ def spawn_agent(prompt: str = "", agent: str = "research-synthesist", read_only:
     Args:
         prompt: The task for the sub-agent. State the goal clearly and, when it
             should build on or coordinate with other agents, name their task ids.
-        agent: Name of the agent profile to delegate to (e.g. 'codebase-analyst',
-            'implementation-engineer', 'research-synthesist').
+        agent: Name of the agent profile to delegate to (e.g. 'reader',
+            'builder', 'scout').
         read_only: Force the sub-agent into read-only mode — it may only run
             read-only commands and cannot modify the system or write files. Use
             for investigation/research sub-agents that should report back rather

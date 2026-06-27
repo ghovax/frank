@@ -23,7 +23,7 @@ export function AgentTimeline({
   agents = [],
 }: {
   parts: AgentPart[];
-  agents?: { name: string; label: string }[];
+  agents?: { id: string; name: string }[];
 }) {
   return (
     <Flex direction="column" gap={1.5} align="stretch">

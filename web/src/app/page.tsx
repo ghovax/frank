@@ -4,7 +4,7 @@ import { Box, Button, EmptyState, Flex, Text, VStack } from "@chakra-ui/react";
 import { LuGripVertical, LuMessageSquare, LuPlus } from "react-icons/lu";
 import { Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchSessions, subscribeEvents, type AgentCard } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchSessions, subscribeEvents, type AgentCard } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
 interface SessionEntry {
@@ -29,7 +29,7 @@ function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [agents, setAgents] = useState<{ name: string; label: string }[]>([]);
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
@@ -47,11 +47,8 @@ function HomeContent() {
 
   async function handleBrowseFolder() {
     try {
-      const showPicker = (window as unknown as { showDirectoryPicker: (opts: { mode: string }) => Promise<{ name: string }> }).showDirectoryPicker;
-      if (showPicker) {
-        const handle = await showPicker({ mode: "read" });
-        setWorkingDirectory(handle.name);
-      }
+      const result = await browseWorkingDirectory();
+      if (!result.cancelled && result.path) setWorkingDirectory(result.path);
     } catch {
       // user cancelled
     }
@@ -62,7 +59,7 @@ function HomeContent() {
       fetchAgents()
         .then((agentList) => {
           setAgents(agentList);
-          setSelectedAgent((current) => current || (agentList[0]?.name ?? ""));
+          setSelectedAgent((current) => current || (agentList[0]?.id ?? ""));
           setIsConnected(true);
         })
         .catch(() => setIsConnected(false));
@@ -94,7 +91,7 @@ function HomeContent() {
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
-  const agentLabels = new Map(agents.map((agent) => [agent.name, agent.label]));
+  const agentNames = new Map(agents.map((agent) => [agent.id, agent.name]));
 
   const refreshSessions = useCallback(() => {
     fetchSessions()
@@ -159,7 +156,7 @@ function HomeContent() {
       handleNewChat();
     } else if (command.startsWith("/agent ")) {
       const agentName = command.slice(7).trim();
-      if (agents.some((agent) => agent.name === agentName)) {
+      if (agents.some((agent) => agent.id === agentName)) {
         handleAgentChange(agentName);
       }
     }
@@ -255,7 +252,7 @@ function HomeContent() {
               <VStack gap={2} align="stretch">
                 {sessions.map((entry) => {
                   const sessionTimestamp = formatSessionTimestamp(entry.createdAt);
-                  const sessionAgent = agentLabels.get(entry.agent) ?? entry.agent;
+                  const sessionAgent = agentNames.get(entry.agent) ?? entry.agent;
                   const sessionMeta = [sessionTimestamp, sessionAgent].filter(Boolean).join(" — ");
 
                   return (
@@ -264,14 +261,13 @@ function HomeContent() {
                       px={2}
                       py={1}
                       borderRadius="sm"
-                      border="1px solid"
                       borderColor="border"
                       cursor="pointer"
                       bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
                       _hover={{ bg: "bg.muted" }}
                       onClick={() => handleResumeSession(entry)}
                     >
-                      <Text fontSize="sm" fontWeight="medium" truncate>
+                      <Text fontSize="xs" fontWeight="medium" truncate>
                         {entry.title || "Untitled conversation"}
                       </Text>
                       <Text fontSize="xs" color="fg.subtle" truncate>

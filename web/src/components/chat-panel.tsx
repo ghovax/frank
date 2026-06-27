@@ -14,11 +14,11 @@ import { ChatMessageItem } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { setBypassPermissions, type AgentCard } from "@/lib/api";
+import { setPermissionMode, type AgentCard, type PermissionMode } from "@/lib/api";
 
 interface ChatPanelProps {
   agent: string;
-  agents: { name: string; label: string }[];
+  agents: { id: string; name: string }[];
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
@@ -48,15 +48,15 @@ export function ChatPanel({
   historyOpen = false,
   onToggleHistory,
 }: ChatPanelProps) {
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
   const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, abort, dequeueMessage, handlePermission } =
-    useChat(agent, initialSessionId, workingDirectory);
+    useChat(agent, initialSessionId, workingDirectory, permissionMode);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const isPinnedRef = useRef(true);
   const onStreamingChangeRef = useRef(onStreamingChange);
   const notifiedSessionIdRef = useRef<string | null>(null);
-  const [bypassPermissions, setBypassPermissionsState] = useState(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
@@ -137,22 +137,21 @@ export function ChatPanel({
     onStreamingChangeRef.current?.(isStreaming);
   }, [isStreaming, scheduleScrollToBottom]);
 
-  async function handleToggleBypass() {
+  async function handlePermissionModeChange(nextMode: PermissionMode) {
+    const previousMode = permissionMode;
+    setPermissionModeState(nextMode);
     if (!sessionId) return;
-    const newValue = !bypassPermissions;
-    setBypassPermissionsState(newValue);
     try {
-      await setBypassPermissions(sessionId, newValue);
+      await setPermissionMode(sessionId, nextMode);
     } catch {
-      setBypassPermissionsState(!newValue);
+      setPermissionModeState(previousMode);
     }
   }
 
   const activeSteps = agentGroups.reduce(
     (sum, group) => sum + group.steps.filter((step) => !isStepDone(step)).length,
     0
-  );
-  const hasAgentActivity = agentGroups.length > 0;
+   );
 
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
@@ -260,10 +259,9 @@ export function ChatPanel({
           agents={agents}
           selectedAgent={agent}
           onAgentChange={onAgentChange}
-          bypassPermissions={bypassPermissions}
-          onToggleBypass={handleToggleBypass}
+          permissionMode={permissionMode}
+          onPermissionModeChange={handlePermissionModeChange}
           agentsCount={activeSteps}
-          agentsAvailable={hasAgentActivity}
           agentsOpen={agentsPanelOpen}
           onShowAgents={() => {
             setFocusedGroupId(null);

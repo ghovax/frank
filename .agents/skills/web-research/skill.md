@@ -1,7 +1,8 @@
 ---
-name: web-research
-label: Web research
+id: web-research
+name: Web research
 description: Gather current, well-cited information from the web — search broadly, read primary sources, and report findings with citations.
+enabled: true
 ---
 
 # Web Research
