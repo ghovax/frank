@@ -158,6 +158,7 @@ class SubAgentRunner:
         prompt: str,
         stream_progress: bool = True,
         read_only_override: Optional[bool] = None,
+        working_directory: str = "",
     ):
         self.task_identifier = task_identifier
         self.prompt = prompt
@@ -166,6 +167,7 @@ class SubAgentRunner:
         self._runtime = AgentRuntime(
             agent_configuration=agent_configuration,
             global_configuration=global_configuration,
+            working_directory=working_directory,
         )
         # An explicit override (from the spawning call or step)
         # wins over the agent profile's own permission_mode.
@@ -592,7 +594,7 @@ class AgentRuntime:
             available_agents = list_available_agents(
                 self._global_configuration.agent_directories()
             )
-            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories()))
+            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._working_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories())
             context_json = json.dumps({
@@ -1290,7 +1292,7 @@ class AgentRuntime:
             self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt})
             child_task = None
             if self._delegate is not None:
-                async for delegated in self._delegate(sub_agent_name, sub_agent_prompt, self._a2a_task_id, sub_agent_read_only, child_depth):
+                async for delegated in self._delegate(sub_agent_name, sub_agent_prompt, self._a2a_task_id, sub_agent_read_only, child_depth, self._working_directory):
                     delegated_kind = delegated.get("type")
                     common = {
                         "group_id": group_id,
@@ -1322,6 +1324,7 @@ class AgentRuntime:
                     prompt=sub_agent_prompt,
                     stream_progress=self._agent_configuration.stream_agent_progress,
                     read_only_override=sub_agent_read_only,
+                    working_directory=self._working_directory,
                 )
                 final_text = ""
                 common = {"group_id": group_id, "step_id": spawn_step_id, "child_task_id": ""}

@@ -19,18 +19,6 @@ import {
   Pill,
 } from "./primitives";
 
-function riskPalette(risk: string): string {
-  if (risk === "high") return "red";
-  if (risk === "medium") return "yellow";
-  return "green";
-}
-
-function riskLabel(risk: string): string {
-  if (risk === "high") return "High risk";
-  if (risk === "medium") return "Medium risk";
-  return "Low risk";
-}
-
 function stripCdPrefix(command: string): string {
   const match = command.match(/^cd\s+'[^']*'\s+&&\s+(.*)/s);
   return match ? match[1] : command;
@@ -46,21 +34,26 @@ function tryParse(content: string): unknown {
 
 // Tool call (input) views
 
+// Display label for each bash risk level. Falls back to the raw value when
+// unmapped so an unexpected level still renders something readable.
+const RISK_LABELS: Record<string, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
 function BashCallView({ args }: { args: Record<string, unknown> }) {
   const command = stripCdPrefix(asString(args.command));
-  const risk = asString(args.risk) || "low";
   const readOnly = args.read_only !== false;
+  const risk = asString(args.risk) || "low";
+  const riskText = RISK_LABELS[risk] ?? risk;
   return (
     <FieldList>
       <Field label="Command">
         <MonoBlock>{command}</MonoBlock>
       </Field>
-      <Flex gap={2}>
-        <Pill colorPalette={readOnly ? "gray" : "orange"}>
-          {readOnly ? "Read-only command" : "Can modify files"}
-        </Pill>
-        <Pill colorPalette={riskPalette(risk)}>{riskLabel(risk)}</Pill>
-      </Flex>
+      <InlineField label="Read only">{readOnly ? "Yes" : "No"}</InlineField>
+      <InlineField label="Risk">{riskText}</InlineField>
     </FieldList>
   );
 }
@@ -136,6 +129,15 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+function ReadTaskCallView({ args }: { args: Record<string, unknown> }) {
+  const taskId = asString(args.task_id);
+  return (
+    <FieldList>
+      <InlineField label="Task ID">{taskId || "—"}</InlineField>
+    </FieldList>
+  );
+}
+
 // Fields whose values are human prose (not identifiers/data) — rendered with the
 // markdown renderer in the normal font rather than monospace.
 const PROSE_FIELD_KEYS = new Set([
@@ -164,6 +166,8 @@ const FIELD_LABELS: Record<string, string> = {
   result_count: "Results",
   agent: "Agent",
   prompt: "Prompt",
+  task_id: "Task ID",
+  code: "Status",
 };
 
 function GenericView({ data }: { data: Record<string, unknown> }) {
@@ -202,6 +206,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <WriteTasksCallView args={args} />;
     case "update_tasks":
       return <UpdateTasksCallView args={args} />;
+    case "read_task":
+      return <ReadTaskCallView args={args} />;
     default:
       return <GenericView data={args} />;
   }
@@ -212,16 +218,12 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
 function BashResultView({ data }: { data: Record<string, unknown> }) {
   const output = asString(data.output);
   const outputFile = asString(data.output_file);
-  const hasPills = data.pid != null || data.size != null;
-  if (!output && !outputFile && !hasPills) return null;
+  const hasMeta = data.pid != null || data.size != null;
+  if (!output && !outputFile && !hasMeta) return null;
   return (
     <FieldList>
-      {hasPills && (
-        <Flex gap={2}>
-          {data.pid != null && <Pill>pid {asString(data.pid)}</Pill>}
-          {data.size != null && <Pill>{asString(data.size)} bytes</Pill>}
-        </Flex>
-      )}
+      {data.pid != null && <InlineField label="PID">{asString(data.pid)}</InlineField>}
+      {data.size != null && <InlineField label="Size">{asString(data.size)} bytes</InlineField>}
       {output ? (
         <Field label="Output">
           <MonoBlock>{output}</MonoBlock>
@@ -296,6 +298,18 @@ function ErrorView({ message }: { message: string }) {
       <Text fontSize="xs" color="red.fg">{message}</Text>
     </Box>
   );
+}
+
+// read_task returns either an error code (no id match / unavailable) or the
+// task object itself (kind === "task"). The id is already shown on the call
+// card, so the result only surfaces the outcome — it never re-renders the id.
+function ReadTaskResultView({ data }: { data: Record<string, unknown> }) {
+  const code = asString(data.code);
+  if (code === "task_not_found") return <ErrorView message="No task with that id." />;
+  if (code === "read_task_unavailable") {
+    return <EmptyHint>Reading tasks is not available in this context.</EmptyHint>;
+  }
+  return <AgentTaskResultView data={data} />;
 }
 
 const IFRAME_SANDBOX_TOKENS = new Set([
@@ -619,6 +633,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
+    if (name === "read_task") return <ReadTaskResultView data={data} />;
     return <GenericView data={data} />;
   }
 

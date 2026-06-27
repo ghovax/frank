@@ -10,13 +10,15 @@ from typing import Literal, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Text, create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
 from watchfiles import awatch
 from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -28,8 +30,10 @@ from harness.core.a2a_executor import (
     agent_rpc_path,
     build_agent_card,
 )
+import harness.core.configuration as _configuration
 from harness.core.configuration import (
     GlobalConfiguration,
+    PromptLoader,
     database_file_path,
     list_agent_route_names,
     list_agents,
@@ -153,31 +157,53 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
         pass
 
 
+class SessionTitle(BaseModel):
+    """Structured schema returned by the title-generation LLM call."""
+
+    title: str = Field(
+        description=(
+            "A concise imperative phrase starting with a verb, then the action it describes; "
+            "normal sentence case (not Title Case), no surrounding quotes, no trailing punctuation."
+        ),
+    )
+
+
+# Loads the title prompt from the shared prompts directory next to the
+# harness.core package, mirroring how AgentRuntime resolves its prompt loader.
+_title_prompt_loader = PromptLoader(
+    Path(_configuration.__file__).resolve().parent / "prompts"
+)
+
+
 async def _generate_session_title(first_message: str) -> str:
-    """Ask the configured LLM for a short, descriptive title for the session."""
+    """Ask the configured LLM for a short, structured title for the session.
+
+    ``SessionTitle`` is bound as a tool with auto tool-choice rather than via
+    ``with_structured_output``: the configured reasoning model rejects both
+    ``response_format`` (json_schema) and the forced ``tool_choice`` that
+    ``with_structured_output`` relies on, but accepts a regular tool call — the
+    same pattern the main agent uses with ``bind_tools``.
+    """
     assert _global_configuration is not None
     api = _global_configuration.api
     api_key = api.effective_api_key
     if not api_key:
         return ""
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(base_url=api.endpoint, api_key=api_key)
-    response = await client.chat.completions.create(
+    llm = ChatOpenAI(
         model=api.model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You generate a concise, descriptive title for a chat session based on the "
-                    "user's first message. Reply with the title only: 3-6 words, no surrounding "
-                    "quotes, no trailing punctuation."
-                ),
-            },
-            {"role": "user", "content": first_message},
-        ],
-        max_completion_tokens=24,
-    )
-    return (response.choices[0].message.content or "").strip().strip('"').strip()
+        base_url=api.endpoint,
+        api_key=api_key,
+        temperature=0,
+    ).bind_tools([SessionTitle], tool_choice="auto")
+    prompt = _title_prompt_loader.load("session_title", {})
+    response = await llm.ainvoke([
+        SystemMessage(content=prompt),
+        HumanMessage(content=first_message),
+    ])
+    if not response.tool_calls:
+        return ""
+    title = SessionTitle.model_validate(response.tool_calls[0]["args"]).title
+    return (title or "").strip()
 
 
 async def _finalize_session_title(context_id: str, first_message: str) -> None:
@@ -187,7 +213,6 @@ async def _finalize_session_title(context_id: str, first_message: str) -> None:
         title = await _generate_session_title(first_message)
     except Exception:
         return  # Keep the provisional title on any failure.
-    title = title.split("\n", 1)[0].strip()
     if not title:
         return
     database_session = _session_factory()

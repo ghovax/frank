@@ -186,6 +186,27 @@ class GlobalConfiguration(BaseModel):
             Path(self.skills_directory),
         ])
 
+    def skill_directories_for(self, working_directory: str) -> list[Path]:
+        """Skill directories scoped to a session's working directory.
+
+        The home root (``~/.agents/skills``) is always global. The relative
+        roots (``.agents`` and ``.agents/skills``) are resolved against the
+        session's working directory rather than the server's CWD, so a session
+        working outside the project where the server was launched is not
+        advertised that project's skills — and the paths it is given are valid.
+        """
+        base = Path(working_directory).expanduser() if working_directory else Path.cwd()
+
+        def resolve(directory: str) -> Path:
+            path = Path(directory).expanduser()
+            return path if path.is_absolute() else base / path
+
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "skills",
+            resolve(self.agents_root_directory) / "skills",
+            resolve(self.skills_directory),
+        ])
+
     def memory_directories(self) -> list[Path]:
         return _dedupe_paths([
             Path(self.home_agents_root_directory).expanduser() / "memories",

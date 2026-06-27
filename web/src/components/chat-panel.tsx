@@ -220,7 +220,7 @@ export function ChatPanel({
           {isHistoryLoading ? (
             <Flex h="100%" />
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} py={4}>
+            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
               <EmptyState.Root>
                 <EmptyState.Content>
                   <EmptyState.Indicator>

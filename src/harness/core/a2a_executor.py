@@ -439,6 +439,7 @@ class AgentRegistry:
             parent_task_id: str,
             read_only: Optional[bool] = None,
             depth: int = 1,
+            working_directory: str = "",
         ):
             handler = self._handlers.get(agent_name)
             if handler is None:
@@ -447,6 +448,8 @@ class AgentRegistry:
             metadata: dict = {DELEGATED_METADATA_KEY: True, DEPTH_METADATA_KEY: depth}
             if read_only is not None:
                 metadata[READ_ONLY_METADATA_KEY] = bool(read_only)
+            if working_directory:
+                metadata[WORKING_DIRECTORY_METADATA_KEY] = working_directory
             message = Message(
                 role=Role.user,
                 parts=[Part(root=TextPart(text=prompt))],

@@ -53,7 +53,7 @@ def _parse_skill(path: Path) -> Skill:
         description = ""
         enabled = True
         body = content.strip()
-    return Skill(name=identifier, title=title, description=description, enabled=enabled, body=body, path=str(path))
+    return Skill(name=identifier, title=title, description=description, enabled=enabled, body=body, path=str(path.resolve()))
 
 
 def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path]:
@@ -80,7 +80,6 @@ def load_skills(skills_directory: str | Path | Iterable[str | Path]) -> list[Ski
         candidates = [
             *sorted(directory.glob("*.md")),
             *sorted(directory.glob("*/SKILL.md")),
-            *sorted(directory.glob("*/skill.md")),
         ]
         for path in candidates:
             skill = _parse_skill(path)

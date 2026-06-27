@@ -13,7 +13,7 @@ export interface FocusIcon {
 export function getFocusIcon(icon: string | undefined, title?: string): FocusIcon {
   const isWaiting = icon === "waiting" || title === "Waiting for tools...";
   if (isWaiting) return { icon: LuHourglass, color: "blue.fg" };
-  if (icon === "goal") return { icon: LuFlag, color: "teal.fg" };
-  if (icon === "focus") return { icon: LuTarget, color: "orange.fg" };
+  if (icon === "goal") return { icon: LuTarget, color: "teal.fg" };
+  if (icon === "focus") return { icon: LuFlag, color: "orange.fg" };
   return { icon: LuBrain, color: "purple.fg" };
 }

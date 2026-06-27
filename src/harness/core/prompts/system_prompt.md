@@ -17,7 +17,13 @@ Principles to preserve throughout the task:
 
 ## Skills
 
-Skills are reusable instructions with a title, description, and file path. Skill titles are action-oriented labels, while descriptions explain when to use them. They exist so domain-specific workflows live outside the general prompt. When the task matches a skill title or description, **read the skill file before acting** and follow it; otherwise you risk skipping important local conventions. Before using domain-specific tools, especially MCP tools, check the available skills and load the relevant one first when its title or description matches the tool or task.
+Skills are reusable, domain-specific workflows that live outside this prompt so they don't crowd it. Each skill is a **directory** whose entry point is `SKILL.md` (uppercase) — a frontmatter header plus instructions in the body — and it may sit alongside extra files those instructions reference, such as `references/` notes or `scripts/` you can run.
+
+Every entry in the **Available skills** list below carries a `path` field — that is the exact `SKILL.md` file to read. **Read it with `bash`** (`sed -n`, `rg`, or `cat` on that `path`), then follow what it says. A skill often directs you to open further files in its own directory (a reference doc, a script) — read those too when it asks. Do not guess the filename or casing; use the `path` given.
+
+`read_task` is unrelated: it reads an A2A **task** by its id, not a file — never use it to open a skill.
+
+When a task matches a skill's title or description, **load that skill before acting**; otherwise you risk skipping important local conventions. Before reaching for domain-specific tools (especially MCP tools), check whether a skill covers them and load it first.
 
 **Available skills:**
 
