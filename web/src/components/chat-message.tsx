@@ -2,8 +2,9 @@
 
 import { Box, Button, Code, Flex, HStack, Text } from "@chakra-ui/react";
 import { useEffect, useRef } from "react";
-import { LuTerminal } from "react-icons/lu";
+import { LuTerminal, LuMousePointerClick } from "react-icons/lu";
 import type { ChatMessage } from "@/lib/use-chat";
+import type { WidgetEvent } from "./widget-bridge";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ThinkingIndicator } from "./thinking-indicator";
@@ -117,6 +118,29 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
             status={message.meta?.status as string | undefined}
             agents={agents}
           />
+        </Box>
+      );
+    }
+
+    case "widget_event": {
+      const widgetEvent = message.meta?.widgetEvent as WidgetEvent | undefined;
+      const title = widgetEvent?.title || "Widget";
+      const hasData = widgetEvent?.data !== undefined && widgetEvent?.data !== null;
+      return (
+        <Box alignSelf="flex-end" bg="bg.subtle" border="1px solid" borderColor="border" borderRadius="sm" px={2} py={1.5} maxW="80%">
+          <Flex align="center" gap={1.5}>
+            <Box color="pink.fg" flexShrink={0}>
+              <LuMousePointerClick size={12} />
+            </Box>
+            <Text fontSize="xs" color="fg.muted">
+              {title} → <Text as="span" fontWeight="medium" color="fg">{widgetEvent?.event || message.content}</Text>
+            </Text>
+          </Flex>
+          {hasData && (
+            <Code display="block" mt={1} fontFamily="var(--app-font-mono)" fontSize="2xs" p={1} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="sm">
+              {JSON.stringify(widgetEvent?.data)}
+            </Code>
+          )}
         </Box>
       );
     }

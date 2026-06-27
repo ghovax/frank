@@ -68,6 +68,10 @@ def load_skills(skills_directory: str | Path | Iterable[str | Path]) -> list[Ski
     Directories are processed in order; later entries override earlier entries.
     This lets project-local ``.agents/skills`` replace a global ``~/.agents/skills``
     skill with the same name.
+
+    Disabled skills are still returned (carrying ``enabled=False``) so the UI can
+    show them greyed out; callers that build the agent's actual capability set use
+    :func:`enabled_skills` to drop them.
     """
     skills: dict[str, Skill] = {}
     for directory in _as_directories(skills_directory):
@@ -80,9 +84,13 @@ def load_skills(skills_directory: str | Path | Iterable[str | Path]) -> list[Ski
         ]
         for path in candidates:
             skill = _parse_skill(path)
-            if skill.enabled:
-                skills[skill.identifier] = skill
+            skills[skill.identifier] = skill
     return [skills[name] for name in sorted(skills)]
+
+
+def enabled_skills(skills: list[Skill]) -> list[Skill]:
+    """The subset of skills that are enabled — what an agent may actually use."""
+    return [skill for skill in skills if skill.enabled]
 
 
 def skills_for_agent(skills: list[Skill], allowed_names: list[str]) -> list[Skill]:

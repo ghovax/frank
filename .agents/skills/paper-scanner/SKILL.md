@@ -1,6 +1,7 @@
 ---
 name: paper-scanner
 title: Find, analyze, and read scholarly papers
+enabled: true
 description: >-
   General-purpose scholarly-literature engine: the importable `scholar` Python package, whose functions you call from `uv run python`. Use them to find papers (search across OpenAlex, Semantic Scholar, Crossref, arXiv, PubMed, Europe PMC), analyze them (citations, similar work, facets/trends, author profiling with topics/concepts, author disambiguation, co-authors), read them (open-access full text via Unpaywall/PMC/bioRxiv/CORE/Sci-Hub/Anna's Archive, and PDF figures), and manage the Zotero library. The functions compose freely. Use whenever the user wants to find papers, read full text or figures, rank by citations or recency, traverse citations, profile an author, identify collaborators, manage their library, or answer any other scholarly-metadata question.
 ---

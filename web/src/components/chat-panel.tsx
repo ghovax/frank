@@ -11,6 +11,7 @@ import { LuClock, LuSend } from "react-icons/lu";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
+import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
@@ -49,7 +50,7 @@ export function ChatPanel({
   onToggleHistory,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
-  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, abort, dequeueMessage, handlePermission } =
+  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, sendWidgetEvent, abort, dequeueMessage, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory, permissionMode);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -102,6 +103,14 @@ export function ChatPanel({
     send(text);
     forceScrollToBottom();
   }, [forceScrollToBottom, send]);
+
+  // A rendered widget posted an interaction back to the agent. It travels as a
+  // structured turn (a typed DataPart), so just forward it intact.
+  const handleWidgetEvent = useCallback((widgetEvent: WidgetEvent) => {
+    forceScrollToBottom();
+    sendWidgetEvent(widgetEvent);
+    forceScrollToBottom();
+  }, [forceScrollToBottom, sendWidgetEvent]);
 
   useEffect(() => {
     if (!sessionId || notifiedSessionIdRef.current === sessionId) return;
@@ -188,6 +197,7 @@ export function ChatPanel({
   }, [agentsSidebarWidth]);
 
   return (
+    <WidgetEventProvider onEvent={handleWidgetEvent}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
         <Box ref={scrollContainerRef} flex={1} minH={0} overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none" }}>
@@ -282,5 +292,6 @@ export function ChatPanel({
         onResizeStart={handleAgentsResizeStart}
       />
     </Flex>
+    </WidgetEventProvider>
   );
 }

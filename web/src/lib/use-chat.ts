@@ -12,6 +12,7 @@ import {
   type A2ATask as A2ATaskWire,
   type PermissionMode,
 } from "./api";
+import type { WidgetEvent } from "@/components/widget-bridge";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATask = A2ATaskWire;
@@ -36,11 +37,18 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "permission";
+  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "permission" | "widget_event";
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
 }
+
+// A turn's input: either typed text or a structured widget interaction. Both
+// drive the same stream; a widget event travels as a typed DataPart, never as
+// prose, so the agent receives it as structured JSON.
+export type ChatInput =
+  | { kind: "text"; text: string }
+  | { kind: "widget"; event: WidgetEvent };
 
 // An agent step's ordered timeline — prose and tool calls interleaved, mirroring
 // the main chat. Built from the A2A sub-task DataPart envelopes.
@@ -681,8 +689,15 @@ export function useChat(
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
   const queuedMessagesRef = useRef<string[]>([]);
+  // Widget interactions that arrived mid-turn wait here and drain after the
+  // current stream finishes. Kept separate from the user-visible text queue.
+  const queuedWidgetEventsRef = useRef<WidgetEvent[]>([]);
+  // Render errors fire automatically when a widget mounts, so a broken artifact
+  // (including on session replay) must not spawn the same turn twice. Tracked by
+  // artifact + message; user-driven events (clicks) are never deduped.
+  const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
-  const runStreamRef = useRef<(text: string) => void>(() => {});
+  const runStreamRef = useRef<(input: ChatInput) => void>(() => {});
 
   const setQueue = useCallback((next: string[]) => {
     queuedMessagesRef.current = next;
@@ -692,6 +707,17 @@ export function useChat(
   const flush = useCallback(() => {
     setMessages(stateRef.current.messages);
     setAgentGroups(stateRef.current.agentGroups);
+  }, []);
+
+  // On unmount (e.g. switching sessions), close this hook's SSE connection so it
+  // does not leak — a stack of orphaned streams exhausts the browser's per-host
+  // connection pool and hangs later fetches. This only drops the client end; the
+  // backend turn keeps running (the producer is not tied to the consumer), and a
+  // sidebar spinner reflects that it is still active.
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -727,18 +753,38 @@ export function useChat(
   }, [initialSessionId, flush]);
 
   const runStream = useCallback(
-    (text: string) => {
-      // Optimistic user message + reset the open prose lane.
+    (input: ChatInput) => {
+      // Optimistic input message + reset the open prose lane. A widget event
+      // renders as its own structured entry rather than a user prose bubble.
       stateRef.current.lane = null;
       stateRef.current.toolSequence = 0;
-      stateRef.current.messages = [
-        ...stateRef.current.messages,
-        { id: `user-${Date.now()}`, role: "user", content: text, timestamp: new Date().toISOString() },
-      ];
+      const optimistic: ChatMessage =
+        input.kind === "text"
+          ? { id: `user-${Date.now()}`, role: "user", content: input.text, timestamp: new Date().toISOString() }
+          : {
+              id: `widget-${Date.now()}`,
+              role: "widget_event",
+              content: input.event.event,
+              timestamp: new Date().toISOString(),
+              meta: { widgetEvent: input.event },
+            };
+      stateRef.current.messages = [...stateRef.current.messages, optimistic];
       flush();
 
       isStreamingRef.current = true;
       setIsStreaming(true);
+
+      const text = input.kind === "text" ? input.text : "";
+      const dataPart =
+        input.kind === "widget"
+          ? {
+              kind: "widget_event",
+              artifactId: input.event.artifactId,
+              title: input.event.title,
+              event: input.event.event,
+              data: input.event.data,
+            }
+          : undefined;
 
       abortControllerRef.current = streamA2A(
         text,
@@ -773,18 +819,26 @@ export function useChat(
         },
         () => {
           stateRef.current.lane = null;
-          const pending = queuedMessagesRef.current;
-          if (pending.length > 0) {
-            const [next, ...rest] = pending;
+          // Drain queued text first (user intent), then any widget events that
+          // arrived mid-turn.
+          const pendingText = queuedMessagesRef.current;
+          const pendingWidget = queuedWidgetEventsRef.current;
+          if (pendingText.length > 0) {
+            const [next, ...rest] = pendingText;
             setQueue(rest);
-            runStreamRef.current(next);
+            runStreamRef.current({ kind: "text", text: next });
+          } else if (pendingWidget.length > 0) {
+            const [next, ...rest] = pendingWidget;
+            queuedWidgetEventsRef.current = rest;
+            runStreamRef.current({ kind: "widget", event: next });
           } else {
             isStreamingRef.current = false;
             setIsStreaming(false);
           }
         },
         workingDirectory,
-        permissionMode
+        permissionMode,
+        dataPart
       );
     },
     [agent, workingDirectory, permissionMode, flush, setQueue]
@@ -802,9 +856,30 @@ export function useChat(
         setQueue([...queuedMessagesRef.current, trimmed]);
         return;
       }
-      runStream(trimmed);
+      runStream({ kind: "text", text: trimmed });
     },
     [runStream, setQueue]
+  );
+
+  // A rendered widget posted an interaction. Deliver it as a structured turn,
+  // queueing behind the active stream if one is running.
+  const sendWidgetEvent = useCallback(
+    (event: WidgetEvent) => {
+      if (event.event === "render_error") {
+        const message = typeof (event.data as { message?: unknown })?.message === "string"
+          ? (event.data as { message: string }).message
+          : JSON.stringify(event.data);
+        const signature = `${event.artifactId}|${message}`;
+        if (seenRenderErrorsRef.current.has(signature)) return;
+        seenRenderErrorsRef.current.add(signature);
+      }
+      if (isStreamingRef.current) {
+        queuedWidgetEventsRef.current = [...queuedWidgetEventsRef.current, event];
+        return;
+      }
+      runStream({ kind: "widget", event });
+    },
+    [runStream]
   );
 
   const handlePermission = useCallback(
@@ -847,6 +922,7 @@ export function useChat(
     isStreaming,
     isHistoryLoading,
     send,
+    sendWidgetEvent,
     abort,
     reset,
     dequeueMessage,

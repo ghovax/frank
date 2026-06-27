@@ -59,6 +59,8 @@ from harness.tools.tools import (
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
     set_focus as set_focus_tool,
+    render_widget as render_widget_tool,
+    build_widget_result,
     list_mcp_tools as list_mcp_tools_tool,
     call_mcp_tool as call_mcp_tool_tool,
     call_mcp_tool_with_events,
@@ -74,7 +76,7 @@ from harness.core.handoff import (
     serialize_task,
 )
 from harness.core.memories import load_memories, memories_payload
-from harness.core.skills import load_skills, skills_for_agent, skills_payload
+from harness.core.skills import load_skills, enabled_skills, skills_for_agent, skills_payload
 
 from a2a.types import Task, TaskState
 
@@ -132,6 +134,7 @@ def _build_tools(agent_configuration: AgentConfiguration, global_configuration: 
         update_tasks_tool,
         update_goal_tool,
         set_focus_tool,
+        render_widget_tool,
         read_task_tool,
     ]
     if agent_configuration.tools.spawn_agent.enabled:
@@ -589,7 +592,7 @@ class AgentRuntime:
             available_agents = list_available_agents(
                 self._global_configuration.agent_directories()
             )
-            all_skills = load_skills(self._global_configuration.skill_directories())
+            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories()))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories())
             context_json = json.dumps({
@@ -1348,6 +1351,25 @@ class AgentRuntime:
                     "code": "goal_update_error",
                     "message": "status must be one of 'active', 'satisfied', or 'cleared'.",
                 }
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+
+        elif tool_name == "render_widget":
+            html = str(tool_arguments.get("html", ""))
+            if not html.strip():
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                    code="empty_widget", message="render_widget requires non-empty html.",
+                )
+                return
+            result = build_widget_result(
+                html=html,
+                title=str(tool_arguments.get("title", "Widget")),
+                height=tool_arguments.get("height", 420),
+                artifact_id=str(tool_arguments.get("artifact_id", "")),
+                artifact_update_mode=str(tool_arguments.get("artifact_update_mode", "append")),
+                artifact_target_id=str(tool_arguments.get("artifact_target_id", "")),
+                summary=str(tool_arguments.get("summary", "")),
+            )
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
         elif tool_name == "set_focus":

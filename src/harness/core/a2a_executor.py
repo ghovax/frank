@@ -15,6 +15,7 @@ prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 """
 
 import asyncio
+import json
 import uuid
 from typing import Optional
 
@@ -59,6 +60,27 @@ PERMISSION_MODE_METADATA_KEY = "harness/permissionMode"
 DEPTH_METADATA_KEY = "harness/depth"
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
 PART_KIND = "kind"
+# A user turn whose input is a widget interaction carries it as a DataPart of
+# this kind rather than as prose, so the payload reaches the model intact.
+WIDGET_EVENT_KIND = "widget_event"
+
+
+def _widget_event_turn_input(message) -> Optional[str]:
+    """Render an incoming widget-interaction DataPart as a compact JSON envelope
+    for the model. Returns ``None`` when the message carries no widget event, so
+    the caller falls back to the plain text input. The structured payload is
+    preserved verbatim — the model receives clean JSON, never a paraphrase."""
+    for part in (message.parts or []):
+        root = getattr(part, "root", part)
+        if isinstance(root, DataPart) and root.data.get(PART_KIND) == WIDGET_EVENT_KIND:
+            payload = {
+                "artifact_id": root.data.get("artifactId", ""),
+                "title": root.data.get("title", ""),
+                "event": root.data.get("event", ""),
+                "data": root.data.get("data"),
+            }
+            return json.dumps({"widget_event": payload}, ensure_ascii=False)
+    return None
 
 # Each agent profile is served as its own A2A agent under this prefix.
 AGENT_RPC_PREFIX = "/a2a/agents"
@@ -136,6 +158,8 @@ class HarnessAgentExecutor(AgentExecutor):
         pending_permissions: dict[str, asyncio.Future],
         registry: Optional["AgentRegistry"] = None,
         on_new_context: Optional[callable] = None,
+        conversations: Optional[dict[str, list]] = None,
+        on_turn_state: Optional[callable] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -143,9 +167,17 @@ class HarnessAgentExecutor(AgentExecutor):
         self._pending_permissions = pending_permissions
         self._registry = registry
         self._on_new_context = on_new_context
+        # Notified (context_id, running) when a top-level turn starts/ends, so the
+        # server can track which sessions are active and show a sidebar spinner.
+        self._on_turn_state = on_turn_state
         # One runtime per context preserves the conversation across turns.
         self._runtimes: dict[str, AgentRuntime] = {}
         self._aborts: dict[str, AgentRuntime] = {}
+        # Dialogue history keyed by context, shared across *all* agent executors
+        # in the process. The persona (system prompt) is applied per-turn on top
+        # of this, so switching agents mid-session continues the same conversation
+        # with a different persona rather than starting over.
+        self._conversations: dict[str, list] = conversations if conversations is not None else {}
 
     def abort_context(self, context_id: str) -> bool:
         runtime = self._runtimes.get(context_id)
@@ -168,7 +200,12 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime.set_permission_mode(mode)
         return True
 
-    def _build_runtime(self, context_id: str, working_directory: str) -> AgentRuntime:
+    def _build_runtime(
+        self,
+        context_id: str,
+        working_directory: str,
+        conversation: Optional[list] = None,
+    ) -> AgentRuntime:
         configuration = load_agent_configuration(
             self._agent_name, self._global_configuration.agent_directories()
         )
@@ -177,6 +214,7 @@ class HarnessAgentExecutor(AgentExecutor):
             global_configuration=self._global_configuration,
             pending_permissions=self._pending_permissions,
             session_id=context_id,
+            conversation=conversation,
             working_directory=working_directory or "",
         )
         if self._registry is not None:
@@ -195,7 +233,11 @@ class HarnessAgentExecutor(AgentExecutor):
     def _runtime_for(self, context_id: str, working_directory: str) -> AgentRuntime:
         runtime = self._runtimes.get(context_id)
         if runtime is None:
-            runtime = self._build_runtime(context_id, working_directory)
+            # Seed from (and bind to) the process-wide dialogue history for this
+            # context — the same list object another agent may have been writing
+            # to — so a persona switch picks up exactly where the last turn left off.
+            conversation = self._conversations.setdefault(context_id, [])
+            runtime = self._build_runtime(context_id, working_directory, conversation=conversation)
             self._runtimes[context_id] = runtime
         elif working_directory:
             runtime._working_directory = working_directory
@@ -203,6 +245,10 @@ class HarnessAgentExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         user_text = context.get_user_input()
+        # A widget interaction arrives as a structured DataPart; when present it
+        # is the turn's input, rendered to the model as JSON rather than prose.
+        widget_event_input = _widget_event_turn_input(context.message)
+        turn_input = widget_event_input if widget_event_input is not None else user_text
         metadata = context.message.metadata or {}
         working_directory = metadata.get(WORKING_DIRECTORY_METADATA_KEY, "")
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
@@ -221,6 +267,13 @@ class HarnessAgentExecutor(AgentExecutor):
 
         final_text = ""
         failed_message = ""
+
+        # A top-level user turn marks its session as running so the sidebar can
+        # show a spinner. Delegated sub-agent turns run within their parent turn,
+        # which is already counted, so they are not tracked separately.
+        track_running = not delegated and self._on_turn_state is not None
+        if track_running:
+            self._on_turn_state(task.context_id, True)
 
         async def emit(part: Part) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
@@ -262,7 +315,7 @@ class HarnessAgentExecutor(AgentExecutor):
             runtime.set_a2a_task_id(task.id)
             runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
 
-            async for event in runtime.stream(user_text):
+            async for event in runtime.stream(turn_input):
                 kind = event.type
                 data = event.data
                 if kind == StreamEvent.Type.TEXT_CHUNK:
@@ -334,6 +387,8 @@ class HarnessAgentExecutor(AgentExecutor):
             await updater.failed(updater.new_agent_message([_text_part(f"Execution error: {exception}")]))
         finally:
             self._aborts.pop(task.id, None)
+            if track_running:
+                self._on_turn_state(task.context_id, False)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or (context.current_task.id if context.current_task else "")

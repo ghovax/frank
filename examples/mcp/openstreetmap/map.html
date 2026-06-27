@@ -49,22 +49,23 @@
     document.getElementById("title").textContent = data.title;
     document.getElementById("mode").textContent = data.mode;
 
-    const map = L.map("map");
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    const leaflet = L;
+    const map = leaflet.map("map");
+    leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors"
     }).addTo(map);
 
-    const markerLayer = L.layerGroup().addTo(map);
-    const routeLayer = L.layerGroup().addTo(map);
-    const overlayLayer = L.layerGroup().addTo(map);
+    const markerLayer = leaflet.layerGroup().addTo(map);
+    const routeLayer = leaflet.layerGroup().addTo(map);
+    const overlayLayer = leaflet.layerGroup().addTo(map);
     const bounds = [];
     const stops = document.getElementById("stops");
 
     data.places.forEach((place, index) => {
       const latlng = [place.latitude, place.longitude];
       bounds.push(latlng);
-      const marker = L.marker(latlng).addTo(markerLayer);
+      const marker = leaflet.marker(latlng).addTo(markerLayer);
       marker.bindPopup(`<strong>${index + 1}. ${place.label}</strong><br>${place.description || ""}`);
       const item = document.createElement("li");
       item.textContent = place.label;
@@ -73,7 +74,7 @@
 
     if (data.connect_places && data.places.length > 1) {
       const route = data.places.map((place) => [place.latitude, place.longitude]);
-      L.polyline(route, {
+      leaflet.polyline(route, {
         color: data.mode === "flight" ? "#7c3aed" : "#0f766e",
         weight: 4,
         opacity: 0.85,
@@ -82,7 +83,7 @@
     }
 
     if (data.geojson) {
-      L.geoJSON(data.geojson, {
+      leaflet.geoJSON(data.geojson, {
         style: { color: "#b42318", weight: 2, fillOpacity: 0.16 },
         onEachFeature: (feature, layer) => {
           const name = feature.properties && (feature.properties.name || feature.properties.label);
@@ -91,7 +92,7 @@
       }).addTo(overlayLayer);
     }
 
-    L.control.layers(null, {
+    leaflet.control.layers(null, {
       "Stops": markerLayer,
       "Path": routeLayer,
       "GeoJSON": overlayLayer

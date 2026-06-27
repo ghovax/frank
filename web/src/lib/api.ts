@@ -25,6 +25,7 @@ export interface AgentSkill {
   description?: string;
   tags?: string[];
   examples?: string[];
+  enabled?: boolean;
 }
 
 export interface AgentCard {
@@ -73,6 +74,7 @@ export interface McpTool {
 export interface McpServerTools {
   name: string;
   tools: McpTool[];
+  enabled?: boolean;
 }
 
 // Discovery: tools exposed by each configured MCP server, for the capabilities panel.
@@ -102,7 +104,7 @@ export async function fetchHomeDirectory(): Promise<string> {
   return data.home_directory;
 }
 
-export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string }[]> {
+export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; running?: boolean }[]> {
   const response = await fetch(`${API_BASE}/sessions`);
   const data = await response.json();
   return data.sessions;
@@ -255,13 +257,21 @@ export function streamA2A(
   onResult: (result: A2AStreamResult) => void | Promise<void>,
   onDone: () => void,
   workingDirectory?: string,
-  permissionMode: PermissionMode = "default"
+  permissionMode: PermissionMode = "default",
+  // Optional structured payload carried as a typed DataPart alongside (or instead
+  // of) the text — e.g. a widget interaction posted back to the agent.
+  dataPart?: Record<string, unknown>
 ): AbortController {
   const controller = new AbortController();
 
+  const parts: A2APart[] = [];
+  if (text) parts.push({ kind: "text", text });
+  if (dataPart) parts.push({ kind: "data", data: dataPart });
+  if (parts.length === 0) parts.push({ kind: "text", text: "" });
+
   const message: A2AMessage = {
     role: "user",
-    parts: [{ kind: "text", text }],
+    parts,
     messageId: crypto.randomUUID(),
     metadata: {
       ...(workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : {}),

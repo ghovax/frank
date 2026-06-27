@@ -8,6 +8,7 @@ import {
   LuPuzzle,
   LuWrench,
   LuCheck,
+  LuLayoutDashboard,
 } from "react-icons/lu";
 
 interface ToolDisplayInfo {
@@ -31,6 +32,8 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuUsers, iconColor: "purple.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
+    case "render_widget":
+      return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
     case "write_tasks":
     case "update_tasks":
       return { icon: LuListChecks, iconColor: "teal.fg" };
@@ -54,6 +57,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
     case "read_task":
       return "Reading a related task";
+    case "render_widget":
+      return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
     case "write_tasks": {
       const tasks = Array.isArray(args?.tasks) ? args.tasks : [];
       return `Creating ${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
@@ -116,6 +121,8 @@ export function getToolResultDisplay(name?: string, content?: string): ToolDispl
       return { icon, iconColor, label: "Agent finished" };
     case "read_task":
       return { icon, iconColor, label: "Task read" };
+    case "render_widget":
+      return { ...iconForTool(toolName), label: "Widget rendered" };
     case "write_tasks":
       return { icon, iconColor, label: "Tasks created" };
     case "update_tasks":

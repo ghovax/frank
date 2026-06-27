@@ -93,6 +93,26 @@ _mcp_manager: Optional[MCPClientManager] = None
 _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
 _pending_permissions: dict[str, asyncio.Future] = {}
+# Dialogue history per A2A context, shared across every agent executor so that
+# switching the active agent continues the same conversation (the persona is
+# applied per-turn on top of this shared history).
+_conversations: dict[str, list] = {}
+# How many top-level turns are running per context. Drives the sidebar's
+# "running" spinner; a count rather than a flag so overlapping turns are handled.
+_running_contexts: dict[str, int] = {}
+
+
+def _set_turn_state(context_id: str, running: bool) -> None:
+    """Track active turns per context and broadcast on the empty/active edge so the
+    sidebar reflects which conversations are currently running."""
+    previous = _running_contexts.get(context_id, 0)
+    updated = previous + 1 if running else max(0, previous - 1)
+    if updated:
+        _running_contexts[context_id] = updated
+    else:
+        _running_contexts.pop(context_id, None)
+    if (previous == 0) != (updated == 0):
+        _broadcaster.publish({"type": "sessions_changed"})
 _broadcaster = Broadcaster()
 # Keeps references to in-flight session-title generation tasks so they are not
 # garbage-collected before completing.
@@ -119,6 +139,10 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
         database_session.commit()
     finally:
         database_session.close()
+
+    # Surface the new session immediately (its first turn is already marked
+    # running, so the sidebar shows it with a spinner right away).
+    _broadcaster.publish({"type": "sessions_changed"})
 
     try:
         task = asyncio.create_task(_finalize_session_title(context_id, first_message))
@@ -202,6 +226,8 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         pending_permissions=_pending_permissions,
         registry=_registry,
         on_new_context=_record_session,
+        conversations=_conversations,
+        on_turn_state=_set_turn_state,
     )
     handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
     _executors[agent_name] = executor
@@ -230,6 +256,9 @@ def _reload_agent_cards() -> None:
 def _watched_a2a_paths() -> list[str]:
     assert _global_configuration is not None
     directories = [
+        # The .agents roots are watched recursively so mcp.json (live MCP server
+        # definitions) is picked up alongside the agents/ and skills/ subtrees.
+        *_global_configuration.agents_root_directories(),
         *_global_configuration.agent_directories(),
         *_global_configuration.skill_directories(),
     ]
@@ -246,16 +275,39 @@ def _watched_a2a_paths() -> list[str]:
     return watched
 
 
+async def _reload_mcp() -> None:
+    """Re-read mcp.json and apply the server set live: reconcile the client manager
+    (start new servers, stop removed/disabled ones, keep unchanged ones connected)
+    and drop cached runtimes so the next turn rebuilds its tools with the new set.
+    No server restart required."""
+    global _mcp_manager
+    assert _global_configuration is not None
+    _global_configuration.mcp = GlobalConfiguration.load().mcp
+    enabled = _global_configuration.mcp.enabled_servers()
+    if _mcp_manager is None:
+        if enabled:
+            _mcp_manager = MCPClientManager(enabled)
+            await _mcp_manager.start()
+            set_mcp_client_manager(_mcp_manager)
+    else:
+        await _mcp_manager.reconcile(enabled)
+    for executor in _executors.values():
+        executor.reset_runtimes()
+
+
 async def _watch_agents_and_skills(application: FastAPI) -> None:
-    """Watch the agents and skills directories; on any change, mount newly added
-    agents, refresh cards, and broadcast so connected clients refetch immediately.
-    Skill files are also picked up here so new/edited skills are broadcast live."""
+    """Watch the agents, skills, and mcp.json sources; on any change, mount newly
+    added agents, reload MCP servers, refresh cards, and broadcast so connected
+    clients refetch immediately. Agents, skills, and MCP servers are all picked up
+    live, so the only thing needing a restart is a change to the core harness."""
     assert _global_configuration is not None
     watched = _watched_a2a_paths()
     if not watched:
         return
     try:
-        async for _changes in awatch(*watched):
+        async for changes in awatch(*watched):
+            if any(str(path).endswith("mcp.json") for _change, path in changes):
+                await _reload_mcp()
             for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
                 if agent_name not in _mounted_agents:
                     _mount_agent(application, agent_name)
@@ -366,10 +418,9 @@ async def agent_cards():
     """Discovery: the full A2A AgentCard for every served agent, including their
     skills, so the UI can broadcast what each agent can do."""
     assert _registry is not None and _global_configuration is not None
-    skill_titles = {
-        skill.identifier: skill.display_title
-        for skill in load_skills(_global_configuration.skill_directories())
-    }
+    all_skills = load_skills(_global_configuration.skill_directories())
+    skill_titles = {skill.identifier: skill.display_title for skill in all_skills}
+    skill_enabled = {skill.identifier: skill.enabled for skill in all_skills}
     cards_by_url = {
         card.url: card.model_dump(by_alias=True, exclude_none=True, mode="json")
         for card in _registry.cards()
@@ -385,6 +436,7 @@ async def agent_cards():
             if isinstance(skill, dict):
                 skill_name = str(skill.get("name") or skill.get("id") or "")
                 skill["title"] = skill_titles.get(skill_name, skill_name)
+                skill["enabled"] = skill_enabled.get(skill_name, True)
     return {
         "cards": list(cards_by_url.values())
     }
@@ -443,10 +495,27 @@ async def update_settings(request: SettingsUpdateRequest):
 
 @app.get("/mcp/tools")
 async def mcp_tools(server: str = ""):
-    """List tools exposed by configured MCP servers."""
-    if _mcp_manager is None:
-        return {"servers": []}
-    return await _mcp_manager.list_tools(server)
+    """List every configured MCP server with its enabled flag. Enabled servers
+    carry their advertised tools; disabled ones are still returned (with no tools)
+    so the UI can show them greyed out rather than hiding them."""
+    assert _global_configuration is not None
+    configured = _global_configuration.mcp.servers
+    tools_by_server: dict[str, list] = {}
+    if _mcp_manager is not None:
+        # List every enabled server, then filter below — querying the manager for a
+        # disabled server name would raise, since it only holds enabled ones.
+        listing = await _mcp_manager.list_tools("")
+        tools_by_server = {entry["name"]: entry["tools"] for entry in listing["servers"]}
+    servers = [
+        {
+            "name": name,
+            "enabled": configuration.enabled,
+            "tools": tools_by_server.get(name, []),
+        }
+        for name, configuration in sorted(configured.items())
+        if not server or name == server
+    ]
+    return {"servers": servers}
 
 
 @app.get("/mcp/resources")
@@ -594,7 +663,13 @@ async def list_sessions():
         rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).limit(50).all()
         return {
             "sessions": [
-                {"session_id": row.id, "agent": row.agent, "title": row.title, "created_at": row.created_at}
+                {
+                    "session_id": row.id,
+                    "agent": row.agent,
+                    "title": row.title,
+                    "created_at": row.created_at,
+                    "running": row.id in _running_contexts,
+                }
                 for row in rows
             ]
         }

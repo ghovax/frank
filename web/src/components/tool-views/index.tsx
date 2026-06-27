@@ -1,8 +1,9 @@
 "use client";
 
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
+import { useWidgetEvent } from "../widget-bridge";
 import { MarkdownContent } from "../markdown-content";
 import {
   asArray,
@@ -397,9 +398,62 @@ function ArtifactFrame({ title, children }: { title: string; children: ReactNode
   );
 }
 
+// A sandboxed iframe that also listens for back-channel events the widget posts
+// to its parent. Messages are accepted only from this frame's own contentWindow
+// and only when tagged `source: "harness-widget"`, then forwarded (with the
+// widget's id/title attached) to the active WidgetEvent handler — which turns
+// them into a follow-up message for the agent.
+function WidgetFrame({
+  src,
+  srcDoc,
+  sandbox,
+  title,
+  artifactId,
+}: {
+  src?: string;
+  srcDoc?: string;
+  sandbox: string;
+  title: string;
+  artifactId: string;
+}) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const onWidgetEvent = useWidgetEvent();
+
+  useEffect(() => {
+    if (!onWidgetEvent) return;
+    function handleMessage(messageEvent: MessageEvent) {
+      const frame = frameRef.current;
+      if (!frame || messageEvent.source !== frame.contentWindow) return;
+      const payload = messageEvent.data;
+      if (!payload || typeof payload !== "object") return;
+      const record = payload as Record<string, unknown>;
+      if (record.source !== "harness-widget") return;
+      const eventName = typeof record.event === "string" ? record.event.trim() : "";
+      if (!eventName) return;
+      onWidgetEvent({ artifactId, title, event: eventName, data: record.data });
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [onWidgetEvent, artifactId, title]);
+
+  return (
+    <iframe
+      ref={frameRef}
+      src={src || undefined}
+      srcDoc={srcDoc || undefined}
+      sandbox={sandbox}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      title={title}
+      style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+    />
+  );
+}
+
 function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const type = asString(artifact.type);
   const title = asString(artifact.title) || "MCP artifact";
+  const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
   if (type === "iframe") {
     const src = safeWebUrl(asString(artifact.src));
     const srcDoc = asString(artifact.srcdoc);
@@ -415,14 +469,12 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
           bg="bg.muted"
           overflow="hidden"
         >
-          <iframe
+          <WidgetFrame
             src={src || undefined}
             srcDoc={srcDoc || undefined}
             sandbox={artifactSandbox(artifact, Boolean(srcDoc))}
-            referrerPolicy="no-referrer"
-            loading="lazy"
             title={title}
-            style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+            artifactId={artifactId}
           />
         </Box>
       </ArtifactFrame>
@@ -442,12 +494,11 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
           bg="bg.muted"
           overflow="hidden"
         >
-          <iframe
+          <WidgetFrame
             srcDoc={html}
             sandbox={artifactSandbox(artifact, true)}
-            referrerPolicy="no-referrer"
             title={title}
-            style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+            artifactId={artifactId}
           />
         </Box>
       </ArtifactFrame>
@@ -492,7 +543,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
 // These are rendered OUTSIDE the tool-call card so they stay visible, rather than
 // being tucked inside its collapsible body.
 export function extractToolArtifacts(name: string, content: string): Record<string, unknown>[] {
-  if (name !== "call_mcp_tool" && name !== "read_mcp_resource") return [];
+  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget") return [];
   const parsed = tryParse(content);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
   return collectArtifacts((parsed as Record<string, unknown>).artifacts);

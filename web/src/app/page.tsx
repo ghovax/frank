@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, EmptyState, Flex, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
 import { LuGripVertical, LuMessageSquare, LuPlus } from "react-icons/lu";
 import { Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -12,6 +12,7 @@ interface SessionEntry {
   agent: string;
   title: string;
   createdAt: string;
+  running: boolean;
 }
 
 function formatSessionTimestamp(value: string) {
@@ -74,6 +75,7 @@ function HomeContent() {
               agent: session.agent,
               title: session.title,
               createdAt: session.created_at,
+              running: session.running ?? false,
             }))
           )
         )
@@ -107,6 +109,7 @@ function HomeContent() {
             agent: session.agent,
             title: session.title,
             createdAt: session.created_at,
+            running: session.running ?? false,
           }))
         )
       )
@@ -152,8 +155,10 @@ function HomeContent() {
   }
 
   function handleAgentChange(agentName: string) {
+    // Switching persona continues the current conversation — the new agent picks
+    // up the same session (its system prompt is injected on top of the shared
+    // history). Only an explicit "New conversation" starts a fresh session.
     setSelectedAgent(agentName);
-    handleNewChat();
   }
 
   function handleSlashCommand(command: string) {
@@ -272,9 +277,14 @@ function HomeContent() {
                       _hover={{ bg: "bg.muted" }}
                       onClick={() => handleResumeSession(entry)}
                     >
-                      <Text fontSize="xs" fontWeight="medium" truncate>
-                        {entry.title || "Untitled conversation"}
-                      </Text>
+                      <Flex align="center" gap={1.5}>
+                        <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+                          {entry.title || "Untitled conversation"}
+                        </Text>
+                        {entry.running && (
+                          <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
+                        )}
+                      </Flex>
                       <Text fontSize="xs" color="fg.subtle" truncate>
                         {sessionMeta}
                       </Text>

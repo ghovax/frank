@@ -52,6 +52,25 @@ class MCPClientManager:
                     self._streamable_sessions[name] = connection
                 await connection._connect()
 
+    async def reconcile(self, servers: dict[str, MCPServerConfiguration]) -> None:
+        """Apply a new server set live, without a full restart. Sessions for
+        removed or changed servers are closed; unchanged servers stay connected;
+        new (or changed) stateful servers are started. Used by the file watcher so
+        editing ``mcp.json`` takes effect with no downtime."""
+        for name, configuration in list(self._servers.items()):
+            if name not in servers or servers[name] != configuration:
+                await self._close_session(name)
+        self._servers = dict(servers)
+        await self.start()
+
+    async def _close_session(self, name: str) -> None:
+        connection = self._stdio_sessions.pop(name, None)
+        if connection is not None:
+            await connection.aclose()
+        connection = self._streamable_sessions.pop(name, None)
+        if connection is not None:
+            await connection.aclose()
+
     async def list_tools(self, server: str = "") -> dict[str, Any]:
         result: dict[str, Any] = {"servers": []}
         for name in self._selected_servers(server):

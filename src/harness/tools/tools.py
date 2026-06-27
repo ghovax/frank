@@ -1,6 +1,7 @@
 import asyncio
 import atexit
 import json
+import re
 import signal
 import sys
 import uuid
@@ -368,6 +369,136 @@ def register_spawned_task(task_identifier: str, coroutine):
 
 def collect_completed_agents(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
     return spawned_tasks.collect_completed(identifiers)
+
+
+_WIDGET_UPDATE_MODES = {"append", "replace", "update", "upsert"}
+
+# Injected into model-authored widget HTML so an uncaught error or rejected
+# promise is reported back to the agent as a structured `render_error` widget
+# event — the same back-channel clicks use — letting the model see the failure
+# and iterate on the markup.
+_WIDGET_ERROR_REPORTER = (
+    "<script>(function(){"
+    "function report(message,source){try{window.parent.postMessage("
+    "{source:'harness-widget',event:'render_error',"
+    "data:{message:String(message),source:source||''}},'*');}catch(error){}}"
+    "window.addEventListener('error',function(event){"
+    "report(event.message||(event.error&&event.error.message)||'script error',event.filename||'');});"
+    "window.addEventListener('unhandledrejection',function(event){"
+    "report((event.reason&&event.reason.message)||String(event.reason),'promise');});"
+    "})();</script>"
+)
+
+
+def _widget_update_mode(value: str) -> str:
+    normalized = (value or "append").strip().lower()
+    if normalized == "new":
+        return "append"
+    return normalized if normalized in _WIDGET_UPDATE_MODES else "append"
+
+
+def _inject_error_reporter(html: str) -> str:
+    """Place the error reporter as early as possible in the document so it catches
+    failures in the model's own scripts. Falls back to prepending when there is
+    no recognizable ``<head>``/``<body>``/``<html>`` insertion point."""
+    for pattern in (r"<head[^>]*>", r"<body[^>]*>", r"<html[^>]*>"):
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            return html[: match.end()] + _WIDGET_ERROR_REPORTER + html[match.end() :]
+    return _WIDGET_ERROR_REPORTER + html
+
+
+def build_widget_result(
+    html: str,
+    title: str = "Widget",
+    height: int = 420,
+    artifact_id: str = "",
+    artifact_update_mode: str = "append",
+    artifact_target_id: str = "",
+    summary: str = "",
+) -> dict[str, Any]:
+    """Build the tool result for a model-authored HTML widget.
+
+    Mirrors the MCP artifact contract: the full ``html`` rides in ``artifacts``
+    (streamed to the UI and persisted for replay), while ``model_context`` carries
+    only compact metadata so the rendered markup never re-enters the model's
+    context. Kept pure so it can be dispatched from the agent runtime.
+    """
+    identifier = (artifact_id or "").strip() or f"widget-{uuid.uuid4().hex[:10]}"
+    mode = _widget_update_mode(artifact_update_mode)
+    target_id = (artifact_target_id or "").strip() or identifier
+    clamped_height = max(120, min(900, int(height) if str(height).strip() else 420))
+    widget_summary = (summary or "").strip() or f'Rendered HTML widget "{title}".'
+
+    artifact = {
+        "artifact_id": identifier,
+        "artifact_target_id": target_id,
+        "artifact_update_mode": mode,
+        "type": "html",
+        "title": title,
+        "html": _inject_error_reporter(html),
+        "height": clamped_height,
+        "summary": widget_summary,
+    }
+    model_context = {
+        "code": "widget_rendered",
+        "summary": widget_summary,
+        "artifacts": [
+            {
+                "artifact_id": identifier,
+                "artifact_target_id": target_id,
+                "artifact_update_mode": mode,
+                "type": "html",
+                "title": title,
+                "height": clamped_height,
+            }
+        ],
+    }
+    return {"artifacts": [artifact], "model_context": model_context}
+
+
+@tool
+def render_widget(
+    html: str,
+    title: str = "Widget",
+    height: int = 420,
+    artifact_id: str = "",
+    artifact_update_mode: str = "append",
+    artifact_target_id: str = "",
+    summary: str = "",
+) -> str:
+    """Render a self-contained HTML widget directly in the chat, outside the tool card.
+
+    Use this for one-off visuals or interactive UI that does not match a configured
+    MCP server (for charts prefer the `plotly` MCP, for diagrams the `mermaid` MCP).
+    You author a complete HTML document; it renders in a sandboxed iframe. External
+    scripts load over HTTPS (e.g. a CDN `<script>`), so libraries like Chart.js or
+    D3 work. The markup is shown to the user but stripped from your own context, so
+    a large document costs you nothing after this call.
+
+    To make a widget interactive, post events back to the agent from inside the
+    iframe — each becomes a structured `widget_event` turn you can react to:
+
+        window.parent.postMessage(
+            {source: "harness-widget", event: "<name>", data: {/* ... */}},
+            "*"
+        );
+
+    Uncaught errors and rejected promises in the widget are reported back to you
+    automatically as a `render_error` event, so you can see what broke and fix it.
+
+    Args:
+        html: A complete HTML document (``<!doctype html>`` … ``</html>``).
+        title: Short caption shown above the widget. May contain markdown.
+        height: Rendered height in pixels (120-900).
+        artifact_id: Stable id for this widget; generated when omitted. Reuse it
+            with ``artifact_update_mode="replace"`` to refresh a widget in place.
+        artifact_update_mode: ``append`` renders a new widget, ``replace``/``update``
+            refresh an existing one, ``upsert`` refreshes if present else appends.
+        artifact_target_id: Existing widget id to refresh; defaults to ``artifact_id``.
+        summary: One-line description of what the widget shows.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
