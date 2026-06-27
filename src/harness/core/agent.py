@@ -1364,7 +1364,7 @@ class AgentRuntime:
             result = build_widget_result(
                 html=html,
                 title=str(tool_arguments.get("title", "Widget")),
-                height=tool_arguments.get("height", 420),
+                height=tool_arguments.get("height", 0),
                 artifact_id=str(tool_arguments.get("artifact_id", "")),
                 artifact_update_mode=str(tool_arguments.get("artifact_update_mode", "append")),
                 artifact_target_id=str(tool_arguments.get("artifact_target_id", "")),

@@ -373,19 +373,28 @@ def collect_completed_agents(identifiers: Iterable[str] | None = None) -> list[t
 
 _WIDGET_UPDATE_MODES = {"append", "replace", "update", "upsert"}
 
-# Injected into model-authored widget HTML so an uncaught error or rejected
-# promise is reported back to the agent as a structured `render_error` widget
-# event — the same back-channel clicks use — letting the model see the failure
-# and iterate on the markup.
-_WIDGET_ERROR_REPORTER = (
+# Injected into model-authored widget HTML. Two jobs, both over the same
+# back-channel the front end already listens on: (1) report an uncaught error or
+# rejected promise as a structured `render_error` event so the model can see the
+# failure and iterate; (2) report the document's content height as a
+# `__widget_resize` event so the front end can size the widget automatically —
+# the model never has to guess a height.
+_WIDGET_RUNTIME = (
     "<script>(function(){"
-    "function report(message,source){try{window.parent.postMessage("
-    "{source:'harness-widget',event:'render_error',"
-    "data:{message:String(message),source:source||''}},'*');}catch(error){}}"
+    "function send(event,data){try{window.parent.postMessage("
+    "{source:'harness-widget',event:event,data:data},'*');}catch(error){}}"
+    "function report(message,source){send('render_error',{message:String(message),source:source||''});}"
     "window.addEventListener('error',function(event){"
     "report(event.message||(event.error&&event.error.message)||'script error',event.filename||'');});"
     "window.addEventListener('unhandledrejection',function(event){"
     "report((event.reason&&event.reason.message)||String(event.reason),'promise');});"
+    "function measure(){var body=document.body;var root=document.documentElement;"
+    "var height=Math.max(root?root.scrollHeight:0,body?body.scrollHeight:0,body?body.offsetHeight:0);"
+    "if(height>0){send('__widget_resize',{height:height});}}"
+    "function start(){measure();if(window.ResizeObserver){var observer=new ResizeObserver(measure);"
+    "observer.observe(document.documentElement);if(document.body){observer.observe(document.body);}}}"
+    "if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',start);}else{start();}"
+    "window.addEventListener('load',measure);setTimeout(measure,300);setTimeout(measure,1000);"
     "})();</script>"
 )
 
@@ -397,15 +406,16 @@ def _widget_update_mode(value: str) -> str:
     return normalized if normalized in _WIDGET_UPDATE_MODES else "append"
 
 
-def _inject_error_reporter(html: str) -> str:
-    """Place the error reporter as early as possible in the document so it catches
-    failures in the model's own scripts. Falls back to prepending when there is
-    no recognizable ``<head>``/``<body>``/``<html>`` insertion point."""
+def _inject_widget_runtime(html: str) -> str:
+    """Place the widget runtime (error + resize reporting) as early as possible in
+    the document so it catches failures in the model's own scripts and can size the
+    widget. Falls back to prepending when there is no recognizable
+    ``<head>``/``<body>``/``<html>`` insertion point."""
     for pattern in (r"<head[^>]*>", r"<body[^>]*>", r"<html[^>]*>"):
         match = re.search(pattern, html, re.IGNORECASE)
         if match:
-            return html[: match.end()] + _WIDGET_ERROR_REPORTER + html[match.end() :]
-    return _WIDGET_ERROR_REPORTER + html
+            return html[: match.end()] + _WIDGET_RUNTIME + html[match.end() :]
+    return _WIDGET_RUNTIME + html
 
 
 def build_widget_result(
@@ -427,7 +437,13 @@ def build_widget_result(
     identifier = (artifact_id or "").strip() or f"widget-{uuid.uuid4().hex[:10]}"
     mode = _widget_update_mode(artifact_update_mode)
     target_id = (artifact_target_id or "").strip() or identifier
-    clamped_height = max(120, min(900, int(height) if str(height).strip() else 420))
+    # Height defaults to automatic — the widget reports its own content height and
+    # the front end sizes to it. A positive value pins a fixed height instead.
+    try:
+        requested_height = int(height)
+    except (TypeError, ValueError):
+        requested_height = 0
+    artifact_height = max(120, min(900, requested_height)) if requested_height > 0 else "auto"
     widget_summary = (summary or "").strip() or f'Rendered HTML widget "{title}".'
 
     artifact = {
@@ -436,8 +452,8 @@ def build_widget_result(
         "artifact_update_mode": mode,
         "type": "html",
         "title": title,
-        "html": _inject_error_reporter(html),
-        "height": clamped_height,
+        "html": _inject_widget_runtime(html),
+        "height": artifact_height,
         "summary": widget_summary,
     }
     model_context = {
@@ -450,7 +466,7 @@ def build_widget_result(
                 "artifact_update_mode": mode,
                 "type": "html",
                 "title": title,
-                "height": clamped_height,
+                "height": artifact_height,
             }
         ],
     }
@@ -461,7 +477,7 @@ def build_widget_result(
 def render_widget(
     html: str,
     title: str = "Widget",
-    height: int = 420,
+    height: int = 0,
     artifact_id: str = "",
     artifact_update_mode: str = "append",
     artifact_target_id: str = "",
@@ -469,12 +485,17 @@ def render_widget(
 ) -> str:
     """Render a self-contained HTML widget directly in the chat, outside the tool card.
 
-    Use this for one-off visuals or interactive UI that does not match a configured
-    MCP server (for charts prefer the `plotly` MCP, for diagrams the `mermaid` MCP).
-    You author a complete HTML document; it renders in a sandboxed iframe. External
-    scripts load over HTTPS (e.g. a CDN `<script>`), so libraries like Chart.js or
-    D3 work. The markup is shown to the user but stripped from your own context, so
-    a large document costs you nothing after this call.
+    This is the general-purpose visual tool — a Swiss-army knife for showing the
+    user almost anything: an image, a table, a chart, a map, a small interactive UI,
+    a formatted document. You author a complete HTML document; it renders in a
+    sandboxed iframe. External scripts and assets load over HTTPS, so reach for an
+    existing web library rather than hand-rolling: a `<script>`/`<link>` from a CDN
+    (Chart.js, D3, Plotly, Leaflet, KaTeX, highlight.js, …) or just an `<img>` tag.
+    Think "which library already does this?" first. The markup is shown to the user
+    but stripped from your own context, so a large document costs you nothing.
+
+    Height is automatic — the widget sizes to its content, so you do not need to
+    pass `height` (set it only to pin a fixed height, e.g. for a full-bleed map).
 
     To make a widget interactive, post events back to the agent from inside the
     iframe — each becomes a structured `widget_event` turn you can react to:
@@ -490,7 +511,8 @@ def render_widget(
     Args:
         html: A complete HTML document (``<!doctype html>`` … ``</html>``).
         title: Short caption shown above the widget. May contain markdown.
-        height: Rendered height in pixels (120-900).
+        height: Optional fixed height in pixels (120-900). Omit for automatic
+            sizing to the content (the default).
         artifact_id: Stable id for this widget; generated when omitted. Reuse it
             with ``artifact_update_mode="replace"`` to refresh a widget in place.
         artifact_update_mode: ``append`` renders a new widget, ``replace``/``update``

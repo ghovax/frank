@@ -396,7 +396,7 @@ function setRunningThinking(state: ReduceState, focus: string, icon: string): vo
   state.messages = [
     ...state.messages,
     {
-      id: `status-${state.messages.length}-${Math.random()}`,
+      id: `status-${state.messages.length}`,
       role: "thinking",
       content: "",
       timestamp: new Date().toISOString(),
@@ -417,7 +417,7 @@ function setThinkingFocus(state: ReduceState, focus: string, icon: string): void
   state.messages = [
     ...state.messages,
     {
-      id: `status-${state.messages.length}-${Math.random()}`,
+      id: `status-${state.messages.length}`,
       role: "thinking",
       content: "",
       timestamp: new Date().toISOString(),
@@ -437,7 +437,7 @@ function pushAssistantText(state: ReduceState, text: string): void {
   if (!text) return;
   finishRunningThinking(state);
   if (state.lane === null) {
-    const id = `assistant-${state.messages.length}-${Math.random()}`;
+    const id = `assistant-${state.messages.length}`;
     state.lane = id;
     state.messages = [...state.messages, { id, role: "assistant", content: text, timestamp: new Date().toISOString() }];
   } else {
@@ -453,7 +453,7 @@ function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   state.lane = null;
   state.messages = [
     ...state.messages,
-    { id: `user-${state.messages.length}-${Math.random()}`, role: "user", content: text, timestamp: new Date().toISOString() },
+    { id: `user-${state.messages.length}`, role: "user", content: text, timestamp: new Date().toISOString() },
   ];
 }
 
@@ -495,7 +495,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
         if (index !== -1) {
           state.messages = state.messages.map((message, messageIndex) => (messageIndex === index ? { ...message, content: message.content + text } : message));
         } else {
-          state.messages = [...state.messages, { id: `thinking-${state.messages.length}-${Math.random()}`, role: "thinking", content: text, timestamp: new Date().toISOString(), meta: { focus: label, icon: icon || "focus" } }];
+          state.messages = [...state.messages, { id: `thinking-${state.messages.length}`, role: "thinking", content: text, timestamp: new Date().toISOString(), meta: { focus: label, icon: icon || "focus" } }];
         }
       }
       break;
@@ -507,7 +507,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       state.messages = [
         ...state.messages,
         {
-          id: `toolcall-${data.toolCallId ?? sequence}-${Math.random()}`,
+          id: `toolcall-${data.toolCallId ?? sequence}`,
           role: "tool_call",
           content: String(data.name ?? "unknown"),
           timestamp: new Date().toISOString(),
@@ -561,7 +561,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       finishRunningThinking(state);
       state.messages = [
         ...state.messages,
-        { id: `error-${state.messages.length}-${Math.random()}`, role: "error", content: String(data.message ?? "Unknown error"), timestamp: new Date().toISOString() },
+        { id: `error-${state.messages.length}`, role: "error", content: String(data.message ?? "Unknown error"), timestamp: new Date().toISOString() },
       ];
       break;
     }
@@ -675,7 +675,10 @@ export function useChat(
   agent: string,
   initialSessionId: string | null = null,
   workingDirectory?: string,
-  permissionMode: PermissionMode = "default"
+  permissionMode: PermissionMode = "default",
+  // Whether a turn is currently running on this session (from the server-tracked
+  // running set). Drives live polling when we are viewing — but not driving — it.
+  sessionRunning: boolean = false
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
@@ -697,6 +700,13 @@ export function useChat(
   // artifact + message; user-driven events (clicks) are never deduped.
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
+  // Tracks whether this session was running, so we do a final refresh when its
+  // turn finishes (the poll loop stops once it is no longer running).
+  const wasRunningRef = useRef(false);
+  // True once we have driven a turn in this mount. For such a session the live
+  // SSE is authoritative, so we never poll it (polling would replace the live
+  // state with a replay and churn message ids).
+  const streamedLocallyRef = useRef(false);
   const runStreamRef = useRef<(input: ChatInput) => void>(() => {});
 
   const setQueue = useCallback((next: string[]) => {
@@ -752,6 +762,46 @@ export function useChat(
     };
   }, [initialSessionId, flush]);
 
+  // Live updates for a session that is running on the server but is not being
+  // driven by this hook (we switched back to it, or it was started elsewhere).
+  // The backend persists each step to the task store as the turn progresses, so
+  // polling + re-replay keeps the transcript current in real time. Re-replay is a
+  // smooth in-place update because message ids are deterministic. We never poll
+  // while streaming locally — the live SSE already delivers those updates.
+  useEffect(() => {
+    if (!initialSessionId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
+      try {
+        const tasks = await fetchSessionTasks(initialSessionId);
+        if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
+        const replayed = replayTasks(tasks);
+        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null, toolSequence: 0 };
+        flush();
+      } catch {
+        // transient — try again on the next tick
+      }
+    };
+    if (sessionRunning) {
+      wasRunningRef.current = true;
+      const tick = async () => {
+        await refresh();
+        if (!cancelled) timer = setTimeout(tick, 1000);
+      };
+      timer = setTimeout(tick, 1000);
+    } else if (wasRunningRef.current) {
+      // The turn just finished — capture its final state once, then stop.
+      wasRunningRef.current = false;
+      refresh();
+    }
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [sessionRunning, initialSessionId, flush]);
+
   const runStream = useCallback(
     (input: ChatInput) => {
       // Optimistic input message + reset the open prose lane. A widget event
@@ -772,6 +822,7 @@ export function useChat(
       flush();
 
       isStreamingRef.current = true;
+      streamedLocallyRef.current = true;
       setIsStreaming(true);
 
       const text = input.kind === "text" ? input.text : "";

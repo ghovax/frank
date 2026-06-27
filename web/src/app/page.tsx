@@ -98,6 +98,7 @@ function HomeContent() {
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
+  const activeSessionRunning = sessions.find((entry) => entry.sessionId === activeSessionId)?.running ?? false;
   const agentNames = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
 
   const refreshSessions = useCallback(() => {
@@ -310,6 +311,7 @@ function HomeContent() {
           agentCard={selectedCard}
           onAgentChange={handleAgentChange}
           initialSessionId={activeSessionId}
+          sessionRunning={activeSessionRunning}
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}
           workingDirectory={workingDirectory}

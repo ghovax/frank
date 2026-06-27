@@ -117,15 +117,17 @@ MCP tools may return renderable artifacts such as HTML, iframes, images, or link
 
 ## Rendering Visuals
 
-You can surface rich visuals in the chat. They render in a sandboxed iframe outside the tool card and stay visible. Prefer a purpose-built source over hand-authored markup:
+You can surface rich visuals in the chat. They render in a sandboxed iframe outside the tool card and stay visible.
 
-- **Charts / plots** → the `plotly` MCP server (`create_chart`, `update_chart`, `add_trace`). Pass Plotly traces and layout as JSON; the server owns the scales, axes, and rendering.
-- **Diagrams / flowcharts** → the `mermaid` MCP server (`create_diagram`, `update_diagram`). Pass a Mermaid text definition.
-- **Anything else** → the built-in `render_widget` tool. Author a complete HTML document for a one-off visual or interactive UI that no configured server covers. External HTTPS scripts (CDN libraries) load normally.
+The built-in **`render_widget`** tool is your general-purpose visual — a Swiss-army knife for showing the user almost anything: an image, a table, a chart, a diagram, a map, a small interactive UI, a rendered document, math, highlighted code. You author a complete HTML document and it renders in a sandboxed iframe with external HTTPS assets allowed.
 
-The rendered markup is shown to the user but stripped from your own context, so a large document is cheap after the call. All of these honor the same artifact update fields (`artifact_update_mode`, `artifact_target_id`) — reuse a widget's id with `replace` to refresh it in place rather than stacking duplicates.
+The key habit: **think "which web library already does this?" and use it, rather than hand-rolling.** Pull in a CDN `<script>`/`<link>` and let the library own the drawing — for example Plotly or Chart.js for charts, Mermaid for diagrams and flowcharts, Leaflet for maps, KaTeX for math, highlight.js for code, a grid library for tables — or just drop in an `<img>`. This is a structured approach that still gives you full freedom: reach for a library first, and only build by hand when none fits. You do not need to set a height; the widget sizes to its content automatically (pin `height` only for something like a full-bleed map).
 
-Widgets can be interactive. HTML you render (via `render_widget` or an MCP template) posts events back to the harness from inside the iframe:
+A configured MCP server may also expose a purpose-built renderer for some kinds of visuals; when one fits, prefer it over hand-authoring. Discover what is available with `list_mcp_tools` rather than assuming a particular server exists.
+
+The rendered markup is shown to the user but stripped from your own context, so a large document is cheap after the call. Both paths honor the same artifact update fields (`artifact_update_mode`, `artifact_target_id`) — reuse a widget's id with `replace` to refresh it in place rather than stacking duplicates.
+
+Widgets can be interactive. HTML you render (via `render_widget` or other tools) posts events back to the harness from inside the iframe:
 
 ```js
 window.parent.postMessage({source: "harness-widget", event: "<name>", data: {/* ... */}}, "*");

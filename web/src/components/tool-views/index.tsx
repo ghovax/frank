@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { useWidgetEvent } from "../widget-bridge";
 import { MarkdownContent } from "../markdown-content";
@@ -398,29 +398,38 @@ function ArtifactFrame({ title, children }: { title: string; children: ReactNode
   );
 }
 
-// A sandboxed iframe that also listens for back-channel events the widget posts
-// to its parent. Messages are accepted only from this frame's own contentWindow
-// and only when tagged `source: "harness-widget"`, then forwarded (with the
-// widget's id/title attached) to the active WidgetEvent handler — which turns
-// them into a follow-up message for the agent.
+const AUTO_MIN_HEIGHT = 80;
+const AUTO_MAX_HEIGHT = 1200;
+
+// A sandboxed iframe (in a bordered frame) that listens for back-channel messages
+// the widget posts to its parent. Messages are accepted only from this frame's own
+// contentWindow and only when tagged `source: "harness-widget"`. Two kinds:
+//   - `__widget_resize` → sizes the frame to the content (when autoHeight), so the
+//     model never has to guess a height. Never forwarded to the agent.
+//   - anything else → a real interaction, forwarded (with the widget's id/title)
+//     to the active WidgetEvent handler, becoming a follow-up turn for the agent.
 function WidgetFrame({
   src,
   srcDoc,
   sandbox,
   title,
   artifactId,
+  autoHeight,
+  fixedHeight,
 }: {
   src?: string;
   srcDoc?: string;
   sandbox: string;
   title: string;
   artifactId: string;
+  autoHeight: boolean;
+  fixedHeight: string;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const onWidgetEvent = useWidgetEvent();
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!onWidgetEvent) return;
     function handleMessage(messageEvent: MessageEvent) {
       const frame = frameRef.current;
       if (!frame || messageEvent.source !== frame.contentWindow) return;
@@ -428,25 +437,48 @@ function WidgetFrame({
       if (!payload || typeof payload !== "object") return;
       const record = payload as Record<string, unknown>;
       if (record.source !== "harness-widget") return;
+      if (record.event === "__widget_resize") {
+        if (autoHeight) {
+          const reported = Number((record.data as Record<string, unknown> | undefined)?.height);
+          if (Number.isFinite(reported)) {
+            setMeasuredHeight(Math.max(AUTO_MIN_HEIGHT, Math.min(AUTO_MAX_HEIGHT, Math.ceil(reported))));
+          }
+        }
+        return; // internal sizing signal — never an agent-facing event
+      }
+      if (!onWidgetEvent) return;
       const eventName = typeof record.event === "string" ? record.event.trim() : "";
       if (!eventName) return;
       onWidgetEvent({ artifactId, title, event: eventName, data: record.data });
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [onWidgetEvent, artifactId, title]);
+  }, [onWidgetEvent, artifactId, title, autoHeight]);
+
+  const height = autoHeight ? `${measuredHeight ?? 220}px` : fixedHeight;
 
   return (
-    <iframe
-      ref={frameRef}
-      src={src || undefined}
-      srcDoc={srcDoc || undefined}
-      sandbox={sandbox}
-      referrerPolicy="no-referrer"
-      loading="lazy"
-      title={title}
-      style={{ width: "100%", height: "100%", border: 0, display: "block" }}
-    />
+    <Box
+      w="100%"
+      h={height}
+      border="1px solid"
+      borderColor="border"
+      borderRadius="sm"
+      bg="bg.muted"
+      overflow="hidden"
+      transition="height 120ms ease"
+    >
+      <iframe
+        ref={frameRef}
+        src={src || undefined}
+        srcDoc={srcDoc || undefined}
+        sandbox={sandbox}
+        referrerPolicy="no-referrer"
+        loading="lazy"
+        title={title}
+        style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+      />
+    </Box>
   );
 }
 
@@ -454,29 +486,22 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const type = asString(artifact.type);
   const title = asString(artifact.title) || "MCP artifact";
   const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
+  const isAutoHeight = artifact.height === "auto" || artifact.height == null || artifact.height === "";
   if (type === "iframe") {
     const src = safeWebUrl(asString(artifact.src));
     const srcDoc = asString(artifact.srcdoc);
     if (!src && !srcDoc) return <ErrorView message="Iframe artifact did not include a safe source." />;
     return (
       <ArtifactFrame title={title}>
-        <Box
-          w="100%"
-          h={artifactHeight(artifact.height)}
-          border="1px solid"
-          borderColor="border"
-          borderRadius="sm"
-          bg="bg.muted"
-          overflow="hidden"
-        >
-          <WidgetFrame
-            src={src || undefined}
-            srcDoc={srcDoc || undefined}
-            sandbox={artifactSandbox(artifact, Boolean(srcDoc))}
-            title={title}
-            artifactId={artifactId}
-          />
-        </Box>
+        <WidgetFrame
+          src={src || undefined}
+          srcDoc={srcDoc || undefined}
+          sandbox={artifactSandbox(artifact, Boolean(srcDoc))}
+          title={title}
+          artifactId={artifactId}
+          autoHeight={false}
+          fixedHeight={artifactHeight(artifact.height)}
+        />
       </ArtifactFrame>
     );
   }
@@ -485,22 +510,14 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     if (!html) return <ErrorView message="HTML artifact did not include content." />;
     return (
       <ArtifactFrame title={title}>
-        <Box
-          w="100%"
-          h={artifactHeight(artifact.height)}
-          border="1px solid"
-          borderColor="border"
-          borderRadius="sm"
-          bg="bg.muted"
-          overflow="hidden"
-        >
-          <WidgetFrame
-            srcDoc={html}
-            sandbox={artifactSandbox(artifact, true)}
-            title={title}
-            artifactId={artifactId}
-          />
-        </Box>
+        <WidgetFrame
+          srcDoc={html}
+          sandbox={artifactSandbox(artifact, true)}
+          title={title}
+          artifactId={artifactId}
+          autoHeight={isAutoHeight}
+          fixedHeight={artifactHeight(artifact.height)}
+        />
       </ArtifactFrame>
     );
   }

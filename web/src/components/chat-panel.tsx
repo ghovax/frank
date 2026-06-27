@@ -23,6 +23,7 @@ interface ChatPanelProps {
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
+  sessionRunning?: boolean;
   onSessionCreated: (sessionId: string) => void;
   onSlashCommand?: (command: string) => void;
   workingDirectory?: string;
@@ -40,6 +41,7 @@ export function ChatPanel({
   agentCard,
   onAgentChange,
   initialSessionId,
+  sessionRunning = false,
   onSessionCreated,
   workingDirectory,
   onWorkingDirectoryChange,
@@ -51,11 +53,14 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
   const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, sendWidgetEvent, abort, dequeueMessage, handlePermission } =
-    useChat(agent, initialSessionId, workingDirectory, permissionMode);
+    useChat(agent, initialSessionId, workingDirectory, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  // "Following" the bottom. Released the moment the user scrolls up and resumed
+  // only when they return to the bottom — so auto-scroll never grabs them.
   const isPinnedRef = useRef(true);
+  const lastScrollTopRef = useRef(0);
   const onStreamingChangeRef = useRef(onStreamingChange);
   const notifiedSessionIdRef = useRef<string | null>(null);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
@@ -65,8 +70,16 @@ export function ChatPanel({
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const threshold = 80;
-    isPinnedRef.current = container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+    const previousScrollTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = container.scrollTop;
+    const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+    if (container.scrollTop < previousScrollTop - 1) {
+      // Any upward scroll releases follow mode — never pull the user back down.
+      isPinnedRef.current = false;
+    } else if (distanceFromBottom <= 8) {
+      // Returned to the bottom — resume following new content.
+      isPinnedRef.current = true;
+    }
   }, []);
 
   useEffect(() => {
@@ -81,6 +94,7 @@ export function ChatPanel({
       const container = scrollContainerRef.current;
       if (!container || !isPinnedRef.current) return;
       container.scrollTop = container.scrollHeight;
+      lastScrollTopRef.current = container.scrollTop;
     });
   }, []);
 
@@ -95,6 +109,7 @@ export function ChatPanel({
       const container = scrollContainerRef.current;
       if (!container) return;
       container.scrollTop = container.scrollHeight;
+      lastScrollTopRef.current = container.scrollTop;
     });
   }, []);
 
@@ -139,8 +154,9 @@ export function ChatPanel({
   }, []);
 
   useEffect(() => {
+    // Follow new content only if the user is already at the bottom — starting a
+    // turn must not yank someone who has scrolled up to read earlier messages.
     if (isStreaming) {
-      isPinnedRef.current = true;
       scheduleScrollToBottom();
     }
     onStreamingChangeRef.current?.(isStreaming);
