@@ -17,5 +17,7 @@ wheels/
 *.swo
 *.swp
 
-# Database
+# Harness state now lives in ~/.harness; ignore any legacy in-repo copies.
 harness.db
+history.db
+configuration.yaml

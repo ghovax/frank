@@ -12,6 +12,7 @@ A configurable multi-agent harness built on the A2A protocol. Each agent profile
 - `examples/mcp/echo_server.py` — tiny stdio MCP server used by the default `demo` MCP configuration for smoke tests.
 - `web/` — Next.js chat UI.
 - `src/harness/` — the runtime: agent loop, tool dispatch, permissions, A2A bridge.
-- `configuration.yaml` — API endpoint, default agent, local agent/skill discovery directories, and MCP servers.
+- `~/.harness/` — the harness home directory and single source of truth for mutable state: `configuration.yaml` (API endpoint, default agent, local agent/skill discovery directories, and MCP servers) and `history.db` (chat history). The directory and config are created on first run, seeded from `configuration.yaml.example`.
+- `configuration.yaml.example` — reference configuration committed to the repo; copy it to `~/.harness/configuration.yaml` to customize, or just edit the generated file.
 
-Run with `uv run python server.py`. Secrets (API keys) are read from environment variables, falling back to `configuration.yaml`.
+Run with `uv run python server.py`. Secrets (API keys) are read from environment variables, falling back to `~/.harness/configuration.yaml`.

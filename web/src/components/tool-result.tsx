@@ -16,6 +16,7 @@ export function ToolResult({ name, content, sequenceNumber }: ToolResultProps) {
   const [open, setOpen] = useState(false);
 
   const { icon: Icon, iconColor, label } = getToolResultDisplay(name, content);
+  const bodyMaxHeight = name === "call_mcp_tool" ? "620px" : "320px";
 
   return (
     <ToolCard>
@@ -33,7 +34,7 @@ export function ToolResult({ name, content, sequenceNumber }: ToolResultProps) {
       />
 
       {open && (
-        <ToolCardBody maxH="320px">
+        <ToolCardBody maxH={bodyMaxHeight}>
           <ToolResultView name={name ?? ""} content={content} />
         </ToolCardBody>
       )}

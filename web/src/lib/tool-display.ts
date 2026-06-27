@@ -5,6 +5,7 @@ import {
   LuUsers,
   LuNetwork,
   LuListChecks,
+  LuPuzzle,
   LuWrench,
   LuCheck,
 } from "react-icons/lu";
@@ -33,6 +34,11 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
     case "write_tasks":
     case "update_tasks":
       return { icon: LuListChecks, iconColor: "teal.fg" };
+    case "call_mcp_tool":
+    case "list_mcp_tools":
+    case "list_mcp_resources":
+    case "read_mcp_resource":
+      return { icon: LuPuzzle, iconColor: "purple.fg" };
     default:
       return { icon: LuWrench, iconColor: "fg.muted" };
   }
@@ -54,6 +60,14 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
     }
     case "update_tasks":
       return "Updating tasks";
+    case "call_mcp_tool":
+      return args?.tool_name ? `Calling MCP tool "${String(args.tool_name)}"` : "Calling MCP tool";
+    case "list_mcp_tools":
+      return "Listing MCP tools";
+    case "list_mcp_resources":
+      return "Listing MCP resources";
+    case "read_mcp_resource":
+      return args?.uri ? `Reading MCP resource "${String(args.uri)}"` : "Reading MCP resource";
     default:
       return name;
   }
@@ -106,6 +120,14 @@ export function getToolResultDisplay(name?: string, content?: string): ToolDispl
       return { icon, iconColor, label: "Tasks created" };
     case "update_tasks":
       return { icon, iconColor, label: "Tasks updated" };
+    case "call_mcp_tool":
+      return { ...iconForTool(toolName), label: "MCP tool finished" };
+    case "list_mcp_tools":
+      return { ...iconForTool(toolName), label: "MCP tools listed" };
+    case "list_mcp_resources":
+      return { ...iconForTool(toolName), label: "MCP resources listed" };
+    case "read_mcp_resource":
+      return { ...iconForTool(toolName), label: "MCP resource read" };
     default:
       return {
         icon,

@@ -35,6 +35,46 @@ export async function fetchAgentCards(): Promise<AgentCard[]> {
   return data.cards ?? [];
 }
 
+export interface Settings {
+  api_key: string;
+  exa_api_key: string;
+}
+
+// API credentials stored in ~/.harness/configuration.yaml.
+export async function fetchSettings(): Promise<Settings> {
+  const response = await fetch(`${API_BASE}/settings`);
+  if (!response.ok) return { api_key: "", exa_api_key: "" };
+  return response.json();
+}
+
+export async function saveSettings(settings: Settings): Promise<void> {
+  await fetch(`${API_BASE}/settings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+}
+
+export interface McpTool {
+  name: string;
+  title?: string | null;
+  description?: string | null;
+  input_schema?: unknown;
+}
+
+export interface McpServerTools {
+  name: string;
+  tools: McpTool[];
+}
+
+// Discovery: tools exposed by each configured MCP server, for the capabilities panel.
+export async function fetchMcpTools(): Promise<McpServerTools[]> {
+  const response = await fetch(`${API_BASE}/mcp/tools`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.servers ?? [];
+}
+
 // Subscribe to live server events (e.g. agents changed). Returns an unsubscribe.
 export function subscribeEvents(onEvent: (event: { type: string }) => void): () => void {
   const source = new EventSource(`${API_BASE}/events`);

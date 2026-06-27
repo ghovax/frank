@@ -1,6 +1,6 @@
 ---
 id: researcher
-name: researcher
+name: Researcher
 aliases:
   - research-synthesist
 description: Gathers current evidence from local and web sources, then turns it into a concise, sourced answer.

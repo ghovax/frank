@@ -50,7 +50,7 @@ function PermissionBox({ message, onPermission }: { message: ChatMessage; onPerm
         bg="bg.subtle"
         border="1px solid"
         borderColor="border"
-        _focus={{ boxShadow: "outline" }}
+        _focus={{ outline: "none", boxShadow: "none" }}
       >
         <Flex align="center" gap={1.5} px={2} py={1.5} minH="8" userSelect="none" bg={headerBg}>
           <Box color="green.fg" fontSize="sm" flexShrink={0}>

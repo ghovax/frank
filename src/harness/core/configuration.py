@@ -10,6 +10,64 @@ import yaml
 from pydantic import BaseModel
 
 
+# The harness keeps its mutable state — the configuration file and the chat
+# history database — under a dot-directory in the user's home, not inside the
+# repository. The home directory is the single source of truth.
+HARNESS_HOME_DIRECTORY = Path("~/.harness").expanduser()
+CONFIGURATION_FILENAME = "configuration.yaml"
+EXAMPLE_CONFIGURATION_FILENAME = "configuration.yaml.example"
+DATABASE_FILENAME = "history.db"
+
+# Used only as a last resort when seeding ~/.harness/configuration.yaml and no
+# in-repo configuration.yaml or configuration.yaml.example is available. Keep in
+# sync with configuration.yaml.example, which is the human-facing reference.
+DEFAULT_CONFIGURATION_YAML = """\
+api:
+  endpoint: "https://opencode.ai/zen/go/v1"
+  model: "deepseek-v4-flash"
+  api_key: ""
+
+exa:
+  api_key: ""
+
+default_agent: assistant
+agents_root_directory: .agents
+home_agents_root_directory: ~/.agents
+agents_directory: .agents/agents
+skills_directory: .agents/skills
+"""
+
+
+def harness_home_directory() -> Path:
+    """The ~/.harness directory, created on first use."""
+    HARNESS_HOME_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    return HARNESS_HOME_DIRECTORY
+
+
+def configuration_file_path() -> Path:
+    return harness_home_directory() / CONFIGURATION_FILENAME
+
+
+def database_file_path() -> Path:
+    return harness_home_directory() / DATABASE_FILENAME
+
+
+def save_api_keys(*, api_key: str | None = None, exa_api_key: str | None = None) -> None:
+    """Persist API credentials into ~/.harness/configuration.yaml, preserving the
+    rest of the file. Only the provided keys are written. Creates the file from the
+    default template if it does not exist yet."""
+    path = configuration_file_path()
+    if path.exists():
+        data = yaml.safe_load(path.read_text()) or {}
+    else:
+        data = yaml.safe_load(DEFAULT_CONFIGURATION_YAML)
+    if api_key is not None:
+        data.setdefault("api", {})["api_key"] = api_key
+    if exa_api_key is not None:
+        data.setdefault("exa", {})["api_key"] = exa_api_key
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+
 class ApiConfiguration(BaseModel):
     endpoint: str
     model: str
@@ -80,6 +138,24 @@ class GlobalConfiguration(BaseModel):
     # runaway delegation (agent A spawns B spawns C ...).
     maximum_delegation_depth: int = 8
     maximum_history_age_days: int = 30
+
+    @classmethod
+    def load(cls) -> "GlobalConfiguration":
+        """Load the configuration from ~/.harness/configuration.yaml, creating the
+        home directory and the file on first run. The seed is taken from, in order:
+        a legacy configuration.yaml in the working directory (migrated), the
+        in-repo configuration.yaml.example, then a built-in default."""
+        path = configuration_file_path()
+        if not path.exists():
+            legacy_path = Path(CONFIGURATION_FILENAME)
+            example_path = Path(EXAMPLE_CONFIGURATION_FILENAME)
+            if legacy_path.exists():
+                path.write_text(legacy_path.read_text())
+            elif example_path.exists():
+                path.write_text(example_path.read_text())
+            else:
+                path.write_text(DEFAULT_CONFIGURATION_YAML)
+        return cls.from_yaml(path)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "GlobalConfiguration":

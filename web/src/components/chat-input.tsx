@@ -11,8 +11,9 @@ import {
   Select,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuBan, LuCheck, LuFolder, LuHistory, LuNetwork, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
+import { LuArrowUp, LuBan, LuCheck, LuFolder, LuHistory, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
 import { validateWorkingDirectory, type PermissionMode } from "@/lib/api";
+import { SettingsDialog } from "./settings-dialog";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -56,6 +57,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
     valid: true,
@@ -172,6 +174,18 @@ export function ChatInput({
               History
             </Button>
           )}
+          <Button
+            size="xs"
+            variant="outline"
+            borderRadius="sm"
+            fontSize="xs"
+            h="28px"
+            flexShrink={0}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <LuSettings size={13} />
+            Settings
+          </Button>
         </Flex>
 
         <Flex align="center" gap={1.5} flexShrink={0}>
@@ -378,6 +392,7 @@ export function ChatInput({
             size="xs"
             h="28px"
             fontSize="xs"
+            fontFamily="var(--app-font-mono)"
             placeholder="Working directory"
             value={workingDirectory ?? ""}
             onChange={(event) => onWorkingDirectoryChange?.(event.target.value)}
@@ -403,6 +418,8 @@ export function ChatInput({
           </IconButton>
         </Flex>
       </Flex>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </Box>
   );
 }

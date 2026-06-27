@@ -902,7 +902,11 @@ class AgentRuntime:
                         turn_tool_results_log.append({"name": tool_name, "result": json.dumps(result_str)})
                     else:
                         if isinstance(result_str, dict):
-                            result_str = json.dumps(result_str)
+                            model_context = result_str.get("model_context")
+                            if model_context is not None:
+                                result_str = json.dumps(model_context)
+                            else:
+                                result_str = json.dumps(result_str)
                         result_content = str(result_str)
                         turn_tool_results_log.append({"name": tool_name, "result": result_content})
                 elif event.type == StreamEvent.Type.ERROR:

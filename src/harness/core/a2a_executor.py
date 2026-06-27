@@ -154,6 +154,13 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime.abort()
         return True
 
+    def reset_runtimes(self) -> None:
+        """Drop cached runtimes so the next turn rebuilds them — used after a
+        configuration change (e.g. new API credentials) so it takes effect without
+        a restart. In-flight turns keep their own runtime reference and are
+        unaffected."""
+        self._runtimes.clear()
+
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
         runtime = self._runtimes.get(context_id)
         if runtime is None:
@@ -211,24 +218,6 @@ class HarnessAgentExecutor(AgentExecutor):
                 task.metadata = {**(task.metadata or {}), "referenceTaskIds": reference_task_ids}
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
-        await updater.start_work()
-
-        if delegated:
-            # A delegated sub-agent call is a fresh, one-shot run (no shared
-            # conversation state with the parent turn).
-            runtime = self._build_runtime(task.context_id, working_directory)
-            if READ_ONLY_METADATA_KEY in metadata:
-                runtime.set_read_only(bool(metadata[READ_ONLY_METADATA_KEY]))
-        else:
-            is_new_context = task.context_id not in self._runtimes
-            runtime = self._runtime_for(task.context_id, working_directory)
-            if permission_mode:
-                runtime.set_permission_mode(permission_mode)
-            if is_new_context and self._on_new_context is not None:
-                self._on_new_context(task.context_id, self._agent_name, working_directory, user_text)
-        self._aborts[task.id] = runtime
-        runtime.set_a2a_task_id(task.id)
-        runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
 
         final_text = ""
         failed_message = ""
@@ -249,7 +238,30 @@ class HarnessAgentExecutor(AgentExecutor):
                 **fields,
             ))
 
+        # The runtime setup — building the agent runtime and its model client —
+        # runs inside the try so any failure (e.g. missing API credentials) is
+        # surfaced as a clean A2A `failed` status rather than escaping and tearing
+        # down the SSE stream mid-flight.
         try:
+            await updater.start_work()
+
+            if delegated:
+                # A delegated sub-agent call is a fresh, one-shot run (no shared
+                # conversation state with the parent turn).
+                runtime = self._build_runtime(task.context_id, working_directory)
+                if READ_ONLY_METADATA_KEY in metadata:
+                    runtime.set_read_only(bool(metadata[READ_ONLY_METADATA_KEY]))
+            else:
+                is_new_context = task.context_id not in self._runtimes
+                runtime = self._runtime_for(task.context_id, working_directory)
+                if permission_mode:
+                    runtime.set_permission_mode(permission_mode)
+                if is_new_context and self._on_new_context is not None:
+                    self._on_new_context(task.context_id, self._agent_name, working_directory, user_text)
+            self._aborts[task.id] = runtime
+            runtime.set_a2a_task_id(task.id)
+            runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
+
             async for event in runtime.stream(user_text):
                 kind = event.type
                 data = event.data

@@ -1,6 +1,6 @@
 ---
 id: assistant
-name: assistant
+name: Assistant
 description: A neutral default agent for general tasks when no specialized profile is selected.
 role: primary
 enabled: true

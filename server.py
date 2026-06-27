@@ -1,5 +1,7 @@
 import asyncio
 import json
+import platform
+import shutil
 import subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -27,15 +29,16 @@ from harness.core.a2a_executor import (
 )
 from harness.core.configuration import (
     GlobalConfiguration,
+    database_file_path,
     list_agent_route_names,
     list_agents,
     load_agent_configuration,
+    save_api_keys,
 )
 from harness.core.mcp_client import MCPClientManager
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import cancel_all_background_tasks, set_exa_client, set_mcp_client_manager
 
-DATABASE_PATH = "harness.db"
 PUBLIC_BASE_URL = "http://localhost:8822"
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
@@ -196,9 +199,10 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager
-    _global_configuration = GlobalConfiguration.from_yaml("configuration.yaml")
+    _global_configuration = GlobalConfiguration.load()
 
-    sync_engine = create_engine(f"sqlite:///{DATABASE_PATH}")
+    database_path = database_file_path()
+    sync_engine = create_engine(f"sqlite:///{database_path}")
     Base.metadata.create_all(sync_engine)
     _session_factory = sessionmaker(bind=sync_engine)
 
@@ -211,7 +215,7 @@ async def lifespan(application: FastAPI):
     _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
     set_mcp_client_manager(_mcp_manager)
 
-    _async_engine = create_async_engine(f"sqlite+aiosqlite:///{DATABASE_PATH}")
+    _async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
     _task_store = DatabaseTaskStore(_async_engine, create_table=True)
     await _task_store.initialize()
 
@@ -257,6 +261,11 @@ class PermissionRequest(BaseModel):
 
 class PermissionModeRequest(BaseModel):
     mode: Literal["default", "read_only", "bypass"]
+
+
+class SettingsUpdateRequest(BaseModel):
+    api_key: str
+    exa_api_key: str
 
 
 class MCPToolCallRequest(BaseModel):
@@ -310,6 +319,39 @@ async def home_directory():
     return {"home_directory": str(Path.home())}
 
 
+@app.get("/settings")
+async def get_settings():
+    """Return the API credentials stored in ~/.harness/configuration.yaml so the
+    settings dialog can pre-fill them."""
+    assert _global_configuration is not None
+    return {
+        "api_key": _global_configuration.api.api_key,
+        "exa_api_key": _global_configuration.exa.api_key,
+    }
+
+
+@app.post("/settings")
+async def update_settings(request: SettingsUpdateRequest):
+    """Persist API credentials to ~/.harness/configuration.yaml and apply them
+    live: refresh the in-memory configuration, the Exa client, and drop cached
+    agent runtimes so the next turn rebuilds its model client with the new key."""
+    assert _global_configuration is not None
+    save_api_keys(api_key=request.api_key, exa_api_key=request.exa_api_key)
+    _global_configuration.api.api_key = request.api_key
+    _global_configuration.exa.api_key = request.exa_api_key
+
+    exa_key = _global_configuration.exa.effective_api_key
+    if exa_key:
+        from exa_py import Exa
+        set_exa_client(Exa(api_key=exa_key))
+    else:
+        set_exa_client(None)
+
+    for executor in _executors.values():
+        executor.reset_runtimes()
+    return {"status": "saved"}
+
+
 @app.get("/mcp/tools")
 async def mcp_tools(server: str = ""):
     """List tools exposed by configured MCP servers."""
@@ -360,21 +402,98 @@ async def validate_directory(request: DirectoryValidationRequest):
 
 @app.post("/directory/browse")
 async def browse_directory():
-    """Open a native folder picker on the local server machine and return a POSIX path."""
-    script = 'POSIX path of (choose folder with prompt "Choose a working directory")'
+    """Open a native folder picker on the local server machine and return an absolute path."""
+    system = platform.system()
     try:
-        result = subprocess.run(
-            ["osascript", "-e", script],
+        if system == "Darwin":
+            result = subprocess.run(
+                ["osascript", "-e", 'POSIX path of (choose folder with prompt "Choose a working directory")'],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            return _folder_picker_result(result)
+        if system == "Windows":
+            command = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "$dialog.Description = 'Choose a working directory'; "
+                "$dialog.ShowNewFolderButton = $true; "
+                "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
+                "{ $dialog.SelectedPath }"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-Command", command],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            return _folder_picker_result(result)
+        result = _run_unix_folder_picker()
+        if result is not None:
+            return _folder_picker_result(result)
+        return {
+            "path": "",
+            "cancelled": True,
+            "error": "No supported graphical folder picker is available.",
+        }
+    except subprocess.TimeoutExpired:
+        return {"path": "", "cancelled": True, "error": "Folder selection timed out."}
+    except FileNotFoundError as exception:
+        return {"path": "", "cancelled": True, "error": f"Folder picker is unavailable: {exception.filename}"}
+
+
+def _folder_picker_result(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
+    if result.returncode != 0:
+        return {"path": "", "cancelled": True, "error": result.stderr.strip()}
+    selected_path = result.stdout.strip()
+    if not selected_path:
+        return {"path": "", "cancelled": True}
+    return {"path": str(Path(selected_path).expanduser().resolve()), "cancelled": False}
+
+
+def _run_unix_folder_picker() -> subprocess.CompletedProcess[str] | None:
+    if shutil.which("zenity"):
+        return subprocess.run(
+            ["zenity", "--file-selection", "--directory", "--title=Choose a working directory"],
             check=False,
             capture_output=True,
             text=True,
             timeout=300,
         )
-    except subprocess.TimeoutExpired:
-        return {"path": "", "cancelled": True, "error": "Folder selection timed out."}
-    if result.returncode != 0:
-        return {"path": "", "cancelled": True, "error": result.stderr.strip()}
-    return {"path": result.stdout.strip(), "cancelled": False}
+    if shutil.which("kdialog"):
+        return subprocess.run(
+            ["kdialog", "--getexistingdirectory", str(Path.home())],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    return _run_tk_folder_picker()
+
+
+def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
+    script = (
+        "import tkinter as tk\n"
+        "from tkinter import filedialog\n"
+        "root = tk.Tk()\n"
+        "root.withdraw()\n"
+        "path = filedialog.askdirectory(title='Choose a working directory')\n"
+        "print(path or '')\n"
+        "root.destroy()\n"
+    )
+    try:
+        return subprocess.run(
+            ["python3", "-c", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
 
 
 @app.get("/sessions")

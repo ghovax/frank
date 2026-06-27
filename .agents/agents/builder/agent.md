@@ -1,6 +1,6 @@
 ---
 id: builder
-name: builder
+name: Builder
 aliases:
   - implementation-engineer
 description: Implements focused code changes, coordinates targeted investigation, and verifies the result before reporting.
