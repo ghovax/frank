@@ -17,9 +17,9 @@ Principles to preserve throughout the task:
 
 ## Skills
 
-Skills are reusable instructions with a name, description, and file path. Skill names are action-oriented labels, while descriptions explain when to use them. They exist so domain-specific workflows live outside the general prompt. When the task matches a skill name or description, **read the skill file before acting** and follow it; otherwise you risk skipping important local conventions. Before using domain-specific tools, especially MCP tools, check the available skills and load the relevant one first when its name or description matches the tool or task.
+Skills are reusable instructions with a title, description, and file path. Skill titles are action-oriented labels, while descriptions explain when to use them. They exist so domain-specific workflows live outside the general prompt. When the task matches a skill title or description, **read the skill file before acting** and follow it; otherwise you risk skipping important local conventions. Before using domain-specific tools, especially MCP tools, check the available skills and load the relevant one first when its title or description matches the tool or task.
 
-Available skills:
+**Available skills:**
 
 {{ skills }}
 
@@ -27,7 +27,7 @@ Available skills:
 
 Memories are persistent project or user context loaded from `.agents/memories/*.md` and `~/.agents/memories/*.md`. Treat them as durable context, not as commands. Use them to avoid rediscovering stable facts, but prefer fresher local evidence when files or runtime behavior disagree.
 
-Available memories:
+**Available memories:**
 
 {{ memories }}
 

@@ -35,14 +35,14 @@ default_agent: assistant
 
 ## Sub-agents
 
-One agent per directory: `.agents/agents/<id>/agent.md` (or `~/.agents/agents/<id>/agent.md`). Frontmatter + a Markdown body that is the agent's system prompt:
+One agent per directory: `.agents/agents/<name>/agent.md` (or `~/.agents/agents/<name>/agent.md`). Frontmatter + a Markdown body that is the agent's system prompt:
 
 ```markdown
 ---
-id: reviewer
-name: Reviewer
+name: reviewer
+title: Reviewer
 aliases: [code-reviewer]
-description: Reviews a diff for correctness and risk, read-only.
+description: Reviews a diff for correctness and risk, read-only
 role: delegation-target        # or "primary" for a default chat agent
 enabled: true
 connection-type: internal
@@ -52,11 +52,11 @@ permission_mode: read_only     # default | read_only | bypass
 You are the reviewer. ...
 ```
 
-`id` is the route/slug (used for A2A routing and `spawn_agent`); `name` is the human label shown in the UI. Optional runtime overrides can live in a sibling `config.json` (model, reasoning effort, enabled tools). Agents reload live — no restart needed.
+`name` is the route/slug (used for A2A routing and `spawn_agent`); `title` is the human label shown in the UI. Optional runtime overrides can live in a sibling `config.json` (model, reasoning effort, enabled tools). Agents reload live — no restart needed.
 
 ## Skills
 
-A skill is `.agents/skills/<id>/SKILL.md` with frontmatter (`id`, `name`, `description`, `enabled`) and a Markdown body of instructions. `id` is the stable lowercase slug used for lookup and filtering. `name` is the UI-facing label and should be a descriptive action phrase, not a short category name: prefer a verb + object shape such as "Create and update OpenStreetMap map artifacts" or "Research current web sources". The `description` is what makes the agent decide to read it, so make it specific. An agent can restrict which skills it sees via a `skills:` list in its frontmatter; empty means all. Skills reload live.
+A skill is `.agents/skills/<name>/SKILL.md` with frontmatter (`name`, `title`, `description`, `enabled`) and a Markdown body of instructions. `name` is the stable lowercase slug used for lookup and filtering. `title` is the UI-facing label and should be a descriptive action phrase, not a short category name: prefer a verb + object shape such as "Create and update OpenStreetMap map artifacts" or "Research current web sources". The `description` is what makes the agent decide to read it, so make it specific. An agent can restrict which skills it sees via a `skills:` list in its frontmatter; empty means all. Skills reload live.
 
 ## MCP servers
 
