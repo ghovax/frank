@@ -4,7 +4,7 @@ import { Box, Flex } from "@chakra-ui/react";
 import { useState } from "react";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import { ToolArtifacts, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
-import { ToolCard, ToolCardBody, ToolCardHeader, ToolStatusBadge } from "./tool-card";
+import { ToolCard, ToolCardBody, ToolCardHeader, ToolRiskBadges, ToolStatusBadge } from "./tool-card";
 
 interface ToolCallProps {
   name: string;
@@ -41,7 +41,12 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
             </Box>
           }
           title={label}
-          badges={status === "running" || status === "completed" ? <ToolStatusBadge status={status} /> : undefined}
+          badges={
+            <>
+              <ToolRiskBadges arguments={toolArguments} />
+              {status === "running" || status === "completed" ? <ToolStatusBadge status={status} /> : null}
+            </>
+          }
           open={open}
           collapsible={collapsible}
           shimmer={status === "running"}

@@ -679,6 +679,18 @@ class AgentRuntime:
             self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
         self._record_message("ai", final_response)
 
+    def _invalid_tool_call_content(self, invalid: dict) -> str:
+        """Build the message for a malformed tool call — used both as the tool
+        result the model sees and the error surfaced to the user. The wording
+        lives in the loaded ``invalid_tool_call`` prompt template so it stays
+        out of code; a missing template degrades to an empty string, which still
+        pairs the tool_call_id with a (blank) tool message and keeps the
+        conversation valid."""
+        return self._prompt_loader.load("invalid_tool_call", {
+            "name": invalid.get("name") or "unknown",
+            "error": invalid.get("error") or "arguments could not be parsed",
+        })
+
     async def stream(
         self, user_message: str
     ) -> AsyncIterator[StreamEvent]:
@@ -755,7 +767,39 @@ class AgentRuntime:
                     )
             response = accumulated_response
 
+            # Malformed tool calls (arguments that failed JSON parsing) land in
+            # `invalid_tool_calls` while `tool_calls` may be empty. LangChain
+            # still serializes invalid_tool_calls into the API payload as
+            # `tool_calls`, so each one MUST be followed by a tool message —
+            # otherwise the next provider call fails with "insufficient tool
+            # messages following tool_calls". Ensure every invalid call carries
+            # an id that matches the ToolMessage appended for it below.
+            for invalid in response.invalid_tool_calls:
+                if not invalid.get("id"):
+                    invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
+
             if not response.tool_calls:
+                if response.invalid_tool_calls:
+                    # A response carrying only malformed tool calls: record the
+                    # attempt with a ToolMessage error for each so the
+                    # conversation stays valid, then let the model retry rather
+                    # than ending the turn with a dangling tool_calls message.
+                    self._conversation.append(response)
+                    for invalid in response.invalid_tool_calls:
+                        message = self._invalid_tool_call_content(invalid)
+                        self._conversation.append(ToolMessage(
+                            content=message,
+                            tool_call_id=invalid["id"],
+                        ))
+                        yield StreamEvent(
+                            StreamEvent.Type.ERROR,
+                            id=invalid["id"],
+                            tool=invalid.get("name") or "unknown",
+                            message=message,
+                        )
+                    self._calls_this_turn += 1
+                    continue
+
                 background_events = self._background_result_events()
                 if background_events:
                     for background_event in background_events:
@@ -832,6 +876,15 @@ class AgentRuntime:
                     commands_list = ", ".join(f"'{command}'" for command in denied_commands)
                     denied_message = self._prompt_loader.load("command_denied", {"commands": commands_list})
                     self._conversation.append(SystemMessage(content=denied_message))
+
+            # Malformed tool calls serialized alongside valid ones must also get
+            # a ToolMessage each, or the assistant tool_calls message would be
+            # left partially unanswered (see the invalid-only branch above).
+            for invalid in response.invalid_tool_calls:
+                self._conversation.append(ToolMessage(
+                    content=self._invalid_tool_call_content(invalid),
+                    tool_call_id=invalid["id"],
+                ))
 
             if self._abort_event.is_set():
                 self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
