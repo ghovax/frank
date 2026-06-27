@@ -489,7 +489,9 @@ class PermissionEvaluator:
         if not self._configuration.tools.bash.background_allowed:
             raise PermissionError("Background bash execution is not allowed")
 
-    def check_tool(self, tool_name: str, **arguments) -> None:
+    def check_tool(self, tool_name: str, /, **arguments) -> None:
+        # tool_name is positional-only so that a tool whose own arguments include a
+        # key named "tool_name" (e.g. call_mcp_tool) does not collide with it.
         self.check_tool_enabled(tool_name)
 
 

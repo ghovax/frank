@@ -12,6 +12,10 @@ import type { Element } from "hast";
 
 interface MarkdownContentProps {
   content: string;
+  // Base font size for body text; headings keep their own semantic sizes. Body
+  // elements inherit this from the wrapper so callers can match their context
+  // (e.g. "xs" inside compact tool-call fields).
+  fontSize?: string;
 }
 
 const blockGap = "0.625rem";
@@ -35,9 +39,9 @@ function isDisplayMathParagraph(node: Element | undefined): boolean {
 const markdownComponents: Components = {
   p({ node, children }) {
     if (isDisplayMathParagraph(node)) {
-      return <Box textAlign="center" fontSize="sm">{children}</Box>;
+      return <Box textAlign="center" fontSize="inherit">{children}</Box>;
     }
-    return <Text fontSize="sm" lineHeight="1.65">{children}</Text>;
+    return <Text fontSize="inherit" lineHeight="1.65">{children}</Text>;
   },
   h1({ children }) {
     return <Heading as="h1" fontSize="lg" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
@@ -59,17 +63,17 @@ const markdownComponents: Components = {
     );
   },
   ul({ children }) {
-    return <Box as="ul" pl={5} fontSize="sm" listStyleType="disc" lineHeight="1.5">{children}</Box>;
+    return <Box as="ul" pl={5} fontSize="inherit" listStyleType="disc" lineHeight="1.5">{children}</Box>;
   },
   ol({ children }) {
-    return <Box as="ol" pl={5} fontSize="sm" listStyleType="decimal" lineHeight="1.5">{children}</Box>;
+    return <Box as="ol" pl={5} fontSize="inherit" listStyleType="decimal" lineHeight="1.5">{children}</Box>;
   },
   li({ children }) {
-    return <Box as="li" mb={0.5} fontSize="sm" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
+    return <Box as="li" mb={0.5} fontSize="inherit" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
   },
   blockquote({ children }) {
     return (
-      <Box borderLeft="2px solid" borderColor="border" pl={2} color="fg.muted" fontSize="sm">
+      <Box borderLeft="2px solid" borderColor="border" pl={2} color="fg.muted" fontSize="inherit">
         {children}
       </Box>
     );
@@ -94,7 +98,7 @@ const markdownComponents: Components = {
               margin: 0,
               borderRadius: "var(--chakra-radii-sm)",
               fontFamily: "var(--app-font-mono)",
-              fontSize: "var(--chakra-font-sizes-sm)",
+              fontSize: "inherit",
             }}
             codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit" } }}
           >
@@ -117,7 +121,7 @@ const markdownComponents: Components = {
     return (
       <Box borderRadius="md" border="1px solid" borderColor="border" overflow="hidden">
         <Box overflowX="auto">
-          <Box as="table" w="100%" fontSize="sm" borderCollapse="collapse">
+          <Box as="table" w="100%" fontSize="inherit" borderCollapse="collapse">
             {children}
           </Box>
         </Box>
@@ -152,9 +156,10 @@ const markdownComponents: Components = {
   },
 };
 
-export function MarkdownContent({ content }: MarkdownContentProps) {
+export function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentProps) {
   return (
     <Box
+      fontSize={fontSize}
       css={{
         "& > *": {
           marginBlock: 0,

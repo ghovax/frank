@@ -1,5 +1,5 @@
 import type { IconType } from "react-icons";
-import { LuBrain, LuCrosshair, LuFlag, LuHourglass } from "react-icons/lu";
+import { LuBrain, LuFlag, LuHourglass, LuTarget } from "react-icons/lu";
 
 export interface FocusIcon {
   icon: IconType;
@@ -14,6 +14,6 @@ export function getFocusIcon(icon: string | undefined, title?: string): FocusIco
   const isWaiting = icon === "waiting" || title === "Waiting for tools...";
   if (isWaiting) return { icon: LuHourglass, color: "blue.fg" };
   if (icon === "goal") return { icon: LuFlag, color: "teal.fg" };
-  if (icon === "focus") return { icon: LuCrosshair, color: "orange.fg" };
+  if (icon === "focus") return { icon: LuTarget, color: "orange.fg" };
   return { icon: LuBrain, color: "purple.fg" };
 }

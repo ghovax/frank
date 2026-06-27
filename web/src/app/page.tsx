@@ -65,26 +65,31 @@ function HomeContent() {
         .catch(() => setIsConnected(false));
       fetchAgentCards().then(setAgentCards).catch(() => {});
     };
+    const loadSessions = () => {
+      fetchSessions()
+        .then((serverSessions) =>
+          setSessions(
+            serverSessions.map((session) => ({
+              sessionId: session.session_id,
+              agent: session.agent,
+              title: session.title,
+              createdAt: session.created_at,
+            }))
+          )
+        )
+        .catch(() => {});
+    };
     loadAgents();
     fetchHomeDirectory()
       .then((home) => setWorkingDirectory(home))
       .catch(() => {});
-    fetchSessions()
-      .then((serverSessions) =>
-        setSessions(
-          serverSessions.map((session) => ({
-            sessionId: session.session_id,
-            agent: session.agent,
-            title: session.title,
-            createdAt: session.created_at,
-          }))
-        )
-      )
-      .catch(() => {});
+    loadSessions();
 
-    // Live reload: when agents change on disk, refresh the list and their cards.
+    // Live reload: refresh agents when they change on disk, and the session list
+    // when a session's (LLM-generated) title is updated.
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "agents_changed") loadAgents();
+      if (event.type === "sessions_changed") loadSessions();
     });
     return unsubscribe;
   }, []);

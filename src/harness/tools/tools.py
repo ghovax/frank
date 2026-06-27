@@ -24,16 +24,16 @@ class TaskRegistry:
         self._tasks: dict[str, tuple[asyncio.Task, Path | None]] = {}
 
     def start(self, coroutine, output_path: Path | None = None) -> tuple[str, Path]:
-        identifier = f"{self._prefix}-{uuid.uuid4().hex[:12]}"
+        identifier = f"{self._prefix}-{uuid.uuid4().hex}"
         if output_path is None:
-            output_path = self._output_directory / f"{self._prefix}-{uuid.uuid4().hex[:12]}.log"
+            output_path = self._output_directory / f"{self._prefix}-{uuid.uuid4().hex}.log"
         task = asyncio.create_task(coroutine)
         self._tasks[identifier] = (task, output_path)
         return identifier, output_path
 
     def register(self, task: asyncio.Task, output_path: Path | None = None, identifier: str | None = None) -> str:
         if identifier is None:
-            identifier = f"{self._prefix}-{uuid.uuid4().hex[:12]}"
+            identifier = f"{self._prefix}-{uuid.uuid4().hex}"
         self._tasks[identifier] = (task, output_path)
         return identifier
 
@@ -127,7 +127,7 @@ async def bash(
               Low for read-only commands, medium for modifications,
               high for destructive operations.
     """
-    output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex[:12]}.log"
+    output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex}.log"
 
     async def run() -> str:
         process = await asyncio.create_subprocess_shell(
@@ -205,7 +205,7 @@ async def web_search(
     if client is None:
         return json.dumps({"code": "web_search_error", "message": "Web search is not configured."})
 
-    output_path = Path("/tmp") / f"search-{uuid.uuid4().hex[:12]}.log"
+    output_path = Path("/tmp") / f"search-{uuid.uuid4().hex}.log"
 
     async def run() -> str:
         try:
@@ -219,7 +219,7 @@ async def web_search(
             for result in results.results:
                 entry = {"title": result.title, "url": result.url}
                 if result.text:
-                    entry["summary"] = result.text[:500]
+                    entry["summary"] = result.text
                 if result.published_date:
                     entry["published_date"] = result.published_date
                 entries.append(entry)

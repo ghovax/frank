@@ -88,6 +88,9 @@ _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
 _pending_permissions: dict[str, asyncio.Future] = {}
 _broadcaster = Broadcaster()
+# Keeps references to in-flight session-title generation tasks so they are not
+# garbage-collected before completing.
+_title_tasks: set[asyncio.Task] = set()
 
 
 def _record_session(context_id: str, agent: str, working_directory: str, first_message: str) -> None:
@@ -96,7 +99,10 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
     try:
         if database_session.get(SessionRecord, context_id) is not None:
             return
-        title = first_message.strip().split("\n", 1)[0][:80]
+        # Provisional title so the sidebar shows something immediately; an LLM-
+        # generated title replaces it shortly via _finalize_session_title. The
+        # sidebar truncates for display, so the full first line is stored.
+        title = first_message.strip().split("\n", 1)[0]
         database_session.add(SessionRecord(
             id=context_id,
             agent=agent,
@@ -107,6 +113,63 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
         database_session.commit()
     finally:
         database_session.close()
+
+    try:
+        task = asyncio.create_task(_finalize_session_title(context_id, first_message))
+        _title_tasks.add(task)
+        task.add_done_callback(_title_tasks.discard)
+    except RuntimeError:
+        # No running event loop (e.g. called outside a request) — keep the provisional title.
+        pass
+
+
+async def _generate_session_title(first_message: str) -> str:
+    """Ask the configured LLM for a short, descriptive title for the session."""
+    assert _global_configuration is not None
+    api = _global_configuration.api
+    api_key = api.effective_api_key
+    if not api_key:
+        return ""
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(base_url=api.endpoint, api_key=api_key)
+    response = await client.chat.completions.create(
+        model=api.model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You generate a concise, descriptive title for a chat session based on the "
+                    "user's first message. Reply with the title only: 3-6 words, no surrounding "
+                    "quotes, no trailing punctuation."
+                ),
+            },
+            {"role": "user", "content": first_message},
+        ],
+        max_completion_tokens=24,
+    )
+    return (response.choices[0].message.content or "").strip().strip('"').strip()
+
+
+async def _finalize_session_title(context_id: str, first_message: str) -> None:
+    """Generate an LLM title for a new session and update the sidebar record."""
+    assert _session_factory is not None
+    try:
+        title = await _generate_session_title(first_message)
+    except Exception:
+        return  # Keep the provisional title on any failure.
+    title = title.split("\n", 1)[0].strip()
+    if not title:
+        return
+    database_session = _session_factory()
+    try:
+        record = database_session.get(SessionRecord, context_id)
+        if record is None or record.title == title:
+            return
+        record.title = title
+        database_session.commit()
+    finally:
+        database_session.close()
+    _broadcaster.publish({"type": "sessions_changed"})
 
 
 def _card_for(agent_name: str):
@@ -562,7 +625,7 @@ async def resolve_permission(context_id: str, request: PermissionRequest):
 @app.post("/chat/{context_id}/abort")
 async def abort_session(context_id: str):
     """Abort the running turn for a context and reject any pending permissions."""
-    prefix = f"perm-{context_id[:8]}-"
+    prefix = f"perm-{context_id}-"
     for request_id, future in list(_pending_permissions.items()):
         if request_id.startswith(prefix) and not future.done():
             future.set_result(False)

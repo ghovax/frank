@@ -1,6 +1,7 @@
 "use client";
 
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
+import type { ReactNode } from "react";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { MarkdownContent } from "../markdown-content";
 import {
@@ -133,17 +134,52 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+// Fields whose values are human prose (not identifiers/data) — rendered with the
+// markdown renderer in the normal font rather than monospace.
+const PROSE_FIELD_KEYS = new Set([
+  "justification",
+  "description",
+  "goal",
+  "prompt",
+  "reason",
+  "summary",
+  "message",
+  "content",
+  "instructions",
+  "query",
+]);
+
+// Readable labels for raw argument keys. Falls back to the raw key if unmapped.
+const FIELD_LABELS: Record<string, string> = {
+  server: "Server",
+  tool_name: "Tool name",
+  arguments: "Arguments",
+  read_only: "Read only",
+  justification: "Justification",
+  risk: "Risk",
+  uri: "URI",
+  query: "Query",
+  result_count: "Results",
+  agent: "Agent",
+  prompt: "Prompt",
+};
+
 function GenericView({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data);
   if (entries.length === 0) return <EmptyHint>No data</EmptyHint>;
   return (
     <FieldList>
       {entries.map(([key, value]) => (
-        <InlineField key={key} label={key}>
+        <InlineField key={key} label={FIELD_LABELS[key] ?? key}>
           {value && typeof value === "object" ? (
+            // Structured values (objects/arrays) are data — monospace JSON.
             <MonoBlock>{JSON.stringify(value, null, 2)}</MonoBlock>
+          ) : PROSE_FIELD_KEYS.has(key) ? (
+            // Prose values render as markdown, sized to match the compact field context.
+            <MarkdownContent content={asString(value)} fontSize="xs" />
           ) : (
-            <Text fontSize="xs" whiteSpace="pre-wrap">{asString(value)}</Text>
+            // Scalar identifiers/data (names, ids, flags) render in monospace.
+            <Text fontSize="xs" fontFamily="var(--app-font-mono)" whiteSpace="pre-wrap">{asString(value)}</Text>
           )}
         </InlineField>
       ))}
@@ -208,37 +244,30 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
         <Text fontSize="xs" fontWeight="medium">{title}</Text>
       )}
       {url && (
-        <Text fontSize="2xs" color="fg.subtle" truncate>{url}</Text>
+        <Text fontSize="xs" color="fg.subtle" fontFamily="var(--app-font-mono)" truncate>{url}</Text>
       )}
       {date && (
         <Text fontSize="2xs" color="fg.subtle">{date}</Text>
       )}
       {summary && (
-        <Box mt={1}>
-          <Collapsible title="Summary">
-            <Text fontSize="xs" color="fg.muted" whiteSpace="pre-wrap">{summary}</Text>
-          </Collapsible>
+        <Box mt={1} color="fg.muted">
+          <MarkdownContent content={summary} fontSize="xs" />
         </Box>
       )}
     </Card>
   );
 }
 
+// The query and requested count are already shown by the call view above, so the
+// result view only renders the result cards — shown directly, not behind a
+// nested collapsible (the tool-call card is the collapsible).
 function WebSearchResultView({ data }: { data: Record<string, unknown> }) {
   const results = asArray(data.results).map(asRecord);
+  if (results.length === 0) return <EmptyHint>No results</EmptyHint>;
   return (
-    <FieldList>
-      {asString(data.query) && <InlineField label="Query">{asString(data.query)}</InlineField>}
-      <Collapsible title="Results" count={results.length} defaultOpen>
-        <Flex direction="column" gap={1.5}>
-          {results.length === 0 ? (
-            <EmptyHint>No results</EmptyHint>
-          ) : (
-            results.map((result, index) => <WebResultCard key={index} result={result} />)
-          )}
-        </Flex>
-      </Collapsible>
-    </FieldList>
+    <Flex direction="column" gap={1.5}>
+      {results.map((result, index) => <WebResultCard key={index} result={result} />)}
+    </Flex>
   );
 }
 
@@ -352,6 +381,19 @@ function compactMcpContent(content: unknown): unknown {
   });
 }
 
+// An artifact's title/label may contain markdown, so it is rendered through the
+// markdown renderer above the artifact body.
+function ArtifactFrame({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Box>
+      <Box mb={1} color="fg.subtle">
+        <MarkdownContent content={title} fontSize="sm" />
+      </Box>
+      {children}
+    </Box>
+  );
+}
+
 function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const type = asString(artifact.type);
   const title = asString(artifact.title) || "MCP artifact";
@@ -360,7 +402,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const srcDoc = asString(artifact.srcdoc);
     if (!src && !srcDoc) return <ErrorView message="Iframe artifact did not include a safe source." />;
     return (
-      <Field label={title}>
+      <ArtifactFrame title={title}>
         <Box
           w="100%"
           h={artifactHeight(artifact.height)}
@@ -380,14 +422,14 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
             style={{ width: "100%", height: "100%", border: 0, display: "block" }}
           />
         </Box>
-      </Field>
+      </ArtifactFrame>
     );
   }
   if (type === "html") {
     const html = asString(artifact.html) || asString(artifact.srcdoc);
     if (!html) return <ErrorView message="HTML artifact did not include content." />;
     return (
-      <Field label={title}>
+      <ArtifactFrame title={title}>
         <Box
           w="100%"
           h={artifactHeight(artifact.height)}
@@ -405,14 +447,14 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
             style={{ width: "100%", height: "100%", border: 0, display: "block" }}
           />
         </Box>
-      </Field>
+      </ArtifactFrame>
     );
   }
   if (type === "image") {
     const source = safeImageSource(asString(artifact.data) || asString(artifact.src) || asString(artifact.url));
     if (!source) return <ErrorView message="Image artifact did not include a safe source." />;
     return (
-      <Field label={title}>
+      <ArtifactFrame title={title}>
         <Box
           maxW="100%"
           maxH={artifactHeight(artifact.height)}
@@ -429,57 +471,65 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
             style={{ maxWidth: "100%", maxHeight: artifactHeight(artifact.height), display: "block" }}
           />
         </Box>
-      </Field>
+      </ArtifactFrame>
     );
   }
   const href = safeWebUrl(asString(artifact.href) || asString(artifact.url) || asString(artifact.src));
   if (!href) return <ErrorView message="Link artifact did not include a safe URL." />;
   return (
-    <InlineField label={title}>
+    <ArtifactFrame title={title}>
       <Link href={href} target="_blank" rel="noopener noreferrer" colorPalette="blue">
         {href}
       </Link>
-    </InlineField>
+    </ArtifactFrame>
   );
 }
 
-function McpResultView({ data }: { data: Record<string, unknown> }) {
-  const artifacts = collectArtifacts(data.artifacts);
-  const modelContext = asRecord(data.model_context);
-  const structuredContent = data.structured_content;
-  const content = compactMcpContent(data.content ?? data.contents);
+// Renderable artifacts (maps, images, HTML) returned by an MCP tool/resource.
+// These are rendered OUTSIDE the tool-call card so they stay visible, rather than
+// being tucked inside its collapsible body.
+export function extractToolArtifacts(name: string, content: string): Record<string, unknown>[] {
+  if (name !== "call_mcp_tool" && name !== "read_mcp_resource") return [];
+  const parsed = tryParse(content);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  return collectArtifacts((parsed as Record<string, unknown>).artifacts);
+}
+
+export function ToolArtifacts({ artifacts }: { artifacts: Record<string, unknown>[] }) {
+  if (artifacts.length === 0) return null;
   return (
-    <FieldList>
-      <Flex gap={2} wrap="wrap">
-        {asString(data.server) && <Pill colorPalette="purple">{asString(data.server)}</Pill>}
-        {asString(data.tool) && <Pill>{asString(data.tool)}</Pill>}
-        {asString(data.uri) && <Pill>{asString(data.uri)}</Pill>}
-        {data.is_error === true && <Pill colorPalette="red">Error</Pill>}
-      </Flex>
+    <Flex direction="column" gap={1.5}>
       {artifacts.map((artifact, index) => (
         <RenderArtifact key={index} artifact={artifact} />
       ))}
-      {Object.keys(modelContext).length > 0 && (
-        <Collapsible title="Model context" defaultOpen={artifacts.length === 0}>
-          <MonoBlock>{JSON.stringify(modelContext, null, 2)}</MonoBlock>
-        </Collapsible>
-      )}
-      {structuredContent != null && (
-        <Collapsible title="Structured data" defaultOpen={artifacts.length === 0 && Object.keys(modelContext).length === 0}>
-          <MonoBlock>{JSON.stringify(structuredContent, null, 2)}</MonoBlock>
-        </Collapsible>
-      )}
-      {asArray(content).length > 0 && (
-        <Collapsible title="Raw content" defaultOpen={artifacts.length === 0 && structuredContent == null}>
-          <MonoBlock>{JSON.stringify(content, null, 2)}</MonoBlock>
-        </Collapsible>
-      )}
+    </Flex>
+  );
+}
+
+// The MCP result shown inside the tool-call card. Artifacts are rendered
+// separately (outside the card), so this only surfaces the tool's textual output.
+function McpResultView({ data }: { data: Record<string, unknown> }) {
+  if (data.is_error === true) {
+    return <ErrorView message="The MCP tool returned an error." />;
+  }
+  const structuredContent = data.structured_content;
+  const output = structuredContent != null ? structuredContent : compactMcpContent(data.content ?? data.contents);
+  if (output == null || (Array.isArray(output) && output.length === 0)) {
+    return <EmptyHint>No output</EmptyHint>;
+  }
+  return (
+    <FieldList>
+      <MonoBlock>{JSON.stringify(output, null, 2)}</MonoBlock>
     </FieldList>
   );
 }
 
 export function ToolResultView({ name, content }: { name: string; content: string }) {
   const parsed = tryParse(content);
+
+  // MCP discovery results (the full server/tool catalog with JSON schemas) are
+  // internal noise — the call card already conveys that discovery happened.
+  if (name === "list_mcp_tools" || name === "list_mcp_resources") return null;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;

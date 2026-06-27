@@ -338,7 +338,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       const toolCallId = String(data.toolCallId ?? "");
       state.messages = state.messages.map((message) =>
         message.role === "tool_call" && message.meta?.toolCallId === toolCallId
-          ? { ...message, meta: { ...message.meta, status: "completed" } }
+          ? { ...message, meta: { ...message.meta, status: "completed", result: data.result } }
           : message
       );
       break;

@@ -1088,7 +1088,7 @@ class AgentRuntime:
                 )
                 return
             elif not read_only and (permission_decision == "ask" or risk in ("medium", "high")):
-                request_identifier = f"perm-{self._session_id[:8]}-{uuid.uuid4().hex[:12]}"
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4().hex}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
                 try:
@@ -1114,7 +1114,7 @@ class AgentRuntime:
                 task_identifier = result_data.get("task_identifier", "")
                 if task_identifier:
                     self._background.track("bash", task_identifier)
-                    self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command[:200]})
+                    self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command})
 
         elif tool_name == "call_mcp_tool":
             read_only = tool_arguments.get("read_only", True)
@@ -1124,7 +1124,7 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
                 return
             if not self._bypass_permissions and not read_only and risk in ("medium", "high"):
-                request_identifier = f"perm-{self._session_id[:8]}-{uuid.uuid4().hex[:12]}"
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4().hex}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
                 try:
@@ -1171,7 +1171,7 @@ class AgentRuntime:
             sub_agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(sub_agent_read_only, str):
                 sub_agent_read_only = sub_agent_read_only.lower() == "true"
-            spawn_step_id = f"agent-{uuid.uuid4().hex[:12]}"
+            spawn_step_id = f"agent-{uuid.uuid4().hex}"
 
             try:
                 sub_configuration = self._load_sub_agent(sub_agent_name)
@@ -1193,7 +1193,7 @@ class AgentRuntime:
                 justification="Sub-agents",
                 steps=[{"id": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt}],
             )
-            self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt[:200]})
+            self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt})
             child_task = None
             if self._delegate is not None:
                 async for delegated in self._delegate(sub_agent_name, sub_agent_prompt, self._a2a_task_id, sub_agent_read_only, child_depth):

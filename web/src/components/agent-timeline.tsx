@@ -1,11 +1,9 @@
 "use client";
 
 import { Flex } from "@chakra-ui/react";
-import { Fragment } from "react";
 import type { AgentPart } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
-import { ToolResultView } from "./tool-views";
 
 function isBackgroundStarted(result: unknown): boolean {
   if (typeof result !== "object" || result === null) return false;
@@ -31,21 +29,15 @@ export function AgentTimeline({
         part.kind === "text" ? (
           <MarkdownContent key={`text-${index}`} content={part.content} />
         ) : (
-          <Fragment key={`tool-${index}`}>
-            <ToolCall
-              name={part.name}
-              arguments={part.arguments}
-              sequenceNumber={part.sequenceNumber}
-              status={part.result != null && !isBackgroundStarted(part.result) ? "completed" : undefined}
-              agents={agents}
-            />
-            {part.result != null && !isBackgroundStarted(part.result) && (
-              <ToolResultView
-                name={part.name}
-                content={typeof part.result === "string" ? part.result : JSON.stringify(part.result)}
-              />
-            )}
-          </Fragment>
+          <ToolCall
+            key={`tool-${index}`}
+            name={part.name}
+            arguments={part.arguments}
+            result={isBackgroundStarted(part.result) ? undefined : part.result}
+            sequenceNumber={part.sequenceNumber}
+            status={part.result != null && !isBackgroundStarted(part.result) ? "completed" : undefined}
+            agents={agents}
+          />
         )
       )}
     </Flex>

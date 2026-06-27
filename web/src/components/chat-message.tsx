@@ -112,6 +112,7 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
           <ToolCall
             name={message.content}
             arguments={message.meta?.arguments as Record<string, unknown> | undefined}
+            result={message.meta?.result}
             sequenceNumber={message.meta?.sequenceNumber as number | undefined}
             status={message.meta?.status as string | undefined}
             agents={agents}
