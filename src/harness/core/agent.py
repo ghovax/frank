@@ -61,6 +61,7 @@ from harness.tools.tools import (
     set_focus as set_focus_tool,
     list_mcp_tools as list_mcp_tools_tool,
     call_mcp_tool as call_mcp_tool_tool,
+    call_mcp_tool_with_events,
     list_mcp_resources as list_mcp_resources_tool,
     read_mcp_resource as read_mcp_resource_tool,
     bash_tasks,
@@ -86,6 +87,7 @@ class StreamEvent:
         TEXT_CHUNK = "text_chunk"
         TOOL_CALL = "tool_call"
         TOOL_RESULT = "tool_result"
+        MCP_EVENT = "mcp_event"
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
         PERMISSION_REQUEST = "permission_request"
@@ -96,6 +98,7 @@ class StreamEvent:
         AGENT_TEXT_CHUNK = "agent_text_chunk"
         AGENT_TOOL_CALL = "agent_tool_call"
         AGENT_TOOL_RESULT = "agent_tool_result"
+        AGENT_MCP_EVENT = "agent_mcp_event"
         AGENT_THINKING = "agent_thinking"
         AGENT_STATUS = "agent_status"
         AGENT_DONE = "agent_done"
@@ -615,6 +618,7 @@ class AgentRuntime:
         parts = []
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         parts.append(f"Current time: {current_time}")
+        parts.append(json.dumps({"PWD": self._working_directory or str(Path.cwd())}))
         if self._active_goal:
             parts.append(json.dumps({"active_goal": self._active_goal}))
         tasks_data = self._task_manager.to_dict_list()
@@ -1142,8 +1146,42 @@ class AgentRuntime:
                 if not allowed:
                     yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
                     return
-            result = await call_mcp_tool_tool.ainvoke(tool_arguments)
-            result_data = _maybe_json(result)
+            event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+            async def on_mcp_event(event: dict[str, Any]) -> None:
+                await event_queue.put(event)
+
+            call_task = asyncio.create_task(call_mcp_tool_with_events(
+                str(tool_arguments.get("server", "")),
+                str(tool_arguments.get("tool_name", "")),
+                tool_arguments.get("arguments") if isinstance(tool_arguments.get("arguments"), dict) else {},
+                on_mcp_event,
+            ))
+            try:
+                while True:
+                    if call_task.done() and event_queue.empty():
+                        break
+                    get_task = asyncio.create_task(event_queue.get())
+                    done, pending = await asyncio.wait(
+                        {call_task, get_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if get_task in done:
+                        yield StreamEvent(
+                            StreamEvent.Type.MCP_EVENT,
+                            id=tool_call_identifier,
+                            name="call_mcp_tool",
+                            server=tool_arguments.get("server", ""),
+                            tool=tool_arguments.get("tool_name", ""),
+                            event=get_task.result(),
+                        )
+                    for pending_task in pending:
+                        if pending_task is get_task:
+                            pending_task.cancel()
+                result_data = await call_task
+            except Exception as exception:
+                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
+                return
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
 
         elif tool_name in ("list_mcp_tools", "list_mcp_resources", "read_mcp_resource"):
@@ -1215,6 +1253,8 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), toolCallId=delegated.get("toolCallId", ""), **common)
                     elif delegated_kind == "tool_result":
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=delegated.get("name", ""), result=delegated.get("result"), toolCallId=delegated.get("toolCallId", ""), **common)
+                    elif delegated_kind == "mcp_event":
+                        yield StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=delegated.get("toolCallId", ""), event=delegated.get("event", {}), **common)
                     elif delegated_kind == "done":
                         child_task = delegated.get("task")
                         yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
@@ -1240,6 +1280,8 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=event.data.get("name", ""), arguments=event.data.get("arguments", {}), toolCallId=event.data.get("id", ""), **common)
                     elif event.type == StreamEvent.Type.TOOL_RESULT:
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=event.data.get("name", ""), result=event.data.get("result"), toolCallId=event.data.get("id", ""), **common)
+                    elif event.type == StreamEvent.Type.MCP_EVENT:
+                        yield StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=event.data.get("id", ""), event=event.data.get("event", {}), **common)
                     elif event.type == StreamEvent.Type.DONE:
                         final_text = event.data.get("text", final_text)
                 child_task = serialize_task(build_task(spawn_step_id, sub_agent_name, TaskState.completed, final_text))

@@ -499,9 +499,10 @@ export function ToolArtifacts({ artifacts }: { artifacts: Record<string, unknown
   if (artifacts.length === 0) return null;
   return (
     <Flex direction="column" gap={1.5}>
-      {artifacts.map((artifact, index) => (
-        <RenderArtifact key={index} artifact={artifact} />
-      ))}
+      {artifacts.map((artifact, index) => {
+        const key = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id) || String(index);
+        return <RenderArtifact key={key} artifact={artifact} />;
+      })}
     </Flex>
   );
 }

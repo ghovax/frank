@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .panel {
+      position: absolute;
+      z-index: 500;
+      top: 12px;
+      right: 12px;
+      max-width: min(380px, calc(100% - 24px));
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid rgba(0, 0, 0, 0.16);
+      border-radius: 6px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .panel h1 { font-size: 14px; margin: 0 0 8px; }
+    .panel ol { margin: 0; padding-left: 20px; }
+    .panel li { margin: 3px 0; }
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #e8f1ff;
+      color: #17457a;
+      font-size: 11px;
+      margin-left: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="panel">
+    <h1><span id="title"></span><span class="badge" id="mode"></span></h1>
+    <ol id="stops"></ol>
+  </div>
+  <script type="application/json" id="map-data">__MAP_DATA_JSON__</script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const data = JSON.parse(document.getElementById("map-data").textContent);
+    document.getElementById("title").textContent = data.title;
+    document.getElementById("mode").textContent = data.mode;
+
+    const map = L.map("map");
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const markerLayer = L.layerGroup().addTo(map);
+    const routeLayer = L.layerGroup().addTo(map);
+    const overlayLayer = L.layerGroup().addTo(map);
+    const bounds = [];
+    const stops = document.getElementById("stops");
+
+    data.places.forEach((place, index) => {
+      const latlng = [place.latitude, place.longitude];
+      bounds.push(latlng);
+      const marker = L.marker(latlng).addTo(markerLayer);
+      marker.bindPopup(`<strong>${index + 1}. ${place.label}</strong><br>${place.description || ""}`);
+      const item = document.createElement("li");
+      item.textContent = place.label;
+      stops.appendChild(item);
+    });
+
+    if (data.connect_places && data.places.length > 1) {
+      const route = data.places.map((place) => [place.latitude, place.longitude]);
+      L.polyline(route, {
+        color: data.mode === "flight" ? "#7c3aed" : "#0f766e",
+        weight: 4,
+        opacity: 0.85,
+        dashArray: data.mode === "flight" ? "8 10" : null
+      }).addTo(routeLayer);
+    }
+
+    if (data.geojson) {
+      L.geoJSON(data.geojson, {
+        style: { color: "#b42318", weight: 2, fillOpacity: 0.16 },
+        onEachFeature: (feature, layer) => {
+          const name = feature.properties && (feature.properties.name || feature.properties.label);
+          if (name) layer.bindPopup(String(name));
+        }
+      }).addTo(overlayLayer);
+    }
+
+    L.control.layers(null, {
+      "Stops": markerLayer,
+      "Path": routeLayer,
+      "GeoJSON": overlayLayer
+    }, { collapsed: false }).addTo(map);
+
+    if (bounds.length) {
+      map.fitBounds(bounds, { padding: [32, 32], maxZoom: data.zoom });
+    } else {
+      map.setView([0, 0], 2);
+    }
+  </script>
+</body>
+</html>

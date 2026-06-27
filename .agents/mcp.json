@@ -1,9 +1,10 @@
 {
   "mcpServers": {
-    "demo": {
+    "openstreetmap": {
       "transport": "stdio",
       "command": "uv",
-      "args": ["run", "python", "examples/mcp/echo_server.py"],
+      "args": ["run", "python", "examples/mcp/openstreetmap/server.py"],
+      "stateful": true,
       "env": {
         "UV_CACHE_DIR": "/private/tmp/uv-cache"
       },

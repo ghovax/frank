@@ -281,6 +281,15 @@ class HarnessAgentExecutor(AgentExecutor):
                         "tool_result", name=data.get("name", ""),
                         result=data.get("result"), toolCallId=data.get("id", ""),
                     ))
+                elif kind == StreamEvent.Type.MCP_EVENT:
+                    await emit(_data_part(
+                        "mcp_event",
+                        name=data.get("name", ""),
+                        server=data.get("server", ""),
+                        tool=data.get("tool", ""),
+                        event=data.get("event", {}),
+                        toolCallId=data.get("id", ""),
+                    ))
                 elif kind == StreamEvent.Type.PERMISSION_REQUEST:
                     await emit(_data_part(
                         "permission_request", requestId=data.get("request_id", ""),
@@ -306,6 +315,8 @@ class HarnessAgentExecutor(AgentExecutor):
                     await emit_sub("sub_task_tool_call", data, name=data.get("name", ""), arguments=data.get("arguments", {}), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_TOOL_RESULT:
                     await emit_sub("sub_task_tool_result", data, name=data.get("name", ""), result=data.get("result"), toolCallId=data.get("toolCallId", ""))
+                elif kind == StreamEvent.Type.AGENT_MCP_EVENT:
+                    await emit_sub("sub_task_mcp_event", data, event=data.get("event", {}), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_STATUS:
                     await emit_sub("sub_task_status", data, code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", ""))
                 elif kind == StreamEvent.Type.AGENT_DONE:
@@ -420,6 +431,13 @@ class AgentRegistry:
                                         "type": "tool_result",
                                         "name": root.data.get("name", ""),
                                         "result": root.data.get("result"),
+                                        "toolCallId": root.data.get("toolCallId", ""),
+                                        "child_task_id": child_task_id,
+                                    }
+                                elif data_kind == "mcp_event":
+                                    yield {
+                                        "type": "mcp_event",
+                                        "event": root.data.get("event", {}),
                                         "toolCallId": root.data.get("toolCallId", ""),
                                         "child_task_id": child_task_id,
                                     }

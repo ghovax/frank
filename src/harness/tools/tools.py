@@ -290,6 +290,20 @@ async def call_mcp_tool(
         return json.dumps({"code": "mcp_call_tool_error", "message": str(exception)})
 
 
+async def call_mcp_tool_with_events(
+    server: str,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+    event_callback,
+) -> dict[str, Any]:
+    return await _require_mcp_client_manager().call_tool(
+        server,
+        tool_name,
+        arguments or {},
+        event_callback=event_callback,
+    )
+
+
 @tool
 async def list_mcp_resources(server: str = "", justification: str = "") -> str:
     """List resources exposed by configured MCP servers.

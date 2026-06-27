@@ -1,11 +1,11 @@
 ---
 id: report-synthesis
-name: Report synthesis
+name: Synthesize findings into a report
 description: Combine findings from several sources or sub-agents into one coherent, non-repetitive report.
 enabled: true
 ---
 
-# Report Synthesis
+# Synthesize Findings Into a Report
 
 Use this skill when multiple inputs need to become one coherent report: research findings, logs, sub-agent deliverables, code review notes, source excerpts, or user-provided material. The goal is synthesis, not concatenation.
 

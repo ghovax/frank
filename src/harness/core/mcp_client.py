@@ -1,25 +1,32 @@
 import json
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
+import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.session import RequestResponder
 
 from harness.core.configuration import MCPServerConfiguration
+
+MCPEventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
 
 class MCPClientManager:
     """Small MCP client facade for configured servers.
 
-    Connections are opened per operation. That keeps stdio process lifetimes
-    simple and makes server edits visible without restart coordination.
+    Connections are stateful by default: initialized sessions stay open, so MCP
+    servers can keep process/session state and stream server-initiated events.
     """
 
     def __init__(self, servers: dict[str, MCPServerConfiguration]):
         self._servers = servers
+        self._stdio_sessions: dict[str, _StatefulStdioSession] = {}
+        self._streamable_sessions: dict[str, _StatefulStreamableHTTPSession] = {}
 
     @property
     def has_servers(self) -> bool:
@@ -27,6 +34,23 @@ class MCPClientManager:
 
     def server_names(self) -> list[str]:
         return sorted(self._servers)
+
+    async def start(self) -> None:
+        for name, configuration in self._servers.items():
+            if not configuration.stateful:
+                continue
+            if configuration.transport == "stdio":
+                connection = self._stdio_sessions.get(name)
+                if connection is None:
+                    connection = _StatefulStdioSession(name, configuration)
+                    self._stdio_sessions[name] = connection
+                await connection._connect()
+            elif configuration.transport == "streamable_http":
+                connection = self._streamable_sessions.get(name)
+                if connection is None:
+                    connection = _StatefulStreamableHTTPSession(name, configuration)
+                    self._streamable_sessions[name] = connection
+                await connection._connect()
 
     async def list_tools(self, server: str = "") -> dict[str, Any]:
         result: dict[str, Any] = {"servers": []}
@@ -47,11 +71,21 @@ class MCPClientManager:
                 })
         return result
 
-    async def call_tool(self, server: str, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def call_tool(
+        self,
+        server: str,
+        tool_name: str,
+        arguments: dict[str, Any] | None = None,
+        event_callback: MCPEventCallback | None = None,
+    ) -> dict[str, Any]:
         if not server:
             raise ValueError("server is required when calling an MCP tool")
-        async with self._session(server) as session:
-            result = await session.call_tool(tool_name, arguments or {})
+        async with self._session(server, event_callback=event_callback) as session:
+            result = await session.call_tool(
+                tool_name,
+                arguments or {},
+                progress_callback=_progress_callback(server, tool_name, event_callback),
+            )
         raw_content = [_dump_model(content) for content in result.content]
         structured_content = result.structuredContent
         artifacts = _extract_artifacts(raw_content, structured_content)
@@ -72,6 +106,14 @@ class MCPClientManager:
                 artifacts=artifacts,
             ),
         }
+
+    async def aclose(self) -> None:
+        for connection in list(self._stdio_sessions.values()):
+            await connection.aclose()
+        self._stdio_sessions.clear()
+        for connection in list(self._streamable_sessions.values()):
+            await connection.aclose()
+        self._streamable_sessions.clear()
 
     async def list_resources(self, server: str = "") -> dict[str, Any]:
         result: dict[str, Any] = {"servers": []}
@@ -120,37 +162,289 @@ class MCPClientManager:
         return self.server_names()
 
     @asynccontextmanager
-    async def _session(self, server_name: str) -> AsyncIterator[ClientSession]:
+    async def _session(
+        self,
+        server_name: str,
+        event_callback: MCPEventCallback | None = None,
+    ) -> AsyncIterator[ClientSession]:
         configuration = self._servers.get(server_name)
         if configuration is None:
             raise ValueError(f"Unknown MCP server: {server_name}")
         if configuration.transport == "stdio":
             if not configuration.command:
                 raise ValueError(f"MCP server '{server_name}' is missing command")
-            parameters = StdioServerParameters(
-                command=configuration.command,
-                args=configuration.args,
-                env=configuration.env or None,
-                cwd=str(Path(configuration.cwd).expanduser()) if configuration.cwd else None,
-            )
-            async with stdio_client(parameters) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
+            if configuration.stateful:
+                connection = self._stdio_sessions.get(server_name)
+                if connection is None:
+                    connection = _StatefulStdioSession(server_name, configuration)
+                    self._stdio_sessions[server_name] = connection
+                async with connection.session(event_callback) as session:
+                    yield session
+            else:
+                async with _stateless_stdio_session(server_name, configuration, event_callback) as session:
                     yield session
             return
         if configuration.transport == "streamable_http":
             if not configuration.url:
                 raise ValueError(f"MCP server '{server_name}' is missing url")
-            async with streamable_http_client(
-                configuration.url,
-                headers=configuration.headers or None,
-                timeout=configuration.timeout_seconds,
-            ) as (read_stream, write_stream, _session_id):
-                async with ClientSession(read_stream, write_stream) as session:
-                    await session.initialize()
+            if configuration.stateful:
+                connection = self._streamable_sessions.get(server_name)
+                if connection is None:
+                    connection = _StatefulStreamableHTTPSession(server_name, configuration)
+                    self._streamable_sessions[server_name] = connection
+                async with connection.session(event_callback) as session:
+                    yield session
+            else:
+                async with _stateless_streamable_http_session(server_name, configuration, event_callback) as session:
                     yield session
             return
         raise ValueError(f"Unsupported MCP transport for '{server_name}': {configuration.transport}")
+
+
+class _StatefulStdioSession:
+    def __init__(self, server_name: str, configuration: MCPServerConfiguration):
+        self._server_name = server_name
+        self._configuration = configuration
+        self._exit_stack = AsyncExitStack()
+        self._session: ClientSession | None = None
+        self._connect_lock = asyncio.Lock()
+        self._operation_lock = asyncio.Lock()
+        self._callbacks: set[MCPEventCallback] = set()
+        self._pending_events: list[dict[str, Any]] = []
+
+    @asynccontextmanager
+    async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
+        session = await self._connect()
+        async with self._operation_lock:
+            if event_callback is not None:
+                self._callbacks.add(event_callback)
+                await self._flush_pending_events(event_callback)
+            try:
+                yield session
+            finally:
+                if event_callback is not None:
+                    self._callbacks.discard(event_callback)
+
+    async def _connect(self) -> ClientSession:
+        async with self._connect_lock:
+            if self._session is not None:
+                return self._session
+            read_stream, write_stream = await self._exit_stack.enter_async_context(
+                stdio_client(_stdio_parameters(self._configuration))
+            )
+            session = await self._exit_stack.enter_async_context(
+                ClientSession(
+                    read_stream,
+                    write_stream,
+                    message_handler=self._handle_message,
+                )
+            )
+            await session.initialize()
+            self._session = session
+            return session
+
+    async def _handle_message(self, message: Any) -> None:
+        event = _event_from_mcp_message(self._server_name, message)
+        if event is None:
+            return
+        callbacks = list(self._callbacks)
+        if not callbacks:
+            self._pending_events.append(event)
+            return
+        for callback in callbacks:
+            await _emit_callback(callback, event)
+
+    async def _flush_pending_events(self, callback: MCPEventCallback) -> None:
+        if not self._pending_events:
+            return
+        events = self._pending_events
+        self._pending_events = []
+        for event in events:
+            await _emit_callback(callback, event)
+
+    async def aclose(self) -> None:
+        self._session = None
+        await self._exit_stack.aclose()
+
+
+class _StatefulStreamableHTTPSession:
+    def __init__(self, server_name: str, configuration: MCPServerConfiguration):
+        self._server_name = server_name
+        self._configuration = configuration
+        self._exit_stack = AsyncExitStack()
+        self._session: ClientSession | None = None
+        self._connect_lock = asyncio.Lock()
+        self._operation_lock = asyncio.Lock()
+        self._callbacks: set[MCPEventCallback] = set()
+        self._pending_events: list[dict[str, Any]] = []
+
+    @asynccontextmanager
+    async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
+        session = await self._connect()
+        async with self._operation_lock:
+            if event_callback is not None:
+                self._callbacks.add(event_callback)
+                await self._flush_pending_events(event_callback)
+            try:
+                yield session
+            finally:
+                if event_callback is not None:
+                    self._callbacks.discard(event_callback)
+
+    async def _connect(self) -> ClientSession:
+        async with self._connect_lock:
+            if self._session is not None:
+                return self._session
+            http_client = await self._exit_stack.enter_async_context(_http_client(self._configuration))
+            read_stream, write_stream, _get_session_id = await self._exit_stack.enter_async_context(
+                streamable_http_client(
+                    self._configuration.url,
+                    http_client=http_client,
+                    terminate_on_close=True,
+                )
+            )
+            session = await self._exit_stack.enter_async_context(
+                ClientSession(
+                    read_stream,
+                    write_stream,
+                    message_handler=self._handle_message,
+                )
+            )
+            await session.initialize()
+            self._session = session
+            return session
+
+    async def _handle_message(self, message: Any) -> None:
+        event = _event_from_mcp_message(self._server_name, message)
+        if event is None:
+            return
+        callbacks = list(self._callbacks)
+        if not callbacks:
+            self._pending_events.append(event)
+            return
+        for callback in callbacks:
+            await _emit_callback(callback, event)
+
+    async def _flush_pending_events(self, callback: MCPEventCallback) -> None:
+        if not self._pending_events:
+            return
+        events = self._pending_events
+        self._pending_events = []
+        for event in events:
+            await _emit_callback(callback, event)
+
+    async def aclose(self) -> None:
+        self._session = None
+        await self._exit_stack.aclose()
+
+
+@asynccontextmanager
+async def _stateless_stdio_session(
+    server_name: str,
+    configuration: MCPServerConfiguration,
+    event_callback: MCPEventCallback | None,
+) -> AsyncIterator[ClientSession]:
+    async with stdio_client(_stdio_parameters(configuration)) as (read_stream, write_stream):
+        async with ClientSession(
+            read_stream,
+            write_stream,
+            message_handler=_message_handler(server_name, event_callback),
+        ) as session:
+            await session.initialize()
+            yield session
+
+
+@asynccontextmanager
+async def _stateless_streamable_http_session(
+    server_name: str,
+    configuration: MCPServerConfiguration,
+    event_callback: MCPEventCallback | None,
+) -> AsyncIterator[ClientSession]:
+    async with _http_client(configuration) as http_client:
+        async with streamable_http_client(
+            configuration.url,
+            http_client=http_client,
+            terminate_on_close=True,
+        ) as (read_stream, write_stream, _session_id):
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                message_handler=_message_handler(server_name, event_callback),
+            ) as session:
+                await session.initialize()
+                yield session
+
+
+def _stdio_parameters(configuration: MCPServerConfiguration) -> StdioServerParameters:
+    return StdioServerParameters(
+        command=configuration.command,
+        args=configuration.args,
+        env=configuration.env or None,
+        cwd=str(Path(configuration.cwd).expanduser()) if configuration.cwd else None,
+    )
+
+
+def _http_client(configuration: MCPServerConfiguration) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        headers=configuration.headers or None,
+        timeout=httpx.Timeout(configuration.timeout_seconds, read=None),
+    )
+
+
+def _message_handler(server_name: str, event_callback: MCPEventCallback | None):
+    async def handle(message: Any) -> None:
+        event = _event_from_mcp_message(server_name, message)
+        if event is not None and event_callback is not None:
+            await _emit_callback(event_callback, event)
+    return handle
+
+
+def _progress_callback(
+    server: str,
+    tool_name: str,
+    event_callback: MCPEventCallback | None,
+):
+    if event_callback is None:
+        return None
+
+    async def progress(progress: float, total: float | None, message: str | None) -> None:
+        await _emit_callback(event_callback, {
+            "event": "progress",
+            "server": server,
+            "tool": tool_name,
+            "progress": progress,
+            "total": total,
+            "message": message,
+        })
+
+    return progress
+
+
+async def _emit_callback(callback: MCPEventCallback, event: dict[str, Any]) -> None:
+    result = callback(event)
+    if result is not None:
+        await result
+
+
+def _event_from_mcp_message(server_name: str, message: Any) -> dict[str, Any] | None:
+    if isinstance(message, Exception):
+        return {"event": "error", "server": server_name, "message": str(message)}
+    if isinstance(message, RequestResponder):
+        request = _dump_model(message.request)
+        return {
+            "event": "server_request",
+            "server": server_name,
+            "request_id": message.request_id,
+            "payload": _strip_render_payloads(request),
+        }
+    payload = _dump_model(message)
+    artifacts = _find_artifacts(payload)
+    return {
+        "event": "server_notification",
+        "server": server_name,
+        "payload": _strip_render_payloads(payload),
+        "artifacts": artifacts,
+    }
 
 
 def _dump_model(value: Any) -> Any:
@@ -280,6 +574,26 @@ def _normalize_artifact(value: Any) -> dict[str, Any] | None:
     normalized["type"] = artifact_type
     if "mimeType" in normalized and "mime_type" not in normalized:
         normalized["mime_type"] = normalized.pop("mimeType")
+    if "artifact_id" not in normalized:
+        artifact_id = normalized.get("artifactId") or normalized.get("id")
+        if isinstance(artifact_id, str) and artifact_id.strip():
+            normalized["artifact_id"] = artifact_id.strip()
+    if "artifact_target_id" not in normalized:
+        target_id = (
+            normalized.get("artifactTargetId")
+            or normalized.get("target_artifact_id")
+            or normalized.get("targetArtifactId")
+        )
+        if isinstance(target_id, str) and target_id.strip():
+            normalized["artifact_target_id"] = target_id.strip()
+    if "artifact_update_mode" not in normalized:
+        update_mode = (
+            normalized.get("artifactUpdateMode")
+            or normalized.get("update_mode")
+            or normalized.get("updateMode")
+        )
+        if isinstance(update_mode, str) and update_mode.strip():
+            normalized["artifact_update_mode"] = update_mode.strip().lower()
     return normalized
 
 
@@ -336,7 +650,17 @@ def _build_model_context(
         context["artifacts"] = [
             {
                 key: artifact.get(key)
-                for key in ("type", "title", "mime_type", "width", "height", "summary")
+                for key in (
+                    "artifact_id",
+                    "artifact_target_id",
+                    "artifact_update_mode",
+                    "type",
+                    "title",
+                    "mime_type",
+                    "width",
+                    "height",
+                    "summary",
+                )
                 if artifact.get(key) is not None
             }
             for artifact in artifacts

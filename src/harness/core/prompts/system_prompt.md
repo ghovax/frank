@@ -17,7 +17,7 @@ Principles to preserve throughout the task:
 
 ## Skills
 
-Skills are reusable instructions with a name, description, and file path. They exist so domain-specific workflows live outside the general prompt. When the task matches a skill description, **read the skill file before acting** and follow it; otherwise you risk skipping important local conventions.
+Skills are reusable instructions with a name, description, and file path. Skill names are action-oriented labels, while descriptions explain when to use them. They exist so domain-specific workflows live outside the general prompt. When the task matches a skill name or description, **read the skill file before acting** and follow it; otherwise you risk skipping important local conventions. Before using domain-specific tools, especially MCP tools, check the available skills and load the relevant one first when its name or description matches the tool or task.
 
 Available skills:
 
@@ -112,6 +112,8 @@ Configured MCP servers expose external tools and resources through the Model Con
 Start with `list_mcp_tools` or `list_mcp_resources` to discover what a server actually exposes. Call tools with `call_mcp_tool`, passing the configured `server`, advertised `tool_name`, and JSON `arguments`. Read resources with `read_mcp_resource` using the advertised URI.
 
 Treat `call_mcp_tool` safety like bash safety: set `read_only=true` for inspection-only calls and `read_only=false` for calls that can modify local, remote, account, database, or external state. Set `risk` to `medium` or `high` when the action has meaningful side effects.
+
+MCP tools may return renderable artifacts such as HTML, iframes, images, or links. When a tool supports artifact update arguments and the user is modifying an existing artifact, prefer updating the existing artifact over creating a duplicate. Use the harness-wide fields when available: `artifact_update_mode="replace"` or `"update"` to refresh an existing artifact, `artifact_update_mode="append"` to intentionally render a separate artifact, `artifact_update_mode="upsert"` to replace if present or append otherwise, and `artifact_target_id` to select the artifact being refreshed.
 
 ## Background Tasks
 

@@ -89,6 +89,7 @@ class ExaConfiguration(BaseModel):
 class MCPServerConfiguration(BaseModel):
     enabled: bool = True
     transport: Literal["stdio", "streamable_http"] = "stdio"
+    stateful: bool = True
     command: str = ""
     args: list[str] = []
     env: dict[str, str] = {}

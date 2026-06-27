@@ -16,6 +16,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
 from watchfiles import awatch
+from dotenv import load_dotenv
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -38,6 +39,11 @@ from harness.core.configuration import (
 from harness.core.mcp_client import MCPClientManager
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import cancel_all_background_tasks, set_exa_client, set_mcp_client_manager
+
+# Load .env (gitignored) so API keys are available via the environment without
+# being stored in the tracked configuration.yaml. Existing env vars win, so a
+# direnv-provided environment is not overridden.
+load_dotenv()
 
 PUBLIC_BASE_URL = "http://localhost:8822"
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
@@ -276,6 +282,8 @@ async def lifespan(application: FastAPI):
 
     mcp_servers = _global_configuration.mcp.enabled_servers()
     _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    if _mcp_manager is not None:
+        await _mcp_manager.start()
     set_mcp_client_manager(_mcp_manager)
 
     _async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
@@ -292,6 +300,8 @@ async def lifespan(application: FastAPI):
     finally:
         watcher.cancel()
         cancel_all_background_tasks()
+        if _mcp_manager is not None:
+            await _mcp_manager.aclose()
 
 
 app = FastAPI(title="harness", lifespan=lifespan)

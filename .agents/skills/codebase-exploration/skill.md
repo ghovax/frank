@@ -1,11 +1,11 @@
 ---
 id: codebase-exploration
-name: Codebase exploration
+name: Explore codebases without editing files
 description: Investigate a codebase and explain how it works, citing exact files and line numbers, without modifying anything.
 enabled: true
 ---
 
-# Codebase Exploration
+# Explore Codebases Without Editing Files
 
 Use this skill when the task is to understand, explain, or diagnose a codebase without modifying it. The goal is not to read a lot of files; the goal is to build a defensible model of how the relevant behavior actually works.
 

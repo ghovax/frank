@@ -17,7 +17,10 @@ wheels/
 *.swo
 *.swp
 
-# Harness state now lives in ~/.harness; ignore any legacy in-repo copies.
+# Harness state lives in ~/.harness, with configuration.yaml symlinked to the
+# tracked .harness/configuration.yaml in this repo. The chat history database and
+# any legacy in-repo copies are never tracked; the config (keys blank) is.
 harness.db
 history.db
-configuration.yaml
+# A legacy configuration.yaml in the repo root (not the tracked .harness/ one).
+/configuration.yaml

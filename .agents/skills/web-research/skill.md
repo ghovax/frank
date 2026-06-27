@@ -1,11 +1,11 @@
 ---
 id: web-research
-name: Web research
+name: Research current web sources
 description: Gather current, well-cited information from the web — search broadly, read primary sources, and report findings with citations.
 enabled: true
 ---
 
-# Web Research
+# Research Current Web Sources
 
 Use this skill when a task needs current, external, or source-attributed information. Web research is useful only when it improves accuracy; do not search merely to decorate an answer with links.
 

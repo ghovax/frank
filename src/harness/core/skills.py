@@ -1,7 +1,7 @@
 """File-based skills.
 
 A skill is just a file: ``.agents/skills/<name>.md`` or
-``~/.agents/skills/<name>.md`` with a ``name`` and ``description`` in its
+``.agents/skills/<id>/SKILL.md`` with a ``name`` and ``description`` in its
 frontmatter and instructions in its body. Skills are auto-discovered, broadcast
 on every agent's A2A AgentCard, and listed in every agent's system context so
 agents are aware of them by default. To use a skill, an agent reads its file
@@ -37,13 +37,13 @@ def _parse_skill(path: Path) -> Skill:
     if match:
         frontmatter = yaml.safe_load(match.group(1)) or {}
         body = match.group(2).strip()
-        default_identifier = path.parent.name if path.name == "skill.md" else path.stem
+        default_identifier = path.parent.name if path.name.upper() == "SKILL.MD" else path.stem
         identifier = str(frontmatter.get("id") or default_identifier)
         name = str(frontmatter.get("name") or identifier)
         description = str(frontmatter.get("description", ""))
         enabled = bool(frontmatter.get("enabled", True))
     else:
-        identifier = path.parent.name if path.name == "skill.md" else path.stem
+        identifier = path.parent.name if path.name.upper() == "SKILL.MD" else path.stem
         name = identifier
         description = ""
         enabled = True
@@ -68,7 +68,11 @@ def load_skills(skills_directory: str | Path | Iterable[str | Path]) -> list[Ski
     for directory in _as_directories(skills_directory):
         if not directory.is_dir():
             continue
-        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/skill.md"))]
+        candidates = [
+            *sorted(directory.glob("*.md")),
+            *sorted(directory.glob("*/SKILL.md")),
+            *sorted(directory.glob("*/skill.md")),
+        ]
         for path in candidates:
             skill = _parse_skill(path)
             if skill.enabled:

@@ -126,6 +126,182 @@ function finishAgentStep(step: AgentStep, task: A2ATask | undefined): AgentStep 
   return { ...next, state, task };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function streamedMcpResult(data: Record<string, unknown>): Record<string, unknown> {
+  const event = asRecord(data.event);
+  const artifacts = Array.isArray(event.artifacts) ? event.artifacts : [];
+  return {
+    server: data.server ?? event.server,
+    tool: data.tool ?? event.tool,
+    event: event.event,
+    payload: event.payload,
+    progress: event.progress,
+    total: event.total,
+    message: event.message,
+    artifacts,
+  };
+}
+
+function mergeMcpResult(existing: unknown, streamed: Record<string, unknown>): Record<string, unknown> {
+  const current = asRecord(existing);
+  const events = Array.isArray(current.events) ? current.events : [];
+  const currentArtifacts = Array.isArray(current.artifacts) ? current.artifacts : [];
+  const streamedArtifacts = Array.isArray(streamed.artifacts) ? streamed.artifacts : [];
+  return {
+    ...current,
+    ...streamed,
+    events: [...events, streamed],
+    artifacts: [...currentArtifacts, ...streamedArtifacts],
+  };
+}
+
+function mergeMcpFinalResult(existing: unknown, finalResult: unknown): unknown {
+  const current = asRecord(existing);
+  const finalRecord = asRecord(finalResult);
+  if (Object.keys(finalRecord).length === 0) return finalResult;
+  const currentArtifacts = Array.isArray(current.artifacts) ? current.artifacts : [];
+  if (currentArtifacts.length === 0 || Array.isArray(finalRecord.artifacts)) return finalResult;
+  return {
+    ...finalRecord,
+    events: current.events,
+    artifacts: currentArtifacts,
+  };
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function artifactIdentifier(value: unknown): string {
+  const artifact = asRecord(value);
+  return String(artifact.artifact_id ?? artifact.artifactId ?? artifact.id ?? "").trim();
+}
+
+function artifactTargetIdentifier(value: unknown): string {
+  const artifact = asRecord(value);
+  return String(
+    artifact.artifact_target_id
+      ?? artifact.artifactTargetId
+      ?? artifact.target_artifact_id
+      ?? artifact.targetArtifactId
+      ?? ""
+  ).trim();
+}
+
+function artifactUpdateMode(value: unknown): string {
+  const artifact = asRecord(value);
+  return String(
+    artifact.artifact_update_mode
+      ?? artifact.artifactUpdateMode
+      ?? artifact.update_mode
+      ?? artifact.updateMode
+      ?? "append"
+  ).toLowerCase().trim();
+}
+
+function resultArtifacts(value: unknown): unknown[] {
+  return asArray(asRecord(value).artifacts);
+}
+
+function withResultArtifacts(value: unknown, artifacts: unknown[]): unknown {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return value;
+  return { ...record, artifacts };
+}
+
+function replaceArtifactInResult(result: unknown, targetId: string, nextArtifact: unknown): { result: unknown; replaced: boolean } {
+  const artifacts = resultArtifacts(result);
+  if (artifacts.length === 0) return { result, replaced: false };
+  let replaced = false;
+  const nextArtifacts = artifacts.map((artifact) => {
+    if (artifactIdentifier(artifact) !== targetId) return artifact;
+    replaced = true;
+    return { ...asRecord(artifact), ...asRecord(nextArtifact), artifact_id: artifactIdentifier(nextArtifact) || targetId };
+  });
+  return { result: replaced ? withResultArtifacts(result, nextArtifacts) : result, replaced };
+}
+
+function applyArtifactUpdates(
+  messages: ChatMessage[],
+  result: unknown,
+  currentToolCallId: string
+): { messages: ChatMessage[]; result: unknown } {
+  const artifacts = resultArtifacts(result);
+  if (artifacts.length === 0) return { messages, result };
+
+  let nextMessages = messages;
+  const remainingArtifacts: unknown[] = [];
+
+  for (const artifact of artifacts) {
+    const mode = artifactUpdateMode(artifact);
+    const updateTargetId = artifactTargetIdentifier(artifact) || artifactIdentifier(artifact);
+    if (!updateTargetId || !["replace", "update", "upsert"].includes(mode)) {
+      remainingArtifacts.push(artifact);
+      continue;
+    }
+
+    let didReplace = false;
+    nextMessages = nextMessages.map((message) => {
+      if (didReplace || message.role !== "tool_call" || message.meta?.toolCallId === currentToolCallId) return message;
+      const replacement = replaceArtifactInResult(message.meta?.result, updateTargetId, artifact);
+      if (!replacement.replaced) return message;
+      didReplace = true;
+      return { ...message, meta: { ...message.meta, result: replacement.result } };
+    });
+
+    if (!didReplace && mode === "upsert") {
+      remainingArtifacts.push(artifact);
+    }
+  }
+
+  return { messages: nextMessages, result: withResultArtifacts(result, remainingArtifacts) };
+}
+
+function applyArtifactUpdatesToAgentGroups(
+  agentGroups: AgentGroup[],
+  result: unknown,
+  currentToolCallId: string
+): { agentGroups: AgentGroup[]; result: unknown } {
+  const artifacts = resultArtifacts(result);
+  if (artifacts.length === 0) return { agentGroups, result };
+
+  let nextAgentGroups = agentGroups;
+  const remainingArtifacts: unknown[] = [];
+
+  for (const artifact of artifacts) {
+    const mode = artifactUpdateMode(artifact);
+    const updateTargetId = artifactTargetIdentifier(artifact) || artifactIdentifier(artifact);
+    if (!updateTargetId || !["replace", "update", "upsert"].includes(mode)) {
+      remainingArtifacts.push(artifact);
+      continue;
+    }
+
+    let didReplace = false;
+    nextAgentGroups = nextAgentGroups.map((group) => ({
+      ...group,
+      steps: group.steps.map((step) => ({
+        ...step,
+        parts: step.parts.map((part) => {
+          if (didReplace || part.kind !== "tool" || part.toolCallId === currentToolCallId) return part;
+          const replacement = replaceArtifactInResult(part.result, updateTargetId, artifact);
+          if (!replacement.replaced) return part;
+          didReplace = true;
+          return { ...part, result: replacement.result };
+        }),
+      })),
+    }));
+
+    if (!didReplace && mode === "upsert") {
+      remainingArtifacts.push(artifact);
+    }
+  }
+
+  return { agentGroups: nextAgentGroups, result: withResultArtifacts(result, remainingArtifacts) };
+}
+
 function withStep(
   list: AgentGroup[],
   groupId: string,
@@ -336,9 +512,25 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       finishRunningThinking(state);
       state.lane = null;
       const toolCallId = String(data.toolCallId ?? "");
-      state.messages = state.messages.map((message) =>
+      const currentMessage = state.messages.find((message) => message.role === "tool_call" && message.meta?.toolCallId === toolCallId);
+      const mergedResult = data.name === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, data.result) : data.result;
+      const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
+      state.messages = artifactUpdate.messages.map((message) =>
         message.role === "tool_call" && message.meta?.toolCallId === toolCallId
-          ? { ...message, meta: { ...message.meta, status: "completed", result: data.result } }
+          ? { ...message, meta: { ...message.meta, status: "completed", result: artifactUpdate.result } }
+          : message
+      );
+      break;
+    }
+    case "mcp_event": {
+      const toolCallId = String(data.toolCallId ?? "");
+      const streamed = streamedMcpResult(data);
+      const currentMessage = state.messages.find((message) => message.role === "tool_call" && message.meta?.toolCallId === toolCallId);
+      const mergedResult = mergeMcpResult(currentMessage?.meta?.result, streamed);
+      const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
+      state.messages = artifactUpdate.messages.map((message) =>
+        message.role === "tool_call" && message.meta?.toolCallId === toolCallId
+          ? { ...message, meta: { ...message.meta, status: "running", result: artifactUpdate.result } }
           : message
       );
       break;
@@ -393,11 +585,42 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     case "sub_task_tool_result": {
       const toolCallId = String(data.toolCallId ?? "");
-      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
+      let currentPartResult: unknown;
+      for (const group of state.agentGroups) {
+        for (const step of group.steps) {
+          const part = step.parts.find((candidate) => candidate.kind === "tool" && candidate.toolCallId === toolCallId);
+          if (part?.kind === "tool") currentPartResult = part.result;
+        }
+      }
+      const mergedResult = data.name === "call_mcp_tool" ? mergeMcpFinalResult(currentPartResult, data.result) : data.result;
+      const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
+      state.agentGroups = withStep(artifactUpdate.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
         ...step,
         parts: step.parts.map((part) =>
           part.kind === "tool" && toolCallId && part.toolCallId === toolCallId
-            ? { ...part, result: data.result }
+            ? { ...part, result: artifactUpdate.result }
+            : part
+        ),
+      }));
+      break;
+    }
+    case "sub_task_mcp_event": {
+      const toolCallId = String(data.toolCallId ?? "");
+      const streamed = streamedMcpResult(data);
+      let currentPartResult: unknown;
+      for (const group of state.agentGroups) {
+        for (const step of group.steps) {
+          const part = step.parts.find((candidate) => candidate.kind === "tool" && candidate.toolCallId === toolCallId);
+          if (part?.kind === "tool") currentPartResult = part.result;
+        }
+      }
+      const mergedResult = mergeMcpResult(currentPartResult, streamed);
+      const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
+      state.agentGroups = withStep(artifactUpdate.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
+        ...step,
+        parts: step.parts.map((part) =>
+          part.kind === "tool" && toolCallId && part.toolCallId === toolCallId
+            ? { ...part, result: artifactUpdate.result }
             : part
         ),
       }));

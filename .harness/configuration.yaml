@@ -1,0 +1,13 @@
+api:
+  endpoint: "https://opencode.ai/zen/go/v1"
+  model: "deepseek-v4-flash"
+  api_key: ""
+
+exa:
+  api_key: ""
+
+default_agent: assistant
+agents_root_directory: .agents
+home_agents_root_directory: ~/.agents
+agents_directory: .agents/agents
+skills_directory: .agents/skills
