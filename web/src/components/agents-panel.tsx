@@ -2,10 +2,9 @@
 
 import { Badge, Box, Flex, IconButton, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { LuChevronDown, LuChevronRight, LuNetwork, LuX } from "react-icons/lu";
+import { LuNetwork, LuX } from "react-icons/lu";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
 import { isStepDone } from "@/lib/use-chat";
-import { getFocusIcon } from "@/lib/focus-icon";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
 
@@ -42,10 +41,7 @@ interface AgentsPanelProps {
 }
 
 function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: string; agents: { id: string; name: string; title?: string }[] }) {
-  const done = isStepDone(step);
   const [open, setOpen] = useState(true);
-  const [thinkingOpen, setThinkingOpen] = useState(false);
-  const { icon: FocusIcon, color: focusColor } = getFocusIcon(step.icon, step.focus);
 
   return (
     <ToolCard>
@@ -72,41 +68,8 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
             </ToolMetaRow>
           </Box>
         )}
-        {step.thinking && (
-          <Box mb={step.parts.length > 0 ? 2 : 0}>
-            <Flex
-              align="center"
-              gap={1}
-              cursor="pointer"
-              color="fg.subtle"
-              onClick={() => setThinkingOpen((current) => !current)}
-              userSelect="none"
-            >
-              {thinkingOpen ? <LuChevronDown size={11} /> : <LuChevronRight size={11} />}
-              <Box color={focusColor} fontSize="sm" flexShrink={0}>
-                <FocusIcon size={11} />
-              </Box>
-              {step.focus && <Text fontSize="xs" fontWeight="medium">{step.focus}</Text>}
-            </Flex>
-            {thinkingOpen && (
-              <Box mt={1} pl={3} borderLeft="2px solid" borderColor="border" color="fg.muted" fontSize="xs" whiteSpace="pre-wrap">
-                {step.thinking}
-              </Box>
-            )}
-          </Box>
-        )}
-
-        {step.parts.length > 0 ? (
+        {step.parts.length > 0 && (
           <AgentTimeline parts={step.parts} agents={agents} />
-        ) : (
-          !done && !step.thinking && step.focus && (
-            <Flex align="center" gap={1} color="fg.subtle">
-              <Box color={focusColor} fontSize="sm" flexShrink={0}>
-                <FocusIcon size={11} />
-              </Box>
-              <Text fontSize="xs">{step.focus}</Text>
-            </Flex>
-          )
         )}
       </ToolCardBody>}
     </ToolCard>

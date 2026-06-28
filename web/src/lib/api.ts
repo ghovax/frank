@@ -47,12 +47,13 @@ export async function fetchAgentCards(): Promise<AgentCard[]> {
 export interface Settings {
   api_key: string;
   exa_api_key: string;
+  sandbox_enabled: boolean;
 }
 
 // API credentials stored in ~/.harness/configuration.yaml.
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
-  if (!response.ok) return { api_key: "", exa_api_key: "" };
+  if (!response.ok) return { api_key: "", exa_api_key: "", sandbox_enabled: true };
   return response.json();
 }
 

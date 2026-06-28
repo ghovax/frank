@@ -3,19 +3,14 @@
 import { Flex } from "@chakra-ui/react";
 import type { AgentPart } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
+import { ThinkingIndicator } from "./thinking-indicator";
 import { ToolCall } from "./tool-call";
 
-function isBackgroundStarted(result: unknown): boolean {
-  if (typeof result !== "object" || result === null) return false;
-  const code = (result as Record<string, unknown>).code;
-  if (typeof code !== "string") return false;
-  return code.endsWith("_started") || code === "background_task_scheduled";
-}
-
-// Renders an agent step's ordered timeline — prose blocks and tool calls
+// Renders an agent step's ordered timeline — prose, reasoning, and tool calls
 // interleaved exactly as they occurred. The same building blocks the main chat
-// uses (MarkdownContent for text, ToolCall for tool calls), so an agent's
-// activity reads identically whether shown inline or in the agents panel.
+// uses (MarkdownContent for text, ThinkingIndicator for reasoning/focus,
+// ToolCall for tool calls), so an agent's activity reads identically whether
+// shown inline or in the agents panel.
 export function AgentTimeline({
   parts,
   agents = [],
@@ -28,14 +23,22 @@ export function AgentTimeline({
       {parts.map((part, index) =>
         part.kind === "text" ? (
           <MarkdownContent key={`text-${index}`} content={part.content} />
+        ) : part.kind === "thinking" ? (
+          <ThinkingIndicator
+            key={`thinking-${index}`}
+            content={part.content}
+            focus={part.focus}
+            icon={part.icon}
+            status={part.status}
+          />
         ) : (
           <ToolCall
             key={`tool-${index}`}
             name={part.name}
             arguments={part.arguments}
-            result={isBackgroundStarted(part.result) ? undefined : part.result}
+            result={part.result}
             sequenceNumber={part.sequenceNumber}
-            status={part.result != null && !isBackgroundStarted(part.result) ? "completed" : undefined}
+            status={part.status}
             agents={agents}
           />
         )

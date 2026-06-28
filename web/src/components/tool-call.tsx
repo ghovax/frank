@@ -3,17 +3,11 @@
 import { Box, Flex } from "@chakra-ui/react";
 import { useState } from "react";
 import { getToolCallDisplay } from "@/lib/tool-display";
+import type { ToolEvent } from "@/lib/tool-event";
 import { ToolArtifacts, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolRiskBadges, ToolStatusBadge } from "./tool-card";
 
-interface ToolCallProps {
-  name: string;
-  arguments?: Record<string, unknown>;
-  // The tool's result, rendered inside the (collapsed) card body alongside the
-  // arguments so it is revealed on expand rather than filling the chat.
-  result?: unknown;
-  sequenceNumber?: number;
-  status?: string;
+interface ToolCallProps extends ToolEvent {
   agents?: { id: string; name: string; title?: string }[];
 }
 

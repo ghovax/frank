@@ -30,6 +30,9 @@ api:
 exa:
   api_key: ""
 
+sandbox:
+  enabled: true
+
 default_agent: assistant
 agents_root_directory: .agents
 home_agents_root_directory: ~/.agents
@@ -52,9 +55,14 @@ def database_file_path() -> Path:
     return harness_home_directory() / DATABASE_FILENAME
 
 
-def save_api_keys(*, api_key: str | None = None, exa_api_key: str | None = None) -> None:
-    """Persist API credentials into ~/.harness/configuration.yaml, preserving the
-    rest of the file. Only the provided keys are written. Creates the file from the
+def save_api_keys(
+    *,
+    api_key: str | None = None,
+    exa_api_key: str | None = None,
+    sandbox_enabled: bool | None = None,
+) -> None:
+    """Persist settings into ~/.harness/configuration.yaml, preserving the rest
+    of the file. Only provided values are written. Creates the file from the
     default template if it does not exist yet."""
     path = configuration_file_path()
     if path.exists():
@@ -65,6 +73,8 @@ def save_api_keys(*, api_key: str | None = None, exa_api_key: str | None = None)
         data.setdefault("api", {})["api_key"] = api_key
     if exa_api_key is not None:
         data.setdefault("exa", {})["api_key"] = exa_api_key
+    if sandbox_enabled is not None:
+        data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
     path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
@@ -84,6 +94,10 @@ class ExaConfiguration(BaseModel):
     @property
     def effective_api_key(self) -> str:
         return os.environ.get("EXA_API_KEY") or self.api_key
+
+
+class SandboxConfiguration(BaseModel):
+    enabled: bool = True
 
 
 class MCPServerConfiguration(BaseModel):
@@ -129,6 +143,7 @@ class MCPConfiguration(BaseModel):
 class GlobalConfiguration(BaseModel):
     api: ApiConfiguration
     exa: ExaConfiguration = ExaConfiguration()
+    sandbox: SandboxConfiguration = SandboxConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "assistant"
     agents_root_directory: str = ".agents"

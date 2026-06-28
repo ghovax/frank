@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import shlex
 import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.messages.ai import add_ai_message_chunks
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
@@ -126,7 +128,12 @@ def _maybe_json(value: str) -> Any:
         return value
 
 
-def _build_tools(agent_configuration: AgentConfiguration, global_configuration: GlobalConfiguration) -> list[BaseTool]:
+def _build_tools(
+    agent_configuration: AgentConfiguration,
+    global_configuration: GlobalConfiguration,
+    *,
+    is_sub_agent: bool = False,
+) -> list[BaseTool]:
     available = [
         bash_tool,
         web_search_tool,
@@ -134,9 +141,10 @@ def _build_tools(agent_configuration: AgentConfiguration, global_configuration: 
         update_tasks_tool,
         update_goal_tool,
         set_focus_tool,
-        render_widget_tool,
         read_task_tool,
     ]
+    if not is_sub_agent:
+        available.append(render_widget_tool)
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
     if global_configuration.mcp.enabled_servers():
@@ -168,6 +176,7 @@ class SubAgentRunner:
             agent_configuration=agent_configuration,
             global_configuration=global_configuration,
             working_directory=working_directory,
+            is_sub_agent=True,
         )
         # An explicit override (from the spawning call or step)
         # wins over the agent profile's own permission_mode.
@@ -468,6 +477,7 @@ class AgentRuntime:
         session_id: str = "",
         conversation: Optional[list] = None,
         working_directory: str = "",
+        is_sub_agent: bool = False,
     ):
         self._session_id = session_id
         self._agent_configuration = agent_configuration
@@ -487,7 +497,12 @@ class AgentRuntime:
             temperature=0,
         )
 
-        self._tools = _build_tools(agent_configuration, global_configuration)
+        self._is_sub_agent = is_sub_agent
+        self._tools = _build_tools(
+            agent_configuration,
+            global_configuration,
+            is_sub_agent=is_sub_agent,
+        )
         self._bound_llm = self._llm.bind_tools(
             self._tools,
             parallel_tool_calls=True,
@@ -600,12 +615,17 @@ class AgentRuntime:
             context_json = json.dumps({
                 "working_directory": self._working_directory,
                 "available_agents": available_agents,
+                "is_sub_agent": self._is_sub_agent,
             })
+            sub_agent_context = ""
+            if self._is_sub_agent:
+                sub_agent_context = self._prompt_loader.load("sub_agent_context", {})
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
                 "skills": json.dumps(skills_payload(agent_skills)),
                 "memories": json.dumps(memories_payload(memories)),
+                "sub_agent_context": sub_agent_context,
             })
         return self._cached_system_prompt
 
@@ -747,15 +767,12 @@ class AgentRuntime:
 
             fallback_label, fallback_icon = self._fallback_focus_label()
             yield StreamEvent(StreamEvent.Type.STATUS, code="thinking", label=fallback_label, icon=fallback_icon)
-            accumulated_response = None
+            response_chunks: list[AIMessageChunk] = []
             async for chunk in self._bound_llm.astream(messages):
                 if self._abort_event.is_set():
                     yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                     return
-                if accumulated_response is None:
-                    accumulated_response = chunk
-                else:
-                    accumulated_response += chunk  # type: ignore[operator]
+                response_chunks.append(chunk)
                 if chunk.content and self._agent_configuration.stream_agent_progress:
                     yield StreamEvent(
                         StreamEvent.Type.TEXT_CHUNK,
@@ -767,7 +784,7 @@ class AgentRuntime:
                         StreamEvent.Type.THINKING,
                         text=reasoning_content,
                     )
-            response = accumulated_response
+            response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
 
             # Malformed tool calls (arguments that failed JSON parsing) land in
             # `invalid_tool_calls` while `tool_calls` may be empty. LangChain
@@ -910,6 +927,13 @@ class AgentRuntime:
             name,
             self._global_configuration.agent_directories(),
         )
+
+    def _build_sub_agent_prompt(self, prompt: str, read_only: bool | None) -> str:
+        mode = "read-only investigation" if read_only else "delegated task"
+        return self._prompt_loader.load("sub_agent_task", {
+            "mode": mode,
+            "prompt": prompt,
+        })
 
     async def _run_one_tool(
         self,
@@ -1066,6 +1090,65 @@ class AgentRuntime:
                 return ("invalid_mcp_tool", "tool_name is required.")
         return None
 
+    def _path_like_token(self, token: str) -> str:
+        if not token or token in ("-", "--"):
+            return ""
+        if "://" in token:
+            return ""
+        if token.startswith("--") and "=" in token:
+            token = token.split("=", 1)[1]
+        elif token.startswith("-"):
+            return ""
+        token = token.strip("'\"")
+        if not token or token in (".",):
+            return ""
+        if token.startswith(("~", "/", "./", "../")):
+            return token
+        if "/" in token:
+            return token
+        return ""
+
+    def _outside_working_directory_reads(self, command: str) -> list[str]:
+        """Best-effort static path boundary check for bash commands.
+
+        The shell remains too dynamic to prove every access, so this intentionally
+        catches explicit path arguments that leave the session working directory:
+        absolute paths, home paths, and parent-directory traversal.
+        """
+        if not self._global_configuration.sandbox.enabled:
+            return []
+        root = Path(self._working_directory or Path.home()).expanduser()
+        try:
+            root = root.resolve(strict=False)
+        except OSError:
+            return []
+
+        outside: list[str] = []
+        seen: set[str] = set()
+        for segment in self._agent_configuration.tools.bash._extract_segments(command):
+            try:
+                tokens = shlex.split(segment)
+            except ValueError:
+                tokens = segment.split()
+            for token in tokens[1:]:
+                path_token = self._path_like_token(token)
+                if not path_token:
+                    continue
+                path = Path(path_token).expanduser()
+                if not path.is_absolute():
+                    path = root / path
+                try:
+                    resolved = path.resolve(strict=False)
+                except OSError:
+                    continue
+                if resolved == root or resolved.is_relative_to(root):
+                    continue
+                display = str(Path(path_token).expanduser())
+                if display not in seen:
+                    seen.add(display)
+                    outside.append(display)
+        return outside
+
     async def _execute_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
     ) -> AsyncIterator[StreamEvent]:
@@ -1085,7 +1168,6 @@ class AgentRuntime:
             return
 
         if tool_name == "bash":
-            import shlex
             raw_command = tool_arguments.get("command", "")
             directory = self._working_directory
             if directory:
@@ -1116,6 +1198,45 @@ class AgentRuntime:
             read_only = tool_arguments.get("read_only", True)
             if isinstance(read_only, str):
                 read_only = read_only.lower() == "true"
+
+            outside_reads = self._outside_working_directory_reads(raw_command)
+            if outside_reads:
+                paths = ", ".join(outside_reads)
+                sandbox_message = (
+                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
+                )
+                if self._is_sub_agent:
+                    yield StreamEvent(
+                        StreamEvent.Type.ERROR,
+                        id=tool_call_identifier,
+                        code="sandbox_denied",
+                        message=sandbox_message,
+                        tool=tool_name,
+                    )
+                    yield StreamEvent(
+                        StreamEvent.Type.DENIED_INJECTION,
+                        id=tool_call_identifier,
+                        command=command,
+                    )
+                    return
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4().hex}"
+                future = asyncio.get_event_loop().create_future()
+                self._pending_permissions[request_identifier] = future
+                try:
+                    yield StreamEvent(
+                        StreamEvent.Type.PERMISSION_REQUEST,
+                        id=tool_call_identifier,
+                        request_id=request_identifier,
+                        command=command,
+                        justification=sandbox_message,
+                        risk="medium",
+                    )
+                    allowed = await future
+                finally:
+                    self._pending_permissions.pop(request_identifier, None)
+                if not allowed:
+                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="sandbox read not approved by user", tool=tool_name)
+                    return
 
             # Read-only agents may only run read-only commands. Static analysis
             # classifies the command; a detected mutation is always blocked, and
@@ -1262,11 +1383,12 @@ class AgentRuntime:
                 )
                 return
 
-            sub_agent_prompt = tool_arguments.get("prompt", "")
+            raw_sub_agent_prompt = tool_arguments.get("prompt", "")
             sub_agent_name = tool_arguments.get("agent", self._global_configuration.default_agent)
             sub_agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(sub_agent_read_only, str):
                 sub_agent_read_only = sub_agent_read_only.lower() == "true"
+            sub_agent_prompt = self._build_sub_agent_prompt(raw_sub_agent_prompt, sub_agent_read_only)
             spawn_step_id = f"agent-{uuid.uuid4().hex}"
 
             try:
@@ -1287,9 +1409,9 @@ class AgentRuntime:
                 group_id=group_id,
                 tool_call_id=tool_call_identifier,
                 justification="Sub-agents",
-                steps=[{"id": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt}],
+                steps=[{"id": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt}],
             )
-            self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": sub_agent_prompt})
+            self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt})
             child_task = None
             if self._delegate is not None:
                 async for delegated in self._delegate(sub_agent_name, sub_agent_prompt, self._a2a_task_id, sub_agent_read_only, child_depth, self._working_directory):
@@ -1410,6 +1532,15 @@ class AgentRuntime:
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
         elif tool_name == "render_widget":
+            if self._is_sub_agent:
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR,
+                    id=tool_call_identifier,
+                    tool=tool_name,
+                    code="sub_agent_widget_denied",
+                    message="Sub-agents cannot render widgets. Return findings only as text for the parent agent.",
+                )
+                return
             html = str(tool_arguments.get("html", ""))
             if not html.strip():
                 yield StreamEvent(

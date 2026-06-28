@@ -350,6 +350,8 @@ def spawn_agent(prompt: str = "", agent: str = "assistant", read_only: bool = Fa
     Args:
         prompt: The task for the sub-agent. State the goal clearly and, when it
             should build on or coordinate with other agents, name their task ids.
+            Include the expected return shape: findings, evidence, uncertainty,
+            and recommended next action and all else relevant.
         agent: Name of the agent profile to delegate to (e.g. 'reader',
             'builder', 'scout').
         read_only: Force the sub-agent into read-only mode — it may only run

@@ -12,6 +12,7 @@ import {
   type A2ATask as A2ATaskWire,
   type PermissionMode,
 } from "./api";
+import { isControlToolName, isSameToolEvent, nextToolSequence, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import type { WidgetEvent } from "@/components/widget-bridge";
 
 // Re-export the A2A task shape so components can consume it from one place.
@@ -50,11 +51,17 @@ export type ChatInput =
   | { kind: "text"; text: string }
   | { kind: "widget"; event: WidgetEvent };
 
-// An agent step's ordered timeline — prose and tool calls interleaved, mirroring
-// the main chat. Built from the A2A sub-task DataPart envelopes.
+// An agent step's ordered timeline — prose, reasoning, and tool calls
+// interleaved, mirroring the main chat. Built from the A2A sub-task DataPart
+// envelopes. A `thinking` part renders through the same ThinkingIndicator the
+// main chat uses, so a sub-agent's focus/reasoning reads identically.
 export type AgentPart =
   | { kind: "text"; content: string }
-  | { kind: "tool"; name: string; arguments?: Record<string, unknown>; sequenceNumber: number; toolCallId?: string; result?: unknown };
+  | { kind: "thinking"; content: string; focus: string; icon: string; status: ToolEventStatus }
+  | ({ kind: "tool" } & ToolEvent);
+
+type ThinkingPart = Extract<AgentPart, { kind: "thinking" }>;
+type ToolPart = Extract<AgentPart, { kind: "tool" }>;
 
 export interface AgentStep {
   stepId: string;
@@ -62,9 +69,6 @@ export interface AgentStep {
   goal: string;
   childTaskId: string;
   parts: AgentPart[];
-  thinking: string;
-  focus: string;
-  icon: string;
   state: TaskState;
   task?: A2ATask;
 }
@@ -93,11 +97,96 @@ export function taskArtifactText(task: A2ATask | undefined): string {
 }
 
 function emptyStep(stepId: string, agent = "", goal = "", childTaskId = ""): AgentStep {
-  return { stepId, agent, goal, childTaskId, parts: [], thinking: "", focus: "", icon: "", state: "working" };
+  return { stepId, agent, goal, childTaskId, parts: [], state: "working" };
+}
+
+// One place that knows a thinking part's shape, so call sites spell out only what
+// differs (a focus label, reasoning text, a finished status) rather than every
+// empty field. Defaults to a running placeholder with no label or body.
+function thinkingPart(fields: Partial<ThinkingPart> = {}): ThinkingPart {
+  return { kind: "thinking", content: "", focus: "", icon: "", status: "running", ...fields };
+}
+
+function isThinkingPart(part: AgentPart): part is ThinkingPart {
+  return part.kind === "thinking";
+}
+
+function isRunningThinking(part: AgentPart): part is ThinkingPart {
+  return isThinkingPart(part) && part.status === "running";
+}
+
+function isToolPart(part: AgentPart): part is ToolPart {
+  return part.kind === "tool";
+}
+
+// The 1-based position of the next tool card within a step's timeline.
+function nextAgentToolSequence(step: AgentStep): number {
+  return nextToolSequence(step.parts.filter(isToolPart));
+}
+
+// A focus-set (the flag) is worth persisting even with no body; reasoning text
+// is too. A bare "Thinking" status placeholder is not — it exists only to
+// shimmer while the step is mid-reasoning, and must not linger once the step
+// moves on (otherwise every iteration leaves an empty "Thinking" block behind).
+function isSubstantiveThinking(part: ThinkingPart): boolean {
+  return part.content.trim() !== "" || part.icon === "focus";
+}
+
+// Replace the thinking part at `index` with the result of `update`. The map
+// narrows the part for the updater, so call sites get the existing part typed.
+function patchThinkingAt(step: AgentStep, index: number, update: (part: ThinkingPart) => ThinkingPart): AgentStep {
+  return {
+    ...step,
+    parts: step.parts.map((part, partIndex) =>
+      partIndex === index && isThinkingPart(part) ? update(part) : part
+    ),
+  };
+}
+
+// Close out any in-flight thinking part. Called before a new prose block, tool
+// call, or the step finishing — mirrors the main chat closing its running
+// thinking indicator. Substantive parts are kept (marked done); bare placeholders
+// are dropped so no stale "Thinking" shimmer lingers.
+function finishAgentThinking(step: AgentStep): AgentStep {
+  if (!step.parts.some(isRunningThinking)) return step;
+  return {
+    ...step,
+    parts: step.parts.flatMap((part): AgentPart[] => {
+      if (!isRunningThinking(part)) return [part];
+      return isSubstantiveThinking(part) ? [{ ...part, status: "done" }] : [];
+    }),
+  };
+}
+
+// Update the running thinking part's label/icon, or open a new one — the
+// parts-model equivalent of the main chat's setRunningThinking.
+function setRunningAgentThinking(step: AgentStep, focus: string, icon: string): AgentStep {
+  const index = step.parts.findLastIndex(isRunningThinking);
+  if (index === -1) return { ...step, parts: [...step.parts, thinkingPart({ focus, icon })] };
+  return patchThinkingAt(step, index, (part) => ({ ...part, focus, icon }));
+}
+
+// A focus-set starts a new thinking step. Finalize whatever is running so it
+// persists, then open a fresh one — but if the running step already shows this
+// exact focus, leave it as-is (mirrors the main chat's setThinkingFocus).
+function setAgentThinkingFocus(step: AgentStep, focus: string, icon: string): AgentStep {
+  const running = step.parts[step.parts.findLastIndex(isRunningThinking)];
+  if (running?.kind === "thinking" && running.focus === focus && running.icon === icon) return step;
+  const finished = finishAgentThinking(step);
+  return { ...finished, parts: [...finished.parts, thinkingPart({ focus, icon })] };
+}
+
+// Append reasoning text to the last thinking part, or open one if none exists.
+function appendAgentThinkingText(step: AgentStep, text: string): AgentStep {
+  if (!text) return step;
+  const index = step.parts.findLastIndex(isThinkingPart);
+  if (index === -1) return { ...step, parts: [...step.parts, thinkingPart({ content: text, status: "done" })] };
+  return patchThinkingAt(step, index, (part) => ({ ...part, content: part.content + text }));
 }
 
 function appendAgentText(step: AgentStep, text: string): AgentStep {
   if (!text) return step;
+  step = finishAgentThinking(step);
   const last = step.parts[step.parts.length - 1];
   if (last && last.kind === "text") {
     const parts = step.parts.slice(0, -1);
@@ -108,11 +197,41 @@ function appendAgentText(step: AgentStep, text: string): AgentStep {
 }
 
 function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Record<string, unknown> | undefined, toolCallId: string): AgentStep {
-  const toolCount = step.parts.filter((part) => part.kind === "tool").length;
+  if (toolCallId && step.parts.some((part) => isToolPart(part) && part.toolCallId === toolCallId)) {
+    return step;
+  }
+  step = finishAgentThinking(step);
   return {
     ...step,
-    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, sequenceNumber: toolCount + 1, toolCallId }],
+    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, sequenceNumber: nextAgentToolSequence(step), toolCallId, status: "running" }],
   };
+}
+
+function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string, result: unknown): AgentStep {
+  let matched = false;
+  const parts = step.parts.map((part) => {
+    if (!isToolPart(part) || !isSameToolEvent(part, name, toolCallId)) return part;
+    matched = true;
+    return { ...part, result, status: "completed" as const };
+  });
+  if (matched) return { ...step, parts };
+  // No matching call (result arrived first / orphaned) — record it as a finished tool.
+  return {
+    ...step,
+    parts: [...step.parts, { kind: "tool", name: name || "unknown", sequenceNumber: nextAgentToolSequence(step), toolCallId, result, status: "completed" }],
+  };
+}
+
+// The result currently stored for a tool part, located by its call id across all
+// agent steps — so a streamed/MCP update merges into what is already there.
+function agentToolResult(agentGroups: AgentGroup[], toolCallId: string): unknown {
+  for (const group of agentGroups) {
+    for (const step of group.steps) {
+      const part = step.parts.find((candidate) => isToolPart(candidate) && candidate.toolCallId === toolCallId);
+      if (part && isToolPart(part)) return part.result;
+    }
+  }
+  return undefined;
 }
 
 function artifactPartsText(parts: A2APart[] | undefined): string {
@@ -130,7 +249,7 @@ function finishAgentStep(step: AgentStep, task: A2ATask | undefined): AgentStep 
   const state = (task?.status?.state as TaskState) ?? "completed";
   const artifactText = taskArtifactText(task);
   const hasText = step.parts.some((part) => part.kind === "text");
-  const next = !hasText && artifactText ? appendAgentText(step, artifactText) : step;
+  const next = finishAgentThinking(!hasText && artifactText ? appendAgentText(step, artifactText) : step);
   return { ...next, state, task };
 }
 
@@ -333,7 +452,6 @@ interface ReduceState {
   messages: ChatMessage[];
   agentGroups: AgentGroup[];
   lane: string | null; // id of the open assistant prose block, if any
-  toolSequence: number;
 }
 
 function startAgentGroup(state: ReduceState, data: Record<string, unknown>): void {
@@ -433,6 +551,31 @@ function hasAssistantTextAfterLastUser(state: ReduceState): boolean {
     .some((message) => message.role === "assistant" && message.content.trim());
 }
 
+function toolEventFromMessage(message: ChatMessage): ToolEvent | null {
+  if (message.role !== "tool_call") return null;
+  const status = message.meta?.status;
+  return {
+    name: message.content,
+    arguments: message.meta?.arguments as Record<string, unknown> | undefined,
+    sequenceNumber: message.meta?.sequenceNumber as number | undefined,
+    toolCallId: String(message.meta?.toolCallId ?? ""),
+    result: message.meta?.result,
+    status: status === "running" || status === "completed" || status === "done" ? status : undefined,
+  };
+}
+
+function messageMatchesToolEvent(message: ChatMessage, name: string, toolCallId: string): boolean {
+  const event = toolEventFromMessage(message);
+  return event ? isSameToolEvent(event, name, toolCallId) : false;
+}
+
+function messageToolEvents(messages: ChatMessage[]): ToolEvent[] {
+  return messages.flatMap((message) => {
+    const event = toolEventFromMessage(message);
+    return event ? [event] : [];
+  });
+}
+
 function pushAssistantText(state: ReduceState, text: string): void {
   if (!text) return;
   finishRunningThinking(state);
@@ -501,9 +644,10 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "tool_call": {
+      if (isControlToolName(data.name)) break;
       finishRunningThinking(state);
       state.lane = null;
-      const sequence = ++state.toolSequence;
+      const sequence = nextToolSequence(messageToolEvents(state.messages));
       state.messages = [
         ...state.messages,
         {
@@ -517,14 +661,16 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "tool_result": {
+      if (isControlToolName(data.name)) break;
       finishRunningThinking(state);
       state.lane = null;
+      const toolName = String(data.name ?? "");
       const toolCallId = String(data.toolCallId ?? "");
-      const currentMessage = state.messages.find((message) => message.role === "tool_call" && message.meta?.toolCallId === toolCallId);
+      const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
       const mergedResult = data.name === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, data.result) : data.result;
       const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
       state.messages = artifactUpdate.messages.map((message) =>
-        message.role === "tool_call" && message.meta?.toolCallId === toolCallId
+        messageMatchesToolEvent(message, toolName, toolCallId)
           ? { ...message, meta: { ...message.meta, status: "completed", result: artifactUpdate.result } }
           : message
       );
@@ -533,11 +679,11 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     case "mcp_event": {
       const toolCallId = String(data.toolCallId ?? "");
       const streamed = streamedMcpResult(data);
-      const currentMessage = state.messages.find((message) => message.role === "tool_call" && message.meta?.toolCallId === toolCallId);
+      const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, "call_mcp_tool", toolCallId));
       const mergedResult = mergeMcpResult(currentMessage?.meta?.result, streamed);
       const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
       state.messages = artifactUpdate.messages.map((message) =>
-        message.role === "tool_call" && message.meta?.toolCallId === toolCallId
+        messageMatchesToolEvent(message, "call_mcp_tool", toolCallId)
           ? { ...message, meta: { ...message.meta, status: "running", result: artifactUpdate.result } }
           : message
       );
@@ -571,67 +717,56 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     case "sub_task_text":
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentText(step, String(data.text ?? "")));
       break;
-    case "sub_task_thinking":
-      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
-        ...step,
-        thinking: step.thinking + String(data.text ?? ""),
-        focus: data.label ? String(data.label) : step.focus,
-        icon: data.icon ? String(data.icon) : step.icon,
-      }));
-      break;
-    case "sub_task_status":
-      if (data.label) {
-        state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
-          ...step,
-          focus: String(data.label),
-          icon: data.icon ? String(data.icon) : step.icon,
-        }));
+    case "sub_task_thinking": {
+      const groupId = String(data.groupId ?? "");
+      const stepId = String(data.stepId ?? "");
+      const label = data.label ? String(data.label) : "";
+      const icon = String(data.icon ?? "");
+      const text = String(data.text ?? "");
+      if (label) {
+        state.agentGroups = withStep(state.agentGroups, groupId, stepId, (step) => setAgentThinkingFocus(step, label, icon || "focus"));
+      }
+      if (text) {
+        state.agentGroups = withStep(state.agentGroups, groupId, stepId, (step) => appendAgentThinkingText(finishAgentThinking(step), text));
       }
       break;
+    }
+    case "sub_task_status": {
+      const code = String(data.code ?? "");
+      if (code === "thinking") {
+        state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
+          setRunningAgentThinking(step, String(data.label ?? "Thinking"), String(data.icon ?? ""))
+        );
+      } else if (code === "waiting_for_tools") {
+        state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), finishAgentThinking);
+      }
+      break;
+    }
     case "sub_task_tool_call":
+      if (isControlToolName(data.name)) break;
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentToolCall(step, String(data.name ?? "unknown"), data.arguments as Record<string, unknown> | undefined, String(data.toolCallId ?? "")));
       break;
     case "sub_task_tool_result": {
+      const toolName = String(data.name ?? "unknown");
+      if (isControlToolName(toolName)) break;
       const toolCallId = String(data.toolCallId ?? "");
-      let currentPartResult: unknown;
-      for (const group of state.agentGroups) {
-        for (const step of group.steps) {
-          const part = step.parts.find((candidate) => candidate.kind === "tool" && candidate.toolCallId === toolCallId);
-          if (part?.kind === "tool") currentPartResult = part.result;
-        }
-      }
-      const mergedResult = data.name === "call_mcp_tool" ? mergeMcpFinalResult(currentPartResult, data.result) : data.result;
+      const currentPartResult = agentToolResult(state.agentGroups, toolCallId);
+      const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(currentPartResult, data.result) : data.result;
       const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
-      state.agentGroups = withStep(artifactUpdate.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
-        ...step,
-        parts: step.parts.map((part) =>
-          part.kind === "tool" && toolCallId && part.toolCallId === toolCallId
-            ? { ...part, result: artifactUpdate.result }
-            : part
-        ),
-      }));
+      state.agentGroups = withStep(artifactUpdate.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
+        upsertAgentToolResult(step, toolName, toolCallId, artifactUpdate.result)
+      );
       break;
     }
     case "sub_task_mcp_event": {
       const toolCallId = String(data.toolCallId ?? "");
       const streamed = streamedMcpResult(data);
-      let currentPartResult: unknown;
-      for (const group of state.agentGroups) {
-        for (const step of group.steps) {
-          const part = step.parts.find((candidate) => candidate.kind === "tool" && candidate.toolCallId === toolCallId);
-          if (part?.kind === "tool") currentPartResult = part.result;
-        }
-      }
+      const currentPartResult = agentToolResult(state.agentGroups, toolCallId);
       const mergedResult = mergeMcpResult(currentPartResult, streamed);
       const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
-      state.agentGroups = withStep(artifactUpdate.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => ({
-        ...step,
-        parts: step.parts.map((part) =>
-          part.kind === "tool" && toolCallId && part.toolCallId === toolCallId
-            ? { ...part, result: artifactUpdate.result }
-            : part
-        ),
-      }));
+      state.agentGroups = withStep(artifactUpdate.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
+        upsertAgentToolResult(step, "call_mcp_tool", toolCallId, artifactUpdate.result)
+      );
       break;
     }
     case "sub_task_done":
@@ -655,15 +790,74 @@ function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, 
   }
 }
 
+function textOnlyAgentMessage(message: A2AMessage): string | null {
+  if (message.role !== "agent") return null;
+  const parts = message.parts ?? [];
+  if (parts.length === 0 || parts.some((part) => part.kind !== "text")) return null;
+  return parts.map((part) => part.text ?? "").join("");
+}
+
+function subTaskTextMessage(message: A2AMessage): { key: string; data: Record<string, unknown>; text: string } | null {
+  if (message.role !== "agent") return null;
+  const parts = message.parts ?? [];
+  if (parts.length !== 1 || parts[0]?.kind !== "data" || !parts[0].data) return null;
+  const data = parts[0].data;
+  if (data.kind !== "sub_task_text") return null;
+  const key = [
+    String(data.groupId ?? ""),
+    String(data.stepId ?? ""),
+    String(data.childTaskId ?? ""),
+  ].join("\u0000");
+  return { key, data, text: String(data.text ?? "") };
+}
+
+function compactReplayMessages(messages: A2AMessage[] | undefined): A2AMessage[] {
+  const compacted: A2AMessage[] = [];
+  for (const message of messages ?? []) {
+    const text = textOnlyAgentMessage(message);
+    if (text !== null) {
+      const last = compacted[compacted.length - 1];
+      const previousText = last ? textOnlyAgentMessage(last) : null;
+      if (last && previousText !== null) {
+        last.parts = [{ kind: "text", text: previousText + text }];
+      } else {
+        compacted.push({ ...message, parts: [{ kind: "text", text }] });
+      }
+      continue;
+    }
+
+    const subText = subTaskTextMessage(message);
+    if (subText) {
+      const last = compacted[compacted.length - 1];
+      const previousSubText = last ? subTaskTextMessage(last) : null;
+      if (last && previousSubText && previousSubText.key === subText.key) {
+        last.parts = [{
+          kind: "data",
+          data: { ...previousSubText.data, text: previousSubText.text + subText.text },
+        }];
+      } else {
+        compacted.push({
+          ...message,
+          parts: [{ kind: "data", data: { ...subText.data, text: subText.text } }],
+        });
+      }
+      continue;
+    }
+
+    compacted.push(message);
+  }
+  return compacted;
+}
+
 // Reconstruct messages + agentGroups from a session's persisted A2A tasks.
 function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[] } {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
-  const state: ReduceState = { messages: [], agentGroups: [], lane: null, toolSequence: 0 };
+  const state: ReduceState = { messages: [], agentGroups: [], lane: null };
   for (const task of mainTasks) {
     state.lane = null;
-    for (const message of task.history ?? []) {
+    for (const message of compactReplayMessages(task.history)) {
       if (message.role === "user") reduceUserMessage(state, message);
       else reduceAgentMessage(state, message);
     }
@@ -688,7 +882,7 @@ export function useChat(
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], lane: null, toolSequence: 0 });
+  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], lane: null });
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
   const queuedMessagesRef = useRef<string[]>([]);
@@ -708,15 +902,34 @@ export function useChat(
   // state with a replay and churn message ids).
   const streamedLocallyRef = useRef(false);
   const runStreamRef = useRef<(input: ChatInput) => void>(() => {});
+  const flushFrameRef = useRef<number | null>(null);
 
   const setQueue = useCallback((next: string[]) => {
     queuedMessagesRef.current = next;
     setQueuedMessages(next);
   }, []);
 
-  const flush = useCallback(() => {
+  const flushNow = useCallback(() => {
+    if (flushFrameRef.current != null) {
+      window.cancelAnimationFrame(flushFrameRef.current);
+      flushFrameRef.current = null;
+    }
     setMessages(stateRef.current.messages);
     setAgentGroups(stateRef.current.agentGroups);
+  }, []);
+
+  const flush = useCallback(() => {
+    if (typeof window === "undefined") {
+      setMessages(stateRef.current.messages);
+      setAgentGroups(stateRef.current.agentGroups);
+      return;
+    }
+    if (flushFrameRef.current != null) return;
+    flushFrameRef.current = window.requestAnimationFrame(() => {
+      flushFrameRef.current = null;
+      setMessages(stateRef.current.messages);
+      setAgentGroups(stateRef.current.agentGroups);
+    });
   }, []);
 
   // On unmount (e.g. switching sessions), close this hook's SSE connection so it
@@ -726,6 +939,10 @@ export function useChat(
   // sidebar spinner reflects that it is still active.
   useEffect(() => {
     return () => {
+      if (flushFrameRef.current != null) {
+        window.cancelAnimationFrame(flushFrameRef.current);
+        flushFrameRef.current = null;
+      }
       abortControllerRef.current?.abort();
     };
   }, []);
@@ -747,10 +964,10 @@ export function useChat(
       .then((tasks) => {
         if (cancelled) return;
         const replayed = replayTasks(tasks);
-        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null, toolSequence: 0 };
+        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
         setSessionId(initialSessionId);
         sessionIdRef.current = initialSessionId;
-        flush();
+        flushNow();
       })
       .catch(() => {})
       .finally(() => {
@@ -760,7 +977,7 @@ export function useChat(
       cancelled = true;
       historyLoadedForRef.current = null;
     };
-  }, [initialSessionId, flush]);
+  }, [initialSessionId, flushNow]);
 
   // Live updates for a session that is running on the server but is not being
   // driven by this hook (we switched back to it, or it was started elsewhere).
@@ -778,8 +995,8 @@ export function useChat(
         const tasks = await fetchSessionTasks(initialSessionId);
         if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
         const replayed = replayTasks(tasks);
-        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null, toolSequence: 0 };
-        flush();
+        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
+        flushNow();
       } catch {
         // transient — try again on the next tick
       }
@@ -800,14 +1017,13 @@ export function useChat(
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [sessionRunning, initialSessionId, flush]);
+  }, [sessionRunning, initialSessionId, flushNow]);
 
   const runStream = useCallback(
     (input: ChatInput) => {
       // Optimistic input message + reset the open prose lane. A widget event
       // renders as its own structured entry rather than a user prose bubble.
       stateRef.current.lane = null;
-      stateRef.current.toolSequence = 0;
       const optimistic: ChatMessage =
         input.kind === "text"
           ? { id: `user-${Date.now()}`, role: "user", content: input.text, timestamp: new Date().toISOString() }
@@ -958,7 +1174,7 @@ export function useChat(
 
   const reset = useCallback(() => {
     abort();
-    stateRef.current = { messages: [], agentGroups: [], lane: null, toolSequence: 0 };
+    stateRef.current = { messages: [], agentGroups: [], lane: null };
     setMessages([]);
     setAgentGroups([]);
     setSessionId(null);

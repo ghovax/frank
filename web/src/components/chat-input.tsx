@@ -206,7 +206,7 @@ export function ChatInput({
       </Flex>
 
       {/* Message input */}
-      <Box px={2} pt={1.5} pb={1.5}>
+      <Box px={2} pt={2} pb={2}>
         <Box
           bg="bg"
           border="1px solid"

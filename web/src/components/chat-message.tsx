@@ -4,6 +4,7 @@ import { Box, Button, Code, Flex, HStack, Text } from "@chakra-ui/react";
 import { useEffect, useRef } from "react";
 import { LuTerminal, LuMousePointerClick } from "react-icons/lu";
 import type { ChatMessage } from "@/lib/use-chat";
+import type { ToolEventStatus } from "@/lib/tool-event";
 import type { WidgetEvent } from "./widget-bridge";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
@@ -86,6 +87,9 @@ function PermissionBox({ message, onPermission }: { message: ChatMessage; onPerm
 }
 
 export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMessageProps) {
+  const toolStatus = (status: unknown): ToolEventStatus | undefined =>
+    status === "running" || status === "completed" || status === "done" ? status : undefined;
+
   switch (message.role) {
     case "user":
       return (
@@ -115,7 +119,7 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
             arguments={message.meta?.arguments as Record<string, unknown> | undefined}
             result={message.meta?.result}
             sequenceNumber={message.meta?.sequenceNumber as number | undefined}
-            status={message.meta?.status as string | undefined}
+            status={toolStatus(message.meta?.status)}
             agents={agents}
           />
         </Box>

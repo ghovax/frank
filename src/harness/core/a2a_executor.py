@@ -17,7 +17,7 @@ prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 import asyncio
 import json
 import uuid
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -146,6 +146,56 @@ def _data_part(kind: str, **fields) -> Part:
     return Part(root=DataPart(data={PART_KIND: kind, **fields}))
 
 
+class _TextPartBuffer:
+    """Coalesce adjacent text chunks before publishing A2A task updates.
+
+    The buffering is intentionally at the semantic event layer, not the SSE/ASGI
+    layer: structured parts such as tool calls, status changes, and sub-agent
+    lifecycle events must force a flush so replay order remains exact.
+    """
+
+    def __init__(
+        self,
+        emit: Callable[[tuple[str, ...], str], Awaitable[None]],
+        *,
+        flush_interval: float = 0.05,
+        flush_size: int = 512,
+    ):
+        self._emit = emit
+        self._flush_interval = flush_interval
+        self._flush_size = flush_size
+        self._key: tuple[str, ...] | None = None
+        self._chunks: list[str] = []
+        self._length = 0
+        self._last_flush = 0.0
+
+    async def push(self, text: str, key: tuple[str, ...] = ()) -> None:
+        if not text:
+            return
+        if self._chunks and self._key != key:
+            await self.flush(force=True)
+        if not self._chunks:
+            self._key = key
+            self._last_flush = asyncio.get_running_loop().time()
+        self._chunks.append(text)
+        self._length += len(text)
+        await self.flush()
+
+    async def flush(self, force: bool = False) -> None:
+        if not self._chunks or self._key is None:
+            return
+        now = asyncio.get_running_loop().time()
+        if not force and self._length < self._flush_size and now - self._last_flush < self._flush_interval:
+            return
+        key = self._key
+        text = "".join(self._chunks)
+        self._key = None
+        self._chunks = []
+        self._length = 0
+        self._last_flush = now
+        await self._emit(key, text)
+
+
 class HarnessAgentExecutor(AgentExecutor):
     """The A2A executor for a single agent profile. One of these is served per
     agent, so each agent is an independently addressable A2A endpoint."""
@@ -205,6 +255,7 @@ class HarnessAgentExecutor(AgentExecutor):
         context_id: str,
         working_directory: str,
         conversation: Optional[list] = None,
+        is_sub_agent: bool = False,
     ) -> AgentRuntime:
         configuration = load_agent_configuration(
             self._agent_name, self._global_configuration.agent_directories()
@@ -216,6 +267,7 @@ class HarnessAgentExecutor(AgentExecutor):
             session_id=context_id,
             conversation=conversation,
             working_directory=working_directory or "",
+            is_sub_agent=is_sub_agent,
         )
         if self._registry is not None:
             runtime.set_delegate(self._registry.make_delegate(context_id))
@@ -291,6 +343,26 @@ class HarnessAgentExecutor(AgentExecutor):
                 **fields,
             ))
 
+        async def emit_text_buffer(_key: tuple[str, ...], text: str) -> None:
+            await emit(_text_part(text))
+
+        async def emit_sub_text_buffer(key: tuple[str, ...], text: str) -> None:
+            group_id, step_id, child_task_id = key
+            await emit(_data_part(
+                "sub_task_text",
+                groupId=group_id,
+                stepId=step_id,
+                childTaskId=child_task_id,
+                text=text,
+            ))
+
+        text_buffer = _TextPartBuffer(emit_text_buffer)
+        sub_text_buffer = _TextPartBuffer(emit_sub_text_buffer)
+
+        async def flush_stream_buffers(force: bool = True) -> None:
+            await text_buffer.flush(force=force)
+            await sub_text_buffer.flush(force=force)
+
         # The runtime setup — building the agent runtime and its model client —
         # runs inside the try so any failure (e.g. missing API credentials) is
         # surfaced as a clean A2A `failed` status rather than escaping and tearing
@@ -301,7 +373,7 @@ class HarnessAgentExecutor(AgentExecutor):
             if delegated:
                 # A delegated sub-agent call is a fresh, one-shot run (no shared
                 # conversation state with the parent turn).
-                runtime = self._build_runtime(task.context_id, working_directory)
+                runtime = self._build_runtime(task.context_id, working_directory, is_sub_agent=True)
                 if READ_ONLY_METADATA_KEY in metadata:
                     runtime.set_read_only(bool(metadata[READ_ONLY_METADATA_KEY]))
             else:
@@ -319,22 +391,27 @@ class HarnessAgentExecutor(AgentExecutor):
                 kind = event.type
                 data = event.data
                 if kind == StreamEvent.Type.TEXT_CHUNK:
-                    await emit(_text_part(data.get("text", "")))
+                    await text_buffer.push(data.get("text", ""))
                 elif kind == StreamEvent.Type.THINKING:
+                    await flush_stream_buffers()
                     await emit(_data_part("thinking", text=data.get("text", ""), label=data.get("label", ""), icon=data.get("icon", "")))
                 elif kind == StreamEvent.Type.STATUS:
+                    await flush_stream_buffers()
                     await emit(_data_part("status", code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", "")))
                 elif kind == StreamEvent.Type.TOOL_CALL:
+                    await flush_stream_buffers()
                     await emit(_data_part(
                         "tool_call", name=data.get("name", ""),
                         arguments=data.get("arguments", {}), toolCallId=data.get("id", ""),
                     ))
                 elif kind == StreamEvent.Type.TOOL_RESULT:
+                    await flush_stream_buffers()
                     await emit(_data_part(
                         "tool_result", name=data.get("name", ""),
                         result=data.get("result"), toolCallId=data.get("id", ""),
                     ))
                 elif kind == StreamEvent.Type.MCP_EVENT:
+                    await flush_stream_buffers()
                     await emit(_data_part(
                         "mcp_event",
                         name=data.get("name", ""),
@@ -344,15 +421,18 @@ class HarnessAgentExecutor(AgentExecutor):
                         toolCallId=data.get("id", ""),
                     ))
                 elif kind == StreamEvent.Type.PERMISSION_REQUEST:
+                    await flush_stream_buffers()
                     await emit(_data_part(
                         "permission_request", requestId=data.get("request_id", ""),
                         command=data.get("command", ""), justification=data.get("justification", ""),
                         risk=data.get("risk", ""),
                     ))
                 elif kind == StreamEvent.Type.ERROR:
+                    await flush_stream_buffers()
                     failed_message = data.get("message", "error")
                     await emit(_data_part("error", message=failed_message))
                 elif kind == StreamEvent.Type.AGENT_GROUP_STARTED:
+                    await flush_stream_buffers()
                     await emit(_data_part(
                         "agent_group_started",
                         groupId=data.get("group_id", ""),
@@ -361,21 +441,38 @@ class HarnessAgentExecutor(AgentExecutor):
                         steps=data.get("steps", []),
                     ))
                 elif kind == StreamEvent.Type.AGENT_TEXT_CHUNK:
-                    await emit_sub("sub_task_text", data, text=data.get("text", ""))
+                    await text_buffer.flush(force=True)
+                    await sub_text_buffer.push(
+                        data.get("text", ""),
+                        (
+                            data.get("group_id", ""),
+                            data.get("step_id", ""),
+                            data.get("child_task_id", ""),
+                        ),
+                    )
                 elif kind == StreamEvent.Type.AGENT_THINKING:
+                    await flush_stream_buffers()
                     await emit_sub("sub_task_thinking", data, text=data.get("text", ""), label=data.get("label", ""), icon=data.get("icon", ""))
                 elif kind == StreamEvent.Type.AGENT_TOOL_CALL:
+                    await flush_stream_buffers()
                     await emit_sub("sub_task_tool_call", data, name=data.get("name", ""), arguments=data.get("arguments", {}), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_TOOL_RESULT:
+                    await flush_stream_buffers()
                     await emit_sub("sub_task_tool_result", data, name=data.get("name", ""), result=data.get("result"), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_MCP_EVENT:
+                    await flush_stream_buffers()
                     await emit_sub("sub_task_mcp_event", data, event=data.get("event", {}), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_STATUS:
+                    await flush_stream_buffers()
                     await emit_sub("sub_task_status", data, code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", ""))
                 elif kind == StreamEvent.Type.AGENT_DONE:
+                    await flush_stream_buffers()
                     await emit_sub("sub_task_done", data, task=data.get("task"))
                 elif kind == StreamEvent.Type.DONE:
+                    await flush_stream_buffers()
                     final_text = data.get("text", "") or final_text
+
+            await flush_stream_buffers()
 
             if final_text.strip():
                 await updater.add_artifact([_text_part(final_text)], name="result", last_chunk=True)

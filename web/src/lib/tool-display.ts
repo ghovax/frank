@@ -7,7 +7,6 @@ import {
   LuListChecks,
   LuPuzzle,
   LuWrench,
-  LuCheck,
   LuLayoutDashboard,
 } from "react-icons/lu";
 
@@ -87,59 +86,4 @@ export function getToolCallDisplay(
     ...iconForTool(name),
     label: justification || fallbackLabel(name, args),
   };
-}
-
-function parseResultContent(content?: string): Record<string, unknown> | null {
-  if (!content) return null;
-  try {
-    const parsed = JSON.parse(content);
-    return typeof parsed === "object" && parsed !== null ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-export function getToolResultDisplay(name?: string, content?: string): ToolDisplayInfo {
-  const toolName = name ?? "";
-  const data = parseResultContent(content);
-  const icon = LuCheck;
-  const iconColor = "green.fg";
-
-  switch (toolName) {
-    case "web_search": {
-      const query = data?.query ? String(data.query) : "";
-      return {
-        icon,
-        iconColor,
-        label: query ? `Results for "${query}" received` : "Browse results received",
-      };
-    }
-    case "bash":
-      return { icon, iconColor, label: "Command finished" };
-    case "spawn_agent":
-    case "agent":
-      return { icon, iconColor, label: "Agent finished" };
-    case "read_task":
-      return { icon, iconColor, label: "Task read" };
-    case "render_widget":
-      return { ...iconForTool(toolName), label: "Widget rendered" };
-    case "write_tasks":
-      return { icon, iconColor, label: "Tasks created" };
-    case "update_tasks":
-      return { icon, iconColor, label: "Tasks updated" };
-    case "call_mcp_tool":
-      return { ...iconForTool(toolName), label: "MCP tool finished" };
-    case "list_mcp_tools":
-      return { ...iconForTool(toolName), label: "MCP tools listed" };
-    case "list_mcp_resources":
-      return { ...iconForTool(toolName), label: "MCP resources listed" };
-    case "read_mcp_resource":
-      return { ...iconForTool(toolName), label: "MCP resource read" };
-    default:
-      return {
-        icon,
-        iconColor,
-        label: toolName ? `${toolName} finished` : "Finished",
-      };
-  }
 }

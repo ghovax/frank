@@ -11,7 +11,7 @@ from typing import Literal, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, String, Text, create_engine, text
+from sqlalchemy import Column, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
@@ -22,7 +22,6 @@ from langchain_openai import ChatOpenAI
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import DatabaseTaskStore
 
 from harness.core.a2a_executor import (
     AgentRegistry,
@@ -30,6 +29,7 @@ from harness.core.a2a_executor import (
     agent_rpc_path,
     build_agent_card,
 )
+from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
     GlobalConfiguration,
@@ -91,7 +91,7 @@ class Broadcaster:
 _global_configuration: Optional[GlobalConfiguration] = None
 _session_factory: Optional[sessionmaker] = None
 _async_engine = None
-_task_store: Optional[DatabaseTaskStore] = None
+_task_store: Optional[AppendOnlyTaskStore] = None
 _registry: Optional[AgentRegistry] = None
 _mcp_manager: Optional[MCPClientManager] = None
 _executors: dict[str, HarnessAgentExecutor] = {}
@@ -364,7 +364,7 @@ async def lifespan(application: FastAPI):
     set_mcp_client_manager(_mcp_manager)
 
     _async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
-    _task_store = DatabaseTaskStore(_async_engine, create_table=True)
+    _task_store = AppendOnlyTaskStore(_async_engine)
     await _task_store.initialize()
 
     _registry = AgentRegistry(_task_store)
@@ -417,6 +417,7 @@ class PermissionModeRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     api_key: str
     exa_api_key: str
+    sandbox_enabled: bool = True
 
 
 class MCPToolCallRequest(BaseModel):
@@ -493,6 +494,7 @@ async def get_settings():
     return {
         "api_key": _global_configuration.api.api_key,
         "exa_api_key": _global_configuration.exa.api_key,
+        "sandbox_enabled": _global_configuration.sandbox.enabled,
     }
 
 
@@ -502,9 +504,14 @@ async def update_settings(request: SettingsUpdateRequest):
     live: refresh the in-memory configuration, the Exa client, and drop cached
     agent runtimes so the next turn rebuilds its model client with the new key."""
     assert _global_configuration is not None
-    save_api_keys(api_key=request.api_key, exa_api_key=request.exa_api_key)
+    save_api_keys(
+        api_key=request.api_key,
+        exa_api_key=request.exa_api_key,
+        sandbox_enabled=request.sandbox_enabled,
+    )
     _global_configuration.api.api_key = request.api_key
     _global_configuration.exa.api_key = request.exa_api_key
+    _global_configuration.sandbox.enabled = request.sandbox_enabled
 
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
@@ -706,12 +713,8 @@ async def list_sessions():
 async def session_tasks(context_id: str):
     """All A2A tasks for a context — the main turn tasks (with history and
     artifacts) plus related sub-agent tasks — for replaying a session."""
-    assert _task_store is not None and _async_engine is not None
-    async with _async_engine.connect() as connection:
-        result = await connection.execute(
-            text("SELECT id FROM tasks WHERE context_id = :context_id"), {"context_id": context_id}
-        )
-        task_ids = [row[0] for row in result.fetchall()]
+    assert _task_store is not None
+    task_ids = await _task_store.task_ids_for_context(context_id)
     tasks = []
     for task_id in task_ids:
         task = await _task_store.get(task_id)

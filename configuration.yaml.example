@@ -6,6 +6,9 @@ api:
 exa:
   api_key: ""
 
+sandbox:
+  enabled: true
+
 default_agent: assistant
 agents_root_directory: .agents
 home_agents_root_directory: ~/.agents
