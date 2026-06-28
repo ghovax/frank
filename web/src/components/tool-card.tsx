@@ -120,7 +120,7 @@ export function ToolStatusBadge({ status }: { status: "running" | "completed" | 
   const done = status === "completed" || status === "done";
   return (
     <Badge size="sm" variant="subtle" colorPalette={done ? "green" : "blue"} borderRadius="sm" flexShrink={0}>
-      {done ? "Done" : "Running"}
+      {done ? "Completed" : "Running"}
     </Badge>
   );
 }

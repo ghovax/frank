@@ -13,16 +13,20 @@ import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card
 function AgentStateBadge({ state }: { state: TaskState }) {
   const { label, palette } =
     state === "completed"
-      ? { label: "Done", palette: "green" }
+      ? { label: "Completed", palette: "green" }
       : state === "failed"
         ? { label: "Failed", palette: "red" }
         : state === "rejected"
           ? { label: "Rejected", palette: "red" }
           : state === "canceled"
             ? { label: "Canceled", palette: "gray" }
-            : state === "input-required" || state === "auth-required"
-              ? { label: "Waiting", palette: "yellow" }
-              : { label: "Running", palette: "blue" };
+            : state === "input-required"
+              ? { label: "Input required", palette: "yellow" }
+              : state === "auth-required"
+                ? { label: "Authentication required", palette: "yellow" }
+                : state === "working"
+                  ? { label: "Working", palette: "blue" }
+                  : { label: "Submitted", palette: "blue" };
   return (
     <Badge size="sm" variant="subtle" colorPalette={palette} borderRadius="sm" flexShrink={0}>
       {label}
@@ -100,7 +104,7 @@ function AgentGroupCard({
         title={group.justification || "Sub-agents"}
         badges={
           <Badge size="sm" variant="surface" colorPalette={active > 0 ? "blue" : "green"} borderRadius="sm" flexShrink={0}>
-            {active > 0 ? `${active} running` : "Done"}
+            {active > 0 ? `${active} working` : "Completed"}
           </Badge>
         }
         open={open}

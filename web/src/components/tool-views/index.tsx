@@ -277,17 +277,15 @@ function WebSearchResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// A spawned sub-agent returns its A2A task as the tool result; show its terminal
-// state and its deliverable (artifact).
+// A spawned sub-agent returns its A2A task as the tool result; show its
+// deliverable (artifact).
 function AgentTaskResultView({ data }: { data: Record<string, unknown> }) {
   const task = data as unknown as A2ATask;
-  const state = task.status?.state;
   return (
     <FieldList>
-      <Flex align="center" gap={2}>
-        {state && <Pill colorPalette={state === "completed" ? "green" : state === "failed" ? "red" : "gray"}>{state}</Pill>}
-      </Flex>
-      <MarkdownContent content={taskArtifactText(task)} />
+      <Field label="Response">
+        <MarkdownContent content={taskArtifactText(task)} />
+      </Field>
     </FieldList>
   );
 }
