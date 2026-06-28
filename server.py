@@ -127,6 +127,13 @@ def _set_turn_state(context_id: str, running: bool) -> None:
         _running_contexts.pop(context_id, None)
     if (previous == 0) != (updated == 0):
         _broadcaster.publish({"type": "sessions_changed"})
+
+
+def _notify_permission_state(context_id: str) -> None:
+    """A turn raised (or settled) a permission request — refresh the sidebar so it
+    can swap the spinner for an attention marker on the waiting session."""
+    _broadcaster.publish({"type": "sessions_changed"})
+
 _broadcaster = Broadcaster()
 # Keeps references to in-flight session-title generation tasks so they are not
 # garbage-collected before completing.
@@ -297,6 +304,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         on_new_context=_record_session,
         conversations=_conversations,
         on_turn_state=_set_turn_state,
+        on_permission_state=_notify_permission_state,
     )
     handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
     _executors[agent_name] = executor
@@ -533,8 +541,10 @@ async def default_agent_card():
 
 @app.get("/home")
 async def home_directory():
-    """Return the server user's home directory (default working directory)."""
-    return {"home_directory": str(Path.home())}
+    """The server user's home directory and its folder name — the default project
+    the UI selects before anything else is chosen."""
+    home = str(Path.home())
+    return {"path": home, "name": _project_name(home)}
 
 
 @app.get("/projects/recent")
@@ -807,7 +817,12 @@ async def list_sessions():
                     "title": row.title,
                     "created_at": row.created_at,
                     "working_directory": row.working_directory,
+                    "working_directory_name": _project_name(row.working_directory) if row.working_directory else "",
                     "running": row.id in _running_contexts,
+                    "awaiting_input": any(
+                        request_id.startswith(f"perm-{row.id}-") and not future.done()
+                        for request_id, future in _pending_permissions.items()
+                    ),
                 }
                 for row in rows
             ]
@@ -848,13 +863,19 @@ async def events():
 
 @app.post("/chat/{context_id}/permission")
 async def resolve_permission(context_id: str, request: PermissionRequest):
-    """Resolve a pending human-in-the-loop permission request."""
+    """Resolve a pending human-in-the-loop permission request. ``deny`` rejects;
+    ``allow_once`` and ``allow_always`` both let this command run (``allow_always``
+    additionally records a session rule — handled separately)."""
     future = _pending_permissions.get(request.request_id)
     if not future:
         return {"status": "unknown", "error": "No pending permission request with that identifier."}
     if future.done():
         return {"status": "stale", "error": "Permission request was already resolved."}
-    future.set_result(request.decision == "allow")
+    # The runtime resumes on the decision string ("deny" / "allow_once" /
+    # "allow_always") so it can record a session rule for "allow_always".
+    future.set_result(request.decision)
+    # The session is no longer waiting — refresh the sidebar marker.
+    _broadcaster.publish({"type": "sessions_changed"})
     return {"status": "resolved", "decision": request.decision}
 
 
@@ -864,7 +885,7 @@ async def abort_session(context_id: str):
     prefix = f"perm-{context_id}-"
     for request_id, future in list(_pending_permissions.items()):
         if request_id.startswith(prefix) and not future.done():
-            future.set_result(False)
+            future.set_result("deny")
     aborted = any(executor.abort_context(context_id) for executor in _executors.values())
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
 

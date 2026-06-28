@@ -133,13 +133,15 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   return () => source.close();
 }
 
-export async function fetchHomeDirectory(): Promise<string> {
+// The default project shown before the user picks anything — the server provides
+// its folder name so the selector never has to derive one.
+export async function fetchHomeDirectory(): Promise<{ path: string; name: string }> {
   const response = await fetch(`${API_BASE}/home`);
   const data = await response.json();
-  return data.home_directory;
+  return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
 
-export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; working_directory?: string; running?: boolean }[]> {
+export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; working_directory?: string; working_directory_name?: string; running?: boolean; awaiting_input?: boolean }[]> {
   const response = await fetch(`${API_BASE}/sessions`);
   const data = await response.json();
   return data.sessions;
@@ -156,7 +158,7 @@ export async function fetchSessionTasks(sessionId: string): Promise<A2ATask[]> {
 export async function resolvePermission(
   sessionId: string,
   requestId: string,
-  decision: "allow" | "deny"
+  decision: "deny" | "allow_once" | "allow_always"
 ): Promise<void> {
   await fetch(`${API_BASE}/chat/${sessionId}/permission`, {
     method: "POST",

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import shlex
+import time
 import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -80,6 +81,12 @@ from harness.core.memories import load_memories, memories_payload
 from harness.core.skills import load_skills, enabled_skills, skills_for_agent, skills_payload
 from harness.identifiers import new_id
 
+
+class BashAllowRule(BaseModel):
+    """Structured output for an 'always allow' rule: the command pattern(s) to
+    auto-allow for the rest of the session (e.g. ``["cat *", "ls *"]``)."""
+    patterns: list[str]
+
 from a2a.types import Task, TaskState
 
 
@@ -88,6 +95,7 @@ class StreamEvent:
         SESSION = "session"
         STATUS = "status"
         THINKING = "thinking"
+        THINKING_DONE = "thinking_done"
         TEXT_CHUNK = "text_chunk"
         TOOL_CALL = "tool_call"
         TOOL_RESULT = "tool_result"
@@ -104,6 +112,7 @@ class StreamEvent:
         AGENT_TOOL_RESULT = "agent_tool_result"
         AGENT_MCP_EVENT = "agent_mcp_event"
         AGENT_THINKING = "agent_thinking"
+        AGENT_THINKING_DONE = "agent_thinking_done"
         AGENT_STATUS = "agent_status"
         AGENT_DONE = "agent_done"
 
@@ -506,6 +515,10 @@ class AgentRuntime:
         )
         self._permissions = PermissionEvaluator(agent_configuration)
         self._background = BackgroundTaskManager(self._record_event)
+        # Command patterns the user chose to "always allow" this session — matching
+        # bash commands then skip the sandbox/approval prompts. Scoped to this
+        # runtime (this context), populated on demand from an LLM-derived rule.
+        self._session_allow_patterns: list[str] = []
 
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
@@ -584,6 +597,48 @@ class AgentRuntime:
         if self._bypass_permissions:
             return "allow"
         return self._permissions.evaluate_bash_permission(command)
+
+    def _command_session_allowed(self, command: str) -> bool:
+        """Whether a prior 'always allow' in this session covers this command, so
+        it skips the sandbox/approval prompts."""
+        if not self._session_allow_patterns:
+            return False
+        return self._agent_configuration.tools.bash.command_matches(command, self._session_allow_patterns)
+
+    async def _resolve_permission_future(
+        self, request_identifier: str, future: "asyncio.Future", command: str, *, is_bash: bool
+    ) -> bool:
+        """Await the user's decision on a permission request and clean it up.
+        Returns whether the command may run; on 'allow_always' for a bash command,
+        also schedules a session rule so matching commands won't prompt again."""
+        try:
+            decision = await future
+        finally:
+            self._pending_permissions.pop(request_identifier, None)
+        if is_bash and decision == "allow_always" and command:
+            self._schedule_bash_allow_rule(command)
+        return decision != "deny"
+
+    def _schedule_bash_allow_rule(self, command: str) -> None:
+        try:
+            asyncio.create_task(self._remember_bash_allow_rule(command))
+        except RuntimeError:
+            pass
+
+    async def _remember_bash_allow_rule(self, command: str) -> None:
+        """Ask the model to distill an allow rule (one or more command patterns)
+        from the approved command, and add it to this session's allowlist. Best
+        effort — the one-time approval already ran the command regardless."""
+        try:
+            prompt = self._prompt_loader.load("bash_allow_rule", {"command": command})
+            model = self._llm.with_structured_output(BashAllowRule)
+            rule = await model.ainvoke(prompt)
+            for pattern in (rule.patterns or []):
+                pattern = pattern.strip()
+                if pattern and pattern not in self._session_allow_patterns:
+                    self._session_allow_patterns.append(pattern)
+        except Exception:
+            pass
 
     def _record_event(self, event_type: str, data: dict) -> None:
         record = {"type": event_type, **data}
@@ -701,13 +756,24 @@ class AgentRuntime:
             "error": invalid.get("error") or "arguments could not be parsed",
         })
 
+    def widget_render_error_note(self, payload: str) -> str:
+        """Frame a widget render failure as a behind-the-scenes self-realization
+        note (injected as a system message, not user input) the model repairs. The
+        raw error rides along as its JSON payload, intact."""
+        return self._prompt_loader.load("widget_render_error", {"payload": payload})
+
     async def stream(
-        self, user_message: str
+        self, user_message: str, as_system_note: bool = False
     ) -> AsyncIterator[StreamEvent]:
         self._abort_event.clear()
         self._calls_this_turn = 0
 
-        self._conversation.append(HumanMessage(content=user_message))
+        # A self-realization note (e.g. a widget render error) enters the
+        # conversation as a system message so the model treats it as its own
+        # observation, not as something the user said.
+        self._conversation.append(
+            SystemMessage(content=user_message) if as_system_note else HumanMessage(content=user_message)
+        )
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -756,25 +822,47 @@ class AgentRuntime:
             # Open a thinking step for this iteration. One channel (THINKING)
             # drives the indicator: this bare ping marks "reasoning started" and
             # reasoning_content fills the body — no labels, no separate status
-            # placeholder to reconcile downstream.
+            # placeholder to reconcile downstream. We time the phase here and emit
+            # a matching THINKING_DONE the moment reasoning ends (the first answer
+            # token, or — for a tool-only turn — when the stream closes), so the UI
+            # can show "Thought for Ns". Measured server-side as wall-clock and
+            # carried in the event, so it is correct on live stream and on replay.
             yield StreamEvent(StreamEvent.Type.THINKING)
+            thinking_started_at = time.monotonic()
+            thinking_done_emitted = False
             response_chunks: list[AIMessageChunk] = []
             async for chunk in self._bound_llm.astream(messages):
                 if self._abort_event.is_set():
                     yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                     return
                 response_chunks.append(chunk)
-                if chunk.content and self._agent_configuration.stream_agent_progress:
-                    yield StreamEvent(
-                        StreamEvent.Type.TEXT_CHUNK,
-                        text=chunk.content,
-                    )
+                if chunk.content:
+                    # First answer token: reasoning is over. Close the thinking
+                    # phase before the text streams so the indicator flips to
+                    # "Thought for Ns" exactly as the answer begins.
+                    if not thinking_done_emitted:
+                        thinking_done_emitted = True
+                        yield StreamEvent(
+                            StreamEvent.Type.THINKING_DONE,
+                            duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                        )
+                    if self._agent_configuration.stream_agent_progress:
+                        yield StreamEvent(
+                            StreamEvent.Type.TEXT_CHUNK,
+                            text=chunk.content,
+                        )
                 reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
                 if reasoning_content:
                     yield StreamEvent(
                         StreamEvent.Type.THINKING,
                         text=reasoning_content,
                     )
+            # A tool-only turn produces no answer text, so close the phase here.
+            if not thinking_done_emitted:
+                yield StreamEvent(
+                    StreamEvent.Type.THINKING_DONE,
+                    duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                )
             response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
 
             # Malformed tool calls (arguments that failed JSON parsing) land in
@@ -1174,8 +1262,12 @@ class AgentRuntime:
             if isinstance(read_only, str):
                 read_only = read_only.lower() == "true"
 
+            # A command the user chose to "always allow" this session skips both
+            # the sandbox and approval prompts below.
+            session_allowed = self._command_session_allowed(raw_command)
+
             outside_reads = self._outside_working_directory_reads(raw_command)
-            if outside_reads:
+            if outside_reads and not session_allowed:
                 paths = ", ".join(outside_reads)
                 sandbox_message = (
                     f"Sandbox approval required: this command reads outside the working directory ({paths})."
@@ -1197,18 +1289,15 @@ class AgentRuntime:
                 request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
-                try:
-                    yield StreamEvent(
-                        StreamEvent.Type.PERMISSION_REQUEST,
-                        id=tool_call_identifier,
-                        request_id=request_identifier,
-                        command=command,
-                        justification=sandbox_message,
-                        risk="medium",
-                    )
-                    allowed = await future
-                finally:
-                    self._pending_permissions.pop(request_identifier, None)
+                yield StreamEvent(
+                    StreamEvent.Type.PERMISSION_REQUEST,
+                    id=tool_call_identifier,
+                    request_id=request_identifier,
+                    command=command,
+                    justification=sandbox_message,
+                    risk="medium",
+                )
+                allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
                 if not allowed:
                     yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="sandbox read not approved by user", tool=tool_name)
                     return
@@ -1245,22 +1334,19 @@ class AgentRuntime:
                     command=command,
                 )
                 return
-            elif not read_only and (permission_decision == "ask" or risk in ("medium", "high")):
+            elif not read_only and not session_allowed and (permission_decision == "ask" or risk in ("medium", "high")):
                 request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
-                try:
-                    yield StreamEvent(
-                        StreamEvent.Type.PERMISSION_REQUEST,
-                        id=tool_call_identifier,
-                        request_id=request_identifier,
-                        command=command,
-                        justification=justification,
-                        risk=risk,
-                    )
-                    allowed = await future
-                finally:
-                    self._pending_permissions.pop(request_identifier, None)
+                yield StreamEvent(
+                    StreamEvent.Type.PERMISSION_REQUEST,
+                    id=tool_call_identifier,
+                    request_id=request_identifier,
+                    command=command,
+                    justification=justification,
+                    risk=risk,
+                )
+                allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
                 if not allowed:
                     yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="command not approved by user", tool=tool_name)
                     return
@@ -1285,18 +1371,15 @@ class AgentRuntime:
                 request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
-                try:
-                    yield StreamEvent(
-                        StreamEvent.Type.PERMISSION_REQUEST,
-                        id=tool_call_identifier,
-                        request_id=request_identifier,
-                        command=f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}",
-                        justification=tool_arguments.get("justification", ""),
-                        risk=risk,
-                    )
-                    allowed = await future
-                finally:
-                    self._pending_permissions.pop(request_identifier, None)
+                yield StreamEvent(
+                    StreamEvent.Type.PERMISSION_REQUEST,
+                    id=tool_call_identifier,
+                    request_id=request_identifier,
+                    command=f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}",
+                    justification=tool_arguments.get("justification", ""),
+                    risk=risk,
+                )
+                allowed = await self._resolve_permission_future(request_identifier, future, "", is_bash=False)
                 if not allowed:
                     yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
                     return
@@ -1401,6 +1484,8 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=delegated.get("text", ""), **common)
                     elif delegated_kind == "thinking":
                         yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), **common)
+                    elif delegated_kind == "thinking_done":
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING_DONE, duration_ms=delegated.get("durationMs", 0), **common)
                     elif delegated_kind == "status":
                         yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=delegated.get("code", ""), **common)
                     elif delegated_kind == "tool_call":
@@ -1437,6 +1522,8 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=event.data.get("text", ""), **common)
                     elif event.type == StreamEvent.Type.THINKING:
                         yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), **common)
+                    elif event.type == StreamEvent.Type.THINKING_DONE:
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING_DONE, duration_ms=event.data.get("duration_ms", 0), **common)
                     elif event.type == StreamEvent.Type.STATUS:
                         yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=event.data.get("code", ""), **common)
                     elif event.type == StreamEvent.Type.TOOL_CALL:

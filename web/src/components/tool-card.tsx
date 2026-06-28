@@ -20,6 +20,7 @@ export function ToolCardHeader({
   open,
   collapsible = false,
   shimmer = false,
+  headerBg,
   onToggle,
 }: {
   icon?: ReactNode;
@@ -29,6 +30,7 @@ export function ToolCardHeader({
   open?: boolean;
   collapsible?: boolean;
   shimmer?: boolean;
+  headerBg?: string;
   onToggle?: () => void;
 }) {
   return (
@@ -38,6 +40,7 @@ export function ToolCardHeader({
       px={2}
       py={1.5}
       minH="8"
+      bg={headerBg}
       cursor={collapsible ? "pointer" : undefined}
       onClick={collapsible ? onToggle : undefined}
       userSelect="none"
@@ -116,7 +119,14 @@ export function ToolCardSection({
   );
 }
 
-export function ToolStatusBadge({ status }: { status: "running" | "completed" | "done" | "failed" }) {
+export function ToolStatusBadge({ status }: { status: "running" | "completed" | "done" | "failed" | "input_required" }) {
+  if (status === "input_required") {
+    return (
+      <Badge size="sm" variant="subtle" colorPalette="yellow" borderRadius="sm" flexShrink={0}>
+        Input required
+      </Badge>
+    );
+  }
   if (status === "failed") {
     return (
       <Badge size="sm" variant="subtle" colorPalette="red" borderRadius="sm" flexShrink={0}>

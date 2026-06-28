@@ -403,6 +403,17 @@ class BashToolConfiguration(BaseModel):
                         best_decision = decision.lower()
         return best_decision
 
+    def command_matches(self, command: str, patterns: Iterable[str]) -> bool:
+        """Whether any segment of ``command`` matches any of ``patterns`` — the same
+        matching used for configured rules, reused for session-scoped allowlists."""
+        segments = self._extract_segments(command)
+        return any(
+            self._segment_matches(segment, pattern)
+            for segment in segments
+            for pattern in patterns
+            if pattern
+        )
+
     def _extract_segments(self, command: str) -> list[str]:
         """Split a command string into individual segments to check.
 

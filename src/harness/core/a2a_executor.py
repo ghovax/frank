@@ -65,21 +65,19 @@ PART_KIND = "kind"
 WIDGET_EVENT_KIND = "widget_event"
 
 
-def _widget_event_turn_input(message) -> Optional[str]:
-    """Render an incoming widget-interaction DataPart as a compact JSON envelope
-    for the model. Returns ``None`` when the message carries no widget event, so
-    the caller falls back to the plain text input. The structured payload is
-    preserved verbatim — the model receives clean JSON, never a paraphrase."""
+def _widget_event_payload(message) -> Optional[dict]:
+    """The incoming widget-interaction DataPart, if this turn carries one. Returns
+    ``None`` when the message has no widget event, so the caller falls back to the
+    plain text input."""
     for part in (message.parts or []):
         root = getattr(part, "root", part)
         if isinstance(root, DataPart) and root.data.get(PART_KIND) == WIDGET_EVENT_KIND:
-            payload = {
+            return {
                 "artifact_id": root.data.get("artifactId", ""),
                 "title": root.data.get("title", ""),
                 "event": root.data.get("event", ""),
                 "data": root.data.get("data"),
             }
-            return json.dumps({"widget_event": payload}, ensure_ascii=False)
     return None
 
 # Each agent profile is served as its own A2A agent under this prefix.
@@ -210,6 +208,7 @@ class HarnessAgentExecutor(AgentExecutor):
         on_new_context: Optional[callable] = None,
         conversations: Optional[dict[str, list]] = None,
         on_turn_state: Optional[callable] = None,
+        on_permission_state: Optional[callable] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -220,6 +219,9 @@ class HarnessAgentExecutor(AgentExecutor):
         # Notified (context_id, running) when a top-level turn starts/ends, so the
         # server can track which sessions are active and show a sidebar spinner.
         self._on_turn_state = on_turn_state
+        # Notified (context_id) when a turn raises a permission request, so the
+        # sidebar can swap the spinner for an attention marker on that session.
+        self._on_permission_state = on_permission_state
         # One runtime per context preserves the conversation across turns.
         self._runtimes: dict[str, AgentRuntime] = {}
         self._aborts: dict[str, AgentRuntime] = {}
@@ -295,16 +297,17 @@ class HarnessAgentExecutor(AgentExecutor):
             conversation = self._conversations.setdefault(context_id, [])
             runtime = self._build_runtime(context_id, working_directory, conversation=conversation)
             self._runtimes[context_id] = runtime
-        elif working_directory:
-            runtime._working_directory = working_directory
+        # A context's working directory is fixed at creation — a session stays
+        # bound to the folder it was started in, so later turns never repoint it.
         return runtime
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         user_text = context.get_user_input()
-        # A widget interaction arrives as a structured DataPart; when present it
-        # is the turn's input, rendered to the model as JSON rather than prose.
-        widget_event_input = _widget_event_turn_input(context.message)
-        turn_input = widget_event_input if widget_event_input is not None else user_text
+        # A widget interaction arrives as a structured DataPart. A normal
+        # interaction becomes the turn's JSON input; a render_error is reframed
+        # below (once the runtime's prompt loader exists) into a behind-the-scenes
+        # self-realization note the model repairs as its own output.
+        widget_payload = _widget_event_payload(context.message)
         metadata = context.message.metadata or {}
         working_directory = metadata.get(WORKING_DIRECTORY_METADATA_KEY, "")
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
@@ -391,7 +394,23 @@ class HarnessAgentExecutor(AgentExecutor):
             runtime.set_a2a_task_id(task.id)
             runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
 
-            async for event in runtime.stream(turn_input):
+            # A render_error is injected as the model's own realization (a system
+            # note), never as a user message; every other widget event is the
+            # turn's structured JSON input.
+            as_system_note = False
+            if widget_payload is not None:
+                payload_json = json.dumps({"widget_event": widget_payload}, ensure_ascii=False)
+                if widget_payload.get("event") == "render_error":
+                    # The same JSON payload, wrapped in a self-realization note and
+                    # injected as a system message rather than user input.
+                    turn_input = runtime.widget_render_error_note(payload_json)
+                    as_system_note = True
+                else:
+                    turn_input = payload_json
+            else:
+                turn_input = user_text
+
+            async for event in runtime.stream(turn_input, as_system_note=as_system_note):
                 kind = event.type
                 data = event.data
                 if kind == StreamEvent.Type.TEXT_CHUNK:
@@ -399,6 +418,9 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.THINKING:
                     await flush_stream_buffers()
                     await emit(_data_part("thinking", text=data.get("text", "")))
+                elif kind == StreamEvent.Type.THINKING_DONE:
+                    await flush_stream_buffers()
+                    await emit(_data_part("thinking_done", durationMs=data.get("duration_ms", 0)))
                 elif kind == StreamEvent.Type.STATUS:
                     await flush_stream_buffers()
                     await emit(_data_part("status", code=data.get("code", "")))
@@ -428,9 +450,13 @@ class HarnessAgentExecutor(AgentExecutor):
                     await flush_stream_buffers()
                     await emit(_data_part(
                         "permission_request", requestId=data.get("request_id", ""),
+                        toolCallId=data.get("id", ""),
                         command=data.get("command", ""), justification=data.get("justification", ""),
                         risk=data.get("risk", ""),
                     ))
+                    # Let the sidebar flag this session as awaiting input.
+                    if self._on_permission_state is not None:
+                        self._on_permission_state(task.context_id)
                 elif kind == StreamEvent.Type.ERROR:
                     await flush_stream_buffers()
                     failed_message = data.get("message", "error")
@@ -461,6 +487,9 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.AGENT_THINKING:
                     await flush_stream_buffers()
                     await emit_sub("sub_task_thinking", data, text=data.get("text", ""))
+                elif kind == StreamEvent.Type.AGENT_THINKING_DONE:
+                    await flush_stream_buffers()
+                    await emit_sub("sub_task_thinking_done", data, durationMs=data.get("duration_ms", 0))
                 elif kind == StreamEvent.Type.AGENT_TOOL_CALL:
                     await flush_stream_buffers()
                     await emit_sub("sub_task_tool_call", data, name=data.get("name", ""), arguments=data.get("arguments", {}), toolCallId=data.get("toolCallId", ""))
@@ -579,6 +608,8 @@ class AgentRegistry:
                                 data_kind = root.data.get(PART_KIND)
                                 if data_kind == "thinking":
                                     yield {"type": "thinking", "text": root.data.get("text", ""), "child_task_id": child_task_id}
+                                elif data_kind == "thinking_done":
+                                    yield {"type": "thinking_done", "durationMs": root.data.get("durationMs", 0), "child_task_id": child_task_id}
                                 elif data_kind == "status":
                                     yield {"type": "status", "code": root.data.get("code", ""), "child_task_id": child_task_id}
                                 elif data_kind == "tool_call":

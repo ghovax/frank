@@ -1,94 +1,21 @@
 "use client";
 
-import { Box, Button, Code, Flex, HStack, Text } from "@chakra-ui/react";
-import { useEffect, useRef } from "react";
-import { LuTerminal, LuMousePointerClick } from "react-icons/lu";
+import { Box, Text } from "@chakra-ui/react";
 import type { ChatMessage } from "@/lib/use-chat";
-import type { ToolEventStatus } from "@/lib/tool-event";
-import type { WidgetEvent } from "./widget-bridge";
+import type { PermissionDecision, ToolEventStatus, ToolPermission } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ThinkingIndicator } from "./thinking-indicator";
 
 interface ChatMessageProps {
   message: ChatMessage;
-  onPermission?: (requestId: string, decision: "allow" | "deny") => void;
+  onPermission?: (requestId: string, decision: PermissionDecision) => void;
   agents?: { id: string; name: string }[];
-}
-
-function PermissionBox({ message, onPermission }: { message: ChatMessage; onPermission?: ChatMessageProps["onPermission"] }) {
-  const resolved = message.meta?.resolved as string | undefined;
-  const requestId = message.meta?.request_id as string | undefined;
-  const justification = message.meta?.justification as string | undefined;
-  const risk = message.meta?.risk as string | undefined;
-  const boxRef = useRef<HTMLDivElement>(null);
-
-  const headerBg = risk === "high" ? "red.subtle" : risk === "medium" ? "yellow.subtle" : undefined;
-
-  function handleKeyDown(event: React.KeyboardEvent) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      onPermission?.(String(requestId), "allow");
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      onPermission?.(String(requestId), "deny");
-    }
-  }
-
-  useEffect(() => {
-    if (!resolved && boxRef.current) {
-      boxRef.current.focus();
-    }
-  }, [resolved]);
-
-  return (
-    <Box alignSelf="flex-start" w="100%">
-      <Box
-        ref={boxRef}
-        tabIndex={resolved ? undefined : 0}
-        onKeyDown={resolved ? undefined : handleKeyDown}
-        borderRadius="sm"
-        overflow="hidden"
-        bg="bg.subtle"
-        border="1px solid"
-        borderColor="border"
-        _focus={{ outline: "none", boxShadow: "none" }}
-      >
-        <Flex align="center" gap={1.5} px={2} py={1.5} minH="8" userSelect="none" bg={headerBg}>
-          <Box color="green.fg" fontSize="sm" flexShrink={0}>
-            <LuTerminal size={12} />
-          </Box>
-          <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
-            {justification || "Run command"}
-          </Text>
-        </Flex>
-        <Box px={2} py={1.5} borderTop="1px solid" borderColor="border">
-          <Code display="block" fontFamily="var(--app-font-mono)" fontSize="xs" p={1.5} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="sm">
-            {message.content}
-          </Code>
-        </Box>
-        {resolved ? (
-          <Box px={2} pb={2}>
-            <Text fontSize="xs" fontWeight="bold" color={resolved === "allow" ? "green.fg" : "red.fg"}>
-              {resolved === "allow" ? "Allowed" : resolved === "interrupted" ? "Interrupted" : "Denied"}
-            </Text>
-          </Box>
-        ) : (
-          <Box borderTop="1px solid" borderColor="border" px={2} py={2}>
-            <HStack gap={2}>
-              <Button size="xs" colorPalette="green" onClick={() => onPermission?.(String(requestId), "allow")}>Allow</Button>
-              <Button size="xs" colorPalette="red" onClick={() => onPermission?.(String(requestId), "deny")}>Deny</Button>
-            </HStack>
-          </Box>
-        )}
-      </Box>
-    </Box>
-  );
 }
 
 export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMessageProps) {
   const toolStatus = (status: unknown): ToolEventStatus | undefined =>
-    status === "running" || status === "completed" || status === "done" ? status : undefined;
+    status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined;
 
   switch (message.role) {
     case "user":
@@ -109,7 +36,13 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
       );
 
     case "thinking":
-      return <ThinkingIndicator content={message.content} status={message.meta?.status as string | undefined} />;
+      return (
+        <ThinkingIndicator
+          content={message.content}
+          status={message.meta?.status as string | undefined}
+          durationMs={message.meta?.durationMs as number | undefined}
+        />
+      );
 
     case "tool_call": {
       return (
@@ -120,37 +53,13 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
             result={message.meta?.result}
             sequenceNumber={message.meta?.sequenceNumber as number | undefined}
             status={toolStatus(message.meta?.status)}
+            permission={message.meta?.permission as ToolPermission | undefined}
             agents={agents}
+            onPermission={onPermission}
           />
         </Box>
       );
     }
-
-    case "widget_event": {
-      const widgetEvent = message.meta?.widgetEvent as WidgetEvent | undefined;
-      const title = widgetEvent?.title || "Widget";
-      const hasData = widgetEvent?.data !== undefined && widgetEvent?.data !== null;
-      return (
-        <Box alignSelf="flex-end" bg="bg.subtle" border="1px solid" borderColor="border" borderRadius="sm" px={2} py={1.5} maxW="80%">
-          <Flex align="center" gap={1.5}>
-            <Box color="pink.fg" flexShrink={0}>
-              <LuMousePointerClick size={12} />
-            </Box>
-            <Text fontSize="xs" color="fg.muted">
-              {title} → <Text as="span" fontWeight="medium" color="fg">{widgetEvent?.event || message.content}</Text>
-            </Text>
-          </Flex>
-          {hasData && (
-            <Code display="block" mt={1} fontFamily="var(--app-font-mono)" fontSize="2xs" p={1} whiteSpace="pre-wrap" bg="bg.muted" borderRadius="sm">
-              {JSON.stringify(widgetEvent?.data)}
-            </Code>
-          )}
-        </Box>
-      );
-    }
-
-    case "permission":
-      return <PermissionBox message={message} onPermission={onPermission} />;
 
     case "error":
       return (

@@ -24,7 +24,7 @@ export function AgentTimeline({
         part.kind === "text" ? (
           <MarkdownContent key={`text-${index}`} content={part.content} />
         ) : part.kind === "thinking" ? (
-          <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} />
+          <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} durationMs={part.durationMs} />
         ) : (
           <ToolCall
             key={`tool-${index}`}

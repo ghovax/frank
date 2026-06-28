@@ -1,6 +1,18 @@
-export type ToolEventStatus = "running" | "completed" | "done" | "failed";
+export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "input_required";
 
 const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal"]);
+
+// A human-in-the-loop approval attached to the tool call that triggered it (e.g.
+// a sandbox read outside the working directory). Lives on the same card so the
+// command — and, once approved, its output — read together.
+export type PermissionDecision = "deny" | "allow_once" | "allow_always";
+
+export interface ToolPermission {
+  requestId: string;
+  justification?: string;
+  risk?: string;
+  decision?: PermissionDecision;
+}
 
 export interface ToolEvent {
   name: string;
@@ -9,6 +21,7 @@ export interface ToolEvent {
   toolCallId?: string;
   result?: unknown;
   status?: ToolEventStatus;
+  permission?: ToolPermission;
 }
 
 export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: string): boolean {

@@ -12,7 +12,7 @@ import {
   Select,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuChevronDown, LuFolder, LuHistory, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
+import { LuArrowUp, LuChevronDown, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
 import { validateWorkingDirectory, type PermissionMode } from "@/lib/api";
 import { SettingsDialog } from "./settings-dialog";
 
@@ -45,6 +45,7 @@ export function ChatInput({
   onAbort,
   isStreaming,
   disabled,
+  sessionId,
   workingDirectory,
   recentProjects = [],
   onWorkingDirectoryChange,
@@ -120,11 +121,14 @@ export function ChatInput({
     : {
         label: "Unsandboxed",
         colorPalette: "red" as const,
-        variant: "outline" as const,
+        variant: "solid" as const,
       };
 
   const currentDirectory = (workingDirectory ?? "").trim();
   const directoryValid = !!currentDirectory && directoryState.path === currentDirectory && directoryState.valid;
+  // A session is bound to the folder it was started in: once it exists, the
+  // project can no longer be changed, so the selector and browse are locked.
+  const folderLocked = !!sessionId;
   // The server owns each folder's display name (derived with real path tooling),
   // so the selector only ever reads names — it never parses a path itself.
   const currentProjectName = useMemo(
@@ -254,6 +258,7 @@ export function ChatInput({
                 minW="max-content"
                 maxW="none"
                 whiteSpace="nowrap"
+                fontWeight="medium"
                 style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
               >
                 <Select.ValueText placeholder="Agent" maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
@@ -359,7 +364,7 @@ export function ChatInput({
 
       {/* Bottom row (below the input): permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
-        <Flex align="center" gap={1.5} flexWrap="wrap" flexShrink={0}>
+        <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
           <Box color={permissionAppearance.color} fontSize="sm" flexShrink={0} display="flex" alignItems="center">
             {permissionAppearance.icon}
           </Box>
@@ -390,6 +395,7 @@ export function ChatInput({
                 minW="max-content"
                 maxW="none"
                 whiteSpace="nowrap"
+                fontWeight="medium"
                 style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
               >
                 <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
@@ -411,8 +417,8 @@ export function ChatInput({
               </Select.Positioner>
             </Portal>
           </Select.Root>
-          <Box color={sandboxEnabled ? "green.fg" : "red.fg"} fontSize="sm" flexShrink={0} display="flex" alignItems="center">
-            {sandboxEnabled ? <LuShieldCheck size={16} /> : <LuShieldOff size={16} />}
+          <Box color={sandboxEnabled ? "green.fg" : "red.fg"} fontSize="sm" pl={1} flexShrink={0} display="flex" alignItems="center">
+            {sandboxEnabled ? <LuLock size={16} /> : <LuLockOpen size={16} />}
           </Box>
           <Button
             size="xs"
@@ -421,6 +427,7 @@ export function ChatInput({
             borderRadius="sm"
             fontSize="xs"
             h="28px"
+            fontWeight="medium"
             flexShrink={0}
             title={sandboxEnabled
               ? "Commands are confined to the working directory — access outside it needs approval"
@@ -440,6 +447,7 @@ export function ChatInput({
             minW="28px"
             h="28px"
             flexShrink={0}
+            disabled={folderLocked}
             onClick={onBrowseFolder}
           >
             <LuFolder size={16} />
@@ -460,12 +468,15 @@ export function ChatInput({
                 w={{ base: "min(100%, 220px)", md: "180px" }}
                 maxW="100%"
                 minW={0}
-                title={currentDirectory || "Choose project"}
+                disabled={folderLocked}
+                title={folderLocked
+                  ? `Project folder is fixed for this session to ${currentDirectory}`
+                  : currentDirectory || "Choose project"}
               >
                 <Box as="span" truncate>
-                  {currentProjectName || "Project"}
+                  {currentProjectName}
                 </Box>
-                <LuChevronDown size={14} />
+                {!folderLocked && <LuChevronDown size={14} />}
               </Button>
             </Menu.Trigger>
             <Portal>
@@ -479,7 +490,7 @@ export function ChatInput({
                       whiteSpace="nowrap"
                       onClick={() => onWorkingDirectoryChange?.(project.path)}
                     >
-                      <Box truncate>{project.name || "Project"}</Box>
+                      <Box truncate>{project.name}</Box>
                     </Menu.Item>
                   ))}
                   {projectItems.length > 0 && <Menu.Separator />}

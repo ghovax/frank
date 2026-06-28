@@ -1,8 +1,8 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuGripVertical, LuMessageSquare, LuPlus } from "react-icons/lu";
-import { Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
+import { LuGripVertical, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { Suspense, useCallback, useEffect, useMemo, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, subscribeEvents, type AgentCard, type AgentSummary, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
@@ -13,7 +13,9 @@ interface SessionEntry {
   title: string;
   createdAt: string;
   workingDirectory: string;
+  workingDirectoryName: string;
   running: boolean;
+  awaitingInput: boolean;
 }
 
 function formatSessionTimestamp(value: string) {
@@ -40,6 +42,7 @@ function HomeContent() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [chatKey, setChatKey] = useState(0);
   const [workingDirectory, setWorkingDirectory] = useState("");
+  const [homeProject, setHomeProject] = useState<{ path: string; name: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [sandboxEnabledState, setSandboxEnabledState] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -82,7 +85,9 @@ function HomeContent() {
         title: session.title,
         createdAt: session.created_at,
         workingDirectory: session.working_directory ?? "",
+        workingDirectoryName: session.working_directory_name ?? "",
         running: session.running ?? false,
+        awaitingInput: session.awaiting_input ?? false,
       }))
     );
   }, []);
@@ -119,8 +124,11 @@ function HomeContent() {
     };
     loadAgents();
     loadSettings();
+    // Home is the default project for a brand-new chat; the restoration effect
+    // below applies it (or the active session's own folder) — we don't force it
+    // here, or it would clobber a session opened directly via ?session=.
     fetchHomeDirectory()
-      .then((home) => setWorkingDirectory(home))
+      .then(setHomeProject)
       .catch(() => {});
     loadSessions();
     refreshRecentProjects();
@@ -134,6 +142,50 @@ function HomeContent() {
     });
     return unsubscribe;
   }, [applySessions, refreshRecentProjects]);
+
+  // The working directory is bound to the active context: an open session is
+  // restored to its own persisted folder, a brand-new chat falls back to home.
+  // Adjusted during render (the sanctioned pattern) and guarded so it binds once
+  // per context — it sets the initial folder without clobbering a deliberate
+  // change the user makes within that session.
+  const [restoredContext, setRestoredContext] = useState<string | null>(null);
+  const contextKey = activeSessionId ?? "__new__";
+  if (restoredContext !== contextKey) {
+    if (activeSessionId) {
+      const session = sessions.find((entry) => entry.sessionId === activeSessionId);
+      if (session) {
+        setRestoredContext(contextKey);
+        setWorkingDirectory(session.workingDirectory || homeProject?.path || "");
+      }
+    } else if (homeProject) {
+      setRestoredContext(contextKey);
+      setWorkingDirectory(homeProject.path);
+    }
+  }
+
+  // The selector always knows a real name for the current folder: home leads as
+  // the default, the active session's own folder is guaranteed present (so a
+  // freshly reopened session never falls back to a generic label before recents
+  // load), then the recents — all server-named, deduped by path.
+  const activeSessionProject = useMemo(() => {
+    const session = sessions.find((entry) => entry.sessionId === activeSessionId);
+    return session?.workingDirectory
+      ? { path: session.workingDirectory, name: session.workingDirectoryName }
+      : null;
+  }, [sessions, activeSessionId]);
+  const projectsForSelector = useMemo(() => {
+    const seen = new Set<string>();
+    const items: { path: string; name: string }[] = [];
+    const sources = [homeProject, activeSessionProject, ...recentProjects].filter(
+      (project): project is { path: string; name: string } => !!project && !!project.path
+    );
+    for (const project of sources) {
+      if (seen.has(project.path)) continue;
+      seen.add(project.path);
+      items.push({ path: project.path, name: project.name });
+    }
+    return items;
+  }, [homeProject, activeSessionProject, recentProjects]);
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
@@ -181,7 +233,8 @@ function HomeContent() {
 
   function handleResumeSession(entry: SessionEntry) {
     setSelectedAgent(entry.agent);
-    if (entry.workingDirectory) selectWorkingDirectory(entry.workingDirectory);
+    // The restoration effect rebinds the working directory to this session's
+    // own persisted folder; no need to set (or re-record) it here.
     setActiveSessionId(entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
@@ -309,7 +362,7 @@ function HomeContent() {
                 {sessions.map((entry) => {
                   const sessionTimestamp = formatSessionTimestamp(entry.createdAt);
                   const sessionAgent = agentNames.get(entry.agent) ?? entry.agent;
-                  const sessionMeta = [sessionTimestamp, sessionAgent].filter(Boolean).join(" — ");
+                  const sessionMeta = sessionTimestamp; // This one used to also show the assistant name; not anymore though.
 
                   return (
                     <Box
@@ -327,9 +380,13 @@ function HomeContent() {
                         <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
                           {entry.title || "Untitled conversation"}
                         </Text>
-                        {entry.running && (
+                        {entry.awaitingInput ? (
+                          <Box color="yellow.fg" flexShrink={0} display="flex" alignItems="center" title="Waiting for your approval">
+                            <LuTriangleAlert size={13} />
+                          </Box>
+                        ) : entry.running ? (
                           <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
-                        )}
+                        ) : null}
                       </Flex>
                       <Text fontSize="xs" color="fg.subtle" truncate>
                         {sessionMeta}
@@ -360,7 +417,7 @@ function HomeContent() {
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}
           workingDirectory={workingDirectory}
-          recentProjects={recentProjects.map((project) => ({ path: project.path, name: project.name }))}
+          recentProjects={projectsForSelector}
           onWorkingDirectoryChange={selectWorkingDirectory}
           onBrowseFolder={handleBrowseFolder}
           sandboxEnabled={sandboxEnabledState}

@@ -12,7 +12,7 @@ import {
   type A2ATask as A2ATaskWire,
   type PermissionMode,
 } from "./api";
-import { isControlToolName, isSameToolEvent, nextToolSequence, type ToolEvent, type ToolEventStatus } from "./tool-event";
+import { isControlToolName, isSameToolEvent, nextToolSequence, type PermissionDecision, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import type { WidgetEvent } from "@/components/widget-bridge";
 
 // Re-export the A2A task shape so components can consume it from one place.
@@ -38,7 +38,7 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "permission" | "widget_event";
+  role: "user" | "assistant" | "tool_call" | "thinking" | "error";
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
@@ -57,7 +57,7 @@ export type ChatInput =
 // main chat uses, so a sub-agent's reasoning reads identically.
 export type AgentPart =
   | { kind: "text"; content: string }
-  | { kind: "thinking"; content: string; status: ToolEventStatus }
+  | { kind: "thinking"; content: string; status: ToolEventStatus; durationMs?: number }
   | ({ kind: "tool" } & ToolEvent);
 
 type ThinkingPart = Extract<AgentPart, { kind: "thinking" }>;
@@ -129,6 +129,13 @@ function nextAgentToolSequence(step: AgentStep): number {
 function finishAgentThinking(step: AgentStep): AgentStep {
   if (!step.parts.some(isRunningThinking)) return step;
   return { ...step, parts: step.parts.map((part) => (isRunningThinking(part) ? { ...part, status: "done" } : part)) };
+}
+
+// Close the in-flight thinking part and stamp how long it ran, so the timeline
+// shows "Thought for Ns". The server measures the duration; here it's just recorded.
+function finishAgentThinkingWithDuration(step: AgentStep, durationMs: number): AgentStep {
+  if (!step.parts.some(isRunningThinking)) return step;
+  return { ...step, parts: step.parts.map((part) => (isRunningThinking(part) ? { ...part, status: "done", durationMs } : part)) };
 }
 
 function finishRunningAgentTools(step: AgentStep): AgentStep {
@@ -482,6 +489,16 @@ function finishRunningThinking(state: ReduceState): void {
   );
 }
 
+// Close the in-flight thinking message and record the server-measured duration,
+// so the indicator flips from "Thinking" to "Thought for Ns".
+function finishRunningThinkingWithDuration(state: ReduceState, durationMs: number): void {
+  state.messages = state.messages.map((message) =>
+    isRunningThinkingMessage(message)
+      ? { ...message, meta: { ...message.meta, status: "done", durationMs } }
+      : message
+  );
+}
+
 function finishRunningTools(state: ReduceState): void {
   state.messages = state.messages.map((message) =>
     message.role === "tool_call" && message.meta?.status === "running"
@@ -525,7 +542,8 @@ function toolEventFromMessage(message: ChatMessage): ToolEvent | null {
     sequenceNumber: message.meta?.sequenceNumber as number | undefined,
     toolCallId: String(message.meta?.toolCallId ?? ""),
     result: message.meta?.result,
-    status: status === "running" || status === "completed" || status === "done" || status === "failed" ? status : undefined,
+    status: status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined,
+    permission: message.meta?.permission as ToolEvent["permission"],
   };
 }
 
@@ -590,6 +608,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     case "thinking":
       applyThinking(state, String(data.text ?? ""));
       break;
+    case "thinking_done":
+      finishRunningThinkingWithDuration(state, Number(data.durationMs ?? 0));
+      break;
     case "tool_call": {
       if (isControlToolName(data.name)) break;
       finishRunningThinking(state);
@@ -651,17 +672,21 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "permission_request": {
+      // The approval lives on the tool call that triggered it — the card flips to
+      // "input required" and shows the prompt inline, so the command (and later
+      // its output) stay together. The event always carries the toolCallId.
       finishRunningThinking(state);
-      state.messages = [
-        ...state.messages,
-        {
-          id: `perm-${data.requestId}`,
-          role: "permission",
-          content: String(data.command ?? ""),
-          timestamp: new Date().toISOString(),
-          meta: { request_id: String(data.requestId ?? ""), justification: data.justification, risk: data.risk },
-        },
-      ];
+      const toolCallId = String(data.toolCallId ?? "");
+      const permission = {
+        requestId: String(data.requestId ?? ""),
+        justification: data.justification ? String(data.justification) : undefined,
+        risk: data.risk ? String(data.risk) : undefined,
+      };
+      state.messages = state.messages.map((message) =>
+        message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
+          ? { ...message, meta: { ...message.meta, status: "input_required", permission } }
+          : message
+      );
       break;
     }
     case "error": {
@@ -693,6 +718,11 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     case "sub_task_thinking":
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
         applyAgentThinking(step, String(data.text ?? ""))
+      );
+      break;
+    case "sub_task_thinking_done":
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
+        finishAgentThinkingWithDuration(step, Number(data.durationMs ?? 0))
       );
       break;
     case "sub_task_status":
@@ -816,7 +846,19 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
   const state: ReduceState = { messages: [], agentGroups: [], lane: null };
   for (const task of mainTasks) {
     state.lane = null;
-    for (const message of compactReplayMessages(task.history)) {
+    // A task's full message stream is its history PLUS its trailing status
+    // message: the A2A TaskManager keeps the latest message on `status.message`
+    // and only folds it into `history` on the *next* status update. A turn
+    // suspended mid-flight (e.g. awaiting a permission) never gets that next
+    // update, so its last message — the pending request — lives only there.
+    // Reduce both so replay reproduces exactly what the live stream showed
+    // instead of dropping the trailing message and leaving the card stuck.
+    const replayMessages = [...(task.history ?? [])];
+    const trailing = task.status?.message;
+    if (trailing && !replayMessages.some((message) => !!message.messageId && message.messageId === trailing.messageId)) {
+      replayMessages.push(trailing);
+    }
+    for (const message of compactReplayMessages(replayMessages)) {
       if (message.role === "user") reduceUserMessage(state, message);
       else reduceAgentMessage(state, message);
     }
@@ -980,21 +1022,17 @@ export function useChat(
 
   const runStream = useCallback(
     (input: ChatInput) => {
-      // Optimistic input message + reset the open prose lane. A widget event
-      // renders as its own structured entry rather than a user prose bubble.
+      // Optimistic input message + reset the open prose lane. Widget events are
+      // delivered to the model but never shown as a chat entry (an error is the
+      // model's own realization; an interaction is silent), so only text appears.
       stateRef.current.lane = null;
-      const optimistic: ChatMessage =
-        input.kind === "text"
-          ? { id: `user-${Date.now()}`, role: "user", content: input.text, timestamp: new Date().toISOString() }
-          : {
-              id: `widget-${Date.now()}`,
-              role: "widget_event",
-              content: input.event.event,
-              timestamp: new Date().toISOString(),
-              meta: { widgetEvent: input.event },
-            };
-      stateRef.current.messages = [...stateRef.current.messages, optimistic];
-      flush();
+      if (input.kind === "text") {
+        stateRef.current.messages = [
+          ...stateRef.current.messages,
+          { id: `user-${Date.now()}`, role: "user", content: input.text, timestamp: new Date().toISOString() },
+        ];
+        flush();
+      }
 
       isStreamingRef.current = true;
       streamedLocallyRef.current = true;
@@ -1109,13 +1147,21 @@ export function useChat(
   );
 
   const handlePermission = useCallback(
-    async (requestId: string, decision: "allow" | "deny") => {
+    async (requestId: string, decision: PermissionDecision) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       await resolvePermission(ctx, requestId, decision);
-      stateRef.current.messages = stateRef.current.messages.map((message) =>
-        message.id === `perm-${requestId}` ? { ...message, meta: { ...message.meta, resolved: decision } } : message
-      );
+      // Record the decision and hand the card back to its normal lifecycle: an
+      // approval resumes as "running" (the result/error finalizes it), a denial
+      // is settled by the error the backend emits for this tool call.
+      stateRef.current.messages = stateRef.current.messages.map((message) => {
+        const permission = message.meta?.permission as { requestId?: string } | undefined;
+        if (message.role !== "tool_call" || permission?.requestId !== requestId) return message;
+        return {
+          ...message,
+          meta: { ...message.meta, status: "running", permission: { ...permission, decision } },
+        };
+      });
       flush();
     },
     [flush]
