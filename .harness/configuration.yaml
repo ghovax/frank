@@ -4,6 +4,11 @@ api:
   api_key: ''
 exa:
   api_key: ''
+composio:
+  enabled: true
+  url: https://connect.composio.dev/mcp
+  consumer_api_key: 'ck_7lCN7vVj1bG9CCfRZX4L'
+  server_name: composio
 default_agent: assistant
 agents_root_directory: .agents
 home_agents_root_directory: ~/.agents

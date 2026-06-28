@@ -7,6 +7,7 @@ A configurable multi-agent harness built on the A2A protocol. Each agent profile
 - `.agents/agents/<id>/config.json` — per-agent model, tool, and permission settings.
 - `.agents/skills/<id>/SKILL.md` — project-local reusable skill instructions.
 - `.agents/mcp.json` — MCP server configuration using `mcpServers`.
+- Composio — set `composio.enabled: true` in `configuration.yaml` with the hosted MCP (`url`) and `consumer_api_key` from the Composio dashboard, and the harness exposes its tools through the normal MCP path. No separate agent; the agent discovers tools dynamically and authorizes accounts (e.g. `gmail`, `notion`) on first use.
 - `.agents/memories/*.md` — persistent project memory injected into agent prompts.
 - `~/.agents/agents/` and `~/.agents/skills/` — optional global profiles and skills. Project-local entries override global entries with the same name.
 - `examples/mcp/openstreetmap/` — stdio MCP server folder used by the default `openstreetmap` MCP configuration for map smoke tests.

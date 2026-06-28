@@ -40,6 +40,7 @@ from harness.core.configuration import (
     load_agent_configuration,
     save_api_keys,
 )
+from harness.core.composio_router import composio_mcp_servers
 from harness.core.mcp_client import MCPClientManager
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import cancel_all_background_tasks, set_exa_client, set_mcp_client_manager
@@ -104,6 +105,10 @@ _async_engine = None
 _task_store: Optional[AppendOnlyTaskStore] = None
 _registry: Optional[AgentRegistry] = None
 _mcp_manager: Optional[MCPClientManager] = None
+# Composio Tool Router server(s), provisioned once at startup. Kept separate from
+# the mcp.json-derived servers so the file watcher's live reload re-merges them
+# instead of dropping Composio whenever mcp.json changes.
+_composio_servers: dict[str, _configuration.MCPServerConfiguration] = {}
 _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
 _pending_permissions: dict[str, asyncio.Future] = {}
@@ -360,6 +365,9 @@ async def _reload_mcp() -> None:
     global _mcp_manager
     assert _global_configuration is not None
     _global_configuration.mcp = GlobalConfiguration.load().mcp
+    # Re-fold the startup-provisioned Composio server back in so a live mcp.json
+    # edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
+    _global_configuration.mcp.servers.update(_composio_servers)
     enabled = _global_configuration.mcp.enabled_servers()
     if _mcp_manager is None:
         if enabled:
@@ -396,7 +404,7 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _composio_servers
     _global_configuration = GlobalConfiguration.load()
 
     database_path = database_file_path()
@@ -409,6 +417,12 @@ async def lifespan(application: FastAPI):
         from exa_py import Exa
         set_exa_client(Exa(api_key=exa_key))
 
+    # Provision the Composio Tool Router (best-effort) and fold it into the MCP
+    # config itself, so both the client manager and the agent's tool gating
+    # (which binds list_mcp_tools/call_mcp_tool only when a server is configured)
+    # see it — Composio's tools then ride the normal MCP path.
+    _composio_servers = composio_mcp_servers(_global_configuration.composio)
+    _global_configuration.mcp.servers.update(_composio_servers)
     mcp_servers = _global_configuration.mcp.enabled_servers()
     _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
     if _mcp_manager is not None:

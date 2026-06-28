@@ -100,6 +100,31 @@ class SandboxConfiguration(BaseModel):
     enabled: bool = True
 
 
+class ComposioConfiguration(BaseModel):
+    """Composio integration via its hosted MCP endpoint. When enabled, the harness
+    points at Composio's "connect" MCP URL and exposes it as a normal
+    streamable_http MCP server, so Composio's tools flow through the same
+    list_mcp_tools/call_mcp_tool path as any other MCP server — no new agent, no
+    SDK provisioning. Which toolkits (gmail, notion, …) are available is decided
+    by the MCP server you configure in the Composio dashboard; the agent then
+    discovers tools dynamically through COMPOSIO_SEARCH_TOOLS / COMPOSIO_GET_TOOL_SCHEMAS
+    and runs them with COMPOSIO_MULTI_EXECUTE_TOOL, authorizing accounts via
+    COMPOSIO_MANAGE_CONNECTIONS on first use."""
+    enabled: bool = False
+    # The hosted MCP URL from the Composio dashboard (MCP / "connect" page).
+    url: str = "https://connect.composio.dev/mcp"
+    # The consumer key shown next to the URL (sent as the x-consumer-api-key
+    # header). May also be supplied via COMPOSIO_CONSUMER_API_KEY (env wins).
+    consumer_api_key: str = ""
+    # The MCP server name the tools appear under (call_mcp_tool's `server`).
+    server_name: str = "composio"
+    timeout_seconds: float = 60
+
+    @property
+    def effective_consumer_api_key(self) -> str:
+        return os.environ.get("COMPOSIO_CONSUMER_API_KEY") or self.consumer_api_key
+
+
 class MCPServerConfiguration(BaseModel):
     enabled: bool = True
     transport: Literal["stdio", "streamable_http"] = "stdio"
@@ -144,6 +169,7 @@ class GlobalConfiguration(BaseModel):
     api: ApiConfiguration
     exa: ExaConfiguration = ExaConfiguration()
     sandbox: SandboxConfiguration = SandboxConfiguration()
+    composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "assistant"
     agents_root_directory: str = ".agents"
