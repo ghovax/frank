@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, HStack, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, HStack } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import type { PermissionDecision, ToolEvent, ToolPermission } from "@/lib/tool-event";
@@ -12,17 +12,11 @@ interface ToolCallProps extends ToolEvent {
   onPermission?: (requestId: string, decision: PermissionDecision) => void;
 }
 
-const DECIDED_LABEL: Record<PermissionDecision, { label: string; color: string }> = {
-  deny: { label: "Denied", color: "red.fg" },
-  allow_once: { label: "Allowed", color: "green.fg" },
-  allow_always: { label: "Always allowed", color: "blue.fg" },
-};
-
-// The human-in-the-loop approval, rendered inside the tool card it belongs to.
-// Deny sits far left and Allow once far right (so they can't be mis-clicked),
-// with Always allow tucked beside Allow once. Keys: 1 deny, 2 allow always,
-// ⌘/Ctrl+Enter allow once. Once decided it collapses to a short outcome line and
-// the card resumes its normal running/done lifecycle.
+// The human-in-the-loop approval, rendered inside the tool card it belongs to,
+// only while pending. Deny sits far left and Allow once far right (so they can't
+// be mis-clicked), with Always allow beside Allow once. Keys: 1 deny, 2 allow
+// always, 3 allow once. Once decided, the card's own status badge (Running →
+// Completed, or Failed) carries the outcome — the prompt disappears entirely.
 function ToolPermissionPrompt({
   permission,
   onPermission,
@@ -31,37 +25,28 @@ function ToolPermissionPrompt({
   onPermission?: (requestId: string, decision: PermissionDecision) => void;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
-  const pending = !permission.decision;
 
   function decide(decision: PermissionDecision) {
     onPermission?.(permission.requestId, decision);
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
+    // 1 deny, 2 allow always, 3 allow once — mirrors the on-screen buttons.
     if (event.key === "1") {
       event.preventDefault();
       decide("deny");
     } else if (event.key === "2") {
       event.preventDefault();
       decide("allow_always");
-    } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    } else if (event.key === "3") {
       event.preventDefault();
       decide("allow_once");
     }
   }
 
   useEffect(() => {
-    if (pending) boxRef.current?.focus();
-  }, [pending]);
-
-  if (!pending) {
-    const decided = DECIDED_LABEL[permission.decision!];
-    return (
-      <Text fontSize="xs" fontWeight="bold" color={decided.color}>
-        {decided.label}
-      </Text>
-    );
-  }
+    boxRef.current?.focus();
+  }, []);
 
   // Flat — the yellow card header already signals the approval, and the command
   // is shown above, so the prompt is just the controls (no nested box).
@@ -83,7 +68,7 @@ function ToolPermissionPrompt({
           Always allow (2)
         </Button>
         <Button size="xs" colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
-          Allow once (⌘↵)
+          Allow once (3)
         </Button>
       </HStack>
     </Flex>
@@ -99,7 +84,8 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
   // artifact, there is no separate text to show inside.
   const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
   const showResultInside = resultContent != null && artifacts.length === 0;
-  const showPermission = !!permission && (status === "input_required" || !!permission.decision);
+  // Only while pending — once decided, the status badge carries the outcome.
+  const showPermission = !!permission && status === "input_required";
   const collapsible = hasArguments || showResultInside || showPermission;
   // A pending approval forces the card open so the Allow/Deny controls are visible
   // without a click.
@@ -133,7 +119,9 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
 
         {collapsible && bodyOpen && (
           <ToolCardBody maxH="560px">
-            <Flex direction="column" gap={3} align="stretch">
+            {/* gap matches FieldList's own field spacing so the call's last field
+                (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
+            <Flex direction="column" gap={2} align="stretch">
               {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
               {showPermission && permission && <ToolPermissionPrompt permission={permission} onPermission={onPermission} />}
               {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}

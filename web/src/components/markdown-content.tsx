@@ -37,6 +37,13 @@ function isDisplayMathParagraph(node: Element | undefined): boolean {
 }
 
 const markdownComponents: Components = {
+  // Drop images with no real source — an empty `src` makes the browser re-fetch
+  // the whole page and logs a console error.
+  img({ src, alt }) {
+    if (!src || (typeof src === "string" && !src.trim())) return null;
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} style={{ maxWidth: "100%" }} />;
+  },
   p({ node, children }) {
     if (isDisplayMathParagraph(node)) {
       return <Box textAlign="center" fontSize="inherit">{children}</Box>;
@@ -195,7 +202,14 @@ export function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentPro
         },
       }}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={markdownComponents}>
+      {/* Only treat `$$...$$` as math — a single `$` is almost always currency
+          ("~$9–16", "€50") in this content, not LaTeX, so single-dollar math is
+          off. `strict: false` keeps KaTeX from spamming warnings on the rest. */}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+        rehypePlugins={[[rehypeKatex, { strict: false }]]}
+        components={markdownComponents}
+      >
         {content}
       </ReactMarkdown>
     </Box>

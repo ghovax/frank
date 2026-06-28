@@ -366,7 +366,10 @@ function applyArtifactUpdates(
       return { ...message, meta: { ...message.meta, result: replacement.result } };
     });
 
-    if (!didReplace && mode === "upsert") {
+    // No existing artifact matched this target. Whatever the mode, keep the
+    // artifact so it still renders fresh — dropping it (the old behavior for
+    // "replace"/"update") loses the widget entirely on its first render.
+    if (!didReplace) {
       remainingArtifacts.push(artifact);
     }
   }

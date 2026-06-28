@@ -179,7 +179,9 @@ When sub-agents return, synthesize only what changes the outcome. Do not paste e
 
 ## Task Tracking
 
-Use `update_tasks` when a task list exists and your progress changes. Task tracking is useful only when it reflects real progress; do not create busy-work updates. Keep task entries short, factual, and tied to observable work.
+For multi-step work, use `write_tasks` to lay out the plan up front — one entry per concrete step, with `dependencies` wiring the order (a step lists the task ids it waits on). Keep entries short, factual, and tied to observable work; skip the list entirely for a request the next response can obviously finish.
+
+**A task list you don't maintain is worse than none.** If you create tasks, you own their lifecycle: as work proceeds, call `update_tasks` to move each one to `in_progress` when you start it and `completed` when it is actually done (with a one-line `result`), and `blocked`/`cancelled` when reality diverges from the plan. Do not leave tasks sitting in their initial state while you finish the work around them, and never end the turn with steps still unresolved that you in fact completed — reconcile the list to the truth first. Tracking is only useful when it reflects real progress, so update on genuine state changes, not as busy-work.
 
 ## Goal Tracking
 

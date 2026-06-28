@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { useWidgetEvent } from "../widget-bridge";
 import { MarkdownContent } from "../markdown-content";
@@ -174,6 +174,23 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+// The widget renders as the artifact (outside the card), so the call view never
+// dumps the raw HTML — just what the widget is.
+function RenderWidgetCallView({ args }: { args: Record<string, unknown> }) {
+  const title = asString(args.title);
+  const summary = asString(args.summary);
+  return (
+    <FieldList>
+      {title && <InlineField label="Title">{title}</InlineField>}
+      {summary && (
+        <Field label="Summary">
+          <MarkdownContent content={summary} fontSize="xs" />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
 function ReadTaskCallView({ args }: { args: Record<string, unknown> }) {
   const taskId = asString(args.task_id);
   return (
@@ -253,6 +270,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <UpdateTasksCallView args={args} />;
     case "read_task":
       return <ReadTaskCallView args={args} />;
+    case "render_widget":
+      return <RenderWidgetCallView args={args} />;
     default:
       return <GenericView data={args} />;
   }
@@ -447,16 +466,19 @@ function compactMcpContent(content: unknown): unknown {
 function ArtifactFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Box>
-      <Box mb={1} color="fg.subtle">
-        <MarkdownContent content={title} fontSize="sm" />
-      </Box>
+      <Text mb={1.5} fontSize="sm" fontWeight="semibold" color="fg.muted">
+        {title}
+      </Text>
       {children}
     </Box>
   );
 }
 
-const AUTO_MIN_HEIGHT = 80;
-const AUTO_MAX_HEIGHT = 1200;
+// A generous floor: model-authored widgets frequently mis-measure their own
+// height (absolute-positioned maps, late-loading content) and collapse to a few
+// pixels. Never render one shorter than this, whether auto-sized or hand-resized.
+const AUTO_MINIMUM_HEIGHT = 480;
+const AUTO_MAXIMUM_HEIGHT = 960;
 
 // A sandboxed iframe (in a bordered frame) that listens for back-channel messages
 // the widget posts to its parent. Messages are accepted only from this frame's own
@@ -498,7 +520,7 @@ function WidgetFrame({
         if (autoHeight) {
           const reported = Number((record.data as Record<string, unknown> | undefined)?.height);
           if (Number.isFinite(reported)) {
-            setMeasuredHeight(Math.max(AUTO_MIN_HEIGHT, Math.min(AUTO_MAX_HEIGHT, Math.ceil(reported))));
+            setMeasuredHeight(Math.max(AUTO_MINIMUM_HEIGHT, Math.min(AUTO_MAXIMUM_HEIGHT, Math.ceil(reported))));
           }
         }
         return; // internal sizing signal — never an agent-facing event
@@ -512,29 +534,75 @@ function WidgetFrame({
     return () => window.removeEventListener("message", handleMessage);
   }, [onWidgetEvent, artifactId, title, autoHeight]);
 
-  const height = autoHeight ? `${measuredHeight ?? 220}px` : fixedHeight;
+  // A manual drag overrides auto-sizing entirely — the model's own resize logic
+  // often collapses or mis-sizes a widget, so the user can always take over.
+  const [userHeight, setUserHeight] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const baseHeight = Math.max(
+    AUTO_MINIMUM_HEIGHT,
+    autoHeight ? (measuredHeight ?? AUTO_MINIMUM_HEIGHT) : (parseInt(fixedHeight, 10) || 480),
+  );
+  const effectiveHeight = userHeight ?? baseHeight;
+
+  function startResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startY = event.clientY;
+    const startHeight = effectiveHeight;
+    setDragging(true);
+    function onMove(moveEvent: PointerEvent) {
+      setUserHeight(Math.max(AUTO_MINIMUM_HEIGHT, Math.round(startHeight + (moveEvent.clientY - startY))));
+    }
+    function onUp() {
+      setDragging(false);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
 
   return (
-    <Box
-      w="100%"
-      h={height}
-      border="1px solid"
-      borderColor="border"
-      borderRadius="sm"
-      bg="bg.muted"
-      overflow="hidden"
-      transition="height 120ms ease"
-    >
-      <iframe
-        ref={frameRef}
-        src={src || undefined}
-        srcDoc={srcDoc || undefined}
-        sandbox={sandbox}
-        referrerPolicy="no-referrer"
-        loading="lazy"
-        title={title}
-        style={{ width: "100%", height: "100%", border: 0, display: "block" }}
-      />
+    <Box position="relative" w="100%">
+      <Box
+        w="100%"
+        h={`${effectiveHeight}px`}
+        border="1px solid"
+        borderColor="border"
+        borderRadius="sm"
+        bg="bg.muted"
+        overflow="hidden"
+        transition={dragging ? undefined : "height 120ms ease"}
+      >
+        <iframe
+          ref={frameRef}
+          src={src || undefined}
+          srcDoc={srcDoc || undefined}
+          sandbox={sandbox}
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          title={title}
+          // Ignore pointer events on the iframe mid-drag so it doesn't swallow them.
+          style={{ width: "100%", height: "100%", border: 0, display: "block", pointerEvents: dragging ? "none" : "auto" }}
+        />
+      </Box>
+      {/* Drag the grip to set a fixed height (overriding auto-resize). */}
+      <Box
+        onPointerDown={startResize}
+        position="absolute"
+        left={0}
+        right={0}
+        bottom="-4px"
+        h="10px"
+        cursor="ns-resize"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        role="separator"
+        aria-label="Resize widget height"
+        _hover={{ "& > div": { bg: "fg.muted" } }}
+      >
+        <Box w="44px" h="3px" borderRadius="full" bg="border.emphasized" transition="background 120ms ease" />
+      </Box>
     </Box>
   );
 }
@@ -664,6 +732,10 @@ export function ToolResultView({ name, content }: { name: string; content: strin
   // ids (for the model); the call card already shows the tasks as #N, so don't
   // re-render the confirmation and leak the internal ids.
   if (name === "write_tasks" || name === "update_tasks") return null;
+
+  // A widget's result is just compact model_context metadata — the rendered
+  // widget is the deliverable (it shows as the artifact, outside the card).
+  if (name === "render_widget") return null;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;
