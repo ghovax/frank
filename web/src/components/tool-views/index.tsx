@@ -90,21 +90,70 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
 }
 
 
+// A task's lifecycle status → a capitalized label and a colour, so it reads as a
+// proper badge instead of the raw lowercase value the model emits.
+function taskStatusAppearance(status: string): { label: string; palette: string } {
+  switch (status.toLowerCase().replace(/[\s-]+/g, "_")) {
+    case "completed": return { label: "Completed", palette: "green" };
+    case "in_progress": return { label: "In progress", palette: "blue" };
+    case "blocked": return { label: "Blocked", palette: "yellow" };
+    case "cancelled":
+    case "canceled": return { label: "Cancelled", palette: "gray" };
+    case "deleted": return { label: "Deleted", palette: "red" };
+    case "pending": case "": return { label: "Pending", palette: "gray" };
+    default: return { label: "Unknown", palette: "gray" };
+  }
+}
+
+// "task-7" -> "#7" — the internal id is never shown to the user, only its number.
+function taskHashLabel(id: string): string {
+  const match = id.match(/(\d+)\s*$/);
+  return match ? `#${match[1]}` : id;
+}
+
+// One row shared by task creation and task updates so both read identically: the
+// task's #number on the left, a status badge on the right, the prose as markdown,
+// and dependencies as #number chips (the dependency links carry the ordering).
+function TaskRow({ label, status, body, dependencies = [] }: {
+  label: string;
+  status: string;
+  body: string;
+  dependencies?: string[];
+}) {
+  const appearance = taskStatusAppearance(status);
+  return (
+    <Card>
+      <Flex align="center" gap={2} mb={body ? 1.5 : 0}>
+        <Text fontSize="xs" color="fg.muted" fontWeight="semibold" flexShrink={0}>{label}</Text>
+        <Box flex={1} />
+        <Pill colorPalette={appearance.palette}>{appearance.label}</Pill>
+      </Flex>
+      {body && <MarkdownContent content={body} fontSize="xs" />}
+      {dependencies.length > 0 && (
+        <Flex align="center" gap={1} mt={1.5} flexWrap="wrap">
+          <Text fontSize="2xs" color="fg.subtle">depends on</Text>
+          {dependencies.map((dependency) => (
+            <Pill key={dependency} colorPalette="purple">{taskHashLabel(dependency)}</Pill>
+          ))}
+        </Flex>
+      )}
+    </Card>
+  );
+}
+
 function WriteTasksCallView({ args }: { args: Record<string, unknown> }) {
   const tasks = asArray(args.tasks).map(asRecord);
   return (
     <FieldList>
-      {tasks.map((task, index) => {
-        const dependencies = asArray(task.dependencies).map(asString);
-        return (
-          <Card key={index}>
-            <Text fontSize="xs">{asString(task.description)}</Text>
-            {dependencies.length > 0 && (
-              <Text fontSize="2xs" color="fg.subtle" mt={1}>depends on {dependencies.join(", ")}</Text>
-            )}
-          </Card>
-        );
-      })}
+      {tasks.map((task, index) => (
+        <TaskRow
+          key={index}
+          label={`#${index + 1}`}
+          status="pending"
+          body={asString(task.description)}
+          dependencies={asArray(task.dependencies).map(asString)}
+        />
+      ))}
     </FieldList>
   );
 }
@@ -114,15 +163,12 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
   return (
     <FieldList>
       {updates.map((update, index) => (
-        <Card key={index}>
-          <Flex align="center" gap={2}>
-            <Text fontSize="xs" color="fg.muted">{asString(update.task_id)}</Text>
-            <Pill colorPalette="blue">{asString(update.status)}</Pill>
-          </Flex>
-          {asString(update.result) && (
-            <Text fontSize="xs" color="fg.muted" mt={1}>{asString(update.result)}</Text>
-          )}
-        </Card>
+        <TaskRow
+          key={index}
+          label={taskHashLabel(asString(update.task_id))}
+          status={asString(update.status)}
+          body={asString(update.result)}
+        />
       ))}
     </FieldList>
   );
@@ -613,6 +659,11 @@ export function ToolResultView({ name, content }: { name: string; content: strin
   // MCP discovery results (the full server/tool catalog with JSON schemas) are
   // internal noise — the call card already conveys that discovery happened.
   if (name === "list_mcp_tools" || name === "list_mcp_resources") return null;
+
+  // The task tools' result is a bare confirmation string that names raw "task-N"
+  // ids (for the model); the call card already shows the tasks as #N, so don't
+  // re-render the confirmation and leak the internal ids.
+  if (name === "write_tasks" || name === "update_tasks") return null;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;

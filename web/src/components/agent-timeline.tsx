@@ -24,7 +24,10 @@ export function AgentTimeline({
         part.kind === "text" ? (
           <MarkdownContent key={`text-${index}`} content={part.content} />
         ) : part.kind === "thinking" ? (
-          <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} durationMs={part.durationMs} />
+          // Skip a finished phase with no captured reasoning — just latency, no card.
+          (part.status === "done" || part.status === "completed") && (!part.content || part.content === "Thinking") ? null : (
+            <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} durationMs={part.durationMs} />
+          )
         ) : (
           <ToolCall
             key={`tool-${index}`}

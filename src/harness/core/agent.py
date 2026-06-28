@@ -290,7 +290,6 @@ class BackgroundKind:
 @dataclass(frozen=True)
 class PendingBackgroundMessage:
     tool_call_id: str
-    conversation_index: int
 
 
 @dataclass(frozen=True)
@@ -338,14 +337,11 @@ class BackgroundTaskManager:
         self._tracked_ids.setdefault(tool_name, set()).add(task_identifier)
         self._completed_results.setdefault(tool_name, [])
 
-    def bind_model_message(
-        self, task_identifier: str, tool_call_id: str, conversation_index: int,
-    ) -> None:
+    def bind_model_message(self, task_identifier: str, tool_call_id: str) -> None:
         if not task_identifier:
             return
         self._pending_messages[task_identifier] = PendingBackgroundMessage(
             tool_call_id=tool_call_id,
-            conversation_index=conversation_index,
         )
 
     def poll(self):
@@ -704,24 +700,20 @@ class AgentRuntime:
             return events
 
         for completion in self._background.drain_results():
-            if (
-                completion.pending_message is not None
-                and completion.pending_message.conversation_index < len(self._conversation)
-            ):
-                self._conversation[completion.pending_message.conversation_index] = ToolMessage(
-                    content=completion.result,
-                    tool_call_id=completion.pending_message.tool_call_id,
-                )
-            else:
-                message = SystemMessage(
-                    content=json.dumps({
-                        "type": "background_result",
-                        "tool": completion.tool_name,
-                        "task_identifier": completion.task_identifier,
-                        "result": completion.result,
-                    }),
-                )
-                self._conversation.append(message)
+            # Append-only: the scheduled placeholder ToolMessage stays put and the
+            # result lands as a *new* message. Rewriting the placeholder in place
+            # would change the conversation mid-stream and invalidate the provider's
+            # prompt cache from that point on — re-billing the whole suffix. The
+            # placeholder already satisfies its tool_call, so appending keeps the
+            # prefix monotonic (always cacheable) while the model still sees the result.
+            self._conversation.append(SystemMessage(
+                content=json.dumps({
+                    "type": "background_result",
+                    "tool": completion.tool_name,
+                    "task_identifier": completion.task_identifier,
+                    "result": completion.result,
+                }),
+            ))
             events.append(StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 id=(completion.pending_message.tool_call_id if completion.pending_message else ""),
@@ -946,14 +938,13 @@ class AgentRuntime:
                 content = outcome.get("content", "")
                 if not content:
                     content = "(interrupted)" if self._abort_event.is_set() else ""
-                conversation_index = len(self._conversation)
                 self._conversation.append(
                     ToolMessage(content=content, tool_call_id=tool_call_identifier)
                 )
                 background_task_identifier = outcome.get("background_task_identifier")
                 if background_task_identifier:
                     self._background.bind_model_message(
-                        background_task_identifier, tool_call_identifier, conversation_index,
+                        background_task_identifier, tool_call_identifier,
                     )
                 denied_commands = outcome.get("denied_commands", [])
                 if denied_commands:

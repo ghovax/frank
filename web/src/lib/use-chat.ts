@@ -603,18 +603,27 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       // in-flight thinking indicator. (The thinking ping itself is a `thinking`
       // event now, not a status — this only handles the wait edge.)
       if (String(data.code ?? "") === "waiting_for_tools") finishRunningThinking(state);
+      // A status (e.g. goal_check between answer attempts) ends the current prose
+      // block, so the next text starts its own message instead of concatenating.
+      state.lane = null;
       break;
     }
     case "thinking":
+      // A new reasoning phase ends the current prose block — without this, text
+      // emitted after a mid-turn think (or a control tool) merges into the prior
+      // message and the thinking card lands out of order.
+      state.lane = null;
       applyThinking(state, String(data.text ?? ""));
       break;
     case "thinking_done":
       finishRunningThinkingWithDuration(state, Number(data.durationMs ?? 0));
       break;
     case "tool_call": {
+      // Every tool call (even a control one like update_goal that renders nothing)
+      // breaks the prose lane so surrounding text doesn't run together.
+      state.lane = null;
       if (isControlToolName(data.name)) break;
       finishRunningThinking(state);
-      state.lane = null;
       const sequence = nextToolSequence(messageToolEvents(state.messages));
       state.messages = [
         ...state.messages,
@@ -710,6 +719,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       break;
     }
     case "agent_group_started":
+      state.lane = null;
       startAgentGroup(state, data);
       break;
     case "sub_task_text":

@@ -452,7 +452,7 @@ export function ChatInput({
           >
             <LuFolder size={16} />
           </IconButton>
-          <Menu.Root>
+          <Menu.Root size="sm">
             <Menu.Trigger asChild>
               <Button
                 size="xs"
@@ -481,7 +481,7 @@ export function ChatInput({
             </Menu.Trigger>
             <Portal>
               <Menu.Positioner>
-                <Menu.Content borderRadius="sm" minW="220px" maxW="360px">
+                <Menu.Content borderRadius="sm" minW="max-content" maxW="320px">
                   {projectItems.map((project) => (
                     <Menu.Item
                       value={project.path}
@@ -498,7 +498,7 @@ export function ChatInput({
                     value="open-another-project"
                     bg="blue.subtle"
                     color="blue.fg"
-                    fontWeight="semibold"
+                    fontWeight="medium"
                     _hover={{ bg: "blue.muted" }}
                     onClick={onBrowseFolder}
                   >

@@ -190,7 +190,6 @@ function HomeContent() {
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
   const activeSessionRunning = sessions.find((entry) => entry.sessionId === activeSessionId)?.running ?? false;
-  const agentNames = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
 
   const refreshSessions = useCallback(() => {
     fetchSessions()
@@ -360,9 +359,7 @@ function HomeContent() {
             ) : (
               <VStack gap={1.5} align="stretch">
                 {sessions.map((entry) => {
-                  const sessionTimestamp = formatSessionTimestamp(entry.createdAt);
-                  const sessionAgent = agentNames.get(entry.agent) ?? entry.agent;
-                  const sessionMeta = sessionTimestamp; // This one used to also show the assistant name; not anymore though.
+                  const sessionMeta = formatSessionTimestamp(entry.createdAt);
 
                   return (
                     <Box

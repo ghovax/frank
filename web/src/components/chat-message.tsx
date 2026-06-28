@@ -35,14 +35,21 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
         </Box>
       );
 
-    case "thinking":
+    case "thinking": {
+      const thinkingStatus = message.meta?.status as string | undefined;
+      const finished = thinkingStatus === "done" || thinkingStatus === "completed";
+      const hasReasoning = !!message.content && message.content !== "Thinking";
+      // A finished phase that captured no reasoning is just model latency — don't
+      // leave a bare "Thought for Xs" card lingering (e.g. a goal-check iteration).
+      if (finished && !hasReasoning) return null;
       return (
         <ThinkingIndicator
           content={message.content}
-          status={message.meta?.status as string | undefined}
+          status={thinkingStatus}
           durationMs={message.meta?.durationMs as number | undefined}
         />
       );
+    }
 
     case "tool_call": {
       return (

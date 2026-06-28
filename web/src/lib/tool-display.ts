@@ -58,10 +58,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return "Reading a related task";
     case "render_widget":
       return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
-    case "write_tasks": {
-      const tasks = Array.isArray(args?.tasks) ? args.tasks : [];
-      return `Creating ${tasks.length} task${tasks.length !== 1 ? "s" : ""}`;
-    }
+    case "write_tasks":
+      return "Creating tasks";
     case "update_tasks":
       return "Updating tasks";
     case "call_mcp_tool":
