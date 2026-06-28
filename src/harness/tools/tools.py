@@ -192,8 +192,13 @@ async def web_search(
 ) -> str:
     """Search the web using Exa. Returns a list of results with titles, URLs, and summaries.
 
-    The search runs asynchronously — the result is auto-injected into the
-    conversation when ready. You can start multiple searches concurrently.
+    The search runs in the background. You do NOT fetch the results yourself:
+    when the search finishes, its results are delivered to you automatically as a
+    separate ``web_search_completed`` message carrying the same
+    ``task_identifier``. This call only returns a ``web_search_started``
+    acknowledgement — never call ``read_task`` on the returned identifier and
+    never poll for it. Just keep working (you can start several searches at once);
+    the results will appear on their own.
 
     Use this when you need current information from the internet, recent events,
     or external knowledge not available in the training data.
@@ -207,7 +212,11 @@ async def web_search(
     if client is None:
         return json.dumps({"code": "web_search_error", "message": "Web search is not configured."})
 
-    output_path = Path("/tmp") / f"{new_id('search')}.log"
+    # Mint the identifier up front so the eventual completed/error result can echo
+    # it — the model correlates a delivered result to the search it started by
+    # this id, instead of guessing whether its searches have finished.
+    task_identifier = new_id("search")
+    output_path = Path("/tmp") / f"{task_identifier}.log"
 
     async def run() -> str:
         try:
@@ -227,22 +236,31 @@ async def web_search(
                 entries.append(entry)
             payload = json.dumps({
                 "code": "web_search_completed",
+                "task_identifier": task_identifier,
                 "query": query,
                 "results": entries,
             })
             output_path.write_text(payload)
             return payload
         except Exception as exception:
-            payload = json.dumps({"code": "web_search_error", "message": str(exception)})
+            payload = json.dumps({
+                "code": "web_search_error",
+                "task_identifier": task_identifier,
+                "message": str(exception),
+            })
             output_path.write_text(payload)
             return payload
 
     task = asyncio.create_task(run())
-    task_identifier = web_tasks.register(task, output_path)
+    web_tasks.register(task, output_path, identifier=task_identifier)
+    # The started acknowledgement intentionally omits any file path or other
+    # fetch-looking handle: the only thing the model needs is the id to match the
+    # auto-delivered result against. The "do not poll/read_task" guidance is
+    # attached by the runtime from a prompt template (user-facing wording lives in
+    # prompts, not in tool code).
     return json.dumps({
         "code": "web_search_started",
         "task_identifier": task_identifier,
-        "output_file": str(output_path),
     })
 
 
@@ -533,10 +551,15 @@ def read_task(task_id: str = "", justification: str = "") -> str:
 
     Use this to coordinate with agents working alongside you in the same context:
     check whether a sibling has finished and read what it produced, then build on
-    it. Task ids are the ones returned when an agent is spawned.
+    it. Task ids are the ones returned when an *agent* is spawned.
+
+    This is NOT how you retrieve background results. A web_search
+    ("search-…") or background-bash ("bg-…") identifier is not a readable task —
+    those results are delivered to you automatically when ready, so never call
+    read_task on them and never use it to poll.
 
     Args:
-        task_id: The id of the task to read.
+        task_id: The id of a spawned sibling/sub-agent task to read.
         justification: A concise, user-facing description of why you are reading
             this task — shown as the label for this call.
     """

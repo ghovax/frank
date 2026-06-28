@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Box, Flex, IconButton, Text } from "@chakra-ui/react";
+import { Badge, Box, EmptyState, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { LuBot, LuNetwork, LuX } from "react-icons/lu";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
@@ -157,8 +157,20 @@ export function AgentsPanel({
 
       <Box flex={1} minH={0} overflowY="auto" px={3} py={3}>
         {agentGroups.length === 0 ? (
-          <Flex h="100%" align="center" justify="center">
-            <Text fontSize="xs" color="fg.muted">No agent activity yet.</Text>
+          <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
+            <EmptyState.Root>
+              <EmptyState.Content>
+                <EmptyState.Indicator>
+                  <LuBot />
+                </EmptyState.Indicator>
+                <VStack gap={1}>
+                  <EmptyState.Title>No agent activity yet</EmptyState.Title>
+                  <EmptyState.Description>
+                    Spawned agents will appear here
+                  </EmptyState.Description>
+                </VStack>
+              </EmptyState.Content>
+            </EmptyState.Root>
           </Flex>
         ) : (
           <Flex direction="column" gap={2}>

@@ -24,10 +24,11 @@ export function AgentTimeline({
         part.kind === "text" ? (
           <MarkdownContent key={`text-${index}`} content={part.content} />
         ) : part.kind === "thinking" ? (
-          // Skip a finished phase with no captured reasoning — just latency, no card.
-          (part.status === "done" || part.status === "completed") && (!part.content || part.content === "Thinking") ? null : (
-            <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} durationMs={part.durationMs} />
-          )
+          // Always render the reasoning phase, even with no captured body — the
+          // card is the persistent marker for the phase and must not vanish when
+          // it finishes (models that don't stream reasoning_content still emit
+          // the phase boundary). Never filter it out.
+          <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} durationMs={part.durationMs} />
         ) : (
           <ToolCall
             key={`tool-${index}`}

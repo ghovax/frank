@@ -627,6 +627,32 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
     return agents
 
 
+def describe_available_agents(
+    agents_directory: str | Path | Iterable[str | Path]
+) -> list[dict[str, str]]:
+    """Available agents with the metadata a delegating model needs to choose one.
+
+    `list_available_agents` returns bare ids, which tells the model *that* it can
+    delegate but not *to whom* or *for what* — so it can't match a task to the
+    right specialist and tends to do everything itself. This carries each agent's
+    human title, its `description` (what it is for), and its declared `role`
+    (e.g. `delegation-target`) so the model can pick deliberately.
+    """
+    described = []
+    for name, path in sorted(_agent_paths(agents_directory).items()):
+        try:
+            config = AgentConfiguration.from_markdown(path)
+            described.append({
+                "id": config.identifier,
+                "title": config.display_name,
+                "description": config.description,
+                "role": config.role,
+            })
+        except Exception:
+            described.append({"id": name, "title": name, "description": "", "role": ""})
+    return described
+
+
 def _merge_agent_config(frontmatter: dict, configuration: dict) -> dict:
     merged = dict(frontmatter)
     model_configuration = configuration.get("modelConfig", {})

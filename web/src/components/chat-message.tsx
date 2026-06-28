@@ -37,11 +37,11 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
 
     case "thinking": {
       const thinkingStatus = message.meta?.status as string | undefined;
-      const finished = thinkingStatus === "done" || thinkingStatus === "completed";
-      const hasReasoning = !!message.content && message.content !== "Thinking";
-      // A finished phase that captured no reasoning is just model latency — don't
-      // leave a bare "Thought for Xs" card lingering (e.g. a goal-check iteration).
-      if (finished && !hasReasoning) return null;
+      // Always render the reasoning phase, even when it captured no body text —
+      // the card ("Thinking" → "Thought for Ns") is the persistent marker for
+      // that phase. Models that don't stream reasoning_content still emit the
+      // phase boundary, and dropping the bodyless card made the indicator
+      // vanish the moment the phase finished. Never filter it out.
       return (
         <ThinkingIndicator
           content={message.content}

@@ -24,12 +24,39 @@ from pydantic import BaseModel
 
 
 class ReasoningChatOpenAI(ChatOpenAI):
-    """ChatOpenAI subclass that preserves reasoning_content across turns.
+    """ChatOpenAI subclass that surfaces and preserves reasoning_content.
 
-    DeepSeek-style models return reasoning_content alongside content.
-    LangChain's default serialization drops it. This subclass injects it
-    back into the API payload so the model sees its own prior reasoning.
+    DeepSeek-style models return ``reasoning_content`` alongside ``content``,
+    but ``langchain_openai``'s ``ChatOpenAI`` targets the official OpenAI schema
+    and drops every provider-specific field — it never copies ``reasoning_content``
+    out of the streamed deltas (it tells you to use ``ChatDeepSeek`` instead). We
+    point ``base_url`` at a DeepSeek-compatible endpoint, so we re-attach that
+    field ourselves on the way *out* (so the harness can stream the model's
+    reasoning into the thinking indicator) and inject it back on the way *in* (so
+    the model sees its own prior reasoning across turns). Without the outbound
+    half the inbound half is a no-op, because ``additional_kwargs`` would never
+    carry the field to begin with.
     """
+
+    def _convert_chunk_to_generation_chunk(self, chunk, default_chunk_class, base_generation_info):
+        generation_chunk = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        if generation_chunk is None:
+            return None
+        choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices") or []
+        if choices:
+            delta = choices[0].get("delta") or {}
+            # DeepSeek streams reasoning in `reasoning_content` (and some
+            # compatible gateways nest it under `reasoning`). Chunks merge by
+            # concatenating string additional_kwargs, so per-delta fragments
+            # accumulate into the full reasoning on the merged message.
+            reasoning = delta.get("reasoning_content")
+            if not reasoning and isinstance(delta.get("reasoning"), str):
+                reasoning = delta["reasoning"]
+            if reasoning:
+                generation_chunk.message.additional_kwargs["reasoning_content"] = reasoning
+        return generation_chunk
 
     def _get_request_payload(self, input_, *, stop=None, **kwargs):
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
@@ -51,7 +78,7 @@ from harness.core.configuration import (
     PermissionError,
     PromptLoader,
     load_agent_configuration,
-    list_available_agents,
+    describe_available_agents,
 )
 from harness.tools.tools import (
     bash as bash_tool,
@@ -135,6 +162,24 @@ def _maybe_json(value: str) -> Any:
         return json.loads(value)
     except (json.JSONDecodeError, TypeError):
         return value
+
+
+# Background-task handles minted by the tool registries: web_search ids carry the
+# "search-" prefix, background bash the "bg-" prefix. These are NOT A2A tasks and
+# can never be read with read_task — their results are auto-delivered when ready.
+_BACKGROUND_HANDLE_PREFIXES = {
+    "search-": "web_search",
+    "bg-": "bash",
+}
+
+
+def _background_handle_kind(task_id: str) -> str | None:
+    """The background-task kind ("web_search"/"bash") if ``task_id`` is one of
+    those handles rather than a readable A2A task; otherwise ``None``."""
+    for prefix, kind in _BACKGROUND_HANDLE_PREFIXES.items():
+        if task_id.startswith(prefix):
+            return kind
+    return None
 
 
 def _build_tools(
@@ -654,7 +699,7 @@ class AgentRuntime:
         context, and the available-skills awareness.
         """
         if self._cached_system_prompt is None:
-            available_agents = list_available_agents(
+            available_agents = describe_available_agents(
                 self._global_configuration.agent_directories()
             )
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._working_directory)))
@@ -1630,16 +1675,30 @@ class AgentRuntime:
         elif tool_name == "web_search":
             result = await web_search_tool.ainvoke(tool_arguments)
             result_data = _maybe_json(result)
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
             if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
+                # Attach the "don't poll/read_task this" guidance from a prompt
+                # template, keeping user-facing wording out of the tool code.
+                result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
                 task_identifier = result_data.get("task_identifier", "")
                 if task_identifier:
                     self._background.track("web_search", task_identifier)
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
 
         elif tool_name == "read_task":
             requested_task_id = tool_arguments.get("task_id", "")
+            # A web_search/background-bash handle ("search-…"/"bg-…") is not an A2A
+            # task — its results are delivered automatically, never read. Catch the
+            # mistake with a redirect instead of a bare "task_not_found" that just
+            # invites the model to retry the same wrong poll.
+            background_kind = _background_handle_kind(requested_task_id)
             if self._task_reader is None:
                 result = {"code": "read_task_unavailable", "message": "Reading tasks is not available in this context."}
+            elif background_kind is not None:
+                message = self._prompt_loader.load(
+                    "read_task_background_handle",
+                    {"task_id": requested_task_id, "kind": background_kind},
+                )
+                result = {"code": "not_a_readable_task", "task_id": requested_task_id, "message": message}
             else:
                 task = await self._task_reader(requested_task_id)
                 if task is None:
