@@ -193,8 +193,19 @@ function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Recor
   };
 }
 
+// The lifecycle status implied by a tool result. A "*_started" / scheduled
+// result (bash and web search run in the background) keeps the card "running" —
+// the matching "*_completed" result arrives later and finalizes it. Approving a
+// command only lets it *run*, so it must not jump straight to "completed".
+function toolResultStatus(result: unknown): ToolEventStatus {
+  const code = String(asRecord(result).code ?? "");
+  if (code === "tool_error") return "failed";
+  if (code.endsWith("_started") || code === "background_task_scheduled") return "running";
+  return "completed";
+}
+
 function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string, result: unknown): AgentStep {
-  const status = asRecord(result).code === "tool_error" ? "failed" as const : "completed" as const;
+  const status = toolResultStatus(result);
   let matched = false;
   const parts = step.parts.map((part) => {
     if (!isToolPart(part) || !isSameToolEvent(part, name, toolCallId)) return part;
@@ -649,10 +660,11 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
       const mergedResult = data.name === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, data.result) : data.result;
       const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
+      const resultStatus = toolResultStatus(artifactUpdate.result);
       let matched = false;
       state.messages = artifactUpdate.messages.map((message) =>
         messageMatchesToolEvent(message, toolName, toolCallId)
-          ? (matched = true, { ...message, meta: { ...message.meta, status: "completed", result: artifactUpdate.result } })
+          ? (matched = true, { ...message, meta: { ...message.meta, status: resultStatus, result: artifactUpdate.result } })
           : message
       );
       if (!matched) {
@@ -664,7 +676,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
             role: "tool_call",
             content: toolName || "unknown",
             timestamp: new Date().toISOString(),
-            meta: { toolCallId, sequenceNumber: sequence, status: "completed", result: artifactUpdate.result },
+            meta: { toolCallId, sequenceNumber: sequence, status: resultStatus, result: artifactUpdate.result },
           },
         ];
       }

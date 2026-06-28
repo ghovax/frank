@@ -600,9 +600,7 @@ function WidgetFrame({
         role="separator"
         aria-label="Resize widget height"
         _hover={{ "& > div": { bg: "fg.muted" } }}
-      >
-        <Box w="44px" h="3px" borderRadius="full" bg="border.emphasized" transition="background 120ms ease" />
-      </Box>
+      />
     </Box>
   );
 }
