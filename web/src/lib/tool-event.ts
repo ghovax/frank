@@ -1,6 +1,6 @@
 export type ToolEventStatus = "running" | "completed" | "done";
 
-const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["set_focus", "update_goal"]);
+const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal"]);
 
 export interface ToolEvent {
   name: string;

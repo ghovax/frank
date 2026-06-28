@@ -2,26 +2,21 @@
 
 import { Box, Flex, Text } from "@chakra-ui/react";
 import { useState } from "react";
-import { LuChevronRight, LuChevronDown } from "react-icons/lu";
-import { getFocusIcon } from "@/lib/focus-icon";
+import { LuChevronRight, LuChevronDown, LuBrain } from "react-icons/lu";
 
 interface ThinkingIndicatorProps {
   content?: string;
-  focus?: string;
-  icon?: string;
   status?: string;
 }
 
-export function ThinkingIndicator({ content, focus, icon, status }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ content, status }: ThinkingIndicatorProps) {
   const [open, setOpen] = useState(false);
-  const title = focus || content || "Thinking";
-  const isWaiting = icon === "waiting" || title === "Waiting for tools...";
-  // `content` holds the reasoning body (if any); a real label means we are not
-  // showing a bare placeholder, so the shimmer only applies before any focus.
+  // `content` holds the reasoning body (if any). With a body, its first line is
+  // the title (expand for the rest); without one, it's a bare "Thinking" that
+  // shimmers while the step is still running.
   const hasReasoning = !!content && content !== "Thinking";
-  const showShimmer = !focus && status === "running" && !isWaiting;
-
-  const { icon: FocusIcon, color: iconColor } = getFocusIcon(icon, title);
+  const title = hasReasoning ? content! : "Thinking";
+  const showShimmer = !hasReasoning && status === "running";
 
   return (
     <Box borderRadius="sm" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
@@ -35,8 +30,8 @@ export function ThinkingIndicator({ content, focus, icon, status }: ThinkingIndi
         onClick={() => hasReasoning && setOpen((current) => !current)}
         userSelect="none"
       >
-        <Box color={iconColor} fontSize="sm" flexShrink={0}>
-          <FocusIcon size={12} />
+        <Box color="purple.fg" fontSize="sm" flexShrink={0}>
+          <LuBrain size={12} />
         </Box>
         <Text
           fontSize="xs"

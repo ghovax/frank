@@ -60,7 +60,6 @@ from harness.tools.tools import (
     write_tasks as write_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
-    set_focus as set_focus_tool,
     render_widget as render_widget_tool,
     build_widget_result,
     list_mcp_tools as list_mcp_tools_tool,
@@ -140,7 +139,6 @@ def _build_tools(
         write_tasks_tool,
         update_tasks_tool,
         update_goal_tool,
-        set_focus_tool,
         read_task_tool,
     ]
     if not is_sub_agent:
@@ -465,8 +463,6 @@ class AgentRuntime:
     # the full budget on redundant calls.
     _SUB_AGENT_MAXIMUM_ITERATIONS = 512
 
-    _THINKING_LABEL = "Thinking"
-
     def __init__(
         self,
         agent_configuration: AgentConfiguration,
@@ -629,15 +625,6 @@ class AgentRuntime:
             })
         return self._cached_system_prompt
 
-    def _fallback_focus_label(self) -> tuple[str, str]:
-        """A transient label for the thinking phase before the model's own
-        ``<focus>`` arrives (or if it omits the opener). Returns the label and an
-        icon variant (``"goal"`` when an active goal is set, else ``"thinking"``).
-        The UI truncates the text, so no truncation is done here."""
-        if self._active_goal:
-            return (self._active_goal.strip(), "goal")
-        return (self._THINKING_LABEL, "thinking")
-
     def _build_dynamic_context(self) -> str:
         """Build the dynamic context injected at the end of the message list."""
         parts = []
@@ -765,8 +752,11 @@ class AgentRuntime:
                 + [SystemMessage(content=self._build_dynamic_context())]
             )
 
-            fallback_label, fallback_icon = self._fallback_focus_label()
-            yield StreamEvent(StreamEvent.Type.STATUS, code="thinking", label=fallback_label, icon=fallback_icon)
+            # Open a thinking step for this iteration. One channel (THINKING)
+            # drives the indicator: this bare ping marks "reasoning started" and
+            # reasoning_content fills the body — no labels, no separate status
+            # placeholder to reconcile downstream.
+            yield StreamEvent(StreamEvent.Type.THINKING)
             response_chunks: list[AIMessageChunk] = []
             async for chunk in self._bound_llm.astream(messages):
                 if self._abort_event.is_set():
@@ -853,23 +843,9 @@ class AgentRuntime:
             # aborted mid-flight — every tool_call always gets a ToolMessage.
             outcomes: dict[str, dict] = {}
 
-            # set_focus only updates the thinking label (no tool card), so run it
-            # first (sequential, instant) to surface labels before other work;
-            # every other tool runs concurrently below.
-            focus_calls = [call for call in response.tool_calls if call["name"] == "set_focus"]
-            other_calls = [call for call in response.tool_calls if call["name"] != "set_focus"]
-
-            for tool_call_data in focus_calls:
-                if self._abort_event.is_set():
-                    break
-                async for event in self._run_one_tool(
-                    tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes,
-                ):
-                    yield event
-
-            if other_calls and not self._abort_event.is_set():
+            if response.tool_calls and not self._abort_event.is_set():
                 async for event in self._drain_tools_concurrently(
-                    other_calls, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                    response.tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes,
                 ):
                     yield event
 
@@ -952,16 +928,14 @@ class AgentRuntime:
         tool_name = tool_call_data["name"]
         tool_arguments = tool_call_data["args"]
         tool_call_identifier = tool_call_data["id"]
-        is_focus_call = tool_name == "set_focus"
 
-        if not is_focus_call:
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_CALL,
-                name=tool_name,
-                arguments=tool_arguments,
-                id=tool_call_identifier,
-            )
-            turn_tool_calls_log.append({"name": tool_name, "arguments": tool_arguments})
+        yield StreamEvent(
+            StreamEvent.Type.TOOL_CALL,
+            name=tool_name,
+            arguments=tool_arguments,
+            id=tool_call_identifier,
+        )
+        turn_tool_calls_log.append({"name": tool_name, "arguments": tool_arguments})
 
         result_content: str = ""
         background_task_identifier: str | None = None
@@ -1426,9 +1400,9 @@ class AgentRuntime:
                     elif delegated_kind == "text":
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=delegated.get("text", ""), **common)
                     elif delegated_kind == "thinking":
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), label=delegated.get("label", ""), icon=delegated.get("icon", ""), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), **common)
                     elif delegated_kind == "status":
-                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=delegated.get("code", ""), label=delegated.get("label", ""), icon=delegated.get("icon", ""), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=delegated.get("code", ""), **common)
                     elif delegated_kind == "tool_call":
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), toolCallId=delegated.get("toolCallId", ""), **common)
                     elif delegated_kind == "tool_result":
@@ -1454,9 +1428,9 @@ class AgentRuntime:
                     if event.type == StreamEvent.Type.TEXT_CHUNK:
                         yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=event.data.get("text", ""), **common)
                     elif event.type == StreamEvent.Type.THINKING:
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), label=event.data.get("label", ""), icon=event.data.get("icon", ""), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), **common)
                     elif event.type == StreamEvent.Type.STATUS:
-                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=event.data.get("code", ""), label=event.data.get("label", ""), icon=event.data.get("icon", ""), **common)
+                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=event.data.get("code", ""), **common)
                     elif event.type == StreamEvent.Type.TOOL_CALL:
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=event.data.get("name", ""), arguments=event.data.get("arguments", {}), toolCallId=event.data.get("id", ""), **common)
                     elif event.type == StreamEvent.Type.TOOL_RESULT:
@@ -1558,17 +1532,6 @@ class AgentRuntime:
                 summary=str(tool_arguments.get("summary", "")),
             )
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
-
-        elif tool_name == "set_focus":
-            focus = str(tool_arguments.get("focus", "")).strip()
-            if focus:
-                yield StreamEvent(StreamEvent.Type.THINKING, label=focus, icon="focus")
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result={"code": "focus_set", "focus": focus},
-            )
 
         elif tool_name == "web_search":
             result = await web_search_tool.ainvoke(tool_arguments)

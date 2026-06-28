@@ -54,10 +54,10 @@ export type ChatInput =
 // An agent step's ordered timeline — prose, reasoning, and tool calls
 // interleaved, mirroring the main chat. Built from the A2A sub-task DataPart
 // envelopes. A `thinking` part renders through the same ThinkingIndicator the
-// main chat uses, so a sub-agent's focus/reasoning reads identically.
+// main chat uses, so a sub-agent's reasoning reads identically.
 export type AgentPart =
   | { kind: "text"; content: string }
-  | { kind: "thinking"; content: string; focus: string; icon: string; status: ToolEventStatus }
+  | { kind: "thinking"; content: string; status: ToolEventStatus }
   | ({ kind: "tool" } & ToolEvent);
 
 type ThinkingPart = Extract<AgentPart, { kind: "thinking" }>;
@@ -101,10 +101,10 @@ function emptyStep(stepId: string, agent = "", goal = "", childTaskId = ""): Age
 }
 
 // One place that knows a thinking part's shape, so call sites spell out only what
-// differs (a focus label, reasoning text, a finished status) rather than every
-// empty field. Defaults to a running placeholder with no label or body.
+// differs (reasoning text, a finished status). Defaults to a running placeholder
+// with no body.
 function thinkingPart(fields: Partial<ThinkingPart> = {}): ThinkingPart {
-  return { kind: "thinking", content: "", focus: "", icon: "", status: "running", ...fields };
+  return { kind: "thinking", content: "", status: "running", ...fields };
 }
 
 function isThinkingPart(part: AgentPart): part is ThinkingPart {
@@ -124,64 +124,32 @@ function nextAgentToolSequence(step: AgentStep): number {
   return nextToolSequence(step.parts.filter(isToolPart));
 }
 
-// A focus-set (the flag) is worth persisting even with no body; reasoning text
-// is too. A bare "Thinking" status placeholder is not — it exists only to
-// shimmer while the step is mid-reasoning, and must not linger once the step
-// moves on (otherwise every iteration leaves an empty "Thinking" block behind).
-function isSubstantiveThinking(part: ThinkingPart): boolean {
-  return part.content.trim() !== "" || part.icon === "focus";
-}
-
-// Replace the thinking part at `index` with the result of `update`. The map
-// narrows the part for the updater, so call sites get the existing part typed.
-function patchThinkingAt(step: AgentStep, index: number, update: (part: ThinkingPart) => ThinkingPart): AgentStep {
-  return {
-    ...step,
-    parts: step.parts.map((part, partIndex) =>
-      partIndex === index && isThinkingPart(part) ? update(part) : part
-    ),
-  };
-}
-
-// Close out any in-flight thinking part. Called before a new prose block, tool
-// call, or the step finishing — mirrors the main chat closing its running
-// thinking indicator. Substantive parts are kept (marked done); bare placeholders
-// are dropped so no stale "Thinking" shimmer lingers.
+// Close out any in-flight thinking part (mark it done). Called before a new
+// prose block, tool call, or the step finishing. Parts persist — a finished
+// "Thinking" stays as the marker for that reasoning phase.
 function finishAgentThinking(step: AgentStep): AgentStep {
   if (!step.parts.some(isRunningThinking)) return step;
+  return { ...step, parts: step.parts.map((part) => (isRunningThinking(part) ? { ...part, status: "done" } : part)) };
+}
+
+// The single path for the thinking signal — the iteration-start ping and any
+// streamed reasoning. Ensures a running thinking part exists, then appends the
+// reasoning text. A bare ping just keeps the part alive (no body, no second
+// placeholder stacked).
+function applyAgentThinking(step: AgentStep, text: string): AgentStep {
+  let index = step.parts.findLastIndex(isRunningThinking);
+  let parts = step.parts;
+  if (index === -1) {
+    parts = [...parts, thinkingPart()];
+    index = parts.length - 1;
+  }
+  if (!text) return { ...step, parts };
   return {
     ...step,
-    parts: step.parts.flatMap((part): AgentPart[] => {
-      if (!isRunningThinking(part)) return [part];
-      return isSubstantiveThinking(part) ? [{ ...part, status: "done" }] : [];
-    }),
+    parts: parts.map((part, partIndex) =>
+      partIndex === index && isThinkingPart(part) ? { ...part, content: part.content + text } : part
+    ),
   };
-}
-
-// Update the running thinking part's label/icon, or open a new one — the
-// parts-model equivalent of the main chat's setRunningThinking.
-function setRunningAgentThinking(step: AgentStep, focus: string, icon: string): AgentStep {
-  const index = step.parts.findLastIndex(isRunningThinking);
-  if (index === -1) return { ...step, parts: [...step.parts, thinkingPart({ focus, icon })] };
-  return patchThinkingAt(step, index, (part) => ({ ...part, focus, icon }));
-}
-
-// A focus-set starts a new thinking step. Finalize whatever is running so it
-// persists, then open a fresh one — but if the running step already shows this
-// exact focus, leave it as-is (mirrors the main chat's setThinkingFocus).
-function setAgentThinkingFocus(step: AgentStep, focus: string, icon: string): AgentStep {
-  const running = step.parts[step.parts.findLastIndex(isRunningThinking)];
-  if (running?.kind === "thinking" && running.focus === focus && running.icon === icon) return step;
-  const finished = finishAgentThinking(step);
-  return { ...finished, parts: [...finished.parts, thinkingPart({ focus, icon })] };
-}
-
-// Append reasoning text to the last thinking part, or open one if none exists.
-function appendAgentThinkingText(step: AgentStep, text: string): AgentStep {
-  if (!text) return step;
-  const index = step.parts.findLastIndex(isThinkingPart);
-  if (index === -1) return { ...step, parts: [...step.parts, thinkingPart({ content: text, status: "done" })] };
-  return patchThinkingAt(step, index, (part) => ({ ...part, content: part.content + text }));
 }
 
 function appendAgentText(step: AgentStep, text: string): AgentStep {
@@ -503,45 +471,23 @@ function finishRunningThinking(state: ReduceState): void {
   );
 }
 
-function setRunningThinking(state: ReduceState, focus: string, icon: string): void {
-  const index = state.messages.findLastIndex(isRunningThinkingMessage);
-  if (index !== -1) {
-    state.messages = state.messages.map((message, messageIndex) =>
-      messageIndex === index ? { ...message, meta: { ...message.meta, focus, icon } } : message
-    );
-    return;
+// The single path for the thinking signal — the iteration-start ping and any
+// streamed reasoning. Ensures a running thinking message exists, then appends
+// the reasoning text. A bare ping just keeps it alive (no body, no second
+// placeholder stacked).
+function applyThinking(state: ReduceState, text: string): void {
+  let index = state.messages.findLastIndex(isRunningThinkingMessage);
+  if (index === -1) {
+    state.messages = [
+      ...state.messages,
+      { id: `status-${state.messages.length}`, role: "thinking", content: "", timestamp: new Date().toISOString(), meta: { status: "running" } },
+    ];
+    index = state.messages.length - 1;
   }
-  state.messages = [
-    ...state.messages,
-    {
-      id: `status-${state.messages.length}`,
-      role: "thinking",
-      content: "",
-      timestamp: new Date().toISOString(),
-      meta: { status: "running", focus, icon },
-    },
-  ];
-}
-
-function setThinkingFocus(state: ReduceState, focus: string, icon: string): void {
-  // A focus-set starts a new thinking step. Finalize whatever is currently
-  // running so it persists in the timeline — an entry that was already shown
-  // (e.g. the generic "Thinking" placeholder) must never be replaced or removed.
-  // If the running step already shows this exact focus, leave it as-is.
-  const lastIndex = state.messages.findLastIndex(isRunningThinkingMessage);
-  const last = lastIndex !== -1 ? state.messages[lastIndex] : undefined;
-  if (last && last.meta?.focus === focus && last.meta?.icon === icon) return;
-  finishRunningThinking(state);
-  state.messages = [
-    ...state.messages,
-    {
-      id: `status-${state.messages.length}`,
-      role: "thinking",
-      content: "",
-      timestamp: new Date().toISOString(),
-      meta: { status: "running", focus, icon },
-    },
-  ];
+  if (!text) return;
+  state.messages = state.messages.map((message, messageIndex) =>
+    messageIndex === index ? { ...message, content: message.content + text } : message
+  );
 }
 
 function hasAssistantTextAfterLastUser(state: ReduceState): boolean {
@@ -615,34 +561,16 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
   const kind = String(data.kind ?? "");
   switch (kind) {
     case "status": {
-      const code = String(data.code ?? "");
-      if (code === "thinking") {
-        setRunningThinking(state, String(data.label ?? "Thinking"), String(data.icon ?? ""));
-      } else if (code === "waiting_for_tools") {
-        // Implementation detail: the model has finished thinking and is paused
-        // on tool execution. Tool calls surface their own running/done status,
-        // so just close out any in-flight thinking indicator without leaving a
-        // "Waiting for tools..." placeholder behind.
-        finishRunningThinking(state);
-      }
+      // The model has finished thinking and is paused on tool execution. Tool
+      // calls surface their own running/done status, so just close out any
+      // in-flight thinking indicator. (The thinking ping itself is a `thinking`
+      // event now, not a status — this only handles the wait edge.)
+      if (String(data.code ?? "") === "waiting_for_tools") finishRunningThinking(state);
       break;
     }
-    case "thinking": {
-      const label = data.label ? String(data.label) : "";
-      const icon = String(data.icon ?? "");
-      const text = String(data.text ?? "");
-      if (label) setThinkingFocus(state, label, icon || "focus");
-      if (text) {
-        finishRunningThinking(state);
-        const index = state.messages.findLastIndex((message) => message.role === "thinking");
-        if (index !== -1) {
-          state.messages = state.messages.map((message, messageIndex) => (messageIndex === index ? { ...message, content: message.content + text } : message));
-        } else {
-          state.messages = [...state.messages, { id: `thinking-${state.messages.length}`, role: "thinking", content: text, timestamp: new Date().toISOString(), meta: { focus: label, icon: icon || "focus" } }];
-        }
-      }
+    case "thinking":
+      applyThinking(state, String(data.text ?? ""));
       break;
-    }
     case "tool_call": {
       if (isControlToolName(data.name)) break;
       finishRunningThinking(state);
@@ -717,31 +645,16 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     case "sub_task_text":
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentText(step, String(data.text ?? "")));
       break;
-    case "sub_task_thinking": {
-      const groupId = String(data.groupId ?? "");
-      const stepId = String(data.stepId ?? "");
-      const label = data.label ? String(data.label) : "";
-      const icon = String(data.icon ?? "");
-      const text = String(data.text ?? "");
-      if (label) {
-        state.agentGroups = withStep(state.agentGroups, groupId, stepId, (step) => setAgentThinkingFocus(step, label, icon || "focus"));
-      }
-      if (text) {
-        state.agentGroups = withStep(state.agentGroups, groupId, stepId, (step) => appendAgentThinkingText(finishAgentThinking(step), text));
-      }
+    case "sub_task_thinking":
+      state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
+        applyAgentThinking(step, String(data.text ?? ""))
+      );
       break;
-    }
-    case "sub_task_status": {
-      const code = String(data.code ?? "");
-      if (code === "thinking") {
-        state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) =>
-          setRunningAgentThinking(step, String(data.label ?? "Thinking"), String(data.icon ?? ""))
-        );
-      } else if (code === "waiting_for_tools") {
+    case "sub_task_status":
+      if (String(data.code ?? "") === "waiting_for_tools") {
         state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), finishAgentThinking);
       }
       break;
-    }
     case "sub_task_tool_call":
       if (isControlToolName(data.name)) break;
       state.agentGroups = withStep(state.agentGroups, String(data.groupId ?? ""), String(data.stepId ?? ""), (step) => appendAgentToolCall(step, String(data.name ?? "unknown"), data.arguments as Record<string, unknown> | undefined, String(data.toolCallId ?? "")));

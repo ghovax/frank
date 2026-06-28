@@ -8,7 +8,7 @@ import { ToolCall } from "./tool-call";
 
 // Renders an agent step's ordered timeline — prose, reasoning, and tool calls
 // interleaved exactly as they occurred. The same building blocks the main chat
-// uses (MarkdownContent for text, ThinkingIndicator for reasoning/focus,
+// uses (MarkdownContent for text, ThinkingIndicator for reasoning,
 // ToolCall for tool calls), so an agent's activity reads identically whether
 // shown inline or in the agents panel.
 export function AgentTimeline({
@@ -24,13 +24,7 @@ export function AgentTimeline({
         part.kind === "text" ? (
           <MarkdownContent key={`text-${index}`} content={part.content} />
         ) : part.kind === "thinking" ? (
-          <ThinkingIndicator
-            key={`thinking-${index}`}
-            content={part.content}
-            focus={part.focus}
-            icon={part.icon}
-            status={part.status}
-          />
+          <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} />
         ) : (
           <ToolCall
             key={`tool-${index}`}

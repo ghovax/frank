@@ -394,10 +394,10 @@ class HarnessAgentExecutor(AgentExecutor):
                     await text_buffer.push(data.get("text", ""))
                 elif kind == StreamEvent.Type.THINKING:
                     await flush_stream_buffers()
-                    await emit(_data_part("thinking", text=data.get("text", ""), label=data.get("label", ""), icon=data.get("icon", "")))
+                    await emit(_data_part("thinking", text=data.get("text", "")))
                 elif kind == StreamEvent.Type.STATUS:
                     await flush_stream_buffers()
-                    await emit(_data_part("status", code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", "")))
+                    await emit(_data_part("status", code=data.get("code", "")))
                 elif kind == StreamEvent.Type.TOOL_CALL:
                     await flush_stream_buffers()
                     await emit(_data_part(
@@ -452,7 +452,7 @@ class HarnessAgentExecutor(AgentExecutor):
                     )
                 elif kind == StreamEvent.Type.AGENT_THINKING:
                     await flush_stream_buffers()
-                    await emit_sub("sub_task_thinking", data, text=data.get("text", ""), label=data.get("label", ""), icon=data.get("icon", ""))
+                    await emit_sub("sub_task_thinking", data, text=data.get("text", ""))
                 elif kind == StreamEvent.Type.AGENT_TOOL_CALL:
                     await flush_stream_buffers()
                     await emit_sub("sub_task_tool_call", data, name=data.get("name", ""), arguments=data.get("arguments", {}), toolCallId=data.get("toolCallId", ""))
@@ -464,7 +464,7 @@ class HarnessAgentExecutor(AgentExecutor):
                     await emit_sub("sub_task_mcp_event", data, event=data.get("event", {}), toolCallId=data.get("toolCallId", ""))
                 elif kind == StreamEvent.Type.AGENT_STATUS:
                     await flush_stream_buffers()
-                    await emit_sub("sub_task_status", data, code=data.get("code", ""), label=data.get("label", ""), icon=data.get("icon", ""))
+                    await emit_sub("sub_task_status", data, code=data.get("code", ""))
                 elif kind == StreamEvent.Type.AGENT_DONE:
                     await flush_stream_buffers()
                     await emit_sub("sub_task_done", data, task=data.get("task"))
@@ -570,9 +570,9 @@ class AgentRegistry:
                             elif isinstance(root, DataPart):
                                 data_kind = root.data.get(PART_KIND)
                                 if data_kind == "thinking":
-                                    yield {"type": "thinking", "text": root.data.get("text", ""), "label": root.data.get("label", ""), "icon": root.data.get("icon", ""), "child_task_id": child_task_id}
+                                    yield {"type": "thinking", "text": root.data.get("text", ""), "child_task_id": child_task_id}
                                 elif data_kind == "status":
-                                    yield {"type": "status", "code": root.data.get("code", ""), "label": root.data.get("label", ""), "icon": root.data.get("icon", ""), "child_task_id": child_task_id}
+                                    yield {"type": "status", "code": root.data.get("code", ""), "child_task_id": child_task_id}
                                 elif data_kind == "tool_call":
                                     yield {
                                         "type": "tool_call",

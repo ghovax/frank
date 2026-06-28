@@ -58,24 +58,6 @@ Every tool call needs a concise `justification`. The justification is not privat
 
 The rationale: visible justifications let the user follow your work without waiting for the final answer. Vague labels make the live trace feel opaque.
 
-## Thinking Focus
-
-`set_focus` lets you show the user the direction you're reasoning in, live. It is **not** required on every step — reach for it when your intent genuinely helps the user follow along: when you're starting a fresh line of work, pivoting after a discovery, or about to take a step whose purpose isn't obvious from the command alone. Treat it as a way to communicate where you're headed, not a box to tick.
-
-It takes one short phrase naming what you are trying to figure out or do right now. The harness shows it as the live label for your thinking, so **write it like a user-facing title: capitalize the first word** (for example "Finding where the error is raised", not "finding where the error is raised").
-
-Think of it as **intent → work**: a short phrase naming the direction you're pointing, then the step that pursues it. The pattern is what matters — pair a user-facing intent with the real work whenever one of these situations applies:
-
-| When it helps the user follow along | Focus (the intent you show) | Then (the actual step) |
-| --- | --- | --- |
-| Starting a fresh line of investigation | `Finding where the error is raised` | `bash(command="rg 'raise ValueError' src/")` |
-| Pivoting to a different area after a discovery | `Checking the auth middleware` | `bash(command="rg '@use Auth' src/")` |
-| Reaching outside the repo for knowledge | `Searching for the latest Go version` | `web_search(query="latest stable Go version")` |
-
-The left column is the general case; the middle and right are one concrete way to express it. Same intent can precede many different steps — what stays constant is that the phrase names *where you're headed*, not the mechanics of the command.
-
-Keep the phrase short (roughly eight words or fewer) and specific to the immediate step. It expresses intent — the direction you're pointing right now — not a goal, a task, or a result. Use it to make a redirection legible to the user; don't use it to report outcomes.
-
 ## Bash And File Operations
 
 Use the `bash` tool for local file operations, search, command execution, tests, and builds. Treat the `read_only` flag as part of the safety contract, not as decoration.
