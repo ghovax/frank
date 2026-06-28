@@ -279,7 +279,11 @@ class HarnessAgentExecutor(AgentExecutor):
             if not task_id:
                 return None
             task = await self._task_store.get(task_id)
-            return task.model_dump(by_alias=True, exclude_none=True, mode="json") if task else None
+            # Exclude `history` for the same reason as the delegate's done payload:
+            # read_task feeds a sibling/sub-agent task straight into the caller's
+            # model context, and the full transcript (incl. raw web-search text)
+            # would overflow it. Only the status + deliverable artifact are needed.
+            return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
         return read_task
 
     def _runtime_for(self, context_id: str, working_directory: str) -> AgentRuntime:
@@ -430,14 +434,18 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.ERROR:
                     await flush_stream_buffers()
                     failed_message = data.get("message", "error")
-                    await emit(_data_part("error", message=failed_message))
+                    await emit(_data_part(
+                        "error",
+                        message=failed_message,
+                        toolCallId=data.get("id", ""),
+                        name=data.get("tool", ""),
+                    ))
                 elif kind == StreamEvent.Type.AGENT_GROUP_STARTED:
                     await flush_stream_buffers()
                     await emit(_data_part(
                         "agent_group_started",
                         groupId=data.get("group_id", ""),
                         toolCallId=data.get("tool_call_id", ""),
-                        justification=data.get("justification", ""),
                         steps=data.get("steps", []),
                     ))
                 elif kind == StreamEvent.Type.AGENT_TEXT_CHUNK:
@@ -596,13 +604,28 @@ class AgentRegistry:
                                         "toolCallId": root.data.get("toolCallId", ""),
                                         "child_task_id": child_task_id,
                                     }
+                                elif data_kind == "error":
+                                    yield {
+                                        "type": "error",
+                                        "message": root.data.get("message", ""),
+                                        "name": root.data.get("name", ""),
+                                        "toolCallId": root.data.get("toolCallId", ""),
+                                        "child_task_id": child_task_id,
+                                    }
                 elif isinstance(event, TaskArtifactUpdateEvent):
                     child_task_id = event.task_id or child_task_id
             final_task = await self._task_store.get(child_task_id) if child_task_id else None
             yield {
                 "type": "done",
                 "child_task_id": child_task_id,
-                "task": final_task.model_dump(by_alias=True, exclude_none=True, mode="json") if final_task else None,
+                # Hand back only the sub-agent's deliverable (status + result artifact),
+                # never its `history`. The history holds every relayed event — including
+                # full web-search page text — and the parent serializes this task into
+                # its own model context as the spawn_agent result; injecting the whole
+                # transcript overflows the context window. The live agents panel is fed
+                # by the separate streamed events above, so it is unaffected, and the UI
+                # result card only reads the artifact.
+                "task": final_task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if final_task else None,
             }
 
         return delegate

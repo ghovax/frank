@@ -27,8 +27,11 @@ interface ChatPanelProps {
   onSessionCreated: (sessionId: string) => void;
   onSlashCommand?: (command: string) => void;
   workingDirectory?: string;
+  recentProjects?: { path: string; name: string }[];
   onWorkingDirectoryChange?: (dir: string) => void;
   onBrowseFolder?: () => void;
+  sandboxEnabled?: boolean;
+  onSandboxEnabledChange?: (enabled: boolean) => void;
   isConnected?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
@@ -44,8 +47,11 @@ export function ChatPanel({
   sessionRunning = false,
   onSessionCreated,
   workingDirectory,
+  recentProjects,
   onWorkingDirectoryChange,
   onBrowseFolder,
+  sandboxEnabled = true,
+  onSandboxEnabledChange,
   isConnected = false,
   onStreamingChange,
   historyOpen = false,
@@ -280,8 +286,11 @@ export function ChatPanel({
           disabled={!isConnected}
           sessionId={sessionId}
           workingDirectory={workingDirectory}
+          recentProjects={recentProjects}
           onWorkingDirectoryChange={onWorkingDirectoryChange}
           onBrowseFolder={onBrowseFolder}
+          sandboxEnabled={sandboxEnabled}
+          onSandboxEnabledChange={onSandboxEnabledChange}
           agents={agents}
           selectedAgent={agent}
           onAgentChange={onAgentChange}

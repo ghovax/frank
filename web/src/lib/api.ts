@@ -50,6 +50,12 @@ export interface Settings {
   sandbox_enabled: boolean;
 }
 
+export interface RecentProject {
+  path: string;
+  name: string;
+  last_used_at: string;
+}
+
 // API credentials stored in ~/.harness/configuration.yaml.
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
@@ -57,12 +63,40 @@ export async function fetchSettings(): Promise<Settings> {
   return response.json();
 }
 
-export async function saveSettings(settings: Settings): Promise<void> {
+export async function saveSettings(settings: Pick<Settings, "api_key" | "exa_api_key">): Promise<void> {
   await fetch(`${API_BASE}/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
   });
+}
+
+export async function setSandboxEnabled(enabled: boolean): Promise<void> {
+  await fetch(`${API_BASE}/settings/sandbox`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function fetchRecentProjects(): Promise<RecentProject[]> {
+  const response = await fetch(`${API_BASE}/projects/recent`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.projects ?? [];
+}
+
+// Records a selection and returns the server's canonical {path, name} for it —
+// the server owns the folder-name derivation, so the client never parses paths.
+export async function recordRecentProject(path: string): Promise<{ path: string; name: string } | null> {
+  const response = await fetch(`${API_BASE}/projects/recent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data.saved ? { path: data.path, name: data.name } : null;
 }
 
 export interface McpTool {
@@ -105,7 +139,7 @@ export async function fetchHomeDirectory(): Promise<string> {
   return data.home_directory;
 }
 
-export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; running?: boolean }[]> {
+export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; working_directory?: string; running?: boolean }[]> {
   const response = await fetch(`${API_BASE}/sessions`);
   const data = await response.json();
   return data.sessions;

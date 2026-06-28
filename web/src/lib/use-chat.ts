@@ -76,7 +76,6 @@ export interface AgentStep {
 export interface AgentGroup {
   groupId: string;
   toolCallId: string;
-  justification: string;
   steps: AgentStep[];
 }
 
@@ -132,6 +131,18 @@ function finishAgentThinking(step: AgentStep): AgentStep {
   return { ...step, parts: step.parts.map((part) => (isRunningThinking(part) ? { ...part, status: "done" } : part)) };
 }
 
+function finishRunningAgentTools(step: AgentStep): AgentStep {
+  if (!step.parts.some((part) => isToolPart(part) && part.status === "running")) return step;
+  return {
+    ...step,
+    parts: step.parts.map((part) =>
+      isToolPart(part) && part.status === "running"
+        ? { ...part, status: "completed" as const }
+        : part
+    ),
+  };
+}
+
 // The single path for the thinking signal — the iteration-start ping and any
 // streamed reasoning. Ensures a running thinking part exists, then appends the
 // reasoning text. A bare ping just keeps the part alive (no body, no second
@@ -176,17 +187,18 @@ function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Recor
 }
 
 function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string, result: unknown): AgentStep {
+  const status = asRecord(result).code === "tool_error" ? "failed" as const : "completed" as const;
   let matched = false;
   const parts = step.parts.map((part) => {
     if (!isToolPart(part) || !isSameToolEvent(part, name, toolCallId)) return part;
     matched = true;
-    return { ...part, result, status: "completed" as const };
+    return { ...part, result, status };
   });
   if (matched) return { ...step, parts };
   // No matching call (result arrived first / orphaned) — record it as a finished tool.
   return {
     ...step,
-    parts: [...step.parts, { kind: "tool", name: name || "unknown", sequenceNumber: nextAgentToolSequence(step), toolCallId, result, status: "completed" }],
+    parts: [...step.parts, { kind: "tool", name: name || "unknown", sequenceNumber: nextAgentToolSequence(step), toolCallId, result, status }],
   };
 }
 
@@ -217,7 +229,7 @@ function finishAgentStep(step: AgentStep, task: A2ATask | undefined): AgentStep 
   const state = (task?.status?.state as TaskState) ?? "completed";
   const artifactText = taskArtifactText(task);
   const hasText = step.parts.some((part) => part.kind === "text");
-  const next = finishAgentThinking(!hasText && artifactText ? appendAgentText(step, artifactText) : step);
+  const next = finishRunningAgentTools(finishAgentThinking(!hasText && artifactText ? appendAgentText(step, artifactText) : step));
   return { ...next, state, task };
 }
 
@@ -446,7 +458,6 @@ function startAgentGroup(state: ReduceState, data: Record<string, unknown>): voi
       {
         groupId,
         toolCallId: String(data.toolCallId ?? ""),
-        justification: String(data.justification ?? ""),
         steps: newSteps,
       },
     ];
@@ -467,6 +478,14 @@ function finishRunningThinking(state: ReduceState): void {
   state.messages = state.messages.map((message) =>
     isRunningThinkingMessage(message)
       ? { ...message, meta: { ...message.meta, status: "done" } }
+      : message
+  );
+}
+
+function finishRunningTools(state: ReduceState): void {
+  state.messages = state.messages.map((message) =>
+    message.role === "tool_call" && message.meta?.status === "running"
+      ? { ...message, meta: { ...message.meta, status: "completed" } }
       : message
   );
 }
@@ -506,7 +525,7 @@ function toolEventFromMessage(message: ChatMessage): ToolEvent | null {
     sequenceNumber: message.meta?.sequenceNumber as number | undefined,
     toolCallId: String(message.meta?.toolCallId ?? ""),
     result: message.meta?.result,
-    status: status === "running" || status === "completed" || status === "done" ? status : undefined,
+    status: status === "running" || status === "completed" || status === "done" || status === "failed" ? status : undefined,
   };
 }
 
@@ -597,11 +616,25 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
       const mergedResult = data.name === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, data.result) : data.result;
       const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
+      let matched = false;
       state.messages = artifactUpdate.messages.map((message) =>
         messageMatchesToolEvent(message, toolName, toolCallId)
-          ? { ...message, meta: { ...message.meta, status: "completed", result: artifactUpdate.result } }
+          ? (matched = true, { ...message, meta: { ...message.meta, status: "completed", result: artifactUpdate.result } })
           : message
       );
+      if (!matched) {
+        const sequence = nextToolSequence(messageToolEvents(state.messages));
+        state.messages = [
+          ...state.messages,
+          {
+            id: `toolcall-${toolCallId || crypto.randomUUID()}`,
+            role: "tool_call",
+            content: toolName || "unknown",
+            timestamp: new Date().toISOString(),
+            meta: { toolCallId, sequenceNumber: sequence, status: "completed", result: artifactUpdate.result },
+          },
+        ];
+      }
       break;
     }
     case "mcp_event": {
@@ -633,6 +666,18 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     }
     case "error": {
       finishRunningThinking(state);
+      const toolName = String(data.name ?? data.tool ?? "");
+      const toolCallId = String(data.toolCallId ?? "");
+      if (toolCallId) {
+        const result = { code: "tool_error", message: String(data.message ?? "Unknown error") };
+        let matched = false;
+        state.messages = state.messages.map((message) =>
+          messageMatchesToolEvent(message, toolName, toolCallId)
+            ? (matched = true, { ...message, meta: { ...message.meta, status: "failed", result } })
+            : message
+        );
+        if (matched) break;
+      }
       state.messages = [
         ...state.messages,
         { id: `error-${state.messages.length}`, role: "error", content: String(data.message ?? "Unknown error"), timestamp: new Date().toISOString() },
@@ -700,6 +745,7 @@ function reduceArtifactUpdate(state: ReduceState, result: Extract<A2AStreamResul
 function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, { kind: "status-update" }>): void {
   if (result.final || TERMINAL_STATES.has(result.status?.state as TaskState)) {
     finishRunningThinking(state);
+    finishRunningTools(state);
   }
 }
 

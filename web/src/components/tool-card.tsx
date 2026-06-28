@@ -116,7 +116,14 @@ export function ToolCardSection({
   );
 }
 
-export function ToolStatusBadge({ status }: { status: "running" | "completed" | "done" }) {
+export function ToolStatusBadge({ status }: { status: "running" | "completed" | "done" | "failed" }) {
+  if (status === "failed") {
+    return (
+      <Badge size="sm" variant="subtle" colorPalette="red" borderRadius="sm" flexShrink={0}>
+        Failed
+      </Badge>
+    );
+  }
   const done = status === "completed" || status === "done";
   return (
     <Badge size="sm" variant="subtle" colorPalette={done ? "green" : "blue"} borderRadius="sm" flexShrink={0}>

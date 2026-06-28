@@ -68,6 +68,16 @@ class SessionRecord(Base):
     created_at = Column(String, nullable=False)
 
 
+class ProjectHistoryRecord(Base):
+    """Recent working directories selected in the UI."""
+
+    __tablename__ = "project_history"
+
+    path = Column(Text, primary_key=True)
+    name = Column(Text, default="")
+    selected_at = Column(String, nullable=False)
+
+
 class Broadcaster:
     """A tiny in-process pub/sub. Subscribers receive every broadcast event,
     which is how live changes (e.g. edited agents) reach connected clients."""
@@ -155,6 +165,40 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
     except RuntimeError:
         # No running event loop (e.g. called outside a request) — keep the provisional title.
         pass
+
+
+def _project_name(path: str) -> str:
+    normalized = path.rstrip("/\\")
+    return Path(normalized).name or normalized or path
+
+
+def _record_project_path(path_value: str) -> str | None:
+    directory = path_value.strip()
+    if not directory:
+        return None
+    path = Path(directory).expanduser()
+    if not path.is_absolute() or not path.exists() or not path.is_dir():
+        return None
+
+    resolved = str(path)
+    assert _session_factory is not None
+    database_session = _session_factory()
+    try:
+        record = database_session.get(ProjectHistoryRecord, resolved)
+        selected_at = datetime.now(timezone.utc).isoformat()
+        if record is None:
+            database_session.add(ProjectHistoryRecord(
+                path=resolved,
+                name=_project_name(resolved),
+                selected_at=selected_at,
+            ))
+        else:
+            record.name = _project_name(resolved)
+            record.selected_at = selected_at
+        database_session.commit()
+    finally:
+        database_session.close()
+    return resolved
 
 
 class SessionTitle(BaseModel):
@@ -405,6 +449,10 @@ class DirectoryValidationRequest(BaseModel):
     directory: str
 
 
+class RecentProjectRequest(BaseModel):
+    path: str
+
+
 class PermissionRequest(BaseModel):
     request_id: str
     decision: str
@@ -417,7 +465,10 @@ class PermissionModeRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     api_key: str
     exa_api_key: str
-    sandbox_enabled: bool = True
+
+
+class SandboxUpdateRequest(BaseModel):
+    enabled: bool
 
 
 class MCPToolCallRequest(BaseModel):
@@ -486,6 +537,52 @@ async def home_directory():
     return {"home_directory": str(Path.home())}
 
 
+@app.get("/projects/recent")
+async def recent_projects():
+    """Recent working directories selected in the UI or used by sessions."""
+    assert _session_factory is not None
+    database_session = _session_factory()
+    try:
+        projects: dict[str, dict[str, str]] = {}
+        project_rows = database_session.query(ProjectHistoryRecord).order_by(ProjectHistoryRecord.selected_at.desc()).all()
+        for row in project_rows:
+            if row.path:
+                projects[row.path] = {
+                    "path": row.path,
+                    "name": row.name or _project_name(row.path),
+                    "last_used_at": row.selected_at,
+                }
+
+        session_rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).all()
+        for row in session_rows:
+            path = (row.working_directory or "").strip()
+            if not path:
+                continue
+            existing = projects.get(path)
+            if existing is None or row.created_at > existing["last_used_at"]:
+                projects[path] = {
+                    "path": path,
+                    "name": _project_name(path),
+                    "last_used_at": row.created_at,
+                }
+
+        return {
+            "projects": sorted(projects.values(), key=lambda project: project["last_used_at"], reverse=True)
+        }
+    finally:
+        database_session.close()
+
+
+@app.post("/projects/recent")
+async def record_recent_project(request: RecentProjectRequest):
+    """Record a validated working directory selection."""
+    path = _record_project_path(request.path)
+    if not path:
+        return {"saved": False}
+    _broadcaster.publish({"type": "projects_changed"})
+    return {"saved": True, "path": path, "name": _project_name(path)}
+
+
 @app.get("/settings")
 async def get_settings():
     """Return the API credentials stored in ~/.harness/configuration.yaml so the
@@ -507,11 +604,9 @@ async def update_settings(request: SettingsUpdateRequest):
     save_api_keys(
         api_key=request.api_key,
         exa_api_key=request.exa_api_key,
-        sandbox_enabled=request.sandbox_enabled,
     )
     _global_configuration.api.api_key = request.api_key
     _global_configuration.exa.api_key = request.exa_api_key
-    _global_configuration.sandbox.enabled = request.sandbox_enabled
 
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
@@ -523,6 +618,17 @@ async def update_settings(request: SettingsUpdateRequest):
     for executor in _executors.values():
         executor.reset_runtimes()
     return {"status": "saved"}
+
+
+@app.post("/settings/sandbox")
+async def update_sandbox(request: SandboxUpdateRequest):
+    """Persist and apply the sandbox toggle independently from credentials."""
+    assert _global_configuration is not None
+    save_api_keys(sandbox_enabled=request.enabled)
+    _global_configuration.sandbox.enabled = request.enabled
+    for executor in _executors.values():
+        executor.reset_runtimes()
+    return {"status": "saved", "sandbox_enabled": _global_configuration.sandbox.enabled}
 
 
 @app.get("/mcp/tools")
@@ -700,6 +806,7 @@ async def list_sessions():
                     "agent": row.agent,
                     "title": row.title,
                     "created_at": row.created_at,
+                    "working_directory": row.working_directory,
                     "running": row.id in _running_contexts,
                 }
                 for row in rows

@@ -1,4 +1,4 @@
-export type ToolEventStatus = "running" | "completed" | "done";
+export type ToolEventStatus = "running" | "completed" | "done" | "failed";
 
 const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal"]);
 

@@ -78,6 +78,7 @@ from harness.core.handoff import (
 )
 from harness.core.memories import load_memories, memories_payload
 from harness.core.skills import load_skills, enabled_skills, skills_for_agent, skills_payload
+from harness.identifiers import new_id
 
 from a2a.types import Task, TaskState
 
@@ -1193,7 +1194,7 @@ class AgentRuntime:
                         command=command,
                     )
                     return
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4().hex}"
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
                 try:
@@ -1245,7 +1246,7 @@ class AgentRuntime:
                 )
                 return
             elif not read_only and (permission_decision == "ask" or risk in ("medium", "high")):
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4().hex}"
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
                 try:
@@ -1281,7 +1282,7 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
                 return
             if not self._bypass_permissions and not read_only and risk in ("medium", "high"):
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4().hex}"
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
                 future = asyncio.get_event_loop().create_future()
                 self._pending_permissions[request_identifier] = future
                 try:
@@ -1363,7 +1364,7 @@ class AgentRuntime:
             if isinstance(sub_agent_read_only, str):
                 sub_agent_read_only = sub_agent_read_only.lower() == "true"
             sub_agent_prompt = self._build_sub_agent_prompt(raw_sub_agent_prompt, sub_agent_read_only)
-            spawn_step_id = f"agent-{uuid.uuid4().hex}"
+            spawn_step_id = new_id("agent")
 
             try:
                 sub_configuration = self._load_sub_agent(sub_agent_name)
@@ -1382,7 +1383,6 @@ class AgentRuntime:
                 StreamEvent.Type.AGENT_GROUP_STARTED,
                 group_id=group_id,
                 tool_call_id=tool_call_identifier,
-                justification="Sub-agents",
                 steps=[{"id": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt}],
             )
             self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt})
@@ -1409,6 +1409,14 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=delegated.get("name", ""), result=delegated.get("result"), toolCallId=delegated.get("toolCallId", ""), **common)
                     elif delegated_kind == "mcp_event":
                         yield StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=delegated.get("toolCallId", ""), event=delegated.get("event", {}), **common)
+                    elif delegated_kind == "error":
+                        yield StreamEvent(
+                            StreamEvent.Type.AGENT_TOOL_RESULT,
+                            name=delegated.get("name", "") or "unknown",
+                            result={"code": "tool_error", "message": delegated.get("message", "Unknown error")},
+                            toolCallId=delegated.get("toolCallId", ""),
+                            **common,
+                        )
                     elif delegated_kind == "done":
                         child_task = delegated.get("task")
                         yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
@@ -1437,6 +1445,14 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=event.data.get("name", ""), result=event.data.get("result"), toolCallId=event.data.get("id", ""), **common)
                     elif event.type == StreamEvent.Type.MCP_EVENT:
                         yield StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=event.data.get("id", ""), event=event.data.get("event", {}), **common)
+                    elif event.type == StreamEvent.Type.ERROR:
+                        yield StreamEvent(
+                            StreamEvent.Type.AGENT_TOOL_RESULT,
+                            name=event.data.get("tool", "") or "unknown",
+                            result={"code": "tool_error", "message": event.data.get("message", "Unknown error")},
+                            toolCallId=event.data.get("id", ""),
+                            **common,
+                        )
                     elif event.type == StreamEvent.Type.DONE:
                         final_text = event.data.get("text", final_text)
                 child_task = serialize_task(build_task(spawn_step_id, sub_agent_name, TaskState.completed, final_text))

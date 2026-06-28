@@ -4,12 +4,13 @@ import json
 import re
 import signal
 import sys
-import uuid
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
 from exa_py import Exa
 from langchain.tools import tool
+
+from harness.identifiers import new_id
 
 
 class TaskRegistry:
@@ -25,16 +26,16 @@ class TaskRegistry:
         self._tasks: dict[str, tuple[asyncio.Task, Path | None]] = {}
 
     def start(self, coroutine, output_path: Path | None = None) -> tuple[str, Path]:
-        identifier = f"{self._prefix}-{uuid.uuid4().hex}"
+        identifier = new_id(self._prefix)
         if output_path is None:
-            output_path = self._output_directory / f"{self._prefix}-{uuid.uuid4().hex}.log"
+            output_path = self._output_directory / f"{identifier}.log"
         task = asyncio.create_task(coroutine)
         self._tasks[identifier] = (task, output_path)
         return identifier, output_path
 
     def register(self, task: asyncio.Task, output_path: Path | None = None, identifier: str | None = None) -> str:
         if identifier is None:
-            identifier = f"{self._prefix}-{uuid.uuid4().hex}"
+            identifier = new_id(self._prefix)
         self._tasks[identifier] = (task, output_path)
         return identifier
 
@@ -128,7 +129,7 @@ async def bash(
               Low for read-only commands, medium for modifications,
               high for destructive operations.
     """
-    output_path = Path("/tmp") / f"bash-{uuid.uuid4().hex}.log"
+    output_path = Path("/tmp") / f"{new_id('bash')}.log"
 
     async def run() -> str:
         process = await asyncio.create_subprocess_shell(
@@ -206,7 +207,7 @@ async def web_search(
     if client is None:
         return json.dumps({"code": "web_search_error", "message": "Web search is not configured."})
 
-    output_path = Path("/tmp") / f"search-{uuid.uuid4().hex}.log"
+    output_path = Path("/tmp") / f"{new_id('search')}.log"
 
     async def run() -> str:
         try:
@@ -436,7 +437,7 @@ def build_widget_result(
     only compact metadata so the rendered markup never re-enters the model's
     context. Kept pure so it can be dispatched from the agent runtime.
     """
-    identifier = (artifact_id or "").strip() or f"widget-{uuid.uuid4().hex[:10]}"
+    identifier = (artifact_id or "").strip() or new_id("widget")
     mode = _widget_update_mode(artifact_update_mode)
     target_id = (artifact_target_id or "").strip() or identifier
     # Height defaults to automatic — the widget reports its own content height and

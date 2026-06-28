@@ -2,9 +2,8 @@
 
 import { Badge, Box, Flex, IconButton, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
-import { LuNetwork, LuX } from "react-icons/lu";
+import { LuBot, LuNetwork, LuX } from "react-icons/lu";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
-import { isStepDone } from "@/lib/use-chat";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
 
@@ -44,12 +43,24 @@ interface AgentsPanelProps {
   onResizeStart: (event: PointerEvent<HTMLDivElement>) => void;
 }
 
-function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: string; agents: { id: string; name: string; title?: string }[] }) {
+function StepCard({
+  step,
+  agentLabel,
+  agents,
+  sequenceNumber,
+}: {
+  step: AgentStep;
+  agentLabel: string;
+  agents: { id: string; name: string; title?: string }[];
+  sequenceNumber?: number;
+}) {
   const [open, setOpen] = useState(true);
 
   return (
     <ToolCard>
       <ToolCardHeader
+        sequenceNumber={sequenceNumber}
+        icon={<Box color="fg.muted"><LuBot size={12} /></Box>}
         title={step.goal || "Agent task"}
         badges={
           <>
@@ -80,53 +91,6 @@ function StepCard({ step, agentLabel, agents }: { step: AgentStep; agentLabel: s
   );
 }
 
-function AgentGroupCard({
-  group,
-  agentLabels,
-  agents,
-  sequenceNumber,
-}: {
-  group: AgentGroup;
-  agentLabels: Map<string, string>;
-  agents: { id: string; name: string; title?: string }[];
-  sequenceNumber?: number;
-}) {
-  const completed = group.steps.filter((step) => isStepDone(step)).length;
-  const total = group.steps.length;
-  const active = total - completed;
-  const [open, setOpen] = useState(true);
-
-  return (
-    <ToolCard>
-      <ToolCardHeader
-        sequenceNumber={sequenceNumber}
-        icon={<Box color="fg.muted"><LuNetwork size={12} /></Box>}
-        title={group.justification || "Sub-agents"}
-        badges={
-          <Badge size="sm" variant="surface" colorPalette={active > 0 ? "blue" : "green"} borderRadius="sm" flexShrink={0}>
-            {active > 0 ? `${active} working` : "Completed"}
-          </Badge>
-        }
-        open={open}
-        collapsible
-        onToggle={() => setOpen((current) => !current)}
-      />
-      {open && <ToolCardBody>
-        <Flex direction="column" gap={2}>
-          {group.steps.map((step) => (
-            <StepCard
-              key={step.stepId}
-              step={step}
-              agentLabel={agentLabels.get(step.agent) ?? step.agent}
-              agents={agents}
-            />
-          ))}
-        </Flex>
-      </ToolCardBody>}
-    </ToolCard>
-  );
-}
-
 export function AgentsPanel({
   agentGroups,
   agents,
@@ -138,6 +102,14 @@ export function AgentsPanel({
 }: AgentsPanelProps) {
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const agentLabels = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
+
+  // Sub-agents read as one flat, numbered list across all groups — the group is
+  // a logical anchor (for scroll-to focus), not a visual box. Each group's steps
+  // continue the running number, so offsets are precomputed.
+  const groupNumberOffsets = agentGroups.reduce<number[]>((offsets, group, index) => {
+    offsets.push(index === 0 ? 0 : offsets[index - 1] + agentGroups[index - 1].steps.length);
+    return offsets;
+  }, []);
 
   useEffect(() => {
     if (!open || !focusedGroupId) return;
@@ -189,8 +161,8 @@ export function AgentsPanel({
             <Text fontSize="xs" color="fg.muted">No agent activity yet.</Text>
           </Flex>
         ) : (
-          <Flex direction="column" gap={3}>
-            {agentGroups.map((group, index) => (
+          <Flex direction="column" gap={2}>
+            {agentGroups.map((group, groupIndex) => (
               <Box
                 key={group.groupId}
                 ref={(node: HTMLDivElement | null) => {
@@ -198,7 +170,17 @@ export function AgentsPanel({
                   else cardRefs.current.delete(group.groupId);
                 }}
               >
-                <AgentGroupCard group={group} agentLabels={agentLabels} agents={agents} sequenceNumber={index + 1} />
+                <Flex direction="column" gap={2}>
+                  {group.steps.map((step, stepIndex) => (
+                    <StepCard
+                      key={step.stepId}
+                      step={step}
+                      sequenceNumber={groupNumberOffsets[groupIndex] + stepIndex + 1}
+                      agentLabel={agentLabels.get(step.agent) ?? step.agent}
+                      agents={agents}
+                    />
+                  ))}
+                </Flex>
               </Box>
             ))}
           </Flex>

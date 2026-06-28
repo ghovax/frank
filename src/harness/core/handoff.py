@@ -9,15 +9,15 @@ and rendered by the UI. Nothing is flattened into a bespoke shape; the structure
 A2A object travels end to end so a run is fully reproducible at every layer.
 """
 
-import uuid
-
 from a2a.types import Artifact, Part, Task, TaskState, TaskStatus, TextPart
+
+from harness.identifiers import new_id
 
 
 def build_artifact(step_id: str, agent: str, text: str) -> Artifact:
     """Wrap an agent's final report as its deliverable artifact."""
     return Artifact(
-        artifact_id=f"artifact-{uuid.uuid4().hex}",
+        artifact_id=new_id("artifact"),
         name=f"{step_id} result" if step_id else "result",
         description=f"Final result produced by agent '{agent}'." if agent else "",
         parts=[Part(root=TextPart(text=text))],
@@ -37,8 +37,8 @@ def build_task(
     produced, so downstream agents still receive a legible explanation.
     """
     return Task(
-        id=f"task-{step_id}" if step_id else f"task-{uuid.uuid4().hex}",
-        context_id=f"ctx-{uuid.uuid4().hex}",
+        id=f"task-{step_id}" if step_id else new_id("task"),
+        context_id=new_id("ctx"),
         status=TaskStatus(state=state),
         artifacts=[build_artifact(step_id, agent, text)] if text else [],
     )

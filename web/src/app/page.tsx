@@ -4,7 +4,7 @@ import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui
 import { LuGripVertical, LuMessageSquare, LuPlus } from "react-icons/lu";
 import { Suspense, useCallback, useEffect, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchSessions, subscribeEvents, type AgentCard, type AgentSummary } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, subscribeEvents, type AgentCard, type AgentSummary, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
 interface SessionEntry {
@@ -12,6 +12,7 @@ interface SessionEntry {
   agent: string;
   title: string;
   createdAt: string;
+  workingDirectory: string;
   running: boolean;
 }
 
@@ -39,6 +40,8 @@ function HomeContent() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [chatKey, setChatKey] = useState(0);
   const [workingDirectory, setWorkingDirectory] = useState("");
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [sandboxEnabledState, setSandboxEnabledState] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyWidth, setHistoryWidth] = useState(280);
 
@@ -46,10 +49,48 @@ function HomeContent() {
     return window.matchMedia("(max-width: 767px)").matches;
   }, []);
 
+  const refreshRecentProjects = useCallback(() => {
+    fetchRecentProjects()
+      .then(setRecentProjects)
+      .catch(() => {});
+  }, []);
+
+  const selectWorkingDirectory = useCallback((directory: string) => {
+    const path = directory.trim();
+    setWorkingDirectory(path);
+    if (!path) return;
+    recordRecentProject(path)
+      .then((project) => {
+        // Surface the server's canonical name immediately so the selector never
+        // needs to derive a folder name from the path itself.
+        if (project) {
+          setRecentProjects((previous) => [
+            { ...project, last_used_at: new Date().toISOString() },
+            ...previous.filter((entry) => entry.path !== project.path),
+          ]);
+        }
+        refreshRecentProjects();
+      })
+      .catch(() => {});
+  }, [refreshRecentProjects]);
+
+  const applySessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>) => {
+    setSessions(
+      serverSessions.map((session) => ({
+        sessionId: session.session_id,
+        agent: session.agent,
+        title: session.title,
+        createdAt: session.created_at,
+        workingDirectory: session.working_directory ?? "",
+        running: session.running ?? false,
+      }))
+    );
+  }, []);
+
   async function handleBrowseFolder() {
     try {
       const result = await browseWorkingDirectory();
-      if (!result.cancelled && result.path) setWorkingDirectory(result.path);
+      if (!result.cancelled && result.path) selectWorkingDirectory(result.path);
     } catch {
       // user cancelled
     }
@@ -68,33 +109,31 @@ function HomeContent() {
     };
     const loadSessions = () => {
       fetchSessions()
-        .then((serverSessions) =>
-          setSessions(
-            serverSessions.map((session) => ({
-              sessionId: session.session_id,
-              agent: session.agent,
-              title: session.title,
-              createdAt: session.created_at,
-              running: session.running ?? false,
-            }))
-          )
-        )
+        .then(applySessions)
+        .catch(() => {});
+    };
+    const loadSettings = () => {
+      fetchSettings()
+        .then((settings) => setSandboxEnabledState(settings.sandbox_enabled ?? true))
         .catch(() => {});
     };
     loadAgents();
+    loadSettings();
     fetchHomeDirectory()
       .then((home) => setWorkingDirectory(home))
       .catch(() => {});
     loadSessions();
+    refreshRecentProjects();
 
     // Live reload: refresh agents when they change on disk, and the session list
     // when a session's (LLM-generated) title is updated.
     const unsubscribe = subscribeEvents((event) => {
       if (event.type === "agents_changed") loadAgents();
       if (event.type === "sessions_changed") loadSessions();
+      if (event.type === "projects_changed") refreshRecentProjects();
     });
     return unsubscribe;
-  }, []);
+  }, [applySessions, refreshRecentProjects]);
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
@@ -103,19 +142,9 @@ function HomeContent() {
 
   const refreshSessions = useCallback(() => {
     fetchSessions()
-      .then((serverSessions) =>
-        setSessions(
-          serverSessions.map((session) => ({
-            sessionId: session.session_id,
-            agent: session.agent,
-            title: session.title,
-            createdAt: session.created_at,
-            running: session.running ?? false,
-          }))
-        )
-      )
+      .then(applySessions)
       .catch(() => {});
-  }, []);
+  }, [applySessions]);
 
   const handleSessionCreated = useCallback(
     (sessionId: string) => {
@@ -123,11 +152,16 @@ function HomeContent() {
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
+      if (workingDirectory) {
+        recordRecentProject(workingDirectory)
+          .then(refreshRecentProjects)
+          .catch(() => {});
+      }
       if (isCompactViewport()) setHistoryOpen(false);
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [isCompactViewport, refreshSessions, router]
+    [isCompactViewport, refreshRecentProjects, refreshSessions, router, workingDirectory]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -147,6 +181,7 @@ function HomeContent() {
 
   function handleResumeSession(entry: SessionEntry) {
     setSelectedAgent(entry.agent);
+    if (entry.workingDirectory) selectWorkingDirectory(entry.workingDirectory);
     setActiveSessionId(entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
@@ -160,6 +195,16 @@ function HomeContent() {
     // up the same session (its system prompt is injected on top of the shared
     // history). Only an explicit "New conversation" starts a fresh session.
     setSelectedAgent(agentName);
+  }
+
+  async function handleSandboxEnabledChange(enabled: boolean) {
+    const previous = sandboxEnabledState;
+    setSandboxEnabledState(enabled);
+    try {
+      await setSandboxEnabled(enabled);
+    } catch {
+      setSandboxEnabledState(previous);
+    }
   }
 
   function handleSlashCommand(command: string) {
@@ -315,8 +360,11 @@ function HomeContent() {
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}
           workingDirectory={workingDirectory}
-          onWorkingDirectoryChange={setWorkingDirectory}
+          recentProjects={recentProjects.map((project) => ({ path: project.path, name: project.name }))}
+          onWorkingDirectoryChange={selectWorkingDirectory}
           onBrowseFolder={handleBrowseFolder}
+          sandboxEnabled={sandboxEnabledState}
+          onSandboxEnabledChange={handleSandboxEnabledChange}
           isConnected={isConnected}
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}

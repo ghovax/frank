@@ -38,7 +38,7 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
           badges={
             <>
               <ToolRiskBadges arguments={toolArguments} />
-              {status === "running" || status === "completed" ? <ToolStatusBadge status={status} /> : null}
+              {status === "running" || status === "completed" || status === "failed" ? <ToolStatusBadge status={status} /> : null}
             </>
           }
           open={open}
