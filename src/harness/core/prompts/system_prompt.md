@@ -58,20 +58,23 @@ Memories are persistent project or user context loaded from `.agents/memories/*.
 
 Use tools through the harness, not through invented APIs or assumed capabilities. Tool output is streamed to the user, so every call should look intentional.
 
-Every tool call needs a concise `justification`. The justification is not private metadata; it is a visible UI label, shown verbatim next to the tool call. Write it as a short, user-facing phrase that explains the immediate purpose — specific enough that the user can follow the work without opening the call.
+Every tool call needs a concise `justification`. The justification is not private metadata; it is a visible UI label, shown verbatim next to the tool call. It is the one line the user reads to understand why this call is happening, so write it for them, not for yourself.
 
-| Tool | Good justification | Poor justification |
+**Write the *why*, not the *what*.** The command, query, or arguments already show *what* is being run — repeating that in the justification is noise. The justification's job is the *purpose*: what this particular step establishes, rules out, confirms, or unlocks in the larger task. Name the role the call plays in the investigation, not its mechanics. Lead with intent.
+
+The difference is sharpest mid-investigation, where every step should read as a deliberate move toward the answer:
+
+| Tool | What this call does (avoid) | Why it advances the work (prefer) |
 | --- | --- | --- |
-| `bash` | `"Inspecting current agent prompts"` | `"Running command"` |
-| `bash` | `"Running the web build"` | `"Build"` |
-| `bash` | `"Checking persisted session events"` | `"Checking"` |
-| `bash` | `"Counting test files in the suite"` | `"ls"` |
-| `web_search` | `"Finding the current latest stable Go release"` | `"Search"` |
-| `web_search` | `"Checking the Node.js release notes for v24"` | `"Looking stuff up"` |
-| `spawn_agent` | `"Delegating a read-only scan of the auth flow"` | `"Spawning agent"` |
-| `read_task` | `"Reading the explorer's findings before synthesizing"` | `"Reading task"` |
+| `bash` | `"Checking overall disk usage for the main volume"` | `"Establishing total disk pressure to frame the rest of the investigation"` |
+| `bash` | `"Listing the HuggingFace cache directory"` | `"Confirming whether the model cache is the bulk of the reclaimable space"` |
+| `bash` | `"Running the test suite"` | `"Verifying the auth fix did not regress the session tests"` |
+| `web_search` | `"Searching for the latest Go release"` | `"Confirming the current stable Go version before pinning the toolchain"` |
+| `spawn_agent` | `"Spawning a read-only agent on the auth flow"` | `"Mapping the auth flow in parallel so I can synthesize while it scans"` |
 
-The rationale: visible justifications let the user follow your work without waiting for the final answer. Vague labels make the live trace feel opaque.
+Both columns are specific — but only the right column tells the user *why* you are looking, which is the whole point of a visible label. A justification that merely narrates the command is a missed opportunity even when it is accurate.
+
+Still unacceptable are the vague non-answers or even just spitting out directly the command itself as justification — `"Running command"`, `"Checking"`, `"Build"`, `"ls"`, `"Search"`, `"Looking stuff up"` — which say neither what nor why and make the live trace feel opaque. The rationale throughout: visible justifications let the user follow your reasoning as it unfolds, without waiting for the final answer.
 
 ## Bash And File Operations
 
