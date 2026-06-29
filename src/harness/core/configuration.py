@@ -24,7 +24,7 @@ DATABASE_FILENAME = "history.db"
 DEFAULT_CONFIGURATION_YAML = """\
 api:
   endpoint: "https://opencode.ai/zen/go/v1"
-  model: "mimo-v2.5"
+  model: "deepseek-v4-flash"
   api_key: ""
 
 exa:
