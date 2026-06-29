@@ -1,15 +1,20 @@
 import asyncio
 import json
 import platform
+import re
 import shutil
 import subprocess
+
+import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import quote, urljoin
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -43,7 +48,12 @@ from harness.core.configuration import (
 from harness.core.composio_router import composio_mcp_servers
 from harness.core.mcp_client import MCPClientManager
 from harness.core.skills import load_skills, skills_for_agent
-from harness.tools.tools import cancel_all_background_tasks, set_exa_client, set_mcp_client_manager
+from harness.tools.tools import (
+    cancel_all_background_tasks,
+    set_exa_client,
+    set_mcp_client_manager,
+    _inject_widget_runtime,
+)
 
 # Load .env (gitignored) so API keys are available via the environment without
 # being stored in the tracked configuration.yaml. Existing env vars win, so a
@@ -857,6 +867,189 @@ async def session_tasks(context_id: str):
         if task is not None:
             tasks.append(task.model_dump(by_alias=True, exclude_none=True, mode="json"))
     return {"tasks": tasks}
+
+
+@app.get("/preview/{file_path:path}")
+async def preview_file(file_path: str):
+    """Serve a local file for an ``open_web_preview`` artifact (the UI points a
+    sandboxed iframe here). HTML gets the widget runtime injected so a previewed
+    page can self-size, report render errors, and be interactive; everything else
+    (images, PDFs, CSS/JS assets a page references) is served verbatim so relative
+    links inside a previewed page resolve. Localhost-only, like the rest of the API."""
+    path = Path("/" + file_path.lstrip("/")).resolve()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found.")
+    suffix = path.suffix.lower()
+    if suffix in (".html", ".htm", ".xhtml"):
+        try:
+            markup = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise HTTPException(status_code=400, detail=f"Could not read file: {error}")
+        return HTMLResponse(_inject_widget_runtime(markup))
+    return FileResponse(path)
+
+
+# A rewriting pass-through proxy for `open_web_preview` of external URLs. It serves
+# the page — and *every* asset and request it makes — back through this one route,
+# so to the framed page everything looks same-origin (our localhost). That is what
+# lets sites that refuse direct framing (`X-Frame-Options`/`frame-ancestors`) render,
+# and avoids the cross-origin CORS/history errors a naive `<base>` proxy hits.
+
+_PROXY_PATH = "/preview-proxy"
+_PROXY_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+# URL schemes that must never be rewritten through the proxy.
+_PROXY_SKIP_SCHEMES = ("data:", "blob:", "javascript:", "mailto:", "tel:", "about:", "#", "vbscript:")
+# Response headers dropped when re-serving (framing blockers + hop-by-hop/encoding
+# headers that no longer match the rewritten body).
+_PROXY_DROP_HEADERS = {
+    "x-frame-options",
+    "content-security-policy",
+    "content-security-policy-report-only",
+    "cross-origin-opener-policy",
+    "cross-origin-embedder-policy",
+    "content-encoding",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+    "set-cookie",
+}
+
+_PROXY_HTML_ATTR_RE = re.compile(
+    r'(?P<pre>\b(?:src|href|action|formaction|poster|data-src|data-href|data-url)\s*=\s*)'
+    r'(?P<q>["\'])(?P<url>[^"\']*)(?P=q)',
+    re.IGNORECASE,
+)
+_PROXY_HTML_SRCSET_RE = re.compile(r'(?P<pre>\bsrcset\s*=\s*)(?P<q>["\'])(?P<val>[^"\']*)(?P=q)', re.IGNORECASE)
+_PROXY_STYLE_BLOCK_RE = re.compile(r'(<style[^>]*>)(?P<body>.*?)(</style>)', re.IGNORECASE | re.DOTALL)
+_PROXY_CSS_URL_RE = re.compile(r'url\(\s*(?P<q>["\']?)(?P<url>[^)"\']+)(?P=q)\s*\)', re.IGNORECASE)
+_PROXY_CSS_IMPORT_RE = re.compile(r'(?P<pre>@import\s+)(?P<q>["\'])(?P<url>[^"\']+)(?P=q)', re.IGNORECASE)
+# Tags/attributes that would fight the proxy: an inline CSP, a <base> that would
+# re-point relative URLs, and SRI/crossorigin hints that fail once same-origin.
+_PROXY_CSP_META_RE = re.compile(r'<meta[^>]+http-equiv\s*=\s*["\']?content-security-policy[^>]*>', re.IGNORECASE)
+_PROXY_BASE_TAG_RE = re.compile(r'<base[^>]*>', re.IGNORECASE)
+_PROXY_STRIP_ATTR_RE = re.compile(
+    r'\s+(?:integrity|crossorigin|nonce)(?:\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+))?',
+    re.IGNORECASE,
+)
+
+
+def _proxy_ref(raw: str, base: str) -> str:
+    """Resolve ``raw`` (possibly relative) against ``base`` and route it back through
+    this proxy. Schemes that are not real fetches (data:, javascript:, #…) pass through."""
+    target = raw.strip()
+    if not target or target.lower().startswith(_PROXY_SKIP_SCHEMES):
+        return raw
+    absolute = urljoin(base, target)
+    if not absolute.lower().startswith(("http://", "https://")):
+        return raw
+    return f"{_PROXY_PATH}?url={quote(absolute, safe='')}"
+
+
+def _rewrite_proxy_css(text: str, base: str) -> str:
+    text = _PROXY_CSS_URL_RE.sub(
+        lambda m: f'url({m.group("q")}{_proxy_ref(m.group("url"), base)}{m.group("q")})', text
+    )
+    text = _PROXY_CSS_IMPORT_RE.sub(
+        lambda m: f'{m.group("pre")}{m.group("q")}{_proxy_ref(m.group("url"), base)}{m.group("q")}', text
+    )
+    return text
+
+
+def _rewrite_proxy_srcset(value: str, base: str) -> str:
+    rewritten = []
+    for candidate in value.split(","):
+        chunk = candidate.strip()
+        if not chunk:
+            continue
+        bits = chunk.split(None, 1)
+        descriptor = f" {bits[1]}" if len(bits) > 1 else ""
+        rewritten.append(f"{_proxy_ref(bits[0], base)}{descriptor}")
+    return ", ".join(rewritten)
+
+
+def _proxy_runtime(base: str) -> str:
+    """A small shim injected into every proxied page so URLs built *by scripts*
+    (fetch/XHR, history navigations, dynamically created elements) also go through
+    the proxy and resolve against the real origin — not our localhost — and so a
+    cross-origin ``history.replaceState`` no longer throws."""
+    base_json = json.dumps(base)
+    proxy_json = json.dumps(f"{_PROXY_PATH}?url=")
+    return (
+        "<script>(function(){"
+        f"var BASE={base_json};var PROXY={proxy_json};"
+        "function abs(u){try{return new URL(u,BASE).href;}catch(e){return null;}}"
+        "function prox(u){if(typeof u!=='string'||!u)return u;"
+        "if(/^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i.test(u))return u;"
+        "if(u.indexOf(PROXY)!==-1)return u;var a=abs(u);"
+        "if(!a||!/^https?:/i.test(a))return u;return PROXY+encodeURIComponent(a);}"
+        "['pushState','replaceState'].forEach(function(m){var o=history[m];history[m]=function(s,t,u){"
+        "try{return o.call(history,s,t,u);}catch(e){try{return o.call(history,s,t);}catch(_){}}};});"
+        "if(window.fetch){var of=window.fetch;window.fetch=function(i,n){try{"
+        "if(typeof i==='string')i=prox(i);else if(i&&i.url)i=new Request(prox(i.url),i);}catch(e){}"
+        "return of.call(this,i,n);};}"
+        "if(window.XMLHttpRequest){var oo=XMLHttpRequest.prototype.open;"
+        "XMLHttpRequest.prototype.open=function(m,u){try{u=prox(u);}catch(e){}"
+        "return oo.apply(this,[m,u].concat([].slice.call(arguments,2)));};}"
+        "})();</script>"
+    )
+
+
+def _rewrite_proxy_html(markup: str, base: str) -> str:
+    markup = _PROXY_CSP_META_RE.sub("", markup)
+    markup = _PROXY_BASE_TAG_RE.sub("", markup)
+    markup = _PROXY_STRIP_ATTR_RE.sub("", markup)
+    markup = _PROXY_HTML_ATTR_RE.sub(
+        lambda m: f'{m.group("pre")}{m.group("q")}{_proxy_ref(m.group("url"), base)}{m.group("q")}', markup
+    )
+    markup = _PROXY_HTML_SRCSET_RE.sub(
+        lambda m: f'{m.group("pre")}{m.group("q")}{_rewrite_proxy_srcset(m.group("val"), base)}{m.group("q")}', markup
+    )
+    markup = _PROXY_STYLE_BLOCK_RE.sub(
+        lambda m: f'{m.group(1)}{_rewrite_proxy_css(m.group("body"), base)}{m.group(3)}', markup
+    )
+    runtime = _proxy_runtime(base)
+    head_match = re.search(r"<head[^>]*>", markup, re.IGNORECASE)
+    if head_match:
+        return markup[: head_match.end()] + runtime + markup[head_match.end() :]
+    return runtime + markup
+
+
+@app.get("/preview-proxy")
+async def preview_proxy(url: str):
+    """Fetch an external ``http(s)`` URL server-side and re-serve it (and everything
+    it links to) from our own origin, rewritten so the framed page behaves as if it
+    were same-origin. This is what makes ``open_web_preview`` a real mini-browser for
+    sites that block direct framing. Localhost-only, like the rest of the API."""
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Only http(s) URLs can be previewed.")
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
+            upstream = await client.get(url, headers=_PROXY_BROWSER_HEADERS)
+    except httpx.HTTPError as error:
+        raise HTTPException(status_code=502, detail=f"Could not load {url}: {error}")
+
+    final_url = str(upstream.url)
+    content_type = upstream.headers.get("content-type", "application/octet-stream")
+    lowered = content_type.lower()
+    if "html" in lowered:
+        return HTMLResponse(_rewrite_proxy_html(upstream.text, final_url))
+    if "css" in lowered:
+        return Response(_rewrite_proxy_css(upstream.text, final_url), media_type=content_type)
+    # Scripts, images, fonts, JSON, … — re-serve verbatim from our origin (httpx has
+    # already decoded any transfer encoding), minus the headers that no longer apply.
+    safe_headers = {
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower() not in _PROXY_DROP_HEADERS
+    }
+    return Response(content=upstream.content, media_type=content_type, headers=safe_headers)
 
 
 @app.get("/events")

@@ -88,8 +88,8 @@ from harness.tools.tools import (
     write_tasks as write_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
-    render_widget as render_widget_tool,
-    build_widget_result,
+    open_web_preview as open_web_preview_tool,
+    build_web_preview_result,
     list_mcp_tools as list_mcp_tools_tool,
     call_mcp_tool as call_mcp_tool_tool,
     call_mcp_tool_with_events,
@@ -173,6 +173,25 @@ _BACKGROUND_HANDLE_PREFIXES = {
 }
 
 
+def _coerce_mcp_arguments(value: Any) -> dict:
+    """Normalize the `arguments` of a call_mcp_tool call to a dict. Models often
+    emit the nested arguments object as a JSON *string* rather than a real object;
+    the previous `isinstance(dict)`-only guard silently dropped those to `{}`, so
+    the MCP server saw every field as undefined. Parse a JSON string back to the
+    dict it represents; fall back to empty only when there is genuinely nothing
+    usable."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
 def _background_handle_kind(task_id: str) -> str | None:
     """The background-task kind ("web_search"/"bash") if ``task_id`` is one of
     those handles rather than a readable A2A task; otherwise ``None``."""
@@ -197,7 +216,7 @@ def _build_tools(
         read_task_tool,
     ]
     if not is_sub_agent:
-        available.append(render_widget_tool)
+        available.append(open_web_preview_tool)
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
     if global_configuration.mcp.enabled_servers():
@@ -1427,7 +1446,7 @@ class AgentRuntime:
             call_task = asyncio.create_task(call_mcp_tool_with_events(
                 str(tool_arguments.get("server", "")),
                 str(tool_arguments.get("tool_name", "")),
-                tool_arguments.get("arguments") if isinstance(tool_arguments.get("arguments"), dict) else {},
+                _coerce_mcp_arguments(tool_arguments.get("arguments")),
                 on_mcp_event,
             ))
             try:
@@ -1644,26 +1663,47 @@ class AgentRuntime:
                 }
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
-        elif tool_name == "render_widget":
+        elif tool_name == "open_web_preview":
             if self._is_sub_agent:
                 yield StreamEvent(
                     StreamEvent.Type.ERROR,
                     id=tool_call_identifier,
                     tool=tool_name,
-                    code="sub_agent_widget_denied",
-                    message="Sub-agents cannot render widgets. Return findings only as text for the parent agent.",
+                    code="sub_agent_preview_denied",
+                    message="Sub-agents cannot open previews. Return findings only as text for the parent agent.",
                 )
                 return
-            html = str(tool_arguments.get("html", ""))
-            if not html.strip():
+            raw_url = str(tool_arguments.get("url", "")).strip()
+            if not raw_url:
                 yield StreamEvent(
                     StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    code="empty_widget", message="render_widget requires non-empty html.",
+                    code="empty_preview", message="open_web_preview requires a url or file path.",
                 )
                 return
-            result = build_widget_result(
-                html=html,
-                title=str(tool_arguments.get("title", "Widget")),
+            # An http(s) URL is previewed as-is; anything else is treated as a local
+            # file path (a file:// URL, an absolute path, or one relative to the
+            # working directory) and must resolve to an existing file on disk.
+            lowered = raw_url.lower()
+            if lowered.startswith(("http://", "https://")):
+                source, is_file = raw_url, False
+            else:
+                candidate = raw_url[len("file://"):] if lowered.startswith("file://") else raw_url
+                path = Path(candidate).expanduser()
+                if not path.is_absolute():
+                    path = Path(self._working_directory or Path.cwd()) / path
+                path = path.resolve()
+                if not path.is_file():
+                    yield StreamEvent(
+                        StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                        code="preview_file_not_found",
+                        message=f"No file to preview at {path}. Write the file first, then preview it.",
+                    )
+                    return
+                source, is_file = str(path), True
+            result = build_web_preview_result(
+                source,
+                is_file=is_file,
+                title=str(tool_arguments.get("title", "Preview")),
                 height=tool_arguments.get("height", 0),
                 artifact_id=str(tool_arguments.get("artifact_id", "")),
                 artifact_update_mode=str(tool_arguments.get("artifact_update_mode", "append")),

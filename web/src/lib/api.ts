@@ -1,5 +1,25 @@
 const API_BASE = "http://localhost:8822";
 
+// The URL that serves a local file (and its sibling assets) for an `open_web_preview`
+// artifact — the backend `/preview/<abs path>` route reads the file off disk and,
+// for HTML, injects the widget runtime. Each path segment is encoded but the
+// slashes are kept, so relative assets inside a previewed page still resolve.
+export function filePreviewUrl(path: string): string {
+  const normalized = path.replace(/^\/+/, "");
+  if (!normalized) return "";
+  const encoded = normalized.split("/").map(encodeURIComponent).join("/");
+  return `${API_BASE}/preview/${encoded}`;
+}
+
+// The URL that previews an external page. It is fetched and re-served from the
+// backend `/preview-proxy` route with anti-framing headers (X-Frame-Options /
+// CSP frame-ancestors) stripped — otherwise sites that refuse to be framed (the
+// BBC, most news sites) render as a blank, blocked frame.
+export function proxyPreviewUrl(url: string): string {
+  if (!url) return "";
+  return `${API_BASE}/preview-proxy?url=${encodeURIComponent(url)}`;
+}
+
 // Metadata key understood by the harness A2A executor.
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
 export const PERMISSION_MODE_METADATA_KEY = "harness/permissionMode";
@@ -148,9 +168,12 @@ export async function fetchSessions(): Promise<{ session_id: string; agent: stri
 }
 
 // All A2A tasks for a session (context): the main turn tasks (with history +
-// artifacts) and related sub-agent tasks. Used to replay a session.
-export async function fetchSessionTasks(sessionId: string): Promise<A2ATask[]> {
-  const response = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`);
+// artifacts) and related sub-agent tasks. Used to replay a session. Throws on a
+// non-OK response so callers can distinguish a transient failure (worth a retry)
+// from a genuinely empty session — `fetch` itself only rejects on network errors.
+export async function fetchSessionTasks(sessionId: string, signal?: AbortSignal): Promise<A2ATask[]> {
+  const response = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`, { signal });
+  if (!response.ok) throw new Error(`Failed to load session tasks (${response.status})`);
   const data = await response.json();
   return data.tasks ?? [];
 }

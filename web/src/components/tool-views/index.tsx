@@ -3,6 +3,7 @@
 import { Box, Flex, Link, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
+import { filePreviewUrl, proxyPreviewUrl } from "@/lib/api";
 import { useWidgetEvent } from "../widget-bridge";
 import { MarkdownContent } from "../markdown-content";
 import {
@@ -174,14 +175,16 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-// The widget renders as the artifact (outside the card), so the call view never
-// dumps the raw HTML — just what the widget is.
-function RenderWidgetCallView({ args }: { args: Record<string, unknown> }) {
+// The preview renders as the artifact (outside the card), so the call view just
+// names what is being previewed (its URL/path) — never the page contents.
+function WebPreviewCallView({ args }: { args: Record<string, unknown> }) {
+  const url = asString(args.url);
   const title = asString(args.title);
   const summary = asString(args.summary);
   return (
     <FieldList>
       {title && <InlineField label="Title">{title}</InlineField>}
+      {url && <InlineField label="Source">{url}</InlineField>}
       {summary && (
         <Field label="Summary">
           <MarkdownContent content={summary} fontSize="xs" />
@@ -270,8 +273,9 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <UpdateTasksCallView args={args} />;
     case "read_task":
       return <ReadTaskCallView args={args} />;
+    case "open_web_preview":
     case "render_widget":
-      return <RenderWidgetCallView args={args} />;
+      return <WebPreviewCallView args={args} />;
     default:
       return <GenericView data={args} />;
   }
@@ -419,7 +423,7 @@ function normalizeArtifact(value: unknown): Record<string, unknown> | null {
   if (Object.keys(artifact).length === 0) return null;
   let type = asString(artifact.type).toLowerCase();
   if (!type) {
-    if (asString(artifact.src) || asString(artifact.srcdoc)) type = "iframe";
+    if (asString(artifact.src) || asString(artifact.srcdoc) || asString(artifact.file)) type = "iframe";
     else if (asString(artifact.html)) type = "html";
     else if (asString(artifact.data) || asString(artifact.url)) type = "image";
   }
@@ -611,7 +615,13 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
   const isAutoHeight = artifact.height === "auto" || artifact.height == null || artifact.height === "";
   if (type === "iframe") {
-    const src = safeWebUrl(asString(artifact.src));
+    // A `file` reference (open_web_preview of a local file) is served by the backend
+    // /preview route, which injects the runtime so the page can self-size — so honor
+    // auto-height for it, the same as inline html. An external `src` is routed through
+    // the /preview-proxy route so sites that refuse direct framing still render.
+    const file = asString(artifact.file);
+    const externalSrc = safeWebUrl(asString(artifact.src));
+    const src = file ? filePreviewUrl(file) : externalSrc ? proxyPreviewUrl(externalSrc) : "";
     const srcDoc = asString(artifact.srcdoc);
     if (!src && !srcDoc) return <ErrorView message="Iframe artifact did not include a safe source." />;
     return (
@@ -622,8 +632,10 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
           sandbox={artifactSandbox(artifact, Boolean(srcDoc))}
           title={title}
           artifactId={artifactId}
-          autoHeight={false}
-          fixedHeight={artifactHeight(artifact.height)}
+          autoHeight={Boolean(file) && isAutoHeight}
+          // An external page can't report its height, so give it a generous default
+          // frame (the user can still drag to resize) instead of the short fallback.
+          fixedHeight={!file && isAutoHeight ? "640px" : artifactHeight(artifact.height)}
         />
       </ArtifactFrame>
     );
@@ -683,7 +695,9 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
 // These are rendered OUTSIDE the tool-call card so they stay visible, rather than
 // being tucked inside its collapsible body.
 export function extractToolArtifacts(name: string, content: string): Record<string, unknown>[] {
-  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget") return [];
+  // `render_widget` stays recognized so older persisted sessions still replay their
+  // inline-html artifacts; new sessions use `open_web_preview`.
+  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget" && name !== "open_web_preview") return [];
   const parsed = tryParse(content);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
   return collectArtifacts((parsed as Record<string, unknown>).artifacts);
@@ -731,9 +745,10 @@ export function ToolResultView({ name, content }: { name: string; content: strin
   // re-render the confirmation and leak the internal ids.
   if (name === "write_tasks" || name === "update_tasks") return null;
 
-  // A widget's result is just compact model_context metadata — the rendered
-  // widget is the deliverable (it shows as the artifact, outside the card).
-  if (name === "render_widget") return null;
+  // A preview/widget's result is just compact model_context metadata — the rendered
+  // artifact is the deliverable (it shows outside the card). `render_widget` is kept
+  // for replay of older sessions.
+  if (name === "render_widget" || name === "open_web_preview") return null;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;

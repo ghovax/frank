@@ -439,53 +439,59 @@ def _inject_widget_runtime(html: str) -> str:
     return _WIDGET_RUNTIME + html
 
 
-def build_widget_result(
-    html: str,
-    title: str = "Widget",
-    height: int = 420,
+def build_web_preview_result(
+    source: str,
+    *,
+    is_file: bool,
+    title: str = "Preview",
+    height: int = 0,
     artifact_id: str = "",
     artifact_update_mode: str = "append",
     artifact_target_id: str = "",
     summary: str = "",
 ) -> dict[str, Any]:
-    """Build the tool result for a model-authored HTML widget.
+    """Build the tool result for an ``open_web_preview`` call.
 
-    Mirrors the MCP artifact contract: the full ``html`` rides in ``artifacts``
-    (streamed to the UI and persisted for replay), while ``model_context`` carries
-    only compact metadata so the rendered markup never re-enters the model's
-    context. Kept pure so it can be dispatched from the agent runtime.
+    ``source`` is either an ``http(s)`` URL (``is_file=False``) or an absolute local
+    file path (``is_file=True``). The artifact only carries the reference — the front
+    end points a sandboxed iframe at it (a file path is served by the backend
+    ``/preview`` route) — so nothing heavy ever enters the model's context. Kept pure
+    so it can be dispatched from the agent runtime.
     """
-    identifier = (artifact_id or "").strip() or new_id("widget")
+    identifier = (artifact_id or "").strip() or new_id("preview")
     mode = _widget_update_mode(artifact_update_mode)
     target_id = (artifact_target_id or "").strip() or identifier
-    # Height defaults to automatic — the widget reports its own content height and
-    # the front end sizes to it. A positive value pins a fixed height instead.
+    # Height defaults to automatic — a previewed local page reports its own content
+    # height (via the injected runtime) and the front end sizes to it. A positive
+    # value pins a fixed height instead.
     try:
         requested_height = int(height)
     except (TypeError, ValueError):
         requested_height = 0
     artifact_height = max(120, min(900, requested_height)) if requested_height > 0 else "auto"
-    widget_summary = (summary or "").strip() or f'Rendered HTML widget "{title}".'
+    preview_summary = (summary or "").strip() or f'Opened a web preview of "{title}".'
 
+    reference = {"file": source} if is_file else {"src": source}
     artifact = {
         "artifact_id": identifier,
         "artifact_target_id": target_id,
         "artifact_update_mode": mode,
-        "type": "html",
+        "type": "iframe",
         "title": title,
-        "html": _inject_widget_runtime(html),
+        **reference,
         "height": artifact_height,
-        "summary": widget_summary,
+        "summary": preview_summary,
     }
     model_context = {
-        "code": "widget_rendered",
-        "summary": widget_summary,
+        "code": "web_preview_opened",
+        "summary": preview_summary,
+        "source": source,
         "artifacts": [
             {
                 "artifact_id": identifier,
                 "artifact_target_id": target_id,
                 "artifact_update_mode": mode,
-                "type": "html",
+                "type": "iframe",
                 "title": title,
                 "height": artifact_height,
             }
@@ -495,51 +501,56 @@ def build_widget_result(
 
 
 @tool
-def render_widget(
-    html: str,
-    title: str = "Widget",
+def open_web_preview(
+    url: str,
+    title: str = "Preview",
     height: int = 0,
     artifact_id: str = "",
     artifact_update_mode: str = "append",
     artifact_target_id: str = "",
     summary: str = "",
 ) -> str:
-    """Render a self-contained HTML widget directly in the chat, outside the tool card.
+    """Open a live web preview in the chat — a mini-browser pointed at a URL or a
+    local file — rendered in a sandboxed iframe outside the tool card.
 
-    This is the general-purpose visual tool — a Swiss-army knife for showing the
-    user almost anything: an image, a table, a chart, a map, a small interactive UI,
-    a formatted document. You author a complete HTML document; it renders in a
-    sandboxed iframe. External scripts and assets load over HTTPS, so reach for an
-    existing web library rather than hand-rolling: a `<script>`/`<link>` from a CDN
-    (Chart.js, D3, Plotly, Leaflet, KaTeX, highlight.js, …) or just an `<img>` tag.
-    Think "which library already does this?" first. The markup is shown to the user
-    but stripped from your own context, so a large document costs you nothing.
+    This is the general-purpose visual tool. Rather than passing markup inline, you
+    point it at something that already exists: an ``http(s)`` URL, or a path to a
+    file you have written (``url="/abs/path/chart.html"``, or a path relative to the
+    working directory). To show a visualization, **write a complete HTML document to
+    a file first** (with ``bash``: a heredoc, or an editor) and preview that file —
+    then you can refine it by editing the file and re-previewing, which is far faster
+    and cheaper than re-emitting a whole document each time. Reach for an existing web
+    library inside the page rather than hand-rolling: a CDN ``<script>``/``<link>``
+    (Plotly, D3, Mermaid, Leaflet, KaTeX, highlight.js, …) or just an ``<img>``.
+    Think "which library already does this?" first.
 
-    Height is automatic — the widget sizes to its content, so you do not need to
-    pass `height` (set it only to pin a fixed height, e.g. for a full-bleed map).
-
-    To make a widget interactive, post events back to the agent from inside the
-    iframe — each becomes a structured `widget_event` turn you can react to:
+    A previewed **local HTML file** gets the harness runtime injected automatically,
+    so it sizes to its content (no need to pass ``height``), reports render errors
+    back to you, and can be interactive. To make it interactive, post events back to
+    the agent from inside the page — each becomes a structured ``widget_event`` turn:
 
         window.parent.postMessage(
             {source: "harness-widget", event: "<name>", data: {/* ... */}},
             "*"
         );
 
-    Uncaught errors and rejected promises in the widget are reported back to you
-    automatically as a `render_error` event, so you can see what broke and fix it.
+    Uncaught errors and rejected promises in a previewed local page are reported back
+    to you automatically as a ``render_error`` event, so you can see what broke, edit
+    the file, and re-preview. (External URLs render as-is — some sites refuse to load
+    in a frame, and they cannot self-size or report errors.)
 
     Args:
-        html: A complete HTML document (``<!doctype html>`` … ``</html>``).
-        title: Short caption shown above the widget. May contain markdown.
-        height: Optional fixed height in pixels (120-900). Omit for automatic
-            sizing to the content (the default).
-        artifact_id: Stable id for this widget; generated when omitted. Reuse it
-            with ``artifact_update_mode="replace"`` to refresh a widget in place.
-        artifact_update_mode: ``append`` renders a new widget, ``replace``/``update``
+        url: An ``http(s)`` URL, or a local file path (absolute, or relative to the
+            working directory) — for example one you just wrote.
+        title: Short caption shown above the preview. May contain markdown.
+        height: Optional fixed height in pixels (120-900). Omit for automatic sizing
+            (local HTML pages report their own height; the default).
+        artifact_id: Stable id for this preview; generated when omitted. Reuse it
+            with ``artifact_update_mode="replace"`` to refresh a preview in place.
+        artifact_update_mode: ``append`` opens a new preview, ``replace``/``update``
             refresh an existing one, ``upsert`` refreshes if present else appends.
-        artifact_target_id: Existing widget id to refresh; defaults to ``artifact_id``.
-        summary: One-line description of what the widget shows.
+        artifact_target_id: Existing preview id to refresh; defaults to ``artifact_id``.
+        summary: One-line description of what the preview shows.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

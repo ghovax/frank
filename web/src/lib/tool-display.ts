@@ -31,6 +31,7 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuUsers, iconColor: "purple.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
+    case "open_web_preview":
     case "render_widget":
       return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
     case "write_tasks":
@@ -56,6 +57,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
     case "read_task":
       return "Reading a related task";
+    case "open_web_preview":
+      return args?.title ? `Previewing "${String(args.title)}"` : "Opening a web preview";
     case "render_widget":
       return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
     case "write_tasks":

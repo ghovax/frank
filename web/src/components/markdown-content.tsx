@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { xcode } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import type { Components } from "react-markdown";
 import type { Element } from "hast";
 
@@ -95,15 +95,18 @@ const markdownComponents: Components = {
     const isBlock = !!languageMatch || codeString.includes("\n");
 
     if (isBlock) {
+      // Pin the block to the `sm` font size (and let the inner pre/code inherit
+      // it) so it never drifts with the surrounding inheritance chain — code
+      // blocks always read at the same size as body text.
       return (
-        <Box borderRadius="sm" overflow="hidden" border="1px solid" borderColor="border">
+        <Box borderRadius="sm" overflow="hidden" border="1px solid" borderColor="border" fontSize="xs" my={2}>
           <SyntaxHighlighter
-            style={oneDark}
+            style={xcode}
             language={languageMatch ? languageMatch[1] : "text"}
             PreTag="div"
             customStyle={{
               margin: 0,
-              borderRadius: "var(--chakra-radii-sm)",
+              borderRadius: "var(--chakra-radii-none)",
               fontFamily: "var(--app-font-mono)",
               fontSize: "inherit",
             }}
@@ -122,7 +125,11 @@ const markdownComponents: Components = {
     );
   },
   pre({ children }) {
-    return <Box>{children}</Box>;
+    // No wrapper: the code block's own bordered Box becomes the direct child of
+    // the content, so it picks up the shared block spacing (the `& > * + *`
+    // blockGap rule) above and below like every other block, instead of sitting
+    // inside an extra, unspaced div.
+    return <>{children}</>;
   },
   table({ children }) {
     return (

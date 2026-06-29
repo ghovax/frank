@@ -2,12 +2,13 @@
 
 import {
   Box,
+  Button,
   EmptyState,
   Flex,
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuClock, LuSend } from "react-icons/lu";
+import { LuClock, LuSend, LuTriangleAlert } from "react-icons/lu";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone } from "@/lib/use-chat";
 import { ChatMessageItem } from "./chat-message";
@@ -58,7 +59,7 @@ export function ChatPanel({
   onToggleHistory,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
-  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, send, sendWidgetEvent, abort, dequeueMessage, handlePermission } =
+  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission } =
     useChat(agent, initialSessionId, workingDirectory, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -225,6 +226,25 @@ export function ChatPanel({
         <Box ref={scrollContainerRef} flex={1} minH={0} overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none" }}>
           {isHistoryLoading ? (
             <Flex h="100%" />
+          ) : historyError ? (
+            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2}>
+              <EmptyState.Root>
+                <EmptyState.Content>
+                  <EmptyState.Indicator>
+                    <LuTriangleAlert />
+                  </EmptyState.Indicator>
+                  <VStack gap={1}>
+                    <EmptyState.Title>Couldn’t load this conversation</EmptyState.Title>
+                    <EmptyState.Description>
+                      The transcript failed to load. Check the connection and try again.
+                    </EmptyState.Description>
+                  </VStack>
+                  <Button size="xs" variant="solid" colorPalette="blue" borderRadius="sm" onClick={reloadHistory}>
+                    Retry
+                  </Button>
+                </EmptyState.Content>
+              </EmptyState.Root>
+            </Flex>
           ) : messages.length === 0 ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
               <EmptyState.Root>

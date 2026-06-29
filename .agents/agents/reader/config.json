@@ -1,6 +1,6 @@
 {
   "modelConfig": {
-    "model": "deepseek-v4-flash",
+    "model": "mimo-v2.5",
     "reasoningEffort": "high"
   },
   "permissionMode": "read_only",

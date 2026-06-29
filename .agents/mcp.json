@@ -32,6 +32,12 @@
         "UV_CACHE_DIR": "/private/tmp/uv-cache"
       },
       "cwd": "."
+    },
+    "context7": {
+      "enabled": true,
+      "transport": "streamable_http",
+      "url": "https://mcp.context7.com/mcp",
+      "stateful": true
     }
   }
 }

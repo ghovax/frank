@@ -24,7 +24,7 @@ Read the model: `src/harness/core/configuration.py`. The server wires it up in `
 ```yaml
 api:
   endpoint: "https://opencode.ai/zen/go/v1"
-  model: "deepseek-v4-flash"
+  model: "mimo-v2.5"
   api_key: ""        # or set OPENCODE_API_KEY in the environment
 exa:
   api_key: ""        # or set EXA_API_KEY; enables web_search

@@ -905,6 +905,12 @@ export function useChat(
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(!!initialSessionId);
+  // Set when every attempt to load a session's transcript failed, so the panel can
+  // offer a retry instead of showing a permanently blank conversation that only a
+  // full page reload would recover.
+  const [historyError, setHistoryError] = useState(false);
+  // Bumped to force the history-load effect to re-run (a manual retry).
+  const [historyReloadNonce, setHistoryReloadNonce] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -986,24 +992,51 @@ export function useChat(
     if (historyLoadedForRef.current === initialSessionId) return;
     historyLoadedForRef.current = initialSessionId;
     let cancelled = false;
-    fetchSessionTasks(initialSessionId)
-      .then((tasks) => {
-        if (cancelled) return;
-        const replayed = replayTasks(tasks);
-        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
-        setSessionId(initialSessionId);
-        sessionIdRef.current = initialSessionId;
-        flushNow();
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setIsHistoryLoading(false);
-      });
+    // Abort the in-flight fetch when the session switches or the panel unmounts —
+    // an orphaned request would keep a connection occupied (rapid switching can
+    // exhaust the browser's per-host pool and stall the next load) and could write
+    // a stale transcript after we have moved on.
+    const controller = new AbortController();
+    setHistoryError(false);
+    setIsHistoryLoading(true);
+
+    // A dropped fetch (a momentary connection-pool exhaustion from switching
+    // sessions quickly, a transient 5xx) used to leave the transcript blank with no
+    // recovery but a manual reload. Retry a few times with a short backoff so the
+    // common transient case heals itself, and only surface an error if every
+    // attempt fails.
+    const MAX_ATTEMPTS = 6;
+    const loadHistory = async () => {
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        try {
+          const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+          if (cancelled) return;
+          const replayed = replayTasks(tasks);
+          stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
+          setSessionId(initialSessionId);
+          sessionIdRef.current = initialSessionId;
+          flushNow();
+          setIsHistoryLoading(false);
+          return;
+        } catch {
+          if (cancelled || controller.signal.aborted) return;
+          if (attempt === MAX_ATTEMPTS - 1) {
+            setHistoryError(true);
+            setIsHistoryLoading(false);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, Math.min(4000, 300 * 2 ** attempt)));
+          if (cancelled) return;
+        }
+      }
+    };
+    loadHistory();
     return () => {
       cancelled = true;
+      controller.abort();
       historyLoadedForRef.current = null;
     };
-  }, [initialSessionId, flushNow]);
+  }, [initialSessionId, flushNow, historyReloadNonce]);
 
   // Live updates for a session that is running on the server but is not being
   // driven by this hook (we switched back to it, or it was started elsewhere).
@@ -1015,10 +1048,11 @@ export function useChat(
     if (!initialSessionId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
     const refresh = async () => {
       if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
       try {
-        const tasks = await fetchSessionTasks(initialSessionId);
+        const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
         if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
         const replayed = replayTasks(tasks);
         stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
@@ -1041,9 +1075,19 @@ export function useChat(
     }
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
   }, [sessionRunning, initialSessionId, flushNow]);
+
+  // Manual retry after the transcript failed to load — re-run the history-load
+  // effect from scratch (clearing the per-session guard so it actually re-fetches).
+  const reloadHistory = useCallback(() => {
+    historyLoadedForRef.current = null;
+    setHistoryError(false);
+    setIsHistoryLoading(true);
+    setHistoryReloadNonce((nonce) => nonce + 1);
+  }, []);
 
   const runStream = useCallback(
     (input: ChatInput) => {
@@ -1218,6 +1262,8 @@ export function useChat(
     sessionId,
     isStreaming,
     isHistoryLoading,
+    historyError,
+    reloadHistory,
     send,
     sendWidgetEvent,
     abort,
