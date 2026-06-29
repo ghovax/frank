@@ -260,7 +260,7 @@ export function ChatPanel({
                   </VStack>
                 </EmptyState.Content>
               </EmptyState.Root>
-              <AgentSkills card={agentCard ?? null} />
+              <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} />
             </Flex>
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">

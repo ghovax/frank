@@ -227,32 +227,64 @@ class GlobalConfiguration(BaseModel):
             Path(self.skills_directory),
         ])
 
-    def skill_directories_for(self, working_directory: str) -> list[Path]:
-        """Skill directories scoped to a session's working directory.
-
-        The home root (``~/.agents/skills``) is always global. The relative
-        roots (``.agents`` and ``.agents/skills``) are resolved against the
-        session's working directory rather than the server's CWD, so a session
-        working outside the project where the server was launched is not
-        advertised that project's skills — and the paths it is given are valid.
-        """
-        base = Path(working_directory).expanduser() if working_directory else Path.cwd()
-
-        def resolve(directory: str) -> Path:
-            path = Path(directory).expanduser()
-            return path if path.is_absolute() else base / path
-
-        return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "skills",
-            resolve(self.agents_root_directory) / "skills",
-            resolve(self.skills_directory),
-        ])
-
     def memory_directories(self) -> list[Path]:
         return _dedupe_paths([
             Path(self.home_agents_root_directory).expanduser() / "memories",
             Path(self.agents_root_directory) / "memories",
         ])
+
+    # Working-directory-scoped resolution.
+    #
+    # The home root (``~/.agents``) is always global. Project-relative roots
+    # (``.agents`` and friends) are resolved against the *session's working
+    # directory* rather than the server's launch CWD, so a session working
+    # outside the directory the server happens to have been started in is never
+    # advertised that directory's agents/skills/memories/MCP servers — and the
+    # paths it is handed are valid for where it actually runs. Each ``*_for``
+    # method mirrors its CWD-relative counterpart above; prefer these everywhere
+    # a working directory is known (every session and every UI folder selection).
+
+    def _local_base(self, working_directory: str) -> Path:
+        """The directory project-relative ``.agents`` roots resolve against — the
+        working directory, or the server's CWD as a last resort when none is given."""
+        return Path(working_directory).expanduser() if working_directory else Path.cwd()
+
+    def _resolve_local(self, working_directory: str, directory: str) -> Path:
+        path = Path(directory).expanduser()
+        return path if path.is_absolute() else self._local_base(working_directory) / path
+
+    def agents_root_directories_for(self, working_directory: str) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser(),
+            self._resolve_local(working_directory, self.agents_root_directory),
+        ])
+
+    def agent_directories_for(self, working_directory: str) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "agents",
+            self._resolve_local(working_directory, self.agents_root_directory) / "agents",
+            self._resolve_local(working_directory, self.agents_directory),
+        ])
+
+    def skill_directories_for(self, working_directory: str) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "skills",
+            self._resolve_local(working_directory, self.agents_root_directory) / "skills",
+            self._resolve_local(working_directory, self.skills_directory),
+        ])
+
+    def memory_directories_for(self, working_directory: str) -> list[Path]:
+        return _dedupe_paths([
+            Path(self.home_agents_root_directory).expanduser() / "memories",
+            self._resolve_local(working_directory, self.agents_root_directory) / "memories",
+        ])
+
+    def mcp_configuration_for(self, working_directory: str) -> "MCPConfiguration":
+        """The MCP servers declared for a working directory: those in the home
+        ``mcp.json`` plus the working directory's own, deduped by name (the
+        working directory overriding home). Used to filter what the UI lists and
+        to grow the shared server pool, never to scope the launch directory in."""
+        return MCPConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:

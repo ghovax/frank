@@ -293,11 +293,21 @@ async def _finalize_session_title(context_id: str, first_message: str) -> None:
     _broadcaster.publish({"type": "sessions_changed"})
 
 
-def _card_for(agent_name: str):
-    """Build an agent's AgentCard from its config and the skills available to it."""
+def _card_for(agent_name: str, working_directory: str = ""):
+    """Build an agent's AgentCard from its config and the skills available to it.
+
+    When a ``working_directory`` is given, skills are scoped to that path (home
+    globals plus the path's own ``.agents``, deduped) rather than the server's
+    launch directory — so a card advertises the skills a session in that folder
+    can actually find. Without one, the server-CWD scoping is used (startup mount)."""
     assert _global_configuration is not None
     configuration = load_agent_configuration(agent_name, _global_configuration.agent_directories())
-    all_skills = load_skills(_global_configuration.skill_directories())
+    skill_roots = (
+        _global_configuration.skill_directories_for(working_directory)
+        if working_directory
+        else _global_configuration.skill_directories()
+    )
+    all_skills = load_skills(skill_roots)
     agent_skills = skills_for_agent(all_skills, configuration.skills)
     return configuration, build_agent_card(configuration, agent_skills, PUBLIC_BASE_URL)
 
@@ -331,6 +341,21 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         agent_card_url=f"{rpc_path}{AGENT_CARD_PATH}",
     )
     _mounted_agents.add(agent_name)
+
+
+def _ensure_agents_for(working_directory: str) -> None:
+    """Mount any agent the working directory declares that isn't mounted yet, so a
+    folder's project-local agents become addressable A2A routes once that folder is
+    selected. The route pool is shared and only grows — nothing is unmounted."""
+    assert _global_configuration is not None
+    directories = (
+        _global_configuration.agent_directories_for(working_directory)
+        if working_directory
+        else _global_configuration.agent_directories()
+    )
+    for agent_name in list_agent_route_names(directories):
+        if agent_name not in _mounted_agents:
+            _mount_agent(app, agent_name)
 
 
 def _reload_agent_cards() -> None:
@@ -378,6 +403,36 @@ async def _reload_mcp() -> None:
     # Re-fold the startup-provisioned Composio server back in so a live mcp.json
     # edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
     _global_configuration.mcp.servers.update(_composio_servers)
+    enabled = _global_configuration.mcp.enabled_servers()
+    if _mcp_manager is None:
+        if enabled:
+            _mcp_manager = MCPClientManager(enabled)
+            await _mcp_manager.start()
+            set_mcp_client_manager(_mcp_manager)
+    else:
+        await _mcp_manager.reconcile(enabled)
+    for executor in _executors.values():
+        executor.reset_runtimes()
+
+
+async def _ensure_mcp_servers_for(working_directory: str) -> None:
+    """Additively grow the shared MCP server pool with the working directory's own
+    ``mcp.json`` servers, so a folder's servers are running and listable once that
+    folder is selected. The pool is a union — servers are only added or updated,
+    never removed — so no other session loses its servers."""
+    global _mcp_manager
+    assert _global_configuration is not None
+    if not working_directory:
+        return
+    folder_servers = _global_configuration.mcp_configuration_for(working_directory).servers
+    new_servers = {
+        name: configuration
+        for name, configuration in folder_servers.items()
+        if _global_configuration.mcp.servers.get(name) != configuration
+    }
+    if not new_servers:
+        return
+    _global_configuration.mcp.servers.update(new_servers)
     enabled = _global_configuration.mcp.enabled_servers()
     if _mcp_manager is None:
         if enabled:
@@ -515,40 +570,69 @@ class MCPResourceReadRequest(BaseModel):
 
 
 @app.get("/agents")
-async def agents():
-    """List agent profiles for the UI selector."""
+async def agents(working_directory: str = ""):
+    """List agent profiles for the UI selector, scoped to the selected folder:
+    the home globals plus that folder's own ``.agents/agents`` (deduped), never
+    the directory the server was launched in. Passing ``working_directory`` is
+    what makes the list track the chosen folder."""
     assert _global_configuration is not None
-    agent_data = list_agents(_global_configuration.agent_directories())
+    if working_directory:
+        _ensure_agents_for(working_directory)
+        directories = _global_configuration.agent_directories_for(working_directory)
+    else:
+        directories = _global_configuration.agent_directories()
+    agent_data = list_agents(directories)
     return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"])) for agent in agent_data])
 
 
 @app.get("/agents/cards")
-async def agent_cards():
+async def agent_cards(working_directory: str = ""):
     """Discovery: the full A2A AgentCard for every served agent, including their
-    skills, so the UI can broadcast what each agent can do."""
+    skills, so the UI can broadcast what each agent can do.
+
+    Skills are scoped to ``working_directory`` when given: the home globals plus
+    that path's own ``.agents`` skills (deduped), and crucially *not* the skills of
+    the directory the server happens to have been launched in. The UI passes the
+    selected project path so the advertised skills match what a session there can
+    actually find, refreshing whenever the user picks a different folder."""
     assert _registry is not None and _global_configuration is not None
-    all_skills = load_skills(_global_configuration.skill_directories())
+    skill_roots = (
+        _global_configuration.skill_directories_for(working_directory)
+        if working_directory
+        else _global_configuration.skill_directories()
+    )
+    all_skills = load_skills(skill_roots)
     skill_titles = {skill.identifier: skill.display_title for skill in all_skills}
     skill_enabled = {skill.identifier: skill.enabled for skill in all_skills}
-    cards_by_url = {
-        card.url: card.model_dump(by_alias=True, exclude_none=True, mode="json")
-        for card in _registry.cards()
-    }
-    for card in cards_by_url.values():
-        agent_name = str(card.get("name") or "")
+    # Cards are served from the shared (union) route pool, but listed only for the
+    # agents the selected folder actually declares (home globals plus that folder's
+    # own), so the launch directory's agents don't leak into an unrelated folder.
+    allowed_agents: set[str] | None = None
+    if working_directory:
+        _ensure_agents_for(working_directory)
+        allowed_agents = {
+            agent["id"]
+            for agent in list_agents(_global_configuration.agent_directories_for(working_directory))
+        }
+    cards: list[dict] = []
+    for existing in _registry.cards():
+        agent_name = str(existing.name or "")
+        if allowed_agents is not None and agent_name not in allowed_agents:
+            continue
         try:
-            configuration = load_agent_configuration(agent_name, _global_configuration.agent_directories())
-            card["title"] = configuration.display_name
+            configuration, card = _card_for(agent_name, working_directory)
+            title = configuration.display_name
         except Exception:
-            card["title"] = agent_name
-        for skill in card.get("skills", []):
+            card, title = existing, agent_name
+        dumped = card.model_dump(by_alias=True, exclude_none=True, mode="json")
+        dumped["title"] = title
+        for skill in dumped.get("skills", []):
             if isinstance(skill, dict):
                 skill_name = str(skill.get("name") or skill.get("id") or "")
                 skill["title"] = skill_titles.get(skill_name, skill_name)
                 skill["enabled"] = skill_enabled.get(skill_name, True)
-    return {
-        "cards": list(cards_by_url.values())
-    }
+        cards.append(dumped)
+    return {"cards": cards}
 
 
 @app.get(AGENT_CARD_PATH)
@@ -666,12 +750,28 @@ async def update_sandbox(request: SandboxUpdateRequest):
 
 
 @app.get("/mcp/tools")
-async def mcp_tools(server: str = ""):
-    """List every configured MCP server with its enabled flag. Enabled servers
-    carry their advertised tools; disabled ones are still returned (with no tools)
-    so the UI can show them greyed out rather than hiding them."""
+async def mcp_tools(server: str = "", working_directory: str = ""):
+    """List configured MCP servers with their enabled flag. Enabled servers carry
+    their advertised tools; disabled ones are still returned (with no tools) so the
+    UI can show them greyed out rather than hiding them.
+
+    Scoped to the selected folder when ``working_directory`` is given: only the
+    servers that folder declares (its own ``mcp.json`` plus the home globals) and
+    the global Composio integration are listed — the launch directory's servers do
+    not leak in. The folder's servers are ensured running first so their tools
+    actually appear (the subprocess pool is shared and grows as a union)."""
     assert _global_configuration is not None
-    configured = _global_configuration.mcp.servers
+    if working_directory:
+        await _ensure_mcp_servers_for(working_directory)
+        allowed = set(_global_configuration.mcp_configuration_for(working_directory).servers)
+        allowed.update(_composio_servers)
+        configured = {
+            name: configuration
+            for name, configuration in _global_configuration.mcp.servers.items()
+            if name in allowed
+        }
+    else:
+        configured = _global_configuration.mcp.servers
     tools_by_server: dict[str, list] = {}
     if _mcp_manager is not None:
         # List every enabled server, then filter below — querying the manager for a

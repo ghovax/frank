@@ -260,7 +260,7 @@ class HarnessAgentExecutor(AgentExecutor):
         is_sub_agent: bool = False,
     ) -> AgentRuntime:
         configuration = load_agent_configuration(
-            self._agent_name, self._global_configuration.agent_directories()
+            self._agent_name, self._global_configuration.agent_directories_for(working_directory)
         )
         runtime = AgentRuntime(
             agent_configuration=configuration,

@@ -36,13 +36,15 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 // agent and rendered as collapsible cards, so you can see what an agent can do —
 // plus the tools exposed by the configured MCP servers, grouped per server.
 // Every card starts collapsed to keep the empty state uncluttered.
-export function AgentSkills({ card }: { card: AgentCard | null }) {
+export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
 
   useEffect(() => {
     let cancelled = false;
+    // MCP servers are scoped to the selected folder (its own mcp.json plus the
+    // home globals and Composio), so refetch whenever that folder changes.
     const loadTools = () => {
-      fetchMcpTools()
+      fetchMcpTools(workingDirectory)
         .then((servers) => {
           if (!cancelled) setMcpServers(servers);
         })
@@ -58,7 +60,7 @@ export function AgentSkills({ card }: { card: AgentCard | null }) {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [workingDirectory]);
 
   const hasSkills = !!card && card.skills.length > 0;
   // Disabled capabilities are shown greyed out but sorted to the bottom of their

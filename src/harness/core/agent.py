@@ -719,11 +719,11 @@ class AgentRuntime:
         """
         if self._cached_system_prompt is None:
             available_agents = describe_available_agents(
-                self._global_configuration.agent_directories()
+                self._global_configuration.agent_directories_for(self._working_directory)
             )
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._working_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
-            memories = load_memories(self._global_configuration.memory_directories())
+            memories = load_memories(self._global_configuration.memory_directories_for(self._working_directory))
             context_json = json.dumps({
                 "working_directory": self._working_directory,
                 "available_agents": available_agents,
@@ -1045,7 +1045,7 @@ class AgentRuntime:
     def _load_sub_agent(self, name: str) -> AgentConfiguration:
         return load_agent_configuration(
             name,
-            self._global_configuration.agent_directories(),
+            self._global_configuration.agent_directories_for(self._working_directory),
         )
 
     def _build_sub_agent_prompt(self, prompt: str, read_only: bool | None) -> str:
@@ -1134,7 +1134,7 @@ class AgentRuntime:
                         {"name": tool_name, "result": event.data.get("result_message", "")}
                     )
         except Exception as exception:
-            result_content = f"Internal error processing {tool_name}: {exception}"
+            result_content = f"{exception}"
             yield StreamEvent(
                 StreamEvent.Type.ERROR, id=tool_call_identifier, message=result_content, tool=tool_name,
             )

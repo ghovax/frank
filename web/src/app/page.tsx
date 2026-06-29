@@ -2,7 +2,7 @@
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
 import { LuGripVertical, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
-import { Suspense, useCallback, useEffect, useMemo, useState, type PointerEvent } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, subscribeEvents, type AgentCard, type AgentSummary, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
@@ -58,6 +58,29 @@ function HomeContent() {
       .catch(() => {});
   }, []);
 
+  // Agents, their cards (skills), MCP servers and memories are all scoped to the
+  // selected folder — home globals plus that folder's own `.agents`, deduped,
+  // never the server's launch directory. The ref lets the live-reload handler
+  // refetch with the current folder without re-subscribing.
+  const workingDirectoryRef = useRef("");
+  workingDirectoryRef.current = workingDirectory;
+  const loadAgentCards = useCallback(() => {
+    fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch(() => {});
+  }, []);
+  const loadAgents = useCallback(() => {
+    fetchAgents(workingDirectoryRef.current)
+      .then((agentList) => {
+        setAgents(agentList);
+        // Keep the current selection if it's still available in this folder,
+        // otherwise fall back to the first agent the folder offers.
+        setSelectedAgent((current) =>
+          agentList.some((agent) => agent.id === current) ? current : (agentList[0]?.id ?? "")
+        );
+        setIsConnected(true);
+      })
+      .catch(() => setIsConnected(false));
+  }, []);
+
   const selectWorkingDirectory = useCallback((directory: string) => {
     const path = directory.trim();
     setWorkingDirectory(path);
@@ -102,16 +125,6 @@ function HomeContent() {
   }
 
   useEffect(() => {
-    const loadAgents = () => {
-      fetchAgents()
-        .then((agentList) => {
-          setAgents(agentList);
-          setSelectedAgent((current) => current || (agentList[0]?.id ?? ""));
-          setIsConnected(true);
-        })
-        .catch(() => setIsConnected(false));
-      fetchAgentCards().then(setAgentCards).catch(() => {});
-    };
     const loadSessions = () => {
       fetchSessions()
         .then(applySessions)
@@ -122,7 +135,6 @@ function HomeContent() {
         .then((settings) => setSandboxEnabledState(settings.sandbox_enabled ?? true))
         .catch(() => {});
     };
-    loadAgents();
     loadSettings();
     // Home is the default project for a brand-new chat; the restoration effect
     // below applies it (or the active session's own folder) — we don't force it
@@ -136,12 +148,24 @@ function HomeContent() {
     // Live reload: refresh agents when they change on disk, and the session list
     // when a session's (LLM-generated) title is updated.
     const unsubscribe = subscribeEvents((event) => {
-      if (event.type === "agents_changed") loadAgents();
+      if (event.type === "agents_changed") {
+        loadAgents();
+        loadAgentCards();
+      }
       if (event.type === "sessions_changed") loadSessions();
       if (event.type === "projects_changed") refreshRecentProjects();
     });
     return unsubscribe;
-  }, [applySessions, refreshRecentProjects]);
+  }, [applySessions, refreshRecentProjects, loadAgents, loadAgentCards]);
+
+  // Reload the agents and their cards whenever the selected folder changes (and
+  // on first render): the available agents, skills and MCP servers are all
+  // path-scoped, so picking a different project must re-derive what's actually
+  // available there rather than showing the launch directory's capabilities.
+  useEffect(() => {
+    loadAgents();
+    loadAgentCards();
+  }, [workingDirectory, loadAgents, loadAgentCards]);
 
   // The working directory is bound to the active context: an open session is
   // restored to its own persisted folder, a brand-new chat falls back to home.

@@ -32,8 +32,14 @@ export interface AgentSummary {
   title?: string;
 }
 
-export async function fetchAgents(): Promise<AgentSummary[]> {
-  const response = await fetch(`${API_BASE}/agents`);
+// Agents are scoped to the selected folder (home globals plus that folder's own
+// `.agents/agents`, deduped), so passing `workingDirectory` is what makes the
+// list track the chosen folder rather than the server's launch directory.
+export async function fetchAgents(workingDirectory?: string): Promise<AgentSummary[]> {
+  const query = workingDirectory
+    ? `?working_directory=${encodeURIComponent(workingDirectory)}`
+    : "";
+  const response = await fetch(`${API_BASE}/agents${query}`);
   const data = await response.json();
   return data.agents;
 }
@@ -57,9 +63,15 @@ export interface AgentCard {
   skills: AgentSkill[];
 }
 
-// Discovery: every served agent's A2A AgentCard (with its skills).
-export async function fetchAgentCards(): Promise<AgentCard[]> {
-  const response = await fetch(`${API_BASE}/agents/cards`);
+// Discovery: every served agent's A2A AgentCard (with its skills). Skills are
+// scoped to the selected project path — the home globals plus that folder's own
+// `.agents` skills, deduped — so passing `workingDirectory` is what makes the
+// listed skills match the chosen folder rather than the server's launch directory.
+export async function fetchAgentCards(workingDirectory?: string): Promise<AgentCard[]> {
+  const query = workingDirectory
+    ? `?working_directory=${encodeURIComponent(workingDirectory)}`
+    : "";
+  const response = await fetch(`${API_BASE}/agents/cards${query}`);
   const data = await response.json();
   return data.cards ?? [];
 }
@@ -133,8 +145,14 @@ export interface McpServerTools {
 }
 
 // Discovery: tools exposed by each configured MCP server, for the capabilities panel.
-export async function fetchMcpTools(): Promise<McpServerTools[]> {
-  const response = await fetch(`${API_BASE}/mcp/tools`);
+// MCP servers are listed for the selected folder: its own `mcp.json` plus the
+// home globals and the global Composio integration (deduped), never the server's
+// launch directory. The subprocess pool is shared and grows as a union.
+export async function fetchMcpTools(workingDirectory?: string): Promise<McpServerTools[]> {
+  const query = workingDirectory
+    ? `?working_directory=${encodeURIComponent(workingDirectory)}`
+    : "";
+  const response = await fetch(`${API_BASE}/mcp/tools${query}`);
   if (!response.ok) return [];
   const data = await response.json();
   return data.servers ?? [];
