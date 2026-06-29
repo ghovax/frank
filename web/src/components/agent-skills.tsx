@@ -3,7 +3,7 @@
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
-import { fetchMcpTools, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
+import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
 import { MarkdownContent } from "./markdown-content";
 
@@ -38,23 +38,31 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 // Every card starts collapsed to keep the empty state uncluttered.
 export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
+  const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    // MCP servers are scoped to the selected folder (its own mcp.json plus the
-    // home globals and Composio), so refetch whenever that folder changes.
-    const loadTools = () => {
+    // Skills and MCP servers are both scoped to the selected folder (home globals
+    // plus that folder's own `.agents`), so refetch whenever the folder changes.
+    // Skills are listed independently of any agent, so a folder's global skills
+    // still appear even when it has no agents.
+    const loadCapabilities = () => {
+      fetchSkills(workingDirectory)
+        .then((skills) => {
+          if (!cancelled) setFolderSkills(skills);
+        })
+        .catch(() => {});
       fetchMcpTools(workingDirectory)
         .then((servers) => {
           if (!cancelled) setMcpServers(servers);
         })
         .catch(() => {});
     };
-    loadTools();
-    // MCP servers reload live (mcp.json is watched server-side); refetch the tool
-    // list when the server signals a change so it stays current without a reload.
+    loadCapabilities();
+    // Skills and MCP servers reload live (their files are watched server-side);
+    // refetch when the server signals a change so they stay current.
     const unsubscribe = subscribeEvents((event) => {
-      if (event.type === "agents_changed") loadTools();
+      if (event.type === "agents_changed") loadCapabilities();
     });
     return () => {
       cancelled = true;
@@ -62,10 +70,10 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
     };
   }, [workingDirectory]);
 
-  const hasSkills = !!card && card.skills.length > 0;
   // Disabled capabilities are shown greyed out but sorted to the bottom of their
   // list so they do not clutter the active ones (stable: relative order is kept).
-  const skills = card ? [...card.skills].sort(disabledLast) : [];
+  const skills = [...folderSkills].sort(disabledLast);
+  const hasSkills = skills.length > 0;
   // Disabled servers are shown (greyed out) rather than hidden; enabled servers
   // still connecting (no tools yet) stay hidden until they advertise something.
   const toolServers = mcpServers
@@ -82,9 +90,9 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             <LuListChecks size={13} />
             <Text fontSize="xs" fontWeight="bold">Available capabilities</Text>
           </Flex>
-          {card!.description && (
+          {card?.description && (
             <Box mb={2} color="fg.muted">
-              <MarkdownContent content={card!.description} fontSize="xs" />
+              <MarkdownContent content={card.description} fontSize="xs" />
             </Box>
           )}
           <Flex direction="column" gap={2}>

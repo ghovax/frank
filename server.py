@@ -635,6 +635,33 @@ async def agent_cards(working_directory: str = ""):
     return {"cards": cards}
 
 
+@app.get("/skills")
+async def skills(working_directory: str = ""):
+    """List the skills available in the selected folder — home globals plus that
+    folder's own ``.agents/skills`` (deduped), never the launch directory. This is
+    independent of any agent, so the UI can show a folder's skills even when it has
+    no agents. Disabled skills are returned (flagged) so the UI greys them out."""
+    assert _global_configuration is not None
+    roots = (
+        _global_configuration.skill_directories_for(working_directory)
+        if working_directory
+        else _global_configuration.skill_directories()
+    )
+    all_skills = load_skills(roots)
+    return {
+        "skills": [
+            {
+                "id": skill.identifier,
+                "name": skill.identifier,
+                "title": skill.display_title,
+                "description": skill.description,
+                "enabled": skill.enabled,
+            }
+            for skill in all_skills
+        ]
+    }
+
+
 @app.get(AGENT_CARD_PATH)
 async def default_agent_card():
     """Serve the default agent's card at the well-known path for spec compliance."""

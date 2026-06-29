@@ -145,6 +145,19 @@ export interface McpServerTools {
 }
 
 // Discovery: tools exposed by each configured MCP server, for the capabilities panel.
+// Skills available in the selected folder — home globals plus that folder's own
+// `.agents/skills`, deduped — independent of any agent, so the panel can show a
+// folder's skills even when it has no agents.
+export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill[]> {
+  const query = workingDirectory
+    ? `?working_directory=${encodeURIComponent(workingDirectory)}`
+    : "";
+  const response = await fetch(`${API_BASE}/skills${query}`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.skills ?? [];
+}
+
 // MCP servers are listed for the selected folder: its own `mcp.json` plus the
 // home globals and the global Composio integration (deduped), never the server's
 // launch directory. The subprocess pool is shared and grows as a union.
