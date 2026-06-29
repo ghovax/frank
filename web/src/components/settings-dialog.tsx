@@ -10,6 +10,7 @@ import { fetchSettings, saveSettings } from "@/lib/api";
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [apiKey, setApiKey] = useState("");
   const [exaApiKey, setExaApiKey] = useState("");
+  const [composioApiKey, setComposioApiKey] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Pre-fill from the server each time the dialog opens.
@@ -21,6 +22,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         if (cancelled) return;
         setApiKey(settings.api_key ?? "");
         setExaApiKey(settings.exa_api_key ?? "");
+        setComposioApiKey(settings.composio_consumer_api_key ?? "");
       })
       .catch(() => {});
     return () => {
@@ -34,6 +36,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       await saveSettings({
         api_key: apiKey.trim(),
         exa_api_key: exaApiKey.trim(),
+        composio_consumer_api_key: composioApiKey.trim(),
       });
       onOpenChange(false);
     } finally {
@@ -68,6 +71,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                   value={exaApiKey}
                   disabled={saving}
                   onChange={setExaApiKey}
+                />
+                <SecretField
+                  label="Composio consumer API key"
+                  placeholder="composio-consumer-..."
+                  value={composioApiKey}
+                  disabled={saving}
+                  onChange={setComposioApiKey}
                 />
               </Flex>
             </Dialog.Body>

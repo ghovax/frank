@@ -81,6 +81,7 @@ export async function fetchAgentCards(workingDirectory?: string): Promise<AgentC
 export interface Settings {
   api_key: string;
   exa_api_key: string;
+  composio_consumer_api_key: string;
   sandbox_enabled: boolean;
 }
 
@@ -93,11 +94,13 @@ export interface RecentProject {
 // API credentials stored in ~/.harness/configuration.yaml.
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
-  if (!response.ok) return { api_key: "", exa_api_key: "", sandbox_enabled: true };
+  if (!response.ok) return { api_key: "", exa_api_key: "", composio_consumer_api_key: "", sandbox_enabled: true };
   return response.json();
 }
 
-export async function saveSettings(settings: Pick<Settings, "api_key" | "exa_api_key">): Promise<void> {
+export async function saveSettings(
+  settings: Pick<Settings, "api_key" | "exa_api_key" | "composio_consumer_api_key">
+): Promise<void> {
   await fetch(`${API_BASE}/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -223,6 +226,21 @@ export async function resolvePermission(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request_id: requestId, decision }),
+  });
+}
+
+// Answer a pending ask_user question. `answers` is one entry per question (in
+// order); each entry is the selected label string, an array of labels for
+// multi-select, or the custom text the user typed.
+export async function resolveQuestion(
+  sessionId: string,
+  requestId: string,
+  answers: unknown[]
+): Promise<void> {
+  await fetch(`${API_BASE}/chat/${sessionId}/question`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_id: requestId, answers }),
   });
 }
 

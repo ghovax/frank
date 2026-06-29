@@ -7,7 +7,7 @@ exa:
 composio:
   enabled: true
   url: https://connect.composio.dev/mcp
-  consumer_api_key: 'ck_7lCN7vVj1bG9CCfRZX4L'
+  consumer_api_key: ck_7lCN7vVj1bG9CCfRZX4L
   server_name: composio
 default_agent: assistant
 agents_root_directory: .agents
@@ -15,4 +15,4 @@ home_agents_root_directory: ~/.agents
 agents_directory: .agents/agents
 skills_directory: .agents/skills
 sandbox:
-  enabled: true
+  enabled: false

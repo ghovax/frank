@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import platform
 import shlex
 import time
 import uuid
@@ -95,10 +96,20 @@ from harness.tools.tools import (
     call_mcp_tool_with_events,
     list_mcp_resources as list_mcp_resources_tool,
     read_mcp_resource as read_mcp_resource_tool,
+    read_file as read_file_tool,
+    find_files as find_files_tool,
+    search_content as search_content_tool,
+    edit_file as edit_file_tool,
+    write_file as write_file_tool,
+    fetch_url as fetch_url_tool,
+    ask_user as ask_user_tool,
+    load_skill as load_skill_tool,
     bash_tasks,
     web_tasks,
     spawned_tasks,
 )
+
+from harness.tools import file_tools
 
 from harness.core.handoff import (
     build_task,
@@ -106,6 +117,7 @@ from harness.core.handoff import (
 )
 from harness.core.memories import load_memories, memories_payload
 from harness.core.skills import load_skills, enabled_skills, skills_for_agent, skills_payload
+from harness.core.instructions import load_instructions
 from harness.identifiers import new_id
 
 
@@ -130,6 +142,7 @@ class StreamEvent:
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
         PERMISSION_REQUEST = "permission_request"
+        QUESTION = "question"
         TASKS_UPDATED = "tasks_updated"
         ERROR = "error"
         DENIED_INJECTION = "denied_injection"
@@ -201,6 +214,21 @@ def _background_handle_kind(task_id: str) -> str | None:
     return None
 
 
+def _detect_workspace(working_directory: str) -> tuple[str, bool]:
+    """Return ``(workspace_root, is_git_repo)``. Walks up from the working
+    directory for a ``.git`` marker; if found the workspace root is the repo
+    top level, otherwise it falls back to the working directory itself."""
+    base = Path(working_directory).expanduser().resolve() if working_directory else Path.cwd().resolve()
+    current = base
+    while True:
+        if (current / ".git").exists():
+            return str(current), True
+        if current == current.parent:
+            break
+        current = current.parent
+    return str(base), False
+
+
 def _build_tools(
     agent_configuration: AgentConfiguration,
     global_configuration: GlobalConfiguration,
@@ -209,6 +237,13 @@ def _build_tools(
 ) -> list[BaseTool]:
     available = [
         bash_tool,
+        read_file_tool,
+        find_files_tool,
+        search_content_tool,
+        edit_file_tool,
+        write_file_tool,
+        fetch_url_tool,
+        load_skill_tool,
         web_search_tool,
         write_tasks_tool,
         update_tasks_tool,
@@ -217,6 +252,7 @@ def _build_tools(
     ]
     if not is_sub_agent:
         available.append(open_web_preview_tool)
+        available.append(ask_user_tool)
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
     if global_configuration.mcp.enabled_servers():
@@ -538,6 +574,7 @@ class AgentRuntime:
         agent_configuration: AgentConfiguration,
         global_configuration: GlobalConfiguration,
         pending_permissions: Optional[dict[str, asyncio.Future]] = None,
+        pending_questions: Optional[dict[str, asyncio.Future]] = None,
         on_record_event: Optional[callable] = None,
         on_record_message: Optional[callable] = None,
         session_id: str = "",
@@ -549,6 +586,7 @@ class AgentRuntime:
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._pending_permissions = pending_permissions if pending_permissions is not None else {}
+        self._pending_questions = pending_questions if pending_questions is not None else {}
         self._on_record_event = on_record_event
         self._on_record_message = on_record_message
         self._working_directory = working_directory or str(Path.home())
@@ -582,6 +620,10 @@ class AgentRuntime:
 
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
+        # Files the model has read this session — edit_file/write_file refuse to
+        # touch an existing file until it has been read, matching opencode's edit
+        # guard and steering the model toward read-before-edit discipline.
+        self._read_files: set[str] = set()
         # How many delegation hops led to this runtime (0 = top-level chat agent).
         self._delegation_depth: int = 0
         self._calls_this_turn: int = 0
@@ -590,6 +632,9 @@ class AgentRuntime:
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
         self._cached_system_prompt: str | None = None
+        # Distilled pointers re-injected every turn (via _build_dynamic_context)
+        # so the model keeps the highest-signal rules in focus near its reply.
+        self._turn_reminders: str | None = None
         self._task_manager = TaskManager()
         self._active_goal: str = ""
         self._execution_history: list[dict] = []
@@ -724,8 +769,13 @@ class AgentRuntime:
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._working_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories_for(self._working_directory))
+            workspace_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = json.dumps({
                 "working_directory": self._working_directory,
+                "workspace_root": workspace_root,
+                "is_git_repo": is_git_repo,
+                "platform": platform.system(),
+                "today_date": datetime.now().strftime("%Y-%m-%d"),
                 "available_agents": available_agents,
                 "is_sub_agent": self._is_sub_agent,
             })
@@ -735,6 +785,7 @@ class AgentRuntime:
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
+                "instructions": load_instructions(self._working_directory),
                 "skills": json.dumps(skills_payload(agent_skills)),
                 "memories": json.dumps(memories_payload(memories)),
                 "sub_agent_context": sub_agent_context,
@@ -743,7 +794,11 @@ class AgentRuntime:
 
     def _build_dynamic_context(self) -> str:
         """Build the dynamic context injected at the end of the message list."""
+        if self._turn_reminders is None:
+            self._turn_reminders = self._prompt_loader.load("turn_reminders", {}).strip()
         parts = []
+        if self._turn_reminders:
+            parts.append(self._turn_reminders)
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         parts.append(f"Current time: {current_time}")
         parts.append(json.dumps({"PWD": self._working_directory or str(Path.cwd())}))
@@ -812,11 +867,11 @@ class AgentRuntime:
             "error": invalid.get("error") or "arguments could not be parsed",
         })
 
-    def widget_render_error_note(self, payload: str) -> str:
-        """Frame a widget render failure as a behind-the-scenes self-realization
+    def preview_render_error_note(self, payload: str) -> str:
+        """Frame a preview render failure as a behind-the-scenes self-realization
         note (injected as a system message, not user input) the model repairs. The
         raw error rides along as its JSON payload, intact."""
-        return self._prompt_loader.load("widget_render_error", {"payload": payload})
+        return self._prompt_loader.load("preview_render_error", {"payload": payload})
 
     async def stream(
         self, user_message: str, as_system_note: bool = False
@@ -1414,6 +1469,129 @@ class AgentRuntime:
                 if task_identifier:
                     self._background.track("bash", task_identifier)
                     self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command})
+
+        elif tool_name == "read_file":
+            file_path = str(tool_arguments.get("file_path", ""))
+            offset = tool_arguments.get("offset", 1) or 1
+            limit_raw = tool_arguments.get("limit")
+            limit = int(limit_raw) if limit_raw not in (None, "") else None
+            result = await asyncio.to_thread(
+                file_tools.read_file, self._working_directory, file_path, int(offset), limit,
+            )
+            # Record the canonical path so edit_file/write_file accept it.
+            self._read_files.add(str(file_tools.resolve_path(self._working_directory, file_path)))
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+
+        elif tool_name == "find_files":
+            pattern = str(tool_arguments.get("pattern", ""))
+            result = await asyncio.to_thread(file_tools.find_files, self._working_directory, pattern)
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+
+        elif tool_name == "search_content":
+            pattern = str(tool_arguments.get("pattern", ""))
+            include = tool_arguments.get("include")
+            include = str(include) if include else None
+            search_path = tool_arguments.get("path")
+            search_path = str(search_path) if search_path else None
+            result = await asyncio.to_thread(
+                file_tools.search_content, self._working_directory, pattern, include, search_path,
+            )
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+
+        elif tool_name == "fetch_url":
+            url = str(tool_arguments.get("url", ""))
+            fmt = str(tool_arguments.get("format", "markdown") or "markdown")
+            timeout = int(tool_arguments.get("timeout", 30) or 30)
+            result = await file_tools.fetch_url(url, fmt, timeout)
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+
+        elif tool_name in ("edit_file", "write_file"):
+            if self._read_only:
+                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name,
+                )
+                return
+            file_path = str(tool_arguments.get("file_path", ""))
+            resolved = str(file_tools.resolve_path(self._working_directory, file_path))
+            has_been_read = resolved in self._read_files
+            if tool_name == "edit_file":
+                replace_all = tool_arguments.get("replace_all", False)
+                if isinstance(replace_all, str):
+                    replace_all = replace_all.lower() == "true"
+                result = await asyncio.to_thread(
+                    file_tools.edit_file,
+                    self._working_directory,
+                    file_path,
+                    str(tool_arguments.get("old_string", "")),
+                    str(tool_arguments.get("new_string", "")),
+                    bool(replace_all),
+                    has_been_read=has_been_read,
+                )
+            else:
+                content = tool_arguments.get("content", "")
+                if not isinstance(content, str):
+                    content = json.dumps(content)
+                result = await asyncio.to_thread(
+                    file_tools.write_file, self._working_directory, file_path, content, has_been_read=has_been_read,
+                )
+            self._read_files.add(resolved)
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+
+        elif tool_name == "load_skill":
+            skill_name = str(tool_arguments.get("name", ""))
+            all_skills = enabled_skills(
+                load_skills(self._global_configuration.skill_directories_for(self._working_directory))
+            )
+            match = next((s for s in all_skills if s.identifier == skill_name), None)
+            if match is None:
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR,
+                    id=tool_call_identifier,
+                    message=f"No enabled skill named '{skill_name}'.",
+                    tool=tool_name,
+                )
+                return
+            result = json.dumps({
+                "code": "skill_loaded",
+                "name": match.identifier,
+                "title": match.display_title,
+                "path": match.path,
+                "content": match.body,
+            })
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+
+        elif tool_name == "ask_user":
+            questions = tool_arguments.get("questions", [])
+            request_identifier = f"q-{self._session_id}-{uuid.uuid4()}"
+            future = asyncio.get_event_loop().create_future()
+            self._pending_questions[request_identifier] = future
+            yield StreamEvent(
+                StreamEvent.Type.QUESTION,
+                id=tool_call_identifier,
+                request_id=request_identifier,
+                questions=questions,
+            )
+            try:
+                answers = await future
+            finally:
+                self._pending_questions.pop(request_identifier, None)
+            result = json.dumps({"code": "user_answered", "answers": answers})
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
 
         elif tool_name == "call_mcp_tool":
             read_only = tool_arguments.get("read_only", True)

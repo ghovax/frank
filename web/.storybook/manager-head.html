@@ -1,0 +1,21 @@
+<script>
+  // Chakra UI v3 advertises a Storybook catalog URL (storybook.chakra-ui.com) in
+  // its package.json; Storybook fetches its stories.json / metadata.json at
+  // runtime, which fails cross-origin and spams the console with CORS errors.
+  // Block those requests before any Storybook/Chakra code runs. Storybook-only;
+  // the real app is completely unaffected.
+  (function () {
+    var BLOCKED = "storybook.chakra-ui.com";
+    if (typeof window === "undefined" || !window.fetch) return;
+    var originalFetch = window.fetch;
+    window.fetch = function (input, init) {
+      try {
+        var url = typeof input === "string" ? input : (input && input.url) || "";
+        if (url.indexOf(BLOCKED) !== -1) {
+          return Promise.resolve(new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }));
+        }
+      } catch (e) {}
+      return originalFetch.apply(this, arguments);
+    };
+  })();
+</script>

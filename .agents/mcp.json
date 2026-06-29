@@ -1,43 +1,21 @@
 {
   "mcpServers": {
-    "openstreetmap": {
-      "enabled": false,
-      "transport": "stdio",
-      "command": "uv",
-      "args": ["run", "python", "examples/mcp/openstreetmap/server.py"],
-      "stateful": true,
-      "env": {
-        "UV_CACHE_DIR": "/private/tmp/uv-cache"
-      },
-      "cwd": "."
-    },
-    "plotly": {
-      "enabled": false,
-      "transport": "stdio",
-      "command": "uv",
-      "args": ["run", "python", "examples/mcp/plotly/server.py"],
-      "stateful": true,
-      "env": {
-        "UV_CACHE_DIR": "/private/tmp/uv-cache"
-      },
-      "cwd": "."
-    },
-    "mermaid": {
-      "enabled": false,
-      "transport": "stdio",
-      "command": "uv",
-      "args": ["run", "python", "examples/mcp/mermaid/server.py"],
-      "stateful": true,
-      "env": {
-        "UV_CACHE_DIR": "/private/tmp/uv-cache"
-      },
-      "cwd": "."
-    },
     "context7": {
       "enabled": true,
       "transport": "streamable_http",
       "url": "https://mcp.context7.com/mcp",
       "stateful": true
+    },
+    "example": {
+      "enabled": false,
+      "transport": "stdio",
+      "command": "uv",
+      "args": ["run", "python", "examples/mcp/example/server.py"],
+      "stateful": true,
+      "env": {
+        "UV_CACHE_DIR": "/private/tmp/uv-cache"
+      },
+      "cwd": "."
     }
   }
 }

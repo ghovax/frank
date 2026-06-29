@@ -5,6 +5,7 @@ import {
   streamA2A,
   abortSession,
   resolvePermission,
+  resolveQuestion,
   fetchSessionTasks,
   type A2AStreamResult,
   type A2AMessage,
@@ -12,7 +13,7 @@ import {
   type A2ATask as A2ATaskWire,
   type PermissionMode,
 } from "./api";
-import { isControlToolName, isSameToolEvent, nextToolSequence, type PermissionDecision, type ToolEvent, type ToolEventStatus } from "./tool-event";
+import { isControlToolName, isSameToolEvent, nextToolSequence, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import type { WidgetEvent } from "@/components/widget-bridge";
 
 // Re-export the A2A task shape so components can consume it from one place.
@@ -713,6 +714,23 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       );
       break;
     }
+    case "question": {
+      // An ask_user prompt attaches to the tool call that asked it, same lifecycle
+      // as a permission: the card flips to "input required" and renders the
+      // question inline; the tool result finalizes it once answered.
+      finishRunningThinking(state);
+      const toolCallId = String(data.toolCallId ?? "");
+      const question = {
+        requestId: String(data.requestId ?? ""),
+        questions: Array.isArray(data.questions) ? (data.questions as QuestionItem[]) : [],
+      };
+      state.messages = state.messages.map((message) =>
+        message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
+          ? { ...message, meta: { ...message.meta, status: "input_required", question } }
+          : message
+      );
+      break;
+    }
     case "error": {
       finishRunningThinking(state);
       const toolName = String(data.name ?? data.tool ?? "");
@@ -1236,6 +1254,26 @@ export function useChat(
     [flush]
   );
 
+  const handleQuestion = useCallback(
+    async (requestId: string, answers: QuestionAnswer[]) => {
+      const ctx = sessionIdRef.current;
+      if (!ctx) return;
+      await resolveQuestion(ctx, requestId, answers);
+      // Record the answer and hand the card back to its running lifecycle; the
+      // tool_result finalizes it (same shape as a resolved permission).
+      stateRef.current.messages = stateRef.current.messages.map((message) => {
+        const question = message.meta?.question as { requestId?: string } | undefined;
+        if (message.role !== "tool_call" || question?.requestId !== requestId) return message;
+        return {
+          ...message,
+          meta: { ...message.meta, status: "running", question: { ...question, answers } },
+        };
+      });
+      flush();
+    },
+    [flush]
+  );
+
   const abort = useCallback(() => {
     abortControllerRef.current?.abort();
     const ctx = sessionIdRef.current;
@@ -1270,5 +1308,6 @@ export function useChat(
     reset,
     dequeueMessage,
     handlePermission,
+    handleQuestion,
   };
 }

@@ -104,6 +104,19 @@ def _require_mcp_client_manager():
     return _mcp_client_manager
 
 
+# Rich tool descriptions live alongside the code as markdown templates so they
+# can be tuned without touching function bodies. They are loaded through the same
+# PromptLoader the runtime uses for its prompts (guidance lives in files, not in
+# code) and support {{ variable }} substitution if a description ever needs it.
+from harness.core.configuration import PromptLoader as _PromptLoader
+
+_DESCRIPTION_LOADER = _PromptLoader(Path(__file__).parent / "descriptions")
+
+
+def _load_tool_description(name: str) -> str:
+    return _DESCRIPTION_LOADER.load(name, {}).strip()
+
+
 @tool
 async def bash(
     command: str,
@@ -634,6 +647,181 @@ def update_goal(
         justification: A concise, user-facing reason for this update.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+@tool
+def read_file(
+    file_path: str,
+    offset: int = 1,
+    limit: int | None = None,
+    justification: str = "",
+) -> str:
+    """Read a file or directory from the local filesystem.
+
+    Args:
+        file_path: Absolute path (or path relative to the working directory).
+        offset: Line number to start from (1-indexed).
+        limit: Maximum number of lines to return.
+        justification: A concise, user-facing reason for this read.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+read_file.description = _load_tool_description("read_file")
+
+
+@tool
+def find_files(pattern: str, justification: str = "") -> str:
+    """Find files by glob pattern.
+
+    Args:
+        pattern: Glob pattern such as "**/*.py" or "src/**/*.ts".
+        justification: A concise, user-facing reason for this search.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+find_files.description = _load_tool_description("find_files")
+
+
+@tool
+def search_content(
+    pattern: str,
+    include: str | None = None,
+    path: str | None = None,
+    justification: str = "",
+) -> str:
+    """Search file contents by regular expression.
+
+    Args:
+        pattern: Regular expression to search for.
+        include: File-pattern filter such as "*.py" or "*.{ts,tsx}".
+        path: Directory or file to search (defaults to the working directory).
+        justification: A concise, user-facing reason for this search.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+search_content.description = _load_tool_description("search_content")
+
+
+@tool
+def edit_file(
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
+    justification: str = "",
+    risk: Literal["low", "medium", "high"] = "low",
+) -> str:
+    """Perform an exact string replacement in a file.
+
+    Args:
+        file_path: Absolute path (or path relative to the working directory).
+        old_string: The exact text to replace.
+        new_string: The text to replace it with (must differ from old_string).
+        replace_all: Replace every occurrence of old_string (default false).
+        justification: A concise, user-facing reason for this edit.
+        risk: "low" for a targeted edit, "medium" broad, "high" hard to reverse.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+edit_file.description = _load_tool_description("edit_file")
+
+
+@tool
+def write_file(
+    file_path: str,
+    content: str,
+    justification: str = "",
+    risk: Literal["low", "medium", "high"] = "low",
+) -> str:
+    """Write content to a file, overwriting it if it exists.
+
+    Args:
+        file_path: Absolute path (or path relative to the working directory).
+        content: The full text to write to the file.
+        justification: A concise, user-facing reason for this write.
+        risk: "low" new file, "medium" broad rewrite, "high" hard to reconstruct.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+write_file.description = _load_tool_description("write_file")
+
+
+@tool
+async def fetch_url(
+    url: str,
+    format: Literal["markdown", "text", "html"] = "markdown",
+    timeout: int = 30,
+    justification: str = "",
+) -> str:
+    """Fetch content from a URL and convert it to the requested format.
+
+    Args:
+        url: Fully-formed https URL (http is upgraded to https automatically).
+        format: "markdown" (default), "text", or "html".
+        timeout: Request timeout in seconds.
+        justification: A concise, user-facing reason for this fetch.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+fetch_url.description = _load_tool_description("fetch_url")
+
+
+@tool
+def ask_user(
+    questions: list[dict],
+    justification: str = "",
+) -> str:
+    """Ask the user one or more questions and receive their answers.
+
+    Args:
+        questions: List of question objects, each with "question" (full text),
+            "header" (short label, max ~30 chars), "options" (list of
+            {"label", "description"}), and optional "multiple" (bool) and
+            "custom" (bool, default true).
+        justification: A concise, user-facing reason for asking.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+ask_user.description = _load_tool_description("ask_user")
+
+
+@tool
+def load_skill(name: str, justification: str = "") -> str:
+    """Load a specialized skill's instructions into the conversation.
+
+    Args:
+        name: The skill name, matching one listed in "Available skills".
+        justification: A concise, user-facing reason for loading this skill.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+load_skill.description = _load_tool_description("load_skill")
+
+
+# Give every pre-existing tool the same rich, hand-written description loaded from
+# descriptions/<name>.md, overriding the docstring-derived default. Docstrings are
+# still parsed for the per-parameter JSON schema; the description file carries the
+# user-facing guidance — so every tool, old and new, is shaped the same way.
+bash.description = _load_tool_description("bash")
+web_search.description = _load_tool_description("web_search")
+spawn_agent.description = _load_tool_description("spawn_agent")
+read_task.description = _load_tool_description("read_task")
+write_tasks.description = _load_tool_description("write_tasks")
+update_tasks.description = _load_tool_description("update_tasks")
+update_goal.description = _load_tool_description("update_goal")
+open_web_preview.description = _load_tool_description("open_web_preview")
+list_mcp_tools.description = _load_tool_description("list_mcp_tools")
+call_mcp_tool.description = _load_tool_description("call_mcp_tool")
+list_mcp_resources.description = _load_tool_description("list_mcp_resources")
+read_mcp_resource.description = _load_tool_description("read_mcp_resource")
 
 
 def cancel_all_background_tasks() -> None:

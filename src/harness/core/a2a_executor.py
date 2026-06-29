@@ -204,6 +204,7 @@ class HarnessAgentExecutor(AgentExecutor):
         global_configuration: GlobalConfiguration,
         task_store: TaskStore,
         pending_permissions: dict[str, asyncio.Future],
+        pending_questions: dict[str, asyncio.Future],
         registry: Optional["AgentRegistry"] = None,
         on_new_context: Optional[callable] = None,
         conversations: Optional[dict[str, list]] = None,
@@ -216,6 +217,7 @@ class HarnessAgentExecutor(AgentExecutor):
         self._global_configuration = global_configuration
         self._task_store = task_store
         self._pending_permissions = pending_permissions
+        self._pending_questions = pending_questions
         self._registry = registry
         self._on_new_context = on_new_context
         # Persist/restore the dialogue history so a session keeps its context across
@@ -274,6 +276,7 @@ class HarnessAgentExecutor(AgentExecutor):
             agent_configuration=configuration,
             global_configuration=self._global_configuration,
             pending_permissions=self._pending_permissions,
+            pending_questions=self._pending_questions,
             session_id=context_id,
             conversation=conversation,
             working_directory=working_directory or "",
@@ -418,7 +421,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 if widget_payload.get("event") == "render_error":
                     # The same JSON payload, wrapped in a self-realization note and
                     # injected as a system message rather than user input.
-                    turn_input = runtime.widget_render_error_note(payload_json)
+                    turn_input = runtime.preview_render_error_note(payload_json)
                     as_system_note = True
                 else:
                     turn_input = payload_json
@@ -470,6 +473,17 @@ class HarnessAgentExecutor(AgentExecutor):
                         risk=data.get("risk", ""),
                     ))
                     # Let the sidebar flag this session as awaiting input.
+                    if self._on_permission_state is not None:
+                        self._on_permission_state(task.context_id)
+                elif kind == StreamEvent.Type.QUESTION:
+                    await flush_stream_buffers()
+                    await emit(_data_part(
+                        "question",
+                        requestId=data.get("request_id", ""),
+                        toolCallId=data.get("id", ""),
+                        questions=data.get("questions", []) or [],
+                    ))
+                    # A question is human-in-the-loop input, same as a permission.
                     if self._on_permission_state is not None:
                         self._on_permission_state(task.context_id)
                 elif kind == StreamEvent.Type.ERROR:

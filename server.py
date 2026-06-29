@@ -9,7 +9,7 @@ import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import quote, urljoin
 
 from fastapi import FastAPI, HTTPException
@@ -135,6 +135,10 @@ _composio_servers: dict[str, _configuration.MCPServerConfiguration] = {}
 _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
 _pending_permissions: dict[str, asyncio.Future] = {}
+# Pending ask_user answers, keyed by request id (prefixed "q-<context_id>-").
+# Mirrors _pending_permissions: the runtime awaits a future the UI resolves via
+# the /chat/{context_id}/question endpoint.
+_pending_questions: dict[str, asyncio.Future] = {}
 # Dialogue history per A2A context, shared across every agent executor so that
 # switching the active agent continues the same conversation (the persona is
 # applied per-turn on top of this shared history).
@@ -386,6 +390,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         global_configuration=_global_configuration,
         task_store=_task_store,
         pending_permissions=_pending_permissions,
+        pending_questions=_pending_questions,
         registry=_registry,
         on_new_context=_record_session,
         conversations=_conversations,
@@ -608,6 +613,13 @@ class PermissionRequest(BaseModel):
     decision: str
 
 
+class QuestionRequest(BaseModel):
+    request_id: str
+    # One entry per question, in order: a list of selected labels (plus any
+    # custom text the user typed). The runtime returns this verbatim to the tool.
+    answers: list[Any]
+
+
 class PermissionModeRequest(BaseModel):
     mode: Literal["default", "read_only", "bypass"]
 
@@ -615,6 +627,7 @@ class PermissionModeRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     api_key: str
     exa_api_key: str
+    composio_consumer_api_key: str
 
 
 class SandboxUpdateRequest(BaseModel):
@@ -801,6 +814,7 @@ async def get_settings():
     return {
         "api_key": _global_configuration.api.api_key,
         "exa_api_key": _global_configuration.exa.api_key,
+        "composio_consumer_api_key": _global_configuration.composio.consumer_api_key,
         "sandbox_enabled": _global_configuration.sandbox.enabled,
     }
 
@@ -808,15 +822,19 @@ async def get_settings():
 @app.post("/settings")
 async def update_settings(request: SettingsUpdateRequest):
     """Persist API credentials to ~/.harness/configuration.yaml and apply them
-    live: refresh the in-memory configuration, the Exa client, and drop cached
-    agent runtimes so the next turn rebuilds its model client with the new key."""
+    live: refresh the in-memory configuration, the Exa client, restart the MCP
+    client manager so Composio tools appear/disappear with its key, and drop
+    cached agent runtimes so the next turn rebuilds with the new credentials."""
+    global _composio_servers, _mcp_manager
     assert _global_configuration is not None
     save_api_keys(
         api_key=request.api_key,
         exa_api_key=request.exa_api_key,
+        composio_consumer_api_key=request.composio_consumer_api_key,
     )
     _global_configuration.api.api_key = request.api_key
     _global_configuration.exa.api_key = request.exa_api_key
+    _global_configuration.composio.consumer_api_key = request.composio_consumer_api_key
 
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
@@ -824,6 +842,22 @@ async def update_settings(request: SettingsUpdateRequest):
         set_exa_client(Exa(api_key=exa_key))
     else:
         set_exa_client(None)
+
+    # Re-provision Composio now that its key may have changed: rebuild the server
+    # config, fold it into (or remove it from) the MCP config, and restart the
+    # MCP client manager so the agent picks Composio tools up live.
+    _composio_servers = composio_mcp_servers(_global_configuration.composio)
+    if _composio_servers:
+        _global_configuration.mcp.servers.update(_composio_servers)
+    else:
+        _global_configuration.mcp.servers.pop(_global_configuration.composio.server_name, None)
+    if _mcp_manager is not None:
+        await _mcp_manager.aclose()
+    mcp_servers = _global_configuration.mcp.enabled_servers()
+    _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    if _mcp_manager is not None:
+        await _mcp_manager.start()
+    set_mcp_client_manager(_mcp_manager)
 
     for executor in _executors.values():
         executor.reset_runtimes()
@@ -1293,6 +1327,19 @@ async def resolve_permission(context_id: str, request: PermissionRequest):
     return {"status": "resolved", "decision": request.decision}
 
 
+@app.post("/chat/{context_id}/question")
+async def resolve_question(context_id: str, request: QuestionRequest):
+    """Resolve a pending ask_user request with the user's answers."""
+    future = _pending_questions.get(request.request_id)
+    if not future:
+        return {"status": "unknown", "error": "No pending question with that identifier."}
+    if future.done():
+        return {"status": "stale", "error": "Question was already resolved."}
+    future.set_result(request.answers)
+    _broadcaster.publish({"type": "sessions_changed"})
+    return {"status": "resolved", "answers": request.answers}
+
+
 @app.post("/chat/{context_id}/abort")
 async def abort_session(context_id: str):
     """Abort the running turn for a context and reject any pending permissions."""
@@ -1300,6 +1347,12 @@ async def abort_session(context_id: str):
     for request_id, future in list(_pending_permissions.items()):
         if request_id.startswith(prefix) and not future.done():
             future.set_result("deny")
+    q_prefix = f"q-{context_id}-"
+    for request_id, future in list(_pending_questions.items()):
+        if request_id.startswith(q_prefix) and not future.done():
+            # A cancelled question resolves to an empty answer list so the
+            # awaiting tool call completes cleanly instead of hanging.
+            future.set_result([])
     aborted = any(executor.abort_context(context_id) for executor in _executors.values())
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
 

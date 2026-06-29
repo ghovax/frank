@@ -14,6 +14,30 @@ export interface ToolPermission {
   decision?: PermissionDecision;
 }
 
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface QuestionItem {
+  question: string;
+  header?: string;
+  options?: QuestionOption[];
+  multiple?: boolean;
+  // When false, no "type your own answer" field is shown. Defaults to true.
+  custom?: boolean;
+}
+
+// One answer per question: a selected label, a list of labels (multi-select),
+// or the custom text the user typed.
+export type QuestionAnswer = string | string[];
+
+export interface ToolQuestion {
+  requestId: string;
+  questions: QuestionItem[];
+  answers?: QuestionAnswer[];
+}
+
 export interface ToolEvent {
   name: string;
   arguments?: Record<string, unknown>;
@@ -22,6 +46,7 @@ export interface ToolEvent {
   result?: unknown;
   status?: ToolEventStatus;
   permission?: ToolPermission;
+  question?: ToolQuestion;
 }
 
 export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: string): boolean {

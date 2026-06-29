@@ -61,7 +61,7 @@ export function ChatPanel({
   onToggleHistory,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
-  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission } =
+  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
     useChat(agent, initialSessionId, workingDirectory, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -271,6 +271,7 @@ export function ChatPanel({
                   key={message.id}
                   message={message}
                   onPermission={handlePermission}
+                  onQuestion={handleQuestion}
                   agents={agents}
                 />
               ))}

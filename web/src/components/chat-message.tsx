@@ -2,7 +2,7 @@
 
 import { Box, Text } from "@chakra-ui/react";
 import type { ChatMessage } from "@/lib/use-chat";
-import type { PermissionDecision, ToolEventStatus, ToolPermission } from "@/lib/tool-event";
+import type { PermissionDecision, QuestionAnswer, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ThinkingIndicator } from "./thinking-indicator";
@@ -10,10 +10,11 @@ import { ThinkingIndicator } from "./thinking-indicator";
 interface ChatMessageProps {
   message: ChatMessage;
   onPermission?: (requestId: string, decision: PermissionDecision) => void;
+  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   agents?: { id: string; name: string }[];
 }
 
-export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMessageProps) {
+export function ChatMessageItem({ message, onPermission, onQuestion, agents = [] }: ChatMessageProps) {
   const toolStatus = (status: unknown): ToolEventStatus | undefined =>
     status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined;
 
@@ -61,8 +62,10 @@ export function ChatMessageItem({ message, onPermission, agents = [] }: ChatMess
             sequenceNumber={message.meta?.sequenceNumber as number | undefined}
             status={toolStatus(message.meta?.status)}
             permission={message.meta?.permission as ToolPermission | undefined}
+            question={message.meta?.question as ToolQuestion | undefined}
             agents={agents}
             onPermission={onPermission}
+            onQuestion={onQuestion}
           />
         </Box>
       );

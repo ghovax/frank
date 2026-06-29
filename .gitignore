@@ -17,6 +17,13 @@ wheels/
 *.swo
 *.swp
 
+# Node — the web/ app has its own tracked package.json/node_modules; these
+# root-anchored entries only catch Node debris if npm is ever run from the repo
+# root (which is a Python project). web/ uses its own .gitignore.
+/node_modules/
+/package.json
+/package-lock.json
+
 # Harness state lives in ~/.harness, with configuration.yaml symlinked to the
 # tracked .harness/configuration.yaml in this repo. The chat history database and
 # any legacy in-repo copies are never tracked; the config (keys blank) is.

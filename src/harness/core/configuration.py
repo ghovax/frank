@@ -59,6 +59,7 @@ def save_api_keys(
     *,
     api_key: str | None = None,
     exa_api_key: str | None = None,
+    composio_consumer_api_key: str | None = None,
     sandbox_enabled: bool | None = None,
 ) -> None:
     """Persist settings into ~/.harness/configuration.yaml, preserving the rest
@@ -73,6 +74,8 @@ def save_api_keys(
         data.setdefault("api", {})["api_key"] = api_key
     if exa_api_key is not None:
         data.setdefault("exa", {})["api_key"] = exa_api_key
+    if composio_consumer_api_key is not None:
+        data.setdefault("composio", {})["consumer_api_key"] = composio_consumer_api_key
     if sandbox_enabled is not None:
         data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
     path.write_text(yaml.safe_dump(data, sort_keys=False))

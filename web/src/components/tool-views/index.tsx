@@ -84,7 +84,7 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
         <Pill colorPalette="purple">{agentLabelFor(agentName, agents)}</Pill>
       </InlineField>
       <Field label="Prompt">
-        <MarkdownContent content={asString(args.prompt)} />
+        <MarkdownContent content={asString(args.prompt)} fontSize="xs" />
       </Field>
     </FieldList>
   );
@@ -218,7 +218,7 @@ const PROSE_FIELD_KEYS = new Set([
   "query",
 ]);
 
-// Readable labels for raw argument keys. Falls back to the raw key if unmapped.
+// Readable labels for raw argument/result keys. Falls back to the raw key if unmapped.
 const FIELD_LABELS: Record<string, string> = {
   server: "Server",
   tool_name: "Tool name",
@@ -232,8 +232,301 @@ const FIELD_LABELS: Record<string, string> = {
   agent: "Agent",
   prompt: "Prompt",
   task_id: "Task ID",
+  task_identifier: "Task ID",
   code: "Status",
+  // file / search tools (arguments)
+  file_path: "File path",
+  offset: "Offset",
+  limit: "Limit",
+  pattern: "Pattern",
+  include: "Include",
+  path: "Path",
+  old_string: "Old string",
+  new_string: "New string",
+  replace_all: "Replace all",
+  content: "Content",
+  url: "URL",
+  format: "Format",
+  timeout: "Timeout",
+  name: "Name",
+  questions: "Questions",
+  options: "Options",
+  header: "Header",
+  multiple: "Multiple",
+  custom: "Custom",
+  // file / search tools (results)
+  created: "Created",
+  characters: "Characters",
+  count: "Count",
+  matches: "Matches",
+  entries: "Entries",
+  truncated: "Truncated",
+  total_lines: "Total lines",
+  start_line: "Start line",
+  end_line: "End line",
+  is_directory: "Directory",
+  title: "Title",
+  artifact: "Artifact",
+  answers: "Answers",
 };
+
+// Monospace inline span for identifiers/paths/patterns/URLs — the scalar values
+// that should read as code rather than prose.
+function Mono({ children }: { children: ReactNode }) {
+  return (
+    <Text as="span" fontFamily="var(--app-font-mono)" fontSize="xs" wordBreak="break-all">
+      {children}
+    </Text>
+  );
+}
+
+function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="File path">
+        <Mono>{asString(args.file_path)}</Mono>
+      </InlineField>
+      {args.offset != null && <InlineField label="Offset">{asString(args.offset)}</InlineField>}
+      {args.limit != null && <InlineField label="Limit">{asString(args.limit)}</InlineField>}
+    </FieldList>
+  );
+}
+
+function EditFileCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="File path">
+        <Mono>{asString(args.file_path)}</Mono>
+      </InlineField>
+      {args.replace_all != null && <InlineField label="Replace all">{args.replace_all ? "yes" : "no"}</InlineField>}
+      <Field label="Old string">
+        <MonoBlock>{asString(args.old_string) || "(empty)"}</MonoBlock>
+      </Field>
+      <Field label="New string">
+        <MonoBlock>{asString(args.new_string) || "(empty)"}</MonoBlock>
+      </Field>
+    </FieldList>
+  );
+}
+
+function WriteFileCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="File path">
+        <Mono>{asString(args.file_path)}</Mono>
+      </InlineField>
+      <Field label="Content">
+        <MonoBlock>{asString(args.content)}</MonoBlock>
+      </Field>
+    </FieldList>
+  );
+}
+
+function SearchContentCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="Pattern">
+        <Mono>{asString(args.pattern)}</Mono>
+      </InlineField>
+      {args.include ? (
+        <InlineField label="Include">
+          <Mono>{asString(args.include)}</Mono>
+        </InlineField>
+      ) : null}
+      {args.path ? (
+        <InlineField label="Path">
+          <Mono>{asString(args.path)}</Mono>
+        </InlineField>
+      ) : null}
+    </FieldList>
+  );
+}
+
+function FindFilesCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="Pattern">
+        <Mono>{asString(args.pattern)}</Mono>
+      </InlineField>
+    </FieldList>
+  );
+}
+
+function FetchUrlCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="URL">
+        <Mono>{asString(args.url)}</Mono>
+      </InlineField>
+      {args.format ? <InlineField label="Format">{asString(args.format)}</InlineField> : null}
+      {args.timeout != null && <InlineField label="Timeout">{asString(args.timeout)}s</InlineField>}
+    </FieldList>
+  );
+}
+
+function LoadSkillCallView({ args }: { args: Record<string, unknown> }) {
+  return (
+    <FieldList>
+      <InlineField label="Skill">
+        <Mono>{asString(args.name)}</Mono>
+      </InlineField>
+    </FieldList>
+  );
+}
+
+function AskUserCallView({ args }: { args: Record<string, unknown> }) {
+  const questions = asArray(args.questions).map(asRecord);
+  if (questions.length === 0) return null;
+  return (
+    <FieldList>
+      {questions.map((item, index) => {
+        const options = asArray(item.options).map(asRecord);
+        const label = asString(item.header) || `Question ${index + 1}`;
+        return (
+          <Field key={index} label={label}>
+            <Text fontSize="xs" mb={options.length ? 1.5 : 0}>
+              {asString(item.question)}
+            </Text>
+            {options.length > 0 ? (
+              <Flex wrap="wrap" gap={1}>
+                {options.map((option, optionIndex) => (
+                  <Pill key={optionIndex} colorPalette="blue">
+                    {asString(option.label)}
+                  </Pill>
+                ))}
+              </Flex>
+            ) : null}
+            {item.multiple === true ? (
+              <Text fontSize="2xs" color="fg.subtle">
+                multi-select
+              </Text>
+            ) : null}
+          </Field>
+        );
+      })}
+    </FieldList>
+  );
+}
+
+function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
+  // The call already shows the file path, so the result only surfaces the line
+  // range and the content (no duplicated Path field).
+  if (data.is_directory === true) {
+    const entries = asArray(data.entries).map(asString);
+    return (
+      <FieldList>
+        <Field label="Entries">
+          <MonoBlock>{entries.join("\n") || "(empty)"}</MonoBlock>
+        </Field>
+      </FieldList>
+    );
+  }
+  const content = asString(data.content);
+  const range = [asString(data.start_line), asString(data.end_line)].filter(Boolean).join("–");
+  const total = asString(data.total_lines);
+  return (
+    <FieldList>
+      {range && (
+        <InlineField label="Lines">
+          {range}
+          {total ? ` of ${total}` : ""}
+        </InlineField>
+      )}
+      {content && (
+        <Field label="Content">
+          <MonoBlock>{content}</MonoBlock>
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function MatchListResultView({ data }: { data: Record<string, unknown> }) {
+  // Pattern is already shown on the call card — only surface the count + matches.
+  const matches = asArray(data.matches).map(asString);
+  const count = asString(data.count) || String(matches.length);
+  return (
+    <FieldList>
+      <InlineField label="Count">{count}</InlineField>
+      {matches.length > 0 && (
+        <Field label="Matches">
+          <MonoBlock>{matches.join("\n")}</MonoBlock>
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function FileEditResultView({ data }: { data: Record<string, unknown> }) {
+  // Shared by edit_file and write_file. Path is on the call card; the internal
+  // `code` status is dropped. edit_file carries `created`; write_file does not.
+  const characters = asString(data.characters);
+  return (
+    <FieldList>
+      {data.created != null && (
+        <InlineField label="Created">{data.created ? "yes (new file)" : "no"}</InlineField>
+      )}
+      {characters && <InlineField label="Characters">{characters}</InlineField>}
+    </FieldList>
+  );
+}
+
+function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
+  // URL + format are on the call card; only surface truncation + fetched content.
+  const content = asString(data.content);
+  return (
+    <FieldList>
+      {data.truncated === true && <InlineField label="Truncated">yes</InlineField>}
+      {content && (
+        <Field label="Content">
+          <MarkdownContent content={content} fontSize="xs" />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function LoadSkillResultView({ data }: { data: Record<string, unknown> }) {
+  // Skill name is on the call card; the internal resolved `path` is dropped.
+  const title = asString(data.title);
+  const content = asString(data.content);
+  return (
+    <FieldList>
+      {title && <InlineField label="Title">{title}</InlineField>}
+      {content && (
+        <Field label="Content">
+          <MarkdownContent content={content} fontSize="xs" />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function AskUserResultView({ data }: { data: Record<string, unknown> }) {
+  // Answers arrive as a per-question array of labels (string | string[]). Flatten
+  // into readable pills instead of dumping the raw JSON array.
+  const answers = asArray(data.answers);
+  const labels: string[] = [];
+  for (const answer of answers) {
+    if (Array.isArray(answer)) labels.push(...answer.map(asString));
+    else labels.push(asString(answer));
+  }
+  const shown = labels.filter(Boolean);
+  if (shown.length === 0) return <EmptyHint>No answer</EmptyHint>;
+  return (
+    <FieldList>
+      <Field label="Answers">
+        <Flex wrap="wrap" gap={1}>
+          {shown.map((label, index) => (
+            <Pill key={index} colorPalette="green">
+              {label}
+            </Pill>
+          ))}
+        </Flex>
+      </Field>
+    </FieldList>
+  );
+}
 
 function GenericView({ data }: { data: Record<string, unknown> }) {
   const entries = Object.entries(data);
@@ -258,7 +551,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string }[] }) {
+export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string; title?: string }[] }) {
   if (!args) return null;
   switch (name) {
     case "bash":
@@ -276,6 +569,22 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
     case "open_web_preview":
     case "render_widget":
       return <WebPreviewCallView args={args} />;
+    case "read_file":
+      return <ReadFileCallView args={args} />;
+    case "edit_file":
+      return <EditFileCallView args={args} />;
+    case "write_file":
+      return <WriteFileCallView args={args} />;
+    case "search_content":
+      return <SearchContentCallView args={args} />;
+    case "find_files":
+      return <FindFilesCallView args={args} />;
+    case "fetch_url":
+      return <FetchUrlCallView args={args} />;
+    case "load_skill":
+      return <LoadSkillCallView args={args} />;
+    case "ask_user":
+      return <AskUserCallView args={args} />;
     default:
       return <GenericView data={args} />;
   }
@@ -777,6 +1086,12 @@ export function ToolResultView({ name, content }: { name: string; content: strin
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
     if (name === "read_task") return <ReadTaskResultView data={data} />;
+    if (name === "read_file") return <ReadFileResultView data={data} />;
+    if (name === "find_files" || name === "search_content") return <MatchListResultView data={data} />;
+    if (name === "edit_file" || name === "write_file") return <FileEditResultView data={data} />;
+    if (name === "fetch_url") return <FetchUrlResultView data={data} />;
+    if (name === "load_skill") return <LoadSkillResultView data={data} />;
+    if (name === "ask_user") return <AskUserResultView data={data} />;
     return <GenericView data={data} />;
   }
 

@@ -1,15 +1,16 @@
 "use client";
 
-import { Box, Button, Flex, HStack } from "@chakra-ui/react";
+import { Box, Button, Flex, HStack, Input, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { getToolCallDisplay } from "@/lib/tool-display";
-import type { PermissionDecision, ToolEvent, ToolPermission } from "@/lib/tool-event";
+import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { ToolArtifacts, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolRiskBadges, ToolStatusBadge } from "./tool-card";
 
 interface ToolCallProps extends ToolEvent {
   agents?: { id: string; name: string; title?: string }[];
   onPermission?: (requestId: string, decision: PermissionDecision) => void;
+  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
 }
 
 // The human-in-the-loop approval, rendered inside the tool card it belongs to,
@@ -75,7 +76,106 @@ function ToolPermissionPrompt({
   );
 }
 
-export function ToolCall({ name, arguments: toolArguments, result, sequenceNumber, status, permission, agents = [], onPermission }: ToolCallProps) {
+// An ask_user prompt: one or more questions, each with selectable options and an
+// optional "type your own answer" field. Lives inside the tool card while
+// pending (status "input_required"), same lifecycle as a permission. Custom text
+// overrides any option selection for that question; Submit sends one answer per
+// question (in order) and hands the card back to its running lifecycle.
+function ToolQuestionPrompt({
+  question,
+  onQuestion,
+}: {
+  question: ToolQuestion;
+  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
+}) {
+  const items = question.questions;
+  const [selected, setSelected] = useState<Record<number, string[]>>({});
+  const [custom, setCustom] = useState<Record<number, string>>({});
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    boxRef.current?.focus();
+  }, []);
+
+  function toggle(index: number, label: string, multiple: boolean) {
+    setSelected((current) => {
+      const active = current[index] ?? [];
+      if (!multiple) {
+        return { ...current, [index]: active.length === 1 && active[0] === label ? [] : [label] };
+      }
+      return {
+        ...current,
+        [index]: active.includes(label) ? active.filter((value) => value !== label) : [...active, label],
+      };
+    });
+  }
+
+  function submit() {
+    const answers: QuestionAnswer[] = items.map((item, index) => {
+      const text = (custom[index] ?? "").trim();
+      if (text) return text;
+      const chosen = selected[index] ?? [];
+      return item.multiple ? chosen : (chosen[0] ?? "");
+    });
+    onQuestion?.(question.requestId, answers);
+  }
+
+  return (
+    <Flex ref={boxRef} tabIndex={0} direction="column" gap={3} _focus={{ outline: "none", boxShadow: "none" }}>
+      {items.map((item, index) => {
+        const multiple = !!item.multiple;
+        const customEnabled = item.custom !== false;
+        const hasOptions = !!item.options && item.options.length > 0;
+        const active = selected[index] ?? [];
+        const text = custom[index] ?? "";
+        return (
+          <Flex key={index} direction="column" gap={1.5}>
+            {item.header ? (
+              <Text fontSize="xs" fontWeight="semibold">
+                {item.header}
+              </Text>
+            ) : null}
+            <Text fontSize="sm">{item.question}</Text>
+            {hasOptions ? (
+              <Flex wrap="wrap" gap={1.5}>
+                {item.options!.map((option) => {
+                  const isSelected = !text && active.includes(option.label);
+                  return (
+                    <Button
+                      key={option.label}
+                      size="xs"
+                      variant={isSelected ? "solid" : "subtle"}
+                      colorPalette={isSelected ? "blue" : undefined}
+                      title={option.description}
+                      onClick={() => { if (!text) toggle(index, option.label, multiple); }}
+                    >
+                      {option.label}
+                    </Button>
+                  );
+                })}
+              </Flex>
+            ) : null}
+            {customEnabled ? (
+              <Input
+                size="xs"
+                placeholder="Type your own answer"
+                value={text}
+                onChange={(event) => setCustom((current) => ({ ...current, [index]: event.target.value }))}
+              />
+            ) : null}
+          </Flex>
+        );
+      })}
+      <Flex justify="flex-end">
+        <Button size="xs" colorPalette="green" variant="solid" onClick={submit}>
+          Submit
+        </Button>
+      </Flex>
+    </Flex>
+  );
+}
+
+export function ToolCall({ name, arguments: toolArguments, result, sequenceNumber, status, permission, question, agents = [], onPermission, onQuestion }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
@@ -86,9 +186,9 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
   const showResultInside = resultContent != null && artifacts.length === 0;
   // Only while pending — once decided, the status badge carries the outcome.
   const showPermission = !!permission && status === "input_required";
-  const collapsible = hasArguments || showResultInside || showPermission;
-  // A pending approval forces the card open so the Allow/Deny controls are visible
-  // without a click.
+  const showQuestion = !!question && status === "input_required";
+  const collapsible = hasArguments || showResultInside || showPermission || showQuestion;
+  // A pending prompt forces the card open so the controls are visible without a click.
   const bodyOpen = open || status === "input_required";
 
   const { icon: Icon, iconColor, label } = getToolCallDisplay(name, toolArguments);
@@ -124,6 +224,7 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
             <Flex direction="column" gap={2} align="stretch">
               {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
               {showPermission && permission && <ToolPermissionPrompt permission={permission} onPermission={onPermission} />}
+              {showQuestion && question && <ToolQuestionPrompt question={question} onQuestion={onQuestion} />}
               {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}
             </Flex>
           </ToolCardBody>
