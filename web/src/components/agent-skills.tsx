@@ -1,7 +1,7 @@
 "use client";
 
-import { Badge, Box, Flex, Text } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
+import { Badge, Box, EmptyState, Flex, Text } from "@chakra-ui/react";
+import { useEffect, useState, type ReactNode } from "react";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
 import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
@@ -36,7 +36,7 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 // agent and rendered as collapsible cards, so you can see what an agent can do —
 // plus the tools exposed by the configured MCP servers, grouped per server.
 // Every card starts collapsed to keep the empty state uncluttered.
-export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null; workingDirectory?: string }) {
+export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: AgentCard | null; workingDirectory?: string; homeDirectory?: string }) {
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
   const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
 
@@ -82,6 +82,19 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
   const hasTools = toolServers.length > 0;
   if (!hasSkills && !hasTools) return null;
 
+  // Split each list into the global capabilities (from ~/.agents) and the ones the
+  // selected folder contributes itself, so the two scopes can be shown apart. The
+  // scope labels only appear once the folder actually adds something project-local;
+  // a plain folder (only globals, e.g. home) stays an unlabelled flat list.
+  const globalSkills = skills.filter((skill) => skill.scope !== "project");
+  const projectSkills = skills.filter((skill) => skill.scope === "project");
+  const globalServers = toolServers.filter((server) => server.scope !== "project");
+  const projectServers = toolServers.filter((server) => server.scope === "project");
+
+  // The home folder has no project scope of its own, so its "This project" group
+  // (which would always be empty) is suppressed — only real project folders show it.
+  const isHomeFolder = !workingDirectory || workingDirectory === homeDirectory;
+
   return (
     <Box w="100%" maxW="640px" mx="auto">
       {hasSkills && (
@@ -96,9 +109,14 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             </Box>
           )}
           <Flex direction="column" gap={2}>
-            {skills.map((skill) => (
-              <SkillCard key={skill.id} skill={skill} />
-            ))}
+            <ScopeLabel>Global</ScopeLabel>
+            {globalSkills.length > 0
+              ? globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
+              : <EmptyScope icon={<LuPuzzle />}>No global skills</EmptyScope>}
+            {!isHomeFolder && <ScopeLabel>This project</ScopeLabel>}
+            {!isHomeFolder && (projectSkills.length > 0
+              ? projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
+              : <EmptyScope icon={<LuPuzzle />}>No project-specific skills</EmptyScope>)}
           </Flex>
         </>
       )}
@@ -113,13 +131,43 @@ export function AgentSkills({ card, workingDirectory }: { card: AgentCard | null
             <Text fontSize="xs">External tools the agent can call, exposed by the configured MCP servers and grouped by server.</Text>
           </Box>
           <Flex direction="column" gap={2}>
-            {toolServers.map((server) => (
-              <McpServerGroup key={server.name} server={server} />
-            ))}
+            <ScopeLabel>Global</ScopeLabel>
+            {globalServers.length > 0
+              ? globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)
+              : <EmptyScope icon={<LuPlug />}>No global tools</EmptyScope>}
+            {!isHomeFolder && <ScopeLabel>This project</ScopeLabel>}
+            {!isHomeFolder && (projectServers.length > 0
+              ? projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)
+              : <EmptyScope icon={<LuPlug />}>No project-specific tools</EmptyScope>)}
           </Flex>
         </Box>
       )}
     </Box>
+  );
+}
+
+// A plain label separating the global capabilities from the ones the selected
+// project contributes itself. Always shown (even in the home folder) so the two
+// scopes read clearly; deliberately understated, not a bold uppercase heading.
+function ScopeLabel({ children }: { children: string }) {
+  return (
+    <Text fontSize="xs" color="fg.subtle" mt={1}>
+      {children}
+    </Text>
+  );
+}
+
+// Placeholder for a scope that currently has no capabilities (e.g. a project with
+// no project-specific skills yet), matching the empty state used elsewhere so its
+// label is not left dangling.
+function EmptyScope({ icon, children }: { icon: ReactNode; children: string }) {
+  return (
+    <EmptyState.Root size="sm">
+      <EmptyState.Content>
+        <EmptyState.Indicator>{icon}</EmptyState.Indicator>
+        <EmptyState.Title fontSize="xs">{children}</EmptyState.Title>
+      </EmptyState.Content>
+    </EmptyState.Root>
   );
 }
 

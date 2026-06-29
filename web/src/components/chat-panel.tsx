@@ -28,6 +28,7 @@ interface ChatPanelProps {
   onSessionCreated: (sessionId: string) => void;
   onSlashCommand?: (command: string) => void;
   workingDirectory?: string;
+  homeDirectory?: string;
   recentProjects?: { path: string; name: string }[];
   onWorkingDirectoryChange?: (dir: string) => void;
   onBrowseFolder?: () => void;
@@ -48,6 +49,7 @@ export function ChatPanel({
   sessionRunning = false,
   onSessionCreated,
   workingDirectory,
+  homeDirectory,
   recentProjects,
   onWorkingDirectoryChange,
   onBrowseFolder,
@@ -260,7 +262,7 @@ export function ChatPanel({
                   </VStack>
                 </EmptyState.Content>
               </EmptyState.Root>
-              <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} />
+              <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">

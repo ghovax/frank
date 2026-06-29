@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
 from watchfiles import awatch
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
 from langchain_openai import ChatOpenAI
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
@@ -87,6 +87,19 @@ class ProjectHistoryRecord(Base):
     path = Column(Text, primary_key=True)
     name = Column(Text, default="")
     selected_at = Column(String, nullable=False)
+
+
+class ConversationRecord(Base):
+    """The agent's dialogue history (LangChain messages) per A2A context, persisted
+    so a session keeps its context across a server restart. The A2A task store holds
+    the transcript the UI replays; this holds the model-facing message list the agent
+    actually resumes from."""
+
+    __tablename__ = "conversations"
+
+    context_id = Column(String, primary_key=True)  # == A2A contextId
+    messages = Column(Text, default="")  # JSON: langchain messages_to_dict
+    updated_at = Column(String, nullable=False)
 
 
 class Broadcaster:
@@ -155,6 +168,45 @@ _broadcaster = Broadcaster()
 _title_tasks: set[asyncio.Task] = set()
 
 
+def _load_conversation(context_id: str) -> list:
+    """Restore a context's persisted dialogue history (LangChain messages). Returns
+    an empty list when there is nothing stored or the stored form can't be decoded —
+    a resumed session then simply starts fresh rather than erroring."""
+    if _session_factory is None:
+        return []
+    database_session = _session_factory()
+    try:
+        record = database_session.get(ConversationRecord, context_id)
+        if record is None or not record.messages:
+            return []
+        return messages_from_dict(json.loads(record.messages))
+    except Exception:
+        return []
+    finally:
+        database_session.close()
+
+
+def _save_conversation(context_id: str, messages: list) -> None:
+    """Persist a context's dialogue history after a turn, so it survives a restart."""
+    if _session_factory is None or not context_id:
+        return
+    database_session = _session_factory()
+    try:
+        serialized = json.dumps(messages_to_dict(messages))
+        record = database_session.get(ConversationRecord, context_id)
+        now = datetime.now(timezone.utc).isoformat()
+        if record is None:
+            database_session.add(ConversationRecord(context_id=context_id, messages=serialized, updated_at=now))
+        else:
+            record.messages = serialized
+            record.updated_at = now
+        database_session.commit()
+    except Exception:
+        database_session.rollback()
+    finally:
+        database_session.close()
+
+
 def _record_session(context_id: str, agent: str, working_directory: str, first_message: str) -> None:
     assert _session_factory is not None
     database_session = _session_factory()
@@ -192,6 +244,15 @@ def _record_session(context_id: str, agent: str, working_directory: str, first_m
 def _project_name(path: str) -> str:
     normalized = path.rstrip("/\\")
     return Path(normalized).name or normalized or path
+
+
+def _path_scope(path_value: str, home_root: Path) -> str:
+    """Whether a discovered file is ``global`` (under ``~/.agents``) or
+    ``project`` (the selected folder's own ``.agents``)."""
+    try:
+        return "global" if Path(path_value).resolve().is_relative_to(home_root) else "project"
+    except Exception:
+        return "global"
 
 
 def _record_project_path(path_value: str) -> str | None:
@@ -330,6 +391,8 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         conversations=_conversations,
         on_turn_state=_set_turn_state,
         on_permission_state=_notify_permission_state,
+        load_conversation=_load_conversation,
+        save_conversation=_save_conversation,
     )
     handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
     _executors[agent_name] = executor
@@ -648,6 +711,7 @@ async def skills(working_directory: str = ""):
         else _global_configuration.skill_directories()
     )
     all_skills = load_skills(roots)
+    home_root = _global_configuration.home_agents_root().resolve()
     return {
         "skills": [
             {
@@ -656,6 +720,7 @@ async def skills(working_directory: str = ""):
                 "title": skill.display_title,
                 "description": skill.description,
                 "enabled": skill.enabled,
+                "scope": _path_scope(skill.path, home_root),
             }
             for skill in all_skills
         ]
@@ -788,6 +853,9 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
     not leak in. The folder's servers are ensured running first so their tools
     actually appear (the subprocess pool is shared and grows as a union)."""
     assert _global_configuration is not None
+    # Servers declared by the working directory's own mcp.json are project-specific;
+    # everything else (home globals and the Composio integration) is global.
+    project_server_names: set[str] = set()
     if working_directory:
         await _ensure_mcp_servers_for(working_directory)
         allowed = set(_global_configuration.mcp_configuration_for(working_directory).servers)
@@ -797,6 +865,12 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
             for name, configuration in _global_configuration.mcp.servers.items()
             if name in allowed
         }
+        home_root = _global_configuration.home_agents_root().resolve()
+        project_root = _global_configuration.project_agents_root_for(working_directory).resolve()
+        if project_root != home_root:
+            project_server_names = set(
+                _configuration.MCPConfiguration.from_dotagents_roots([project_root]).servers
+            )
     else:
         configured = _global_configuration.mcp.servers
     tools_by_server: dict[str, list] = {}
@@ -810,6 +884,7 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
             "name": name,
             "enabled": configuration.enabled,
             "tools": tools_by_server.get(name, []),
+            "scope": "project" if name in project_server_names else "global",
         }
         for name, configuration in sorted(configured.items())
         if not server or name == server
@@ -1007,13 +1082,18 @@ async def preview_file(file_path: str):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="File not found.")
     suffix = path.suffix.lower()
+    # Previews are live local files being iterated on, and a page's sibling assets
+    # (CSS/JS/images) are fetched by their stable paths without the cache-busting
+    # version the iframe URL carries — so serve everything no-store, or a refresh
+    # would reload the HTML but keep showing cached assets.
+    no_store = {"Cache-Control": "no-store"}
     if suffix in (".html", ".htm", ".xhtml"):
         try:
             markup = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise HTTPException(status_code=400, detail=f"Could not read file: {error}")
-        return HTMLResponse(_inject_widget_runtime(markup))
-    return FileResponse(path)
+        return HTMLResponse(_inject_widget_runtime(markup), headers=no_store)
+    return FileResponse(path, headers=no_store)
 
 
 # A rewriting pass-through proxy for `open_web_preview` of external URLs. It serves

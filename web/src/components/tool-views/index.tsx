@@ -621,7 +621,16 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     // the /preview-proxy route so sites that refuse direct framing still render.
     const file = asString(artifact.file);
     const externalSrc = safeWebUrl(asString(artifact.src));
-    const src = file ? filePreviewUrl(file) : externalSrc ? proxyPreviewUrl(externalSrc) : "";
+    const baseSrc = file ? filePreviewUrl(file) : externalSrc ? proxyPreviewUrl(externalSrc) : "";
+    // An in-place refresh (replace) keeps the same artifact_id (and the same file
+    // path/URL), so the iframe src would be byte-identical and the frame would never
+    // reload — showing the previous render until a full page reload. The backend
+    // stamps a fresh `version` on every preview call; fold it into the src as a
+    // cache-buster so a refresh actually reloads the (rewritten) page.
+    const version = asString(artifact.version);
+    const src = baseSrc && version
+      ? `${baseSrc}${baseSrc.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`
+      : baseSrc;
     const srcDoc = asString(artifact.srcdoc);
     if (!src && !srcDoc) return <ErrorView message="Iframe artifact did not include a safe source." />;
     return (

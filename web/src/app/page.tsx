@@ -438,6 +438,7 @@ function HomeContent() {
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}
           workingDirectory={workingDirectory}
+          homeDirectory={homeProject?.path ?? ""}
           recentProjects={projectsForSelector}
           onWorkingDirectoryChange={selectWorkingDirectory}
           onBrowseFolder={handleBrowseFolder}

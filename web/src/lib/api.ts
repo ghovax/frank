@@ -52,6 +52,8 @@ export interface AgentSkill {
   tags?: string[];
   examples?: string[];
   enabled?: boolean;
+  // "global" (from ~/.agents) or "project" (from the selected folder's .agents).
+  scope?: "global" | "project";
 }
 
 export interface AgentCard {
@@ -142,6 +144,9 @@ export interface McpServerTools {
   name: string;
   tools: McpTool[];
   enabled?: boolean;
+  // "global" (from ~/.agents or the Composio integration) or "project" (from the
+  // selected folder's own mcp.json).
+  scope?: "global" | "project";
 }
 
 // Discovery: tools exposed by each configured MCP server, for the capabilities panel.

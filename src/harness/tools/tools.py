@@ -481,6 +481,10 @@ def build_web_preview_result(
         **reference,
         "height": artifact_height,
         "summary": preview_summary,
+        # A fresh token on every call — including an in-place refresh that reuses the
+        # same artifact_id — so the front end can bust the iframe and reload the
+        # (possibly rewritten) source instead of showing the previous render.
+        "version": new_id("rev"),
     }
     model_context = {
         "code": "web_preview_opened",

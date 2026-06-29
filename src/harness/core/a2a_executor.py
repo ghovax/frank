@@ -209,6 +209,8 @@ class HarnessAgentExecutor(AgentExecutor):
         conversations: Optional[dict[str, list]] = None,
         on_turn_state: Optional[callable] = None,
         on_permission_state: Optional[callable] = None,
+        load_conversation: Optional[callable] = None,
+        save_conversation: Optional[callable] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -216,6 +218,12 @@ class HarnessAgentExecutor(AgentExecutor):
         self._pending_permissions = pending_permissions
         self._registry = registry
         self._on_new_context = on_new_context
+        # Persist/restore the dialogue history so a session keeps its context across
+        # a server restart. ``_conversations`` is in-memory; without these the agent
+        # would resume a reopened session with an empty history while the UI still
+        # replays the transcript from the task store, silently losing all context.
+        self._load_conversation = load_conversation
+        self._save_conversation = save_conversation
         # Notified (context_id, running) when a top-level turn starts/ends, so the
         # server can track which sessions are active and show a sidebar spinner.
         self._on_turn_state = on_turn_state
@@ -291,6 +299,13 @@ class HarnessAgentExecutor(AgentExecutor):
     def _runtime_for(self, context_id: str, working_directory: str) -> AgentRuntime:
         runtime = self._runtimes.get(context_id)
         if runtime is None:
+            # Restore a persisted conversation the first time a context is seen this
+            # process (e.g. a session reopened after a restart), so the agent resumes
+            # with the same history the UI is replaying rather than a blank slate.
+            if context_id not in self._conversations and self._load_conversation is not None:
+                restored = self._load_conversation(context_id)
+                if restored:
+                    self._conversations[context_id] = restored
             # Seed from (and bind to) the process-wide dialogue history for this
             # context — the same list object another agent may have been writing
             # to — so a persona switch picks up exactly where the last turn left off.
@@ -521,6 +536,11 @@ class HarnessAgentExecutor(AgentExecutor):
             await updater.failed(updater.new_agent_message([_text_part(f"Execution error: {exception}")]))
         finally:
             self._aborts.pop(task.id, None)
+            # Persist the conversation after a top-level turn so a later restart can
+            # restore it. Delegated sub-agent runs have their own throwaway history
+            # and don't touch the shared context, so they are not persisted.
+            if not delegated and self._save_conversation is not None:
+                self._save_conversation(task.context_id, self._conversations.get(task.context_id, []))
             if track_running:
                 self._on_turn_state(task.context_id, False)
 

@@ -253,10 +253,20 @@ class GlobalConfiguration(BaseModel):
         path = Path(directory).expanduser()
         return path if path.is_absolute() else self._local_base(working_directory) / path
 
+    def home_agents_root(self) -> Path:
+        """The global ``~/.agents`` root — the scope shared by every folder."""
+        return Path(self.home_agents_root_directory).expanduser()
+
+    def project_agents_root_for(self, working_directory: str) -> Path:
+        """The working directory's own ``.agents`` root — the project-local scope.
+        Equals :meth:`home_agents_root` when the working directory is the home
+        directory (in which case nothing is project-specific)."""
+        return self._resolve_local(working_directory, self.agents_root_directory)
+
     def agents_root_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser(),
-            self._resolve_local(working_directory, self.agents_root_directory),
+            self.home_agents_root(),
+            self.project_agents_root_for(working_directory),
         ])
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
