@@ -56,6 +56,82 @@ def _dump(model) -> str:
     return json.dumps(model.model_dump(mode="json"))
 
 
+# A turn persists many small history rows (one per text flush, reasoning chunk,
+# etc.). For replay that granularity is pure overhead — adjacent same-kind deltas
+# are merged into one message so a session loads and re-reduces far fewer, larger
+# rows. Mirrors what the client used to do, now server-side so both the REST tasks
+# endpoint and the live-stream snapshot benefit and the client no longer needs to.
+
+def _sole_part(message: object) -> dict | None:
+    parts = message.get("parts") if isinstance(message, dict) else None  # type: ignore[union-attr]
+    if not parts or not isinstance(parts, list) or len(parts) != 1:
+        return None
+    part = parts[0]
+    return part if isinstance(part, dict) else None
+
+
+def _agent_text(message: object) -> str | None:
+    if not isinstance(message, dict) or message.get("role") != "agent":
+        return None
+    part = _sole_part(message)
+    if not part or part.get("kind") != "text":
+        return None
+    return str(part.get("text", ""))
+
+
+def _sole_data(message: object, kind: str) -> dict | None:
+    """The data dict if the message is a single data-part agent message of `kind`."""
+    if not isinstance(message, dict) or message.get("role") != "agent":
+        return None
+    part = _sole_part(message)
+    if not part or part.get("kind") != "data":
+        return None
+    data = part.get("data")
+    if not isinstance(data, dict) or data.get("kind") != kind:
+        return None
+    return data
+
+
+def _compact_history(messages: list) -> list:
+    """Merge adjacent same-kind single-part agent messages (plain text, sub-task
+    text in the same step, and reasoning) into one message each."""
+    compacted: list = []
+    for message in messages:
+        text = _agent_text(message)
+        if text is not None:
+            last = compacted[-1] if compacted else None
+            if last is not None and _agent_text(last) is not None:
+                last["parts"] = [{"kind": "text", "text": _agent_text(last) + text}]  # type: ignore[index]
+                continue
+            compacted.append(message)
+            continue
+        sub = _sole_data(message, "sub_task_text")
+        if sub is not None:
+            key = (sub.get("groupId"), sub.get("stepId"), sub.get("childTaskId"))
+            last = compacted[-1] if compacted else None
+            last_sub = _sole_data(last, "sub_task_text") if last is not None else None
+            last_key = (
+                (last_sub.get("groupId"), last_sub.get("stepId"), last_sub.get("childTaskId"))
+                if last_sub is not None else None
+            )
+            if last_sub is not None and last_key == key:
+                last["parts"] = [{"kind": "data", "data": {**last_sub, "text": str(last_sub.get("text", "")) + str(sub.get("text", ""))}}]  # type: ignore[index]
+                continue
+            compacted.append(message)
+            continue
+        thinking = _sole_data(message, "thinking")
+        if thinking is not None:
+            last = compacted[-1] if compacted else None
+            last_thinking = _sole_data(last, "thinking") if last is not None else None
+            if last_thinking is not None:
+                last["parts"] = [{"kind": "data", "data": {**last_thinking, "text": str(last_thinking.get("text", "")) + str(thinking.get("text", ""))}}]  # type: ignore[index]
+                continue
+            compacted.append(message)
+            continue
+        compacted.append(message)
+    return compacted
+
+
 class AppendOnlyTaskStore(TaskStore):
     """A2A task store that persists history/artifacts incrementally.
 
@@ -264,7 +340,7 @@ class AppendOnlyTaskStore(TaskStore):
                 "kind": head_row["kind"] or "task",
                 "status": json.loads(head_row["status"]),
                 "metadata": json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else None,
-                "history": [json.loads(message) for message in histories[task_id]],
+                "history": _compact_history([json.loads(message) for message in histories[task_id]]),
                 "artifacts": [json.loads(artifact) for artifact in artifacts[task_id]] or None,
             }
             tasks.append(Task.model_validate(data))

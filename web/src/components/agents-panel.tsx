@@ -3,9 +3,14 @@
 import { Badge, Box, EmptyState, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { LuBot, LuNetwork, LuX } from "react-icons/lu";
+import { motion } from "motion/react";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
+
+// A Chakra Flex that is also a motion component, so the agents sidebar can
+// animate its open/close (opacity + slide) without losing its flex-layout props.
+const MotionFlex = motion.create(Flex);
 
 // Maps an A2A TaskState to a status badge. The badge is the canonical lifecycle
 // state, so a failed or cancelled step reads differently from a clean finish.
@@ -47,19 +52,16 @@ function StepCard({
   step,
   agentLabel,
   agents,
-  sequenceNumber,
 }: {
   step: AgentStep;
   agentLabel: string;
   agents: { id: string; name: string; title?: string }[];
-  sequenceNumber?: number;
 }) {
   const [open, setOpen] = useState(true);
 
   return (
     <ToolCard>
       <ToolCardHeader
-        sequenceNumber={sequenceNumber}
         icon={<Box color="fg.muted"><LuBot size={12} /></Box>}
         title={step.goal || "Agent task"}
         badges={
@@ -103,24 +105,14 @@ export function AgentsPanel({
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const agentLabels = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
 
-  // Sub-agents read as one flat, numbered list across all groups — the group is
-  // a logical anchor (for scroll-to focus), not a visual box. Each group's steps
-  // continue the running number, so offsets are precomputed.
-  const groupNumberOffsets = agentGroups.reduce<number[]>((offsets, group, index) => {
-    offsets.push(index === 0 ? 0 : offsets[index - 1] + agentGroups[index - 1].steps.length);
-    return offsets;
-  }, []);
-
   useEffect(() => {
     if (!open || !focusedGroupId) return;
     const node = cardRefs.current.get(focusedGroupId);
     node?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [open, focusedGroupId]);
 
-  if (!open) return null;
-
   return (
-    <Flex
+    <MotionFlex
       w={{ base: "100%", md: `${width}px` }}
       maxW={{ base: "100%", md: "52vw" }}
       minW={{ base: "100%", md: "300px" }}
@@ -134,7 +126,11 @@ export function AgentsPanel({
       inset={{ base: 0, md: "auto" }}
       zIndex={{ base: 1000, md: "auto" }}
       minH={0}
-      display={{ base: open ? "flex" : "none", md: "flex" }}
+      display="flex"
+      initial={{ opacity: 0, x: 24 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 24 }}
+      transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
     >
       <Box
         display={{ base: "none", md: "block" }}
@@ -174,7 +170,7 @@ export function AgentsPanel({
           </Flex>
         ) : (
           <Flex direction="column" gap={2}>
-            {agentGroups.map((group, groupIndex) => (
+            {agentGroups.map((group) => (
               <Box
                 key={group.groupId}
                 ref={(node: HTMLDivElement | null) => {
@@ -183,11 +179,10 @@ export function AgentsPanel({
                 }}
               >
                 <Flex direction="column" gap={2}>
-                  {group.steps.map((step, stepIndex) => (
+                  {group.steps.map((step) => (
                     <StepCard
                       key={step.stepId}
                       step={step}
-                      sequenceNumber={groupNumberOffsets[groupIndex] + stepIndex + 1}
                       agentLabel={agentLabels.get(step.agent) ?? step.agent}
                       agents={agents}
                     />
@@ -198,6 +193,6 @@ export function AgentsPanel({
           </Flex>
         )}
       </Box>
-    </Flex>
+    </MotionFlex>
   );
 }

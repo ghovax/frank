@@ -1,16 +1,54 @@
 "use client";
 
 import { Flex } from "@chakra-ui/react";
+import type { ToolEvent } from "@/lib/tool-event";
 import type { AgentPart } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
-import { ThinkingIndicator } from "./thinking-indicator";
 import { ToolCall } from "./tool-call";
+import { ToolGroup } from "./tool-group";
 
-// Renders an agent step's ordered timeline — prose, reasoning, and tool calls
-// interleaved exactly as they occurred. The same building blocks the main chat
-// uses (MarkdownContent for text, ThinkingIndicator for reasoning,
-// ToolCall for tool calls), so an agent's activity reads identically whether
-// shown inline or in the agents panel.
+type TimelineItem =
+  | { kind: "text"; content: string }
+  | { kind: "tool"; tool: ToolEvent }
+  | { kind: "tools"; id: string; tools: ToolEvent[] };
+
+// Renders an agent step's ordered timeline, mirroring the main chat's decisions:
+// reasoning is not shown as interleaved cards (it's a live status elsewhere), and
+// contiguous tool calls collapse into the same grouped/stacked ToolGroup the chat
+// uses — so an agent's activity reads identically in the panel and inline.
+function buildTimelineItems(parts: AgentPart[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  let index = 0;
+  while (index < parts.length) {
+    const part = parts[index];
+    // Thinking is never rendered as a row — same as the chat timeline.
+    if (part.kind === "thinking") {
+      index += 1;
+      continue;
+    }
+    if (part.kind === "text") {
+      items.push({ kind: "text", content: part.content });
+      index += 1;
+      continue;
+    }
+    // tool: gather the contiguous run. A lone call renders bare (like the chat);
+    // two or more collapse into a ToolGroup.
+    const run: ToolEvent[] = [];
+    while (index < parts.length && parts[index].kind === "tool") {
+      run.push(parts[index] as ToolEvent);
+      index += 1;
+    }
+    if (run.length === 1) {
+      items.push({ kind: "tool", tool: run[0] });
+    } else if (run.length > 1) {
+      const first = run[0].toolCallId;
+      const last = run[run.length - 1].toolCallId;
+      items.push({ kind: "tools", id: `${first}-${last}`, tools: run });
+    }
+  }
+  return items;
+}
+
 export function AgentTimeline({
   parts,
   agents = [],
@@ -18,29 +56,31 @@ export function AgentTimeline({
   parts: AgentPart[];
   agents?: { id: string; name: string; title?: string }[];
 }) {
+  const items = buildTimelineItems(parts);
   return (
     <Flex direction="column" gap={1.5} align="stretch">
-      {parts.map((part, index) =>
-        part.kind === "text" ? (
-          <MarkdownContent key={`text-${index}`} content={part.content} />
-        ) : part.kind === "thinking" ? (
-          // Always render the reasoning phase, even with no captured body — the
-          // card is the persistent marker for the phase and must not vanish when
-          // it finishes (models that don't stream reasoning_content still emit
-          // the phase boundary). Never filter it out.
-          <ThinkingIndicator key={`thinking-${index}`} content={part.content} status={part.status} durationMs={part.durationMs} />
-        ) : (
-          <ToolCall
-            key={`tool-${index}`}
-            name={part.name}
-            arguments={part.arguments}
-            result={part.result}
-            sequenceNumber={part.sequenceNumber}
-            status={part.status}
-            agents={agents}
-          />
-        )
-      )}
+      {items.map((item, itemIndex) => {
+        if (item.kind === "text") {
+          return <MarkdownContent key={`text-${itemIndex}`} content={item.content} />;
+        }
+        if (item.kind === "tool") {
+          const tool = item.tool;
+          return (
+            <ToolCall
+              key={`tool-${tool.toolCallId || itemIndex}`}
+              name={tool.name}
+              arguments={tool.arguments}
+              result={tool.result}
+              toolCallId={tool.toolCallId}
+              status={tool.status}
+              permission={tool.permission}
+              question={tool.question}
+              agents={agents}
+            />
+          );
+        }
+        return <ToolGroup key={`tools-${item.id}`} tools={item.tools} agents={agents} />;
+      })}
     </Flex>
   );
 }

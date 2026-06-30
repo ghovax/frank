@@ -120,6 +120,8 @@ class ChatLiteLLMModel(BaseChatModel):
 
         rendered: list[dict[str, Any]] = []
         for call in tool_calls:
+            # LangChain ToolCall stores the parsed arguments under ``args``; the
+            # OpenAI wire format we serialize back to uses ``arguments``.
             arguments = call.get("args")
             serialized = arguments if isinstance(arguments, str) else _json.dumps(arguments)
             rendered.append({
@@ -191,6 +193,9 @@ class ChatLiteLLMModel(BaseChatModel):
                 "index": getattr(call, "index", 0) or 0,
                 "id": getattr(call, "id", None),
                 "name": getattr(function, "name", None) if function else None,
+                # The OpenAI streaming delta exposes the partial JSON as
+                # function.arguments; langchain-core's ToolCallChunk stores it
+                # under the ``args`` key (not ``arguments``).
                 "args": getattr(function, "arguments", None) if function else None,
                 "type": "tool_call_chunk",
             })

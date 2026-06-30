@@ -213,6 +213,7 @@ class HarnessAgentExecutor(AgentExecutor):
         load_conversation: Optional[callable] = None,
         save_conversation: Optional[callable] = None,
         session_model_for: Optional[callable] = None,
+        on_stream_event: Optional[callable] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -237,6 +238,11 @@ class HarnessAgentExecutor(AgentExecutor):
         # Notified (context_id) when a turn raises a permission request, so the
         # sidebar can swap the spinner for an attention marker on that session.
         self._on_permission_state = on_permission_state
+        # Notified (context_id, part) for every structured part a turn emits, after
+        # it is persisted. The server fans these out to non-driving viewers over a
+        # live SSE stream so they follow the turn in real time (O(delta)) instead of
+        # polling the task store and re-replaying the whole transcript (O(N)).
+        self._on_stream_event = on_stream_event
         # One runtime per context preserves the conversation across turns.
         self._runtimes: dict[str, AgentRuntime] = {}
         self._aborts: dict[str, AgentRuntime] = {}
@@ -390,6 +396,11 @@ class HarnessAgentExecutor(AgentExecutor):
 
         async def emit(part: Part) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
+            # Fan the part out to non-driving viewers. publish runs AFTER the status
+            # update has persisted, so a viewer's snapshot (taken at subscribe time)
+            # plus the live tail are gap- and duplicate-free (see /sessions/.../stream).
+            if self._on_stream_event is not None:
+                self._on_stream_event(task.context_id, part)
 
         # Re-publishes a sub-agent's activity onto this task's stream for the live
         # UI. The sub-agent is itself a real A2A task (created and persisted by its

@@ -8,10 +8,12 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuBrain, LuClock, LuMessageSquare, LuTriangleAlert } from "react-icons/lu";
+import { LuClock, LuMessageSquare, LuTriangleAlert } from "react-icons/lu";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
+import { extractToolArtifacts, isLivePreviewArtifact } from "./tool-views";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
@@ -73,9 +75,20 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
 
     const toolMessages: ChatMessage[] = [];
-    while (index < messages.length && messages[index].role === "tool_call") {
-      toolMessages.push(messages[index]);
-      index += 1;
+    // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
+    // timeline, so it must not split a run of tool calls either — otherwise two
+    // calls issued in successive iterations (each preceded by its own thinking)
+    // would render as separate entries instead of one group.
+    while (index < messages.length) {
+      const next = messages[index];
+      if (next.role === "tool_call") {
+        toolMessages.push(next);
+        index += 1;
+      } else if (next.role === "thinking") {
+        index += 1;
+      } else {
+        break;
+      }
     }
     if (toolMessages.length === 1) {
       items.push({ kind: "message", message: toolMessages[0] });
@@ -130,6 +143,12 @@ export function ChatPanel({
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
+  // Exactly one web preview (iframe-type artifact) is live at a time; the rest are
+  // collapsed to click-to-open placeholders so their scripts/network don't pile up
+  // and drag the page. Newest preview auto-activates; clicking an older one reopens
+  // it (collapsing the current). See ToolArtifacts.
+  const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
+  const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -209,6 +228,17 @@ export function ChatPanel({
     return () => observer.disconnect();
   }, [scheduleScrollToBottom]);
 
+  // Reset the single-live-preview selection when the session changes, so a freshly
+  // loaded transcript seeds its own "newest" preview rather than inheriting one
+  // from the previous conversation. Render-phase prop-change adjustment (the same
+  // pattern as previousActiveSteps below) rather than an effect, to stay lint-clean.
+  const [previousInitialSessionId, setPreviousInitialSessionId] = useState(initialSessionId);
+  if (initialSessionId !== previousInitialSessionId) {
+    setPreviousInitialSessionId(initialSessionId);
+    setSeenPreviewIds(new Set());
+    setActivePreviewId(null);
+  }
+
   useEffect(() => {
     return () => {
       if (scrollFrameRef.current != null) {
@@ -246,6 +276,63 @@ export function ChatPanel({
   const activeToolCount = messages.filter((message) =>
     message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
+
+  // The toolCallIds of every call in the transcript whose result includes a live
+  // (iframe/html) artifact, in transcript order. Used to auto-activate the newest
+  // preview — the agent's latest output becomes the live one — without re-activating
+  // on in-place artifact updates (same call, same toolCallId).
+  const previewToolCallIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const message of messages) {
+      if (message.role !== "tool_call") continue;
+      const toolCallId = String(message.meta?.toolCallId ?? "");
+      if (!toolCallId) continue;
+      const result = message.meta?.result;
+      const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
+      if (resultContent == null) continue;
+      const artifacts = extractToolArtifacts(message.content, resultContent);
+      if (artifacts.some((artifact) => isLivePreviewArtifact(artifact))) ids.push(toolCallId);
+    }
+    return ids;
+  }, [messages]);
+
+  // Auto-activate the newest preview the moment it appears. Runs in render (same
+  // pattern as previousActiveSteps below) so the active toolCallId is set before
+  // children render — users never see two live previews at once. `activePreviewId`
+  // holds that toolCallId; see ToolArtifacts. State (not a ref) so the render-phase
+  // update stays lint-clean and triggers a synchronous re-render before commit.
+  const newPreviewCallIds = previewToolCallIds.filter((id) => !seenPreviewIds.has(id));
+  if (newPreviewCallIds.length > 0) {
+    const nextSeen = new Set(seenPreviewIds);
+    for (const id of newPreviewCallIds) nextSeen.add(id);
+    setSeenPreviewIds(nextSeen);
+    setActivePreviewId(newPreviewCallIds[newPreviewCallIds.length - 1]);
+  }
+
+  const handleActivatePreview = useCallback((toolCallId: string) => {
+    setActivePreviewId(toolCallId);
+  }, []);
+
+  // The live "Thinking" / "Working through N tool calls" label, shown as a chip
+  // next to Settings when no tool group is active. "Thinking" only applies while
+  // the model is actually reasoning (or waiting) — once it starts streaming its
+  // answer (the last message is an assistant message) the chip hides, so it no
+  // longer reads as "thinking" while the response is being written.
+  const lastMessage = messages[messages.length - 1];
+  const isAssistantStreaming = !!lastMessage && lastMessage.role === "assistant";
+  const liveStatusLabel = !isStreaming
+    ? null
+    : activeToolCount > 0
+      ? `Working through ${activeToolCount} ${activeToolCount === 1 ? "tool call" : "tool calls"}`
+      : isAssistantStreaming
+        ? null
+        : "Thinking";
+  const hasActiveToolGroup = renderedTimeline.some(
+    (item) => item.kind === "tool_group" && item.messages.some((message) => {
+      const status = message.meta?.status;
+      return status === "running" || status === "input_required";
+    })
+  );
 
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
@@ -329,25 +416,43 @@ export function ChatPanel({
             </Flex>
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">
-              {renderedTimeline.map((item) =>
-                item.kind === "tool_group" ? (
-                  <ChatToolGroup
-                    key={item.id}
-                    messages={item.messages}
-                    onPermission={handlePermission}
-                    onQuestion={handleQuestion}
-                    agents={agents}
-                  />
-                ) : (
-                  <ChatMessageItem
-                    key={item.message.id}
-                    message={item.message}
-                    onPermission={handlePermission}
-                    onQuestion={handleQuestion}
-                    agents={agents}
-                  />
-                )
-              )}
+              <AnimatePresence initial={false}>
+                {renderedTimeline.map((item) => {
+                  const key = item.kind === "tool_group" ? item.id : item.message.id;
+                  const inner = item.kind === "tool_group" ? (
+                    <ChatToolGroup
+                      messages={item.messages}
+                      onPermission={handlePermission}
+                      onQuestion={handleQuestion}
+                      agents={agents}
+                      activePreviewId={activePreviewId}
+                      onActivatePreview={handleActivatePreview}
+                    />
+                  ) : (
+                    <ChatMessageItem
+                      message={item.message}
+                      onPermission={handlePermission}
+                      onQuestion={handleQuestion}
+                      agents={agents}
+                      activePreviewId={activePreviewId}
+                      onActivatePreview={handleActivatePreview}
+                    />
+                  );
+                  return (
+                    <motion.div
+                      key={key}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.18, ease: "easeOut" }}
+                      style={{ display: "flex", flexDirection: "column" }}
+                    >
+                      {inner}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
               {queuedMessages.map((message, index) => (
                 <Box
                   key={message.id}
@@ -376,28 +481,6 @@ export function ChatPanel({
             </VStack>
           )}
         </Box>
-
-        {isStreaming && (
-          <Flex
-            align="center"
-            gap={1.5}
-            mx={2}
-            mb={2}
-            px={2}
-            py={1.5}
-            borderRadius="sm"
-            bg="bg.muted"
-            color="fg.muted"
-            className="timeline-item"
-          >
-            <Box color={activeToolCount > 0 ? "blue.fg" : "purple.fg"} display="flex" alignItems="center">
-              <LuBrain size={13} />
-            </Box>
-            <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer">
-              {activeToolCount > 0 ? `Working through ${activeToolCount} ${activeToolCount === 1 ? "tool call" : "tool calls"}` : "Thinking"}
-            </Text>
-          </Flex>
-        )}
 
         <ChatInput
           onSend={handleSend}
@@ -430,18 +513,23 @@ export function ChatPanel({
           recentModels={recentModels}
           selectedModel={selectedModel}
           onModelChange={(model) => onModelChange?.(model)}
+          thinkingLabel={hasActiveToolGroup ? null : liveStatusLabel}
         />
       </Flex>
 
-      <AgentsPanel
-        agentGroups={agentGroups}
-        agents={agents}
-        open={agentsPanelOpen}
-        onClose={() => setAgentsPanelOpen(false)}
-        focusedGroupId={focusedGroupId}
-        width={agentsSidebarWidth}
-        onResizeStart={handleAgentsResizeStart}
-      />
+      <AnimatePresence initial={false}>
+        {agentsPanelOpen && (
+          <AgentsPanel
+            agentGroups={agentGroups}
+            agents={agents}
+            open={agentsPanelOpen}
+            onClose={() => setAgentsPanelOpen(false)}
+            focusedGroupId={focusedGroupId}
+            width={agentsSidebarWidth}
+            onResizeStart={handleAgentsResizeStart}
+          />
+        )}
+      </AnimatePresence>
     </Flex>
     </WidgetEventProvider>
   );

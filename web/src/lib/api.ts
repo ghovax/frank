@@ -476,7 +476,7 @@ export type A2AStreamResult =
   | A2AArtifactUpdate
   | (A2AMessage & { kind: "message" });
 
-function parseSseFrame(frame: string): string {
+export function parseSseFrame(frame: string): string {
   return frame
     .split(/\r?\n/)
     .filter((line) => line.startsWith("data:"))
@@ -580,4 +580,65 @@ export function streamA2A(
     .finally(onDone);
 
   return controller;
+}
+
+// A live, read-only view of a running session's structured parts — for a viewer
+// that isn't driving the turn. The server sends a `snapshot` frame (the compacted
+// transcript, same shape as fetchSessionTasks), then a `live` tail of one frame per
+// emitted part in the same agent-message shape the driver consumes, then a `done`
+// frame. Replaces per-second polling + full re-replay (O(N)/s) with O(delta) live
+// updates.
+export type SessionStreamFrame =
+  | { kind: "snapshot"; tasks: A2ATask[] }
+  | { kind: "live"; seq: number; message: A2AMessage }
+  | { kind: "done" };
+
+export function subscribeSessionStream(
+  sessionId: string,
+  onFrame: (frame: SessionStreamFrame) => void,
+  onDone: () => void,
+): { abort: () => void } {
+  const controller = new AbortController();
+  fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/stream`, {
+    signal: controller.signal,
+    headers: { Accept: "text/event-stream" },
+  })
+    .then(async (response) => {
+      if (!response.ok || !response.body) {
+        onDone();
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const frames = buffer.split(/\r?\n\r?\n/);
+        buffer = frames.pop() ?? "";
+        for (const frame of frames) {
+          const raw = parseSseFrame(frame);
+          if (!raw) continue;
+          try {
+            const parsed = JSON.parse(raw) as SessionStreamFrame;
+            onFrame(parsed);
+            if (parsed.kind === "done") {
+              controller.abort();
+              return;
+            }
+          } catch {
+            // skip malformed frame
+          }
+        }
+        if (done) break;
+      }
+    })
+    .catch((error) => {
+      if (error.name !== "AbortError") {
+        // swallow — onDone still fires via finally
+      }
+    })
+    .finally(onDone);
+
+  return { abort: () => controller.abort() };
 }

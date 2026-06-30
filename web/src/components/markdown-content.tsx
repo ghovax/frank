@@ -1,6 +1,7 @@
 "use client";
 
 import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -170,7 +171,7 @@ const markdownComponents: Components = {
   },
 };
 
-export function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentProps) {
   return (
     <Box
       fontSize={fontSize}
@@ -209,11 +210,13 @@ export function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentPro
         },
       }}
     >
-      {/* Only treat `$$...$$` as math — a single `$` is almost always currency
-          ("~$9–16", "€50") in this content, not LaTeX, so single-dollar math is
-          off. `strict: false` keeps KaTeX from spamming warnings on the rest. */}
+      {/* Inline math uses single `$…$` (the prompt instructs the model to emit it
+          that way), display math uses `$$…$$`. remark-math's single-dollar heuristic
+          only matches a `$` immediately followed by non-space text and a matching
+          closing `$`, so bare currency ("$5", "~$9–16", "€50") does not misfire.
+          `strict: false` keeps KaTeX from spamming warnings on the rest. */}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
         rehypePlugins={[[rehypeKatex, { strict: false }]]}
         components={markdownComponents}
       >
@@ -221,4 +224,4 @@ export function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentPro
       </ReactMarkdown>
     </Box>
   );
-}
+});

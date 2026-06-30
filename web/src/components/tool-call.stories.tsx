@@ -26,7 +26,6 @@ export const BashRunning: Story = {
       justification: "Finding every connect() definition before changing its signature",
       risk: "low",
     },
-    sequenceNumber: 1,
     toolCallId: "call_bash_running",
     status: "running",
   },
@@ -41,7 +40,6 @@ export const BashCompleted: Story = {
       justification: "Finding every connect() definition",
       risk: "low",
     },
-    sequenceNumber: 2,
     toolCallId: "call_bash_done",
     status: "completed",
     result: {
@@ -62,7 +60,6 @@ export const BashFailed: Story = {
       justification: "Verifying the auth fix did not regress types",
       risk: "low",
     },
-    sequenceNumber: 3,
     toolCallId: "call_bash_fail",
     status: "failed",
     result: { code: "tool_error", message: "Command exited with code 1: src/api/server.py:41: type error ..." },
@@ -80,7 +77,6 @@ export const AwaitingPermission: Story = {
       justification: "Reading the hosts file to debug the DNS redirect",
       risk: "medium",
     },
-    sequenceNumber: 4,
     toolCallId: "call_perm",
     status: "input_required",
     permission: {
@@ -99,7 +95,6 @@ export const AwaitingAnswer: Story = {
     arguments: {
       justification: "The database choice changes the whole implementation, so asking before building.",
     },
-    sequenceNumber: 5,
     toolCallId: "call_question",
     status: "input_required",
     question: {
@@ -138,7 +133,6 @@ export const ReadFileCompleted: Story = {
       file_path: "/Users/me/proj/src/db/client.py",
       justification: "Reading the connection module before editing it",
     },
-    sequenceNumber: 6,
     toolCallId: "call_read",
     status: "completed",
     result: {
@@ -162,7 +156,6 @@ export const EditFileCompleted: Story = {
       justification: "Adding a timeout parameter to connect()",
       risk: "low",
     },
-    sequenceNumber: 7,
     toolCallId: "call_edit",
     status: "completed",
     result: { code: "edit_completed", path: "/Users/me/proj/src/db/client.py", created: false, characters: 412 },
@@ -177,7 +170,6 @@ export const WebSearchRunning: Story = {
       justification: "Confirming the timeout API before using it",
       result_count: 5,
     },
-    sequenceNumber: 8,
     toolCallId: "call_search",
     status: "running",
   },
@@ -192,7 +184,6 @@ export const SpawnAgentCompleted: Story = {
       read_only: true,
       justification: "Mapping the auth flow in parallel while I implement the DB layer",
     },
-    sequenceNumber: 9,
     toolCallId: "call_spawn",
     status: "completed",
     result: { code: "task_completed", artifact: "Auth flow: login() -> issue_session() -> set_cookie(). No token rotation found." },

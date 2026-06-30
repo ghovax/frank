@@ -2,7 +2,12 @@
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
 import { LuFolder, LuGripVertical, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+
+// A Chakra Flex that is also a motion component, so the history sidebar can
+// animate its open/close (opacity + slide) without losing its flex-layout props.
+const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
 import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
@@ -388,20 +393,25 @@ function HomeContent() {
 
   return (
     <Flex h="100dvh" minW={0}>
-      {historyOpen && (
-        <Flex
-          direction="column"
-          w={{ base: "100%", md: `${historyWidth}px` }}
-          maxW={{ base: "100%", md: "46vw" }}
-          minW={{ base: "100%", md: "220px" }}
-          borderRight="1px solid"
-          h={{ base: "100dvh", md: "auto" }}
-          borderColor="border"
-          flexShrink={0}
-          position="relative"
-          minH={0}
-          display={{ base: historyOpen ? "flex" : "none", md: "flex" }}
-        >
+      <AnimatePresence initial={false}>
+        {historyOpen && (
+          <MotionFlex
+            direction="column"
+            w={{ base: "100%", md: `${historyWidth}px` }}
+            maxW={{ base: "100%", md: "46vw" }}
+            minW={{ base: "100%", md: "220px" }}
+            borderRight="1px solid"
+            h={{ base: "100dvh", md: "auto" }}
+            borderColor="border"
+            flexShrink={0}
+            position="relative"
+            minH={0}
+            display="flex"
+            initial={{ opacity: 0, x: -24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -24 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          >
           <Box
             display={{ base: "none", md: "block" }}
             position="absolute"
@@ -502,8 +512,9 @@ function HomeContent() {
               </VStack>
             )}
           </Box>
-        </Flex>
-      )}
+          </MotionFlex>
+        )}
+      </AnimatePresence>
 
       <Box
         flex={1}

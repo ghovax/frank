@@ -76,7 +76,6 @@ export const Conversation = {
           role: "tool_call",
           content: "grep",
           meta: {
-            sequenceNumber: 1,
             toolCallId: "s1",
             status: "completed",
             arguments: { pattern: "def healthz", include: "*.py", justification: "Finding the existing health endpoint" },
@@ -90,7 +89,6 @@ export const Conversation = {
           role: "tool_call",
           content: "bash",
           meta: {
-            sequenceNumber: 2,
             toolCallId: "s2",
             status: "completed",
             arguments: { command: "uv run python -m pytest tests/api/", read_only: false, justification: "Verifying the new endpoint did not regress the API tests", risk: "low" },
@@ -104,7 +102,6 @@ export const Conversation = {
           role: "tool_call",
           content: "ask_user",
           meta: {
-            sequenceNumber: 3,
             toolCallId: "s3",
             status: "input_required",
             arguments: { justification: "The retry policy changes behavior, so confirming before shipping." },

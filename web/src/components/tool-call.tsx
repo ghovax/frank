@@ -2,6 +2,7 @@
 
 import { Box, Button, Flex, HStack, Input, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { ToolArtifacts, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
@@ -11,6 +12,10 @@ interface ToolCallProps extends ToolEvent {
   agents?: { id: string; name: string; title?: string }[];
   onPermission?: (requestId: string, decision: PermissionDecision) => void;
   onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
+  // The single live web-preview id (owned by ChatPanel). Only the matching
+  // iframe-type artifact mounts its frame; the rest collapse to a placeholder.
+  activePreviewId?: string | null;
+  onActivatePreview?: (id: string) => void;
 }
 
 // The human-in-the-loop approval, rendered inside the tool card it belongs to,
@@ -175,7 +180,7 @@ function ToolQuestionPrompt({
   );
 }
 
-export function ToolCall({ name, arguments: toolArguments, result, sequenceNumber, status, permission, question, agents = [], onPermission, onQuestion }: ToolCallProps) {
+export function ToolCall({ name, arguments: toolArguments, result, toolCallId, status, permission, question, agents = [], onPermission, onQuestion, activePreviewId, onActivatePreview }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
@@ -197,7 +202,6 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
     <Flex direction="column" gap={1.5} align="stretch">
       <ToolCard>
         <ToolCardHeader
-          sequenceNumber={sequenceNumber}
           icon={
             <Box color={iconColor}>
               <Icon size={12} />
@@ -217,20 +221,36 @@ export function ToolCall({ name, arguments: toolArguments, result, sequenceNumbe
           onToggle={() => setOpen((current) => !current)}
         />
 
-        {collapsible && bodyOpen && (
-          <ToolCardBody maxH="560px">
-            {/* gap matches FieldList's own field spacing so the call's last field
-                (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
-            <Flex direction="column" gap={2} align="stretch">
-              {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-              {showPermission && permission && <ToolPermissionPrompt permission={permission} onPermission={onPermission} />}
-              {showQuestion && question && <ToolQuestionPrompt question={question} onQuestion={onQuestion} />}
-              {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}
-            </Flex>
-          </ToolCardBody>
-        )}
+        <AnimatePresence initial={false}>
+          {collapsible && bodyOpen && (
+            <motion.div
+              key="body"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              style={{ overflow: "hidden" }}
+            >
+              <ToolCardBody maxH="560px">
+                {/* gap matches FieldList's own field spacing so the call's last field
+                    (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
+                <Flex direction="column" gap={2} align="stretch">
+                  {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
+                  {showPermission && permission && <ToolPermissionPrompt permission={permission} onPermission={onPermission} />}
+                  {showQuestion && question && <ToolQuestionPrompt question={question} onQuestion={onQuestion} />}
+                  {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}
+                </Flex>
+              </ToolCardBody>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </ToolCard>
-      <ToolArtifacts artifacts={artifacts} />
+      <ToolArtifacts
+        artifacts={artifacts}
+        activePreviewId={activePreviewId}
+        onActivatePreview={onActivatePreview}
+        toolCallId={toolCallId}
+      />
     </Flex>
   );
 }

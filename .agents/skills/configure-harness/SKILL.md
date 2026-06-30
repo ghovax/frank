@@ -1,68 +1,106 @@
 ---
 name: configure-harness
 title: Configure the agentic harness
-description: Configure the agentic harness — API credentials and model, sub-agents, skills, MCP servers, and memories. Use when the user wants to add/change an agent, add a skill, connect an MCP server, set API keys, or change the model/endpoint.
+description: Configure the agentic harness — provider credentials and model, permission modes, sandbox, sub-agents, skills, MCP servers, and memories. Use when the user wants to add/change a provider key or model, add/change an agent or skill, connect an MCP server, set the Composio/Exa key, toggle the sandbox, or switch permission behavior.
 enabled: true
 ---
 
 # Configure the Agentic Harness
 
-Use this skill when the user wants to change how the harness itself is set up: credentials/model, sub-agents, skills, MCP servers, or memories. Read the relevant existing file before editing — most of these are conventions, and copying an existing entry is the safest way to add a new one.
+Use this skill when the user wants to change how the harness itself is set up. The harness has **two configuration surfaces**: a YAML file (`~/.harness/configuration.yaml`) for defaults, and the running UI (Settings + model picker) for live changes that write back to that file. Always read the relevant existing file before editing — most of these are conventions, and copying an existing entry is the safest way to add a new one.
 
-## Where configuration lives
+The authoritative models live in `src/harness/core/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`), `src/harness/core/providers.py` (the provider registry + key/base-url resolution), and `server.py` (`lifespan`, where it is all wired up).
 
-- `~/.harness/configuration.yaml` — the single source of truth for runtime config: API endpoint/model/keys, the Exa key, the default agent, and the `.agents` discovery directories. Created on first run from `configuration.yaml.example` in the repo root (`GlobalConfiguration.load`).
-- `~/.harness/history.db` — chat history (SQLite). Not configuration; never edit by hand.
+## Where things live
+
+- `~/.harness/configuration.yaml` — runtime defaults: provider credentials, default model/provider, Exa, sandbox, Composio, default agent, discovery directories. Seeded on first run from `configuration.yaml.example` in the repo root (then the packaged `default_configuration.yaml`). The UI writes settings back here.
+- `~/.harness/history.db` — chat history (SQLite, WAL mode). Not configuration; never edit by hand. If its schema ever goes stale after an upgrade, stop the server and delete it — it rebuilds on next start (history is replayable transcripts, not irreplaceable state).
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
 
-Read the model: `src/harness/core/configuration.py`. The server wires it up in `server.py` (`lifespan`).
+## Providers, credentials, and the model
 
-## API credentials and model
-
-`configuration.yaml`:
+The harness is multi-provider. Credentials are keyed by **provider id** under a top-level `providers:` map; the default model is the pair `default_provider` + `default_model` (the factory recombines them into the `provider/model` form LiteLLM expects).
 
 ```yaml
-api:
-  endpoint: "https://opencode.ai/zen/go/v1"
-  model: "deepseek-v4-flash"
-  api_key: ""        # or set OPENCODE_API_KEY in the environment
-exa:
-  api_key: ""        # or set EXA_API_KEY; enables web_search
-default_agent: assistant
+providers:
+  opencode:                         # OpenAI-compatible — takes a base_url
+    api_key: ""
+    base_url: "https://opencode.ai/zen/go/v1"
+  anthropic: { api_key: "" }        # first-party clouds omit base_url (LiteLLM knows the endpoint)
+  openai:    { api_key: "" }
+  google:    { api_key: "" }
+  openrouter:{ api_key: "" }
+  xai:       { api_key: "" }
+  deepseek:  { api_key: "" }
+  groq:      { api_key: "" }
+  mistral:   { api_key: "" }
+  custom:                            # any other OpenAI-compatible endpoint
+    api_key: ""
+    base_url: ""
+
+default_model: "deepseek-v4-flash"
+default_provider: "opencode"
 ```
 
-`effective_api_key` prefers the environment variable over the file (`OPENCODE_API_KEY`, `EXA_API_KEY`). Keys can also be set live from the UI **Settings** dialog (`POST /settings`), which writes them into `configuration.yaml` and reloads them without a restart. Changing `endpoint`/`model` by editing the file needs a server restart.
+**Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). `base_url` only matters for the OpenAI-compatible providers (`opencode`, `custom`); first-party clouds ignore it.
+
+**Two ways to change this at runtime, both live (no restart):**
+- The **Settings** dialog writes `api_key`/`base_url`/`default_model` into the YAML and reloads.
+- The **model picker** (provider dropdown → model dropdown, with a per-provider API-key/base-url field) sets a default or a **per-session model override** (`PUT /sessions/{id}/model`). A session runs on its override, falling back to the global default.
+
+Editing `configuration.yaml` on disk by hand needs a server restart.
+
+## Permission modes
+
+Permission behavior is one of four modes, set per-agent in frontmatter (`permission_mode:`) and overridable per-session from the UI:
+
+- `default` — per-command permission rules (allow / ask / deny) from the bash allow-rules.
+- `auto` — the default rules **plus** an LLM classifier that auto-approves bash calls it judges safe and escalates the rest to the user. It is default-permissions-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — classifier failure falls back to escalation. The classifier prompt lives in `src/harness/core/prompts/bash_permission_classifier.md`.
+- `read_only` — hard-block every write (investigation/review agents).
+- `bypass` — allow everything.
+
+## Sandbox
+
+`sandbox.enabled` (default `true`) confines bash commands to the working directory; access outside it needs approval. Toggle it from the UI (live) or the YAML (`sandbox: { enabled: true }`, restart).
 
 ## Sub-agents
 
-One agent per directory: `.agents/agents/<name>/agent.md` (or `~/.agents/agents/<name>/agent.md`). Frontmatter + a Markdown body that is the agent's system prompt:
+One agent per directory: `.agents/agents/<name>/agent.md` (or `~/.agents/agents/<name>/agent.md`). YAML frontmatter + a Markdown body that is the agent's system prompt. Fields mirror `AgentConfiguration`:
 
 ```markdown
 ---
-name: reviewer
-title: Reviewer
+name: reviewer                       # route/slug — used for A2A routing and spawn_agent
+title: Reviewer                      # human label shown in the UI
 aliases: [code-reviewer]
+color: purple
 description: Reviews a diff for correctness and risk, read-only
-role: delegation-target        # or "primary" for a default chat agent
+role: delegation-target              # or "primary" for a default chat agent
 enabled: true
-connection-type: internal
-permission_mode: read_only     # default | read_only | bypass
+connection_type: internal
+skills: []                           # skill slugs this agent may use; empty = all
+model: null                          # override the global default (provider/model)
+provider: null
+reasoning_effort: high               # minimal | low | medium | high
+maximum_iterations: 25               # safety bound on the per-turn tool-calling loop
+permission_mode: read_only           # default | auto | read_only | bypass
+tools_enabled: []                    # restrict the built-in tools; empty = all
+system_prompt: ""
 ---
 
 You are the reviewer. ...
 ```
 
-`name` is the route/slug (used for A2A routing and `spawn_agent`); `title` is the human label shown in the UI. Optional runtime overrides can live in a sibling `config.json` (model, reasoning effort, enabled tools). Agents reload live — no restart needed.
+Optional runtime overrides can live in a sibling `config.json` (`model`/`provider`, `reasoningEffort`, `permissionMode`, `toolsEnabled`). Agents reload live — no restart needed.
 
 ## Skills
 
-A skill is `.agents/skills/<name>/SKILL.md` with frontmatter (`name`, `title`, `description`, `enabled`) and a Markdown body of instructions. `name` is the stable lowercase slug used for lookup and filtering. `title` is the UI-facing label and should be a descriptive action phrase, not a short category name: prefer a verb + object shape such as "Create and update OpenStreetMap map artifacts" or "Research current web sources". The `description` is what makes the agent decide to read it, so make it specific. An agent can restrict which skills it sees via a `skills:` list in its frontmatter; empty means all. Skills reload live.
+A skill is `.agents/skills/<name>/SKILL.md` with frontmatter (`name`, `title`, `description`, `enabled`) and a Markdown body of instructions. `name` is the stable lowercase slug used for lookup and filtering. `title` is the UI-facing label and should be a descriptive action phrase, not a short category name: prefer a verb + object shape such as "Create and update OpenStreetMap map artifacts" or "Research current web sources". The `description` is what makes the agent decide to read it, so make it specific. An agent restricts which skills it sees via its `skills:` list (empty means all). Skills reload live.
 
 ## MCP servers
 
-Configured in `.agents/mcp.json` (project) or `~/.agents/mcp.json` (global) — **not** auto-discovered from any folder. Each entry names a server the agent can reach via `list_mcp_tools` / `call_mcp_tool`.
+Configured in `.agents/mcp.json` (project) or `~/.agents/mcp.json` (global) — **not** auto-discovered from any folder. Each entry names a server the agent reaches via `list_mcp_tools` / `call_mcp_tool`. Put non-trivial stdio servers in their own folder under `examples/mcp/<server-id>/` (`server.py` plus templates/assets).
 
-Local (stdio) server — the harness launches it as a subprocess. Put non-trivial servers in their own folder under `examples/mcp/<server-id>/`, with `server.py` plus any templates/assets the server returns or reads:
+Local (stdio) — launched as a subprocess:
 
 ```json
 {
@@ -79,7 +117,7 @@ Local (stdio) server — the harness launches it as a subprocess. Put non-trivia
 }
 ```
 
-Remote (HTTP) server:
+Remote (HTTP):
 
 ```json
 {
@@ -95,11 +133,11 @@ Remote (HTTP) server:
 }
 ```
 
-Notes: `enabled: false` keeps an entry but turns it off; the `"type"` key is accepted as an alias for `"transport"`. MCP servers default to `stateful: true`, so the harness keeps the initialized session open. For `stdio`, that keeps the subprocess alive across tool calls; for `streamable_http`, it preserves the MCP session id and listens to the server's GET SSE stream. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **MCP config is read once at startup** (the live watcher does not watch `mcp.json`), so adding or changing a server requires a **server restart**. Discovery/connection live in `src/harness/core/mcp_client.py`.
+`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **MCP config is read once at startup** (the live watcher does not watch `mcp.json`), so adding or changing a server requires a **server restart**. Discovery/connection live in `src/harness/core/mcp_client.py`.
 
 ### MCP render artifacts
 
-MCP tools can return renderable artifacts in a top-level `artifacts` array. The harness currently renders `html`, `iframe`, `image`, and `link` artifacts. For artifacts that should be refreshed by later tool calls, use the generic artifact update fields:
+MCP tools can return renderable artifacts in a top-level `artifacts` array. The harness renders `html`, `iframe`, `image`, and `link` artifacts. To refresh an existing artifact from a later call:
 
 ```json
 {
@@ -116,7 +154,21 @@ MCP tools can return renderable artifacts in a top-level `artifacts` array. The 
 }
 ```
 
-`artifact_id` identifies the artifact being returned. `artifact_update_mode` controls UI behavior: `append` renders a new artifact, `replace`/`update` refreshes an existing artifact, and `upsert` replaces when the target exists or appends otherwise. `artifact_target_id` names the existing artifact to refresh; omit it when the target is the returned `artifact_id`. The backend normalizes common aliases such as `artifactId`, `artifactTargetId`, `targetArtifactId`, `updateMode`, and `artifactUpdateMode`.
+`artifact_update_mode` controls UI behavior: `append` renders a new artifact, `replace`/`update` refresh an existing one, `upsert` replaces when the target exists or appends otherwise. `artifact_target_id` names the existing artifact to refresh; omit it when the target is the returned `artifact_id`. The backend normalizes camelCase aliases (`artifactId`, `artifactTargetId`, `updateMode`, …).
+
+Note: in the chat UI only **one** live preview (iframe/html) is mounted at a time — the newest auto-activates and the rest collapse to click-to-open placeholders, so many previews never pile up live iframes.
+
+## Composio (optional)
+
+Hosted MCP integration under `composio:` in the YAML. When `enabled`, the harness points at Composio's "connect" MCP URL and exposes its tools through the normal MCP path (`call_mcp_tool`) under `server_name`. The consumer key may come from `COMPOSIO_CONSUMER_API_KEY` (env wins). Which toolkits are available is set in the Composio dashboard.
+
+```yaml
+composio:
+  enabled: false
+  url: "https://connect.composio.dev/mcp"
+  consumer_api_key: ""
+  server_name: "composio"
+```
 
 ## Memories
 
@@ -124,7 +176,12 @@ Durable project/user context: `.agents/memories/*.md` and `~/.agents/memories/*.
 
 ## What reloads live vs. needs a restart
 
-- **Live (no restart):** agent files, skill files, memories, and API keys set via the Settings dialog.
-- **Restart required:** `mcp.json` changes, and `configuration.yaml` edits made directly on disk (endpoint, model, default agent, directories).
+- **Live (no restart):** agent files, skill files, memories, API keys/base-url/model set via the Settings dialog or model picker, per-session model overrides, and the sandbox toggle.
+- **Restart required:** `mcp.json` changes, Composio changes, and `configuration.yaml` edits made directly on disk (directory roots, default agent, delegation depth, etc.).
 
-After any change, verify: for agents/skills, confirm they appear via the `/agents/cards` or `/mcp/tools` endpoints (or the UI capabilities panel); for credentials, send a message and confirm the turn completes instead of failing with a credentials error.
+## Verifying a change
+
+- Agents/skills: confirm they appear via `GET /agents/cards` (or the UI capabilities panel).
+- Providers/model: `GET /models` lists available models grouped by provider; a provider's models are unlocked once its key resolves.
+- MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools the folder sees.
+- Credentials/model end-to-end: send a message and confirm the turn completes (a missing/empty key fails the turn with a credentials error rather than silently hanging).

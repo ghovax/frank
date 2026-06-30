@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 from urllib.parse import quote, urljoin
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from sqlalchemy import Column, String, Text, create_engine
+from sqlalchemy import Column, String, Text, create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
@@ -165,6 +165,64 @@ _conversations: dict[str, list] = {}
 _running_contexts: dict[str, int] = {}
 
 
+class _ContextEventBus:
+    """Per-context fan-out of the structured A2A parts a turn emits.
+
+    A non-driving viewer (e.g. the sidebar re-opened on a running session) follows
+    the turn by subscribing here instead of polling the task store and re-replaying
+    the whole transcript every second. ``publish`` is called from the executor
+    *after* each part is persisted, and ``complete`` when the turn ends.
+
+    Delivery is snapshot-then-tail and gap-/duplicate-free without a cursor: a
+    subscriber takes a baseline ``high_seq``, reads a compacted snapshot of the
+    persisted transcript (which covers every event with seq <= baseline, because
+    publish runs after persist), then drains its queue for events with seq >
+    baseline and keeps reading live.
+    """
+
+    # Sentinel placed on a subscriber's queue when the context's turn completes,
+    # so the SSE generator can emit a terminal frame and close cleanly.
+    _DONE = object()
+
+    def __init__(self) -> None:
+        self._seq: dict[str, int] = {}
+        self._subscribers: dict[str, list[asyncio.Queue]] = {}
+
+    def publish(self, context_id: str, part: dict) -> int:
+        seq = self._seq.get(context_id, 0) + 1
+        self._seq[context_id] = seq
+        for queue in self._subscribers.get(context_id, ()):
+            queue.put_nowait((seq, part))
+        return seq
+
+    def complete(self, context_id: str) -> None:
+        for queue in self._subscribers.get(context_id, ()):
+            queue.put_nowait(self._DONE)
+
+    def high_seq(self, context_id: str) -> int:
+        return self._seq.get(context_id, 0)
+
+    def subscribe(self, context_id: str) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue()
+        self._subscribers.setdefault(context_id, []).append(queue)
+        return queue
+
+    def unsubscribe(self, context_id: str, queue: asyncio.Queue) -> None:
+        subscribers = self._subscribers.get(context_id)
+        if subscribers and queue in subscribers:
+            subscribers.remove(queue)
+            if not subscribers:
+                self._subscribers.pop(context_id, None)
+
+
+_event_bus = _ContextEventBus()
+
+
+def _publish_stream_event(context_id: str, part) -> None:
+    """Executor hook: serialize one structured part and fan it out to live viewers."""
+    _event_bus.publish(context_id, part.model_dump(by_alias=True, exclude_none=True, mode="json"))
+
+
 def _set_turn_state(context_id: str, running: bool) -> None:
     """Track active turns per context and broadcast on the empty/active edge so the
     sidebar reflects which conversations are currently running."""
@@ -176,6 +234,10 @@ def _set_turn_state(context_id: str, running: bool) -> None:
         _running_contexts.pop(context_id, None)
     if (previous == 0) != (updated == 0):
         _broadcaster.publish({"type": "sessions_changed"})
+    # When the last turn for a context finishes, tell live viewers to do a final
+    # refresh and close — the structured-part fan-out is only meaningful mid-turn.
+    if not running and updated == 0:
+        _event_bus.complete(context_id)
 
 
 def _notify_permission_state(context_id: str) -> None:
@@ -512,6 +574,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         load_conversation=_load_conversation,
         save_conversation=_save_conversation,
         session_model_for=_session_model_for,
+        on_stream_event=_publish_stream_event,
     )
     handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
     _executors[agent_name] = executor
@@ -659,6 +722,19 @@ async def lifespan(application: FastAPI):
     Base.metadata.create_all(sync_engine)
     _session_factory = sessionmaker(bind=sync_engine)
 
+    # SQLite concurrency: WAL lets readers run alongside the single writer (the
+    # task store writes on every streamed event, while the UI reads sessions /
+    # projects), and a busy timeout makes a contended op wait instead of raising
+    # "database is locked". WAL is persistent once set; synchronous/busy_timeout
+    # are per-connection, so apply them on every connect.
+    @event.listens_for(sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
         from exa_py import Exa
@@ -676,7 +752,13 @@ async def lifespan(application: FastAPI):
         await _mcp_manager.start()
     set_mcp_client_manager(_mcp_manager)
 
-    _async_engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+    _async_engine = create_async_engine(
+        f"sqlite+aiosqlite:///{database_path}",
+        # Wait up to 30s for the write lock instead of raising "database is locked"
+        # when the task store and UI reads contend. WAL (set above) lets reads run
+        # concurrently with writes.
+        connect_args={"timeout": 30},
+    )
     _task_store = AppendOnlyTaskStore(_async_engine)
     await _task_store.initialize()
 
@@ -1300,6 +1382,71 @@ async def session_tasks(context_id: str):
             for task in tasks
         ]
     }
+
+
+@app.get("/sessions/{context_id}/stream")
+async def session_stream(context_id: str, request: Request):
+    """Live SSE stream of a session's structured parts for a non-driving viewer.
+
+    Emits one ``snapshot`` frame (the compacted transcript, same shape as
+    /sessions/{id}/tasks) then a ``live`` tail — one frame per part the turn emits,
+    in the same agent-message shape the driver's message/stream uses, so the client
+    feeds them to the same reducer. Replaces per-second polling + full re-replay
+    (O(N)/s) with O(delta) live updates.
+
+    A ``done`` frame ends the stream when the turn completes (or if it already had
+    by the time the viewer connected)."""
+    assert _task_store is not None
+
+    async def generate():
+        # Subscribe before reading the baseline so every part published from here on
+        # lands on our queue; the snapshot then covers everything up to the baseline.
+        queue = _event_bus.subscribe(context_id)
+        baseline = _event_bus.high_seq(context_id)
+        try:
+            tasks = await _task_store.tasks_for_context(context_id)
+            yield {"data": json.dumps({
+                "kind": "snapshot",
+                "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
+            })}
+
+            # Drain anything queued between subscribe and now. Events with seq <=
+            # baseline are already in the snapshot; only newer ones are sent live.
+            done = False
+            while not queue.empty():
+                item = queue.get_nowait()
+                if item is _ContextEventBus._DONE:
+                    done = True
+                    break
+                seq, part = item
+                if seq <= baseline:
+                    continue
+                yield {"data": json.dumps({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
+
+            if done or _running_contexts.get(context_id, 0) == 0:
+                yield {"data": json.dumps({"kind": "done"})}
+                return
+
+            # Live tail. The wait_for timeout lets us notice a client disconnect
+            # promptly; the library's ping keeps the connection alive between events.
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+                if item is _ContextEventBus._DONE:
+                    yield {"data": json.dumps({"kind": "done"})}
+                    break
+                seq, part = item
+                yield {"data": json.dumps({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
+        except asyncio.CancelledError:
+            raise
+        finally:
+            _event_bus.unsubscribe(context_id, queue)
+
+    return EventSourceResponse(generate(), ping=15)
 
 
 class SessionModelRequest(BaseModel):

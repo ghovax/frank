@@ -2,7 +2,7 @@
 
 import { Box, Flex, IconButton, Link, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { LuRotateCw } from "react-icons/lu";
+import { LuAppWindow, LuRotateCw } from "react-icons/lu";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { useColorMode } from "../ui/color-mode";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
@@ -301,12 +301,12 @@ function EditFileCallView({ args }: { args: Record<string, unknown> }) {
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.replace_all != null && <InlineField label="Replace all">{args.replace_all ? "yes" : "no"}</InlineField>}
+      {args.replace_all != null && <InlineField label="Replace all">{args.replace_all ? "Yes" : "No"}</InlineField>}
       <Field label="Old string">
-        <MonoBlock>{asString(args.old_string) || "(empty)"}</MonoBlock>
+        <MonoBlock>{asString(args.old_string) || " "}</MonoBlock>
       </Field>
       <Field label="New string">
-        <MonoBlock>{asString(args.new_string) || "(empty)"}</MonoBlock>
+        <MonoBlock>{asString(args.new_string) || " "}</MonoBlock>
       </Field>
     </FieldList>
   );
@@ -419,7 +419,7 @@ function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
     return (
       <FieldList>
         <Field label="Entries">
-          <MonoBlock>{entries.join("\n") || "(empty)"}</MonoBlock>
+          <MonoBlock>{entries.join("\n") || " "}</MonoBlock>
         </Field>
       </FieldList>
     );
@@ -505,7 +505,7 @@ function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
   const content = asString(data.content);
   return (
     <FieldList>
-      {data.truncated === true && <InlineField label="Truncated">yes</InlineField>}
+      {data.truncated === true && <InlineField label="Truncated">Yes</InlineField>}
       {content && (
         <Field label="Content">
           <MarkdownContent content={content} fontSize="xs" />
@@ -596,7 +596,6 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
     case "read_task":
       return <ReadTaskCallView args={args} />;
     case "open_web_preview":
-    case "render_widget":
       return <WebPreviewCallView args={args} />;
     case "read_file":
       return <ReadFileCallView args={args} />;
@@ -823,10 +822,13 @@ function ArtifactFrame({ title, children }: { title: string; children: ReactNode
           size="xs"
           variant="ghost"
           borderRadius="sm"
+          h="20px"
+          minW="20px"
+          px={1}
           flexShrink={0}
           onClick={() => setReloadKey((current) => current + 1)}
         >
-          <LuRotateCw size={13} />
+          <LuRotateCw size={10} />
         </IconButton>
       </Flex>
       <Box key={reloadKey}>{children}</Box>
@@ -1068,12 +1070,70 @@ export function extractToolArtifacts(name: string, content: string): Record<stri
   return collectArtifacts((parsed as Record<string, unknown>).artifacts);
 }
 
-export function ToolArtifacts({ artifacts }: { artifacts: Record<string, unknown>[] }) {
+// Only iframe/html artifacts mount a live frame (scripts, network, layout). Images
+// and links are cheap, so the "one live preview at a time" rule only applies here.
+export function isLivePreviewArtifact(artifact: Record<string, unknown>): boolean {
+  const normalized = normalizeArtifact(artifact);
+  return normalized?.type === "iframe" || normalized?.type === "html";
+}
+
+// A collapsed, click-to-open stand-in for a live preview that is not currently
+// active. Unmounting the iframe stops its scripts and network activity, which is
+// what keeps a long transcript (many previews) from dragging the page down.
+function CollapsedPreview({ title, onOpen }: { title: string; onOpen: () => void }) {
+  return (
+    <Flex
+      as="button"
+      align="center"
+      gap={1.5}
+      px={2}
+      py={1.5}
+      borderRadius="sm"
+      border="1px solid"
+      borderColor="border"
+      bg="bg.subtle"
+      cursor="pointer"
+      textAlign="left"
+      w="100%"
+      onClick={onOpen}
+      _hover={{ bg: "bg.muted", borderColor: "border.emphasized" }}
+    >
+      <Box color="fg.muted" flexShrink={0}>
+        <LuAppWindow size={13} />
+      </Box>
+      <Text fontSize="xs" fontWeight="medium" flex={1} minW={0} truncate>{title}</Text>
+      <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>click to open</Text>
+    </Flex>
+  );
+}
+
+export function ToolArtifacts({
+  artifacts,
+  activePreviewId,
+  onActivatePreview,
+  toolCallId,
+}: {
+  artifacts: Record<string, unknown>[];
+  // The toolCallId of the single live preview call (owned by ChatPanel, which
+  // auto-activates the newest preview and lets the user click to reopen an older
+  // one). null/undefined while none has been claimed yet — a transient that
+  // resolves on the same render pass, so users never see two live previews at once.
+  activePreviewId?: string | null;
+  onActivatePreview?: (toolCallId: string) => void;
+  toolCallId?: string;
+}) {
   if (artifacts.length === 0) return null;
+  // Identity here is just the owning tool call: one open_web_preview is one tool
+  // call, so "this call is the active preview" is enough to decide mount-vs-collapse.
+  const callActive = activePreviewId == null || activePreviewId === toolCallId;
   return (
     <Flex direction="column" gap={1.5}>
       {artifacts.map((artifact, index) => {
         const key = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id) || String(index);
+        if (isLivePreviewArtifact(artifact) && !callActive) {
+          const title = asString(artifact.title) || "Preview";
+          return <CollapsedPreview key={key} title={title} onOpen={() => onActivatePreview?.(toolCallId ?? "")} />;
+        }
         return <RenderArtifact key={key} artifact={artifact} />;
       })}
     </Flex>

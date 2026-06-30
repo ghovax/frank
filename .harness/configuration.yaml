@@ -15,4 +15,4 @@ home_agents_root_directory: ~/.agents
 agents_directory: .agents/agents
 skills_directory: .agents/skills
 sandbox:
-  enabled: false
+  enabled: true

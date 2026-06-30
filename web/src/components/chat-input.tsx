@@ -9,11 +9,12 @@ import {
   Menu,
   Portal,
   Select,
+  Spinner,
   Text,
   Textarea,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuChevronDown, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuUser } from "react-icons/lu";
+import { LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
 import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
@@ -47,6 +48,80 @@ interface ChatInputProps {
   recentModels?: { id: string; name: string; provider: string }[];
   selectedModel: string;
   onModelChange: (model: string) => void;
+  // A live "Thinking" / "Working through N tool calls" label shown as a compact
+  // chip next to the Settings button while a turn runs and no tool group is
+  // active (otherwise the status lives in the active group's header). null hides it.
+  thinkingLabel?: string | null;
+}
+
+// A clean, symmetric progress ring (SVG arc) for the aggregate task completion.
+// Full blue arc = progress; muted track behind it. Switches to a check at 100%.
+// Sized to 13px so it reads at the exact same scale as the other control icons.
+function TaskProgressRing({ progress }: { progress: number }) {
+  const clamped = Math.max(0, Math.min(100, progress));
+  if (clamped >= 100) {
+    return (
+      <Box color="green.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
+        <LuCheck size={13} />
+      </Box>
+    );
+  }
+  const radius = 5.5;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - clamped / 100);
+  return (
+    <Box w="13px" h="13px" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
+      <svg width="13" height="13" viewBox="0 0 14 14">
+        <circle cx="7" cy="7" r={radius} fill="none" stroke="var(--chakra-colors-bg-muted)" strokeWidth="2" />
+        <circle
+          cx="7"
+          cy="7"
+          r={radius}
+          fill="none"
+          stroke="var(--chakra-colors-blue-solid)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform="rotate(-90 7 7)"
+        />
+      </svg>
+    </Box>
+  );
+}
+
+// One icon per task status — the status is conveyed visually, not by a text label.
+function TaskStatusIcon({ status }: { status: string }) {
+  if (status === "completed") {
+    return (
+      <Box color="green.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
+        <LuCheck size={13} />
+      </Box>
+    );
+  }
+  if (status === "in_progress") {
+    return <Spinner size="xs" color="blue.solid" />;
+  }
+  if (status === "blocked") {
+    return (
+      <Box color="red.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
+        <LuTriangleAlert size={13} />
+      </Box>
+    );
+  }
+  if (status === "failed" || status === "cancelled" || status === "canceled" || status === "deleted") {
+    return (
+      <Box color="fg.subtle" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
+        <LuX size={13} />
+      </Box>
+    );
+  }
+  // pending / unknown — a hollow dot reads as "not started".
+  return (
+    <Box color="fg.subtle" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
+      <LuCircle size={13} />
+    </Box>
+  );
 }
 
 export function ChatInput({
@@ -77,6 +152,7 @@ export function ChatInput({
   recentModels = [],
   selectedModel,
   onModelChange,
+  thinkingLabel,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState("");
@@ -107,28 +183,28 @@ export function ChatInput({
   );
   const permissionAppearance = {
     default: {
-      icon: <LuShield size={16} />,
+      icon: <LuShield size={13} />,
       color: "fg.subtle",
       bg: "bg",
       borderColor: "border",
       colorPalette: undefined,
     },
     auto: {
-      icon: <LuSparkles size={16} />,
+      icon: <LuSparkles size={13} />,
       color: "blue.fg",
       bg: "blue.subtle",
       borderColor: "blue.muted",
       colorPalette: "blue",
     },
     read_only: {
-      icon: <LuShieldCheck size={16} />,
+      icon: <LuShieldCheck size={13} />,
       color: "green.fg",
       bg: "green.subtle",
       borderColor: "green.muted",
       colorPalette: "green",
     },
     bypass: {
-      icon: <LuShieldOff size={16} />,
+      icon: <LuShieldOff size={13} />,
       color: "red.fg",
       bg: "red.subtle",
       borderColor: "red.muted",
@@ -260,6 +336,7 @@ export function ChatInput({
               borderRadius="sm"
               fontSize="xs"
               h="28px"
+              px={2}
               bg={historyAppearance.bg}
               borderColor={historyAppearance.borderColor}
               flexShrink={0}
@@ -275,20 +352,90 @@ export function ChatInput({
             borderRadius="sm"
             fontSize="xs"
             h="28px"
-            bg="bg.emphasized"
-            borderColor="border.emphasized"
+            px={2}
+            bg="bg.subtle"
+            borderColor="border"
             flexShrink={0}
             onClick={() => setSettingsOpen(true)}
           >
             <LuSettings size={13} />
             Settings
           </Button>
+          {thinkingLabel && (
+            <Flex
+              align="center"
+              gap={1.5}
+              h="28px"
+              px={2}
+              borderRadius="sm"
+              bg="bg.subtle"
+              border="1px solid"
+              borderColor="border"
+              flexShrink={0}
+            >
+              <Box color="purple.fg" display="flex" alignItems="center">
+                <LuBrain size={13} />
+              </Box>
+              <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer">
+                {thinkingLabel}
+              </Text>
+            </Flex>
+          )}
         </Flex>
 
         <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">
-          <Box color="fg.muted" fontSize="sm" flexShrink={0} display="flex" alignItems="center">
-            <LuUser size={16} />
-          </Box>
+          {tasks.length > 0 && (
+            <Box position="relative" className="task-hover-root" flexShrink={0}>
+              <Flex
+                align="center"
+                gap={1.5}
+                h="28px"
+                px={2}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor="border"
+                bg="bg"
+                fontSize="xs"
+                fontWeight="medium"
+                cursor="default"
+              >
+                <TaskProgressRing progress={taskProgress} />
+                <Text fontSize="xs" fontWeight="medium">
+                  Tasks {completedTasks}/{tasks.length}
+                </Text>
+              </Flex>
+              <Box
+                display="none"
+                className="task-hover-panel"
+                position="absolute"
+                right={0}
+                bottom="calc(100% + 6px)"
+                w="min(360px, calc(100vw - 24px))"
+                maxH="260px"
+                overflowY="auto"
+                p={2}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor="border"
+                bg="bg"
+                boxShadow="lg"
+                zIndex={5}
+              >
+                <Flex direction="column" gap={1.5}>
+                  {tasks.map((task) => (
+                    <Flex key={task.identifier} align="flex-start" gap={2}>
+                      <Box mt="1px" display="flex" alignItems="center" flexShrink={0}>
+                        <TaskStatusIcon status={task.status} />
+                      </Box>
+                      <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2} flex={1} minW={0}>
+                        {task.description}
+                      </Text>
+                    </Flex>
+                  ))}
+                </Flex>
+              </Box>
+            </Box>
+          )}
           <Select.Root
             collection={agentCollection}
             value={[selectedAgent]}
@@ -306,6 +453,7 @@ export function ChatInput({
                 w="max-content"
                 borderRadius="sm"
                 fontSize="xs"
+                gap={1.5}
                 px={2}
                 pe={7}
                 bg="bg"
@@ -317,6 +465,9 @@ export function ChatInput({
                 fontWeight="medium"
                 style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
               >
+                <Box display="flex" alignItems="center" color="fg.muted" flexShrink={0}>
+                  <LuUser size={13} />
+                </Box>
                 <Select.ValueText placeholder="Agent" maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
               </Select.Trigger>
               <Select.IndicatorGroup>
@@ -352,6 +503,7 @@ export function ChatInput({
             borderRadius="sm"
             fontSize="xs"
             h="28px"
+            px={2}
             bg={agentsAppearance.bg}
             borderColor={agentsAppearance.borderColor}
             flexShrink={0}
@@ -365,78 +517,6 @@ export function ChatInput({
 
       {/* Message input */}
       <Box px={2} pt={2} pb={2}>
-        {tasks.length > 0 && (
-          <Flex justify="flex-end" mb={1.5}>
-            <Box position="relative" className="task-hover-root">
-              <Flex
-                align="center"
-                gap={1.5}
-                px={2}
-                py={1}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor="border"
-                bg="bg"
-                cursor="default"
-              >
-                <Box
-                  w="16px"
-                  h="16px"
-                  borderRadius="full"
-                  bg={`conic-gradient(var(--chakra-colors-blue-solid) ${taskProgress}%, var(--chakra-colors-bg-muted) 0)`}
-                  display="grid"
-                  placeItems="center"
-                  flexShrink={0}
-                >
-                  <Box w="9px" h="9px" borderRadius="full" bg="bg" />
-                </Box>
-                <Text fontSize="xs" fontWeight="medium" color="fg.muted">
-                  Tasks {completedTasks}/{tasks.length}
-                </Text>
-              </Flex>
-              <Box
-                display="none"
-                className="task-hover-panel"
-                position="absolute"
-                right={0}
-                bottom="calc(100% + 6px)"
-                w="min(360px, calc(100vw - 24px))"
-                maxH="260px"
-                overflowY="auto"
-                p={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor="border"
-                bg="bg"
-                boxShadow="lg"
-                zIndex={5}
-              >
-                <Flex direction="column" gap={1.5}>
-                  {tasks.map((task) => (
-                    <Flex key={task.identifier} align="flex-start" gap={2}>
-                      <Box
-                        mt="5px"
-                        w="7px"
-                        h="7px"
-                        borderRadius="full"
-                        bg={task.status === "completed" ? "green.solid" : task.status === "in_progress" ? "blue.solid" : task.status === "blocked" ? "red.solid" : "border.emphasized"}
-                        flexShrink={0}
-                      />
-                      <Box minW={0} flex={1}>
-                        <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2}>
-                          {task.description}
-                        </Text>
-                        <Text fontSize="2xs" color="fg.subtle">
-                          {task.status.replace("_", " ")}
-                        </Text>
-                      </Box>
-                    </Flex>
-                  ))}
-                </Flex>
-              </Box>
-            </Box>
-          </Flex>
-        )}
         <Box
           bg="bg"
           border="1px solid"
@@ -507,9 +587,6 @@ export function ChatInput({
       {/* Bottom row (below the input): permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
         <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
-          <Box color={permissionAppearance.color} fontSize="sm" flexShrink={0} display="flex" alignItems="center">
-            {permissionAppearance.icon}
-          </Box>
           <Select.Root
             collection={permissionCollection}
             value={[permissionMode]}
@@ -528,6 +605,7 @@ export function ChatInput({
                 w="max-content"
                 borderRadius="sm"
                 fontSize="xs"
+                gap={1.5}
                 px={2}
                 pe={7}
                 bg={permissionAppearance.bg}
@@ -540,6 +618,9 @@ export function ChatInput({
                 fontWeight="medium"
                 style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
               >
+                <Box display="flex" alignItems="center" color={permissionAppearance.color} flexShrink={0}>
+                  {permissionAppearance.icon}
+                </Box>
                 <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
               </Select.Trigger>
               <Select.IndicatorGroup>
@@ -559,9 +640,6 @@ export function ChatInput({
               </Select.Positioner>
             </Portal>
           </Select.Root>
-          <Box color={sandboxEnabled ? "green.fg" : "red.fg"} fontSize="sm" pl={1} flexShrink={0} display="flex" alignItems="center">
-            {sandboxEnabled ? <LuLock size={16} /> : <LuLockOpen size={16} />}
-          </Box>
           <Button
             size="xs"
             variant={sandboxAppearance.variant}
@@ -569,6 +647,7 @@ export function ChatInput({
             borderRadius="sm"
             fontSize="xs"
             h="28px"
+            px={2}
             fontWeight="medium"
             flexShrink={0}
             title={sandboxEnabled
@@ -577,6 +656,9 @@ export function ChatInput({
             onClick={() => onSandboxEnabledChange?.(!sandboxEnabled)}
             disabled={!onSandboxEnabledChange}
           >
+            <Box display="flex" alignItems="center" color={sandboxEnabled ? "green.fg" : "red.fg"}>
+              {sandboxEnabled ? <LuLock size={13} /> : <LuLockOpen size={13} />}
+            </Box>
             {sandboxAppearance.label}
           </Button>
         </Flex>
@@ -592,7 +674,7 @@ export function ChatInput({
             disabled={folderLocked}
             onClick={onBrowseFolder}
           >
-            <LuFolder size={16} />
+            <LuFolder size={13} />
           </IconButton>
           <Menu.Root size="sm">
             <Menu.Trigger asChild>

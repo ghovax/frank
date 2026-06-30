@@ -10,7 +10,7 @@
       "enabled": false,
       "transport": "stdio",
       "command": "uv",
-      "args": ["run", "python", "examples/mcp/example/server.py"],
+      "arguments": ["run", "python", "examples/mcp/example/server.py"],
       "stateful": true,
       "env": {
         "UV_CACHE_DIR": "/private/tmp/uv-cache"

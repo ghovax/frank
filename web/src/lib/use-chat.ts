@@ -8,13 +8,14 @@ import {
   resolvePermission,
   resolveQuestion,
   fetchSessionTasks,
+  subscribeSessionStream,
   type A2AStreamResult,
   type A2AMessage,
   type A2APart,
   type A2ATask as A2ATaskWire,
   type PermissionMode,
 } from "./api";
-import { isControlToolName, isSameToolEvent, nextToolSequence, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
+import { isControlToolName, isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import type { WidgetEvent } from "@/components/widget-bridge";
 
 // Re-export the A2A task shape so components can consume it from one place.
@@ -69,8 +70,8 @@ export interface QueuedMessage {
 
 // An agent step's ordered timeline — prose, reasoning, and tool calls
 // interleaved, mirroring the main chat. Built from the A2A sub-task DataPart
-// envelopes. A `thinking` part renders through the same ThinkingIndicator the
-// main chat uses, so a sub-agent's reasoning reads identically.
+// envelopes. Reasoning is captured here for fidelity but, like the main chat, is
+// not rendered as transcript rows (the agents panel surfaces it as a live status).
 export type AgentPart =
   | { kind: "text"; content: string }
   | { kind: "thinking"; content: string; status: ToolEventStatus; durationMs?: number }
@@ -132,11 +133,6 @@ function isRunningThinking(part: AgentPart): part is ThinkingPart {
 
 function isToolPart(part: AgentPart): part is ToolPart {
   return part.kind === "tool";
-}
-
-// The 1-based position of the next tool card within a step's timeline.
-function nextAgentToolSequence(step: AgentStep): number {
-  return nextToolSequence(step.parts.filter(isToolPart));
 }
 
 // Close out any in-flight thinking part (mark it done). Called before a new
@@ -205,7 +201,7 @@ function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Recor
   step = finishAgentThinking(step);
   return {
     ...step,
-    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, sequenceNumber: nextAgentToolSequence(step), toolCallId, status: "running" }],
+    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, toolCallId, status: "running" }],
   };
 }
 
@@ -232,7 +228,7 @@ function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string
   // No matching call (result arrived first / orphaned) — record it as a finished tool.
   return {
     ...step,
-    parts: [...step.parts, { kind: "tool", name: name || "unknown", sequenceNumber: nextAgentToolSequence(step), toolCallId, result, status }],
+    parts: [...step.parts, { kind: "tool", name: name || "unknown", toolCallId, result, status }],
   };
 }
 
@@ -596,7 +592,6 @@ function toolEventFromMessage(message: ChatMessage): ToolEvent | null {
   return {
     name: message.content,
     arguments: message.meta?.arguments as Record<string, unknown> | undefined,
-    sequenceNumber: message.meta?.sequenceNumber as number | undefined,
     toolCallId: String(message.meta?.toolCallId ?? ""),
     result: message.meta?.result,
     status: status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined,
@@ -607,13 +602,6 @@ function toolEventFromMessage(message: ChatMessage): ToolEvent | null {
 function messageMatchesToolEvent(message: ChatMessage, name: string, toolCallId: string): boolean {
   const event = toolEventFromMessage(message);
   return event ? isSameToolEvent(event, name, toolCallId) : false;
-}
-
-function messageToolEvents(messages: ChatMessage[]): ToolEvent[] {
-  return messages.flatMap((message) => {
-    const event = toolEventFromMessage(message);
-    return event ? [event] : [];
-  });
 }
 
 function pushAssistantText(state: ReduceState, text: string): void {
@@ -704,15 +692,15 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       state.lane = null;
       if (isControlToolName(data.name)) break;
       finishRunningThinking(state);
-      const sequence = nextToolSequence(messageToolEvents(state.messages));
+      const toolCallId = String(data.toolCallId ?? "");
       state.messages = [
         ...state.messages,
         {
-          id: `toolcall-${data.toolCallId ?? sequence}`,
+          id: `toolcall-${toolCallId || crypto.randomUUID()}`,
           role: "tool_call",
           content: String(data.name ?? "unknown"),
           timestamp: new Date().toISOString(),
-          meta: { arguments: data.arguments, toolCallId: String(data.toolCallId ?? ""), sequenceNumber: sequence, status: "running" },
+          meta: { arguments: data.arguments, toolCallId, status: "running" },
         },
       ];
       break;
@@ -734,7 +722,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
           : message
       );
       if (!matched) {
-        const sequence = nextToolSequence(messageToolEvents(state.messages));
         state.messages = [
           ...state.messages,
           {
@@ -742,7 +729,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
             role: "tool_call",
             content: toolName || "unknown",
             timestamp: new Date().toISOString(),
-            meta: { toolCallId, sequenceNumber: sequence, status: resultStatus, result: artifactUpdate.result },
+            meta: { toolCallId, status: resultStatus, result: artifactUpdate.result },
           },
         ];
       }
@@ -887,66 +874,9 @@ function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, 
   }
 }
 
-function textOnlyAgentMessage(message: A2AMessage): string | null {
-  if (message.role !== "agent") return null;
-  const parts = message.parts ?? [];
-  if (parts.length === 0 || parts.some((part) => part.kind !== "text")) return null;
-  return parts.map((part) => part.text ?? "").join("");
-}
-
-function subTaskTextMessage(message: A2AMessage): { key: string; data: Record<string, unknown>; text: string } | null {
-  if (message.role !== "agent") return null;
-  const parts = message.parts ?? [];
-  if (parts.length !== 1 || parts[0]?.kind !== "data" || !parts[0].data) return null;
-  const data = parts[0].data;
-  if (data.kind !== "sub_task_text") return null;
-  const key = [
-    String(data.groupId ?? ""),
-    String(data.stepId ?? ""),
-    String(data.childTaskId ?? ""),
-  ].join("\u0000");
-  return { key, data, text: String(data.text ?? "") };
-}
-
-function compactReplayMessages(messages: A2AMessage[] | undefined): A2AMessage[] {
-  const compacted: A2AMessage[] = [];
-  for (const message of messages ?? []) {
-    const text = textOnlyAgentMessage(message);
-    if (text !== null) {
-      const last = compacted[compacted.length - 1];
-      const previousText = last ? textOnlyAgentMessage(last) : null;
-      if (last && previousText !== null) {
-        last.parts = [{ kind: "text", text: previousText + text }];
-      } else {
-        compacted.push({ ...message, parts: [{ kind: "text", text }] });
-      }
-      continue;
-    }
-
-    const subText = subTaskTextMessage(message);
-    if (subText) {
-      const last = compacted[compacted.length - 1];
-      const previousSubText = last ? subTaskTextMessage(last) : null;
-      if (last && previousSubText && previousSubText.key === subText.key) {
-        last.parts = [{
-          kind: "data",
-          data: { ...previousSubText.data, text: previousSubText.text + subText.text },
-        }];
-      } else {
-        compacted.push({
-          ...message,
-          parts: [{ kind: "data", data: { ...subText.data, text: subText.text } }],
-        });
-      }
-      continue;
-    }
-
-    compacted.push(message);
-  }
-  return compacted;
-}
-
-// Reconstruct messages + agentGroups from a session's persisted A2A tasks.
+// Reconstruct messages + agentGroups from a session's persisted A2A tasks. The
+// history arrives already compacted server-side (adjacent same-kind deltas merged),
+// so it is reduced as-is — no client-side compaction pass.
 function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[] } {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
@@ -966,7 +896,7 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
     if (trailing && !replayMessages.some((message) => !!message.messageId && message.messageId === trailing.messageId)) {
       replayMessages.push(trailing);
     }
-    for (const message of compactReplayMessages(replayMessages)) {
+    for (const message of replayMessages) {
       if (message.role === "user") reduceUserMessage(state, message);
       else reduceAgentMessage(state, message);
     }
@@ -980,7 +910,8 @@ export function useChat(
   workingDirectory?: string,
   permissionMode: PermissionMode = "default",
   // Whether a turn is currently running on this session (from the server-tracked
-  // running set). Drives live polling when we are viewing — but not driving — it.
+  // running set). Drives the live subscribe stream when we are viewing — but not
+  // driving — it.
   sessionRunning: boolean = false
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1011,11 +942,11 @@ export function useChat(
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
   // Tracks whether this session was running, so we do a final refresh when its
-  // turn finishes (the poll loop stops once it is no longer running).
+  // turn finishes (the subscribe stream closes once it is no longer running).
   const wasRunningRef = useRef(false);
   // True once we have driven a turn in this mount. For such a session the live
-  // SSE is authoritative, so we never poll it (polling would replace the live
-  // state with a replay and churn message ids).
+  // SSE is authoritative, so we never subscribe to the read-only stream (it would
+  // replace the live state with a replay and churn message ids).
   const streamedLocallyRef = useRef(false);
   const runStreamRef = useRef<(input: ChatInput) => void>(() => {});
   const flushFrameRef = useRef<number | null>(null);
@@ -1084,6 +1015,13 @@ export function useChat(
       return;
     }
     if (historyLoadedForRef.current === initialSessionId) return;
+    // A running session we're not driving is loaded by the live subscribe stream
+    // (snapshot catch-up + live tail). Skip the REST load here so the two paths
+    // can't race and clobber each other's state at connect time.
+    if (sessionRunning && !streamedLocallyRef.current) {
+      historyLoadedForRef.current = initialSessionId;
+      return;
+    }
     historyLoadedForRef.current = initialSessionId;
     let cancelled = false;
     // Abort the in-flight fetch when the session switches or the panel unmounts —
@@ -1130,49 +1068,72 @@ export function useChat(
       controller.abort();
       historyLoadedForRef.current = null;
     };
-  }, [initialSessionId, flushNow, historyReloadNonce]);
+  }, [initialSessionId, flushNow, historyReloadNonce, sessionRunning]);
 
   // Live updates for a session that is running on the server but is not being
   // driven by this hook (we switched back to it, or it was started elsewhere).
-  // The backend persists each step to the task store as the turn progresses, so
-  // polling + re-replay keeps the transcript current in real time. Re-replay is a
-  // smooth in-place update because message ids are deterministic. We never poll
-  // while streaming locally — the live SSE already delivers those updates.
+  // Subscribes to the server's per-context event stream: one compacted snapshot
+  // (catch-up) then a live tail of each emitted part, applied as O(delta) updates
+  // through the same reducer the driver uses — instead of polling and re-replaying
+  // the whole transcript every second. Never subscribes while we're driving the
+  // turn ourselves; the live message/stream SSE is authoritative for that.
   useEffect(() => {
     if (!initialSessionId) return;
+    if (streamedLocallyRef.current || isStreamingRef.current) return;
+
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let subscription: { abort: () => void } | null = null;
     const controller = new AbortController();
-    const refresh = async () => {
-      if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
-      try {
-        const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
-        if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
-        const replayed = replayTasks(tasks);
-        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null };
-        flushNow();
-      } catch {
-        // transient — try again on the next tick
-      }
+
+    const applySnapshot = (tasks: A2ATask[]) => {
+      const replayed = replayTasks(tasks);
+      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null };
+      sessionIdRef.current = initialSessionId;
+      setSessionId(initialSessionId);
+      flushNow();
     };
+
     if (sessionRunning) {
       wasRunningRef.current = true;
-      const tick = async () => {
-        await refresh();
-        if (!cancelled) timer = setTimeout(tick, 1000);
-      };
-      timer = setTimeout(tick, 1000);
+      subscription = subscribeSessionStream(
+        initialSessionId,
+        (frame) => {
+          if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
+          if (frame.kind === "snapshot") {
+            applySnapshot(frame.tasks);
+            setHistoryError(false);
+            setIsHistoryLoading(false);
+          } else if (frame.kind === "live") {
+            reduceAgentMessage(stateRef.current, frame.message);
+            flush();
+          }
+        },
+        () => {
+          // Stream closed (turn finished or dropped). The sessionRunning flip to
+          // false re-runs this effect and the else branch captures final state.
+        },
+      );
     } else if (wasRunningRef.current) {
-      // The turn just finished — capture its final state once, then stop.
+      // The turn just finished — capture its terminal state once (the live tail
+      // misses the final artifact, which arrives as a separate artifact-update),
+      // then stop.
       wasRunningRef.current = false;
-      refresh();
+      void (async () => {
+        try {
+          const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+          if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
+        } catch {
+          // transient — leave the last live state in place
+        }
+      })();
     }
+
     return () => {
       cancelled = true;
       controller.abort();
-      if (timer) clearTimeout(timer);
+      subscription?.abort();
     };
-  }, [sessionRunning, initialSessionId, flushNow]);
+  }, [sessionRunning, initialSessionId, isStreaming, flushNow, flush]);
 
   // Manual retry after the transcript failed to load — re-run the history-load
   // effect from scratch (clearing the per-session guard so it actually re-fetches).

@@ -466,6 +466,28 @@ class BackgroundTaskManager:
             for tool_name, kind in BACKGROUND_KINDS.items()
         )
 
+    async def wait_for_any(self, abort_event: "asyncio.Event", poll_interval: float = 0.2, timeout: float = 120.0) -> None:
+        """Wait until at least one tracked background task completes, all finish,
+        the turn is aborted, or ``timeout`` elapses — polling the registries meanwhile.
+
+        Completion is poll-driven (the tool registries expose no event), so this
+        sleeps in short, abort-responsive increments rather than blocking a frame.
+        Without this, a model that fires off parallel web searches and then emits
+        no further tool calls would end the turn before the results land, leaving
+        the completed searches orphaned and never synthesized."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while self.has_pending() and not self.has_results():
+            if abort_event.is_set() or loop.time() >= deadline:
+                return
+            self.poll()
+            if self.has_results() or not self.has_pending():
+                return
+            try:
+                await asyncio.wait_for(abort_event.wait(), timeout=poll_interval)
+            except asyncio.TimeoutError:
+                continue
+
     def active_tasks(self) -> dict[str, list[str]]:
         active = {}
         for tool_name, kind in BACKGROUND_KINDS.items():
@@ -1078,6 +1100,13 @@ class AgentRuntime:
                     self._calls_this_turn += 1
                     continue
 
+                # If background work (parallel web searches, background bash) is
+                # still in flight, the model's "no tool calls" would otherwise end
+                # the turn before the results land — leaving them orphaned. Wait
+                # for the next completion, then drain and re-invoke so the model
+                # actually sees and synthesizes the results.
+                if self._background.has_pending():
+                    await self._background.wait_for_any(self._abort_event)
                 background_events = self._background_result_events()
                 if background_events:
                     for background_event in background_events:

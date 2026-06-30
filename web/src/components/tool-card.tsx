@@ -14,7 +14,6 @@ export function ToolCard({ children }: { children: ReactNode }) {
 
 export function ToolCardHeader({
   icon,
-  sequenceNumber,
   title,
   badges,
   open,
@@ -24,7 +23,6 @@ export function ToolCardHeader({
   onToggle,
 }: {
   icon?: ReactNode;
-  sequenceNumber?: number;
   title: ReactNode;
   badges?: ReactNode;
   open?: boolean;
@@ -45,11 +43,6 @@ export function ToolCardHeader({
       onClick={collapsible ? onToggle : undefined}
       userSelect="none"
     >
-      {sequenceNumber != null && (
-        <Text fontSize="xs" color="fg.subtle" fontWeight="medium" flexShrink={0}>
-          #{sequenceNumber}
-        </Text>
-      )}
       {icon && (
         <Box fontSize="sm" flexShrink={0}>
           {icon}
