@@ -212,6 +212,64 @@ class AppendOnlyTaskStore(TaskStore):
         }
         return Task.model_validate(data)
 
+    async def tasks_for_context(self, context_id: str) -> list[Task]:
+        """All tasks in a context, loaded with one head/history/artifact pass.
+
+        Session replay asks for every task in a context at once. Calling ``get``
+        per task fans that into three queries per task; this keeps the same Task
+        shape but batches those reads so opening a local session is not gated by
+        request count.
+        """
+        await self._ensure_initialized()
+        async with self._engine.connect() as connection:
+            head_rows = (
+                await connection.execute(
+                    select(self._head)
+                    .where(self._head.c.context_id == context_id)
+                    .order_by(self._head.c.id)
+                )
+            ).mappings().all()
+            task_ids = [str(row["id"]) for row in head_rows]
+            if not task_ids:
+                return []
+
+            history_rows = (
+                await connection.execute(
+                    select(self._history.c.task_id, self._history.c.message)
+                    .where(self._history.c.task_id.in_(task_ids))
+                    .order_by(self._history.c.task_id, self._history.c.seq)
+                )
+            ).all()
+            artifact_rows = (
+                await connection.execute(
+                    select(self._artifacts.c.task_id, self._artifacts.c.artifact)
+                    .where(self._artifacts.c.task_id.in_(task_ids))
+                    .order_by(self._artifacts.c.task_id, self._artifacts.c.row_id)
+                )
+            ).all()
+
+        histories: dict[str, list[str]] = {task_id: [] for task_id in task_ids}
+        artifacts: dict[str, list[str]] = {task_id: [] for task_id in task_ids}
+        for task_id, message in history_rows:
+            histories[str(task_id)].append(message)
+        for task_id, artifact in artifact_rows:
+            artifacts[str(task_id)].append(artifact)
+
+        tasks: list[Task] = []
+        for head_row in head_rows:
+            task_id = str(head_row["id"])
+            data = {
+                "id": task_id,
+                "context_id": head_row["context_id"],
+                "kind": head_row["kind"] or "task",
+                "status": json.loads(head_row["status"]),
+                "metadata": json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else None,
+                "history": [json.loads(message) for message in histories[task_id]],
+                "artifacts": [json.loads(artifact) for artifact in artifacts[task_id]] or None,
+            }
+            tasks.append(Task.model_validate(data))
+        return tasks
+
     async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()
         async with self._engine.begin() as connection:

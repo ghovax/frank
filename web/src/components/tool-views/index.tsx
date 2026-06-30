@@ -1,7 +1,10 @@
 "use client";
 
-import { Box, Flex, Link, Text } from "@chakra-ui/react";
+import { Box, Flex, IconButton, Link, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { LuRotateCw } from "react-icons/lu";
+import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
+import { useColorMode } from "../ui/color-mode";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { filePreviewUrl, proxyPreviewUrl } from "@/lib/api";
 import { useWidgetEvent } from "../widget-bridge";
@@ -461,12 +464,38 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
   // Shared by edit_file and write_file. Path is on the call card; the internal
   // `code` status is dropped. edit_file carries `created`; write_file does not.
   const characters = asString(data.characters);
+  const before = asString(data.before);
+  const after = asString(data.after);
+  const { colorMode } = useColorMode();
+  const hasDiff = before !== after && (before !== "" || after !== "");
   return (
     <FieldList>
       {data.created != null && (
-        <InlineField label="Created">{data.created ? "yes (new file)" : "no"}</InlineField>
+        <InlineField label="Created">{data.created ? "Yes" : "No"}</InlineField>
       )}
       {characters && <InlineField label="Characters">{characters}</InlineField>}
+      {hasDiff ? (
+        <Box
+          mt={1}
+          maxH="520px"
+          overflowY="auto"
+          border="1px solid"
+          borderColor="border"
+          borderRadius="sm"
+          className="diff-scroll"
+        >
+          <ReactDiffViewer
+            oldValue={before}
+            newValue={after}
+            splitView={false}
+            useDarkTheme={colorMode === "dark"}
+            hideLineNumbers={false}
+            showDiffOnly={false}
+            compareMethod={DiffMethod.LINES}
+            styles={{ contentText: { fontSize: "12px", fontFamily: "var(--app-font-mono)" } }}
+          />
+        </Box>
+      ) : null}
     </FieldList>
   );
 }
@@ -777,12 +806,30 @@ function compactMcpContent(content: unknown): unknown {
 // An artifact's title/label may contain markdown, so it is rendered through the
 // markdown renderer above the artifact body.
 function ArtifactFrame({ title, children }: { title: string; children: ReactNode }) {
+  // Remounting the content (via a changing key) forces a fresh fetch of the
+  // previewed page — the /preview route is served no-store, so the iframe reloads
+  // the current file/URL rather than showing a stale render. Works for every
+  // artifact kind (iframe, inline html, image) since each is a child subtree.
+  const [reloadKey, setReloadKey] = useState(0);
   return (
     <Box>
-      <Text mb={1.5} fontSize="sm" fontWeight="semibold" color="fg.muted">
-        {title}
-      </Text>
-      {children}
+      <Flex align="center" gap={1.5} mb={1.5}>
+        <Text fontSize="sm" fontWeight="semibold" color="fg.muted" flex={1} minW={0} truncate>
+          {title}
+        </Text>
+        <IconButton
+          aria-label="Reload preview"
+          title="Reload preview"
+          size="xs"
+          variant="ghost"
+          borderRadius="sm"
+          flexShrink={0}
+          onClick={() => setReloadKey((current) => current + 1)}
+        >
+          <LuRotateCw size={13} />
+        </IconButton>
+      </Flex>
+      <Box key={reloadKey}>{children}</Box>
     </Box>
   );
 }

@@ -9,9 +9,8 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Optional
+from typing import Any, AsyncIterator, Callable, Literal, Optional
 
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -21,56 +20,8 @@ from langchain_core.messages import (
 )
 from langchain_core.messages.ai import add_ai_message_chunks
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
-
-class ReasoningChatOpenAI(ChatOpenAI):
-    """ChatOpenAI subclass that surfaces and preserves reasoning_content.
-
-    DeepSeek-style models return ``reasoning_content`` alongside ``content``,
-    but ``langchain_openai``'s ``ChatOpenAI`` targets the official OpenAI schema
-    and drops every provider-specific field — it never copies ``reasoning_content``
-    out of the streamed deltas (it tells you to use ``ChatDeepSeek`` instead). We
-    point ``base_url`` at a DeepSeek-compatible endpoint, so we re-attach that
-    field ourselves on the way *out* (so the harness can stream the model's
-    reasoning into the thinking indicator) and inject it back on the way *in* (so
-    the model sees its own prior reasoning across turns). Without the outbound
-    half the inbound half is a no-op, because ``additional_kwargs`` would never
-    carry the field to begin with.
-    """
-
-    def _convert_chunk_to_generation_chunk(self, chunk, default_chunk_class, base_generation_info):
-        generation_chunk = super()._convert_chunk_to_generation_chunk(
-            chunk, default_chunk_class, base_generation_info
-        )
-        if generation_chunk is None:
-            return None
-        choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices") or []
-        if choices:
-            delta = choices[0].get("delta") or {}
-            # DeepSeek streams reasoning in `reasoning_content` (and some
-            # compatible gateways nest it under `reasoning`). Chunks merge by
-            # concatenating string additional_kwargs, so per-delta fragments
-            # accumulate into the full reasoning on the merged message.
-            reasoning = delta.get("reasoning_content")
-            if not reasoning and isinstance(delta.get("reasoning"), str):
-                reasoning = delta["reasoning"]
-            if reasoning:
-                generation_chunk.message.additional_kwargs["reasoning_content"] = reasoning
-        return generation_chunk
-
-    def _get_request_payload(self, input_, *, stop=None, **kwargs):
-        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
-        messages = self._convert_input(input_).to_messages()
-        for payload_message, source_message in zip(
-            payload.get("messages", []), messages, strict=False
-        ):
-            if not isinstance(source_message, (AIMessage, AIMessageChunk)):
-                continue
-            reasoning = source_message.additional_kwargs.get("reasoning_content", "")
-            if reasoning:
-                payload_message["reasoning_content"] = reasoning
-        return payload
 
 from harness.core.configuration import (
     AgentConfiguration,
@@ -81,6 +32,8 @@ from harness.core.configuration import (
     load_agent_configuration,
     describe_available_agents,
 )
+from harness.core.litellm_model import ChatLiteLLMModel
+from harness.core.models import resolve_litellm
 from harness.tools.tools import (
     bash as bash_tool,
     web_search as web_search_tool,
@@ -126,6 +79,41 @@ class BashAllowRule(BaseModel):
     auto-allow for the rest of the session (e.g. ``["cat *", "ls *"]``)."""
     patterns: list[str]
 
+
+class BashPermissionDecision(BaseModel):
+    """Structured decision for automatic bash permission classification."""
+
+    action: Literal["auto_approve", "escalate"]
+    justification: str
+    risk: Literal["low", "medium", "high"]
+
+
+def build_chat_model(
+    model_identifier: str,
+    global_configuration: "GlobalConfiguration",
+    agent_configuration: "AgentConfiguration",
+) -> ChatLiteLLMModel:
+    """Build the LiteLLM-backed chat model for a provider-qualified model id.
+
+    Every provider flows through one ``ChatLiteLLMModel`` (LiteLLM owns each
+    provider's auth, base URL, request format, and reasoning normalization). A
+    bare model id with no provider prefix defaults to the OpenCode gateway and is
+    qualified as ``opencode/<model>``."""
+    if "/" not in model_identifier:
+        model_identifier = f"opencode/{model_identifier}"
+    resolved = resolve_litellm(
+        model_identifier,
+        global_configuration.configured_provider_keys(),
+        global_configuration.configured_provider_bases(),
+    )
+    return ChatLiteLLMModel(
+        model=resolved["model"],
+        api_key=SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
+        api_base=resolved["api_base"] or None,
+        temperature=0,
+        reasoning_effort=agent_configuration.reasoning_effort,
+    )
+
 from a2a.types import Task, TaskState
 
 
@@ -155,6 +143,7 @@ class StreamEvent:
         AGENT_THINKING_DONE = "agent_thinking_done"
         AGENT_STATUS = "agent_status"
         AGENT_DONE = "agent_done"
+        STEERING = "steering"
 
     def __init__(self, event_type: Type, **data):
         self.type = event_type
@@ -591,14 +580,15 @@ class AgentRuntime:
         self._on_record_message = on_record_message
         self._working_directory = working_directory or str(Path.home())
 
-        effective_model = agent_configuration.model or global_configuration.api.model
+        # Precedence: a per-agent override (its model + provider combined), then
+        # the configured default model (likewise combined into provider/model).
+        effective_model = (
+            agent_configuration.model_identifier
+            or global_configuration.default_model_identifier()
+        )
 
-        self._llm = ReasoningChatOpenAI(
-            model=effective_model,
-            base_url=global_configuration.api.endpoint,
-            api_key=global_configuration.api.effective_api_key,
-            reasoning_effort=agent_configuration.reasoning_effort,
-            temperature=0,
+        self._llm = build_chat_model(
+            effective_model, global_configuration, agent_configuration
         )
 
         self._is_sub_agent = is_sub_agent
@@ -640,6 +630,7 @@ class AgentRuntime:
         self._execution_history: list[dict] = []
         self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
+        self._auto_permissions: bool = agent_configuration.permission_mode == "auto"
         # When set, sub-agents (spawn_agent calls) are invoked
         # through this delegate — an A2A call to the target agent's served
         # endpoint — instead of being run in-process. Bound to the A2A context.
@@ -648,6 +639,11 @@ class AgentRuntime:
         # Reads another A2A task (sibling/sub-agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
         self._task_reader: Optional[Callable] = None
+        self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
+
+    @property
+    def conversation(self) -> list:
+        return self._conversation
 
     @property
     def agent_name(self) -> str:
@@ -664,20 +660,30 @@ class AgentRuntime:
     def abort(self) -> None:
         self._abort_event.set()
 
+    def enqueue_steering(self, message: str) -> bool:
+        text = message.strip()
+        if not text:
+            return False
+        self._steering_messages.put_nowait(text)
+        return True
+
     def set_read_only(self, read_only: bool) -> None:
         self._read_only = read_only
         if read_only:
             self._bypass_permissions = False
+            self._auto_permissions = False
 
     def set_permission_mode(self, mode: str) -> None:
-        if mode not in ("default", "read_only", "bypass"):
+        if mode not in ("default", "read_only", "bypass", "auto"):
             return
         if mode == "default":
             self._bypass_permissions = self._agent_configuration.permission_mode == "bypass"
             self._read_only = self._agent_configuration.permission_mode == "read_only"
+            self._auto_permissions = self._agent_configuration.permission_mode == "auto"
             return
         self._bypass_permissions = mode == "bypass"
         self._read_only = mode == "read_only"
+        self._auto_permissions = mode == "auto"
 
     def set_delegate(self, delegate: Callable) -> None:
         """Install the A2A delegate used to invoke sub-agents as related tasks."""
@@ -702,6 +708,52 @@ class AgentRuntime:
         if self._bypass_permissions:
             return "allow"
         return self._permissions.evaluate_bash_permission(command)
+
+    async def _classify_bash_permission(
+        self,
+        *,
+        command: str,
+        raw_command: str,
+        default_decision: str,
+        read_only: bool,
+        risk: str,
+        justification: str,
+        static_classification: str = "",
+        static_detail: str = "",
+        outside_reads: Optional[list[str]] = None,
+    ) -> BashPermissionDecision:
+        context = json.dumps(
+            {
+                "working_directory": self._working_directory,
+                "command": command,
+                "raw_command": raw_command,
+                "default_permission_decision": default_decision,
+                "model_declared_read_only": read_only,
+                "model_declared_risk": risk,
+                "model_justification": justification,
+                "static_read_only_classification": static_classification,
+                "static_detail": static_detail,
+                "outside_working_directory_reads": outside_reads or [],
+                "allowed_actions": ["auto_approve", "escalate"],
+            },
+            ensure_ascii=False,
+        )
+        prompt = self._prompt_loader.load("bash_permission_classifier", {"context": context})
+        try:
+            model = self._llm.bind_tools([BashPermissionDecision], tool_choice="auto")
+            response = await model.ainvoke([
+                SystemMessage(content=prompt),
+            ])
+            if not response.tool_calls:
+                return BashPermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+            decision = BashPermissionDecision.model_validate(response.tool_calls[0]["args"])
+            if default_decision == "deny" and decision.action == "auto_approve":
+                return BashPermissionDecision(action="escalate", justification="Default permissions deny this command.", risk="high")
+            if not decision.justification.strip():
+                return BashPermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+            return decision
+        except Exception as exception:
+            return BashPermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
 
     def _command_session_allowed(self, command: str) -> bool:
         """Whether a prior 'always allow' in this session covers this command, so
@@ -736,8 +788,14 @@ class AgentRuntime:
         effort — the one-time approval already ran the command regardless."""
         try:
             prompt = self._prompt_loader.load("bash_allow_rule", {"command": command})
-            model = self._llm.with_structured_output(BashAllowRule)
-            rule = await model.ainvoke(prompt)
+            # bind_tools + manual parse instead of with_structured_output: the
+            # configured reasoning model rejects response_format/forced tool_choice
+            # that structured output relies on, but accepts a regular tool call.
+            model = self._llm.bind_tools([BashAllowRule], tool_choice="auto")
+            response = await model.ainvoke(prompt)
+            if not response.tool_calls:
+                return
+            rule = BashAllowRule.model_validate(response.tool_calls[0]["args"])
             for pattern in (rule.patterns or []):
                 pattern = pattern.strip()
                 if pattern and pattern not in self._session_allow_patterns:
@@ -855,6 +913,14 @@ class AgentRuntime:
             self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
         self._record_message("ai", final_response)
 
+    async def _drain_steering_messages(self) -> list[StreamEvent]:
+        events: list[StreamEvent] = []
+        while not self._steering_messages.empty():
+            message = self._steering_messages.get_nowait()
+            self._conversation.append(HumanMessage(content=message))
+            events.append(StreamEvent(StreamEvent.Type.STEERING, text=message))
+        return events
+
     def _invalid_tool_call_content(self, invalid: dict) -> str:
         """Build the message for a malformed tool call — used both as the tool
         result the model sees and the error surfaced to the user. The wording
@@ -923,6 +989,9 @@ class AgentRuntime:
 
             for background_event in self._background_result_events():
                 yield background_event
+
+            for steering_event in await self._drain_steering_messages():
+                yield steering_event
 
             messages = (
                 [SystemMessage(content=self._build_static_system_prompt())]
@@ -1019,6 +1088,12 @@ class AgentRuntime:
                 final_text = response.content or ""
                 turn_final_response = final_text
                 self._conversation.append(response)
+                steering_events = await self._drain_steering_messages()
+                if steering_events:
+                    for steering_event in steering_events:
+                        yield steering_event
+                    self._calls_this_turn += 1
+                    continue
                 if self._active_goal and goal_continuations < self._GOAL_CONTINUATION_LIMIT:
                     goal_continuations += 1
                     self._calls_this_turn += 1
@@ -1084,6 +1159,9 @@ class AgentRuntime:
                 self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
+
+            for steering_event in await self._drain_steering_messages():
+                yield steering_event
 
             self._calls_this_turn += 1
 
@@ -1376,6 +1454,7 @@ class AgentRuntime:
             # the sandbox and approval prompts below.
             session_allowed = self._command_session_allowed(raw_command)
 
+            static_classification, static_detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
             outside_reads = self._outside_working_directory_reads(raw_command)
             if outside_reads and not session_allowed:
                 paths = ", ".join(outside_reads)
@@ -1396,21 +1475,60 @@ class AgentRuntime:
                         command=command,
                     )
                     return
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                future = asyncio.get_event_loop().create_future()
-                self._pending_permissions[request_identifier] = future
-                yield StreamEvent(
-                    StreamEvent.Type.PERMISSION_REQUEST,
-                    id=tool_call_identifier,
-                    request_id=request_identifier,
-                    command=command,
-                    justification=sandbox_message,
-                    risk="medium",
-                )
-                allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
-                if not allowed:
-                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="sandbox read not approved by user", tool=tool_name)
-                    return
+                permission_decision = self._evaluate_bash_permission(command)
+                if self._auto_permissions and permission_decision != "deny":
+                    decision = await self._classify_bash_permission(
+                        command=command,
+                        raw_command=raw_command,
+                        default_decision=permission_decision,
+                        read_only=read_only,
+                        risk=risk or "medium",
+                        justification=justification or sandbox_message,
+                        static_classification=static_classification,
+                        static_detail=static_detail,
+                        outside_reads=outside_reads,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("bash_auto_approved", {
+                            "command": raw_command,
+                            "reason": decision.justification,
+                            "risk": decision.risk,
+                        })
+                    else:
+                        request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                        future = asyncio.get_event_loop().create_future()
+                        self._pending_permissions[request_identifier] = future
+                        yield StreamEvent(
+                            StreamEvent.Type.PERMISSION_REQUEST,
+                            id=tool_call_identifier,
+                            request_id=request_identifier,
+                            command=command,
+                            justification=decision.justification or sandbox_message,
+                            risk=decision.risk,
+                        )
+                        allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
+                        if not allowed:
+                            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="sandbox read not approved by user", tool=tool_name)
+                            return
+                else:
+                    if permission_decision == "deny":
+                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="sandbox read denied by default permissions", tool=tool_name)
+                        return
+                    request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                    future = asyncio.get_event_loop().create_future()
+                    self._pending_permissions[request_identifier] = future
+                    yield StreamEvent(
+                        StreamEvent.Type.PERMISSION_REQUEST,
+                        id=tool_call_identifier,
+                        request_id=request_identifier,
+                        command=command,
+                        justification=sandbox_message,
+                        risk="medium",
+                    )
+                    allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
+                    if not allowed:
+                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="sandbox read not approved by user", tool=tool_name)
+                        return
 
             # Read-only agents may only run read-only commands. Static analysis
             # classifies the command; a detected mutation is always blocked, and
@@ -1418,11 +1536,10 @@ class AgentRuntime:
             # itself marked it as a write. This is a hard block — sub-agents have
             # no human in the loop to approve.
             if self._read_only:
-                classification, detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
                 violation = None
-                if classification == "mutating":
-                    violation = detail
-                elif classification == "unknown" and not read_only:
+                if static_classification == "mutating":
+                    violation = static_detail
+                elif static_classification == "unknown" and not read_only:
                     violation = "a command not recognized as read-only that you marked as modifying state"
                 if violation:
                     deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
@@ -1445,21 +1562,56 @@ class AgentRuntime:
                 )
                 return
             elif not read_only and not session_allowed and (permission_decision == "ask" or risk in ("medium", "high")):
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                future = asyncio.get_event_loop().create_future()
-                self._pending_permissions[request_identifier] = future
-                yield StreamEvent(
-                    StreamEvent.Type.PERMISSION_REQUEST,
-                    id=tool_call_identifier,
-                    request_id=request_identifier,
-                    command=command,
-                    justification=justification,
-                    risk=risk,
-                )
-                allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
-                if not allowed:
-                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="command not approved by user", tool=tool_name)
-                    return
+                if self._auto_permissions:
+                    decision = await self._classify_bash_permission(
+                        command=command,
+                        raw_command=raw_command,
+                        default_decision=permission_decision,
+                        read_only=read_only,
+                        risk=risk or "medium",
+                        justification=justification,
+                        static_classification=static_classification,
+                        static_detail=static_detail,
+                        outside_reads=outside_reads,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("bash_auto_approved", {
+                            "command": raw_command,
+                            "reason": decision.justification,
+                            "risk": decision.risk,
+                        })
+                    else:
+                        request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                        future = asyncio.get_event_loop().create_future()
+                        self._pending_permissions[request_identifier] = future
+                        yield StreamEvent(
+                            StreamEvent.Type.PERMISSION_REQUEST,
+                            id=tool_call_identifier,
+                            request_id=request_identifier,
+                            command=command,
+                            justification=decision.justification or justification,
+                            risk=decision.risk,
+                        )
+                        allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
+                        if not allowed:
+                            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="command not approved by user", tool=tool_name)
+                            return
+                else:
+                    request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                    future = asyncio.get_event_loop().create_future()
+                    self._pending_permissions[request_identifier] = future
+                    yield StreamEvent(
+                        StreamEvent.Type.PERMISSION_REQUEST,
+                        id=tool_call_identifier,
+                        request_id=request_identifier,
+                        command=command,
+                        justification=justification,
+                        risk=risk,
+                    )
+                    allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
+                    if not allowed:
+                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="command not approved by user", tool=tool_name)
+                        return
 
             result = await bash_tool.ainvoke(tool_arguments)
             result_data = _maybe_json(result)

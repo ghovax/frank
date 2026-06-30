@@ -1,6 +1,6 @@
 export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "input_required";
 
-const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal"]);
+const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal", "write_tasks", "update_tasks"]);
 
 // A human-in-the-loop approval attached to the tool call that triggered it (e.g.
 // a sandbox read outside the working directory). Lives on the same card so the

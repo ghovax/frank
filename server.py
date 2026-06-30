@@ -15,7 +15,6 @@ from urllib.parse import quote, urljoin
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Text, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -23,7 +22,7 @@ from sse_starlette.sse import EventSourceResponse
 from watchfiles import awatch
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
-from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field, SecretStr
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -46,7 +45,10 @@ from harness.core.configuration import (
     save_api_keys,
 )
 from harness.core.composio_router import composio_mcp_servers
+from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.mcp_client import MCPClientManager
+from harness.core.models import MODELS, available_models, find_model, resolve_litellm
+from harness.core.providers import PROVIDERS
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import (
     cancel_all_background_tasks,
@@ -76,6 +78,9 @@ class SessionRecord(Base):
     agent = Column(String, nullable=False)
     working_directory = Column(Text, default="")
     title = Column(Text, default="")
+    # Per-session model override (provider/model id); empty means use the global
+    # default_model. Persisted so resuming a session keeps its chosen model.
+    model = Column(Text, default="")
     created_at = Column(String, nullable=False)
 
 
@@ -86,6 +91,18 @@ class ProjectHistoryRecord(Base):
 
     path = Column(Text, primary_key=True)
     name = Column(Text, default="")
+    selected_at = Column(String, nullable=False)
+
+
+class ModelHistoryRecord(Base):
+    """Recently selected models (provider/model id + label), mirroring the project
+    history so a user can quickly switch back to a model they used before."""
+
+    __tablename__ = "model_history"
+
+    model_id = Column(Text, primary_key=True)
+    name = Column(Text, default="")
+    provider = Column(Text, default="")
     selected_at = Column(String, nullable=False)
 
 
@@ -211,6 +228,46 @@ def _save_conversation(context_id: str, messages: list) -> None:
         database_session.close()
 
 
+def _session_model_for(context_id: str) -> str:
+    """Read a context's persisted per-session model override (``""`` = global
+    default). Used when building a runtime so a conversation runs on the model the
+    user picked for it."""
+    if _session_factory is None or not context_id:
+        return ""
+    database_session = _session_factory()
+    try:
+        record = database_session.get(SessionRecord, context_id)
+        return (record.model or "") if record is not None else ""
+    except Exception:
+        return ""
+    finally:
+        database_session.close()
+
+
+def _set_session_model(context_id: str, model_identifier: str) -> bool:
+    """Persist a per-session model override and drop the cached runtime so the next
+    turn rebuilds with the new model. Returns whether the session was found."""
+    if _session_factory is None or not context_id:
+        return False
+    database_session = _session_factory()
+    updated = False
+    try:
+        record = database_session.get(SessionRecord, context_id)
+        if record is None:
+            return False
+        record.model = model_identifier or ""
+        database_session.commit()
+        updated = True
+    except Exception:
+        database_session.rollback()
+    finally:
+        database_session.close()
+    if updated:
+        for executor in _executors.values():
+            executor.reset_runtime(context_id)
+    return updated
+
+
 def _record_session(context_id: str, agent: str, working_directory: str, first_message: str) -> None:
     assert _session_factory is not None
     database_session = _session_factory()
@@ -288,6 +345,57 @@ def _record_project_path(path_value: str) -> str | None:
     return resolved
 
 
+def _record_model_selection(model_identifier: str) -> None:
+    """Record a model selection in the history (upserting by id), mirroring the
+    project-history list. Looks up the label/provider from the catalog so the UI
+    can render recent models without re-resolving. No-op for an unknown id."""
+    if not model_identifier or _session_factory is None:
+        return
+    definition = find_model(model_identifier)
+    if definition is None:
+        return
+    database_session = _session_factory()
+    try:
+        record = database_session.get(ModelHistoryRecord, model_identifier)
+        selected_at = datetime.now(timezone.utc).isoformat()
+        if record is None:
+            database_session.add(ModelHistoryRecord(
+                model_id=model_identifier,
+                name=definition.name,
+                provider=definition.provider,
+                selected_at=selected_at,
+            ))
+        else:
+            record.name = definition.name
+            record.provider = definition.provider
+            record.selected_at = selected_at
+        database_session.commit()
+    except Exception:
+        database_session.rollback()
+    finally:
+        database_session.close()
+
+
+def _recent_models(limit: int = 8) -> list[dict[str, str]]:
+    """Recently selected models, newest first."""
+    if _session_factory is None:
+        return []
+    database_session = _session_factory()
+    try:
+        rows = (
+            database_session.query(ModelHistoryRecord)
+            .order_by(ModelHistoryRecord.selected_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {"id": row.model_id, "name": row.name, "provider": row.provider}
+            for row in rows
+        ]
+    finally:
+        database_session.close()
+
+
 class SessionTitle(BaseModel):
     """Structured schema returned by the title-generation LLM call."""
 
@@ -316,14 +424,19 @@ async def _generate_session_title(first_message: str) -> str:
     same pattern the main agent uses with ``bind_tools``.
     """
     assert _global_configuration is not None
-    api = _global_configuration.api
-    api_key = api.effective_api_key
-    if not api_key:
+    configuration = _global_configuration
+    model_identifier = configuration.default_model_identifier()
+    resolved = resolve_litellm(
+        model_identifier,
+        configuration.configured_provider_keys(),
+        configuration.configured_provider_bases(),
+    )
+    if not resolved["api_key"]:
         return ""
-    llm = ChatOpenAI(
-        model=api.model,
-        base_url=api.endpoint,
-        api_key=api_key,
+    llm = ChatLiteLLMModel(
+        model=resolved["model"],
+        api_key=SecretStr(resolved["api_key"]),
+        api_base=resolved["api_base"] or None,
         temperature=0,
     ).bind_tools([SessionTitle], tool_choice="auto")
     prompt = _title_prompt_loader.load("session_title", {})
@@ -398,6 +511,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         on_permission_state=_notify_permission_state,
         load_conversation=_load_conversation,
         save_conversation=_save_conversation,
+        session_model_for=_session_model_for,
     )
     handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
     _executors[agent_name] = executor
@@ -620,14 +734,23 @@ class QuestionRequest(BaseModel):
     answers: list[Any]
 
 
+class SteeringRequest(BaseModel):
+    message: str
+
+
 class PermissionModeRequest(BaseModel):
-    mode: Literal["default", "read_only", "bypass"]
+    mode: Literal["default", "auto", "read_only", "bypass"]
 
 
 class SettingsUpdateRequest(BaseModel):
-    api_key: str
-    exa_api_key: str
-    composio_consumer_api_key: str
+    exa_api_key: str = ""
+    composio_consumer_api_key: str = ""
+    # Per-provider API keys (the opencode gateway's key lives under "opencode").
+    provider_keys: dict[str, str] = {}
+    # Base URLs for the OpenAI-compatible providers (opencode, custom).
+    provider_base_urls: dict[str, str] = {}
+    # The default model id (provider/model) used when a session has no override.
+    default_model: str = ""
 
 
 class SandboxUpdateRequest(BaseModel):
@@ -806,16 +929,62 @@ async def record_recent_project(request: RecentProjectRequest):
     return {"saved": True, "path": path, "name": _project_name(path)}
 
 
+@app.get("/models")
+async def list_models_endpoint():
+    """The model catalog for the picker: every curated model with its provider and
+    whether its provider has a resolvable credential (available), plus the provider
+    registry and the current default model. Available models are fronted in the
+    picker; locked ones stay listed (greyed) so the user sees what a key unlocks."""
+    assert _global_configuration is not None
+    configured_keys = _global_configuration.configured_provider_keys()
+    available_identifiers = {model.identifier for model in available_models(configured_keys)}
+    models = [
+        {
+            "id": model.identifier,
+            "name": model.name,
+            "provider": model.provider,
+            "available": model.identifier in available_identifiers,
+        }
+        for model in MODELS
+    ]
+    providers = [
+        {
+            "id": provider.identifier,
+            "name": provider.name,
+            "openai_compatible": provider.openai_compatible,
+        }
+        for provider in PROVIDERS.values()
+    ]
+    return {
+        "models": models,
+        "providers": providers,
+        "default_model": _global_configuration.default_model_identifier(),
+    }
+
+
+@app.get("/models/recent")
+async def recent_models():
+    """Recently selected models (newest first), mirroring the project history — a
+    user can quickly switch back to a model they used before without scrolling the
+    full catalog. Each entry is only recorded once it is actually selected."""
+    return {"models": _recent_models()}
+
+
 @app.get("/settings")
 async def get_settings():
     """Return the API credentials stored in ~/.harness/configuration.yaml so the
-    settings dialog can pre-fill them."""
+    settings dialog can pre-fill them, including per-provider keys and the default
+    model."""
     assert _global_configuration is not None
     return {
-        "api_key": _global_configuration.api.api_key,
         "exa_api_key": _global_configuration.exa.api_key,
         "composio_consumer_api_key": _global_configuration.composio.consumer_api_key,
         "sandbox_enabled": _global_configuration.sandbox.enabled,
+        "default_model": _global_configuration.default_model_identifier(),
+        "providers": {
+            identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
+            for identifier, credential in _global_configuration.providers.items()
+        },
     }
 
 
@@ -827,16 +996,43 @@ async def update_settings(request: SettingsUpdateRequest):
     cached agent runtimes so the next turn rebuilds with the new credentials."""
     global _composio_servers, _mcp_manager
     assert _global_configuration is not None
+    configuration = _global_configuration
     save_api_keys(
-        api_key=request.api_key,
         exa_api_key=request.exa_api_key,
         composio_consumer_api_key=request.composio_consumer_api_key,
+        provider_keys=request.provider_keys,
+        provider_base_urls=request.provider_base_urls,
+        default_model=request.default_model,
     )
-    _global_configuration.api.api_key = request.api_key
-    _global_configuration.exa.api_key = request.exa_api_key
-    _global_configuration.composio.consumer_api_key = request.composio_consumer_api_key
+    configuration.exa.api_key = request.exa_api_key
+    configuration.composio.consumer_api_key = request.composio_consumer_api_key
+    # Rebuild the providers map from the posted keys/base URLs, merging so a
+    # provider the dialog did not render keeps its stored credential.
+    merged_providers = {
+        identifier: _configuration.ProviderCredential(
+            api_key=credential.api_key, base_url=credential.base_url
+        )
+        for identifier, credential in configuration.providers.items()
+    }
+    for provider_identifier, api_key in request.provider_keys.items():
+        existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
+        merged_providers[provider_identifier] = existing.model_copy(update={"api_key": api_key})
+    for provider_identifier, base_url in request.provider_base_urls.items():
+        existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
+        merged_providers[provider_identifier] = existing.model_copy(update={"base_url": base_url})
+    configuration.providers = merged_providers
+    if request.default_model:
+        # The picker carries the combined ``provider/model`` id; split it into the
+        # two separate in-memory fields (mirroring how save_api_keys persists them).
+        if "/" in request.default_model:
+            provider, model = request.default_model.split("/", 1)
+            configuration.default_provider = provider
+            configuration.default_model = model
+        else:
+            configuration.default_model = request.default_model
+        _record_model_selection(request.default_model)
 
-    exa_key = _global_configuration.exa.effective_api_key
+    exa_key = configuration.exa.effective_api_key
     if exa_key:
         from exa_py import Exa
         set_exa_client(Exa(api_key=exa_key))
@@ -846,14 +1042,14 @@ async def update_settings(request: SettingsUpdateRequest):
     # Re-provision Composio now that its key may have changed: rebuild the server
     # config, fold it into (or remove it from) the MCP config, and restart the
     # MCP client manager so the agent picks Composio tools up live.
-    _composio_servers = composio_mcp_servers(_global_configuration.composio)
+    _composio_servers = composio_mcp_servers(configuration.composio)
     if _composio_servers:
-        _global_configuration.mcp.servers.update(_composio_servers)
+        configuration.mcp.servers.update(_composio_servers)
     else:
-        _global_configuration.mcp.servers.pop(_global_configuration.composio.server_name, None)
+        configuration.mcp.servers.pop(configuration.composio.server_name, None)
     if _mcp_manager is not None:
         await _mcp_manager.aclose()
-    mcp_servers = _global_configuration.mcp.enabled_servers()
+    mcp_servers = configuration.mcp.enabled_servers()
     _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
     if _mcp_manager is not None:
         await _mcp_manager.start()
@@ -1078,6 +1274,7 @@ async def list_sessions():
                     "created_at": row.created_at,
                     "working_directory": row.working_directory,
                     "working_directory_name": _project_name(row.working_directory) if row.working_directory else "",
+                    "model": row.model or "",
                     "running": row.id in _running_contexts,
                     "awaiting_input": any(
                         request_id.startswith(f"perm-{row.id}-") and not future.done()
@@ -1096,13 +1293,37 @@ async def session_tasks(context_id: str):
     """All A2A tasks for a context — the main turn tasks (with history and
     artifacts) plus related sub-agent tasks — for replaying a session."""
     assert _task_store is not None
-    task_ids = await _task_store.task_ids_for_context(context_id)
-    tasks = []
-    for task_id in task_ids:
-        task = await _task_store.get(task_id)
-        if task is not None:
-            tasks.append(task.model_dump(by_alias=True, exclude_none=True, mode="json"))
-    return {"tasks": tasks}
+    tasks = await _task_store.tasks_for_context(context_id)
+    return {
+        "tasks": [
+            task.model_dump(by_alias=True, exclude_none=True, mode="json")
+            for task in tasks
+        ]
+    }
+
+
+class SessionModelRequest(BaseModel):
+    model: str
+
+
+@app.put("/sessions/{context_id}/model")
+async def update_session_model(context_id: str, request: SessionModelRequest):
+    """Set or clear a per-session model override (provider/model id, or "" to fall
+    back to the global default). Persists to the sessions table and drops the cached
+    runtime so the next turn runs on the new model. A non-empty selection is also
+    recorded in the model history for quick switching."""
+    updated = _set_session_model(context_id, request.model)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if request.model:
+        _record_model_selection(request.model)
+    return {"status": "saved", "model": request.model or ""}
+
+
+@app.get("/sessions/{context_id}/model")
+async def get_session_model(context_id: str):
+    """The per-session model override for a context ("" = global default)."""
+    return {"model": _session_model_for(context_id)}
 
 
 @app.get("/preview/{file_path:path}")
@@ -1338,6 +1559,18 @@ async def resolve_question(context_id: str, request: QuestionRequest):
     future.set_result(request.answers)
     _broadcaster.publish({"type": "sessions_changed"})
     return {"status": "resolved", "answers": request.answers}
+
+
+@app.post("/chat/{context_id}/steer")
+async def steer_context(context_id: str, request: SteeringRequest):
+    """Append user steering to an active turn at the next model-call boundary."""
+    message = request.message.strip()
+    if not message:
+        return {"queued": False}
+    for executor in _executors.values():
+        if executor.steer_context(context_id, message):
+            return {"queued": True}
+    raise HTTPException(status_code=409, detail="Session is not currently steerable.")
 
 
 @app.post("/chat/{context_id}/abort")

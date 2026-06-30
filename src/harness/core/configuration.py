@@ -18,27 +18,14 @@ CONFIGURATION_FILENAME = "configuration.yaml"
 EXAMPLE_CONFIGURATION_FILENAME = "configuration.yaml.example"
 DATABASE_FILENAME = "history.db"
 
-# Used only as a last resort when seeding ~/.harness/configuration.yaml and no
-# in-repo configuration.yaml or configuration.yaml.example is available. Keep in
-# sync with configuration.yaml.example, which is the human-facing reference.
-DEFAULT_CONFIGURATION_YAML = """\
-api:
-  endpoint: "https://opencode.ai/zen/go/v1"
-  model: "deepseek-v4-flash"
-  api_key: ""
+# The default configuration lives in a sibling YAML file so editing the template
+# is a data change, not a code change. Used to seed ~/.harness/configuration.yaml
+# on first run and as the base when persisting settings before any file exists.
+DEFAULT_CONFIGURATION_PATH = Path(__file__).resolve().parent / "default_configuration.yaml"
 
-exa:
-  api_key: ""
 
-sandbox:
-  enabled: true
-
-default_agent: assistant
-agents_root_directory: .agents
-home_agents_root_directory: ~/.agents
-agents_directory: .agents/agents
-skills_directory: .agents/skills
-"""
+def default_configuration_yaml() -> str:
+    return DEFAULT_CONFIGURATION_PATH.read_text()
 
 
 def harness_home_directory() -> Path:
@@ -57,10 +44,12 @@ def database_file_path() -> Path:
 
 def save_api_keys(
     *,
-    api_key: str | None = None,
     exa_api_key: str | None = None,
     composio_consumer_api_key: str | None = None,
     sandbox_enabled: bool | None = None,
+    provider_keys: dict[str, str] | None = None,
+    provider_base_urls: dict[str, str] | None = None,
+    default_model: str | None = None,
 ) -> None:
     """Persist settings into ~/.harness/configuration.yaml, preserving the rest
     of the file. Only provided values are written. Creates the file from the
@@ -69,26 +58,34 @@ def save_api_keys(
     if path.exists():
         data = yaml.safe_load(path.read_text()) or {}
     else:
-        data = yaml.safe_load(DEFAULT_CONFIGURATION_YAML)
-    if api_key is not None:
-        data.setdefault("api", {})["api_key"] = api_key
+        data = yaml.safe_load(default_configuration_yaml())
     if exa_api_key is not None:
         data.setdefault("exa", {})["api_key"] = exa_api_key
     if composio_consumer_api_key is not None:
         data.setdefault("composio", {})["consumer_api_key"] = composio_consumer_api_key
     if sandbox_enabled is not None:
         data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
+    if provider_keys is not None or provider_base_urls is not None:
+        providers_section = data.setdefault("providers", {})
+        all_provider_ids = {*(provider_keys or {}), *(provider_base_urls or {})}
+        for provider_id in all_provider_ids:
+            entry = dict(providers_section.get(provider_id) or {})
+            if provider_keys is not None and provider_id in provider_keys:
+                entry["api_key"] = provider_keys[provider_id]
+            if provider_base_urls is not None and provider_id in provider_base_urls:
+                entry["base_url"] = provider_base_urls[provider_id]
+            providers_section[provider_id] = entry
+    if default_model is not None:
+        # The API carries the default model as the combined ``provider/model`` id
+        # (the picker's value); split it into the two separate fields the config
+        # file stores so a human sees both explicitly.
+        if "/" in default_model:
+            provider, model = default_model.split("/", 1)
+            data["default_provider"] = provider
+            data["default_model"] = model
+        else:
+            data["default_model"] = default_model
     path.write_text(yaml.safe_dump(data, sort_keys=False))
-
-
-class ApiConfiguration(BaseModel):
-    endpoint: str
-    model: str
-    api_key: str = ""
-
-    @property
-    def effective_api_key(self) -> str:
-        return os.environ.get("OPENCODE_API_KEY") or self.api_key
 
 
 class ExaConfiguration(BaseModel):
@@ -168,8 +165,22 @@ class MCPConfiguration(BaseModel):
         return cls(servers=servers)
 
 
+class ProviderCredential(BaseModel):
+    """Credentials for one LLM provider. ``base_url`` is only meaningful for the
+    OpenAI-compatible providers (opencode and custom); first-party clouds leave it
+    blank because LiteLLM knows their endpoints."""
+
+    api_key: str = ""
+    base_url: str = ""
+
+
 class GlobalConfiguration(BaseModel):
-    api: ApiConfiguration
+    providers: dict[str, ProviderCredential] = {}
+    # The default model and its provider are stored as separate fields so a human
+    # editing configuration.yaml sees both explicitly; ``default_model_identifier``
+    # recombines them into the ``provider/model`` form the model factory expects.
+    default_model: str = "deepseek-v4-flash"
+    default_provider: str = "opencode"
     exa: ExaConfiguration = ExaConfiguration()
     sandbox: SandboxConfiguration = SandboxConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
@@ -188,18 +199,14 @@ class GlobalConfiguration(BaseModel):
     def load(cls) -> "GlobalConfiguration":
         """Load the configuration from ~/.harness/configuration.yaml, creating the
         home directory and the file on first run. The seed is taken from, in order:
-        a legacy configuration.yaml in the working directory (migrated), the
-        in-repo configuration.yaml.example, then a built-in default."""
+        an in-repo configuration.yaml.example, then the packaged default."""
         path = configuration_file_path()
         if not path.exists():
-            legacy_path = Path(CONFIGURATION_FILENAME)
             example_path = Path(EXAMPLE_CONFIGURATION_FILENAME)
-            if legacy_path.exists():
-                path.write_text(legacy_path.read_text())
-            elif example_path.exists():
+            if example_path.exists():
                 path.write_text(example_path.read_text())
             else:
-                path.write_text(DEFAULT_CONFIGURATION_YAML)
+                path.write_text(default_configuration_yaml())
         return cls.from_yaml(path)
 
     @classmethod
@@ -209,6 +216,28 @@ class GlobalConfiguration(BaseModel):
         configuration = cls(**data)
         configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
         return configuration
+
+    def configured_provider_keys(self) -> dict[str, str]:
+        """Configured (non-empty) API keys per provider, for credential resolution
+        and for filtering the model picker to usable models."""
+        return {
+            identifier: credential.api_key
+            for identifier, credential in self.providers.items()
+            if credential.api_key
+        }
+
+    def configured_provider_bases(self) -> dict[str, str]:
+        """Configured (non-empty) base URLs per provider (opencode/custom only)."""
+        return {
+            identifier: credential.base_url
+            for identifier, credential in self.providers.items()
+            if credential.base_url
+        }
+
+    def default_model_identifier(self) -> str:
+        """The default model as the ``provider/model`` form the factory expects,
+        recombined from the two stored fields."""
+        return f"{self.default_provider}/{self.default_model}"
 
     def agents_root_directories(self) -> list[Path]:
         return _dedupe_paths([
@@ -529,14 +558,19 @@ class AgentConfiguration(BaseModel):
     # Names of the skills (files in the skills directory) this agent may use.
     # Empty means every available skill is offered to the agent by default.
     skills: list[str] = []
+    # The model and its provider are separate fields, mirroring the global config:
+    # a human editing an agent.md sees both explicitly. ``model_identifier``
+    # recombines them into the ``provider/model`` form the factory expects.
     model: Optional[str] = None
+    provider: Optional[str] = None
     reasoning_effort: str = "high"
     # Safety bound on the per-turn tool-calling loop. A runtime detail, defaulted
     # here rather than restated in every agent file.
     maximum_iterations: int = 25
-    # default: per-command permission rules. read_only: hard-block all writes
-    # (investigation agents). bypass: allow everything.
-    permission_mode: Literal["default", "read_only", "bypass"] = "default"
+    # default: per-command permission rules. auto: use the default rules plus an
+    # LLM classifier to auto-approve safe bash calls and escalate the rest.
+    # read_only: hard-block all writes (investigation agents). bypass: allow everything.
+    permission_mode: Literal["default", "auto", "read_only", "bypass"] = "default"
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
     system_prompt: str = ""
@@ -549,6 +583,16 @@ class AgentConfiguration(BaseModel):
     @property
     def display_name(self) -> str:
         return self.title or self.name
+
+    @property
+    def model_identifier(self) -> Optional[str]:
+        """The agent's model as the ``provider/model`` form the factory expects, or
+        ``None`` when no model is declared (fall back to the global default)."""
+        if not self.model:
+            return None
+        if self.provider:
+            return f"{self.provider}/{self.model}"
+        return self.model
 
     @classmethod
     def from_markdown(cls, path: str | Path) -> "AgentConfiguration":
@@ -729,6 +773,8 @@ def _merge_agent_config(frontmatter: dict, configuration: dict) -> dict:
     model_configuration = configuration.get("modelConfig", {})
     if "model" in model_configuration:
         merged["model"] = model_configuration["model"]
+    if "provider" in model_configuration:
+        merged["provider"] = model_configuration["provider"]
     if "reasoningEffort" in model_configuration:
         merged["reasoning_effort"] = model_configuration["reasoningEffort"]
     if "reasoning_effort" in model_configuration:

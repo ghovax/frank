@@ -1,5 +1,50 @@
 const API_BASE = "http://localhost:8822";
 
+type CacheEntry = {
+  expiresAt: number;
+  data?: unknown;
+  promise?: Promise<unknown>;
+};
+
+const DISCOVERY_CACHE_TTL_MS = 15_000;
+const discoveryCache = new Map<string, CacheEntry>();
+
+function discoveryKey(path: string, workingDirectory?: string): string {
+  return `${path}?working_directory=${workingDirectory ?? ""}`;
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`);
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  return response.json();
+}
+
+function cachedDiscovery<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const cached = discoveryCache.get(key);
+  if (cached?.promise) return cached.promise as Promise<T>;
+  if (cached && cached.expiresAt > now) return Promise.resolve(cached.data as T);
+
+  const promise = loader()
+    .then((data) => {
+      discoveryCache.set(key, {
+        expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS,
+        data,
+      });
+      return data;
+    })
+    .catch((error) => {
+      discoveryCache.delete(key);
+      throw error;
+    });
+  discoveryCache.set(key, { expiresAt: 0, promise });
+  return promise;
+}
+
+export function invalidateDiscoveryCache(): void {
+  discoveryCache.clear();
+}
+
 // The URL that serves a local file (and its sibling assets) for an `open_web_preview`
 // artifact — the backend `/preview/<abs path>` route reads the file off disk and,
 // for HTML, injects the widget runtime. Each path segment is encoded but the
@@ -24,7 +69,7 @@ export function proxyPreviewUrl(url: string): string {
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
 export const PERMISSION_MODE_METADATA_KEY = "harness/permissionMode";
 
-export type PermissionMode = "default" | "read_only" | "bypass";
+export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
 
 export interface AgentSummary {
   id: string;
@@ -39,8 +84,9 @@ export async function fetchAgents(workingDirectory?: string): Promise<AgentSumma
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
     : "";
-  const response = await fetch(`${API_BASE}/agents${query}`);
-  const data = await response.json();
+  const data = await cachedDiscovery(discoveryKey("/agents", workingDirectory), () =>
+    fetchJson<{ agents: AgentSummary[] }>(`/agents${query}`)
+  );
   return data.agents;
 }
 
@@ -73,16 +119,42 @@ export async function fetchAgentCards(workingDirectory?: string): Promise<AgentC
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
     : "";
-  const response = await fetch(`${API_BASE}/agents/cards${query}`);
-  const data = await response.json();
+  const data = await cachedDiscovery(discoveryKey("/agents/cards", workingDirectory), () =>
+    fetchJson<{ cards?: AgentCard[] }>(`/agents/cards${query}`)
+  );
   return data.cards ?? [];
 }
 
-export interface Settings {
+export interface ProviderCredential {
   api_key: string;
+  base_url: string;
+}
+
+export interface Settings {
   exa_api_key: string;
   composio_consumer_api_key: string;
   sandbox_enabled: boolean;
+  default_model: string;
+  providers: Record<string, ProviderCredential>;
+}
+
+export interface ModelOption {
+  id: string;
+  name: string;
+  provider: string;
+  available: boolean;
+}
+
+export interface ProviderOption {
+  id: string;
+  name: string;
+  openai_compatible: boolean;
+}
+
+export interface ModelsResponse {
+  models: ModelOption[];
+  providers: ProviderOption[];
+  default_model: string;
 }
 
 export interface RecentProject {
@@ -94,18 +166,66 @@ export interface RecentProject {
 // API credentials stored in ~/.harness/configuration.yaml.
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
-  if (!response.ok) return { api_key: "", exa_api_key: "", composio_consumer_api_key: "", sandbox_enabled: true };
+  if (!response.ok) {
+    return { exa_api_key: "", composio_consumer_api_key: "", sandbox_enabled: true, default_model: "", providers: {} };
+  }
   return response.json();
 }
 
-export async function saveSettings(
-  settings: Pick<Settings, "api_key" | "exa_api_key" | "composio_consumer_api_key">
-): Promise<void> {
+export interface SaveSettingsPayload {
+  exa_api_key: string;
+  composio_consumer_api_key: string;
+  provider_keys: Record<string, string>;
+  provider_base_urls: Record<string, string>;
+  default_model: string;
+}
+
+export async function saveSettings(settings: SaveSettingsPayload): Promise<void> {
   await fetch(`${API_BASE}/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
   });
+}
+
+// The model catalog for the picker (with per-model availability) and the provider
+// registry, plus the configured default model.
+export async function fetchModels(): Promise<ModelsResponse> {
+  const response = await fetch(`${API_BASE}/models`);
+  if (!response.ok) return { models: [], providers: [], default_model: "" };
+  return response.json();
+}
+
+// Recently selected models (newest first), mirroring the project history — so the
+// picker can surface the models a user actually switches between at the top.
+export interface RecentModel {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+export async function fetchRecentModels(): Promise<RecentModel[]> {
+  const response = await fetch(`${API_BASE}/models/recent`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.models ?? [];
+}
+
+// Set or clear a per-session model override (provider/model id, or "" for the
+// global default). Persists to the sessions table and rebuilds the runtime.
+export async function setSessionModel(contextId: string, model: string): Promise<void> {
+  await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/model`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+}
+
+export async function fetchSessionModel(contextId: string): Promise<string> {
+  const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/model`);
+  if (!response.ok) return "";
+  const data = await response.json();
+  return data.model ?? "";
 }
 
 export async function setSandboxEnabled(enabled: boolean): Promise<void> {
@@ -160,10 +280,14 @@ export async function fetchSkills(workingDirectory?: string): Promise<AgentSkill
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
     : "";
-  const response = await fetch(`${API_BASE}/skills${query}`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return data.skills ?? [];
+  try {
+    const data = await cachedDiscovery(discoveryKey("/skills", workingDirectory), () =>
+      fetchJson<{ skills?: AgentSkill[] }>(`/skills${query}`)
+    );
+    return data.skills ?? [];
+  } catch {
+    return [];
+  }
 }
 
 // MCP servers are listed for the selected folder: its own `mcp.json` plus the
@@ -173,10 +297,14 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
     : "";
-  const response = await fetch(`${API_BASE}/mcp/tools${query}`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return data.servers ?? [];
+  try {
+    const data = await cachedDiscovery(discoveryKey("/mcp/tools", workingDirectory), () =>
+      fetchJson<{ servers?: McpServerTools[] }>(`/mcp/tools${query}`)
+    );
+    return data.servers ?? [];
+  } catch {
+    return [];
+  }
 }
 
 // Subscribe to live server events (e.g. agents changed). Returns an unsubscribe.
@@ -184,7 +312,9 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
   const source = new EventSource(`${API_BASE}/events`);
   source.onmessage = (message) => {
     try {
-      onEvent(JSON.parse(message.data));
+      const event = JSON.parse(message.data);
+      if (event.type === "agents_changed") invalidateDiscoveryCache();
+      onEvent(event);
     } catch {
       // ignore malformed
     }
@@ -200,7 +330,7 @@ export async function fetchHomeDirectory(): Promise<{ path: string; name: string
   return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
 
-export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; working_directory?: string; working_directory_name?: string; running?: boolean; awaiting_input?: boolean }[]> {
+export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; working_directory?: string; working_directory_name?: string; running?: boolean; awaiting_input?: boolean; model?: string }[]> {
   const response = await fetch(`${API_BASE}/sessions`);
   const data = await response.json();
   return data.sessions;
@@ -242,6 +372,17 @@ export async function resolveQuestion(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request_id: requestId, answers }),
   });
+}
+
+export async function steerSession(sessionId: string, message: string): Promise<boolean> {
+  const response = await fetch(`${API_BASE}/chat/${sessionId}/steer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!response.ok) return false;
+  const data = await response.json();
+  return !!data.queued;
 }
 
 export async function abortSession(sessionId: string): Promise<void> {

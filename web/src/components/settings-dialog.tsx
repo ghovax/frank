@@ -3,12 +3,16 @@
 import { Box, Button, Dialog, Flex, IconButton, Input, Portal, Text } from "@chakra-ui/react";
 import { useEffect, useState } from "react";
 import { LuEye, LuEyeOff } from "react-icons/lu";
-import { fetchSettings, saveSettings } from "@/lib/api";
+import { fetchModels, fetchRecentModels, fetchSettings, saveSettings, type ModelOption, type ProviderOption, type RecentModel } from "@/lib/api";
+import { ModelSelect } from "./model-select";
 
-// A dialog for entering the API credentials persisted in ~/.harness/configuration.yaml.
-// Saving applies the keys live on the server (no restart needed).
+// A dialog for entering API credentials and choosing the default model, persisted
+// in ~/.harness/configuration.yaml. Saving applies everything live (no restart).
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [apiKey, setApiKey] = useState("");
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [providers, setProviders] = useState<ProviderOption[]>([]);
+  const [recentModels, setRecentModels] = useState<RecentModel[]>([]);
+  const [defaultModel, setDefaultModel] = useState("");
   const [exaApiKey, setExaApiKey] = useState("");
   const [composioApiKey, setComposioApiKey] = useState("");
   const [saving, setSaving] = useState(false);
@@ -17,10 +21,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    fetchSettings()
-      .then((settings) => {
+    Promise.all([fetchSettings(), fetchModels(), fetchRecentModels()])
+      .then(([settings, catalog, recent]) => {
         if (cancelled) return;
-        setApiKey(settings.api_key ?? "");
+        setModels(catalog.models);
+        setProviders(catalog.providers);
+        setRecentModels(recent);
+        setDefaultModel(settings.default_model ?? catalog.default_model ?? "");
         setExaApiKey(settings.exa_api_key ?? "");
         setComposioApiKey(settings.composio_consumer_api_key ?? "");
       })
@@ -34,9 +41,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     setSaving(true);
     try {
       await saveSettings({
-        api_key: apiKey.trim(),
         exa_api_key: exaApiKey.trim(),
         composio_consumer_api_key: composioApiKey.trim(),
+        provider_keys: {},
+        provider_base_urls: {},
+        default_model: defaultModel,
       });
       onOpenChange(false);
     } finally {
@@ -49,36 +58,47 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content borderRadius="md" maxW="440px">
+          <Dialog.Content borderRadius="md" maxW="480px">
             <Dialog.Header>
               <Dialog.Title fontSize="sm">Settings</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
               <Text fontSize="xs" color="fg.muted" mb={4}>
-                API credentials are stored in <Box as="span" fontFamily="var(--app-font-mono)">~/.harness/configuration.yaml</Box> and applied immediately.
+                Credentials and the default model are stored in{" "}
+                <Box as="span" fontFamily="var(--app-font-mono)">
+                  ~/.harness/configuration.yaml
+                </Box>{" "}
+                and applied immediately.
               </Text>
               <Flex direction="column" gap={4}>
-                <SecretField
-                  label="OpenCode API key"
-                  placeholder="sk-..."
-                  value={apiKey}
-                  disabled={saving}
-                  onChange={setApiKey}
-                />
-                <SecretField
-                  label="Exa API key"
-                  placeholder="xxxxxxxx-..."
-                  value={exaApiKey}
-                  disabled={saving}
-                  onChange={setExaApiKey}
-                />
-                <SecretField
-                  label="Composio consumer API key"
-                  placeholder="composio-consumer-..."
-                  value={composioApiKey}
-                  disabled={saving}
-                  onChange={setComposioApiKey}
-                />
+                <Box>
+                  <Text fontSize="xs" fontWeight="medium" mb={1}>
+                    Default model
+                  </Text>
+                  <ModelSelect
+                    models={models}
+                    providers={providers}
+                    recent={recentModels}
+                    value={defaultModel}
+                    onChange={setDefaultModel}
+                  />
+                </Box>
+                <Box maxH="260px" overflowY="auto" pr={1} display="flex" flexDir="column" gap={3}>
+                  <SecretField
+                    label="Exa API key"
+                    placeholder="xxxxxxxx-..."
+                    value={exaApiKey}
+                    disabled={saving}
+                    onChange={setExaApiKey}
+                  />
+                  <SecretField
+                    label="Composio consumer API key"
+                    placeholder="composio-consumer-..."
+                    value={composioApiKey}
+                    disabled={saving}
+                    onChange={setComposioApiKey}
+                  />
+                </Box>
               </Flex>
             </Dialog.Body>
             <Dialog.Footer>
@@ -113,7 +133,9 @@ function SecretField({
   const [visible, setVisible] = useState(false);
   return (
     <Box>
-      <Text fontSize="xs" fontWeight="medium" mb={1}>{label}</Text>
+      <Text fontSize="xs" fontWeight="medium" mb={1}>
+        {label}
+      </Text>
       <Flex gap={1.5} align="center">
         <Input
           size="sm"

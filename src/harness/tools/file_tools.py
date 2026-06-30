@@ -243,7 +243,7 @@ def edit_file(
             )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(new_string)
-        return _payload("edit_completed", path=str(path), created=True, characters=len(new_string))
+        return _edit_payload("edit_completed", path, created=True, before="", after=new_string)
 
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -255,7 +255,27 @@ def edit_file(
     content = path.read_text(errors="replace")
     new_content = apply_edit(content, old_string, new_string, replace_all)
     path.write_text(new_content)
-    return _payload("edit_completed", path=str(path), created=False, characters=len(new_content))
+    return _edit_payload("edit_completed", path, created=False, before=content, after=new_content)
+
+
+def _edit_payload(code: str, path: Path, *, created: bool, before: str, after: str) -> str:
+    """Result for edit_file/write_file. ``before``/``after`` carry the full old and
+    new file content for the UI's diff viewer; ``model_context`` is the lean summary
+    the model actually sees (the file contents are redundant in the model's context
+    — it already read the file and supplied the replacement — so they are stripped
+    from the model-facing payload to avoid bloating it)."""
+    summary = {
+        "code": code,
+        "path": str(path),
+        "created": created,
+        "characters": len(after),
+    }
+    return json.dumps({
+        **summary,
+        "before": before,
+        "after": after,
+        "model_context": summary,
+    })
 
 
 def write_file(
@@ -266,9 +286,10 @@ def write_file(
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
     if path.exists() and not has_been_read:
         raise PermissionError(f"You must read {path} with read_file before overwriting it.")
+    before = path.read_text(errors="replace") if path.exists() and path.is_file() else ""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
-    return _payload("write_completed", path=str(path), characters=len(content))
+    return _edit_payload("write_completed", path, created=before == "", before=before, after=content)
 
 
 async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:

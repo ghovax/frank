@@ -1,10 +1,10 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuGripVertical, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuGripVertical, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, subscribeEvents, type AgentCard, type AgentSummary, type RecentProject } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
 interface SessionEntry {
@@ -16,6 +16,7 @@ interface SessionEntry {
   workingDirectoryName: string;
   running: boolean;
   awaitingInput: boolean;
+  model?: string;
 }
 
 function formatSessionTimestamp(value: string) {
@@ -27,6 +28,14 @@ function formatSessionTimestamp(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function projectGroupKey(entry: SessionEntry): string {
+  return entry.workingDirectory || "__unknown__";
+}
+
+function projectGroupName(entry: SessionEntry): string {
+  return entry.workingDirectoryName || "No project";
 }
 
 function HomeContent() {
@@ -45,6 +54,11 @@ function HomeContent() {
   const [homeProject, setHomeProject] = useState<{ path: string; name: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [sandboxEnabledState, setSandboxEnabledState] = useState(true);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
+  const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
+  // The active session's model override; "" means use the global default model.
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyWidth, setHistoryWidth] = useState(280);
 
@@ -62,8 +76,10 @@ function HomeContent() {
   // selected folder — home globals plus that folder's own `.agents`, deduped,
   // never the server's launch directory. The ref lets the live-reload handler
   // refetch with the current folder without re-subscribing.
-  const workingDirectoryRef = useRef("");
-  workingDirectoryRef.current = workingDirectory;
+  const workingDirectoryRef = useRef(workingDirectory);
+  useEffect(() => {
+    workingDirectoryRef.current = workingDirectory;
+  }, [workingDirectory]);
   const loadAgentCards = useCallback(() => {
     fetchAgentCards(workingDirectoryRef.current).then(setAgentCards).catch(() => {});
   }, []);
@@ -111,6 +127,7 @@ function HomeContent() {
         workingDirectoryName: session.working_directory_name ?? "",
         running: session.running ?? false,
         awaitingInput: session.awaiting_input ?? false,
+        model: session.model ?? "",
       }))
     );
   }, []);
@@ -136,6 +153,17 @@ function HomeContent() {
         .catch(() => {});
     };
     loadSettings();
+    // The model catalog (provider list + curated models) drives the composer's
+    // per-session model override and the settings dialog's default-model picker.
+    fetchModels()
+      .then((catalog) => {
+        setModels(catalog.models);
+        setModelProviders(catalog.providers);
+      })
+      .catch(() => {});
+    fetchRecentModels()
+      .then(setRecentModels)
+      .catch(() => {});
     // Home is the default project for a brand-new chat; the restoration effect
     // below applies it (or the active session's own folder) — we don't force it
     // here, or it would clobber a session opened directly via ?session=.
@@ -214,6 +242,24 @@ function HomeContent() {
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
   const activeSessionRunning = sessions.find((entry) => entry.sessionId === activeSessionId)?.running ?? false;
+  const groupedSessions = useMemo(() => {
+    const groups = new Map<string, { key: string; name: string; path: string; sessions: SessionEntry[] }>();
+    for (const session of sessions) {
+      const key = projectGroupKey(session);
+      const existing = groups.get(key);
+      if (existing) {
+        existing.sessions.push(session);
+      } else {
+        groups.set(key, {
+          key,
+          name: projectGroupName(session),
+          path: session.workingDirectory,
+          sessions: [session],
+        });
+      }
+    }
+    return [...groups.values()];
+  }, [sessions]);
 
   const refreshSessions = useCallback(() => {
     fetchSessions()
@@ -227,6 +273,11 @@ function HomeContent() {
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
+      // Persist the model the user picked before the first message (a new chat
+      // had no session id to attach it to) so the next turn runs on it.
+      if (selectedModel) {
+        setSessionModel(sessionId, selectedModel).catch(() => {});
+      }
       if (workingDirectory) {
         recordRecentProject(workingDirectory)
           .then(refreshRecentProjects)
@@ -236,7 +287,7 @@ function HomeContent() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [isCompactViewport, refreshRecentProjects, refreshSessions, router, workingDirectory]
+    [isCompactViewport, refreshRecentProjects, refreshSessions, router, selectedModel, workingDirectory]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -247,6 +298,7 @@ function HomeContent() {
 
   function handleNewChat() {
     setActiveSessionId(null);
+    setSelectedModel("");
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
     params.delete("session");
@@ -256,6 +308,7 @@ function HomeContent() {
 
   function handleResumeSession(entry: SessionEntry) {
     setSelectedAgent(entry.agent);
+    setSelectedModel(entry.model ?? "");
     // The restoration effect rebinds the working directory to this session's
     // own persisted folder; no need to set (or re-record) it here.
     setActiveSessionId(entry.sessionId);
@@ -264,6 +317,22 @@ function HomeContent() {
     params.set("session", entry.sessionId);
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
+  }
+
+  async function handleModelChange(model: string) {
+    const previous = selectedModel;
+    setSelectedModel(model);
+    // A new chat has no session id yet; the override is applied when the session
+    // is created on first send (the server seeds it from the global default, and
+    // the user can re-pick). For an existing session, persist immediately.
+    if (activeSessionId) {
+      try {
+        await setSessionModel(activeSessionId, model);
+        fetchRecentModels().then(setRecentModels).catch(() => {});
+      } catch {
+        setSelectedModel(previous);
+      }
+    }
   }
 
   function handleAgentChange(agentName: string) {
@@ -381,40 +450,55 @@ function HomeContent() {
                 </EmptyState.Content>
               </EmptyState.Root>
             ) : (
-              <VStack gap={1.5} align="stretch">
-                {sessions.map((entry) => {
-                  const sessionMeta = formatSessionTimestamp(entry.createdAt);
-
-                  return (
-                    <Box
-                      key={entry.sessionId}
-                      px={2}
-                      py={1}
-                      borderRadius="sm"
-                      borderColor="border"
-                      cursor="pointer"
-                      bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
-                      _hover={{ bg: "bg.muted" }}
-                      onClick={() => handleResumeSession(entry)}
-                    >
-                      <Flex align="center" gap={1.5}>
-                        <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
-                          {entry.title || "Untitled conversation"}
-                        </Text>
-                        {entry.awaitingInput ? (
-                          <Box color="yellow.fg" flexShrink={0} display="flex" alignItems="center" title="Waiting for your approval">
-                            <LuTriangleAlert size={13} />
-                          </Box>
-                        ) : entry.running ? (
-                          <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
-                        ) : null}
-                      </Flex>
-                      <Text fontSize="xs" color="fg.subtle" truncate>
-                        {sessionMeta}
+              <VStack gap={3} align="stretch">
+                {groupedSessions.map((group) => (
+                  <Box key={group.key}>
+                    <Flex align="center" gap={1.5} mb={1} px={1} color="fg.subtle" title={group.path || undefined}>
+                      <LuFolder size={12} />
+                      <Text fontSize="xs" fontWeight="semibold" truncate flex={1}>
+                        {group.name}
                       </Text>
-                    </Box>
-                  );
-                })}
+                      <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
+                        {group.sessions.length}
+                      </Text>
+                    </Flex>
+                    <VStack gap={1} align="stretch">
+                      {group.sessions.map((entry) => {
+                        const sessionMeta = formatSessionTimestamp(entry.createdAt);
+
+                        return (
+                          <Box
+                            key={entry.sessionId}
+                            px={2}
+                            py={1}
+                            borderRadius="sm"
+                            borderColor="border"
+                            cursor="pointer"
+                            bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
+                            _hover={{ bg: "bg.muted" }}
+                            onClick={() => handleResumeSession(entry)}
+                          >
+                            <Flex align="center" gap={1.5}>
+                              <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+                                {entry.title || "Untitled conversation"}
+                              </Text>
+                              {entry.awaitingInput ? (
+                                <Box color="yellow.fg" flexShrink={0} display="flex" alignItems="center" title="Waiting for your approval">
+                                  <LuTriangleAlert size={13} />
+                                </Box>
+                              ) : entry.running ? (
+                                <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
+                              ) : null}
+                            </Flex>
+                            <Text fontSize="xs" color="fg.subtle" truncate>
+                              {sessionMeta}
+                            </Text>
+                          </Box>
+                        );
+                      })}
+                    </VStack>
+                  </Box>
+                ))}
               </VStack>
             )}
           </Box>
@@ -448,6 +532,11 @@ function HomeContent() {
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}
           onToggleHistory={() => setHistoryOpen((current) => !current)}
+          models={models}
+          modelProviders={modelProviders}
+          recentModels={recentModels}
+          selectedModel={selectedModel}
+          onModelChange={handleModelChange}
         />
       </Box>
     </Flex>

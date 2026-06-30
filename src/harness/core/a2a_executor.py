@@ -212,6 +212,7 @@ class HarnessAgentExecutor(AgentExecutor):
         on_permission_state: Optional[callable] = None,
         load_conversation: Optional[callable] = None,
         save_conversation: Optional[callable] = None,
+        session_model_for: Optional[callable] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -226,6 +227,10 @@ class HarnessAgentExecutor(AgentExecutor):
         # replays the transcript from the task store, silently losing all context.
         self._load_conversation = load_conversation
         self._save_conversation = save_conversation
+        # Resolves a context's persisted per-session model override (provider/model
+        # id, or "" for the global default), so a runtime is built with the model
+        # the user chose for that conversation rather than only the global default.
+        self._session_model_for = session_model_for
         # Notified (context_id, running) when a top-level turn starts/ends, so the
         # server can track which sessions are active and show a sidebar spinner.
         self._on_turn_state = on_turn_state
@@ -235,6 +240,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # One runtime per context preserves the conversation across turns.
         self._runtimes: dict[str, AgentRuntime] = {}
         self._aborts: dict[str, AgentRuntime] = {}
+        self._active_contexts: set[str] = set()
         # Dialogue history keyed by context, shared across *all* agent executors
         # in the process. The persona (system prompt) is applied per-turn on top
         # of this, so switching agents mid-session continues the same conversation
@@ -262,16 +268,36 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime.set_permission_mode(mode)
         return True
 
+    def steer_context(self, context_id: str, message: str) -> bool:
+        if context_id not in self._active_contexts:
+            return False
+        runtime = self._runtimes.get(context_id)
+        if runtime is None:
+            return False
+        return runtime.enqueue_steering(message)
+
+    def reset_runtime(self, context_id: str) -> None:
+        """Drop a single context's cached runtime so the next turn rebuilds it —
+        used when the session's model override changes, so the new model takes
+        effect without a server restart."""
+        self._runtimes.pop(context_id, None)
+
     def _build_runtime(
         self,
         context_id: str,
         working_directory: str,
         conversation: Optional[list] = None,
         is_sub_agent: bool = False,
+        model_override: Optional[str] = None,
     ) -> AgentRuntime:
         configuration = load_agent_configuration(
             self._agent_name, self._global_configuration.agent_directories_for(working_directory)
         )
+        # A per-session model override wins over the agent's own ``model`` field
+        # and the global default. Applied on a copy so the loaded agent config is
+        # not mutated for other contexts.
+        if model_override:
+            configuration = configuration.model_copy(update={"model": model_override})
         runtime = AgentRuntime(
             agent_configuration=configuration,
             global_configuration=self._global_configuration,
@@ -313,7 +339,15 @@ class HarnessAgentExecutor(AgentExecutor):
             # context — the same list object another agent may have been writing
             # to — so a persona switch picks up exactly where the last turn left off.
             conversation = self._conversations.setdefault(context_id, [])
-            runtime = self._build_runtime(context_id, working_directory, conversation=conversation)
+            model_override = ""
+            if self._session_model_for is not None:
+                model_override = (self._session_model_for(context_id) or "").strip()
+            runtime = self._build_runtime(
+                context_id,
+                working_directory,
+                conversation=conversation,
+                model_override=model_override or None,
+            )
             self._runtimes[context_id] = runtime
         # A context's working directory is fixed at creation — a session stays
         # bound to the folder it was started in, so later turns never repoint it.
@@ -344,6 +378,7 @@ class HarnessAgentExecutor(AgentExecutor):
 
         final_text = ""
         failed_message = ""
+        runtime: AgentRuntime | None = None
 
         # A top-level user turn marks its session as running so the sidebar can
         # show a spinner. Delegated sub-agent turns run within their parent turn,
@@ -351,6 +386,7 @@ class HarnessAgentExecutor(AgentExecutor):
         track_running = not delegated and self._on_turn_state is not None
         if track_running:
             self._on_turn_state(task.context_id, True)
+            self._active_contexts.add(task.context_id)
 
         async def emit(part: Part) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
@@ -387,6 +423,10 @@ class HarnessAgentExecutor(AgentExecutor):
         async def flush_stream_buffers(force: bool = True) -> None:
             await text_buffer.flush(force=force)
             await sub_text_buffer.flush(force=force)
+
+        def save_runtime_conversation() -> None:
+            if not delegated and self._save_conversation is not None and runtime is not None:
+                self._save_conversation(task.context_id, runtime.conversation)
 
         # The runtime setup — building the agent runtime and its model client —
         # runs inside the try so any failure (e.g. missing API credentials) is
@@ -534,6 +574,17 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.AGENT_DONE:
                     await flush_stream_buffers()
                     await emit_sub("sub_task_done", data, task=data.get("task"))
+                elif kind == StreamEvent.Type.TASKS_UPDATED:
+                    await flush_stream_buffers()
+                    await emit(_data_part(
+                        "tasks_updated",
+                        toolCallId=data.get("id", ""),
+                        tasks=data.get("tasks", []),
+                        resultMessage=data.get("result_message", ""),
+                    ))
+                elif kind == StreamEvent.Type.STEERING:
+                    await flush_stream_buffers()
+                    await emit(_data_part("steering", text=data.get("text", "")))
                 elif kind == StreamEvent.Type.DONE:
                     await flush_stream_buffers()
                     final_text = data.get("text", "") or final_text
@@ -542,11 +593,13 @@ class HarnessAgentExecutor(AgentExecutor):
 
             if final_text.strip():
                 await updater.add_artifact([_text_part(final_text)], name="result", last_chunk=True)
+            save_runtime_conversation()
             if failed_message and not final_text.strip():
                 await updater.failed(updater.new_agent_message([_text_part(failed_message)]))
             else:
                 await updater.complete()
         except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
+            save_runtime_conversation()
             await updater.failed(updater.new_agent_message([_text_part(f"Execution error: {exception}")]))
         finally:
             self._aborts.pop(task.id, None)
@@ -554,8 +607,12 @@ class HarnessAgentExecutor(AgentExecutor):
             # restore it. Delegated sub-agent runs have their own throwaway history
             # and don't touch the shared context, so they are not persisted.
             if not delegated and self._save_conversation is not None:
-                self._save_conversation(task.context_id, self._conversations.get(task.context_id, []))
+                self._save_conversation(
+                    task.context_id,
+                    runtime.conversation if runtime is not None else self._conversations.get(task.context_id, []),
+                )
             if track_running:
+                self._active_contexts.discard(task.context_id)
                 self._on_turn_state(task.context_id, False)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

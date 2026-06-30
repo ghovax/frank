@@ -6,20 +6,24 @@ import {
   createListCollection,
   Flex,
   IconButton,
-  Input,
   Menu,
   Portal,
   Select,
+  Text,
+  Textarea,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuChevronDown, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuUser } from "react-icons/lu";
-import { validateWorkingDirectory, type PermissionMode } from "@/lib/api";
+import { LuArrowUp, LuChevronDown, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuUser } from "react-icons/lu";
+import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
+import type { ChatTask } from "@/lib/use-chat";
 
 interface ChatInputProps {
   onSend: (text: string) => void;
   onAbort: () => void;
   isStreaming: boolean;
+  tasks?: ChatTask[];
   disabled?: boolean;
   sessionId?: string | null;
   workingDirectory?: string;
@@ -38,12 +42,18 @@ interface ChatInputProps {
   onShowAgents?: () => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
+  models: ModelOption[];
+  modelProviders: ProviderOption[];
+  recentModels?: { id: string; name: string; provider: string }[];
+  selectedModel: string;
+  onModelChange: (model: string) => void;
 }
 
 export function ChatInput({
   onSend,
   onAbort,
   isStreaming,
+  tasks = [],
   disabled,
   sessionId,
   workingDirectory,
@@ -62,8 +72,13 @@ export function ChatInput({
   onShowAgents,
   historyOpen = false,
   onToggleHistory,
+  models,
+  modelProviders,
+  recentModels = [],
+  selectedModel,
+  onModelChange,
 }: ChatInputProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [directoryState, setDirectoryState] = useState({
@@ -83,6 +98,7 @@ export function ChatInput({
     () => createListCollection({
       items: [
         { label: "Default permissions", value: "default" },
+        { label: "Auto-classify permissions", value: "auto" },
         { label: "Read-only permissions", value: "read_only" },
         { label: "Bypass permissions", value: "bypass" },
       ],
@@ -96,6 +112,13 @@ export function ChatInput({
       bg: "bg",
       borderColor: "border",
       colorPalette: undefined,
+    },
+    auto: {
+      icon: <LuSparkles size={16} />,
+      color: "blue.fg",
+      bg: "blue.subtle",
+      borderColor: "blue.muted",
+      colorPalette: "blue",
     },
     read_only: {
       icon: <LuShieldCheck size={16} />,
@@ -122,6 +145,35 @@ export function ChatInput({
         label: "Unsandboxed",
         colorPalette: "red" as const,
         variant: "solid" as const,
+      };
+
+  const completedTasks = tasks.filter((task) => task.status === "completed").length;
+  const taskProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+  const historyAppearance = historyOpen
+    ? {
+        variant: "solid" as const,
+        colorPalette: "blue" as const,
+        bg: undefined,
+        borderColor: undefined,
+      }
+    : {
+        variant: "outline" as const,
+        colorPalette: undefined,
+        bg: "bg",
+        borderColor: "border.emphasized",
+      };
+  const agentsAppearance = agentsOpen || agentsCount > 0
+    ? {
+        variant: "solid" as const,
+        colorPalette: "orange" as const,
+        bg: undefined,
+        borderColor: undefined,
+      }
+    : {
+        variant: "outline" as const,
+        colorPalette: undefined,
+        bg: "bg",
+        borderColor: "border.emphasized",
       };
 
   const currentDirectory = (workingDirectory ?? "").trim();
@@ -194,7 +246,7 @@ export function ChatInput({
   }
 
   return (
-    <Box borderTop="1px solid" borderColor="border" bg="bg.subtle">
+    <Box borderTop="1px solid" borderColor="border" bg="bg.subtle" position="relative">
       {/* Top row (above the input): history button on the left, Agents button
           on the right. The Agents button is always shown; the panel renders an
           empty state when there is no activity yet. */}
@@ -203,11 +255,13 @@ export function ChatInput({
           {onToggleHistory && (
             <Button
               size="xs"
-              variant={historyOpen ? "solid" : "outline"}
-              colorPalette={historyOpen ? "blue" : undefined}
+              variant={historyAppearance.variant}
+              colorPalette={historyAppearance.colorPalette}
               borderRadius="sm"
               fontSize="xs"
               h="28px"
+              bg={historyAppearance.bg}
+              borderColor={historyAppearance.borderColor}
               flexShrink={0}
               onClick={onToggleHistory}
             >
@@ -221,6 +275,8 @@ export function ChatInput({
             borderRadius="sm"
             fontSize="xs"
             h="28px"
+            bg="bg.emphasized"
+            borderColor="border.emphasized"
             flexShrink={0}
             onClick={() => setSettingsOpen(true)}
           >
@@ -280,13 +336,24 @@ export function ChatInput({
               </Select.Positioner>
             </Portal>
           </Select.Root>
+          <ModelSelect
+            models={models}
+            providers={modelProviders}
+            recent={recentModels}
+            value={selectedModel}
+            onChange={onModelChange}
+            clearLabel="Default model"
+            compact
+          />
           <Button
             size="xs"
-            variant={agentsOpen ? "solid" : "outline"}
-            colorPalette={agentsCount > 0 || agentsOpen ? "orange" : undefined}
+            variant={agentsAppearance.variant}
+            colorPalette={agentsAppearance.colorPalette}
             borderRadius="sm"
             fontSize="xs"
             h="28px"
+            bg={agentsAppearance.bg}
+            borderColor={agentsAppearance.borderColor}
             flexShrink={0}
             onClick={onShowAgents}
           >
@@ -298,6 +365,78 @@ export function ChatInput({
 
       {/* Message input */}
       <Box px={2} pt={2} pb={2}>
+        {tasks.length > 0 && (
+          <Flex justify="flex-end" mb={1.5}>
+            <Box position="relative" className="task-hover-root">
+              <Flex
+                align="center"
+                gap={1.5}
+                px={2}
+                py={1}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor="border"
+                bg="bg"
+                cursor="default"
+              >
+                <Box
+                  w="16px"
+                  h="16px"
+                  borderRadius="full"
+                  bg={`conic-gradient(var(--chakra-colors-blue-solid) ${taskProgress}%, var(--chakra-colors-bg-muted) 0)`}
+                  display="grid"
+                  placeItems="center"
+                  flexShrink={0}
+                >
+                  <Box w="9px" h="9px" borderRadius="full" bg="bg" />
+                </Box>
+                <Text fontSize="xs" fontWeight="medium" color="fg.muted">
+                  Tasks {completedTasks}/{tasks.length}
+                </Text>
+              </Flex>
+              <Box
+                display="none"
+                className="task-hover-panel"
+                position="absolute"
+                right={0}
+                bottom="calc(100% + 6px)"
+                w="min(360px, calc(100vw - 24px))"
+                maxH="260px"
+                overflowY="auto"
+                p={2}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor="border"
+                bg="bg"
+                boxShadow="lg"
+                zIndex={5}
+              >
+                <Flex direction="column" gap={1.5}>
+                  {tasks.map((task) => (
+                    <Flex key={task.identifier} align="flex-start" gap={2}>
+                      <Box
+                        mt="5px"
+                        w="7px"
+                        h="7px"
+                        borderRadius="full"
+                        bg={task.status === "completed" ? "green.solid" : task.status === "in_progress" ? "blue.solid" : task.status === "blocked" ? "red.solid" : "border.emphasized"}
+                        flexShrink={0}
+                      />
+                      <Box minW={0} flex={1}>
+                        <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2}>
+                          {task.description}
+                        </Text>
+                        <Text fontSize="2xs" color="fg.subtle">
+                          {task.status.replace("_", " ")}
+                        </Text>
+                      </Box>
+                    </Flex>
+                  ))}
+                </Flex>
+              </Box>
+            </Box>
+          </Flex>
+        )}
         <Box
           bg="bg"
           border="1px solid"
@@ -305,8 +444,8 @@ export function ChatInput({
           borderRadius="sm"
           _focusWithin={{ borderColor: "border.emphasized" }}
         >
-          <Flex align="center" gap={2} px={1.5} py={1.5}>
-            <Input
+          <Flex align="flex-end" gap={2} px={1.5} py={1.5}>
+            <Textarea
               ref={inputRef}
               placeholder={
                 disabled
@@ -322,11 +461,14 @@ export function ChatInput({
               onKeyDown={handleKeyDown}
               disabled={disabled}
               fontSize="sm"
-              h="32px"
+              minH="72px"
+              maxH="180px"
               border="none"
               outline="none"
               px={1}
-              py={0}
+              py={1}
+              resize="none"
+              lineHeight="1.45"
               _focus={{ boxShadow: "none", borderColor: "transparent" }}
               _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   streamA2A,
   abortSession,
+  steerSession,
   resolvePermission,
   resolveQuestion,
   fetchSessionTasks,
@@ -45,12 +46,26 @@ export interface ChatMessage {
   meta?: Record<string, unknown>;
 }
 
+export interface ChatTask {
+  identifier: string;
+  description: string;
+  status: string;
+  dependencies: string[];
+  result: string;
+}
+
 // A turn's input: either typed text or a structured widget interaction. Both
 // drive the same stream; a widget event travels as a typed DataPart, never as
 // prose, so the agent receives it as structured JSON.
 export type ChatInput =
   | { kind: "text"; text: string }
   | { kind: "widget"; event: WidgetEvent };
+
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  steering: boolean;
+}
 
 // An agent step's ordered timeline — prose, reasoning, and tool calls
 // interleaved, mirroring the main chat. Built from the A2A sub-task DataPart
@@ -453,7 +468,34 @@ function withStep(
 interface ReduceState {
   messages: ChatMessage[];
   agentGroups: AgentGroup[];
+  tasks: ChatTask[];
   lane: string | null; // id of the open assistant prose block, if any
+}
+
+function asChatTask(value: unknown): ChatTask | null {
+  const record = asRecord(value);
+  const identifier = String(record.identifier ?? "");
+  const description = String(record.description ?? "");
+  if (!identifier || !description) return null;
+  return {
+    identifier,
+    description,
+    status: String(record.status ?? "pending"),
+    dependencies: Array.isArray(record.dependencies) ? record.dependencies.map(String) : [],
+    result: String(record.result ?? ""),
+  };
+}
+
+function mergeTasks(current: ChatTask[], updates: unknown[]): ChatTask[] {
+  const next = [...current];
+  for (const raw of updates) {
+    const task = asChatTask(raw);
+    if (!task) continue;
+    const index = next.findIndex((item) => item.identifier === task.identifier);
+    if (index === -1) next.push(task);
+    else next[index] = { ...next[index], ...task };
+  }
+  return next;
 }
 
 function startAgentGroup(state: ReduceState, data: Record<string, unknown>): void {
@@ -609,9 +651,32 @@ function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
   }
 }
 
+function steeringText(message: A2AMessage | undefined): string {
+  for (const part of message?.parts ?? []) {
+    if (part.kind === "data" && part.data?.kind === "steering") {
+      return String(part.data.text ?? "").trim();
+    }
+  }
+  return "";
+}
+
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void {
   const kind = String(data.kind ?? "");
   switch (kind) {
+    case "steering": {
+      const text = String(data.text ?? "").trim();
+      if (!text) break;
+      state.lane = null;
+      state.messages = [
+        ...state.messages,
+        { id: `user-${state.messages.length}`, role: "user", content: text, timestamp: new Date().toISOString() },
+      ];
+      break;
+    }
+    case "tasks_updated": {
+      state.tasks = mergeTasks(state.tasks, Array.isArray(data.tasks) ? data.tasks : []);
+      break;
+    }
     case "status": {
       // The model has finished thinking and is paused on tool execution. Tool
       // calls surface their own running/done status, so just close out any
@@ -882,11 +947,11 @@ function compactReplayMessages(messages: A2AMessage[] | undefined): A2AMessage[]
 }
 
 // Reconstruct messages + agentGroups from a session's persisted A2A tasks.
-function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[] } {
+function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[] } {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
-  const state: ReduceState = { messages: [], agentGroups: [], lane: null };
+  const state: ReduceState = { messages: [], agentGroups: [], tasks: [], lane: null };
   for (const task of mainTasks) {
     state.lane = null;
     // A task's full message stream is its history PLUS its trailing status
@@ -906,7 +971,7 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       else reduceAgentMessage(state, message);
     }
   }
-  return { messages: state.messages, agentGroups: state.agentGroups };
+  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks };
 }
 
 export function useChat(
@@ -920,6 +985,7 @@ export function useChat(
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
+  const [tasks, setTasks] = useState<ChatTask[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(!!initialSessionId);
@@ -929,13 +995,13 @@ export function useChat(
   const [historyError, setHistoryError] = useState(false);
   // Bumped to force the history-load effect to re-run (a manual retry).
   const [historyReloadNonce, setHistoryReloadNonce] = useState(0);
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], lane: null });
+  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], tasks: [], lane: null });
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
-  const queuedMessagesRef = useRef<string[]>([]);
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   // Widget interactions that arrived mid-turn wait here and drain after the
   // current stream finishes. Kept separate from the user-visible text queue.
   const queuedWidgetEventsRef = useRef<WidgetEvent[]>([]);
@@ -954,10 +1020,17 @@ export function useChat(
   const runStreamRef = useRef<(input: ChatInput) => void>(() => {});
   const flushFrameRef = useRef<number | null>(null);
 
-  const setQueue = useCallback((next: string[]) => {
+  const setQueue = useCallback((next: QueuedMessage[]) => {
     queuedMessagesRef.current = next;
     setQueuedMessages(next);
   }, []);
+
+  const acknowledgeSteering = useCallback((text: string) => {
+    if (!text) return;
+    const index = queuedMessagesRef.current.findIndex((message) => message.steering && message.text === text);
+    if (index === -1) return;
+    setQueue(queuedMessagesRef.current.filter((_, messageIndex) => messageIndex !== index));
+  }, [setQueue]);
 
   const flushNow = useCallback(() => {
     if (flushFrameRef.current != null) {
@@ -966,12 +1039,14 @@ export function useChat(
     }
     setMessages(stateRef.current.messages);
     setAgentGroups(stateRef.current.agentGroups);
+    setTasks(stateRef.current.tasks);
   }, []);
 
   const flush = useCallback(() => {
     if (typeof window === "undefined") {
       setMessages(stateRef.current.messages);
       setAgentGroups(stateRef.current.agentGroups);
+      setTasks(stateRef.current.tasks);
       return;
     }
     if (flushFrameRef.current != null) return;
@@ -979,6 +1054,7 @@ export function useChat(
       flushFrameRef.current = null;
       setMessages(stateRef.current.messages);
       setAgentGroups(stateRef.current.agentGroups);
+      setTasks(stateRef.current.tasks);
     });
   }, []);
 
@@ -1030,7 +1106,7 @@ export function useChat(
           const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
           if (cancelled) return;
           const replayed = replayTasks(tasks);
-          stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
+          stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null };
           setSessionId(initialSessionId);
           sessionIdRef.current = initialSessionId;
           flushNow();
@@ -1073,7 +1149,7 @@ export function useChat(
         const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
         if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
         const replayed = replayTasks(tasks);
-        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, lane: null };
+        stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null };
         flushNow();
       } catch {
         // transient — try again on the next tick
@@ -1150,6 +1226,7 @@ export function useChat(
               setSessionId(update.contextId);
             }
             if (update.status?.message) {
+              acknowledgeSteering(steeringText(update.status.message));
               reduceAgentMessage(stateRef.current, update.status.message);
             }
             reduceFinalStatus(stateRef.current, update);
@@ -1164,7 +1241,9 @@ export function useChat(
               setSessionId(task.contextId);
             }
           } else if (kind === "message") {
-            reduceAgentMessage(stateRef.current, result as unknown as A2AMessage);
+            const message = result as unknown as A2AMessage;
+            acknowledgeSteering(steeringText(message));
+            reduceAgentMessage(stateRef.current, message);
             flush();
           }
         },
@@ -1172,12 +1251,12 @@ export function useChat(
           stateRef.current.lane = null;
           // Drain queued text first (user intent), then any widget events that
           // arrived mid-turn.
-          const pendingText = queuedMessagesRef.current;
+          const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
           const pendingWidget = queuedWidgetEventsRef.current;
           if (pendingText.length > 0) {
-            const [next, ...rest] = pendingText;
-            setQueue(rest);
-            runStreamRef.current({ kind: "text", text: next });
+            const next = pendingText[0];
+            setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
+            runStreamRef.current({ kind: "text", text: next.text });
           } else if (pendingWidget.length > 0) {
             const [next, ...rest] = pendingWidget;
             queuedWidgetEventsRef.current = rest;
@@ -1192,7 +1271,7 @@ export function useChat(
         dataPart
       );
     },
-    [agent, workingDirectory, permissionMode, flush, setQueue]
+    [agent, workingDirectory, permissionMode, flush, setQueue, acknowledgeSteering]
   );
 
   useEffect(() => {
@@ -1204,7 +1283,26 @@ export function useChat(
       const trimmed = text.trim();
       if (!trimmed) return;
       if (isStreamingRef.current) {
-        setQueue([...queuedMessagesRef.current, trimmed]);
+        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false };
+        const ctx = sessionIdRef.current;
+        if (ctx) {
+          setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
+          steerSession(ctx, trimmed)
+            .then((queued) => {
+              if (!queued) {
+                setQueue(queuedMessagesRef.current.map((message) =>
+                  message.id === pending.id ? { ...message, steering: false } : message
+                ));
+              }
+            })
+            .catch(() => {
+              setQueue(queuedMessagesRef.current.map((message) =>
+                message.id === pending.id ? { ...message, steering: false } : message
+              ));
+            });
+          return;
+        }
+        setQueue([...queuedMessagesRef.current, pending]);
         return;
       }
       runStream({ kind: "text", text: trimmed });
@@ -1286,9 +1384,10 @@ export function useChat(
 
   const reset = useCallback(() => {
     abort();
-    stateRef.current = { messages: [], agentGroups: [], lane: null };
+    stateRef.current = { messages: [], agentGroups: [], tasks: [], lane: null };
     setMessages([]);
     setAgentGroups([]);
+    setTasks([]);
     setSessionId(null);
     sessionIdRef.current = null;
   }, [abort]);
@@ -1296,6 +1395,7 @@ export function useChat(
   return {
     messages,
     agentGroups,
+    tasks,
     queuedMessages,
     sessionId,
     isStreaming,

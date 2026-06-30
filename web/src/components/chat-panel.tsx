@@ -8,10 +8,10 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuClock, LuSend, LuTriangleAlert } from "react-icons/lu";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { useChat, isStepDone } from "@/lib/use-chat";
-import { ChatMessageItem } from "./chat-message";
+import { LuBrain, LuClock, LuMessageSquare, LuTriangleAlert } from "react-icons/lu";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
+import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
@@ -38,6 +38,56 @@ interface ChatPanelProps {
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
+  models?: { id: string; name: string; provider: string; available: boolean }[];
+  modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
+  recentModels?: { id: string; name: string; provider: string }[];
+  selectedModel?: string;
+  onModelChange?: (model: string) => void;
+}
+
+type TimelineItem =
+  | { kind: "message"; message: ChatMessage }
+  | { kind: "tool_group"; id: string; messages: ChatMessage[] };
+
+function folderDisplayName(workingDirectory?: string, projects: { path: string; name: string }[] = []): string {
+  const directory = (workingDirectory ?? "").trim();
+  if (!directory) return "this folder";
+  const known = projects.find((project) => project.path === directory)?.name;
+  if (known) return known;
+  return directory.split(/[\\/]/).filter(Boolean).at(-1) ?? directory;
+}
+
+function timelineItems(messages: ChatMessage[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+  let index = 0;
+  while (index < messages.length) {
+    const message = messages[index];
+    if (message.role === "thinking") {
+      index += 1;
+      continue;
+    }
+    if (message.role !== "tool_call") {
+      items.push({ kind: "message", message });
+      index += 1;
+      continue;
+    }
+
+    const toolMessages: ChatMessage[] = [];
+    while (index < messages.length && messages[index].role === "tool_call") {
+      toolMessages.push(messages[index]);
+      index += 1;
+    }
+    if (toolMessages.length === 1) {
+      items.push({ kind: "message", message: toolMessages[0] });
+    } else {
+      items.push({
+        kind: "tool_group",
+        id: `${toolMessages[0].id}-${toolMessages.at(-1)?.id ?? ""}`,
+        messages: toolMessages,
+      });
+    }
+  }
+  return items;
 }
 
 export function ChatPanel({
@@ -59,9 +109,14 @@ export function ChatPanel({
   onStreamingChange,
   historyOpen = false,
   onToggleHistory,
+  models = [],
+  modelProviders = [],
+  recentModels = [],
+  selectedModel = "",
+  onModelChange,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
-  const { messages, agentGroups, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
+  const { messages, agentGroups, tasks, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
     useChat(agent, initialSessionId, workingDirectory, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -186,6 +241,11 @@ export function ChatPanel({
     (sum, group) => sum + group.steps.filter((step) => !isStepDone(step)).length,
     0
    );
+  const currentFolderName = folderDisplayName(workingDirectory, recentProjects);
+  const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
+  const activeToolCount = messages.filter((message) =>
+    message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
+  ).length;
 
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
@@ -249,15 +309,18 @@ export function ChatPanel({
             </Flex>
           ) : messages.length === 0 ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
+              <Text as="h2" fontSize="xl" fontWeight="semibold" textAlign="center">
+                What should we build in {currentFolderName}?
+              </Text>
               <EmptyState.Root>
                 <EmptyState.Content>
                   <EmptyState.Indicator>
-                    <LuSend />
+                    <LuMessageSquare />
                   </EmptyState.Indicator>
                   <VStack gap={1}>
                     <EmptyState.Title>No messages yet</EmptyState.Title>
                     <EmptyState.Description>
-                      Send a message to start
+                      Send a message to start this conversation.
                     </EmptyState.Description>
                   </VStack>
                 </EmptyState.Content>
@@ -266,18 +329,28 @@ export function ChatPanel({
             </Flex>
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">
-              {messages.map((message) => (
-                <ChatMessageItem
-                  key={message.id}
-                  message={message}
-                  onPermission={handlePermission}
-                  onQuestion={handleQuestion}
-                  agents={agents}
-                />
-              ))}
-              {queuedMessages.map((text, index) => (
+              {renderedTimeline.map((item) =>
+                item.kind === "tool_group" ? (
+                  <ChatToolGroup
+                    key={item.id}
+                    messages={item.messages}
+                    onPermission={handlePermission}
+                    onQuestion={handleQuestion}
+                    agents={agents}
+                  />
+                ) : (
+                  <ChatMessageItem
+                    key={item.message.id}
+                    message={item.message}
+                    onPermission={handlePermission}
+                    onQuestion={handleQuestion}
+                    agents={agents}
+                  />
+                )
+              )}
+              {queuedMessages.map((message, index) => (
                 <Box
-                  key={`queued-${index}`}
+                  key={message.id}
                   alignSelf="flex-end"
                   maxW="80%"
                   px={2}
@@ -293,19 +366,44 @@ export function ChatPanel({
                 >
                   <Flex align="center" gap={1.5}>
                     <LuClock size={11} />
-                    <Text fontSize="xs" color="fg.subtle" fontWeight="medium">Queued</Text>
+                    <Text fontSize="xs" color="fg.subtle" fontWeight="medium">
+                      {message.steering ? "Steering next opening" : "Queued"}
+                    </Text>
                   </Flex>
-                  <Text fontSize="sm" color="fg.muted">{text}</Text>
+                  <Text fontSize="sm" color="fg.muted">{message.text}</Text>
                 </Box>
               ))}
             </VStack>
           )}
         </Box>
 
+        {isStreaming && (
+          <Flex
+            align="center"
+            gap={1.5}
+            mx={2}
+            mb={2}
+            px={2}
+            py={1.5}
+            borderRadius="sm"
+            bg="bg.muted"
+            color="fg.muted"
+            className="timeline-item"
+          >
+            <Box color={activeToolCount > 0 ? "blue.fg" : "purple.fg"} display="flex" alignItems="center">
+              <LuBrain size={13} />
+            </Box>
+            <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer">
+              {activeToolCount > 0 ? `Working through ${activeToolCount} ${activeToolCount === 1 ? "tool call" : "tool calls"}` : "Thinking"}
+            </Text>
+          </Flex>
+        )}
+
         <ChatInput
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
+          tasks={tasks}
           disabled={!isConnected}
           sessionId={sessionId}
           workingDirectory={workingDirectory}
@@ -327,6 +425,11 @@ export function ChatPanel({
           }}
           historyOpen={historyOpen}
           onToggleHistory={onToggleHistory}
+          models={models}
+          modelProviders={modelProviders}
+          recentModels={recentModels}
+          selectedModel={selectedModel}
+          onModelChange={(model) => onModelChange?.(model)}
         />
       </Flex>
 

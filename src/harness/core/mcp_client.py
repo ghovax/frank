@@ -66,10 +66,10 @@ class MCPClientManager:
     async def _close_session(self, name: str) -> None:
         connection = self._stdio_sessions.pop(name, None)
         if connection is not None:
-            await connection.aclose()
+            await self._close_connection(connection)
         connection = self._streamable_sessions.pop(name, None)
         if connection is not None:
-            await connection.aclose()
+            await self._close_connection(connection)
 
     async def list_tools(self, server: str = "") -> dict[str, Any]:
         result: dict[str, Any] = {"servers": []}
@@ -127,12 +127,23 @@ class MCPClientManager:
         }
 
     async def aclose(self) -> None:
-        for connection in list(self._stdio_sessions.values()):
-            await connection.aclose()
+        connections = [
+            *list(self._stdio_sessions.values()),
+            *list(self._streamable_sessions.values()),
+        ]
         self._stdio_sessions.clear()
-        for connection in list(self._streamable_sessions.values()):
-            await connection.aclose()
         self._streamable_sessions.clear()
+        for connection in connections:
+            await self._close_connection(connection)
+
+    @staticmethod
+    async def _close_connection(connection: Any) -> None:
+        try:
+            await connection.aclose()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            pass
 
     async def list_resources(self, server: str = "") -> dict[str, Any]:
         result: dict[str, Any] = {"servers": []}
