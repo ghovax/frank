@@ -1080,23 +1080,20 @@ class AgentRuntime:
 
             if not response.tool_calls:
                 if response.invalid_tool_calls:
-                    # A response carrying only malformed tool calls: record the
-                    # attempt with a ToolMessage error for each so the
-                    # conversation stays valid, then let the model retry rather
-                    # than ending the turn with a dangling tool_calls message.
-                    self._conversation.append(response)
+                    # A response carrying only malformed tool calls (arguments that
+                    # failed to parse). These are NOT valid tool_calls — the LiteLLM
+                    # model serializes only message.tool_calls, never
+                    # invalid_tool_calls — so a ToolMessage response would be
+                    # orphaned, and strict providers (e.g. DeepSeek) reject that with
+                    # "Messages with role 'tool' must follow a tool_calls message".
+                    # Correct the model with a system note and let it retry. This is
+                    # model-facing, so it is not surfaced to the user.
+                    if response.content:
+                        self._conversation.append(response)
                     for invalid in response.invalid_tool_calls:
-                        message = self._invalid_tool_call_content(invalid)
-                        self._conversation.append(ToolMessage(
-                            content=message,
-                            tool_call_id=invalid["id"],
+                        self._conversation.append(SystemMessage(
+                            content=self._invalid_tool_call_content(invalid),
                         ))
-                        yield StreamEvent(
-                            StreamEvent.Type.ERROR,
-                            id=invalid["id"],
-                            tool=invalid.get("name") or "unknown",
-                            message=message,
-                        )
                     self._calls_this_turn += 1
                     continue
 
@@ -1175,13 +1172,13 @@ class AgentRuntime:
                     denied_message = self._prompt_loader.load("command_denied", {"commands": commands_list})
                     self._conversation.append(SystemMessage(content=denied_message))
 
-            # Malformed tool calls serialized alongside valid ones must also get
-            # a ToolMessage each, or the assistant tool_calls message would be
-            # left partially unanswered (see the invalid-only branch above).
+            # Malformed tool calls serialized alongside valid ones: correct them
+            # with a system note (not a ToolMessage — invalid calls aren't in the
+            # serialized tool_calls, so a ToolMessage would be orphaned and rejected
+            # by strict providers). Model-facing; not surfaced to the user.
             for invalid in response.invalid_tool_calls:
-                self._conversation.append(ToolMessage(
+                self._conversation.append(SystemMessage(
                     content=self._invalid_tool_call_content(invalid),
-                    tool_call_id=invalid["id"],
                 ))
 
             if self._abort_event.is_set():

@@ -214,9 +214,14 @@ function HomeContent() {
         setRestoredContext(contextKey);
         setWorkingDirectory(session.workingDirectory || homeProject?.path || "");
       }
-    } else if (homeProject) {
+    } else if (workingDirectory || homeProject) {
+      // A brand-new chat inherits the working directory the user was just in —
+      // no jarring folder reset when starting a new conversation. Only fall back
+      // to home if there's no directory yet (first load).
       setRestoredContext(contextKey);
-      setWorkingDirectory(homeProject.path);
+      if (!workingDirectory) {
+        setWorkingDirectory(homeProject?.path || "");
+      }
     }
   }
 

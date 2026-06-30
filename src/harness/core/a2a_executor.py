@@ -16,8 +16,11 @@ prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 
 import asyncio
 import json
+import logging
 import uuid
 from typing import Awaitable, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -606,12 +609,21 @@ class HarnessAgentExecutor(AgentExecutor):
                 await updater.add_artifact([_text_part(final_text)], name="result", last_chunk=True)
             save_runtime_conversation()
             if failed_message and not final_text.strip():
-                await updater.failed(updater.new_agent_message([_text_part(failed_message)]))
+                # failed_message carries raw, model-facing error text (e.g. a tool
+                # exception) — never leak it to the user. Surface a generic notice.
+                await updater.failed(updater.new_agent_message([_text_part(
+                    "Something went wrong and this turn could not complete."
+                )]))
             else:
                 await updater.complete()
         except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
             save_runtime_conversation()
-            await updater.failed(updater.new_agent_message([_text_part(f"Execution error: {exception}")]))
+            # Log the real exception server-side for debugging, but show the user a
+            # generic message — never the raw exception text.
+            logger.exception("Agent turn failed: %s", exception)
+            await updater.failed(updater.new_agent_message([_text_part(
+                "Something went wrong and this turn could not complete."
+            )]))
         finally:
             self._aborts.pop(task.id, None)
             # Persist the conversation after a top-level turn so a later restart can

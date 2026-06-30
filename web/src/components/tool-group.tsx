@@ -85,6 +85,10 @@ interface ToolGroupProps {
   onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   activePreviewId?: string | null;
   onActivatePreview?: (toolCallId: string) => void;
+  // When true, the group stays expanded even after all calls complete — used by
+  // the chat timeline to keep the latest group open until the assistant's text
+  // response actually arrives, rather than collapsing the instant tools finish.
+  keepOpen?: boolean;
 }
 
 export const ToolGroup = memo(function ToolGroup({
@@ -94,13 +98,14 @@ export const ToolGroup = memo(function ToolGroup({
   onQuestion,
   activePreviewId,
   onActivatePreview,
+  keepOpen = false,
 }: ToolGroupProps) {
   const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length;
   const inputRequired = tools.some((tool) => toolStatus(tool.status) === "input_required");
   const failedCount = tools.filter((tool) => toolStatus(tool.status) === "failed").length;
   const active = runningCount > 0 || inputRequired;
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
-  const bodyOpen = manualOverride ?? active;
+  const bodyOpen = manualOverride ?? (active || keepOpen);
 
   // The header title is a category-aware summary of the whole batch (carrying the
   // count), not the last call's label. The icon represents the first/dominant
@@ -117,7 +122,7 @@ export const ToolGroup = memo(function ToolGroup({
       ? { label: `${failedCount} failed`, colorPalette: "red" }
       : runningCount > 0
         ? { label: `${runningCount} running`, colorPalette: "blue" }
-        : { label: "Completed", colorPalette: "green" };
+        : null;
 
   return (
     <Box alignSelf="flex-start" w="100%" className="timeline-item">
@@ -159,9 +164,11 @@ export const ToolGroup = memo(function ToolGroup({
           >
             {summary}
           </Text>
-          <Badge size="sm" variant="subtle" colorPalette={badge.colorPalette} borderRadius="sm" flexShrink={0}>
-            {badge.label}
-          </Badge>
+          {badge && (
+            <Badge size="sm" variant="subtle" colorPalette={badge.colorPalette} borderRadius="sm" flexShrink={0}>
+              {badge.label}
+            </Badge>
+          )}
           <Box color="fg.muted" fontSize="xs" flexShrink={0}>
             {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
           </Box>

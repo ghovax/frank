@@ -41,9 +41,10 @@ function buildTimelineItems(parts: AgentPart[]): TimelineItem[] {
     if (run.length === 1) {
       items.push({ kind: "tool", tool: run[0] });
     } else if (run.length > 1) {
-      const first = run[0].toolCallId;
-      const last = run[run.length - 1].toolCallId;
-      items.push({ kind: "tools", id: `${first}-${last}`, tools: run });
+      // Key by the first tool only so the group stays mounted as tools stream in
+      // (a first+last key would remount on every new tool and replay animations).
+      const first = run[0].toolCallId || `tools-${index}`;
+      items.push({ kind: "tools", id: first, tools: run });
     }
   }
   return items;

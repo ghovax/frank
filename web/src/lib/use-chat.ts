@@ -788,19 +788,20 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       const toolName = String(data.name ?? data.tool ?? "");
       const toolCallId = String(data.toolCallId ?? "");
       if (toolCallId) {
-        const result = { code: "tool_error", message: String(data.message ?? "Unknown error") };
+        // Mark the tool call failed with a generic result. The raw error text is
+        // model-facing (the runtime already delivered it to the model via the tool
+        // message) and must not leak to the UI — only a "Failed" indicator shows.
         let matched = false;
         state.messages = state.messages.map((message) =>
           messageMatchesToolEvent(message, toolName, toolCallId)
-            ? (matched = true, { ...message, meta: { ...message.meta, status: "failed", result } })
+            ? (matched = true, { ...message, meta: { ...message.meta, status: "failed", result: { code: "tool_error" } } })
             : message
         );
         if (matched) break;
       }
-      state.messages = [
-        ...state.messages,
-        { id: `error-${state.messages.length}`, role: "error", content: String(data.message ?? "Unknown error"), timestamp: new Date().toISOString() },
-      ];
+      // No matching tool call: drop it. Turn-level failures arrive as a generic
+      // failed status (not raw error text), and the model has already received the
+      // real error, so there is nothing user-facing to add here.
       break;
     }
     case "agent_group_started":

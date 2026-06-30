@@ -95,7 +95,10 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     } else {
       items.push({
         kind: "tool_group",
-        id: `${toolMessages[0].id}-${toolMessages.at(-1)?.id ?? ""}`,
+        // Key by the FIRST tool only: the key must stay stable as more tools
+        // stream into the group, or React remounts the whole group (re-running
+        // every card's entrance animation and resetting its open/closed state).
+        id: toolMessages[0].id,
         messages: toolMessages,
       });
     }
@@ -417,7 +420,8 @@ export function ChatPanel({
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">
               <AnimatePresence initial={false}>
-                {renderedTimeline.map((item) => {
+                {renderedTimeline.map((item, itemIndex) => {
+                  const isLastItem = itemIndex === renderedTimeline.length - 1;
                   const key = item.kind === "tool_group" ? item.id : item.message.id;
                   const inner = item.kind === "tool_group" ? (
                     <ChatToolGroup
@@ -427,6 +431,7 @@ export function ChatPanel({
                       agents={agents}
                       activePreviewId={activePreviewId}
                       onActivatePreview={handleActivatePreview}
+                      keepOpen={isStreaming && isLastItem}
                     />
                   ) : (
                     <ChatMessageItem
@@ -438,6 +443,17 @@ export function ChatPanel({
                       onActivatePreview={handleActivatePreview}
                     />
                   );
+                  // Assistant messages stream their content in — any entrance or
+                  // layout animation on the wrapper looks wrong as text grows, so
+                  // they get a plain div with no motion at all.
+                  const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
+                  if (isAssistantMessage) {
+                    return (
+                      <div key={key} style={{ display: "flex", flexDirection: "column" }}>
+                        {inner}
+                      </div>
+                    );
+                  }
                   return (
                     <motion.div
                       key={key}

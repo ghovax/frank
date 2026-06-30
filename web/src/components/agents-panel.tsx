@@ -12,25 +12,24 @@ import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 
-// Maps an A2A TaskState to a status badge. The badge is the canonical lifecycle
-// state, so a failed or cancelled step reads differently from a clean finish.
+// Maps an A2A TaskState to a status badge. Completed steps carry no badge —
+// the settled state is self-evident from the card. Only non-default states show.
 function AgentStateBadge({ state }: { state: TaskState }) {
+  if (state === "completed") return null;
   const { label, palette } =
-    state === "completed"
-      ? { label: "Completed", palette: "green" }
-      : state === "failed"
-        ? { label: "Failed", palette: "red" }
-        : state === "rejected"
-          ? { label: "Rejected", palette: "red" }
-          : state === "canceled"
-            ? { label: "Canceled", palette: "gray" }
-            : state === "input-required"
-              ? { label: "Input required", palette: "yellow" }
-              : state === "auth-required"
-                ? { label: "Authentication required", palette: "yellow" }
-                : state === "working"
-                  ? { label: "Working", palette: "blue" }
-                  : { label: "Submitted", palette: "blue" };
+    state === "failed"
+      ? { label: "Failed", palette: "red" }
+      : state === "rejected"
+        ? { label: "Rejected", palette: "red" }
+        : state === "canceled"
+          ? { label: "Canceled", palette: "gray" }
+          : state === "input-required"
+            ? { label: "Input required", palette: "yellow" }
+            : state === "auth-required"
+              ? { label: "Authentication required", palette: "yellow" }
+              : state === "working"
+                ? { label: "Working", palette: "blue" }
+                : { label: "Submitted", palette: "blue" };
   return (
     <Badge size="sm" variant="subtle" colorPalette={palette} borderRadius="sm" flexShrink={0}>
       {label}

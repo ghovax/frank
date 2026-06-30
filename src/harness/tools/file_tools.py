@@ -11,12 +11,15 @@ tool-call wrapper surfaces them as ERROR events to the model.
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
+
+from harness.core.configuration import PromptLoader
 
 from markdownify import markdownify as _markdownify
 
@@ -25,6 +28,8 @@ MAX_LINE_LENGTH = 2000
 MAX_GREP_RESULTS = 500
 MAX_GLOB_RESULTS = 1000
 MAX_FETCH_CHARS = 200_000
+
+_PROMPT_LOADER = PromptLoader(Path(__file__).parent / "descriptions")
 
 
 def _resolve(working_directory: str, file_path: str) -> Path:
@@ -154,7 +159,48 @@ def search_content(
     return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
 
 
-# --- edit: tolerant exact-string replacement (subset of opencode's cascade) ---
+# Models (notably DeepSeek) sometimes emit the literal escape text "\u2014"
+# instead of the actual character when reproducing non-ASCII text they read.
+# Decode those so old_string can still match the file's real characters.
+_UNICODE_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
+def _decode_unicode_escapes(text: str) -> str:
+    return _UNICODE_ESCAPE.sub(lambda match: chr(int(match.group(1), 16)), text)
+
+
+# Minimum similarity for a fuzzy old_string match. High enough to reject genuinely
+# wrong/hallucinated content while absorbing a few stray characters (escape
+# artifacts, a wrong punctuation mark, a single off line).
+MINIMUM_FUZZY_RATIO = 0.90
+
+
+def _best_fuzzy_span(content: str, old: str) -> tuple[str | None, float]:
+    """The span in ``content`` most likely to be what ``old`` meant, with its ratio.
+
+    Anchors on the longest common substring between ``content`` and ``old`` (so a
+    fragment ``old`` localizes, not just whole-line matches), then takes a span of
+    roughly ``len(old)`` around the anchor and refines the start by a few chars to
+    absorb a missing/extra character at either edge.
+    """
+    if not old:
+        return None, 0.0
+    matcher = difflib.SequenceMatcher(None, content, old, autojunk=False)
+    anchor = matcher.find_longest_match(0, len(content), 0, len(old))
+    if anchor.size == 0:
+        return None, 0.0
+    # Align old's start to the anchor: content[anchor.a - anchor.b : ... + len(old)].
+    base_start = max(0, anchor.a - anchor.b)
+    best_span: str | None = None
+    best_ratio = 0.0
+    for start in range(max(0, base_start - 3), min(len(content), base_start + 4)):
+        end = min(len(content), start + len(old))
+        candidate = content[start:end]
+        ratio = difflib.SequenceMatcher(None, old, candidate, autojunk=False).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_span = candidate
+    return best_span, best_ratio
 
 
 def _find_matches(content: str, old: str) -> list[str]:
@@ -199,12 +245,20 @@ def apply_edit(content: str, old_string: str, new_string: str, replace_all: bool
     if old_string == "":
         return new_string
 
+    # Models sometimes emit literal "\uXXXX" escapes instead of the real
+    # character; decode so matching can succeed against the file's actual text.
+    old_string = _decode_unicode_escapes(old_string)
+
     matches = _find_matches(content, old_string)
     if not matches:
-        raise ValueError(
-            "Could not find old_string in the file. It must match exactly, including "
-            "whitespace, indentation, and line endings.",
-        )
+        # Fuzzy fallback: tolerate a few stray characters / a missing line by
+        # matching the most similar span in the file when similarity is very high.
+        closest_span, closest_ratio = _best_fuzzy_span(content, old_string)
+        if closest_span is not None and closest_ratio >= MINIMUM_FUZZY_RATIO:
+            matches = [closest_span]
+        else:
+            hint = f"Closest match ({closest_ratio:.0%}): {closest_span!r}." if closest_span else ""
+            raise ValueError(_PROMPT_LOADER.load("edit_not_found", {"hint": hint}))
     for matched in matches:
         if _is_disproportionate(matched, old_string):
             raise ValueError(
@@ -218,10 +272,10 @@ def apply_edit(content: str, old_string: str, new_string: str, replace_all: bool
             new_content = new_content.replace(matched, new_string)
         return new_content
 
-    literal_unique = [m for m in matches if m == old_string and content.count(m) == 1]
+    literal_unique = [match for match in matches if match == old_string and content.count(match) == 1]
     if literal_unique:
         return content.replace(literal_unique[0], new_string, 1)
-    unique = [m for m in matches if content.count(m) == 1]
+    unique = [match for match in matches if content.count(match) == 1]
     if not unique:
         raise ValueError(
             "Found multiple matches for old_string. Provide more surrounding context, "

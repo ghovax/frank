@@ -127,10 +127,12 @@ export function ToolStatusBadge({ status }: { status: "running" | "completed" | 
       </Badge>
     );
   }
+  // Completed calls carry no badge — the card's settled state speaks for itself.
   const done = status === "completed" || status === "done";
+  if (done) return null;
   return (
-    <Badge size="sm" variant="subtle" colorPalette={done ? "green" : "blue"} borderRadius="sm" flexShrink={0}>
-      {done ? "Completed" : "Running"}
+    <Badge size="sm" variant="subtle" colorPalette="blue" borderRadius="sm" flexShrink={0}>
+      Running
     </Badge>
   );
 }

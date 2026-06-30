@@ -96,9 +96,9 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
 
 // A task's lifecycle status → a capitalized label and a colour, so it reads as a
 // proper badge instead of the raw lowercase value the model emits.
-function taskStatusAppearance(status: string): { label: string; palette: string } {
+function taskStatusAppearance(status: string): { label: string; palette: string } | null {
   switch (status.toLowerCase().replace(/[\s-]+/g, "_")) {
-    case "completed": return { label: "Completed", palette: "green" };
+    case "completed": return null;
     case "in_progress": return { label: "In progress", palette: "blue" };
     case "blocked": return { label: "Blocked", palette: "yellow" };
     case "cancelled":
@@ -130,7 +130,7 @@ function TaskRow({ label, status, body, dependencies = [] }: {
       <Flex align="center" gap={2} mb={body ? 1.5 : 0}>
         <Text fontSize="xs" color="fg.muted" fontWeight="semibold" flexShrink={0}>{label}</Text>
         <Box flex={1} />
-        <Pill colorPalette={appearance.palette}>{appearance.label}</Pill>
+        {appearance && <Pill colorPalette={appearance.palette}>{appearance.label}</Pill>}
       </Flex>
       {body && <MarkdownContent content={body} fontSize="xs" />}
       {dependencies.length > 0 && (
