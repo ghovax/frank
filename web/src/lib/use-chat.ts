@@ -59,15 +59,20 @@ export interface ChatTask {
 // Running token totals for the session, summed from the real per-call usage the
 // model reports. Carried on `token_usage` parts and mirrored into hook state.
 export interface TokenUsage {
+  // Cumulative session totals — the running spend, shown only in the tooltip.
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
   cacheReadTokens: number;
   reasoningTokens: number;
   modelCalls: number;
-  // The latest call's prompt size (system + history + turn) — how full the context
-  // currently is — and the model's context window. contextWindow is 0 when unknown.
-  contextTokens: number;
+  // Current context occupancy — the latest call's prompt (system + history + turn)
+  // plus the reply it generated (completion + reasoning). This is what's actually in
+  // the window right now, and what the indicator visualizes — not the cumulative sum.
+  // contextWindow is the model's limit (0 when unknown).
+  contextTokens: number; // contextInputTokens + contextOutputTokens
+  contextInputTokens: number;
+  contextOutputTokens: number;
   contextWindow: number;
 }
 
@@ -685,6 +690,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       // The cumulative totals grow monotonically across the session, so the
       // latest part is authoritative on both the live stream and on replay.
       const cumulative = asRecord(data.cumulative);
+      // Per-call (latest) figures — this is the actual current context, not a sum.
+      const contextInputTokens = Number(data.inputTokens ?? 0);
+      const contextOutputTokens = Number(data.outputTokens ?? 0);
       state.tokenUsage = {
         inputTokens: Number(cumulative.inputTokens ?? 0),
         outputTokens: Number(cumulative.outputTokens ?? 0),
@@ -692,8 +700,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
         cacheReadTokens: Number(cumulative.cacheReadTokens ?? 0),
         reasoningTokens: Number(cumulative.reasoningTokens ?? 0),
         modelCalls: Number(cumulative.modelCalls ?? 0),
-        // The current context fill is this call's prompt size, not a cumulative sum.
-        contextTokens: Number(data.inputTokens ?? 0),
+        contextInputTokens,
+        contextOutputTokens,
+        contextTokens: contextInputTokens + contextOutputTokens,
         contextWindow: Number(data.contextWindow ?? 0),
       };
       break;

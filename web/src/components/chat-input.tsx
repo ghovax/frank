@@ -71,13 +71,6 @@ interface ChatInputProps {
   tokenUsage?: TokenUsage | null;
 }
 
-// Compact token count for the counter chip: 2500 -> "2.5k", 1_200_000 -> "1.2M".
-function formatTokenCount(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(count >= 10_000 ? 0 : 1)}k`;
-  return String(count);
-}
-
 // A clean, symmetric progress ring (SVG arc) for the aggregate task completion.
 // Full blue arc = progress; muted track behind it. Switches to a check at 100%.
 // Sized to 13px so it reads at the exact same scale as the other control icons.
@@ -145,6 +138,57 @@ function ContextFillRing({ fraction }: { fraction: number }) {
         />
       </svg>
     </Box>
+  );
+}
+
+// The context-usage chip: a fill ring + percent, then the current context size
+// against the model's window. It reflects the latest exchange actually occupying
+// the window (not the cumulative session sum, which lives in the tooltip).
+function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
+  if (!tokenUsage || tokenUsage.contextTokens <= 0) return null;
+  const hasContext = tokenUsage.contextWindow > 0;
+  const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
+  const contextPercent = Math.min(100, Math.round(contextFraction * 100));
+  const title = `Context in use: ${tokenUsage.contextTokens.toLocaleString()} tokens` +
+    (hasContext ? ` of ${tokenUsage.contextWindow.toLocaleString()} (${contextPercent}% full)` : "") +
+    ` — input ${tokenUsage.contextInputTokens.toLocaleString()}, output ${tokenUsage.contextOutputTokens.toLocaleString()}` +
+    `\nSession total: ${tokenUsage.totalTokens.toLocaleString()} tokens across ${tokenUsage.modelCalls} model call${tokenUsage.modelCalls === 1 ? "" : "s"}` +
+    ` (input ${tokenUsage.inputTokens.toLocaleString()}` +
+    (tokenUsage.cacheReadTokens > 0 ? `, cache read ${tokenUsage.cacheReadTokens.toLocaleString()}` : "") +
+    `, output ${tokenUsage.outputTokens.toLocaleString()}` +
+    (tokenUsage.reasoningTokens > 0 ? `, reasoning ${tokenUsage.reasoningTokens.toLocaleString()}` : "") +
+    `)`;
+  return (
+    <Flex
+      align="center"
+      gap={1.5}
+      h="28px"
+      px={2}
+      borderRadius="sm"
+      border="1px solid"
+      borderColor="border"
+      bg="bg"
+      color="fg.subtle"
+      flexShrink={0}
+      title={title}
+    >
+      {hasContext && (
+        <>
+          <ContextFillRing fraction={contextFraction} />
+          <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+            {contextPercent}%
+          </Text>
+          <Box w="1px" h="14px" bg="border" flexShrink={0} />
+        </>
+      )}
+      <Box display="flex" alignItems="center" flexShrink={0}>
+        <LuCoins size={13} />
+      </Box>
+      <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+        {tokenUsage.contextTokens.toLocaleString()}
+        {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""} in context
+      </Text>
+    </Flex>
   );
 }
 
@@ -668,6 +712,7 @@ export function ChatInput({
             fallbackModelId={globalModel}
             compact
           />
+          <ContextUsageChip tokenUsage={tokenUsage} />
           <Button
             size="xs"
             variant={agentsAppearance.variant}
@@ -1029,47 +1074,6 @@ export function ChatInput({
             </Flex>
           )}
         </Flex>
-        {tokenUsage && tokenUsage.totalTokens > 0 && (() => {
-          const hasContext = tokenUsage.contextWindow > 0 && tokenUsage.contextTokens > 0;
-          const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
-          const contextPercent = Math.min(100, Math.round(contextFraction * 100));
-          const title = `Tokens this session — input ${tokenUsage.inputTokens.toLocaleString()}` +
-            (tokenUsage.cacheReadTokens > 0 ? ` (cache read ${tokenUsage.cacheReadTokens.toLocaleString()})` : "") +
-            `, output ${tokenUsage.outputTokens.toLocaleString()}` +
-            (tokenUsage.reasoningTokens > 0 ? ` (reasoning ${tokenUsage.reasoningTokens.toLocaleString()})` : "") +
-            `, total ${tokenUsage.totalTokens.toLocaleString()} across ${tokenUsage.modelCalls} model call${tokenUsage.modelCalls === 1 ? "" : "s"}` +
-            (hasContext ? `\nContext: ${tokenUsage.contextTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} tokens (${contextPercent}% full)` : "");
-          return (
-            <Flex
-              align="center"
-              gap={1.5}
-              h="28px"
-              px={2}
-              ml="auto"
-              borderRadius="sm"
-              bg="bg.subtle"
-              color="fg.subtle"
-              flexShrink={0}
-              title={title}
-            >
-              {hasContext && (
-                <>
-                  <ContextFillRing fraction={contextFraction} />
-                  <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-                    {contextPercent}%
-                  </Text>
-                  <Box w="1px" h="14px" bg="border" flexShrink={0} />
-                </>
-              )}
-              <Box display="flex" alignItems="center" flexShrink={0}>
-                <LuCoins size={13} />
-              </Box>
-              <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-                {formatTokenCount(tokenUsage.totalTokens)} tokens
-              </Text>
-            </Flex>
-          );
-        })()}
       </Flex>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
