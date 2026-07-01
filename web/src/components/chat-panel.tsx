@@ -8,7 +8,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuClock, LuMessageSquare, LuTriangleAlert } from "react-icons/lu";
+import { LuClock, LuMessageSquare, LuNavigation, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
@@ -494,7 +494,9 @@ export function ChatPanel({
                   onClick={() => dequeueMessage(index)}
                 >
                   <Flex align="center" gap={1.5}>
-                    <LuClock size={11} />
+                    <Box as="span" display="inline-flex" alignItems="center">
+                      {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
+                    </Box>
                     <Text fontSize="xs" color="fg.subtle" fontWeight="medium">
                       {message.steering ? "Steering next opening" : "Queued"}
                     </Text>
