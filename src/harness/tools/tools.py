@@ -471,7 +471,7 @@ def build_web_preview_result(
     artifact_target_id: str = "",
     summary: str = "",
 ) -> dict[str, Any]:
-    """Build the tool result for an ``open_web_preview`` call.
+    """Build the tool result for an ``open_preview`` call.
 
     ``source`` is either an ``http(s)`` URL (``is_file=False``) or an absolute local
     file path (``is_file=True``). The artifact only carries the reference — the front
@@ -508,7 +508,7 @@ def build_web_preview_result(
         "version": new_id("rev"),
     }
     model_context = {
-        "code": "web_preview_opened",
+        "code": "preview_opened",
         "summary": preview_summary,
         "source": source,
         "artifacts": [
@@ -526,7 +526,7 @@ def build_web_preview_result(
 
 
 @tool
-def open_web_preview(
+def open_preview(
     url: str,
     title: str = "Preview",
     height: int = 0,
@@ -535,7 +535,7 @@ def open_web_preview(
     artifact_target_id: str = "",
     summary: str = "",
 ) -> str:
-    """Open a live web preview in the chat — a mini-browser pointed at a URL or a
+    """Open a live preview in the chat — a mini-browser pointed at a URL or a
     local file — rendered in a sandboxed iframe outside the tool card.
 
     This is the general-purpose visual tool. Rather than passing markup inline, you
@@ -825,7 +825,7 @@ read_task.description = _load_tool_description("read_task")
 write_tasks.description = _load_tool_description("write_tasks")
 update_tasks.description = _load_tool_description("update_tasks")
 update_goal.description = _load_tool_description("update_goal")
-open_web_preview.description = _load_tool_description("open_web_preview")
+open_preview.description = _load_tool_description("open_preview")
 list_mcp_tools.description = _load_tool_description("list_mcp_tools")
 call_mcp_tool.description = _load_tool_description("call_mcp_tool")
 list_mcp_resources.description = _load_tool_description("list_mcp_resources")

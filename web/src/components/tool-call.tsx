@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { LuCheck } from "react-icons/lu";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
-import { ToolArtifacts, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
+import { ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolRiskBadges, ToolStatusBadge } from "./tool-card";
 
 interface ToolCallProps extends ToolEvent {
@@ -214,7 +214,17 @@ function ToolQuestionPrompt({
   );
 }
 
-export function ToolCall({ name, arguments: toolArguments, result, toolCallId, status, permission, question, agents = [], onPermission, onQuestion, activePreviewId, onActivatePreview }: ToolCallProps) {
+function isToolErrorResult(content: string | null): boolean {
+  if (!content) return false;
+  try {
+    const parsed = JSON.parse(content);
+    return !!parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as Record<string, unknown>).code === "tool_error";
+  } catch {
+    return false;
+  }
+}
+
+export function ToolCall({ name, arguments: toolArguments, result, status, permission, question, agents = [], onPermission, onQuestion }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
@@ -222,7 +232,7 @@ export function ToolCall({ name, arguments: toolArguments, result, toolCallId, s
   // the textual result stays inside the collapsible body. When the result is an
   // artifact, there is no separate text to show inside.
   const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
-  const showResultInside = resultContent != null && artifacts.length === 0;
+  const showResultInside = resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent);
   // Only while pending — once decided, the status badge carries the outcome.
   const showPermission = !!permission && status === "input_required";
   const showQuestion = !!question && status === "input_required";
@@ -279,12 +289,6 @@ export function ToolCall({ name, arguments: toolArguments, result, toolCallId, s
           )}
         </AnimatePresence>
       </ToolCard>
-      <ToolArtifacts
-        artifacts={artifacts}
-        activePreviewId={activePreviewId}
-        onActivatePreview={onActivatePreview}
-        toolCallId={toolCallId}
-      />
     </Flex>
   );
 }

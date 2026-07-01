@@ -15,17 +15,16 @@ from pydantic import BaseModel
 # repository. The home directory is the single source of truth.
 HARNESS_HOME_DIRECTORY = Path("~/.harness").expanduser()
 CONFIGURATION_FILENAME = "configuration.yaml"
-EXAMPLE_CONFIGURATION_FILENAME = "configuration.yaml.example"
 DATABASE_FILENAME = "history.db"
 
-# The default configuration lives in a sibling YAML file so editing the template
+# The packaged configuration lives in a sibling YAML file so editing the template
 # is a data change, not a code change. Used to seed ~/.harness/configuration.yaml
 # on first run and as the base when persisting settings before any file exists.
-DEFAULT_CONFIGURATION_PATH = Path(__file__).resolve().parent / "default_configuration.yaml"
+PACKAGED_CONFIGURATION_PATH = Path(__file__).resolve().parent / "configuration.yaml"
 
 
-def default_configuration_yaml() -> str:
-    return DEFAULT_CONFIGURATION_PATH.read_text()
+def packaged_configuration_yaml() -> str:
+    return PACKAGED_CONFIGURATION_PATH.read_text()
 
 
 def harness_home_directory() -> Path:
@@ -45,11 +44,12 @@ def database_file_path() -> Path:
 def save_api_keys(
     *,
     exa_api_key: str | None = None,
-    composio_consumer_api_key: str | None = None,
+    composio_api_key: str | None = None,
     sandbox_enabled: bool | None = None,
+    workspace_strategy: str | None = None,
     provider_keys: dict[str, str] | None = None,
     provider_base_urls: dict[str, str] | None = None,
-    default_model: str | None = None,
+    selected_model: str | None = None,
 ) -> None:
     """Persist settings into ~/.harness/configuration.yaml, preserving the rest
     of the file. Only provided values are written. Creates the file from the
@@ -58,13 +58,15 @@ def save_api_keys(
     if path.exists():
         data = yaml.safe_load(path.read_text()) or {}
     else:
-        data = yaml.safe_load(default_configuration_yaml())
+        data = yaml.safe_load(packaged_configuration_yaml())
     if exa_api_key is not None:
         data.setdefault("exa", {})["api_key"] = exa_api_key
-    if composio_consumer_api_key is not None:
-        data.setdefault("composio", {})["consumer_api_key"] = composio_consumer_api_key
+    if composio_api_key is not None:
+        data.setdefault("composio", {})["api_key"] = composio_api_key
     if sandbox_enabled is not None:
         data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
+    if workspace_strategy is not None:
+        data.setdefault("workspace", {})["strategy"] = workspace_strategy
     if provider_keys is not None or provider_base_urls is not None:
         providers_section = data.setdefault("providers", {})
         all_provider_ids = {*(provider_keys or {}), *(provider_base_urls or {})}
@@ -75,16 +77,16 @@ def save_api_keys(
             if provider_base_urls is not None and provider_id in provider_base_urls:
                 entry["base_url"] = provider_base_urls[provider_id]
             providers_section[provider_id] = entry
-    if default_model is not None:
-        # The API carries the default model as the combined ``provider/model`` id
+    if selected_model is not None:
+        # The API carries the selected model as the combined ``provider/model`` id
         # (the picker's value); split it into the two separate fields the config
         # file stores so a human sees both explicitly.
-        if "/" in default_model:
-            provider, model = default_model.split("/", 1)
-            data["default_provider"] = provider
-            data["default_model"] = model
+        if "/" in selected_model:
+            provider, model = selected_model.split("/", 1)
+            data["selected_provider"] = provider
+            data["selected_model"] = model
         else:
-            data["default_model"] = default_model
+            data["selected_model"] = selected_model
     path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
@@ -100,6 +102,10 @@ class SandboxConfiguration(BaseModel):
     enabled: bool = True
 
 
+class WorkspaceConfiguration(BaseModel):
+    strategy: Literal["none", "branch", "worktree"] = "none"
+
+
 class ComposioConfiguration(BaseModel):
     """Composio integration via its hosted MCP endpoint. When enabled, the harness
     points at Composio's "connect" MCP URL and exposes it as a normal
@@ -113,16 +119,16 @@ class ComposioConfiguration(BaseModel):
     enabled: bool = False
     # The hosted MCP URL from the Composio dashboard (MCP / "connect" page).
     url: str = "https://connect.composio.dev/mcp"
-    # The consumer key shown next to the URL (sent as the x-consumer-api-key
-    # header). May also be supplied via COMPOSIO_CONSUMER_API_KEY (env wins).
-    consumer_api_key: str = ""
+    # The API key shown next to the URL (sent as the x-consumer-api-key header).
+    # May also be supplied via COMPOSIO_API_KEY (env wins).
+    api_key: str = ""
     # The MCP server name the tools appear under (call_mcp_tool's `server`).
     server_name: str = "composio"
     timeout_seconds: float = 60
 
     @property
-    def effective_consumer_api_key(self) -> str:
-        return os.environ.get("COMPOSIO_CONSUMER_API_KEY") or self.consumer_api_key
+    def effective_api_key(self) -> str:
+        return os.environ.get("COMPOSIO_API_KEY") or self.api_key
 
 
 class MCPServerConfiguration(BaseModel):
@@ -176,13 +182,14 @@ class ProviderCredential(BaseModel):
 
 class GlobalConfiguration(BaseModel):
     providers: dict[str, ProviderCredential] = {}
-    # The default model and its provider are stored as separate fields so a human
-    # editing configuration.yaml sees both explicitly; ``default_model_identifier``
+    # The selected model and its provider are stored as separate fields so a human
+    # editing configuration.yaml sees both explicitly; ``selected_model_identifier``
     # recombines them into the ``provider/model`` form the model factory expects.
-    default_model: str = "deepseek-v4-flash"
-    default_provider: str = "opencode"
+    selected_model: str = "deepseek-v4-flash"
+    selected_provider: str = "opencode"
     exa: ExaConfiguration = ExaConfiguration()
     sandbox: SandboxConfiguration = SandboxConfiguration()
+    workspace: WorkspaceConfiguration = WorkspaceConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "senior-researcher"
@@ -198,15 +205,10 @@ class GlobalConfiguration(BaseModel):
     @classmethod
     def load(cls) -> "GlobalConfiguration":
         """Load the configuration from ~/.harness/configuration.yaml, creating the
-        home directory and the file on first run. The seed is taken from, in order:
-        an in-repo configuration.yaml.example, then the packaged default."""
+        home directory and the file on first run from the packaged configuration."""
         path = configuration_file_path()
         if not path.exists():
-            example_path = Path(EXAMPLE_CONFIGURATION_FILENAME)
-            if example_path.exists():
-                path.write_text(example_path.read_text())
-            else:
-                path.write_text(default_configuration_yaml())
+            path.write_text(packaged_configuration_yaml())
         return cls.from_yaml(path)
 
     @classmethod
@@ -234,10 +236,10 @@ class GlobalConfiguration(BaseModel):
             if credential.base_url
         }
 
-    def default_model_identifier(self) -> str:
-        """The default model as the ``provider/model`` form the factory expects,
+    def selected_model_identifier(self) -> str:
+        """The selected model as the ``provider/model`` form the factory expects,
         recombined from the two stored fields."""
-        return f"{self.default_provider}/{self.default_model}"
+        return f"{self.selected_provider}/{self.selected_model}"
 
     def agents_root_directories(self) -> list[Path]:
         return _dedupe_paths([

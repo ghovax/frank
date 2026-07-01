@@ -10,7 +10,7 @@ class ProviderDefinition:
 
     The ``litellm_prefix`` is the LiteLLM model prefix (the segment before the
     first ``/`` in the model string LiteLLM receives). OpenAI-compatible servers
-    (the OpenCode Zen gateway, a user-declared custom server, and the
+    (the OpenCode Go gateway, a user-declared custom server, and the
     OpenAI-compatible SaaS family) all ride the ``"openai"`` prefix with a custom
     ``api_base``; first-party clouds use their native prefix (``anthropic``,
     ``gemini``, …). The env-var list mirrors opencode's provider credential table
@@ -37,10 +37,10 @@ PROVIDERS: dict[str, ProviderDefinition] = {
     for provider in [
         ProviderDefinition(
             identifier="opencode",
-            name="OpenCode",
+            name="OpenCode Go",
             litellm_prefix="openai",
             env_vars=("OPENCODE_API_KEY",),
-            default_base_url="https://opencode.ai/zen/go/v1",
+            default_base_url="https://opencode.ai/go/v1",
             openai_compatible=True,
         ),
         ProviderDefinition(

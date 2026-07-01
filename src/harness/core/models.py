@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import litellm
+
 from harness.core.providers import (
     PROVIDERS,
     ProviderDefinition,
@@ -43,7 +45,79 @@ def _load_catalog() -> list[ModelDefinition]:
     ]
 
 
-MODELS: list[ModelDefinition] = _load_catalog()
+_LITELLM_PROVIDER_KEYS = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "google": "gemini",
+    "openrouter": "openrouter",
+    "xai": "xai",
+    "deepseek": "deepseek",
+    "groq": "groq",
+    "mistral": "mistral",
+}
+
+_NON_CHAT_MODEL_MARKERS = (
+    "audio",
+    "batch",
+    "clip",
+    "dall-e",
+    "embed",
+    "embedding",
+    "image",
+    "imagen",
+    "moderation",
+    "ocr",
+    "rerank",
+    "sora",
+    "speech",
+    "stable-image",
+    "tts",
+    "transcribe",
+    "veo",
+    "video",
+    "vision",
+    "whisper",
+)
+
+
+def _display_name(model_suffix: str) -> str:
+    return model_suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
+
+
+def _normalize_litellm_model(provider_identifier: str, model_name: str) -> ModelDefinition | None:
+    value = model_name.strip()
+    if not value:
+        return None
+    lowered = value.lower()
+    if any(marker in lowered for marker in _NON_CHAT_MODEL_MARKERS):
+        return None
+    litellm_key = _LITELLM_PROVIDER_KEYS[provider_identifier]
+    prefix = f"{litellm_key}/"
+    suffix = value[len(prefix):] if value.startswith(prefix) else value
+    if not suffix:
+        return None
+    identifier = f"{provider_identifier}/{suffix}"
+    return ModelDefinition(identifier=identifier, name=_display_name(suffix), provider=provider_identifier)
+
+
+def _litellm_catalog() -> list[ModelDefinition]:
+    models: list[ModelDefinition] = []
+    for provider_identifier, litellm_key in _LITELLM_PROVIDER_KEYS.items():
+        for model_name in sorted(litellm.models_by_provider.get(litellm_key, ())):
+            model = _normalize_litellm_model(provider_identifier, model_name)
+            if model is not None:
+                models.append(model)
+    return models
+
+
+def _merged_catalog() -> list[ModelDefinition]:
+    merged: dict[str, ModelDefinition] = {}
+    for model in _load_catalog() + _litellm_catalog():
+        merged.setdefault(model.identifier, model)
+    return list(merged.values())
+
+
+MODELS: list[ModelDefinition] = _merged_catalog()
 
 
 def list_models() -> list[ModelDefinition]:

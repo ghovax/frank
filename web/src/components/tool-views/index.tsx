@@ -594,7 +594,7 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <UpdateTasksCallView args={args} />;
     case "read_task":
       return <ReadTaskCallView args={args} />;
-    case "open_web_preview":
+    case "open_preview":
       return <WebPreviewCallView args={args} />;
     case "read_file":
       return <ReadFileCallView args={args} />;
@@ -972,7 +972,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
   const isAutoHeight = artifact.height === "auto" || artifact.height == null || artifact.height === "";
   if (type === "iframe") {
-    // A `file` reference (open_web_preview of a local file) is served by the backend
+    // A `file` reference (open_preview of a local file) is served by the backend
     // /preview route, which injects the runtime so the page can self-size — so honor
     // auto-height for it, the same as inline html. An external `src` is routed through
     // the /preview-proxy route so sites that refuse direct framing still render.
@@ -1057,13 +1057,17 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   );
 }
 
+export function PreviewArtifact({ artifact }: { artifact: Record<string, unknown> }) {
+  return <RenderArtifact artifact={artifact} />;
+}
+
 // Renderable artifacts (maps, images, HTML) returned by an MCP tool/resource.
 // These are rendered OUTSIDE the tool-call card so they stay visible, rather than
 // being tucked inside its collapsible body.
 export function extractToolArtifacts(name: string, content: string): Record<string, unknown>[] {
   // `render_widget` stays recognized so older persisted sessions still replay their
-  // inline-html artifacts; new sessions use `open_web_preview`.
-  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget" && name !== "open_web_preview") return [];
+  // inline-html artifacts; new sessions use `open_preview`.
+  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget" && name !== "open_preview") return [];
   const parsed = tryParse(content);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
   return collectArtifacts((parsed as Record<string, unknown>).artifacts);
@@ -1122,7 +1126,7 @@ export function ToolArtifacts({
   toolCallId?: string;
 }) {
   if (artifacts.length === 0) return null;
-  // Identity here is just the owning tool call: one open_web_preview is one tool
+  // Identity here is just the owning tool call: one open_preview is one tool
   // call, so "this call is the active preview" is enough to decide mount-vs-collapse.
   const callActive = activePreviewId == null || activePreviewId === toolCallId;
   return (
@@ -1172,7 +1176,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
   // A preview/widget's result is just compact model_context metadata — the rendered
   // artifact is the deliverable (it shows outside the card). `render_widget` is kept
   // for replay of older sessions.
-  if (name === "render_widget" || name === "open_web_preview") return null;
+  if (name === "render_widget" || name === "open_preview") return null;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;
@@ -1181,7 +1185,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
     // are transient implementation details — the matching *_completed result arrives
     // shortly and renders instead. Don't render the raw scheduling payload.
     if (code.endsWith("_started") || code === "background_task_scheduled") return null;
-    if (code === "tool_error") return <ErrorView message={asString(data.message) || "Tool failed"} />;
+    if (code === "tool_error") return null;
     if (code === "web_search_completed") return <WebSearchResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || "Search failed"} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;

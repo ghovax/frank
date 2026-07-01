@@ -1,12 +1,12 @@
 """Expose Composio's hosted MCP endpoint as an MCP server.
 
-Composio's dashboard hands you a ready "connect" MCP URL plus a consumer key.
+Composio's dashboard hands you a ready "connect" MCP URL plus an API key.
 That endpoint is the Tool Router: a small set of meta-tools (search, schema fetch,
 execute, manage-connections) over `streamable_http`, through which the agent
 discovers and runs tools across whichever toolkits the dashboard server enables.
 
 So integration is just config: build a `streamable_http` MCP server pointed at the
-URL with the consumer key as the `x-consumer-api-key` header. The actual
+URL with the API key as the `x-consumer-api-key` header. The actual
 connection is made by the MCP client manager at startup like any other server;
 nothing here does I/O, so a bad URL/key surfaces as a normal MCP connection error
 rather than crashing boot.
@@ -33,11 +33,11 @@ def composio_mcp_servers(
         logger.warning("Composio is enabled but no MCP url is set; skipping Composio tools.")
         return {}
 
-    consumer_api_key = configuration.effective_consumer_api_key
-    if not consumer_api_key:
+    api_key = configuration.effective_api_key
+    if not api_key:
         logger.warning(
-            "Composio is enabled but no consumer key is set "
-            "(composio.consumer_api_key or COMPOSIO_CONSUMER_API_KEY); skipping Composio tools."
+            "Composio is enabled but no API key is set "
+            "(composio.api_key or COMPOSIO_API_KEY); skipping Composio tools."
         )
         return {}
 
@@ -52,7 +52,7 @@ def composio_mcp_servers(
             transport="streamable_http",
             stateful=True,
             url=configuration.url,
-            headers={"x-consumer-api-key": consumer_api_key},
+            headers={"x-consumer-api-key": api_key},
             timeout_seconds=configuration.timeout_seconds,
         )
     }

@@ -43,7 +43,7 @@ from harness.tools.tools import (
     write_tasks as write_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
-    open_web_preview as open_web_preview_tool,
+    open_preview as open_preview_tool,
     build_web_preview_result,
     list_mcp_tools as list_mcp_tools_tool,
     call_mcp_tool as call_mcp_tool_tool,
@@ -241,7 +241,7 @@ def _build_tools(
         read_task_tool,
     ]
     if not is_sub_agent:
-        available.append(open_web_preview_tool)
+        available.append(open_preview_tool)
         available.append(ask_user_tool)
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
@@ -469,9 +469,16 @@ class BackgroundTaskManager:
             for tool_name, kind in BACKGROUND_KINDS.items()
         )
 
-    async def wait_for_any(self, abort_event: "asyncio.Event", poll_interval: float = 0.2, timeout: float = 120.0) -> None:
+    async def wait_for_any(
+        self,
+        abort_event: "asyncio.Event",
+        poll_interval: float = 0.2,
+        timeout: float = 120.0,
+        wake_event: "asyncio.Event | None" = None,
+    ) -> None:
         """Wait until at least one tracked background task completes, all finish,
-        the turn is aborted, or ``timeout`` elapses — polling the registries meanwhile.
+        the turn is aborted, steering arrives, or ``timeout`` elapses — polling
+        the registries meanwhile.
 
         Completion is poll-driven (the tool registries expose no event), so this
         sleeps in short, abort-responsive increments rather than blocking a frame.
@@ -481,7 +488,7 @@ class BackgroundTaskManager:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while self.has_pending() and not self.has_results():
-            if abort_event.is_set() or loop.time() >= deadline:
+            if abort_event.is_set() or (wake_event is not None and wake_event.is_set()) or loop.time() >= deadline:
                 return
             self.poll()
             if self.has_results() or not self.has_pending():
@@ -572,7 +579,7 @@ class TaskManager:
 class AgentRuntime:
     # Maximum time to block a turn waiting for in-flight background tasks
     # (searches, sub-agents, slow bash) before invoking the model anyway.
-    _BACKGROUND_WAIT_SECONDS = 60.0
+    _BACKGROUND_WAIT_SECONDS = 30.0
     _GOAL_CONTINUATION_LIMIT = 3
     # Sub-agents (delegation depth > 0) get a tighter iteration budget than the
     # top-level chat agent so a looping sub-agent fails fast instead of burning
@@ -605,10 +612,10 @@ class AgentRuntime:
         self._project_directory = project_directory or self._working_directory
 
         # Precedence: a per-agent override (its model + provider combined), then
-        # the configured default model (likewise combined into provider/model).
+        # the configured selected model (likewise combined into provider/model).
         effective_model = (
             agent_configuration.model_identifier
-            or global_configuration.default_model_identifier()
+            or global_configuration.selected_model_identifier()
         )
 
         self._llm = build_chat_model(
@@ -665,6 +672,8 @@ class AgentRuntime:
         # so context-aware agents can coordinate. Injected by the executor.
         self._task_reader: Optional[Callable] = None
         self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
+        self._steering_available = asyncio.Event()
+        self._active_tool_tasks: dict[str, asyncio.Task] = {}
 
     def _canonical_working_directory(self) -> str:
         return str(Path(self._working_directory or Path.home()).expanduser().resolve(strict=False))
@@ -709,12 +718,22 @@ class AgentRuntime:
 
     def abort(self) -> None:
         self._abort_event.set()
+        for task in list(self._active_tool_tasks.values()):
+            task.cancel()
+
+    def abort_tool(self, tool_call_identifier: str) -> bool:
+        task = self._active_tool_tasks.get(tool_call_identifier)
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
     def enqueue_steering(self, message: str) -> bool:
         text = message.strip()
         if not text:
             return False
         self._steering_messages.put_nowait(text)
+        self._steering_available.set()
         return True
 
     def set_read_only(self, read_only: bool) -> None:
@@ -798,7 +817,7 @@ class AgentRuntime:
                 return BashPermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
             decision = BashPermissionDecision.model_validate(response.tool_calls[0]["args"])
             if default_decision == "deny" and decision.action == "auto_approve":
-                return BashPermissionDecision(action="escalate", justification="Default permissions deny this command.", risk="high")
+                return BashPermissionDecision(action="escalate", justification="User-configured permissions deny this command.", risk="high")
             if not decision.justification.strip():
                 return BashPermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
             return decision
@@ -883,6 +902,7 @@ class AgentRuntime:
                 "project_directory": self._project_directory,
                 "workspace_root": workspace_root,
                 "is_git_repo": is_git_repo,
+                "session_workspace_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
                 "available_agents": available_agents,
@@ -970,6 +990,8 @@ class AgentRuntime:
             message = self._steering_messages.get_nowait()
             self._conversation.append(HumanMessage(content=message))
             events.append(StreamEvent(StreamEvent.Type.STEERING, text=message))
+        if self._steering_messages.empty():
+            self._steering_available.clear()
         return events
 
     def _invalid_tool_call_content(self, invalid: dict) -> str:
@@ -1019,30 +1041,39 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
 
-            while self._background.has_pending():
+            background_events = self._background_result_events()
+            if background_events:
+                for background_event in background_events:
+                    yield background_event
+                self._calls_this_turn += 1
+                continue
+
+            steering_events = await self._drain_steering_messages()
+            if steering_events:
+                for steering_event in steering_events:
+                    yield steering_event
+            elif self._background.has_pending():
                 yield StreamEvent(
                     StreamEvent.Type.STATUS,
                     code="waiting_for_tools",
                     active=self._background.active_tasks(),
                 )
-                while (
-                    self._background.has_pending()
-                    and not self._background.has_results()
-                    and not self._abort_event.is_set()
-                ):
-                    await asyncio.sleep(0.05)
-                    self._background.poll()
+                await self._background.wait_for_any(
+                    self._abort_event,
+                    timeout=self._BACKGROUND_WAIT_SECONDS,
+                    wake_event=self._steering_available,
+                )
                 if self._abort_event.is_set():
                     yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                     return
-                for background_event in self._background_result_events():
-                    yield background_event
-
-            for background_event in self._background_result_events():
-                yield background_event
-
-            for steering_event in await self._drain_steering_messages():
-                yield steering_event
+                background_events = self._background_result_events()
+                if background_events:
+                    for background_event in background_events:
+                        yield background_event
+                    self._calls_this_turn += 1
+                    continue
+                for steering_event in await self._drain_steering_messages():
+                    yield steering_event
 
             # Dynamic context (turn reminders, time, PWD, active goal) is injected
             # only on the first iteration of a turn — when the user just sent a
@@ -1140,7 +1171,11 @@ class AgentRuntime:
                 # for the next completion, then drain and re-invoke so the model
                 # actually sees and synthesizes the results.
                 if self._background.has_pending():
-                    await self._background.wait_for_any(self._abort_event)
+                    await self._background.wait_for_any(
+                        self._abort_event,
+                        timeout=self._BACKGROUND_WAIT_SECONDS,
+                        wake_event=self._steering_available,
+                    )
                 background_events = self._background_result_events()
                 if background_events:
                     for background_event in background_events:
@@ -1329,6 +1364,12 @@ class AgentRuntime:
                     turn_tool_results_log.append(
                         {"name": tool_name, "result": event.data.get("result_message", "")}
                     )
+        except asyncio.CancelledError:
+            result_content = "Tool call aborted."
+            yield StreamEvent(
+                StreamEvent.Type.ERROR, id=tool_call_identifier, message=result_content, tool=tool_name,
+            )
+            turn_tool_results_log.append({"name": tool_name, "result": result_content})
         except Exception as exception:
             result_content = f"{exception}"
             yield StreamEvent(
@@ -1362,6 +1403,10 @@ class AgentRuntime:
 
         async def runner(tool_call_data: dict) -> None:
             nonlocal remaining
+            tool_call_identifier = tool_call_data["id"]
+            current_task = asyncio.current_task()
+            if current_task is not None:
+                self._active_tool_tasks[tool_call_identifier] = current_task
             try:
                 async for event in self._run_one_tool(
                     tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes,
@@ -1371,6 +1416,7 @@ class AgentRuntime:
                 # _run_one_tool handles its own errors; this guards the merge.
                 pass
             finally:
+                self._active_tool_tasks.pop(tool_call_identifier, None)
                 remaining -= 1
                 if remaining == 0:
                     await queue.put(None)
@@ -2122,7 +2168,7 @@ class AgentRuntime:
                 }
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
-        elif tool_name == "open_web_preview":
+        elif tool_name == "open_preview":
             if self._is_sub_agent:
                 yield StreamEvent(
                     StreamEvent.Type.ERROR,
@@ -2136,7 +2182,7 @@ class AgentRuntime:
             if not raw_url:
                 yield StreamEvent(
                     StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    code="empty_preview", message="open_web_preview requires a url or file path.",
+                    code="empty_preview", message="open_preview requires a url or file path.",
                 )
                 return
             # An http(s) URL is previewed as-is; anything else is treated as a local

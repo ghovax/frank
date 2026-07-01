@@ -58,7 +58,7 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuSparkles, iconColor: "pink.fg" };
     case "update_goal":
       return { icon: LuTarget, iconColor: "red.fg" };
-    case "open_web_preview":
+    case "open_preview":
     case "render_widget":
       return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
     case "write_tasks":
@@ -102,8 +102,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.name ? `Loading "${String(args.name)}" skill` : "Loading skill";
     case "update_goal":
       return "Updating goal";
-    case "open_web_preview":
-      return args?.title ? `Previewing "${String(args.title)}"` : "Opening a web preview";
+    case "open_preview":
+      return args?.title ? `Previewing "${String(args.title)}"` : "Opening a preview";
     case "render_widget":
       return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
     case "write_tasks":

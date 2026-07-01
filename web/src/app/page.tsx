@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuGitBranch, LuGripVertical, LuLock, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuGitBranch, LuGitFork, LuGripVertical, LuMessageSquare, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -11,6 +11,7 @@ const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
 import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
+import { CollapsibleSection } from "@/components/collapsible-section";
 
 interface SessionEntry {
   sessionId: string;
@@ -21,10 +22,10 @@ interface SessionEntry {
   workingDirectoryName: string;
   runtimeWorkingDirectory: string;
   runtimeWorkingDirectoryName: string;
-  worktreePath: string;
-  worktreeBranch: string;
-  worktreeIsolated: boolean;
-  worktreeError: string;
+  workspaceStrategy: "none" | "branch" | "worktree";
+  workspacePath: string;
+  workspaceBranch: string;
+  workspaceError: string;
   running: boolean;
   awaitingInput: boolean;
   filesystemLeases: FilesystemLease[];
@@ -69,8 +70,11 @@ function HomeContent() {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
-  // The active session's model override; "" means use the global default model.
+  // The active session's model override; "" means use the globally selected model.
   const [selectedModel, setSelectedModel] = useState<string>("");
+  // The globally-selected default model (from the catalog), shown on the composer
+  // chip whenever there is no per-conversation override.
+  const [globalModel, setGlobalModel] = useState<string>("");
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyWidth, setHistoryWidth] = useState(280);
 
@@ -114,6 +118,7 @@ function HomeContent() {
       .then((catalog) => {
         setModels(catalog.models);
         setModelProviders(catalog.providers);
+        setGlobalModel(catalog.selected_model ?? "");
       })
       .catch(() => {});
   }, []);
@@ -148,10 +153,10 @@ function HomeContent() {
         workingDirectoryName: session.working_directory_name ?? "",
         runtimeWorkingDirectory: session.runtime_working_directory ?? session.working_directory ?? "",
         runtimeWorkingDirectoryName: session.runtime_working_directory_name ?? session.working_directory_name ?? "",
-        worktreePath: session.worktree_path ?? "",
-        worktreeBranch: session.worktree_branch ?? "",
-        worktreeIsolated: session.worktree_isolated ?? false,
-        worktreeError: session.worktree_error ?? "",
+        workspaceStrategy: session.workspace_strategy ?? "none",
+        workspacePath: session.workspace_path ?? "",
+        workspaceBranch: session.workspace_branch ?? "",
+        workspaceError: session.workspace_error ?? "",
         running: session.running ?? false,
         awaitingInput: session.awaiting_input ?? false,
         filesystemLeases: session.filesystem_leases ?? [],
@@ -477,86 +482,88 @@ function HomeContent() {
               <EmptyState.Root size="sm">
                 <EmptyState.Content>
                   <EmptyState.Indicator>
-                    <LuMessageSquare />
+                    <LuFolder />
                   </EmptyState.Indicator>
                   <VStack gap={0}>
-                    <EmptyState.Title fontSize="xs">No sessions</EmptyState.Title>
+                    <EmptyState.Title fontSize="sm">No sessions</EmptyState.Title>
                     <EmptyState.Description fontSize="xs">
-                      Start a conversation
+                      Start a conversation to see it
                     </EmptyState.Description>
                   </VStack>
                 </EmptyState.Content>
               </EmptyState.Root>
             ) : (
-              <VStack gap={3} align="stretch">
+              <VStack gap={2} align="stretch">
                 {groupedSessions.map((group) => (
-                  <Box key={group.key}>
-                    <Flex align="center" gap={1.5} mb={1} px={1} color="fg.subtle" title={group.path || undefined}>
-                      <LuFolder size={12} />
-                      <Text fontSize="xs" fontWeight="semibold" truncate flex={1}>
-                        {group.name}
-                      </Text>
-                      <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
-                        {group.sessions.length}
-                      </Text>
-                    </Flex>
-                    <VStack gap={1} align="stretch">
-                      {group.sessions.map((entry) => {
-                        const sessionMeta = formatSessionTimestamp(entry.createdAt);
-                        const activeLease = entry.filesystemLeases[0];
-                        const worktreeTitle = entry.worktreeIsolated
-                          ? `Session worktree: ${entry.worktreeBranch}\n${entry.runtimeWorkingDirectory}`
-                          : entry.worktreeError || "This session is not backed by a Git worktree";
+                  <CollapsibleSection
+                    key={group.key}
+                    title={group.name}
+                    subtitle={group.path || undefined}
+                    count={group.sessions.length}
+                    icon={<LuFolder size={12} />}
+                    initialVisibleCount={5}
+                  >
+                    {group.sessions.map((entry) => {
+                      const sessionMeta = formatSessionTimestamp(entry.createdAt);
+                      const activeLease = entry.filesystemLeases[0];
+                      const workspaceTitle = entry.workspaceStrategy === "worktree"
+                        ? `Session worktree: ${entry.workspaceBranch}\n${entry.runtimeWorkingDirectory}`
+                        : entry.workspaceStrategy === "branch"
+                          ? `Session branch: ${entry.workspaceBranch}\n${entry.runtimeWorkingDirectory}`
+                          : entry.workspaceError || "No automatic Git workspace";
 
-                        return (
-                          <Box
-                            key={entry.sessionId}
-                            px={2}
-                            py={1}
-                            borderRadius="sm"
-                            borderColor="border"
-                            cursor="pointer"
-                            bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
-                            _hover={{ bg: "bg.muted" }}
-                            onClick={() => handleResumeSession(entry)}
-                          >
-                            <Flex align="center" gap={1.5}>
-                              <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
-                                {entry.title || "Untitled conversation"}
-                              </Text>
-                              {entry.awaitingInput ? (
-                                <Box color="yellow.fg" flexShrink={0} display="flex" alignItems="center" title="Waiting for your approval">
-                                  <LuTriangleAlert size={13} />
-                                </Box>
-                              ) : activeLease ? (
-                                <Box
-                                  color="orange.fg"
-                                  flexShrink={0}
-                                  display="flex"
-                                  alignItems="center"
-                                  title={`Filesystem lease: ${activeLease.scope} ${activeLease.path}`}
-                                >
-                                  <LuLock size={13} />
-                                </Box>
-                              ) : entry.running ? (
-                                <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
-                              ) : null}
-                            </Flex>
-                            <Flex align="center" gap={1} minW={0}>
-                              {entry.worktreeIsolated && (
-                                <Box color="green.fg" flexShrink={0} display="flex" alignItems="center" title={worktreeTitle}>
-                                  <LuGitBranch size={11} />
-                                </Box>
-                              )}
-                              <Text fontSize="xs" color="fg.subtle" truncate>
-                                {sessionMeta}
-                              </Text>
-                            </Flex>
-                          </Box>
-                        );
-                      })}
-                    </VStack>
-                  </Box>
+                      return (
+                        <Box
+                          key={entry.sessionId}
+                          px={2}
+                          py={1}
+                          borderRadius="sm"
+                          cursor="pointer"
+                          bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
+                          _hover={{ bg: "bg.muted" }}
+                          onClick={() => handleResumeSession(entry)}
+                        >
+                          <Flex align="center" gap={1.5}>
+                            <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
+                              {entry.title || "Untitled conversation"}
+                            </Text>
+                            {entry.awaitingInput ? (
+                              <Box color="yellow.fg" flexShrink={0} display="flex" alignItems="center" title="Waiting for your approval">
+                                <LuTriangleAlert size={13} />
+                              </Box>
+                            ) : activeLease ? (
+                              <Box
+                                color="orange.fg"
+                                flexShrink={0}
+                                display="flex"
+                                alignItems="center"
+                                title={`Filesystem edit lease: ${activeLease.scope} ${activeLease.path}`}
+                              >
+                                <LuPencilLine size={13} />
+                              </Box>
+                            ) : entry.running ? (
+                              <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
+                            ) : null}
+                          </Flex>
+                          <Flex align="center" gap={1} minW={0}>
+                            {entry.workspaceStrategy === "worktree" && (
+                              <Box color="green.fg" flexShrink={0} display="flex" alignItems="center" title={workspaceTitle}>
+                                <LuGitFork size={11} />
+                              </Box>
+                            )}
+                            {entry.workspaceStrategy === "branch" && (
+                              <Box color="purple.fg" flexShrink={0} display="flex" alignItems="center" title={workspaceTitle}>
+                                <LuGitBranch size={11} />
+                              </Box>
+                            )}
+                            <Text fontSize="xs" color="fg.subtle" truncate>
+                              {sessionMeta}
+                            </Text>
+                          </Flex>
+                        </Box>
+                      );
+                    })}
+                  </CollapsibleSection>
                 ))}
               </VStack>
             )}
@@ -596,6 +603,7 @@ function HomeContent() {
           modelProviders={modelProviders}
           recentModels={recentModels}
           selectedModel={selectedModel}
+          globalModel={globalModel}
           onModelChange={handleModelChange}
         />
       </Box>

@@ -24,9 +24,9 @@ wheels/
 /package.json
 /package-lock.json
 
-# Harness state lives in ~/.harness, with configuration.yaml symlinked to the
-# tracked .harness/configuration.yaml in this repo. The chat history database and
-# any legacy in-repo copies are never tracked; the config (keys blank) is.
+# Harness state lives in ~/.harness. Repo-local harness state/config is ignored so
+# there is exactly one mutable configuration surface.
+/.harness/
 harness.db
 history.db
 # A legacy configuration.yaml in the repo root (not the tracked .harness/ one).

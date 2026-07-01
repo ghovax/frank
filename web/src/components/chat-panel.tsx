@@ -5,20 +5,23 @@ import {
   Button,
   EmptyState,
   Flex,
+  IconButton,
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuClock, LuMessageSquare, LuNavigation, LuTriangleAlert } from "react-icons/lu";
+import { LuAppWindow, LuClock, LuMessageSquare, LuNavigation, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
-import { extractToolArtifacts, isLivePreviewArtifact } from "./tool-views";
+import { extractToolArtifacts, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
 import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode } from "@/lib/api";
+
+const MotionFlex = motion.create(Flex);
 
 interface ChatPanelProps {
   agent: string;
@@ -44,6 +47,7 @@ interface ChatPanelProps {
   modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
   recentModels?: { id: string; name: string; provider: string }[];
   selectedModel?: string;
+  globalModel?: string;
   onModelChange?: (model: string) => void;
 }
 
@@ -57,6 +61,14 @@ function folderDisplayName(workingDirectory?: string, projects: { path: string; 
   const known = projects.find((project) => project.path === directory)?.name;
   if (known) return known;
   return directory.split(/[\\/]/).filter(Boolean).at(-1) ?? directory;
+}
+
+function previewArtifactAddress(artifact: Record<string, unknown>): string {
+  for (const key of ["source", "src", "url", "href", "file"]) {
+    const value = artifact[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
 }
 
 function timelineItems(messages: ChatMessage[]): TimelineItem[] {
@@ -129,6 +141,7 @@ export function ChatPanel({
   modelProviders = [],
   recentModels = [],
   selectedModel = "",
+  globalModel = "",
   onModelChange,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
@@ -152,6 +165,7 @@ export function ChatPanel({
   // it (collapsing the current). See ToolArtifacts.
   const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
   const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
+  const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
 
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -289,12 +303,8 @@ export function ChatPanel({
     message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
 
-  // The toolCallIds of every call in the transcript whose result includes a live
-  // (iframe/html) artifact, in transcript order. Used to auto-activate the newest
-  // preview — the agent's latest output becomes the live one — without re-activating
-  // on in-place artifact updates (same call, same toolCallId).
-  const previewToolCallIds = useMemo(() => {
-    const ids: string[] = [];
+  const previewEntries = useMemo(() => {
+    const entries: { toolCallId: string; artifact: Record<string, unknown>; title: string; address: string }[] = [];
     for (const message of messages) {
       if (message.role !== "tool_call") continue;
       const toolCallId = String(message.meta?.toolCallId ?? "");
@@ -303,10 +313,23 @@ export function ChatPanel({
       const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
       if (resultContent == null) continue;
       const artifacts = extractToolArtifacts(message.content, resultContent);
-      if (artifacts.some((artifact) => isLivePreviewArtifact(artifact))) ids.push(toolCallId);
+      for (const artifact of artifacts) {
+        if (!isLivePreviewArtifact(artifact)) continue;
+        entries.push({
+          toolCallId,
+          artifact,
+          title: String(artifact.title ?? "Preview"),
+          address: previewArtifactAddress(artifact),
+        });
+      }
     }
-    return ids;
+    return entries;
   }, [messages]);
+  const previewToolCallIds = useMemo(() => previewEntries.map((entry) => entry.toolCallId), [previewEntries]);
+  const activePreviewEntry = useMemo(() => {
+    if (previewEntries.length === 0) return null;
+    return previewEntries.find((entry) => entry.toolCallId === activePreviewId) ?? previewEntries[previewEntries.length - 1];
+  }, [previewEntries, activePreviewId]);
 
   // Auto-activate the newest preview the moment it appears. Runs in render (same
   // pattern as previousActiveSteps below) so the active toolCallId is set before
@@ -319,17 +342,17 @@ export function ChatPanel({
     for (const id of newPreviewCallIds) nextSeen.add(id);
     setSeenPreviewIds(nextSeen);
     setActivePreviewId(newPreviewCallIds[newPreviewCallIds.length - 1]);
+    setPreviewPanelOpen(true);
   }
 
   const handleActivatePreview = useCallback((toolCallId: string) => {
     setActivePreviewId(toolCallId);
+    setPreviewPanelOpen(true);
   }, []);
 
-  // The live "Thinking" / "Working through N tool calls" label, shown as a chip
-  // next to Settings when no tool group is active. "Thinking" only applies while
-  // the model is actually reasoning (or waiting) — once it starts streaming its
-  // answer (the last message is an assistant message) the chip hides, so it no
-  // longer reads as "thinking" while the response is being written.
+  // The live "Thinking" / "Working through N tool calls" label shown beside the
+  // toolbar. It stays present through quick reasoning/tool/reasoning transitions,
+  // so the input bar reads as one continuous active turn instead of blinking.
   const lastMessage = messages[messages.length - 1];
   const isAssistantStreaming = !!lastMessage && lastMessage.role === "assistant";
   const liveStatusLabel = !isStreaming
@@ -339,13 +362,6 @@ export function ChatPanel({
       : isAssistantStreaming
         ? null
         : "Thinking";
-  const hasActiveToolGroup = renderedTimeline.some(
-    (item) => item.kind === "tool_group" && item.messages.some((message) => {
-      const status = message.meta?.status;
-      return status === "running" || status === "input_required";
-    })
-  );
-
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
   // client-side after a change) rather than in an effect.
@@ -408,7 +424,7 @@ export function ChatPanel({
             </Flex>
           ) : messages.length === 0 ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
-              <Text as="h2" fontSize="xl" fontWeight="semibold" textAlign="center">
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
                 What should we build in {currentFolderName}?
               </Text>
               <EmptyState.Root>
@@ -419,7 +435,7 @@ export function ChatPanel({
                   <VStack gap={1}>
                     <EmptyState.Title>No messages yet</EmptyState.Title>
                     <EmptyState.Description>
-                      Send a message to start this conversation.
+                      Send a message to start this conversation
                     </EmptyState.Description>
                   </VStack>
                 </EmptyState.Content>
@@ -532,18 +548,74 @@ export function ChatPanel({
             setFocusedGroupId(null);
             setAgentsPanelOpen((current) => !current);
           }}
+          previewsCount={previewEntries.length}
+          previewOpen={previewPanelOpen}
+          onTogglePreview={() => setPreviewPanelOpen((current) => !current)}
           historyOpen={historyOpen}
           onToggleHistory={onToggleHistory}
           models={models}
           modelProviders={modelProviders}
           recentModels={recentModels}
           selectedModel={selectedModel}
+          globalModel={globalModel}
           onModelChange={(model) => onModelChange?.(model)}
-          thinkingLabel={hasActiveToolGroup ? null : liveStatusLabel}
+          thinkingLabel={liveStatusLabel}
         />
       </Flex>
 
       <AnimatePresence initial={false}>
+        {previewPanelOpen && activePreviewEntry && (
+          <MotionFlex
+            key="preview-panel"
+            direction="column"
+            w={{ base: "100%", md: "480px" }}
+            maxW={{ base: "100%", md: "48vw" }}
+            minW={{ base: "100%", md: "340px" }}
+            h="100%"
+            borderLeft="1px solid"
+            borderColor="border"
+            bg="bg"
+            flexShrink={0}
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 24 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          >
+            <Flex align="center" gap={2} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
+              <Box color="teal.fg" display="flex" alignItems="center" flexShrink={0}>
+                <LuAppWindow size={14} />
+              </Box>
+              <Box flex={1} minW={0}>
+                <Text fontSize="xs" fontWeight="semibold" truncate>
+                  {activePreviewEntry.title}
+                </Text>
+                {activePreviewEntry.address ? (
+                  <Text
+                    fontSize="2xs"
+                    color="fg.subtle"
+                    fontFamily="var(--app-font-mono)"
+                    truncate
+                    title={activePreviewEntry.address}
+                  >
+                    {activePreviewEntry.address}
+                  </Text>
+                ) : null}
+              </Box>
+              <IconButton
+                aria-label="Close preview"
+                size="xs"
+                variant="ghost"
+                borderRadius="sm"
+                onClick={() => setPreviewPanelOpen(false)}
+              >
+                <LuX size={13} />
+              </IconButton>
+            </Flex>
+            <Box flex={1} minH={0} overflowY="auto" p={2}>
+              <PreviewArtifact artifact={activePreviewEntry.artifact} />
+            </Box>
+          </MotionFlex>
+        )}
         {agentsPanelOpen && (
           <AgentsPanel
             agentGroups={agentGroups}

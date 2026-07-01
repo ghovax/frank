@@ -12,12 +12,15 @@ import {
   Text,
   Textarea,
 } from "@chakra-ui/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
 import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask } from "@/lib/use-chat";
+
+const MotionFlex = motion.create(Flex);
 
 interface ChatInputProps {
   onSend: (text: string) => void;
@@ -40,12 +43,18 @@ interface ChatInputProps {
   agentsCount?: number;
   agentsOpen?: boolean;
   onShowAgents?: () => void;
+  previewsCount?: number;
+  previewOpen?: boolean;
+  onTogglePreview?: () => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
   models: ModelOption[];
   modelProviders: ProviderOption[];
   recentModels?: { id: string; name: string; provider: string }[];
   selectedModel: string;
+  // The globally-selected model, shown on the chip when no per-conversation
+  // override is set (selectedModel is "").
+  globalModel?: string;
   onModelChange: (model: string) => void;
   // A live "Thinking" / "Working through N tool calls" label shown as a compact
   // chip next to the Settings button while a turn runs and no tool group is
@@ -148,18 +157,24 @@ export function ChatInput({
   agentsCount = 0,
   agentsOpen = false,
   onShowAgents,
+  previewsCount = 0,
+  previewOpen = false,
+  onTogglePreview,
   historyOpen = false,
   onToggleHistory,
   models,
   modelProviders,
   recentModels = [],
   selectedModel,
+  globalModel = "",
   onModelChange,
   thinkingLabel,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [displayedThinkingLabel, setDisplayedThinkingLabel] = useState(thinkingLabel ?? "");
+  const [thinkingVisible, setThinkingVisible] = useState(!!thinkingLabel);
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
     valid: true,
@@ -176,7 +191,7 @@ export function ChatInput({
   const permissionCollection = useMemo(
     () => createListCollection({
       items: [
-        { label: "Default permissions", value: "default" },
+        { label: "User-configured permissions", value: "default" },
         { label: "Auto-classify permissions", value: "auto" },
         { label: "Read-only permissions", value: "read_only" },
         { label: "Bypass permissions", value: "bypass" },
@@ -254,6 +269,19 @@ export function ChatInput({
         bg: "bg",
         borderColor: "border.emphasized",
       };
+  const previewAppearance = previewOpen || previewsCount > 0
+    ? {
+        variant: "solid" as const,
+        colorPalette: "teal" as const,
+        bg: undefined,
+        borderColor: undefined,
+      }
+    : {
+        variant: "outline" as const,
+        colorPalette: undefined,
+        bg: "bg",
+        borderColor: "border.emphasized",
+      };
 
   const currentDirectory = (workingDirectory ?? "").trim();
   const directoryValid = !!currentDirectory && directoryState.path === currentDirectory && directoryState.valid;
@@ -307,6 +335,24 @@ export function ChatInput({
       window.clearTimeout(timeout);
     };
   }, [currentDirectory]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (thinkingLabel) {
+      setDisplayedThinkingLabel(thinkingLabel);
+      setThinkingVisible(true);
+      return;
+    }
+    const hideTimer = window.setTimeout(() => setThinkingVisible(false), 180);
+    const clearTimer = window.setTimeout(() => setDisplayedThinkingLabel(""), 520);
+    return () => {
+      window.clearTimeout(hideTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [thinkingLabel]);
 
   function handleSubmit() {
     const trimmed = inputValue.trim();
@@ -364,26 +410,34 @@ export function ChatInput({
             <LuSettings size={13} />
             Settings
           </Button>
-          {thinkingLabel && (
-            <Flex
-              align="center"
-              gap={1.5}
-              h="28px"
-              px={2}
-              borderRadius="sm"
-              bg="bg"
-              border="1px solid"
-              borderColor="border"
-              flexShrink={0}
-            >
-              <Box color="purple.fg" display="flex" alignItems="center">
-                <LuBrain size={13} />
-              </Box>
-              <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer">
-                {thinkingLabel}
-              </Text>
-            </Flex>
-          )}
+          <AnimatePresence initial={false}>
+            {displayedThinkingLabel && (
+              <MotionFlex
+                key="thinking-status"
+                align="center"
+                gap={1.5}
+                h="28px"
+                px={2}
+                borderRadius="sm"
+                bg="bg"
+                border="1px solid"
+                borderColor="border"
+                flexShrink={0}
+                overflow="hidden"
+                initial={{ opacity: 0, y: 2, width: 0 }}
+                animate={{ opacity: thinkingVisible ? 1 : 0, y: thinkingVisible ? 0 : 2, width: thinkingVisible ? "auto" : 0 }}
+                exit={{ opacity: 0, y: 2, width: 0 }}
+                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+              >
+                <Box color="purple.fg" display="flex" alignItems="center" flexShrink={0}>
+                  <LuBrain size={13} />
+                </Box>
+                <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer" whiteSpace="nowrap">
+                  {displayedThinkingLabel}
+                </Text>
+              </MotionFlex>
+            )}
+          </AnimatePresence>
         </Flex>
 
         <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">
@@ -481,7 +535,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                   {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>
@@ -496,7 +550,7 @@ export function ChatInput({
             recent={recentModels}
             value={selectedModel}
             onChange={onModelChange}
-            clearLabel="Default model"
+            fallbackModelId={globalModel}
             compact
           />
           <Button
@@ -514,6 +568,23 @@ export function ChatInput({
           >
             <LuNetwork size={13} />
             {agentsCount > 0 ? `Agents (${agentsCount})` : "Agents"}
+          </Button>
+          <Button
+            size="xs"
+            variant={previewAppearance.variant}
+            colorPalette={previewAppearance.colorPalette}
+            borderRadius="sm"
+            fontSize="xs"
+            h="28px"
+            px={2}
+            bg={previewAppearance.bg}
+            borderColor={previewAppearance.borderColor}
+            flexShrink={0}
+            onClick={onTogglePreview}
+            disabled={!onTogglePreview || previewsCount === 0}
+          >
+            <LuAppWindow size={13} />
+            {previewsCount > 0 ? `Preview (${previewsCount})` : "Preview"}
           </Button>
         </Flex>
       </Flex>
@@ -557,30 +628,38 @@ export function ChatInput({
             />
             <Flex gap={1.5} flexShrink={0}>
               {isStreaming ? (
-                <IconButton
-                  aria-label="Stop"
+                <Button
                   onClick={onAbort}
                   colorPalette="red"
                   variant="solid"
                   borderRadius="sm"
-                  minW="32px"
+                  minW="70px"
                   h="32px"
+                  px={2}
+                  gap={1.5}
+                  fontSize="xs"
+                  fontWeight="medium"
                 >
                   <LuSquare size={14} />
-                </IconButton>
+                  Stop
+                </Button>
               ) : (
-                <IconButton
-                  aria-label="Send"
+                <Button
                   onClick={handleSubmit}
                   colorPalette="blue"
                   variant="solid"
                   borderRadius="sm"
-                  minW="32px"
+                  minW="70px"
                   h="32px"
+                  px={2}
+                  gap={1.5}
+                  fontSize="xs"
+                  fontWeight="medium"
                   disabled={disabled || !directoryValid || !inputValue.trim()}
                 >
                   <LuArrowUp size={16} />
-                </IconButton>
+                  Send
+                </Button>
               )}
             </Flex>
           </Flex>
@@ -634,7 +713,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                   {permissionCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>
@@ -715,6 +794,7 @@ export function ChatInput({
                       key={project.path}
                       title={project.path}
                       whiteSpace="nowrap"
+                      fontWeight="medium"
                       onClick={() => onWorkingDirectoryChange?.(project.path)}
                     >
                       <Box truncate>{project.name}</Box>
@@ -735,6 +815,24 @@ export function ChatInput({
               </Menu.Positioner>
             </Portal>
           </Menu.Root>
+          {folderLocked && (
+            <Flex
+              align="center"
+              gap={1}
+              h="28px"
+              px={2}
+              borderRadius="sm"
+              bg="bg.subtle"
+              color="fg.subtle"
+              flexShrink={0}
+              title={`Project folder is fixed for this chat: ${currentDirectory}`}
+            >
+              <LuLock size={12} />
+              <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+                Project fixed for this chat
+              </Text>
+            </Flex>
+          )}
         </Flex>
       </Flex>
 

@@ -7,25 +7,25 @@ enabled: true
 
 # Configure the Agentic Harness
 
-Use this skill when the user wants to change how the harness itself is set up. The harness has **two configuration surfaces**: a YAML file (`~/.harness/configuration.yaml`) for defaults, and the running UI (Settings + model picker) for live changes that write back to that file. Always read the relevant existing file before editing — most of these are conventions, and copying an existing entry is the safest way to add a new one.
+Use this skill when the user wants to change how the harness itself is set up. The harness has **two configuration surfaces**: the YAML file (`~/.harness/configuration.yaml`) and the running UI (Settings + model picker), which writes back to that file for live changes. Always read the relevant existing file before editing.
 
 The authoritative models live in `src/harness/core/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`), `src/harness/core/providers.py` (the provider registry + key/base-url resolution), and `server.py` (`lifespan`, where it is all wired up).
 
 ## Where things live
 
-- `~/.harness/configuration.yaml` — runtime defaults: provider credentials, default model/provider, Exa, sandbox, Composio, default agent, discovery directories. Seeded on first run from `configuration.yaml.example` in the repo root (then the packaged `default_configuration.yaml`). The UI writes settings back here.
+- `~/.harness/configuration.yaml` — runtime configuration: provider credentials, selected model/provider, Exa, sandbox, Composio, default agent, and discovery directories. Seeded on first run from the packaged `src/harness/core/configuration.yaml`. The UI writes settings back here.
 - `~/.harness/history.db` — chat history (SQLite, WAL mode). Not configuration; never edit by hand. If its schema ever goes stale after an upgrade, stop the server and delete it — it rebuilds on next start (history is replayable transcripts, not irreplaceable state).
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
 
 ## Providers, credentials, and the model
 
-The harness is multi-provider. Credentials are keyed by **provider id** under a top-level `providers:` map; the default model is the pair `default_provider` + `default_model` (the factory recombines them into the `provider/model` form LiteLLM expects).
+The harness is multi-provider. Credentials are keyed by **provider id** under a top-level `providers:` map; the selected model is the pair `selected_provider` + `selected_model` (the factory recombines them into the `provider/model` form LiteLLM expects).
 
 ```yaml
 providers:
   opencode:                         # OpenAI-compatible — takes a base_url
     api_key: ""
-    base_url: "https://opencode.ai/zen/go/v1"
+    base_url: "https://opencode.ai/go/v1"
   anthropic: { api_key: "" }        # first-party clouds omit base_url (LiteLLM knows the endpoint)
   openai:    { api_key: "" }
   google:    { api_key: "" }
@@ -38,15 +38,15 @@ providers:
     api_key: ""
     base_url: ""
 
-default_model: "deepseek-v4-flash"
-default_provider: "opencode"
+selected_model: "deepseek-v4-flash"
+selected_provider: "opencode"
 ```
 
 **Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). `base_url` only matters for the OpenAI-compatible providers (`opencode`, `custom`); first-party clouds ignore it.
 
 **Two ways to change this at runtime, both live (no restart):**
-- The **Settings** dialog writes `api_key`/`base_url`/`default_model` into the YAML and reloads.
-- The **model picker** (provider dropdown → model dropdown, with a per-provider API-key/base-url field) sets a default or a **per-session model override** (`PUT /sessions/{id}/model`). A session runs on its override, falling back to the global default.
+- The **Settings** dialog writes credentials and the selected model into the YAML and reloads.
+- The **model picker** (provider dropdown → model dropdown, with a per-provider API-key field) sets a **per-session model override** (`PUT /sessions/{id}/model`). A session runs on its override, falling back to the globally selected model.
 
 Editing `configuration.yaml` on disk by hand needs a server restart.
 
@@ -54,8 +54,8 @@ Editing `configuration.yaml` on disk by hand needs a server restart.
 
 Permission behavior is one of four modes, set per-agent in frontmatter (`permission_mode:`) and overridable per-session from the UI:
 
-- `default` — per-command permission rules (allow / ask / deny) from the bash allow-rules.
-- `auto` — the default rules **plus** an LLM classifier that auto-approves bash calls it judges safe and escalates the rest to the user. It is default-permissions-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — classifier failure falls back to escalation. The classifier prompt lives in `src/harness/core/prompts/bash_permission_classifier.md`.
+- `default` — user-configured per-command permission rules (allow / ask / deny) from the bash allow-rules.
+- `auto` — the user-configured rules **plus** an LLM classifier that auto-approves bash calls it judges safe and escalates the rest to the user. It is permission-rule-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — classifier failure falls back to escalation. The classifier prompt lives in `src/harness/core/prompts/bash_permission_classifier.md`.
 - `read_only` — hard-block every write (investigation/review agents).
 - `bypass` — allow everything.
 
@@ -160,13 +160,13 @@ Note: in the chat UI only **one** live preview (iframe/html) is mounted at a tim
 
 ## Composio (optional)
 
-Hosted MCP integration under `composio:` in the YAML. When `enabled`, the harness points at Composio's "connect" MCP URL and exposes its tools through the normal MCP path (`call_mcp_tool`) under `server_name`. The consumer key may come from `COMPOSIO_CONSUMER_API_KEY` (env wins). Which toolkits are available is set in the Composio dashboard.
+Hosted MCP integration under `composio:` in the YAML. When `enabled`, the harness points at Composio's "connect" MCP URL and exposes its tools through the normal MCP path (`call_mcp_tool`) under `server_name`. The API key may come from `COMPOSIO_API_KEY` (env wins). Which toolkits are available is set in the Composio dashboard.
 
 ```yaml
 composio:
   enabled: false
   url: "https://connect.composio.dev/mcp"
-  consumer_api_key: ""
+  api_key: ""
   server_name: "composio"
 ```
 

@@ -138,8 +138,8 @@ export function ToolStatusBadge({ status }: { status: "running" | "completed" | 
 }
 
 // Always-visible safety markers for the tool-call title bar. A tool that can
-// modify state (read_only === false) shows a red "Write" badge, and a medium/
-// high risk call shows its risk level. Read-only / low-risk calls stay bare.
+// modify state (read_only === false) shows a write badge, and a medium/high risk
+// call shows its risk level. Read-only / low-risk calls stay bare.
 export function ToolRiskBadges({ arguments: toolArguments }: { arguments?: Record<string, unknown> }) {
   if (!toolArguments) return null;
   const readOnly = toolArguments.read_only !== false;
@@ -147,7 +147,7 @@ export function ToolRiskBadges({ arguments: toolArguments }: { arguments?: Recor
   const badges: ReactNode[] = [];
   if (!readOnly) {
     badges.push(
-      <Badge key="write" size="sm" variant="subtle" colorPalette="red" borderRadius="sm" flexShrink={0}>
+      <Badge key="write" size="sm" variant="subtle" colorPalette="orange" borderRadius="sm" flexShrink={0}>
         Write
       </Badge>
     );

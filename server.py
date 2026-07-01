@@ -47,10 +47,10 @@ from harness.core.configuration import (
 from harness.core.composio_router import composio_mcp_servers
 from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.mcp_client import MCPClientManager
-from harness.core.models import MODELS, available_models, find_model, resolve_litellm
+from harness.core.models import MODELS, available_models, find_model, provider_and_suffix, resolve_litellm
 from harness.core.providers import PROVIDERS
 from harness.core.file_leases import FileLeaseManager
-from harness.core.session_worktrees import SessionWorkspace, SessionWorktreeManager
+from harness.core.session_workspaces import SessionWorkspace, SessionWorkspaceManager
 from harness.core.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import (
@@ -85,16 +85,16 @@ class SessionRecord(Base):
     # Actual path where shell and file tools run. For Git projects this is a
     # per-session worktree; for non-Git directories it falls back to the source.
     runtime_working_directory = Column(Text, default="")
-    worktree_path = Column(Text, default="")
-    worktree_branch = Column(Text, default="")
+    workspace_strategy = Column(Text, default="none")
+    workspace_path = Column(Text, default="")
+    workspace_branch = Column(Text, default="")
     source_repository_root = Column(Text, default="")
     runtime_repository_root = Column(Text, default="")
-    worktree_head = Column(Text, default="")
-    worktree_isolated = Column(Boolean, default=False)
-    worktree_error = Column(Text, default="")
+    workspace_head = Column(Text, default="")
+    workspace_error = Column(Text, default="")
     title = Column(Text, default="")
     # Per-session model override (provider/model id); empty means use the global
-    # default_model. Persisted so resuming a session keeps its chosen model.
+    # selected model. Persisted so resuming a session keeps its chosen model.
     model = Column(Text, default="")
     created_at = Column(String, nullable=False)
 
@@ -162,7 +162,7 @@ _registry: Optional[AgentRegistry] = None
 _mcp_manager: Optional[MCPClientManager] = None
 _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
-_worktree_manager: SessionWorktreeManager | None = None
+_workspace_manager: SessionWorkspaceManager | None = None
 # Composio Tool Router server(s), provisioned once at startup. Kept separate from
 # the mcp.json-derived servers so the file watcher's live reload re-merges them
 # instead of dropping Composio whenever mcp.json changes.
@@ -384,13 +384,13 @@ def _session_workspace_from_record(record: SessionRecord) -> SessionWorkspace:
     return SessionWorkspace(
         source_working_directory=source,
         runtime_working_directory=runtime,
-        isolated=bool(record.worktree_isolated),
-        worktree_path=record.worktree_path or "",
-        worktree_branch=record.worktree_branch or "",
+        strategy=(record.workspace_strategy or "none"),
+        workspace_path=record.workspace_path or "",
+        workspace_branch=record.workspace_branch or "",
         source_repository_root=record.source_repository_root or "",
         runtime_repository_root=record.runtime_repository_root or "",
-        head=record.worktree_head or "",
-        isolation_error=record.worktree_error or "",
+        head=record.workspace_head or "",
+        error=record.workspace_error or "",
     )
 
 
@@ -412,15 +412,16 @@ def _ensure_session_workspace(context_id: str, agent: str, working_directory: st
     finally:
         database_session.close()
 
-    if _worktree_manager is not None:
-        workspace = _worktree_manager.prepare_sync(context_id, source_directory)
+    strategy = _global_configuration.workspace.strategy if _global_configuration is not None else "none"
+    if _workspace_manager is not None:
+        workspace = _workspace_manager.prepare_sync(context_id, source_directory, strategy)
     else:
         resolved = str(Path(source_directory).expanduser().resolve(strict=False))
         workspace = SessionWorkspace(
             source_working_directory=resolved,
             runtime_working_directory=resolved,
-            isolated=False,
-            isolation_error="Session worktree manager is not initialized.",
+            strategy="none",
+            error="Session workspace manager is not initialized.",
         )
 
     with sqlite_write_lock():
@@ -430,13 +431,13 @@ def _ensure_session_workspace(context_id: str, agent: str, working_directory: st
             if record is not None:
                 if not record.runtime_working_directory:
                     record.runtime_working_directory = workspace.runtime_working_directory
-                    record.worktree_path = workspace.worktree_path
-                    record.worktree_branch = workspace.worktree_branch
+                    record.workspace_strategy = workspace.strategy
+                    record.workspace_path = workspace.workspace_path
+                    record.workspace_branch = workspace.workspace_branch
                     record.source_repository_root = workspace.source_repository_root
                     record.runtime_repository_root = workspace.runtime_repository_root
-                    record.worktree_head = workspace.head
-                    record.worktree_isolated = workspace.isolated
-                    record.worktree_error = workspace.isolation_error
+                    record.workspace_head = workspace.head
+                    record.workspace_error = workspace.error
                     database_session.commit()
                 return _session_workspace_from_record(record)
             # Provisional title so the sidebar shows something immediately; an LLM-
@@ -448,13 +449,13 @@ def _ensure_session_workspace(context_id: str, agent: str, working_directory: st
                 agent=agent,
                 working_directory=workspace.source_working_directory,
                 runtime_working_directory=workspace.runtime_working_directory,
-                worktree_path=workspace.worktree_path,
-                worktree_branch=workspace.worktree_branch,
+                workspace_strategy=workspace.strategy,
+                workspace_path=workspace.workspace_path,
+                workspace_branch=workspace.workspace_branch,
                 source_repository_root=workspace.source_repository_root,
                 runtime_repository_root=workspace.runtime_repository_root,
-                worktree_head=workspace.head,
-                worktree_isolated=workspace.isolated,
-                worktree_error=workspace.isolation_error,
+                workspace_head=workspace.head,
+                workspace_error=workspace.error,
                 title=title,
                 created_at=datetime.now(timezone.utc).isoformat(),
             ))
@@ -521,13 +522,16 @@ def _record_project_path(path_value: str) -> str | None:
 
 def _record_model_selection(model_identifier: str) -> None:
     """Record a model selection in the history (upserting by id), mirroring the
-    project-history list. Looks up the label/provider from the catalog so the UI
-    can render recent models without re-resolving. No-op for an unknown id."""
+    project-history list. Catalog models use their curated label; typed model ids
+    derive a readable label from the provider/model value."""
     if not model_identifier or _session_factory is None:
         return
     definition = find_model(model_identifier)
-    if definition is None:
+    split = provider_and_suffix(model_identifier)
+    if definition is None and split is None:
         return
+    provider, suffix = split if split is not None else (definition.provider, definition.identifier.split("/", 1)[1])
+    label = definition.name if definition is not None else suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
     with sqlite_write_lock():
         database_session = _session_factory()
         try:
@@ -536,13 +540,13 @@ def _record_model_selection(model_identifier: str) -> None:
             if record is None:
                 database_session.add(ModelHistoryRecord(
                     model_id=model_identifier,
-                    name=definition.name,
-                    provider=definition.provider,
+                    name=label,
+                    provider=provider,
                     selected_at=selected_at,
                 ))
             else:
-                record.name = definition.name
-                record.provider = definition.provider
+                record.name = label
+                record.provider = provider
                 record.selected_at = selected_at
             database_session.commit()
         except Exception:
@@ -579,13 +583,13 @@ def _ensure_session_schema(sync_engine) -> None:
     existing = {column["name"] for column in inspector.get_columns("sessions")}
     additions = {
         "runtime_working_directory": "TEXT DEFAULT ''",
-        "worktree_path": "TEXT DEFAULT ''",
-        "worktree_branch": "TEXT DEFAULT ''",
+        "workspace_strategy": "TEXT DEFAULT 'none'",
+        "workspace_path": "TEXT DEFAULT ''",
+        "workspace_branch": "TEXT DEFAULT ''",
         "source_repository_root": "TEXT DEFAULT ''",
         "runtime_repository_root": "TEXT DEFAULT ''",
-        "worktree_head": "TEXT DEFAULT ''",
-        "worktree_isolated": "BOOLEAN DEFAULT 0",
-        "worktree_error": "TEXT DEFAULT ''",
+        "workspace_head": "TEXT DEFAULT ''",
+        "workspace_error": "TEXT DEFAULT ''",
     }
     missing = [(name, definition) for name, definition in additions.items() if name not in existing]
     if not missing:
@@ -624,7 +628,7 @@ async def _generate_session_title(first_message: str) -> str:
     """
     assert _global_configuration is not None
     configuration = _global_configuration
-    model_identifier = configuration.default_model_identifier()
+    model_identifier = configuration.selected_model_identifier()
     resolved = resolve_litellm(
         model_identifier,
         configuration.configured_provider_keys(),
@@ -736,13 +740,13 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                         if row.runtime_working_directory
                         else _project_name(row.working_directory) if row.working_directory else ""
                     ),
-                    "worktree_path": row.worktree_path or "",
-                    "worktree_branch": row.worktree_branch or "",
+                    "workspace_strategy": row.workspace_strategy or "none",
+                    "workspace_path": row.workspace_path or "",
+                    "workspace_branch": row.workspace_branch or "",
                     "source_repository_root": row.source_repository_root or "",
                     "runtime_repository_root": row.runtime_repository_root or "",
-                    "worktree_head": row.worktree_head or "",
-                    "worktree_isolated": bool(row.worktree_isolated),
-                    "worktree_error": row.worktree_error or "",
+                    "workspace_head": row.workspace_head or "",
+                    "workspace_error": row.workspace_error or "",
                     "model": row.model or "",
                     "filesystem_leases": (
                         _file_lease_manager.active_for_session(row.id)
@@ -946,10 +950,10 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _composio_servers, _main_loop, _file_lease_manager, _worktree_manager
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager
     _main_loop = asyncio.get_running_loop()
     _file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
-    _worktree_manager = SessionWorktreeManager()
+    _workspace_manager = SessionWorkspaceManager()
     _global_configuration = GlobalConfiguration.load()
 
     database_path = database_file_path()
@@ -1090,13 +1094,14 @@ class PermissionModeRequest(BaseModel):
 
 class SettingsUpdateRequest(BaseModel):
     exa_api_key: str = ""
-    composio_consumer_api_key: str = ""
+    composio_api_key: str = ""
     # Per-provider API keys (the opencode gateway's key lives under "opencode").
     provider_keys: dict[str, str] = {}
     # Base URLs for the OpenAI-compatible providers (opencode, custom).
     provider_base_urls: dict[str, str] = {}
-    # The default model id (provider/model) used when a session has no override.
-    default_model: str = ""
+    # The selected model id (provider/model) used when a session has no override.
+    selected_model: str = ""
+    workspace_strategy: Literal["none", "branch", "worktree"] = "none"
 
 
 class SandboxUpdateRequest(BaseModel):
@@ -1246,9 +1251,9 @@ async def record_recent_project(request: RecentProjectRequest):
 
 @app.get("/models")
 async def list_models_endpoint():
-    """The model catalog for the picker: every curated model with its provider and
+    """The model catalog for the picker: every known model with its provider and
     whether its provider has a resolvable credential (available), plus the provider
-    registry and the current default model. Available models are fronted in the
+    registry and the currently selected model. Available models are fronted in the
     picker; locked ones stay listed (greyed) so the user sees what a key unlocks."""
     assert _global_configuration is not None
     configured_keys = _global_configuration.configured_provider_keys()
@@ -1270,10 +1275,11 @@ async def list_models_endpoint():
         }
         for provider in PROVIDERS.values()
     ]
+    selected_model = _global_configuration.selected_model_identifier()
     return {
         "models": models,
         "providers": providers,
-        "default_model": _global_configuration.default_model_identifier(),
+        "selected_model": selected_model,
     }
 
 
@@ -1288,14 +1294,15 @@ async def recent_models():
 @app.get("/settings")
 async def get_settings():
     """Return the API credentials stored in ~/.harness/configuration.yaml so the
-    settings dialog can pre-fill them, including per-provider keys and the default
+    settings dialog can pre-fill them, including per-provider keys and the selected
     model."""
     assert _global_configuration is not None
     return {
         "exa_api_key": _global_configuration.exa.api_key,
-        "composio_consumer_api_key": _global_configuration.composio.consumer_api_key,
+        "composio_api_key": _global_configuration.composio.api_key,
         "sandbox_enabled": _global_configuration.sandbox.enabled,
-        "default_model": _global_configuration.default_model_identifier(),
+        "workspace_strategy": _global_configuration.workspace.strategy,
+        "selected_model": _global_configuration.selected_model_identifier(),
         "providers": {
             identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
             for identifier, credential in _global_configuration.providers.items()
@@ -1315,13 +1322,15 @@ async def update_settings(request: SettingsUpdateRequest):
     await asyncio.to_thread(
         save_api_keys,
         exa_api_key=request.exa_api_key,
-        composio_consumer_api_key=request.composio_consumer_api_key,
+        composio_api_key=request.composio_api_key,
         provider_keys=request.provider_keys,
         provider_base_urls=request.provider_base_urls,
-        default_model=request.default_model,
+        selected_model=request.selected_model,
+        workspace_strategy=request.workspace_strategy,
     )
     configuration.exa.api_key = request.exa_api_key
-    configuration.composio.consumer_api_key = request.composio_consumer_api_key
+    configuration.composio.api_key = request.composio_api_key
+    configuration.workspace.strategy = request.workspace_strategy
     # Rebuild the providers map from the posted keys/base URLs, merging so a
     # provider the dialog did not render keeps its stored credential.
     merged_providers = {
@@ -1337,16 +1346,16 @@ async def update_settings(request: SettingsUpdateRequest):
         existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
         merged_providers[provider_identifier] = existing.model_copy(update={"base_url": base_url})
     configuration.providers = merged_providers
-    if request.default_model:
+    if request.selected_model:
         # The picker carries the combined ``provider/model`` id; split it into the
         # two separate in-memory fields (mirroring how save_api_keys persists them).
-        if "/" in request.default_model:
-            provider, model = request.default_model.split("/", 1)
-            configuration.default_provider = provider
-            configuration.default_model = model
+        if "/" in request.selected_model:
+            provider, model = request.selected_model.split("/", 1)
+            configuration.selected_provider = provider
+            configuration.selected_model = model
         else:
-            configuration.default_model = request.default_model
-        await asyncio.to_thread(_record_model_selection, request.default_model)
+            configuration.selected_model = request.selected_model
+        await asyncio.to_thread(_record_model_selection, request.selected_model)
 
     exa_key = configuration.exa.effective_api_key
     if exa_key:
@@ -1692,7 +1701,7 @@ async def get_session_model(context_id: str):
 
 @app.get("/preview/{file_path:path}")
 async def preview_file(file_path: str):
-    """Serve a local file for an ``open_web_preview`` artifact (the UI points a
+    """Serve a local file for an ``open_preview`` artifact (the UI points a
     sandboxed iframe here). HTML gets the widget runtime injected so a previewed
     page can self-size, report render errors, and be interactive; everything else
     (images, PDFs, CSS/JS assets a page references) is served verbatim so relative
@@ -1715,7 +1724,7 @@ async def preview_file(file_path: str):
     return FileResponse(path, headers=no_store)
 
 
-# A rewriting pass-through proxy for `open_web_preview` of external URLs. It serves
+# A rewriting pass-through proxy for `open_preview` of external URLs. It serves
 # the page — and *every* asset and request it makes — back through this one route,
 # so to the framed page everything looks same-origin (our localhost). That is what
 # lets sites that refuse direct framing (`X-Frame-Options`/`frame-ancestors`) render,
@@ -1851,7 +1860,7 @@ def _rewrite_proxy_html(markup: str, base: str) -> str:
 async def preview_proxy(url: str):
     """Fetch an external ``http(s)`` URL server-side and re-serve it (and everything
     it links to) from our own origin, rewritten so the framed page behaves as if it
-    were same-origin. This is what makes ``open_web_preview`` a real mini-browser for
+    were same-origin. This is what makes ``open_preview`` a real mini-browser for
     sites that block direct framing. Localhost-only, like the rest of the API."""
     if not url.lower().startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Only http(s) URLs can be previewed.")
@@ -1952,6 +1961,13 @@ async def abort_session(context_id: str):
             future.set_result([])
     aborted = any(executor.abort_context(context_id) for executor in _executors.values())
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
+
+
+@app.post("/chat/{context_id}/tools/{tool_call_id}/abort")
+async def abort_tool_call(context_id: str, tool_call_id: str):
+    """Abort one foreground tool call in a running context."""
+    aborted = any(executor.abort_tool(context_id, tool_call_id) for executor in _executors.values())
+    return {"status": "aborted" if aborted else "not_found", "session_id": context_id, "tool_call_id": tool_call_id}
 
 
 @app.post("/chat/{context_id}/permissions/mode")

@@ -45,7 +45,7 @@ export function invalidateDiscoveryCache(): void {
   discoveryCache.clear();
 }
 
-// The URL that serves a local file (and its sibling assets) for an `open_web_preview`
+// The URL that serves a local file (and its sibling assets) for an `open_preview`
 // artifact — the backend `/preview/<abs path>` route reads the file off disk and,
 // for HTML, injects the widget runtime. Each path segment is encoded but the
 // slashes are kept, so relative assets inside a previewed page still resolve.
@@ -132,9 +132,10 @@ export interface ProviderCredential {
 
 export interface Settings {
   exa_api_key: string;
-  composio_consumer_api_key: string;
+  composio_api_key: string;
   sandbox_enabled: boolean;
-  default_model: string;
+  workspace_strategy: "none" | "branch" | "worktree";
+  selected_model: string;
   providers: Record<string, ProviderCredential>;
 }
 
@@ -154,7 +155,7 @@ export interface ProviderOption {
 export interface ModelsResponse {
   models: ModelOption[];
   providers: ProviderOption[];
-  default_model: string;
+  selected_model: string;
 }
 
 export interface RecentProject {
@@ -176,17 +177,18 @@ export interface FilesystemLease {
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
   if (!response.ok) {
-    return { exa_api_key: "", composio_consumer_api_key: "", sandbox_enabled: true, default_model: "", providers: {} };
+    return { exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", providers: {} };
   }
   return response.json();
 }
 
 export interface SaveSettingsPayload {
   exa_api_key: string;
-  composio_consumer_api_key: string;
+  composio_api_key: string;
   provider_keys: Record<string, string>;
   provider_base_urls: Record<string, string>;
-  default_model: string;
+  selected_model: string;
+  workspace_strategy: "none" | "branch" | "worktree";
 }
 
 export async function saveSettings(settings: SaveSettingsPayload): Promise<void> {
@@ -198,10 +200,10 @@ export async function saveSettings(settings: SaveSettingsPayload): Promise<void>
 }
 
 // The model catalog for the picker (with per-model availability) and the provider
-// registry, plus the configured default model.
+// registry, plus the configured selected model.
 export async function fetchModels(): Promise<ModelsResponse> {
   const response = await fetch(`${API_BASE}/models`);
-  if (!response.ok) return { models: [], providers: [], default_model: "" };
+  if (!response.ok) return { models: [], providers: [], selected_model: "" };
   return response.json();
 }
 
@@ -348,13 +350,13 @@ export async function fetchSessions(): Promise<{
   working_directory_name?: string;
   runtime_working_directory?: string;
   runtime_working_directory_name?: string;
-  worktree_path?: string;
-  worktree_branch?: string;
+  workspace_strategy?: "none" | "branch" | "worktree";
+  workspace_path?: string;
+  workspace_branch?: string;
   source_repository_root?: string;
   runtime_repository_root?: string;
-  worktree_head?: string;
-  worktree_isolated?: boolean;
-  worktree_error?: string;
+  workspace_head?: string;
+  workspace_error?: string;
   running?: boolean;
   awaiting_input?: boolean;
   model?: string;
@@ -423,6 +425,10 @@ export async function steerSession(sessionId: string, message: string): Promise<
 
 export async function abortSession(sessionId: string): Promise<void> {
   await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
+}
+
+export async function abortToolCall(sessionId: string, toolCallId: string): Promise<void> {
+  await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
 }
 
 export async function validateWorkingDirectory(directory: string): Promise<{ valid: boolean; exists: boolean; is_directory: boolean; is_absolute: boolean; path: string }> {

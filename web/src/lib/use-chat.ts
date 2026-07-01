@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   streamA2A,
   abortSession,
+  abortToolCall,
   steerSession,
   resolvePermission,
   resolveQuestion,
@@ -1338,6 +1339,18 @@ export function useChat(
     if (ctx) abortSession(ctx);
   }, []);
 
+  const abortTool = useCallback((toolCallId: string) => {
+    const ctx = sessionIdRef.current;
+    if (!ctx || !toolCallId) return;
+    void abortToolCall(ctx, toolCallId);
+    stateRef.current.messages = stateRef.current.messages.map((message) => (
+      message.role === "tool_call" && message.meta?.toolCallId === toolCallId
+        ? { ...message, meta: { ...message.meta, status: "failed" } }
+        : message
+    ));
+    flush();
+  }, [flush]);
+
   const dequeueMessage = useCallback((index: number) => {
     setQueue(queuedMessagesRef.current.filter((_, i) => i !== index));
   }, [setQueue]);
@@ -1365,6 +1378,7 @@ export function useChat(
     send,
     sendWidgetEvent,
     abort,
+    abortTool,
     reset,
     dequeueMessage,
     handlePermission,

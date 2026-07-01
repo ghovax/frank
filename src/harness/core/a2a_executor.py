@@ -50,7 +50,7 @@ from harness.core.configuration import (
     load_agent_configuration,
 )
 from harness.core.file_leases import FileLeaseManager
-from harness.core.session_worktrees import SessionWorkspace
+from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
 
 # Metadata key the client may set to steer the working directory of a turn.
@@ -275,6 +275,12 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime.abort()
         return True
 
+    def abort_tool(self, context_id: str, tool_call_identifier: str) -> bool:
+        runtime = self._runtimes.get(context_id)
+        if runtime is None:
+            return False
+        return runtime.abort_tool(tool_call_identifier)
+
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a
         configuration change (e.g. new API credentials) so it takes effect without
@@ -402,7 +408,7 @@ class HarnessAgentExecutor(AgentExecutor):
             return SessionWorkspace(
                 source_working_directory=project_directory,
                 runtime_working_directory=runtime_directory,
-                isolated=bool(metadata.get(RUNTIME_WORKING_DIRECTORY_METADATA_KEY)),
+                strategy="worktree" if metadata.get(RUNTIME_WORKING_DIRECTORY_METADATA_KEY) else "none",
             )
         if self._ensure_session_workspace is not None:
             return await asyncio.to_thread(
@@ -416,7 +422,7 @@ class HarnessAgentExecutor(AgentExecutor):
         return SessionWorkspace(
             source_working_directory=directory,
             runtime_working_directory=directory,
-            isolated=False,
+            strategy="none",
         )
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:

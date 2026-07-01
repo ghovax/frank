@@ -1,11 +1,11 @@
-# Per-provider credentials. Each provider's key resolves as: this value, then the
-# provider's env var (e.g. ANTHROPIC_API_KEY). OpenAI-compatible providers (opencode,
-# custom) also take a base_url; first-party clouds ignore it (LiteLLM knows their
-# endpoints).
+# Per-provider credentials. Each provider key resolves as: this value, then the
+# provider's environment variable (for example ANTHROPIC_API_KEY). First-party
+# providers use LiteLLM's built-in endpoints. OpenAI-compatible providers can
+# declare their endpoint here.
 providers:
   opencode:
     api_key: ""
-    base_url: "https://opencode.ai/zen/go/v1"
+    base_url: "https://opencode.ai/go/v1"
   anthropic:
     api_key: ""
   openai:
@@ -26,10 +26,8 @@ providers:
     api_key: ""
     base_url: ""
 
-# The default model and provider, stored as separate fields. The model factory
-# recombines them into the ``provider/model`` form LiteLLM expects.
-default_model: "deepseek-v4-flash"
-default_provider: "opencode"
+selected_model: "deepseek-v4-flash"
+selected_provider: "opencode"
 
 exa:
   api_key: ""
@@ -37,14 +35,16 @@ exa:
 sandbox:
   enabled: true
 
+workspace:
+  strategy: "none"
+
 # Composio: point at the hosted MCP ("connect") URL from the Composio dashboard
 # and the harness exposes its tools through the normal MCP path (call_mcp_tool)
-# under `server_name`. The consumer key may also come from the
-# COMPOSIO_CONSUMER_API_KEY environment variable (which wins over this value).
+# under server_name. The API key may also come from COMPOSIO_API_KEY.
 composio:
   enabled: false
   url: "https://connect.composio.dev/mcp"
-  consumer_api_key: ""
+  api_key: ""
   server_name: "composio"
 
 default_agent: senior-researcher

@@ -7,13 +7,12 @@ A configurable multi-agent harness built on the A2A protocol. Each agent profile
 - `.agents/agents/<id>/config.json` — per-agent model, tool, and permission settings.
 - `.agents/skills/<id>/SKILL.md` — project-local reusable skill instructions.
 - `.agents/mcp.json` — MCP server configuration using `mcpServers`.
-- Composio — set `composio.enabled: true` in `configuration.yaml` with the hosted MCP (`url`) and `consumer_api_key` from the Composio dashboard, and the harness exposes its tools through the normal MCP path. No separate agent; the agent discovers tools dynamically and authorizes accounts (e.g. `gmail`, `notion`) on first use.
+- Composio — set `composio.enabled: true` in `configuration.yaml` with the hosted MCP (`url`) and `api_key` from the Composio dashboard, and the harness exposes its tools through the normal MCP path. No separate agent; the agent discovers tools dynamically and authorizes accounts (e.g. `gmail`, `notion`) on first use.
 - `.agents/memories/*.md` — persistent project memory injected into agent prompts.
 - `~/.agents/agents/` and `~/.agents/skills/` — optional global profiles and skills. Project-local entries override global entries with the same name.
 - `examples/mcp/openstreetmap/` — stdio MCP server folder used by the default `openstreetmap` MCP configuration for map smoke tests.
 - `web/` — Next.js chat UI.
 - `src/harness/` — the runtime: agent loop, tool dispatch, permissions, A2A bridge.
-- `~/.harness/` — the harness home directory and single source of truth for mutable state: `configuration.yaml` (API endpoint, default agent, local agent/skill discovery directories, and MCP servers) and `history.db` (chat history). The directory and config are created on first run, seeded from `configuration.yaml.example`.
-- `configuration.yaml.example` — reference configuration committed to the repo; copy it to `~/.harness/configuration.yaml` to customize, or just edit the generated file.
+- `~/.harness/` — the harness home directory and single source of truth for mutable state: `configuration.yaml` (provider credentials, selected model, default agent, local agent/skill discovery directories, and MCP servers) and `history.db` (chat history). The directory and config are created on first run from the packaged `src/harness/core/configuration.yaml`.
 
 Run with `uv run python server.py`. Secrets (API keys) are read from environment variables, falling back to `~/.harness/configuration.yaml`.

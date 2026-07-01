@@ -32,7 +32,7 @@ const TOOL_SUMMARY: Record<string, { past: (count: number) => string; gerund: st
   replace_lines: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
   write_file: { past: (n) => (n === 1 ? "wrote a file" : `wrote ${n} files`), gerund: "Writing files" },
   fetch_url: { past: (n) => (n === 1 ? "fetched a URL" : `fetched ${n} URLs`), gerund: "Fetching URLs" },
-  open_web_preview: { past: (n) => (n === 1 ? "opened a preview" : `opened ${n} previews`), gerund: "Opening previews" },
+  open_preview: { past: (n) => (n === 1 ? "opened a preview" : `opened ${n} previews`), gerund: "Opening previews" },
   render_widget: { past: (n) => (n === 1 ? "rendered a widget" : `rendered ${n} widgets`), gerund: "Rendering widgets" },
   spawn_agent: { past: (n) => (n === 1 ? "delegated to an agent" : `delegated to ${n} agents`), gerund: "Delegating to agents" },
   load_skill: { past: (n) => (n === 1 ? "loaded a skill" : `loaded ${n} skills`), gerund: "Loading skills" },
@@ -153,7 +153,7 @@ export const ToolGroup = memo(function ToolGroup({
           px={2}
           py={1.5}
           minH="8"
-          color="fg.muted"
+          color="fg"
           textAlign="left"
           cursor="pointer"
           _hover={{ bg: "bg.muted" }}

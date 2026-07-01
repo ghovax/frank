@@ -1,18 +1,17 @@
 "use client";
 
 import { Box, Button, Dialog, Flex, IconButton, Input, Portal, Text } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
-import { LuEye, LuEyeOff } from "react-icons/lu";
-import { fetchModels, fetchRecentModels, fetchSettings, saveSettings, type ModelOption, type ProviderOption, type RecentModel } from "@/lib/api";
-import { ModelSelect } from "./model-select";
+import { useEffect, useState, type ReactNode } from "react";
+import { LuBan, LuEye, LuEyeOff, LuGitBranch, LuGitFork } from "react-icons/lu";
+import { fetchSettings, saveSettings } from "@/lib/api";
 
-// A dialog for entering API credentials and choosing the default model, persisted
+// A dialog for entering API credentials and choosing the selected model, persisted
 // in ~/.harness/configuration.yaml. Saving applies everything live (no restart).
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const [providers, setProviders] = useState<ProviderOption[]>([]);
-  const [recentModels, setRecentModels] = useState<RecentModel[]>([]);
-  const [defaultModel, setDefaultModel] = useState("");
+  // The globally-selected model is not edited here (it lives on the composer's
+  // model picker); we only track it so saving preserves it rather than wiping it.
+  const [selectedModel, setSelectedModel] = useState("");
+  const [workspaceStrategy, setWorkspaceStrategy] = useState<"none" | "branch" | "worktree">("none");
   const [exaApiKey, setExaApiKey] = useState("");
   const [composioApiKey, setComposioApiKey] = useState("");
   const [saving, setSaving] = useState(false);
@@ -21,15 +20,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    Promise.all([fetchSettings(), fetchModels(), fetchRecentModels()])
-      .then(([settings, catalog, recent]) => {
+    fetchSettings()
+      .then((settings) => {
         if (cancelled) return;
-        setModels(catalog.models);
-        setProviders(catalog.providers);
-        setRecentModels(recent);
-        setDefaultModel(settings.default_model ?? catalog.default_model ?? "");
+        setSelectedModel(settings.selected_model ?? "");
+        setWorkspaceStrategy(settings.workspace_strategy ?? "none");
         setExaApiKey(settings.exa_api_key ?? "");
-        setComposioApiKey(settings.composio_consumer_api_key ?? "");
+        setComposioApiKey(settings.composio_api_key ?? "");
       })
       .catch(() => {});
     return () => {
@@ -42,10 +39,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     try {
       await saveSettings({
         exa_api_key: exaApiKey.trim(),
-        composio_consumer_api_key: composioApiKey.trim(),
+        composio_api_key: composioApiKey.trim(),
         provider_keys: {},
         provider_base_urls: {},
-        default_model: defaultModel,
+        selected_model: selectedModel,
+        workspace_strategy: workspaceStrategy,
       });
       onOpenChange(false);
     } finally {
@@ -64,7 +62,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </Dialog.Header>
             <Dialog.Body>
               <Text fontSize="xs" color="fg.muted" mb={4}>
-                Credentials and the default model are stored in{" "}
+                Credentials are stored in{" "}
                 <Box as="span" fontFamily="var(--app-font-mono)">
                   ~/.harness/configuration.yaml
                 </Box>{" "}
@@ -73,15 +71,34 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               <Flex direction="column" gap={4}>
                 <Box>
                   <Text fontSize="xs" fontWeight="medium" mb={1}>
-                    Default model
+                    Session workspace
                   </Text>
-                  <ModelSelect
-                    models={models}
-                    providers={providers}
-                    recent={recentModels}
-                    value={defaultModel}
-                    onChange={setDefaultModel}
-                  />
+                  <Flex gap={1.5} flexWrap="wrap">
+                    <WorkspaceStrategyButton
+                      value="none"
+                      selected={workspaceStrategy}
+                      label="None"
+                      icon={<LuBan size={13} />}
+                      onSelect={setWorkspaceStrategy}
+                    />
+                    <WorkspaceStrategyButton
+                      value="branch"
+                      selected={workspaceStrategy}
+                      label="Branch"
+                      icon={<LuGitBranch size={13} />}
+                      onSelect={setWorkspaceStrategy}
+                    />
+                    <WorkspaceStrategyButton
+                      value="worktree"
+                      selected={workspaceStrategy}
+                      label="Worktree"
+                      icon={<LuGitFork size={13} />}
+                      onSelect={setWorkspaceStrategy}
+                    />
+                  </Flex>
+                  <Text fontSize="xs" color="fg.subtle" mt={1}>
+                    Applies only when a new conversation starts.
+                  </Text>
                 </Box>
                 <Box maxH="260px" overflowY="auto" pr={1} display="flex" flexDir="column" gap={3}>
                   <SecretField
@@ -92,8 +109,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                     onChange={setExaApiKey}
                   />
                   <SecretField
-                    label="Composio consumer API key"
-                    placeholder="composio-consumer-..."
+                    label="Composio API key"
+                    placeholder="cmp_..."
                     value={composioApiKey}
                     disabled={saving}
                     onChange={setComposioApiKey}
@@ -114,6 +131,36 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </Dialog.Positioner>
       </Portal>
     </Dialog.Root>
+  );
+}
+
+function WorkspaceStrategyButton({
+  value,
+  selected,
+  label,
+  icon,
+  onSelect,
+}: {
+  value: "none" | "branch" | "worktree";
+  selected: "none" | "branch" | "worktree";
+  label: string;
+  icon: ReactNode;
+  onSelect: (value: "none" | "branch" | "worktree") => void;
+}) {
+  const active = value === selected;
+  return (
+    <Button
+      size="xs"
+      variant={active ? "solid" : "outline"}
+      colorPalette={value === "worktree" ? "green" : value === "branch" ? "purple" : undefined}
+      borderRadius="sm"
+      fontSize="xs"
+      aria-pressed={active}
+      onClick={() => onSelect(value)}
+    >
+      {icon}
+      {label}
+    </Button>
   );
 }
 
