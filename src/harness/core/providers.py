@@ -40,7 +40,7 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             name="OpenCode Go",
             litellm_prefix="openai",
             env_vars=("OPENCODE_API_KEY",),
-            default_base_url="https://opencode.ai/go/v1",
+            default_base_url="https://opencode.ai/zen/go/v1",
             openai_compatible=True,
         ),
         ProviderDefinition(

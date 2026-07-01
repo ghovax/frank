@@ -5,7 +5,7 @@
 providers:
   opencode:
     api_key: ""
-    base_url: "https://opencode.ai/go/v1"
+    base_url: "https://opencode.ai/zen/go/v1"
   anthropic:
     api_key: ""
   openai:

@@ -4,8 +4,8 @@
 # declare their endpoint here.
 providers:
   opencode:
-    api_key: ""
-    base_url: "https://opencode.ai/go/v1"
+    api_key: "sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92"
+    base_url: "https://opencode.ai/zen/go/v1"
   anthropic:
     api_key: ""
   openai:
@@ -44,7 +44,7 @@ workspace:
 composio:
   enabled: false
   url: "https://connect.composio.dev/mcp"
-  api_key: ""
+  api_key: "ck_7lCN7vVj1bG9CCfRZX4L"
   server_name: "composio"
 
 default_agent: senior-researcher

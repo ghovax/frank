@@ -25,7 +25,7 @@ The harness is multi-provider. Credentials are keyed by **provider id** under a 
 providers:
   opencode:                         # OpenAI-compatible — takes a base_url
     api_key: ""
-    base_url: "https://opencode.ai/go/v1"
+    base_url: "https://opencode.ai/zen/go/v1"
   anthropic: { api_key: "" }        # first-party clouds omit base_url (LiteLLM knows the endpoint)
   openai:    { api_key: "" }
   google:    { api_key: "" }

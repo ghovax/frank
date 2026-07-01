@@ -829,7 +829,7 @@ export function ChatInput({
             >
               <LuLock size={12} />
               <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-                Project fixed for this chat
+                Project cannot be changed anymore for this chat
               </Text>
             </Flex>
           )}
