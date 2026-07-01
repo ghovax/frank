@@ -23,6 +23,7 @@ dependencies = [
     "watchfiles>=1.2.0",
     "mcp[cli]>=1.27,<2",
     "markdownify>=1.2.2",
+    "curl-cffi>=0.15.0",
 ]
 
 [build-system]

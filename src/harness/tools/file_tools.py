@@ -284,10 +284,7 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
     if parsed.scheme != "https" or not parsed.netloc:
         raise ValueError("The URL must be a fully-formed valid https URL.")
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-        response.raise_for_status()
-        body = response.text
+    body = await _fetch_with_cloudflare_bypass(url, timeout)
 
     if fmt == "html":
         content = body
@@ -300,6 +297,47 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
     if truncated:
         content = content[:MAXIMUM_FETCH_CHARS]
     return _payload("fetch_completed", url=url, format=fmt, truncated=truncated, content=content)
+
+
+async def _fetch_with_cloudflare_bypass(url: str, timeout: int) -> str:
+    """Fetch a URL, transparently retrying with a browser-impersonated client
+    if the initial request is blocked by a Cloudflare challenge."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        response = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        body = response.text
+
+    # If this looks like a Cloudflare challenge, retry with curl_cffi
+    if _is_cloudflare_challenge(response.status_code, dict(response.headers), body):
+        try:
+            body = await _fetch_with_curl_cffi(url, timeout)
+        except ImportError:
+            pass  # curl_cffi not installed — honour the original challenge response
+        else:
+            return body
+
+    # Normal path: raise on HTTP errors, return body on success
+    response.raise_for_status()
+    return body
+
+
+def _is_cloudflare_challenge(status_code: int, headers: dict[str, str], body: str) -> bool:
+    """Heuristic: does this response look like a Cloudflare anti-bot interstitial?"""
+    # Cloudflare sets cf-mitigated: challenge on every Challenge Page response.
+    # This is the authoritative signal per Cloudflare docs:
+    # https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/
+    return headers.get("cf-mitigated", "").lower() == "challenge"
+
+
+async def _fetch_with_curl_cffi(url: str, timeout: int) -> str:
+    """Fetch a URL using curl_cffi with full browser TLS/HTTP2 impersonation."""
+    from curl_cffi import AsyncSession
+
+    async with AsyncSession(impersonate="chrome", timeout=timeout) as session:
+        response = await session.get(url)
+        response.raise_for_status()
+        return response.text
 
 
 def _strip_html(html: str) -> str:
