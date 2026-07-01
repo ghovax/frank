@@ -175,7 +175,7 @@ export interface FilesystemLease {
   acquired_at: number;
 }
 
-// API credentials stored in ~/.harness/configuration.yaml.
+// API credentials stored in ~/.daisy/configuration.yaml.
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
   if (!response.ok) {

@@ -128,6 +128,7 @@ class StreamEvent:
         TOOL_CALL = "tool_call"
         TOOL_RESULT = "tool_result"
         MCP_EVENT = "mcp_event"
+        USAGE = "usage"
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
         PERMISSION_REQUEST = "permission_request"
@@ -692,6 +693,16 @@ class AgentRuntime:
         self._delegation_depth: int = 0
         self._calls_this_turn: int = 0
         self._abort_event = asyncio.Event()
+        # Running token totals for the session, summed from the real usage each
+        # model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
+        self._token_usage: dict[str, int] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cache_read_tokens": 0,
+            "reasoning_tokens": 0,
+            "model_calls": 0,
+        }
 
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
@@ -741,6 +752,46 @@ class AgentRuntime:
     @property
     def conversation(self) -> list:
         return self._conversation
+
+    @property
+    def token_usage(self) -> dict[str, int]:
+        return dict(self._token_usage)
+
+    def _accumulate_usage(self, response: AIMessage) -> "StreamEvent | None":
+        """Fold one model call's real token usage into the running session total
+        and return a USAGE event carrying both the per-call and cumulative counts.
+        Returns ``None`` when the provider reported no usage for this call."""
+        usage = getattr(response, "usage_metadata", None)
+        if not usage:
+            return None
+        input_tokens = int(usage.get("input_tokens", 0) or 0)
+        output_tokens = int(usage.get("output_tokens", 0) or 0)
+        total_tokens = int(usage.get("total_tokens", 0) or 0) or (input_tokens + output_tokens)
+        cache_read = int((usage.get("input_token_details") or {}).get("cache_read", 0) or 0)
+        reasoning = int((usage.get("output_token_details") or {}).get("reasoning", 0) or 0)
+        if not (input_tokens or output_tokens or total_tokens):
+            return None
+        self._token_usage["input_tokens"] += input_tokens
+        self._token_usage["output_tokens"] += output_tokens
+        self._token_usage["total_tokens"] += total_tokens
+        self._token_usage["cache_read_tokens"] += cache_read
+        self._token_usage["reasoning_tokens"] += reasoning
+        self._token_usage["model_calls"] += 1
+        # input_tokens for this (latest) call is the whole prompt — system, history,
+        # and the new turn — so it reflects how full the context currently is. Paired
+        # with the model's context window, it drives the context-fill indicator.
+        model = getattr(self, "_llm", None)
+        context_window = model.context_window() if model is not None else 0
+        return StreamEvent(
+            StreamEvent.Type.USAGE,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read,
+            reasoning_tokens=reasoning,
+            context_window=context_window,
+            cumulative=dict(self._token_usage),
+        )
 
     @property
     def agent_name(self) -> str:
@@ -1208,6 +1259,10 @@ class AgentRuntime:
                 self._calls_this_turn += 1
                 continue
             response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
+
+            usage_event = self._accumulate_usage(response)
+            if usage_event is not None:
+                yield usage_event
 
             # Malformed tool calls (arguments that failed JSON parsing) land in
             # `invalid_tool_calls` while `tool_calls` may be empty. LangChain

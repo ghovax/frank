@@ -1300,7 +1300,7 @@ async def recent_models():
 
 @app.get("/settings")
 async def get_settings():
-    """Return the API credentials stored in ~/.harness/configuration.yaml so the
+    """Return the API credentials stored in ~/.daisy/configuration.yaml so the
     settings dialog can pre-fill them, including per-provider keys and the selected
     model."""
     assert _global_configuration is not None
@@ -1319,7 +1319,7 @@ async def get_settings():
 
 @app.post("/settings")
 async def update_settings(request: SettingsUpdateRequest):
-    """Persist API credentials to ~/.harness/configuration.yaml and apply them
+    """Persist API credentials to ~/.daisy/configuration.yaml and apply them
     live: refresh the in-memory configuration, the Exa client, restart the MCP
     client manager so Composio tools appear/disappear with its key, and drop
     cached agent runtimes so the next turn rebuilds with the new credentials."""

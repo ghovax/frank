@@ -13,12 +13,12 @@ from pydantic import BaseModel
 # The harness keeps its mutable state — the configuration file and the chat
 # history database — under a dot-directory in the user's home, not inside the
 # repository. The home directory is the single source of truth.
-HARNESS_HOME_DIRECTORY = Path("~/.harness").expanduser()
+HARNESS_HOME_DIRECTORY = Path("~/.daisy").expanduser()
 CONFIGURATION_FILENAME = "configuration.yaml"
 DATABASE_FILENAME = "history.db"
 
 # The packaged configuration lives in a sibling YAML file so editing the template
-# is a data change, not a code change. Used to seed ~/.harness/configuration.yaml
+# is a data change, not a code change. Used to seed ~/.daisy/configuration.yaml
 # on first run and as the base when persisting settings before any file exists.
 PACKAGED_CONFIGURATION_PATH = Path(__file__).resolve().parent / "configuration.yaml"
 
@@ -28,7 +28,7 @@ def packaged_configuration_yaml() -> str:
 
 
 def harness_home_directory() -> Path:
-    """The ~/.harness directory, created on first use."""
+    """The ~/.daisy directory, created on first use."""
     HARNESS_HOME_DIRECTORY.mkdir(parents=True, exist_ok=True)
     return HARNESS_HOME_DIRECTORY
 
@@ -51,7 +51,7 @@ def save_api_keys(
     provider_base_urls: dict[str, str] | None = None,
     selected_model: str | None = None,
 ) -> None:
-    """Persist settings into ~/.harness/configuration.yaml, preserving the rest
+    """Persist settings into ~/.daisy/configuration.yaml, preserving the rest
     of the file. Only provided values are written. Creates the file from the
     default template if it does not exist yet."""
     path = configuration_file_path()
@@ -204,7 +204,7 @@ class GlobalConfiguration(BaseModel):
 
     @classmethod
     def load(cls) -> "GlobalConfiguration":
-        """Load the configuration from ~/.harness/configuration.yaml, creating the
+        """Load the configuration from ~/.daisy/configuration.yaml, creating the
         home directory and the file on first run from the packaged configuration."""
         path = configuration_file_path()
         if not path.exists():

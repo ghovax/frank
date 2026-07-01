@@ -14,11 +14,11 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
 import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
-import type { ChatTask } from "@/lib/use-chat";
+import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 
 const MotionFlex = motion.create(Flex);
 
@@ -66,6 +66,16 @@ interface ChatInputProps {
   // chip next to the Settings button while a turn runs and no tool group is
   // active (otherwise the status lives in the active group's header). null hides it.
   thinkingLabel?: string | null;
+  // Running token totals for the session, summed from the model's reported usage.
+  // Null until the first turn reports usage.
+  tokenUsage?: TokenUsage | null;
+}
+
+// Compact token count for the counter chip: 2500 -> "2.5k", 1_200_000 -> "1.2M".
+function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(count >= 10_000_000 ? 0 : 1)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(count >= 10_000 ? 0 : 1)}k`;
+  return String(count);
 }
 
 // A clean, symmetric progress ring (SVG arc) for the aggregate task completion.
@@ -93,6 +103,40 @@ function TaskProgressRing({ progress }: { progress: number }) {
           r={radius}
           fill="none"
           stroke="var(--chakra-colors-blue-solid)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform="rotate(-90 7 7)"
+        />
+      </svg>
+    </Box>
+  );
+}
+
+// A filling circle for how full the model's context window is. The arc grows with
+// the fill fraction and shifts colour as it approaches the limit (blue -> amber ->
+// red) so a nearly-full context reads at a glance. Sized 13px to match the icons.
+function ContextFillRing({ fraction }: { fraction: number }) {
+  const clamped = Math.max(0, Math.min(1, fraction));
+  const radius = 5.5;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - clamped);
+  const stroke = clamped >= 0.9
+    ? "var(--chakra-colors-red-solid)"
+    : clamped >= 0.75
+      ? "var(--chakra-colors-orange-solid)"
+      : "var(--chakra-colors-blue-solid)";
+  return (
+    <Box w="13px" h="13px" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
+      <svg width="13" height="13" viewBox="0 0 14 14">
+        <circle cx="7" cy="7" r={radius} fill="none" stroke="var(--chakra-colors-bg-muted)" strokeWidth="2" />
+        <circle
+          cx="7"
+          cy="7"
+          r={radius}
+          fill="none"
+          stroke={stroke}
           strokeWidth="2"
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -181,6 +225,7 @@ export function ChatInput({
   globalModel = "",
   onModelChange,
   thinkingLabel,
+  tokenUsage,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState("");
@@ -550,11 +595,11 @@ export function ChatInput({
               >
                 <Flex direction="column" gap={1.5}>
                   {tasks.map((task) => (
-                    <Flex key={task.identifier} align="flex-start" gap={2}>
-                      <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0} h="1.4em" lineHeight="1.4">
+                    <Flex key={task.identifier} align="center" gap={2}>
+                      <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                         <TaskStatusIcon status={task.status} />
                       </Box>
-                      <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2} flex={1} minW={0} lineHeight="1.4">
+                      <Text fontSize="xs" fontWeight="medium" color="fg" truncate flex={1} minW={0} title={task.description}>
                         {task.description}
                       </Text>
                     </Flex>
@@ -984,6 +1029,47 @@ export function ChatInput({
             </Flex>
           )}
         </Flex>
+        {tokenUsage && tokenUsage.totalTokens > 0 && (() => {
+          const hasContext = tokenUsage.contextWindow > 0 && tokenUsage.contextTokens > 0;
+          const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
+          const contextPercent = Math.min(100, Math.round(contextFraction * 100));
+          const title = `Tokens this session — input ${tokenUsage.inputTokens.toLocaleString()}` +
+            (tokenUsage.cacheReadTokens > 0 ? ` (cache read ${tokenUsage.cacheReadTokens.toLocaleString()})` : "") +
+            `, output ${tokenUsage.outputTokens.toLocaleString()}` +
+            (tokenUsage.reasoningTokens > 0 ? ` (reasoning ${tokenUsage.reasoningTokens.toLocaleString()})` : "") +
+            `, total ${tokenUsage.totalTokens.toLocaleString()} across ${tokenUsage.modelCalls} model call${tokenUsage.modelCalls === 1 ? "" : "s"}` +
+            (hasContext ? `\nContext: ${tokenUsage.contextTokens.toLocaleString()} / ${tokenUsage.contextWindow.toLocaleString()} tokens (${contextPercent}% full)` : "");
+          return (
+            <Flex
+              align="center"
+              gap={1.5}
+              h="28px"
+              px={2}
+              ml="auto"
+              borderRadius="sm"
+              bg="bg.subtle"
+              color="fg.subtle"
+              flexShrink={0}
+              title={title}
+            >
+              {hasContext && (
+                <>
+                  <ContextFillRing fraction={contextFraction} />
+                  <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+                    {contextPercent}%
+                  </Text>
+                  <Box w="1px" h="14px" bg="border" flexShrink={0} />
+                </>
+              )}
+              <Box display="flex" alignItems="center" flexShrink={0}>
+                <LuCoins size={13} />
+              </Box>
+              <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+                {formatTokenCount(tokenUsage.totalTokens)} tokens
+              </Text>
+            </Flex>
+          );
+        })()}
       </Flex>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

@@ -53,6 +53,16 @@ class ChatLiteLLMModel(BaseChatModel):
     def _llm_type(self) -> str:
         return "litellm"
 
+    def context_window(self) -> int:
+        """The model's maximum input context in tokens, from LiteLLM's model-info
+        map. Used to show how full the context is. Returns 0 when the model is not
+        in the map (a custom or unknown endpoint), which callers treat as unknown."""
+        try:
+            info = litellm.get_model_info(self.model)
+        except Exception:  # noqa: BLE001 — unknown model ids raise; treat as unknown
+            return 0
+        return int(info.get("max_input_tokens") or info.get("max_tokens") or 0)
+
     @property
     def _identifying_params(self) -> dict[str, Any]:
         return {
@@ -166,7 +176,13 @@ class ChatLiteLLMModel(BaseChatModel):
         run_manager=None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        params = self._completion_kwargs(stop=stop, stream=True, **kwargs)
+        # include_usage asks the provider for a trailing usage chunk so the real
+        # prompt/completion token counts are reported for the streamed turn (LiteLLM
+        # drops this option for providers that don't support it, and normalizes the
+        # usage object across providers either way).
+        params = self._completion_kwargs(
+            stop=stop, stream=True, stream_options={"include_usage": True}, **kwargs,
+        )
         stream = await litellm.acompletion(
             messages=self._messages_to_dicts(messages),
             **params,
@@ -177,13 +193,57 @@ class ChatLiteLLMModel(BaseChatModel):
                 yield generation_chunk
 
     @staticmethod
+    def _usage_metadata(usage: Any) -> Optional[dict[str, Any]]:
+        """Normalize a LiteLLM ``Usage`` object into a LangChain ``UsageMetadata``
+        dict, so real per-call token counts ride along on the message and merge
+        automatically when streamed chunks are combined. Returns ``None`` when the
+        response carries no usage."""
+        if usage is None:
+            return None
+
+        def _value(source: Any, key: str) -> int:
+            if source is None:
+                return 0
+            if isinstance(source, dict):
+                return int(source.get(key) or 0)
+            return int(getattr(source, key, 0) or 0)
+
+        input_tokens = _value(usage, "prompt_tokens")
+        output_tokens = _value(usage, "completion_tokens")
+        total_tokens = _value(usage, "total_tokens") or (input_tokens + output_tokens)
+        if not (input_tokens or output_tokens or total_tokens):
+            return None
+        metadata: dict[str, Any] = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+        prompt_details = usage.get("prompt_tokens_details") if isinstance(usage, dict) else getattr(usage, "prompt_tokens_details", None)
+        cache_read = _value(prompt_details, "cached_tokens")
+        if cache_read:
+            metadata["input_token_details"] = {"cache_read": cache_read}
+        completion_details = usage.get("completion_tokens_details") if isinstance(usage, dict) else getattr(usage, "completion_tokens_details", None)
+        reasoning = _value(completion_details, "reasoning_tokens")
+        if reasoning:
+            metadata["output_token_details"] = {"reasoning": reasoning}
+        return metadata
+
+    @staticmethod
     def _litellm_chunk_to_generation_chunk(chunk: Any) -> Optional[ChatGenerationChunk]:
+        usage_metadata = ChatLiteLLMModel._usage_metadata(getattr(chunk, "usage", None))
         choices = getattr(chunk, "choices", None) or []
         if not choices:
+            # The trailing include_usage chunk (and some providers' final chunk)
+            # carries usage but no choices — surface an empty message that only
+            # transports the token counts so the merged response accumulates them.
+            if usage_metadata is not None:
+                return ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=usage_metadata))
             return None
         choice = choices[0]
         delta = getattr(choice, "delta", None)
         if delta is None:
+            if usage_metadata is not None:
+                return ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=usage_metadata))
             return None
         content = getattr(delta, "content", None) or ""
         tool_call_chunks: list[dict[str, Any]] = []
@@ -210,6 +270,7 @@ class ChatLiteLLMModel(BaseChatModel):
             content=content,
             tool_call_chunks=tool_call_chunks,
             additional_kwargs=additional_kwargs,
+            usage_metadata=usage_metadata,
         )
         finish_reason = getattr(choice, "finish_reason", None)
         generation_info = {"finish_reason": finish_reason} if finish_reason else None
@@ -275,5 +336,6 @@ class ChatLiteLLMModel(BaseChatModel):
             content=content,
             tool_calls=tool_calls if tool_calls else None,
             additional_kwargs=additional_kwargs,
+            usage_metadata=ChatLiteLLMModel._usage_metadata(getattr(response, "usage", None)),
         )
         return ChatResult(generations=[ChatGeneration(message=message)])

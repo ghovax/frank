@@ -157,7 +157,7 @@ export function ChatPanel({
   onModelChange,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
-  const { messages, agentGroups, tasks, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
+  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -565,6 +565,7 @@ export function ChatPanel({
           globalModel={globalModel}
           onModelChange={(model) => onModelChange?.(model)}
           thinkingLabel={liveStatusLabel}
+          tokenUsage={tokenUsage}
         />
       </Flex>
 

@@ -13,6 +13,6 @@ A configurable multi-agent harness built on the A2A protocol. Each agent profile
 - `examples/mcp/openstreetmap/` — stdio MCP server folder used by the default `openstreetmap` MCP configuration for map smoke tests.
 - `web/` — Next.js chat UI.
 - `src/harness/` — the runtime: agent loop, tool dispatch, permissions, A2A bridge.
-- `~/.harness/` — the harness home directory and single source of truth for mutable state: `configuration.yaml` (provider credentials, selected model, default agent, local agent/skill discovery directories, and MCP servers) and `history.db` (chat history). The directory and config are created on first run from the packaged `src/harness/core/configuration.yaml`.
+- `~/.daisy/` — the harness home directory and single source of truth for mutable state: `configuration.yaml` (provider credentials, selected model, default agent, local agent/skill discovery directories, and MCP servers) and `history.db` (chat history). The directory and config are created on first run from the packaged `src/harness/core/configuration.yaml`.
 
-Run with `uv run python server.py`. Secrets (API keys) are read from environment variables, falling back to `~/.harness/configuration.yaml`.
+Run with `uv run python server.py`. Secrets (API keys) are read from environment variables, falling back to `~/.daisy/configuration.yaml`.

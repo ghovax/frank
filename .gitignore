@@ -24,10 +24,9 @@ wheels/
 /package.json
 /package-lock.json
 
-# Harness state lives in ~/.harness. Repo-local harness state/config is ignored so
-# there is exactly one mutable configuration surface.
-/.harness/
-harness.db
-history.db
-# A legacy configuration.yaml in the repo root (not the tracked .harness/ one).
-/configuration.yaml
+# Harness state lives in ~/.daisy. The configuration.yaml is tracked so it can be
+# symlinked from ~/.daisy/; runtime state (DB, workspaces, worktrees) is ignored.
+/.daisy/history.db*
+/.daisy/*.lock
+/.daisy/workspaces/
+/.daisy/worktrees/

@@ -6,7 +6,7 @@ import { LuEye, LuEyeOff } from "react-icons/lu";
 import { fetchSettings, saveSettings } from "@/lib/api";
 
 // A dialog for entering API credentials and choosing the selected model, persisted
-// in ~/.harness/configuration.yaml. Saving applies everything live (no restart).
+// in ~/.daisy/configuration.yaml. Saving applies everything live (no restart).
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   // The globally-selected model is not edited here (it lives on the composer's
   // model picker); we only track it so saving preserves it rather than wiping it.
@@ -64,7 +64,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               <Text fontSize="xs" color="fg.muted" mb={4}>
                 Credentials are stored in{" "}
                 <Box as="span" fontFamily="var(--app-font-mono)">
-                  ~/.harness/configuration.yaml
+                  ~/.daisy/configuration.yaml
                 </Box>{" "}
                 and applied immediately.
               </Text>

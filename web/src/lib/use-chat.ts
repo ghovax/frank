@@ -56,6 +56,21 @@ export interface ChatTask {
   dependencies: string[];
 }
 
+// Running token totals for the session, summed from the real per-call usage the
+// model reports. Carried on `token_usage` parts and mirrored into hook state.
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  reasoningTokens: number;
+  modelCalls: number;
+  // The latest call's prompt size (system + history + turn) — how full the context
+  // currently is — and the model's context window. contextWindow is 0 when unknown.
+  contextTokens: number;
+  contextWindow: number;
+}
+
 // A turn's input: either typed text or a structured widget interaction. Both
 // drive the same stream; a widget event travels as a typed DataPart, never as
 // prose, so the agent receives it as structured JSON.
@@ -467,6 +482,7 @@ interface ReduceState {
   agentGroups: AgentGroup[];
   tasks: ChatTask[];
   lane: string | null; // id of the open assistant prose block, if any
+  tokenUsage: TokenUsage | null; // latest cumulative token totals, if any reported
 }
 
 function asChatTask(value: unknown): ChatTask | null {
@@ -663,6 +679,23 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
     }
     case "tasks_updated": {
       state.tasks = mergeTasks(state.tasks, Array.isArray(data.tasks) ? data.tasks : []);
+      break;
+    }
+    case "token_usage": {
+      // The cumulative totals grow monotonically across the session, so the
+      // latest part is authoritative on both the live stream and on replay.
+      const cumulative = asRecord(data.cumulative);
+      state.tokenUsage = {
+        inputTokens: Number(cumulative.inputTokens ?? 0),
+        outputTokens: Number(cumulative.outputTokens ?? 0),
+        totalTokens: Number(cumulative.totalTokens ?? 0),
+        cacheReadTokens: Number(cumulative.cacheReadTokens ?? 0),
+        reasoningTokens: Number(cumulative.reasoningTokens ?? 0),
+        modelCalls: Number(cumulative.modelCalls ?? 0),
+        // The current context fill is this call's prompt size, not a cumulative sum.
+        contextTokens: Number(data.inputTokens ?? 0),
+        contextWindow: Number(data.contextWindow ?? 0),
+      };
       break;
     }
     case "status": {
@@ -878,11 +911,11 @@ function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, 
 // Reconstruct messages + agentGroups from a session's persisted A2A tasks. The
 // history arrives already compacted server-side (adjacent same-kind deltas merged),
 // so it is reduced as-is — no client-side compaction pass.
-function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[] } {
+function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[]; tokenUsage: TokenUsage | null } {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
-  const state: ReduceState = { messages: [], agentGroups: [], tasks: [], lane: null };
+  const state: ReduceState = { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null };
   for (const task of mainTasks) {
     state.lane = null;
     // A task's full message stream is its history PLUS its trailing status
@@ -902,7 +935,7 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       else reduceAgentMessage(state, message);
     }
   }
-  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks };
+  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks, tokenUsage: state.tokenUsage };
 }
 
 export function useChat(
@@ -919,6 +952,7 @@ export function useChat(
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
   const [tasks, setTasks] = useState<ChatTask[]>([]);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(!!initialSessionId);
@@ -931,7 +965,7 @@ export function useChat(
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], tasks: [], lane: null });
+  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null });
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
   const queuedMessagesRef = useRef<QueuedMessage[]>([]);
@@ -973,6 +1007,7 @@ export function useChat(
     setMessages(stateRef.current.messages);
     setAgentGroups(stateRef.current.agentGroups);
     setTasks(stateRef.current.tasks);
+    setTokenUsage(stateRef.current.tokenUsage);
   }, []);
 
   const flush = useCallback(() => {
@@ -980,6 +1015,7 @@ export function useChat(
       setMessages(stateRef.current.messages);
       setAgentGroups(stateRef.current.agentGroups);
       setTasks(stateRef.current.tasks);
+      setTokenUsage(stateRef.current.tokenUsage);
       return;
     }
     if (flushFrameRef.current != null) return;
@@ -988,6 +1024,7 @@ export function useChat(
       setMessages(stateRef.current.messages);
       setAgentGroups(stateRef.current.agentGroups);
       setTasks(stateRef.current.tasks);
+      setTokenUsage(stateRef.current.tokenUsage);
     });
   }, []);
 
@@ -1046,7 +1083,7 @@ export function useChat(
           const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
           if (cancelled) return;
           const replayed = replayTasks(tasks);
-          stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null };
+          stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage };
           setSessionId(initialSessionId);
           sessionIdRef.current = initialSessionId;
           flushNow();
@@ -1089,7 +1126,7 @@ export function useChat(
 
     const applySnapshot = (tasks: A2ATask[]) => {
       const replayed = replayTasks(tasks);
-      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null };
+      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage };
       sessionIdRef.current = initialSessionId;
       setSessionId(initialSessionId);
       flushNow();
@@ -1360,10 +1397,11 @@ export function useChat(
 
   const reset = useCallback(() => {
     abort();
-    stateRef.current = { messages: [], agentGroups: [], tasks: [], lane: null };
+    stateRef.current = { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null };
     setMessages([]);
     setAgentGroups([]);
     setTasks([]);
+    setTokenUsage(null);
     setSessionId(null);
     sessionIdRef.current = null;
   }, [abort]);
@@ -1372,6 +1410,7 @@ export function useChat(
     messages,
     agentGroups,
     tasks,
+    tokenUsage,
     queuedMessages,
     sessionId,
     isStreaming,

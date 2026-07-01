@@ -7,14 +7,14 @@ enabled: true
 
 # Configure the Agentic Harness
 
-Use this skill when the user wants to change how the harness itself is set up. The harness has **two configuration surfaces**: the YAML file (`~/.harness/configuration.yaml`) and the running UI (Settings + model picker), which writes back to that file for live changes. Always read the relevant existing file before editing.
+Use this skill when the user wants to change how the harness itself is set up. The harness has **two configuration surfaces**: the YAML file (`~/.daisy/configuration.yaml`) and the running UI (Settings + model picker), which writes back to that file for live changes. Always read the relevant existing file before editing.
 
 The authoritative models live in `src/harness/core/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`), `src/harness/core/providers.py` (the provider registry + key/base-url resolution), and `server.py` (`lifespan`, where it is all wired up).
 
 ## Where things live
 
-- `~/.harness/configuration.yaml` — runtime configuration: provider credentials, selected model/provider, Exa, sandbox, Composio, default agent, and discovery directories. Seeded on first run from the packaged `src/harness/core/configuration.yaml`. The UI writes settings back here.
-- `~/.harness/history.db` — chat history (SQLite, WAL mode). Not configuration; never edit by hand. If its schema ever goes stale after an upgrade, stop the server and delete it — it rebuilds on next start (history is replayable transcripts, not irreplaceable state).
+- `~/.daisy/configuration.yaml` — runtime configuration: provider credentials, selected model/provider, Exa, sandbox, Composio, default agent, and discovery directories. Seeded on first run from the packaged `src/harness/core/configuration.yaml`. The UI writes settings back here.
+- `~/.daisy/history.db` — chat history (SQLite, WAL mode). Not configuration; never edit by hand. If its schema ever goes stale after an upgrade, stop the server and delete it — it rebuilds on next start (history is replayable transcripts, not irreplaceable state).
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
 
 ## Providers, credentials, and the model

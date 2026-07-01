@@ -602,6 +602,26 @@ class HarnessAgentExecutor(AgentExecutor):
                         event=data.get("event", {}),
                         toolCallId=data.get("id", ""),
                     ))
+                elif kind == StreamEvent.Type.USAGE:
+                    await flush_stream_buffers()
+                    cumulative = data.get("cumulative", {})
+                    await emit(_data_part(
+                        "token_usage",
+                        inputTokens=data.get("input_tokens", 0),
+                        outputTokens=data.get("output_tokens", 0),
+                        totalTokens=data.get("total_tokens", 0),
+                        cacheReadTokens=data.get("cache_read_tokens", 0),
+                        reasoningTokens=data.get("reasoning_tokens", 0),
+                        contextWindow=data.get("context_window", 0),
+                        cumulative={
+                            "inputTokens": cumulative.get("input_tokens", 0),
+                            "outputTokens": cumulative.get("output_tokens", 0),
+                            "totalTokens": cumulative.get("total_tokens", 0),
+                            "cacheReadTokens": cumulative.get("cache_read_tokens", 0),
+                            "reasoningTokens": cumulative.get("reasoning_tokens", 0),
+                            "modelCalls": cumulative.get("model_calls", 0),
+                        },
+                    ))
                 elif kind == StreamEvent.Type.PERMISSION_REQUEST:
                     await flush_stream_buffers()
                     await emit(_data_part(
