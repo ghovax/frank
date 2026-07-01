@@ -49,7 +49,7 @@ composio:
   consumer_api_key: ""
   server_name: "composio"
 
-default_agent: assistant
+default_agent: senior-researcher
 agents_root_directory: .agents
 home_agents_root_directory: ~/.agents
 agents_directory: .agents/agents

@@ -185,7 +185,7 @@ class GlobalConfiguration(BaseModel):
     sandbox: SandboxConfiguration = SandboxConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
-    default_agent: str = "assistant"
+    default_agent: str = "senior-researcher"
     agents_root_directory: str = ".agents"
     home_agents_root_directory: str = "~/.agents"
     agents_directory: str = ".agents/agents"
