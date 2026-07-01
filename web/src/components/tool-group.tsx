@@ -29,7 +29,7 @@ const TOOL_SUMMARY: Record<string, { past: (count: number) => string; gerund: st
   read_lines: { past: (n) => (n === 1 ? "read file lines" : `read file lines ${n} times`), gerund: "Reading file lines" },
   find_files: { past: (n) => (n === 1 ? "searched for files" : `searched for files ${n} times`), gerund: "Finding files" },
   search_content: { past: (n) => (n === 1 ? "searched file contents" : `searched file contents ${n} times`), gerund: "Searching content" },
-  replace_lines: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
+  apply_patch: { past: (n) => (n === 1 ? "patched a file" : `patched ${n} files`), gerund: "Patching files" },
   write_file: { past: (n) => (n === 1 ? "wrote a file" : `wrote ${n} files`), gerund: "Writing files" },
   fetch_url: { past: (n) => (n === 1 ? "fetched a URL" : `fetched ${n} URLs`), gerund: "Fetching URLs" },
   open_preview: { past: (n) => (n === 1 ? "opened a preview" : `opened ${n} previews`), gerund: "Opening previews" },

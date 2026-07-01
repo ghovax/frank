@@ -1482,16 +1482,51 @@ async def mcp_read_resource(request: MCPResourceReadRequest):
 
 @app.post("/directory/validate")
 async def validate_directory(request: DirectoryValidationRequest):
-    """Validate that a path is an existing absolute directory."""
+    """Validate that a path is an existing absolute directory and report Git workspace availability."""
     directory = request.directory.strip()
     if not directory:
-        return {"valid": False, "exists": False, "is_directory": False, "is_absolute": False, "path": ""}
+        return {
+            "valid": False,
+            "exists": False,
+            "is_directory": False,
+            "is_absolute": False,
+            "is_git_repository": False,
+            "repository_root": "",
+            "path": "",
+        }
     path = Path(directory).expanduser()
+    valid = path.is_absolute() and path.exists() and path.is_dir()
+    is_git_repository = False
+    repository_root = ""
+    if valid:
+        try:
+            inside = subprocess.run(
+                ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            is_git_repository = inside.returncode == 0 and inside.stdout.strip() == "true"
+            if is_git_repository:
+                root = subprocess.run(
+                    ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if root.returncode == 0:
+                    repository_root = root.stdout.strip()
+        except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired):
+            is_git_repository = False
     return {
-        "valid": path.is_absolute() and path.exists() and path.is_dir(),
+        "valid": valid,
         "exists": path.exists(),
         "is_directory": path.is_dir(),
         "is_absolute": path.is_absolute(),
+        "is_git_repository": is_git_repository,
+        "repository_root": repository_root,
         "path": str(path),
     }
 

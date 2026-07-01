@@ -53,7 +53,7 @@ from harness.tools.tools import (
     read_lines as read_lines_tool,
     find_files as find_files_tool,
     search_content as search_content_tool,
-    replace_lines as replace_lines_tool,
+    apply_patch as apply_patch_tool,
     write_file as write_file_tool,
     fetch_url as fetch_url_tool,
     ask_user as ask_user_tool,
@@ -259,7 +259,7 @@ def _build_tools(
         read_lines_tool,
         find_files_tool,
         search_content_tool,
-        replace_lines_tool,
+        apply_patch_tool,
         write_file_tool,
         fetch_url_tool,
         load_skill_tool,
@@ -1856,7 +1856,7 @@ class AgentRuntime:
                 file_tools.read_lines, self._working_directory, file_path, int(start_line), line_count, read_all,
             )
             result_data = _maybe_json(result)
-            # Record the canonical path and hash so replace_lines/write_file can
+            # Record the canonical path and hash so apply_patch/write_file can
             # reject stale edits.
             if isinstance(result_data, dict):
                 sha256 = result_data.get("sha256")
@@ -1895,7 +1895,7 @@ class AgentRuntime:
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
             )
 
-        elif tool_name in ("replace_lines", "write_file"):
+        elif tool_name in ("apply_patch", "write_file"):
             if self._read_only:
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
                 yield StreamEvent(
@@ -1904,7 +1904,6 @@ class AgentRuntime:
                 return
             file_path = str(tool_arguments.get("file_path", ""))
             resolved = self._canonical_file_path(file_path)
-            expected_sha256 = self._read_files.get(resolved)
             try:
                 lease_token = await self._acquire_filesystem_lease(
                     scope="file",
@@ -1921,17 +1920,16 @@ class AgentRuntime:
                 )
                 return
             try:
-                if tool_name == "replace_lines":
-                    new_lines = tool_arguments.get("new_lines", [])
-                    if not isinstance(new_lines, list):
-                        raise ValueError("new_lines must be a list of strings.")
+                expected_sha256 = self._read_files.get(resolved)
+                if tool_name == "apply_patch":
+                    diff = tool_arguments.get("diff", "")
+                    if not isinstance(diff, str):
+                        raise ValueError("diff must be a string.")
                     result = await asyncio.to_thread(
-                        file_tools.replace_lines,
+                        file_tools.apply_patch,
                         self._working_directory,
                         file_path,
-                        int(tool_arguments.get("start_line", 1) or 1),
-                        int(tool_arguments.get("end_line", 0) or 0),
-                        [str(line) for line in new_lines],
+                        diff,
                         expected_sha256=expected_sha256,
                     )
                 else:
@@ -1941,17 +1939,18 @@ class AgentRuntime:
                     result = await asyncio.to_thread(
                         file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
                     )
-                if tool_name == "replace_lines":
-                    # The file has been modified — the model's previous read is now
-                    # stale. Discard it so the next replace_lines forces a fresh
-                    # read_lines with current line numbers.
-                    self._read_files.pop(resolved, None)
+                result_data = _maybe_json(result)
+                if tool_name == "apply_patch":
+                    if isinstance(result_data, dict) and isinstance(result_data.get("sha256"), str):
+                        self._read_files[resolved] = result_data["sha256"]
+                    else:
+                        self._read_files.pop(resolved, None)
                 else:
                     # write_file: the model supplied the full content, so it knows
                     # the current state and can edit without re-reading.
                     self._read_files[resolved] = file_tools.content_sha256(content)
                 yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
                 )
             finally:
                 self._release_filesystem_lease(lease_token)

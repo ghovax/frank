@@ -148,20 +148,18 @@ export const ReadLinesCompleted: Story = {
   },
 };
 
-export const ReplaceLinesCompleted: Story = {
+export const ApplyPatchCompleted: Story = {
   args: {
-    name: "replace_lines",
+    name: "apply_patch",
     arguments: {
       file_path: "/Users/me/proj/src/db/client.py",
-      start_line: 3,
-      end_line: 3,
-      new_lines: ["def connect(uri, timeout=5):"],
+      diff: "@@ -1,3 +1,3 @@\n import psycopg2\n \n-def connect(uri):\n+def connect(uri, timeout=5):",
       justification: "Adding a timeout parameter to connect()",
       risk: "low",
     },
     toolCallId: "call_edit",
     status: "completed",
-    result: { code: "replace_completed", path: "/Users/me/proj/src/db/client.py", created: false, characters: 412 },
+    result: { code: "patch_completed", path: "/Users/me/proj/src/db/client.py", characters: 412 },
   },
 };
 

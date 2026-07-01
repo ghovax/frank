@@ -101,19 +101,17 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
         <>
           <Flex align="center" gap={1.5} mb={2} color="fg.muted">
             <LuListChecks size={13} />
-            <Text fontSize="xs" fontWeight="bold">Available capabilities</Text>
+            <Text fontSize="xs" fontWeight="bold">Skills</Text>
           </Flex>
-          {card?.description && (
-            <Box mb={2} color="fg.muted">
-              <MarkdownContent content={card.description} fontSize="xs" />
-            </Box>
-          )}
+          <Box mb={2} color="fg.muted">
+            <Text fontSize="xs">Capabilities available to assist with your tasks.</Text>
+          </Box>
           <Flex direction="column" gap={2}>
-            <ScopeLabel>Global</ScopeLabel>
+            <ScopeLabel icon={<LuPuzzle size={12} />}>Skills available globally</ScopeLabel>
             {globalSkills.length > 0
               ? globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
               : <EmptyScope icon={<LuPuzzle />}>No global skills</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel>This project</ScopeLabel>}
+            {!isHomeFolder && <ScopeLabel icon={<LuPuzzle size={12} />}>Skills available in this project</ScopeLabel>}
             {!isHomeFolder && (projectSkills.length > 0
               ? projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
               : <EmptyScope icon={<LuPuzzle />}>No project-specific skills</EmptyScope>)}
@@ -131,11 +129,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             <Text fontSize="xs">External tools the agent can call, exposed by the configured MCP servers and grouped by server.</Text>
           </Box>
           <Flex direction="column" gap={2}>
-            <ScopeLabel>Global</ScopeLabel>
+            <ScopeLabel icon={<LuPlug size={12} />}>Tools available globally</ScopeLabel>
             {globalServers.length > 0
               ? globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)
               : <EmptyScope icon={<LuPlug />}>No global tools</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel>This project</ScopeLabel>}
+            {!isHomeFolder && <ScopeLabel icon={<LuPlug size={12} />}>Tools available in this project</ScopeLabel>}
             {!isHomeFolder && (projectServers.length > 0
               ? projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)
               : <EmptyScope icon={<LuPlug />}>No project-specific tools</EmptyScope>)}
@@ -149,11 +147,14 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
 // A plain label separating the global capabilities from the ones the selected
 // project contributes itself. Always shown (even in the home folder) so the two
 // scopes read clearly; deliberately understated, not a bold uppercase heading.
-function ScopeLabel({ children }: { children: string }) {
+function ScopeLabel({ icon, children }: { icon?: ReactNode; children: string }) {
   return (
-    <Text fontSize="xs" color="fg.subtle" mt={1}>
-      {children}
-    </Text>
+    <Flex align="center" gap={1.5} mt={1}>
+      {icon && <Box color="fg.subtle" flexShrink={0}>{icon}</Box>}
+      <Text fontSize="xs" fontWeight="medium" color="fg.subtle">
+        {children}
+      </Text>
+    </Flex>
   );
 }
 

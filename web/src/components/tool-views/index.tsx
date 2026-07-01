@@ -294,18 +294,14 @@ function ReadLinesCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ReplaceLinesCallView({ args }: { args: Record<string, unknown> }) {
-  const newLines = Array.isArray(args.new_lines) ? args.new_lines.map(asString).join("\n") : asString(args.new_lines);
-
+function ApplyPatchCallView({ args }: { args: Record<string, unknown> }) {
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      <InlineField label="Start line">{asString(args.start_line)}</InlineField>
-      <InlineField label="End line">{asString(args.end_line)}</InlineField>
-      <Field label="New lines">
-        <MonoBlock>{newLines || " "}</MonoBlock>
+      <Field label="Diff">
+        <MonoBlock>{asString(args.diff) || " "}</MonoBlock>
       </Field>
     </FieldList>
   );
@@ -450,7 +446,7 @@ function MatchListResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  // Shared by replace_lines and write_file. Path is on the call card; the
+  // Shared by apply_patch and write_file. Path is on the call card; the
   // internal `code` status is dropped.
   const characters = asString(data.characters);
   const before = asString(data.before);
@@ -588,8 +584,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <WebPreviewCallView args={args} />;
     case "read_lines":
       return <ReadLinesCallView args={args} />;
-    case "replace_lines":
-      return <ReplaceLinesCallView args={args} />;
+    case "apply_patch":
+      return <ApplyPatchCallView args={args} />;
     case "write_file":
       return <WriteFileCallView args={args} />;
     case "search_content":
@@ -1191,7 +1187,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
     if (name === "read_task") return <ReadTaskResultView data={data} />;
     if (name === "read_lines") return <ReadLinesResultView data={data} />;
     if (name === "find_files" || name === "search_content") return <MatchListResultView data={data} />;
-    if (name === "replace_lines" || name === "write_file") return <FileEditResultView data={data} />;
+    if (name === "apply_patch" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;

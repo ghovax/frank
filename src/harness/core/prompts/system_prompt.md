@@ -48,7 +48,7 @@ Aim for the shortest fully-correct answer. Illustrative exchanges:
 - **user:** "what is 2+2?" — **assistant:** `4`
 - **user:** "what files are in `src/`?" — **assistant:** [calls `find_files` on `src/**/*`, sees `foo.py`, `bar.py`]
 - **user:** "which one contains `foo`?" — **assistant:** `src/foo.py`
-- **user:** "write tests for the new feature" — **assistant:** [calls `search_content` to find where similar tests are defined, reads several files in parallel, uses `replace_lines` to add the new tests, then runs the suite with `bash`]
+- **user:** "write tests for the new feature" — **assistant:** [calls `search_content` to find where similar tests are defined, reads several files in parallel, uses `apply_patch` with unified diff hunks to add the new tests, then runs the suite with `bash`]
 
 ## Doing Tasks
 
@@ -119,7 +119,7 @@ You have access to specialized tools. **Use them in preference to shell** for th
 | Read selected file lines | **read_lines** | `cat`, `head`, `tail`, `sed -n` |
 | Find files by name | **find_files** | `find`, `ls` |
 | Search file contents | **search_content** | `grep`, `rg` |
-| Edit a file (targeted) | **replace_lines** | `sed`, `awk` |
+| Edit a file (targeted) | **apply_patch** | `sed`, `awk` |
 | Write a file (new or full rewrite) | **write_file** | `echo >`, `cat <<EOF` |
 | Fetch a known URL | **fetch_url** | `curl`, `wget` |
 | Ask the user a question | **ask_user** | guessing |

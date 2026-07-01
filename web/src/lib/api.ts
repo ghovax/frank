@@ -433,7 +433,15 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
   await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
 }
 
-export async function validateWorkingDirectory(directory: string): Promise<{ valid: boolean; exists: boolean; is_directory: boolean; is_absolute: boolean; path: string }> {
+export async function validateWorkingDirectory(directory: string): Promise<{
+  valid: boolean;
+  exists: boolean;
+  is_directory: boolean;
+  is_absolute: boolean;
+  is_git_repository: boolean;
+  repository_root: string;
+  path: string;
+}> {
   const response = await fetch(`${API_BASE}/directory/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

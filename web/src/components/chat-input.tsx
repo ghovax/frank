@@ -14,7 +14,7 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
 import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
@@ -189,8 +189,10 @@ export function ChatInput({
   const [thinkingVisible, setThinkingVisible] = useState(!!thinkingLabel);
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
-    valid: true,
-    checking: false,
+    valid: false,
+    isGitRepository: false,
+    repositoryRoot: "",
+    checking: !!workingDirectory,
   });
 
   const agentCollection = useMemo(
@@ -220,7 +222,7 @@ export function ChatInput({
       colorPalette: undefined,
     },
     auto: {
-      icon: <LuSparkles size={13} />,
+      icon: <LuScan size={13} />,
       color: "blue.fg",
       bg: "blue.subtle",
       borderColor: "blue.muted",
@@ -272,7 +274,6 @@ export function ChatInput({
           colorPalette: workspaceStrategy === "worktree" ? "green" as const : "purple" as const,
         }
       : null;
-
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
   const taskProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
   const historyAppearance = historyOpen
@@ -316,7 +317,8 @@ export function ChatInput({
       };
 
   const currentDirectory = (workingDirectory ?? "").trim();
-  const directoryValid = !!currentDirectory && directoryState.path === currentDirectory && directoryState.valid;
+  const directoryStateMatchesCurrent = directoryState.path === currentDirectory;
+  const directoryValid = !!currentDirectory && directoryStateMatchesCurrent && directoryState.valid;
   // A session is bound to the folder it was started in: once it exists, the
   // project can no longer be changed, so the selector and browse are locked.
   const folderLocked = !!sessionId;
@@ -324,6 +326,14 @@ export function ChatInput({
   // Changing it after the session exists would desynchronize the UI setting from
   // the checkout/branch/worktree the backend already created.
   const workspaceLocked = !!sessionId;
+  const gitWorkspaceAvailable = directoryStateMatchesCurrent && directoryState.valid && directoryState.isGitRepository;
+  const gitWorkspaceUnavailable = directoryStateMatchesCurrent && directoryState.valid && !directoryState.checking && !directoryState.isGitRepository;
+  const gitWorkspaceUnavailableLabel = directoryState.valid
+    ? "Branch and worktree sessions require the selected folder to be inside a Git repository."
+    : "Choose a valid working directory before using branch or worktree sessions.";
+  const displayedWorkspaceStrategy =
+    !workspaceLocked && gitWorkspaceUnavailable && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
+  const workspaceStrategyValid = workspaceLocked || workspaceStrategy === "none" || gitWorkspaceAvailable;
   // The server owns each folder's display name (derived with real path tooling),
   // so the selector only ever reads names — it never parses a path itself.
   const currentProjectName = useMemo(
@@ -349,19 +359,25 @@ export function ChatInput({
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       if (!currentDirectory) {
-        setDirectoryState({ path: currentDirectory, valid: false, checking: false });
+        setDirectoryState({ path: currentDirectory, valid: false, isGitRepository: false, repositoryRoot: "", checking: false });
         return;
       }
-      setDirectoryState({ path: currentDirectory, valid: false, checking: true });
+      setDirectoryState({ path: currentDirectory, valid: false, isGitRepository: false, repositoryRoot: "", checking: true });
       validateWorkingDirectory(currentDirectory)
         .then((result) => {
           if (!cancelled) {
-            setDirectoryState({ path: currentDirectory, valid: result.valid, checking: false });
+            setDirectoryState({
+              path: currentDirectory,
+              valid: result.valid,
+              isGitRepository: result.is_git_repository,
+              repositoryRoot: result.repository_root,
+              checking: false,
+            });
           }
         })
         .catch(() => {
           if (!cancelled) {
-            setDirectoryState({ path: currentDirectory, valid: false, checking: false });
+            setDirectoryState({ path: currentDirectory, valid: false, isGitRepository: false, repositoryRoot: "", checking: false });
           }
         });
     }, 250);
@@ -371,6 +387,21 @@ export function ChatInput({
       window.clearTimeout(timeout);
     };
   }, [currentDirectory]);
+
+  useEffect(() => {
+    if (workspaceLocked || workspaceStrategy === "none" || directoryState.checking) return;
+    if (directoryState.path !== currentDirectory || !directoryState.valid || directoryState.isGitRepository) return;
+    onWorkspaceStrategyChange?.("none");
+  }, [
+    currentDirectory,
+    directoryState.checking,
+    directoryState.isGitRepository,
+    directoryState.path,
+    directoryState.valid,
+    onWorkspaceStrategyChange,
+    workspaceLocked,
+    workspaceStrategy,
+  ]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -396,6 +427,7 @@ export function ChatInput({
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     if (!directoryValid) return;
+    if (!workspaceStrategyValid) return;
     // While the agent is busy this enqueues for the next turn (handled upstream).
     onSend(trimmed);
     setInputValue("");
@@ -693,7 +725,7 @@ export function ChatInput({
                   gap={1.5}
                   fontSize="xs"
                   fontWeight="medium"
-                  disabled={disabled || !directoryValid || !inputValue.trim()}
+                  disabled={disabled || !directoryValid || !workspaceStrategyValid || !inputValue.trim()}
                 >
                   <LuArrowUp size={16} />
                   Send
@@ -783,7 +815,16 @@ export function ChatInput({
           </Button>
           <Flex align="center" gap={1.5} flexWrap="wrap">
             {workspaceChoices.map((choice) => {
-              const active = workspaceStrategy === choice.value;
+              const active = displayedWorkspaceStrategy === choice.value;
+              const gitModeUnavailable = choice.value !== "none" && !gitWorkspaceAvailable;
+              const choiceDisabled = workspaceLocked || !onWorkspaceStrategyChange || gitModeUnavailable;
+              const choiceTitle = workspaceLocked
+                ? "Workspace strategy is fixed for this chat"
+                : gitModeUnavailable
+                  ? gitWorkspaceUnavailableLabel
+                  : directoryState.repositoryRoot && choice.value !== "none"
+                    ? `Git repository: ${directoryState.repositoryRoot}`
+                    : "Session workspace strategy";
               return (
                 <Button
                   key={choice.value}
@@ -796,8 +837,8 @@ export function ChatInput({
                   px={2}
                   flexShrink={0}
                   aria-pressed={active}
-                  title={workspaceLocked ? "Workspace strategy is fixed for this chat" : "Session workspace strategy"}
-                  disabled={workspaceLocked || !onWorkspaceStrategyChange}
+                  title={choiceTitle}
+                  disabled={choiceDisabled}
                   onClick={() => onWorkspaceStrategyChange?.(choice.value)}
                 >
                   {choice.icon}
@@ -805,6 +846,29 @@ export function ChatInput({
                 </Button>
               );
             })}
+            {!workspaceLocked && gitWorkspaceUnavailable && (
+              <Flex
+                align="center"
+                gap={1.5}
+                h="28px"
+                px={2}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor="orange.muted"
+                bg="orange.subtle"
+                color="orange.fg"
+                flexShrink={0}
+                maxW={{ base: "100%", md: "300px" }}
+                title={gitWorkspaceUnavailableLabel}
+              >
+                <Box display="flex" alignItems="center" flexShrink={0}>
+                  <LuTriangleAlert size={13} />
+                </Box>
+                <Text fontSize="xs" fontWeight="medium" truncate>
+                  Git workspace unavailable
+                </Text>
+              </Flex>
+            )}
             {workspaceLocked && workspaceDetail && workspaceDetail.label && (
               <Flex
                 align="center"
@@ -831,19 +895,19 @@ export function ChatInput({
           </Flex>
         </Flex>
         <Flex align="center" justify="flex-start" gap={1.5} flex={{ base: "1 1 100%", md: "0 1 auto" }} minW={0}>
-          <IconButton
-            aria-label="Browse folder"
+          <Button
             size="xs"
             variant="ghost"
             borderRadius="sm"
-            minW="28px"
             h="28px"
+            px={2}
             flexShrink={0}
             disabled={folderLocked}
             onClick={onBrowseFolder}
           >
             <LuFolder size={13} />
-          </IconButton>
+            Open folder
+          </Button>
           <Menu.Root size="sm">
             <Menu.Trigger asChild>
               <Button

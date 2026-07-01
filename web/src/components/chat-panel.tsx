@@ -435,7 +435,7 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
+            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} py={12}>
               <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={10}>
                 What should we build in {currentFolderName}?
               </Text>

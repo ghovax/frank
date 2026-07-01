@@ -16,6 +16,7 @@ import json
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -168,50 +169,119 @@ def search_content(
     return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
 
 
-def apply_line_replacement(content: str, start_line: int, end_line: int, new_lines: list[str]) -> str:
-    """Replace an inclusive 1-indexed line range. ``end_line < start_line`` inserts."""
-    if start_line < 1:
-        raise ValueError("start_line must be 1 or greater.")
-    if end_line < start_line - 1:
-        raise ValueError("end_line must be at least start_line - 1.")
-    if any("\n" in line or "\r" in line for line in new_lines):
-        raise ValueError("new_lines entries must not contain newline characters; use one list item per line.")
+@dataclass
+class PatchHunk:
+    old_start: int = 1
+    lines: list[tuple[str, str]] = field(default_factory=list)
 
+
+def _parse_unified_diff(diff: str) -> list[PatchHunk]:
+    lines = diff.splitlines()
+    hunks: list[PatchHunk] = []
+    index = 0
+    header_pattern = re.compile(r"^@@ -(?P<old_start>\d+)(?:,\d+)? \+(?:\d+)(?:,\d+)? @@")
+
+    while index < len(lines):
+        line = lines[index]
+        if not line.startswith("@@"):
+            index += 1
+            continue
+        match = header_pattern.match(line)
+        if match is None:
+            raise ValueError(f"Invalid unified diff hunk header: {line}")
+        hunk = PatchHunk(old_start=int(match.group("old_start")))
+        index += 1
+        while index < len(lines) and not lines[index].startswith("@@"):
+            line = lines[index]
+            if line.startswith("\\ No newline at end of file"):
+                index += 1
+                continue
+            if not line:
+                raise ValueError("Unified diff hunk lines must start with ' ', '+', or '-'.")
+            prefix = line[0]
+            if prefix not in (" ", "+", "-"):
+                raise ValueError("Unified diff hunk lines must start with ' ', '+', or '-'.")
+            hunk.lines.append((prefix, line[1:]))
+            index += 1
+        if not hunk.lines:
+            raise ValueError("Unified diff hunk cannot be empty.")
+        hunks.append(hunk)
+
+    if not hunks:
+        raise ValueError("Patch must contain at least one unified diff hunk starting with '@@'.")
+    return hunks
+
+
+def _find_sequence(lines: list[str], needle: list[str], start: int) -> int:
+    if not needle:
+        return start
+    last = len(lines) - len(needle)
+    for index in range(start, last + 1):
+        if lines[index:index + len(needle)] == needle:
+            return index
+    preview = "\n".join(needle[:5])
+    raise ValueError(f"Patch context did not match the current file content:\n{preview}")
+
+
+def _apply_hunks(content: str, hunks: list[PatchHunk]) -> str:
     lines = content.split("\n")
-    if start_line > len(lines) + 1:
-        raise ValueError(f"start_line is past the end of the file. Last valid insertion line is {len(lines) + 1}.")
-    if end_line > len(lines):
-        raise ValueError(f"end_line is past the end of the file. Last existing line is {len(lines)}.")
+    cursor = 0
+    for hunk in hunks:
+        old_lines = [text for prefix, text in hunk.lines if prefix in (" ", "-")]
+        new_lines = [text for prefix, text in hunk.lines if prefix in (" ", "+")]
+        preferred = max(0, hunk.old_start - 1)
+        if not old_lines:
+            index = min(preferred, len(lines))
+        elif lines[preferred:preferred + len(old_lines)] == old_lines:
+            index = preferred
+        else:
+            index = _find_sequence(lines, old_lines, cursor)
+        lines = [*lines[:index], *new_lines, *lines[index + len(old_lines):]]
+        cursor = index + len(new_lines)
+    return "\n".join(lines)
 
-    start_index = start_line - 1
-    end_index = end_line
-    return "\n".join([*lines[:start_index], *new_lines, *lines[end_index:]])
 
-
-def replace_lines(
-    working_directory: str, file_path: str, start_line: int, end_line: int, new_lines: list[str],
-    *, expected_sha256: str | None,
+def apply_patch(
+    working_directory: str,
+    file_path: str,
+    diff: str,
+    *,
+    expected_sha256: str | None,
 ) -> str:
-    path = _resolve(working_directory, file_path)
+    path = _resolve(working_directory, file_path).expanduser().resolve(strict=False)
     if not path.exists():
-        raise FileNotFoundError(f"File not found: {path}")
+        raise FileNotFoundError(f"Cannot patch missing file: {path}. Use write_file to create new files.")
     if path.is_dir():
-        raise IsADirectoryError(f"Path is a directory, not a file: {path}")
+        raise IsADirectoryError(f"Cannot patch directory: {path}")
+    before = path.read_text(errors="replace")
+    _validate_expected_hash(path, before, expected_sha256)
+    after = _apply_hunks(before, _parse_unified_diff(diff))
+    if after == before:
+        raise ValueError(f"No changes to apply for {path}.")
+    path.write_text(after)
+    summary = {
+        "code": "patch_completed",
+        "path": str(path),
+        "characters": len(after),
+        "sha256": content_sha256(after),
+    }
+    return json.dumps({
+        **summary,
+        "before": before,
+        "after": after,
+        "model_context": summary,
+    })
+
+
+def _validate_expected_hash(path: Path, content: str, expected_sha256: str | None) -> None:
     if expected_sha256 is None:
         raise PermissionError(f"You must read {path} with read_lines before editing it.")
-
-    content = path.read_text(errors="replace")
     if content_sha256(content) != expected_sha256:
         raise ValueError(f"{path} changed since it was last read. Re-read the file before editing it.")
-    new_content = apply_line_replacement(content, start_line, end_line, new_lines)
-    if new_content == content:
-        raise ValueError("No changes to apply: replacement produced identical content.")
-    path.write_text(new_content)
-    return _edit_payload("replace_completed", path, created=False, before=content, after=new_content)
 
 
 def _edit_payload(code: str, path: Path, *, created: bool, before: str, after: str) -> str:
-    """Result for replace_lines/write_file. ``before``/``after`` carry the full old and
+    """Result for write_file. ``before``/``after`` carry the full old and
     new file content for the UI's diff viewer; ``model_context`` is the lean summary
     the model actually sees (the file contents are redundant in the model's context
     — it already read the file and supplied the replacement — so they are stripped
@@ -288,8 +358,7 @@ __all__ = [
     "find_files",
     "search_content",
     "content_sha256",
-    "apply_line_replacement",
-    "replace_lines",
+    "apply_patch",
     "write_file",
     "fetch_url",
 ]

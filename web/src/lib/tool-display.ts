@@ -46,7 +46,7 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuFolderSearch, iconColor: "cyan.fg" };
     case "search_content":
       return { icon: LuSearchCode, iconColor: "teal.fg" };
-    case "replace_lines":
+    case "apply_patch":
       return { icon: LuFilePen, iconColor: "yellow.fg" };
     case "write_file":
       return { icon: LuFilePlus, iconColor: "green.fg" };
@@ -90,8 +90,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.pattern ? `Finding files matching "${String(args.pattern)}"` : "Finding files";
     case "search_content":
       return args?.pattern ? `Searching for "${String(args.pattern)}"` : "Searching content";
-    case "replace_lines":
-      return args?.file_path ? `Replacing lines in ${shortPath(String(args.file_path))}` : "Replacing lines";
+    case "apply_patch":
+      return args?.file_path ? `Patching ${shortPath(String(args.file_path))}` : "Applying patch";
     case "write_file":
       return args?.file_path ? `Writing ${shortPath(String(args.file_path))}` : "Writing file";
     case "fetch_url":
