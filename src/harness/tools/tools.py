@@ -1,11 +1,12 @@
 import asyncio
 import atexit
 import json
+import os
 import re
 import signal
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Callable, Iterable, Literal
 
 from exa_py import Exa
 from langchain.tools import tool
@@ -23,59 +24,85 @@ class TaskRegistry:
     def __init__(self, prefix: str):
         self._prefix = prefix
         self._output_directory = Path("/tmp")
-        self._tasks: dict[str, tuple[asyncio.Task, Path | None]] = {}
+        self._tasks: dict[str, tuple[asyncio.Task, Path | None, Callable[[], None] | None]] = {}
 
-    def start(self, coroutine, output_path: Path | None = None) -> tuple[str, Path]:
+    def start(self, coroutine, output_path: Path | None = None, cancel_callback: Callable[[], None] | None = None) -> tuple[str, Path]:
         identifier = new_id(self._prefix)
         if output_path is None:
             output_path = self._output_directory / f"{identifier}.log"
         task = asyncio.create_task(coroutine)
-        self._tasks[identifier] = (task, output_path)
+        self._tasks[identifier] = (task, output_path, cancel_callback)
         return identifier, output_path
 
-    def register(self, task: asyncio.Task, output_path: Path | None = None, identifier: str | None = None) -> str:
+    def register(
+        self,
+        task: asyncio.Task,
+        output_path: Path | None = None,
+        identifier: str | None = None,
+        cancel_callback: Callable[[], None] | None = None,
+    ) -> str:
         if identifier is None:
             identifier = new_id(self._prefix)
-        self._tasks[identifier] = (task, output_path)
+        self._tasks[identifier] = (task, output_path, cancel_callback)
         return identifier
 
     def add_done_callback(self, identifier: str, callback) -> bool:
         entry = self._tasks.get(identifier)
         if entry is None:
             return False
-        task, _output_path = entry
+        task, _output_path, _cancel_callback = entry
         task.add_done_callback(lambda _task: callback(identifier))
         return True
 
     def collect_completed(self, identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
         allowed_identifiers = set(identifiers) if identifiers is not None else None
         completed = []
-        for identifier, (task, output_path) in list(self._tasks.items()):
+        for identifier, (task, output_path, _cancel_callback) in list(self._tasks.items()):
             if allowed_identifiers is not None and identifier not in allowed_identifiers:
                 continue
             if task.done():
                 try:
                     result = task.result()
+                except asyncio.CancelledError:
+                    result = json.dumps({
+                        "code": f"{self._prefix}_cancelled",
+                        "task_identifier": identifier,
+                        "output_file": str(output_path) if output_path else "",
+                    })
                 except Exception as exception:
                     result = str(exception)
                 completed.append((identifier, result))
                 del self._tasks[identifier]
         return completed
 
+    def cancel(self, identifier: str) -> bool:
+        entry = self._tasks.get(identifier)
+        if entry is None:
+            return False
+        task, _output_path, cancel_callback = entry
+        if cancel_callback is not None:
+            cancel_callback()
+        task.cancel()
+        return True
+
+    def cancel_many(self, identifiers: Iterable[str]) -> None:
+        for identifier in list(identifiers):
+            self.cancel(identifier)
+
     def cancel_all(self) -> None:
-        for identifier, (task, _) in list(self._tasks.items()):
-            task.cancel()
-            del self._tasks[identifier]
+        for identifier in list(self._tasks):
+            self.cancel(identifier)
+            self._tasks.pop(identifier, None)
 
     @property
     def active_count(self) -> int:
-        return sum(1 for task, _ in self._tasks.values() if not task.done())
+        return sum(1 for task, _, _ in self._tasks.values() if not task.done())
 
     def active_count_for(self, identifiers: Iterable[str]) -> int:
         allowed_identifiers = set(identifiers)
         return sum(
             1
-            for identifier, (task, _) in self._tasks.items()
+            for identifier, (task, _, _) in self._tasks.items()
             if identifier in allowed_identifiers and not task.done()
         )
 
@@ -83,7 +110,7 @@ class TaskRegistry:
         allowed_identifiers = set(identifiers) if identifiers is not None else None
         return [
             identifier
-            for identifier, (task, _) in self._tasks.items()
+            for identifier, (task, _, _) in self._tasks.items()
             if (allowed_identifiers is None or identifier in allowed_identifiers) and not task.done()
         ]
 
@@ -151,13 +178,30 @@ async def bash(
               high for destructive operations.
     """
     output_path = Path("/tmp") / f"{new_id('bash')}.log"
+    process_holder: dict[str, Any] = {}
+
+    def cancel_process() -> None:
+        process = process_holder.get("process")
+        if process is None or process.returncode is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                return
 
     async def run() -> str:
         process = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
+        process_holder["process"] = process
         process_id = process.pid
 
         async def write_stream(stream, handle):
@@ -168,32 +212,54 @@ async def bash(
                 handle.write(line.decode())
                 handle.flush()
 
-        with output_path.open("w") as file_handle:
-            await asyncio.gather(
-                write_stream(process.stdout, file_handle),
-                write_stream(process.stderr, file_handle),
-            )
+        try:
+            with output_path.open("w") as file_handle:
+                await asyncio.gather(
+                    write_stream(process.stdout, file_handle),
+                    write_stream(process.stderr, file_handle),
+                )
 
-        await process.wait()
-        output = output_path.read_text()
-        if not output:
-            return json.dumps({"code": "bash_completed", "output": "", "pid": process_id})
-        if len(output) > 1 << 17:
-            return json.dumps({
-                "code": "bash_completed",
+            await process.wait()
+        except asyncio.CancelledError:
+            cancel_process()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=2)
+            except asyncio.TimeoutError:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    try:
+                        process.kill()
+                    except ProcessLookupError:
+                        pass
+                await process.wait()
+            output = output_path.read_text(errors="replace") if output_path.exists() else ""
+            payload = {
+                "code": "bash_cancelled",
+                "output": output[: 1 << 16],
                 "output_file": str(output_path),
+                "truncated": len(output) > 1 << 16,
                 "pid": process_id,
                 "size": len(output),
-            })
+            }
+            return json.dumps(payload)
+        output = output_path.read_text()
+        if not output:
+            return json.dumps({"code": "bash_completed", "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0})
+        truncated = len(output) > 1 << 16
         return json.dumps({
             "code": "bash_completed",
-            "output": output,
+            "output": output[: 1 << 16],
+            "output_file": str(output_path),
+            "truncated": truncated,
             "pid": process_id,
             "size": len(output),
         })
 
     task = asyncio.create_task(run())
-    task_identifier = bash_tasks.register(task, output_path)
+    task_identifier = bash_tasks.register(task, output_path, cancel_callback=cancel_process)
     return json.dumps({
         "code": "bash_started",
         "task_identifier": task_identifier,
@@ -658,24 +724,26 @@ def update_goal(
 
 
 @tool
-def read_file(
+def read_lines(
     file_path: str,
-    offset: int = 1,
-    limit: int | None = None,
+    start_line: int = 1,
+    line_count: int | None = 2000,
+    read_all: bool = False,
     justification: str = "",
 ) -> str:
-    """Read a file or directory from the local filesystem.
+    """Read selected lines from a file.
 
     Args:
         file_path: Absolute path (or path relative to the working directory).
-        offset: Line number to start from (1-indexed).
-        limit: Maximum number of lines to return.
+        start_line: Line number to start from (1-indexed).
+        line_count: Maximum number of lines to return unless read_all is true.
+        read_all: Return the whole file. Use only when the file is known to be small.
         justification: A concise, user-facing reason for this read.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-read_file.description = _load_tool_description("read_file")
+read_lines.description = _load_tool_description("read_lines")
 
 
 @tool

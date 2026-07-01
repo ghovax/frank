@@ -100,7 +100,17 @@ const markdownComponents: Components = {
       // it) so it never drifts with the surrounding inheritance chain — code
       // blocks always read at the same size as body text.
       return (
-        <Box borderRadius="sm" overflow="hidden" border="1px solid" borderColor="border" fontSize="xs" my={2}>
+        <Box
+          borderRadius="sm"
+          overflow="auto"
+          border="1px solid"
+          borderColor="border"
+          fontSize="xs"
+          my={2}
+          maxW="100%"
+          maxH="420px"
+          bg="bg.subtle"
+        >
           <SyntaxHighlighter
             style={xcode}
             language={languageMatch ? languageMatch[1] : "text"}
@@ -110,8 +120,10 @@ const markdownComponents: Components = {
               borderRadius: "var(--chakra-radii-none)",
               fontFamily: "var(--app-font-mono)",
               fontSize: "inherit",
+              background: "var(--chakra-colors-bg-subtle)",
+              minWidth: "max-content",
             }}
-            codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit" } }}
+            codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit", whiteSpace: "pre" } }}
           >
             {codeString}
           </SyntaxHighlighter>

@@ -61,17 +61,17 @@ export function MonoBlock({ children, maxH = "260px" }: { children: ReactNode; m
       fontFamily="var(--app-font-mono)"
       fontSize="xs"
       lineHeight="1.5"
-      bg="bg.muted"
+      bg="bg.subtle"
       border="1px solid"
       borderColor="border"
       borderRadius="sm"
       px={2}
       py={1.5}
+      maxW="100%"
       maxH={maxH}
       overflowX="auto"
       overflowY="auto"
-      whiteSpace="pre-wrap"
-      wordBreak="break-word"
+      whiteSpace="pre"
     >
       {children}
     </Box>

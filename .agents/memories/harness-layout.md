@@ -1,6 +1,7 @@
 ---
 name: harness-layout
 title: Harness configuration layout
+description: Describes this repository's .agents layout for project-local agents, skills, memories, MCP servers, and MCP examples.
 importance: high
 tags: configuration, dotagents, mcp
 ---

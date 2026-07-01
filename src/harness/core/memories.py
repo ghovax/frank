@@ -11,6 +11,7 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 class Memory(BaseModel):
     name: str
     title: str = ""
+    description: str = ""
     importance: str = ""
     tags: list[str] = []
     body: str = ""
@@ -27,7 +28,8 @@ def _parse_memory(path: Path) -> Memory:
     content = path.read_text()
     match = _FRONTMATTER.match(content)
     if not match:
-        return Memory(name=path.stem, title=path.stem, body=content.strip(), path=str(path))
+        first_line = next((line.strip() for line in content.splitlines() if line.strip()), "")
+        return Memory(name=path.stem, title=path.stem, description=first_line[:240], body=content.strip(), path=str(path))
     frontmatter = yaml.safe_load(match.group(1)) or {}
     raw_tags = frontmatter.get("tags", [])
     if isinstance(raw_tags, str):
@@ -37,6 +39,7 @@ def _parse_memory(path: Path) -> Memory:
     return Memory(
         name=str(frontmatter.get("name") or path.stem),
         title=str(frontmatter.get("title") or path.stem),
+        description=str(frontmatter.get("description") or ""),
         importance=str(frontmatter.get("importance", "")),
         tags=tags,
         body=match.group(2).strip(),
@@ -60,10 +63,11 @@ def memories_payload(memories: list[Memory]) -> list[dict]:
         {
             "name": memory.name,
             "title": memory.title,
+            "description": memory.description,
             "importance": memory.importance,
             "tags": memory.tags,
-            "body": memory.body,
             "path": memory.path,
+            "read_hint": "Use read_lines on this path if the description indicates it is relevant.",
         }
         for memory in memories
     ]

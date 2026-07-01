@@ -126,11 +126,13 @@ export const AwaitingAnswer: Story = {
 
 // --- the new specialized tools, completed ---
 
-export const ReadFileCompleted: Story = {
+export const ReadLinesCompleted: Story = {
   args: {
-    name: "read_file",
+    name: "read_lines",
     arguments: {
       file_path: "/Users/me/proj/src/db/client.py",
+      start_line: 1,
+      line_count: 3,
       justification: "Reading the connection module before editing it",
     },
     toolCallId: "call_read",

@@ -1,52 +1,39 @@
-# Per-provider credentials. Each provider key resolves as: this value, then the
-# provider's environment variable (for example ANTHROPIC_API_KEY). First-party
-# providers use LiteLLM's built-in endpoints. OpenAI-compatible providers can
-# declare their endpoint here.
 providers:
   opencode:
-    api_key: "sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92"
-    base_url: "https://opencode.ai/zen/go/v1"
+    api_key: sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92
+    base_url: https://opencode.ai/zen/go/v1
   anthropic:
-    api_key: ""
+    api_key: ''
   openai:
-    api_key: ""
+    api_key: ''
   google:
-    api_key: ""
+    api_key: ''
   openrouter:
-    api_key: ""
+    api_key: ''
   xai:
-    api_key: ""
+    api_key: ''
   deepseek:
-    api_key: ""
+    api_key: ''
   groq:
-    api_key: ""
+    api_key: ''
   mistral:
-    api_key: ""
+    api_key: ''
   custom:
-    api_key: ""
-    base_url: ""
-
-selected_model: "deepseek-v4-flash"
-selected_provider: "opencode"
-
+    api_key: ''
+    base_url: ''
+selected_model: deepseek-v4-flash
+selected_provider: opencode
 exa:
-  api_key: ""
-
+  api_key: ''
 sandbox:
   enabled: true
-
 workspace:
-  strategy: "none"
-
-# Composio: point at the hosted MCP ("connect") URL from the Composio dashboard
-# and the harness exposes its tools through the normal MCP path (call_mcp_tool)
-# under server_name. The API key may also come from COMPOSIO_API_KEY.
+  strategy: none
 composio:
   enabled: false
-  url: "https://connect.composio.dev/mcp"
-  api_key: "ck_7lCN7vVj1bG9CCfRZX4L"
-  server_name: "composio"
-
+  url: https://connect.composio.dev/mcp
+  api_key: ck_7lCN7vVj1bG9CCfRZX4L
+  server_name: composio
 default_agent: senior-researcher
 agents_root_directory: .agents
 home_agents_root_directory: ~/.agents

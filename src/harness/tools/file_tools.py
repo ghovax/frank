@@ -26,6 +26,7 @@ MAX_LINE_LENGTH = 2000
 MAX_GREP_RESULTS = 500
 MAX_GLOB_RESULTS = 1000
 MAX_FETCH_CHARS = 200_000
+MAX_TOOL_OUTPUT_CHARS = 1 << 16
 
 def _resolve(working_directory: str, file_path: str) -> Path:
     candidate = Path(file_path)
@@ -53,32 +54,36 @@ def content_sha256(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def read_file(working_directory: str, file_path: str, offset: int = 1, limit: int | None = None) -> str:
-    """Read a file (line-prefixed) or list a directory. Returns JSON."""
+def read_lines(
+    working_directory: str,
+    file_path: str,
+    start_line: int = 1,
+    line_count: int | None = DEFAULT_READ_LINES,
+    read_all: bool = False,
+) -> str:
+    """Read line-prefixed ranges from a file and return JSON."""
     path = _resolve(working_directory, file_path)
     if not path.exists():
         raise FileNotFoundError(f"Path does not exist: {path}")
 
     if path.is_dir():
-        entries = [f"{child.name}/" if child.is_dir() else child.name
-                   for child in sorted(path.iterdir(), key=lambda p: p.name.lower())]
-        return _payload("read_completed", path=str(path), is_directory=True, entries=entries)
+        raise IsADirectoryError(f"Path is a directory, not a file: {path}")
 
     text = path.read_text(errors="replace")
     lines = text.split("\n")
-    start = max(1, offset)
-    end = len(lines)
-    if limit is not None and limit > 0:
-        end = min(end, start - 1 + limit)
+    start = max(1, start_line)
+    effective_count = None if read_all else (line_count if line_count and line_count > 0 else DEFAULT_READ_LINES)
+    end = len(lines) if effective_count is None else min(len(lines), start - 1 + effective_count)
     selected = lines[start - 1:end]
     rendered = "\n".join(f"{idx}: {_truncate_line(line)}" for idx, line in enumerate(selected, start=start))
+    truncated = start > 1 or end < len(lines)
     return _payload(
         "read_completed",
         path=str(path),
-        is_directory=False,
         start_line=start,
         end_line=end,
         total_lines=len(lines),
+        truncated=truncated,
         sha256=content_sha256(text),
         content=rendered,
     )
@@ -148,6 +153,10 @@ def search_content(
     base = _resolve(working_directory, path) if path else (Path(working_directory) if working_directory else Path.cwd())
     if not base.exists():
         raise FileNotFoundError(f"Search path does not exist: {base}")
+    home = Path.home().resolve(strict=False)
+    resolved_base = base.expanduser().resolve(strict=False)
+    if resolved_base == home:
+        raise ValueError("Refusing to search the home directory. Narrow the search to a project folder or specific subdirectory.")
     if shutil.which("rg"):
         try:
             matches = _grep_with_ripgrep(base, pattern, include)
@@ -189,7 +198,7 @@ def replace_lines(
     if path.is_dir():
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
     if expected_sha256 is None:
-        raise PermissionError(f"You must read {path} with read_file before editing it.")
+        raise PermissionError(f"You must read {path} with read_lines before editing it.")
 
     content = path.read_text(errors="replace")
     if content_sha256(content) != expected_sha256:
@@ -228,7 +237,7 @@ def write_file(
     if path.exists() and path.is_dir():
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
     if path.exists() and expected_sha256 is None:
-        raise PermissionError(f"You must read {path} with read_file before overwriting it.")
+        raise PermissionError(f"You must read {path} with read_lines before overwriting it.")
     before = path.read_text(errors="replace") if path.exists() and path.is_file() else ""
     if path.exists() and path.is_file() and content_sha256(before) != expected_sha256:
         raise ValueError(f"{path} changed since it was last read. Re-read the file before overwriting it.")
@@ -275,7 +284,7 @@ def _strip_html(html: str) -> str:
 
 __all__ = [
     "resolve_path",
-    "read_file",
+    "read_lines",
     "find_files",
     "search_content",
     "content_sha256",

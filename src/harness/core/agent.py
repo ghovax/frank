@@ -50,7 +50,7 @@ from harness.tools.tools import (
     call_mcp_tool_with_events,
     list_mcp_resources as list_mcp_resources_tool,
     read_mcp_resource as read_mcp_resource_tool,
-    read_file as read_file_tool,
+    read_lines as read_lines_tool,
     find_files as find_files_tool,
     search_content as search_content_tool,
     replace_lines as replace_lines_tool,
@@ -174,6 +174,7 @@ _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "web_search",
     "bg-": "bash",
 }
+MAX_MODEL_RESULT_CHARS = 1 << 16
 
 
 def _coerce_mcp_arguments(value: Any) -> dict:
@@ -204,6 +205,34 @@ def _background_handle_kind(task_id: str) -> str | None:
     return None
 
 
+def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
+    """Keep model-facing tool results bounded while preserving a full-output file."""
+    if len(result) <= MAX_MODEL_RESULT_CHARS:
+        return result
+    output_path = Path("/tmp") / f"{new_id('tool-result')}.json"
+    output_path.write_text(result)
+    preview = result[:MAX_MODEL_RESULT_CHARS]
+    parsed = _maybe_json(result)
+    if isinstance(parsed, dict):
+        payload = {
+            **parsed,
+            "truncated": True,
+            "full_output_file": str(output_path),
+            "output_preview": preview,
+        }
+        for large_key in ("output", "content", "summary", "results"):
+            if large_key in payload:
+                payload.pop(large_key, None)
+        return json.dumps(payload, ensure_ascii=False)
+    return json.dumps({
+        "code": code,
+        "truncated": True,
+        "full_output_file": str(output_path),
+        "output_preview": preview,
+        "size": len(result),
+    }, ensure_ascii=False)
+
+
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
     """Return ``(workspace_root, is_git_repo)``. Walks up from the working
     directory for a ``.git`` marker; if found the workspace root is the repo
@@ -227,7 +256,7 @@ def _build_tools(
 ) -> list[BaseTool]:
     available = [
         bash_tool,
-        read_file_tool,
+        read_lines_tool,
         find_files_tool,
         search_content_tool,
         replace_lines_tool,
@@ -499,12 +528,25 @@ class BackgroundTaskManager:
                 continue
 
     def active_tasks(self) -> dict[str, list[str]]:
+        active = {
+            kind.active_context_key: kind.registry.list_active(self._tracked_ids[tool_name])
+            for tool_name, kind in BACKGROUND_KINDS.items()
+        }
+        return active
+
+    def active_non_empty_tasks(self) -> dict[str, list[str]]:
         active = {}
         for tool_name, kind in BACKGROUND_KINDS.items():
             active_ids = kind.registry.list_active(self._tracked_ids[tool_name])
             if active_ids:
                 active[kind.active_context_key] = active_ids
         return active
+
+    def cancel_pending(self) -> None:
+        for tool_name, kind in BACKGROUND_KINDS.items():
+            tracked_ids = set(self._tracked_ids[tool_name])
+            kind.registry.cancel_many(tracked_ids)
+            self._tracked_ids[tool_name].clear()
 
     def record_completed(self, tool_name: str, task_identifier: str, result: str) -> None:
         kind = BACKGROUND_KINDS[tool_name]
@@ -718,6 +760,7 @@ class AgentRuntime:
 
     def abort(self) -> None:
         self._abort_event.set()
+        self._background.cancel_pending()
         for task in list(self._active_tool_tasks.values()):
             task.cancel()
 
@@ -735,6 +778,9 @@ class AgentRuntime:
         self._steering_messages.put_nowait(text)
         self._steering_available.set()
         return True
+
+    def _has_queued_steering(self) -> bool:
+        return not self._steering_messages.empty()
 
     def set_read_only(self, read_only: bool) -> None:
         self._read_only = read_only
@@ -936,9 +982,11 @@ class AgentRuntime:
         tasks_data = self._task_manager.to_dict_list()
         if tasks_data:
             parts.append(json.dumps({"tasks": tasks_data}))
-        pending_info = self._background.active_tasks()
-        if pending_info:
-            parts.append(json.dumps({"background_tasks_in_progress": pending_info}))
+        parts.append(json.dumps({"background_processes": {
+            "running": self._background.active_tasks(),
+            "active_count": self._background.active_background_count(),
+            "recent_events": self._execution_history[-20:],
+        }}))
         return "\n".join(parts)
 
     def _background_result_events(self) -> list[StreamEvent]:
@@ -948,6 +996,10 @@ class AgentRuntime:
             return events
 
         for completion in self._background.drain_results():
+            capped_result = _cap_model_result_payload(
+                completion.result,
+                code=f"{completion.tool_name}_result_truncated",
+            )
             # Append-only: the scheduled placeholder ToolMessage stays put and the
             # result lands as a *new* message. Rewriting the placeholder in place
             # would change the conversation mid-stream and invalidate the provider's
@@ -959,20 +1011,20 @@ class AgentRuntime:
                     "type": "background_result",
                     "tool": completion.tool_name,
                     "task_identifier": completion.task_identifier,
-                    "result": completion.result,
+                    "result": capped_result,
                 }),
             ))
             events.append(StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
                 id=(completion.pending_message.tool_call_id if completion.pending_message else ""),
                 name=completion.tool_name,
-                result=_maybe_json(completion.result),
+                result=_maybe_json(capped_result),
                 task_id=completion.task_identifier,
             ))
             self._background.record_completed(
                 completion.tool_name,
                 completion.task_identifier,
-                completion.result,
+                capped_result,
             )
         return events
 
@@ -1038,6 +1090,12 @@ class AgentRuntime:
 
         while self._calls_this_turn < effective_maximum_iterations:
             if self._abort_event.is_set():
+                if self._has_queued_steering():
+                    self._abort_event.clear()
+                    for steering_event in await self._drain_steering_messages():
+                        yield steering_event
+                    self._calls_this_turn += 1
+                    continue
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
 
@@ -1064,6 +1122,12 @@ class AgentRuntime:
                     wake_event=self._steering_available,
                 )
                 if self._abort_event.is_set():
+                    if self._has_queued_steering():
+                        self._abort_event.clear()
+                        for steering_event in await self._drain_steering_messages():
+                            yield steering_event
+                        self._calls_this_turn += 1
+                        continue
                     yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                     return
                 background_events = self._background_result_events()
@@ -1101,8 +1165,13 @@ class AgentRuntime:
             thinking_started_at = time.monotonic()
             thinking_done_emitted = False
             response_chunks: list[AIMessageChunk] = []
+            aborted_for_steering = False
             async for chunk in self._bound_llm.astream(messages):
                 if self._abort_event.is_set():
+                    if self._has_queued_steering():
+                        self._abort_event.clear()
+                        aborted_for_steering = True
+                        break
                     yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                     return
                 response_chunks.append(chunk)
@@ -1133,6 +1202,11 @@ class AgentRuntime:
                     StreamEvent.Type.THINKING_DONE,
                     duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
                 )
+            if aborted_for_steering:
+                for steering_event in await self._drain_steering_messages():
+                    yield steering_event
+                self._calls_this_turn += 1
+                continue
             response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
 
             # Malformed tool calls (arguments that failed JSON parsing) land in
@@ -1176,6 +1250,15 @@ class AgentRuntime:
                         timeout=self._BACKGROUND_WAIT_SECONDS,
                         wake_event=self._steering_available,
                     )
+                    if self._abort_event.is_set():
+                        if self._has_queued_steering():
+                            self._abort_event.clear()
+                            for steering_event in await self._drain_steering_messages():
+                                yield steering_event
+                            self._calls_this_turn += 1
+                            continue
+                        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                        return
                 background_events = self._background_result_events()
                 if background_events:
                     for background_event in background_events:
@@ -1254,6 +1337,12 @@ class AgentRuntime:
                 ))
 
             if self._abort_event.is_set():
+                if self._has_queued_steering():
+                    self._abort_event.clear()
+                    for steering_event in await self._drain_steering_messages():
+                        yield steering_event
+                    self._calls_this_turn += 1
+                    continue
                 self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
@@ -1342,7 +1431,7 @@ class AgentRuntime:
                                 result_str = json.dumps(model_context)
                             else:
                                 result_str = json.dumps(result_str)
-                        result_content = str(result_str)
+                        result_content = _cap_model_result_payload(str(result_str))
                         turn_tool_results_log.append({"name": tool_name, "result": result_content})
                 elif event.type == StreamEvent.Type.ERROR:
                     result_content = event.data.get("message", "unknown error")
@@ -1757,18 +1846,19 @@ class AgentRuntime:
             finally:
                 self._release_filesystem_lease(lease_token)
 
-        elif tool_name == "read_file":
+        elif tool_name == "read_lines":
             file_path = str(tool_arguments.get("file_path", ""))
-            offset = tool_arguments.get("offset", 1) or 1
-            limit_raw = tool_arguments.get("limit")
-            limit = int(limit_raw) if limit_raw not in (None, "") else None
+            start_line = tool_arguments.get("start_line", 1) or 1
+            line_count_raw = tool_arguments.get("line_count")
+            line_count = int(line_count_raw) if line_count_raw not in (None, "") else None
+            read_all = bool(tool_arguments.get("read_all", False))
             result = await asyncio.to_thread(
-                file_tools.read_file, self._working_directory, file_path, int(offset), limit,
+                file_tools.read_lines, self._working_directory, file_path, int(start_line), line_count, read_all,
             )
             result_data = _maybe_json(result)
             # Record the canonical path and hash so replace_lines/write_file can
             # reject stale edits.
-            if isinstance(result_data, dict) and not result_data.get("is_directory"):
+            if isinstance(result_data, dict):
                 sha256 = result_data.get("sha256")
                 if isinstance(sha256, str):
                     self._read_files[self._canonical_file_path(file_path)] = sha256
@@ -1854,7 +1944,7 @@ class AgentRuntime:
                 if tool_name == "replace_lines":
                     # The file has been modified — the model's previous read is now
                     # stale. Discard it so the next replace_lines forces a fresh
-                    # read_file with current line numbers.
+                    # read_lines with current line numbers.
                     self._read_files.pop(resolved, None)
                 else:
                     # write_file: the model supplied the full content, so it knows

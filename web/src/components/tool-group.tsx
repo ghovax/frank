@@ -26,7 +26,7 @@ function toolStatus(status: unknown): ToolEventStatus | undefined {
 const TOOL_SUMMARY: Record<string, { past: (count: number) => string; gerund: string }> = {
   web_search: { past: (n) => (n === 1 ? "searched the web" : `searched the web ${n} times`), gerund: "Searching the web" },
   bash: { past: (n) => (n === 1 ? "ran a command" : `ran ${n} commands`), gerund: "Running commands" },
-  read_file: { past: (n) => (n === 1 ? "read a file" : `read ${n} files`), gerund: "Reading files" },
+  read_lines: { past: (n) => (n === 1 ? "read file lines" : `read file lines ${n} times`), gerund: "Reading file lines" },
   find_files: { past: (n) => (n === 1 ? "searched for files" : `searched for files ${n} times`), gerund: "Finding files" },
   search_content: { past: (n) => (n === 1 ? "searched file contents" : `searched file contents ${n} times`), gerund: "Searching content" },
   replace_lines: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
@@ -127,9 +127,9 @@ export const ToolGroup = memo(function ToolGroup({
   const badge = inputRequired
     ? { label: "Input required", colorPalette: "yellow" }
     : failedCount > 0
-      ? { label: `${failedCount} failed`, colorPalette: "red" }
+      ? { label: "Failed", colorPalette: "red" }
       : runningCount > 0
-        ? { label: `${runningCount} running`, colorPalette: "blue" }
+        ? { label: "Running", colorPalette: "blue" }
         : null;
 
   return (

@@ -398,7 +398,13 @@ def _record_session_visible(context_id: str) -> None:
     _publish_broadcast({"type": "sessions_changed"})
 
 
-def _ensure_session_workspace(context_id: str, agent: str, working_directory: str, first_message: str) -> SessionWorkspace:
+def _ensure_session_workspace(
+    context_id: str,
+    agent: str,
+    working_directory: str,
+    workspace_strategy: str,
+    first_message: str,
+) -> SessionWorkspace:
     assert _session_factory is not None
     source_directory = working_directory or str(Path.home())
 
@@ -412,7 +418,8 @@ def _ensure_session_workspace(context_id: str, agent: str, working_directory: st
     finally:
         database_session.close()
 
-    strategy = _global_configuration.workspace.strategy if _global_configuration is not None else "none"
+    requested_strategy = workspace_strategy if workspace_strategy in {"none", "branch", "worktree"} else ""
+    strategy = requested_strategy or (_global_configuration.workspace.strategy if _global_configuration is not None else "none")
     if _workspace_manager is not None:
         workspace = _workspace_manager.prepare_sync(context_id, source_directory, strategy)
     else:

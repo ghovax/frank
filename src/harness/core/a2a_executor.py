@@ -55,8 +55,10 @@ from harness.core.skills import Skill
 
 # Metadata key the client may set to steer the working directory of a turn.
 WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory"
+WORKSPACE_STRATEGY_METADATA_KEY = "harness/workspaceStrategy"
 # Internal metadata keys used once the backend has resolved a session's isolated
-# runtime checkout. The UI sends only WORKING_DIRECTORY_METADATA_KEY.
+# runtime checkout. The UI sends only WORKING_DIRECTORY_METADATA_KEY and
+# WORKSPACE_STRATEGY_METADATA_KEY.
 RUNTIME_WORKING_DIRECTORY_METADATA_KEY = "harness/runtimeWorkingDirectory"
 PROJECT_DIRECTORY_METADATA_KEY = "harness/projectDirectory"
 # Marks a sub-agent call delegated from another agent (one-shot, fresh state).
@@ -389,6 +391,7 @@ class HarnessAgentExecutor(AgentExecutor):
         *,
         context_id: str,
         requested_working_directory: str,
+        requested_workspace_strategy: str,
         first_message: str,
         delegated: bool,
         metadata: dict,
@@ -416,6 +419,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 context_id,
                 self._agent_name,
                 requested_working_directory,
+                requested_workspace_strategy,
                 first_message,
             )
         directory = requested_working_directory or ""
@@ -434,6 +438,7 @@ class HarnessAgentExecutor(AgentExecutor):
         widget_payload = _widget_event_payload(context.message)
         metadata = context.message.metadata or {}
         requested_working_directory = str(metadata.get(WORKING_DIRECTORY_METADATA_KEY, ""))
+        requested_workspace_strategy = str(metadata.get(WORKSPACE_STRATEGY_METADATA_KEY, ""))
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
 
@@ -515,6 +520,7 @@ class HarnessAgentExecutor(AgentExecutor):
             workspace = await self._workspace_for(
                 context_id=task.context_id,
                 requested_working_directory=requested_working_directory,
+                requested_workspace_strategy=requested_workspace_strategy,
                 first_message=user_text,
                 delegated=delegated,
                 metadata=metadata,

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, HStack, Input, Text } from "@chakra-ui/react";
+import { Badge, Box, Button, Flex, HStack, Input, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { LuCheck } from "react-icons/lu";
@@ -224,6 +224,15 @@ function isToolErrorResult(content: string | null): boolean {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function isBackgroundResult(result: unknown): boolean {
+  const code = String(asRecord(result).code ?? "");
+  return code.endsWith("_started") || code === "background_task_scheduled";
+}
+
 export function ToolCall({ name, arguments: toolArguments, result, status, permission, question, agents = [], onPermission, onQuestion }: ToolCallProps) {
   const [open, setOpen] = useState(false);
   const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
@@ -239,6 +248,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, permi
   const collapsible = hasArguments || showResultInside || showPermission || showQuestion;
   // A pending prompt forces the card open so the controls are visible without a click.
   const bodyOpen = open || status === "input_required";
+  const background = status === "running" && isBackgroundResult(result);
 
   const { icon: Icon, iconColor, label } = getToolCallDisplay(name, toolArguments);
 
@@ -256,6 +266,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, permi
             <>
               <ToolRiskBadges arguments={toolArguments} />
               {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
+              {background ? <Badge size="sm" variant="subtle" colorPalette="purple" borderRadius="sm" flexShrink={0}>Background</Badge> : null}
             </>
           }
           open={bodyOpen}

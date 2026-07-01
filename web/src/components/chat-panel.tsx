@@ -9,7 +9,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuClock, LuMessageSquare, LuNavigation, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuClock, LuNavigation, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
@@ -19,7 +19,7 @@ import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode } from "@/lib/api";
+import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 
 const MotionFlex = motion.create(Flex);
 
@@ -39,6 +39,12 @@ interface ChatPanelProps {
   onBrowseFolder?: () => void;
   sandboxEnabled?: boolean;
   onSandboxEnabledChange?: (enabled: boolean) => void;
+  workspaceStrategy?: WorkspaceStrategy;
+  workspaceBranch?: string;
+  workspaceRuntimeDirectory?: string;
+  workspaceRuntimeDirectoryName?: string;
+  workspaceError?: string;
+  onWorkspaceStrategyChange?: (strategy: WorkspaceStrategy) => void;
   isConnected?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
@@ -133,6 +139,12 @@ export function ChatPanel({
   onBrowseFolder,
   sandboxEnabled = true,
   onSandboxEnabledChange,
+  workspaceStrategy = "none",
+  workspaceBranch = "",
+  workspaceRuntimeDirectory = "",
+  workspaceRuntimeDirectoryName = "",
+  workspaceError = "",
+  onWorkspaceStrategyChange,
   isConnected = false,
   onStreamingChange,
   historyOpen = false,
@@ -146,7 +158,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
   const { messages, agentGroups, tasks, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
-    useChat(agent, initialSessionId, workingDirectory, permissionMode, sessionRunning);
+    useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -524,6 +536,12 @@ export function ChatPanel({
           onBrowseFolder={onBrowseFolder}
           sandboxEnabled={sandboxEnabled}
           onSandboxEnabledChange={onSandboxEnabledChange}
+          workspaceStrategy={workspaceStrategy}
+          workspaceBranch={workspaceBranch}
+          workspaceRuntimeDirectory={workspaceRuntimeDirectory}
+          workspaceRuntimeDirectoryName={workspaceRuntimeDirectoryName}
+          workspaceError={workspaceError}
+          onWorkspaceStrategyChange={onWorkspaceStrategyChange}
           agents={agents}
           selectedAgent={agent}
           onAgentChange={onAgentChange}

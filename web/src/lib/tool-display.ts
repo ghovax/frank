@@ -40,7 +40,7 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuUsers, iconColor: "purple.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
-    case "read_file":
+    case "read_lines":
       return { icon: LuFileText, iconColor: "blue.fg" };
     case "find_files":
       return { icon: LuFolderSearch, iconColor: "cyan.fg" };
@@ -84,8 +84,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
     case "read_task":
       return "Reading a related task";
-    case "read_file":
-      return args?.file_path ? `Reading ${shortPath(String(args.file_path))}` : "Reading file";
+    case "read_lines":
+      return args?.file_path ? `Reading lines from ${shortPath(String(args.file_path))}` : "Reading lines";
     case "find_files":
       return args?.pattern ? `Finding files matching "${String(args.pattern)}"` : "Finding files";
     case "search_content":

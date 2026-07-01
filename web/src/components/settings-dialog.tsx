@@ -1,8 +1,8 @@
 "use client";
 
 import { Box, Button, Dialog, Flex, IconButton, Input, Portal, Text } from "@chakra-ui/react";
-import { useEffect, useState, type ReactNode } from "react";
-import { LuBan, LuEye, LuEyeOff, LuGitBranch, LuGitFork } from "react-icons/lu";
+import { useEffect, useState } from "react";
+import { LuEye, LuEyeOff } from "react-icons/lu";
 import { fetchSettings, saveSettings } from "@/lib/api";
 
 // A dialog for entering API credentials and choosing the selected model, persisted
@@ -69,37 +69,6 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 and applied immediately.
               </Text>
               <Flex direction="column" gap={4}>
-                <Box>
-                  <Text fontSize="xs" fontWeight="medium" mb={1}>
-                    Session workspace
-                  </Text>
-                  <Flex gap={1.5} flexWrap="wrap">
-                    <WorkspaceStrategyButton
-                      value="none"
-                      selected={workspaceStrategy}
-                      label="None"
-                      icon={<LuBan size={13} />}
-                      onSelect={setWorkspaceStrategy}
-                    />
-                    <WorkspaceStrategyButton
-                      value="branch"
-                      selected={workspaceStrategy}
-                      label="Branch"
-                      icon={<LuGitBranch size={13} />}
-                      onSelect={setWorkspaceStrategy}
-                    />
-                    <WorkspaceStrategyButton
-                      value="worktree"
-                      selected={workspaceStrategy}
-                      label="Worktree"
-                      icon={<LuGitFork size={13} />}
-                      onSelect={setWorkspaceStrategy}
-                    />
-                  </Flex>
-                  <Text fontSize="xs" color="fg.subtle" mt={1}>
-                    Applies only when a new conversation starts.
-                  </Text>
-                </Box>
                 <Box maxH="260px" overflowY="auto" pr={1} display="flex" flexDir="column" gap={3}>
                   <SecretField
                     label="Exa API key"
@@ -131,36 +100,6 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </Dialog.Positioner>
       </Portal>
     </Dialog.Root>
-  );
-}
-
-function WorkspaceStrategyButton({
-  value,
-  selected,
-  label,
-  icon,
-  onSelect,
-}: {
-  value: "none" | "branch" | "worktree";
-  selected: "none" | "branch" | "worktree";
-  label: string;
-  icon: ReactNode;
-  onSelect: (value: "none" | "branch" | "worktree") => void;
-}) {
-  const active = value === selected;
-  return (
-    <Button
-      size="xs"
-      variant={active ? "solid" : "outline"}
-      colorPalette={value === "worktree" ? "green" : value === "branch" ? "purple" : undefined}
-      borderRadius="sm"
-      fontSize="xs"
-      aria-pressed={active}
-      onClick={() => onSelect(value)}
-    >
-      {icon}
-      {label}
-    </Button>
   );
 }
 

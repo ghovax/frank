@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuGitBranch, LuGitFork, LuGripVertical, LuMessageSquare, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuGitBranch, LuGitFork, LuGripVertical, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, saveSettings, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
 
@@ -67,6 +67,7 @@ function HomeContent() {
   const [homeProject, setHomeProject] = useState<{ path: string; name: string } | null>(null);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [sandboxEnabledState, setSandboxEnabledState] = useState(true);
+  const [workspaceStrategy, setWorkspaceStrategy] = useState<"none" | "branch" | "worktree">("none");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
   const [recentModels, setRecentModels] = useState<{ id: string; name: string; provider: string }[]>([]);
@@ -182,7 +183,10 @@ function HomeContent() {
     };
     const loadSettings = () => {
       fetchSettings()
-        .then((settings) => setSandboxEnabledState(settings.sandbox_enabled ?? true))
+        .then((settings) => {
+          setSandboxEnabledState(settings.sandbox_enabled ?? true);
+          setWorkspaceStrategy(settings.workspace_strategy ?? "none");
+        })
         .catch(() => {});
     };
     loadSettings();
@@ -279,7 +283,9 @@ function HomeContent() {
 
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
-  const activeSessionRunning = sessions.find((entry) => entry.sessionId === activeSessionId)?.running ?? false;
+  const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
+  const activeSessionRunning = activeSession?.running ?? false;
+  const displayedWorkspaceStrategy = activeSession?.workspaceStrategy ?? workspaceStrategy;
   const groupedSessions = useMemo(() => {
     const groups = new Map<string, { key: string; name: string; path: string; sessions: SessionEntry[] }>();
     for (const session of sessions) {
@@ -387,6 +393,25 @@ function HomeContent() {
       await setSandboxEnabled(enabled);
     } catch {
       setSandboxEnabledState(previous);
+    }
+  }
+
+  async function handleWorkspaceStrategyChange(strategy: "none" | "branch" | "worktree") {
+    if (activeSessionId) return;
+    const previous = workspaceStrategy;
+    setWorkspaceStrategy(strategy);
+    try {
+      const settings = await fetchSettings();
+      await saveSettings({
+        exa_api_key: settings.exa_api_key ?? "",
+        composio_api_key: settings.composio_api_key ?? "",
+        provider_keys: {},
+        provider_base_urls: {},
+        selected_model: settings.selected_model ?? "",
+        workspace_strategy: strategy,
+      });
+    } catch {
+      setWorkspaceStrategy(previous);
     }
   }
 
@@ -595,6 +620,12 @@ function HomeContent() {
           onBrowseFolder={handleBrowseFolder}
           sandboxEnabled={sandboxEnabledState}
           onSandboxEnabledChange={handleSandboxEnabledChange}
+          workspaceStrategy={displayedWorkspaceStrategy}
+          workspaceBranch={activeSession?.workspaceBranch ?? ""}
+          workspaceRuntimeDirectory={activeSession?.runtimeWorkingDirectory ?? ""}
+          workspaceRuntimeDirectoryName={activeSession?.runtimeWorkingDirectoryName ?? ""}
+          workspaceError={activeSession?.workspaceError ?? ""}
+          onWorkspaceStrategyChange={handleWorkspaceStrategyChange}
           isConnected={isConnected}
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}

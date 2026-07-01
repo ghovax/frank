@@ -15,6 +15,7 @@ import {
   type A2APart,
   type A2ATask as A2ATaskWire,
   type PermissionMode,
+  type WorkspaceStrategy,
 } from "./api";
 import { isControlToolName, isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import type { WidgetEvent } from "@/components/widget-bridge";
@@ -908,6 +909,7 @@ export function useChat(
   agent: string,
   initialSessionId: string | null = null,
   workingDirectory?: string,
+  workspaceStrategy: WorkspaceStrategy = "none",
   permissionMode: PermissionMode = "default",
   // Whether a turn is currently running on this session (from the server-tracked
   // running set). Drives the live subscribe stream when we are viewing — but not
@@ -1228,11 +1230,12 @@ export function useChat(
           }
         },
         workingDirectory,
+        workspaceStrategy,
         permissionMode,
         dataPart
       );
     },
-    [agent, workingDirectory, permissionMode, flush, setQueue, acknowledgeSteering]
+    [agent, workingDirectory, workspaceStrategy, permissionMode, flush, setQueue, acknowledgeSteering]
   );
 
   useEffect(() => {
@@ -1334,9 +1337,9 @@ export function useChat(
   );
 
   const abort = useCallback(() => {
-    abortControllerRef.current?.abort();
     const ctx = sessionIdRef.current;
     if (ctx) abortSession(ctx);
+    else abortControllerRef.current?.abort();
   }, []);
 
   const abortTool = useCallback((toolCallId: string) => {

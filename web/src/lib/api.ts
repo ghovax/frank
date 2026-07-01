@@ -67,9 +67,11 @@ export function proxyPreviewUrl(url: string): string {
 
 // Metadata key understood by the harness A2A executor.
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
+export const WORKSPACE_STRATEGY_METADATA_KEY = "harness/workspaceStrategy";
 export const PERMISSION_MODE_METADATA_KEY = "harness/permissionMode";
 
 export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
+export type WorkspaceStrategy = "none" | "branch" | "worktree";
 
 export interface AgentSummary {
   id: string;
@@ -554,6 +556,7 @@ export function streamA2A(
   onResult: (result: A2AStreamResult) => void | Promise<void>,
   onDone: () => void,
   workingDirectory?: string,
+  workspaceStrategy: WorkspaceStrategy = "none",
   permissionMode: PermissionMode = "default",
   // Optional structured payload carried as a typed DataPart alongside (or instead
   // of) the text — e.g. a widget interaction posted back to the agent.
@@ -572,6 +575,7 @@ export function streamA2A(
     messageId: crypto.randomUUID(),
     metadata: {
       ...(workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : {}),
+      [WORKSPACE_STRATEGY_METADATA_KEY]: workspaceStrategy,
       [PERMISSION_MODE_METADATA_KEY]: permissionMode,
     },
   };

@@ -266,7 +266,6 @@ const FIELD_LABELS: Record<string, string> = {
   truncated: "Truncated",
   total_lines: "Total lines",
   sha256: "SHA-256",
-  is_directory: "Directory",
   title: "Title",
   artifact: "Artifact",
   answers: "Answers",
@@ -282,14 +281,15 @@ function Mono({ children }: { children: ReactNode }) {
   );
 }
 
-function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
+function ReadLinesCallView({ args }: { args: Record<string, unknown> }) {
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.offset != null && <InlineField label="Offset">{asString(args.offset)}</InlineField>}
-      {args.limit != null && <InlineField label="Limit">{asString(args.limit)}</InlineField>}
+      {args.start_line != null && <InlineField label="Start line">{asString(args.start_line)}</InlineField>}
+      {args.line_count != null && <InlineField label="Line count">{asString(args.line_count)}</InlineField>}
+      {args.read_all === true && <InlineField label="Read all">Yes</InlineField>}
     </FieldList>
   );
 }
@@ -410,19 +410,9 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
+function ReadLinesResultView({ data }: { data: Record<string, unknown> }) {
   // The call already shows the file path, so the result only surfaces the line
   // range and the content (no duplicated Path field).
-  if (data.is_directory === true) {
-    const entries = asArray(data.entries).map(asString);
-    return (
-      <FieldList>
-        <Field label="Entries">
-          <MonoBlock>{entries.join("\n") || " "}</MonoBlock>
-        </Field>
-      </FieldList>
-    );
-  }
   const content = asString(data.content);
   const range = [asString(data.start_line), asString(data.end_line)].filter(Boolean).join("–");
   const total = asString(data.total_lines);
@@ -596,8 +586,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <ReadTaskCallView args={args} />;
     case "open_preview":
       return <WebPreviewCallView args={args} />;
-    case "read_file":
-      return <ReadFileCallView args={args} />;
+    case "read_lines":
+      return <ReadLinesCallView args={args} />;
     case "replace_lines":
       return <ReplaceLinesCallView args={args} />;
     case "write_file":
@@ -628,6 +618,7 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
     <FieldList>
       {data.pid != null && <InlineField label="PID">{asString(data.pid)}</InlineField>}
       {data.size != null && <InlineField label="Size">{asString(data.size)} bytes</InlineField>}
+      {data.truncated === true && <InlineField label="Truncated">Yes</InlineField>}
       {output ? (
         <Field label="Output">
           <MonoBlock>{output}</MonoBlock>
@@ -635,6 +626,8 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
       ) : outputFile ? (
         <InlineField label="Output">written to {outputFile}</InlineField>
       ) : null}
+      {output && outputFile ? <InlineField label="Full output"><Mono>{outputFile}</Mono></InlineField> : null}
+      {asString(data.full_output_file) ? <InlineField label="Full output"><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}
     </FieldList>
   );
 }
@@ -1196,7 +1189,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
     if (name === "read_task") return <ReadTaskResultView data={data} />;
-    if (name === "read_file") return <ReadFileResultView data={data} />;
+    if (name === "read_lines") return <ReadLinesResultView data={data} />;
     if (name === "find_files" || name === "search_content") return <MatchListResultView data={data} />;
     if (name === "replace_lines" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;

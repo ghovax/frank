@@ -13,8 +13,8 @@ import {
   Textarea,
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuCircle, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSparkles, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
 import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
@@ -35,6 +35,12 @@ interface ChatInputProps {
   onBrowseFolder?: () => void;
   sandboxEnabled?: boolean;
   onSandboxEnabledChange?: (enabled: boolean) => void;
+  workspaceStrategy?: "none" | "branch" | "worktree";
+  workspaceBranch?: string;
+  workspaceRuntimeDirectory?: string;
+  workspaceRuntimeDirectoryName?: string;
+  workspaceError?: string;
+  onWorkspaceStrategyChange?: (strategy: "none" | "branch" | "worktree") => void;
   agents: { id: string; name: string; title?: string }[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
@@ -149,6 +155,12 @@ export function ChatInput({
   onBrowseFolder,
   sandboxEnabled = true,
   onSandboxEnabledChange,
+  workspaceStrategy = "none",
+  workspaceBranch = "",
+  workspaceRuntimeDirectory = "",
+  workspaceRuntimeDirectoryName = "",
+  workspaceError = "",
+  onWorkspaceStrategyChange,
   agents,
   selectedAgent,
   onAgentChange,
@@ -240,6 +252,26 @@ export function ChatInput({
         colorPalette: "red" as const,
         variant: "solid" as const,
       };
+  const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "green" }[] = [
+    { value: "none", label: "None", icon: <LuBan size={13} /> },
+    { value: "branch", label: "Branch", icon: <LuGitBranch size={13} />, colorPalette: "purple" },
+    { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "green" },
+  ];
+  const workspaceDetail =
+    workspaceStrategy === "branch" || workspaceStrategy === "worktree"
+      ? {
+          label: workspaceBranch || workspaceRuntimeDirectoryName || workspaceRuntimeDirectory || workspaceStrategy,
+          title: [
+            workspaceStrategy === "worktree" ? "Session worktree" : "Session branch",
+            workspaceBranch,
+            workspaceRuntimeDirectoryName,
+            workspaceRuntimeDirectory,
+            workspaceError,
+          ].filter(Boolean).join("\n"),
+          icon: workspaceStrategy === "worktree" ? <LuGitFork size={13} /> : <LuGitBranch size={13} />,
+          colorPalette: workspaceStrategy === "worktree" ? "green" as const : "purple" as const,
+        }
+      : null;
 
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
   const taskProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
@@ -288,6 +320,10 @@ export function ChatInput({
   // A session is bound to the folder it was started in: once it exists, the
   // project can no longer be changed, so the selector and browse are locked.
   const folderLocked = !!sessionId;
+  // The workspace strategy decides how that first turn prepares the session.
+  // Changing it after the session exists would desynchronize the UI setting from
+  // the checkout/branch/worktree the backend already created.
+  const workspaceLocked = !!sessionId;
   // The server owns each folder's display name (derived with real path tooling),
   // so the selector only ever reads names — it never parses a path itself.
   const currentProjectName = useMemo(
@@ -342,9 +378,11 @@ export function ChatInput({
 
   useEffect(() => {
     if (thinkingLabel) {
-      setDisplayedThinkingLabel(thinkingLabel);
-      setThinkingVisible(true);
-      return;
+      const showTimer = window.setTimeout(() => {
+        setDisplayedThinkingLabel(thinkingLabel);
+        setThinkingVisible(true);
+      }, 0);
+      return () => window.clearTimeout(showTimer);
     }
     const hideTimer = window.setTimeout(() => setThinkingVisible(false), 180);
     const clearTimer = window.setTimeout(() => setDisplayedThinkingLabel(""), 520);
@@ -480,11 +518,11 @@ export function ChatInput({
               >
                 <Flex direction="column" gap={1.5}>
                   {tasks.map((task) => (
-                    <Flex key={task.identifier} align="center" gap={2}>
-                      <Box display="flex" alignItems="center" flexShrink={0}>
+                    <Flex key={task.identifier} align="flex-start" gap={2}>
+                      <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0} h="1.4em" lineHeight="1.4">
                         <TaskStatusIcon status={task.status} />
                       </Box>
-                      <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2} flex={1} minW={0}>
+                      <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2} flex={1} minW={0} lineHeight="1.4">
                         {task.description}
                       </Text>
                     </Flex>
@@ -743,6 +781,54 @@ export function ChatInput({
             </Box>
             {sandboxAppearance.label}
           </Button>
+          <Flex align="center" gap={1.5} flexWrap="wrap">
+            {workspaceChoices.map((choice) => {
+              const active = workspaceStrategy === choice.value;
+              return (
+                <Button
+                  key={choice.value}
+                  size="xs"
+                  variant={active ? "solid" : "outline"}
+                  colorPalette={choice.colorPalette}
+                  borderRadius="sm"
+                  fontSize="xs"
+                  h="28px"
+                  px={2}
+                  flexShrink={0}
+                  aria-pressed={active}
+                  title={workspaceLocked ? "Workspace strategy is fixed for this chat" : "Session workspace strategy"}
+                  disabled={workspaceLocked || !onWorkspaceStrategyChange}
+                  onClick={() => onWorkspaceStrategyChange?.(choice.value)}
+                >
+                  {choice.icon}
+                  {choice.label}
+                </Button>
+              );
+            })}
+            {workspaceLocked && workspaceDetail && workspaceDetail.label && (
+              <Flex
+                align="center"
+                gap={1.5}
+                h="28px"
+                px={2}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor={`${workspaceDetail.colorPalette}.muted`}
+                bg={`${workspaceDetail.colorPalette}.subtle`}
+                color={`${workspaceDetail.colorPalette}.fg`}
+                flexShrink={0}
+                maxW={{ base: "100%", md: "260px" }}
+                title={workspaceDetail.title}
+              >
+                <Box display="flex" alignItems="center" flexShrink={0}>
+                  {workspaceDetail.icon}
+                </Box>
+                <Text fontSize="xs" fontWeight="medium" truncate>
+                  {workspaceDetail.label}
+                </Text>
+              </Flex>
+            )}
+          </Flex>
         </Flex>
         <Flex align="center" justify="flex-start" gap={1.5} flex={{ base: "1 1 100%", md: "0 1 auto" }} minW={0}>
           <IconButton
