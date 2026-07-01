@@ -48,8 +48,8 @@ const monoFont = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Harness",
-  description: "Agentic Harness UI",
+  title: "Daisy",
+  description: "Daisy GUI",
 };
 
 export default function RootLayout({

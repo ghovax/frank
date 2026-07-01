@@ -5,8 +5,8 @@ Fast commands (under ~2s) return output directly. Slow commands return immediate
 **Prefer the specialized tools over shell** for the operations they cover — they are faster, cheaper, and give the model better-shaped results:
 - *File search:* use **find_files** (not `find` or `ls`)
 - *Content search:* use **search_content** (not `grep` or `rg`)
-- *Read files:* use **read_lines** (not `cat`, `head`, `tail`, `sed -n`)
-- *Edit files:* use **apply_patch** (not `sed`, `awk`)
+- *Read files:* use **read_file** (not `cat`, `head`, `tail`, `sed -n`)
+- *Edit files:* use **edit_file** (not `sed`, `awk`)
 - *Write files:* use **write_file** (not `echo >`, `cat <<EOF`)
 - *Fetch a URL:* use **fetch_url** (not `curl`/`wget` for reading)
 

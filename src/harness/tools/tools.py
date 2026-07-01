@@ -724,26 +724,24 @@ def update_goal(
 
 
 @tool
-def read_lines(
+def read_file(
     file_path: str,
-    start_line: int = 1,
-    line_count: int | None = 2000,
-    read_all: bool = False,
+    offset: int = 1,
+    limit: int | None = 2000,
     justification: str = "",
 ) -> str:
-    """Read selected lines from a file.
+    """Read a file, returning its lines in cat -n format.
 
     Args:
         file_path: Absolute path (or path relative to the working directory).
-        start_line: Line number to start from (1-indexed).
-        line_count: Maximum number of lines to return unless read_all is true.
-        read_all: Return the whole file. Use only when the file is known to be small.
+        offset: 1-indexed line number to start reading from.
+        limit: Maximum number of lines to return (defaults to 2000).
         justification: A concise, user-facing reason for this read.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-read_lines.description = _load_tool_description("read_lines")
+read_file.description = _load_tool_description("read_file")
 
 
 @tool
@@ -782,24 +780,28 @@ search_content.description = _load_tool_description("search_content")
 
 
 @tool
-def apply_patch(
+def edit_file(
     file_path: str,
-    diff: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Apply a unified diff patch to one file.
+    """Replace an exact substring in one existing file.
 
     Args:
         file_path: Absolute path (or path relative to the working directory).
-        diff: Unified diff hunk text for this file.
+        old_string: The exact text to replace, copied verbatim from the file.
+        new_string: The text to replace it with (must differ from old_string).
+        replace_all: Replace every occurrence instead of requiring a unique match.
         justification: A concise, user-facing reason for this edit.
         risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-apply_patch.description = _load_tool_description("apply_patch")
+edit_file.description = _load_tool_description("edit_file")
 
 
 @tool

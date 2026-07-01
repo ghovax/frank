@@ -1,5 +1,5 @@
 [project]
-name = "harness"
+name = "daisy"
 version = "0.1.0"
 description = "Configurable LangChain agent with tools, permissions, and sub-agents"
 readme = "README.md"

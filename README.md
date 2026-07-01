@@ -1,4 +1,4 @@
-# agentic-harness
+# daisy
 
 A configurable multi-agent harness built on the A2A protocol. Each agent profile is a markdown file; every agent is served as an independently addressable A2A endpoint with tools, permissions, sub-agent delegation, skills, and a web UI.
 

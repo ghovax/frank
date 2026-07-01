@@ -40,13 +40,13 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuUsers, iconColor: "purple.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
-    case "read_lines":
+    case "read_file":
       return { icon: LuFileText, iconColor: "blue.fg" };
     case "find_files":
       return { icon: LuFolderSearch, iconColor: "cyan.fg" };
     case "search_content":
       return { icon: LuSearchCode, iconColor: "teal.fg" };
-    case "apply_patch":
+    case "edit_file":
       return { icon: LuFilePen, iconColor: "yellow.fg" };
     case "write_file":
       return { icon: LuFilePlus, iconColor: "green.fg" };
@@ -84,14 +84,14 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
     case "read_task":
       return "Reading a related task";
-    case "read_lines":
-      return args?.file_path ? `Reading lines from ${shortPath(String(args.file_path))}` : "Reading lines";
+    case "read_file":
+      return args?.file_path ? `Reading ${shortPath(String(args.file_path))}` : "Reading file";
     case "find_files":
       return args?.pattern ? `Finding files matching "${String(args.pattern)}"` : "Finding files";
     case "search_content":
       return args?.pattern ? `Searching for "${String(args.pattern)}"` : "Searching content";
-    case "apply_patch":
-      return args?.file_path ? `Patching ${shortPath(String(args.file_path))}` : "Applying patch";
+    case "edit_file":
+      return args?.file_path ? `Editing ${shortPath(String(args.file_path))}` : "Editing file";
     case "write_file":
       return args?.file_path ? `Writing ${shortPath(String(args.file_path))}` : "Writing file";
     case "fetch_url":

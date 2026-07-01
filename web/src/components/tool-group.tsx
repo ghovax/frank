@@ -26,10 +26,10 @@ function toolStatus(status: unknown): ToolEventStatus | undefined {
 const TOOL_SUMMARY: Record<string, { past: (count: number) => string; gerund: string }> = {
   web_search: { past: (n) => (n === 1 ? "searched the web" : `searched the web ${n} times`), gerund: "Searching the web" },
   bash: { past: (n) => (n === 1 ? "ran a command" : `ran ${n} commands`), gerund: "Running commands" },
-  read_lines: { past: (n) => (n === 1 ? "read file lines" : `read file lines ${n} times`), gerund: "Reading file lines" },
+  read_file: { past: (n) => (n === 1 ? "read a file" : `read files ${n} times`), gerund: "Reading files" },
   find_files: { past: (n) => (n === 1 ? "searched for files" : `searched for files ${n} times`), gerund: "Finding files" },
   search_content: { past: (n) => (n === 1 ? "searched file contents" : `searched file contents ${n} times`), gerund: "Searching content" },
-  apply_patch: { past: (n) => (n === 1 ? "patched a file" : `patched ${n} files`), gerund: "Patching files" },
+  edit_file: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
   write_file: { past: (n) => (n === 1 ? "wrote a file" : `wrote ${n} files`), gerund: "Writing files" },
   fetch_url: { past: (n) => (n === 1 ? "fetched a URL" : `fetched ${n} URLs`), gerund: "Fetching URLs" },
   open_preview: { past: (n) => (n === 1 ? "opened a preview" : `opened ${n} previews`), gerund: "Opening previews" },

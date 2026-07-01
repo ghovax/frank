@@ -1,4 +1,4 @@
-"""Concrete implementations of the file/search/edit tools.
+r"""Concrete implementations of the file/search/edit tools.
 
 These are plain functions (synchronous for filesystem work, async for HTTP) that
 the agent runtime dispatches to from ``_execute_tool``. They mirror opencode's
@@ -16,18 +16,17 @@ import json
 import re
 import shutil
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
 from markdownify import markdownify as _markdownify
 
 DEFAULT_READ_LINES = 2000
-MAX_LINE_LENGTH = 2000
-MAX_GREP_RESULTS = 500
-MAX_GLOB_RESULTS = 1000
-MAX_FETCH_CHARS = 200_000
-MAX_TOOL_OUTPUT_CHARS = 1 << 16
+MAXIMUM_LINE_LENGTH = 2000
+MAXIMUM_GREP_RESULTS = 512
+MAXIMUM_GLOB_RESULTS = 1024
+MAXIMUM_FETCH_CHARS = 262_144
+MAXIMUM_TOOL_OUTPUT_CHARS = 1 << 16
 
 def _resolve(working_directory: str, file_path: str) -> Path:
     candidate = Path(file_path)
@@ -44,7 +43,7 @@ def resolve_path(working_directory: str, file_path: str) -> Path:
 
 
 def _truncate_line(line: str) -> str:
-    return line if len(line) <= MAX_LINE_LENGTH else line[:MAX_LINE_LENGTH]
+    return line if len(line) <= MAXIMUM_LINE_LENGTH else line[:MAXIMUM_LINE_LENGTH]
 
 
 def _payload(code: str, **fields) -> str:
@@ -55,14 +54,17 @@ def content_sha256(content: str) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def read_lines(
+def read_file(
     working_directory: str,
     file_path: str,
-    start_line: int = 1,
-    line_count: int | None = DEFAULT_READ_LINES,
-    read_all: bool = False,
+    offset: int = 1,
+    limit: int | None = DEFAULT_READ_LINES,
 ) -> str:
-    """Read line-prefixed ranges from a file and return JSON."""
+    """Read a file and return its lines in ``cat -n`` format.
+
+    ``offset`` is the 1-indexed line to start reading from and ``limit`` caps the
+    number of lines returned (defaulting to 2000). Each returned line is prefixed
+    with its right-aligned line number and a tab, exactly like ``cat -n``."""
     path = _resolve(working_directory, file_path)
     if not path.exists():
         raise FileNotFoundError(f"Path does not exist: {path}")
@@ -72,11 +74,11 @@ def read_lines(
 
     text = path.read_text(errors="replace")
     lines = text.split("\n")
-    start = max(1, start_line)
-    effective_count = None if read_all else (line_count if line_count and line_count > 0 else DEFAULT_READ_LINES)
-    end = len(lines) if effective_count is None else min(len(lines), start - 1 + effective_count)
+    start = max(1, offset)
+    effective_limit = limit if (limit is None or limit > 0) else DEFAULT_READ_LINES
+    end = len(lines) if effective_limit is None else min(len(lines), start - 1 + effective_limit)
     selected = lines[start - 1:end]
-    rendered = "\n".join(f"{idx}: {_truncate_line(line)}" for idx, line in enumerate(selected, start=start))
+    rendered = "\n".join(f"{idx:6d}\t{_truncate_line(line)}" for idx, line in enumerate(selected, start=start))
     truncated = start > 1 or end < len(lines)
     return _payload(
         "read_completed",
@@ -95,9 +97,9 @@ def find_files(working_directory: str, pattern: str) -> str:
     base = Path(working_directory) if working_directory else Path.cwd()
     if not base.exists():
         raise FileNotFoundError(f"Working directory does not exist: {base}")
-    matches = [m for m in base.glob(pattern) if not m.is_dir()]
-    matches.sort(key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
-    matches = matches[:MAX_GLOB_RESULTS]
+    matches = [match for match in base.glob(pattern) if not match.is_dir()]
+    matches.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
+    matches = matches[:MAXIMUM_GLOB_RESULTS]
     paths = [str(m) for m in matches]
     return _payload("find_completed", pattern=pattern, matches=paths, count=len(paths))
 
@@ -142,7 +144,7 @@ def _grep_python(path: Path, pattern: str, include: str | None) -> list[str]:
         for line_no, line in enumerate(text.splitlines(), start=1):
             if regex.search(line):
                 results.append(f"{file}:{line_no}:{line}")
-                if len(results) >= MAX_GREP_RESULTS:
+                if len(results) >= MAXIMUM_GREP_RESULTS:
                     return results
     return results
 
@@ -165,104 +167,59 @@ def search_content(
             matches = _grep_python(base, pattern, include)
     else:
         matches = _grep_python(base, pattern, include)
-    matches = matches[:MAX_GREP_RESULTS]
+    matches = matches[:MAXIMUM_GREP_RESULTS]
     return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
 
 
-@dataclass
-class PatchHunk:
-    old_start: int = 1
-    lines: list[tuple[str, str]] = field(default_factory=list)
 
 
-def _parse_unified_diff(diff: str) -> list[PatchHunk]:
-    lines = diff.splitlines()
-    hunks: list[PatchHunk] = []
-    index = 0
-    header_pattern = re.compile(r"^@@ -(?P<old_start>\d+)(?:,\d+)? \+(?:\d+)(?:,\d+)? @@")
-
-    while index < len(lines):
-        line = lines[index]
-        if not line.startswith("@@"):
-            index += 1
-            continue
-        match = header_pattern.match(line)
-        if match is None:
-            raise ValueError(f"Invalid unified diff hunk header: {line}")
-        hunk = PatchHunk(old_start=int(match.group("old_start")))
-        index += 1
-        while index < len(lines) and not lines[index].startswith("@@"):
-            line = lines[index]
-            if line.startswith("\\ No newline at end of file"):
-                index += 1
-                continue
-            if not line:
-                raise ValueError("Unified diff hunk lines must start with ' ', '+', or '-'.")
-            prefix = line[0]
-            if prefix not in (" ", "+", "-"):
-                raise ValueError("Unified diff hunk lines must start with ' ', '+', or '-'.")
-            hunk.lines.append((prefix, line[1:]))
-            index += 1
-        if not hunk.lines:
-            raise ValueError("Unified diff hunk cannot be empty.")
-        hunks.append(hunk)
-
-    if not hunks:
-        raise ValueError("Patch must contain at least one unified diff hunk starting with '@@'.")
-    return hunks
-
-
-def _find_sequence(lines: list[str], needle: list[str], start: int) -> int:
-    if not needle:
-        return start
-    last = len(lines) - len(needle)
-    for index in range(start, last + 1):
-        if lines[index:index + len(needle)] == needle:
-            return index
-    preview = "\n".join(needle[:5])
-    raise ValueError(f"Patch context did not match the current file content:\n{preview}")
-
-
-def _apply_hunks(content: str, hunks: list[PatchHunk]) -> str:
-    lines = content.split("\n")
-    cursor = 0
-    for hunk in hunks:
-        old_lines = [text for prefix, text in hunk.lines if prefix in (" ", "-")]
-        new_lines = [text for prefix, text in hunk.lines if prefix in (" ", "+")]
-        preferred = max(0, hunk.old_start - 1)
-        if not old_lines:
-            index = min(preferred, len(lines))
-        elif lines[preferred:preferred + len(old_lines)] == old_lines:
-            index = preferred
-        else:
-            index = _find_sequence(lines, old_lines, cursor)
-        lines = [*lines[:index], *new_lines, *lines[index + len(old_lines):]]
-        cursor = index + len(new_lines)
-    return "\n".join(lines)
-
-
-def apply_patch(
+def edit_file(
     working_directory: str,
     file_path: str,
-    diff: str,
+    old_string: str,
+    new_string: str,
+    replace_all: bool = False,
     *,
     expected_sha256: str | None,
 ) -> str:
+    """Replace an exact substring in one existing file.
+
+    Mirrors the semantics of a string-replacement edit tool: ``old_string`` must
+    occur verbatim in the file and, unless ``replace_all`` is set, must be unique.
+    The file must have been read first (its hash is checked against
+    ``expected_sha256``) so stale edits are rejected."""
     path = _resolve(working_directory, file_path).expanduser().resolve(strict=False)
     if not path.exists():
-        raise FileNotFoundError(f"Cannot patch missing file: {path}. Use write_file to create new files.")
+        raise FileNotFoundError(f"Cannot edit missing file: {path}. Use write_file to create new files.")
     if path.is_dir():
-        raise IsADirectoryError(f"Cannot patch directory: {path}")
+        raise IsADirectoryError(f"Cannot edit directory: {path}")
+    if old_string == new_string:
+        raise ValueError("old_string and new_string are identical; nothing to change.")
+
     before = path.read_text(errors="replace")
     _validate_expected_hash(path, before, expected_sha256)
-    after = _apply_hunks(before, _parse_unified_diff(diff))
-    if after == before:
-        raise ValueError(f"No changes to apply for {path}.")
+
+    occurrences = before.count(old_string)
+    if occurrences == 0:
+        raise ValueError(
+            f"old_string not found in {path}. Copy it character-for-character from the read_file output "
+            "(whitespace and quote style must match exactly)."
+        )
+    if occurrences > 1 and not replace_all:
+        raise ValueError(
+            f"old_string is not unique in {path}: {occurrences} matches. Add surrounding context to make it "
+            "unique, or set replace_all=true to replace every occurrence."
+        )
+
+    after = before.replace(old_string, new_string) if replace_all else before.replace(old_string, new_string, 1)
+    replacements = occurrences if replace_all else 1
     path.write_text(after)
+
     summary = {
-        "code": "patch_completed",
+        "code": "edit_completed",
         "path": str(path),
         "characters": len(after),
+        "replacements": replacements,
         "sha256": content_sha256(after),
     }
     return json.dumps({
@@ -272,10 +229,9 @@ def apply_patch(
         "model_context": summary,
     })
 
-
 def _validate_expected_hash(path: Path, content: str, expected_sha256: str | None) -> None:
     if expected_sha256 is None:
-        raise PermissionError(f"You must read {path} with read_lines before editing it.")
+        raise PermissionError(f"You must read {path} with read_file before editing it.")
     if content_sha256(content) != expected_sha256:
         raise ValueError(f"{path} changed since it was last read. Re-read the file before editing it.")
 
@@ -307,7 +263,7 @@ def write_file(
     if path.exists() and path.is_dir():
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
     if path.exists() and expected_sha256 is None:
-        raise PermissionError(f"You must read {path} with read_lines before overwriting it.")
+        raise PermissionError(f"You must read {path} with read_file before overwriting it.")
     before = path.read_text(errors="replace") if path.exists() and path.is_file() else ""
     if path.exists() and path.is_file() and content_sha256(before) != expected_sha256:
         raise ValueError(f"{path} changed since it was last read. Re-read the file before overwriting it.")
@@ -329,7 +285,7 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
         raise ValueError("The URL must be a fully-formed valid https URL.")
 
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; agentic-harness)"})
+        response = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
         response.raise_for_status()
         body = response.text
 
@@ -340,9 +296,9 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
     else:
         content = _markdownify(body)
 
-    truncated = len(content) > MAX_FETCH_CHARS
+    truncated = len(content) > MAXIMUM_FETCH_CHARS
     if truncated:
-        content = content[:MAX_FETCH_CHARS]
+        content = content[:MAXIMUM_FETCH_CHARS]
     return _payload("fetch_completed", url=url, format=fmt, truncated=truncated, content=content)
 
 
@@ -354,11 +310,11 @@ def _strip_html(html: str) -> str:
 
 __all__ = [
     "resolve_path",
-    "read_lines",
+    "read_file",
     "find_files",
     "search_content",
     "content_sha256",
-    "apply_patch",
+    "edit_file",
     "write_file",
     "fetch_url",
 ]

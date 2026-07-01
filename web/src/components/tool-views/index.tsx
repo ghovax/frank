@@ -281,27 +281,30 @@ function Mono({ children }: { children: ReactNode }) {
   );
 }
 
-function ReadLinesCallView({ args }: { args: Record<string, unknown> }) {
+function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.start_line != null && <InlineField label="Start line">{asString(args.start_line)}</InlineField>}
-      {args.line_count != null && <InlineField label="Line count">{asString(args.line_count)}</InlineField>}
-      {args.read_all === true && <InlineField label="Read all">Yes</InlineField>}
+      {args.offset != null && <InlineField label="Offset">{asString(args.offset)}</InlineField>}
+      {args.limit != null && <InlineField label="Limit">{asString(args.limit)}</InlineField>}
     </FieldList>
   );
 }
 
-function ApplyPatchCallView({ args }: { args: Record<string, unknown> }) {
+function EditFileCallView({ args }: { args: Record<string, unknown> }) {
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      <Field label="Diff">
-        <MonoBlock>{asString(args.diff) || " "}</MonoBlock>
+      {args.replace_all === true && <InlineField label="Replace all">Yes</InlineField>}
+      <Field label="Old string">
+        <MonoBlock>{asString(args.old_string) || " "}</MonoBlock>
+      </Field>
+      <Field label="New string">
+        <MonoBlock>{asString(args.new_string) || " "}</MonoBlock>
       </Field>
     </FieldList>
   );
@@ -406,7 +409,7 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ReadLinesResultView({ data }: { data: Record<string, unknown> }) {
+function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
   // The call already shows the file path, so the result only surfaces the line
   // range and the content (no duplicated Path field).
   const content = asString(data.content);
@@ -446,7 +449,7 @@ function MatchListResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  // Shared by apply_patch and write_file. Path is on the call card; the
+  // Shared by edit_file and write_file. Path is on the call card; the
   // internal `code` status is dropped.
   const characters = asString(data.characters);
   const before = asString(data.before);
@@ -582,10 +585,10 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <ReadTaskCallView args={args} />;
     case "open_preview":
       return <WebPreviewCallView args={args} />;
-    case "read_lines":
-      return <ReadLinesCallView args={args} />;
-    case "apply_patch":
-      return <ApplyPatchCallView args={args} />;
+    case "read_file":
+      return <ReadFileCallView args={args} />;
+    case "edit_file":
+      return <EditFileCallView args={args} />;
     case "write_file":
       return <WriteFileCallView args={args} />;
     case "search_content":
@@ -1185,9 +1188,9 @@ export function ToolResultView({ name, content }: { name: string; content: strin
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
     if (name === "read_task") return <ReadTaskResultView data={data} />;
-    if (name === "read_lines") return <ReadLinesResultView data={data} />;
+    if (name === "read_file") return <ReadFileResultView data={data} />;
     if (name === "find_files" || name === "search_content") return <MatchListResultView data={data} />;
-    if (name === "apply_patch" || name === "write_file") return <FileEditResultView data={data} />;
+    if (name === "edit_file" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;

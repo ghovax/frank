@@ -67,7 +67,7 @@ def memories_payload(memories: list[Memory]) -> list[dict]:
             "importance": memory.importance,
             "tags": memory.tags,
             "path": memory.path,
-            "read_hint": "Use read_lines on this path if the description indicates it is relevant.",
+            "read_hint": "Use read_file on this path if the description indicates it is relevant.",
         }
         for memory in memories
     ]

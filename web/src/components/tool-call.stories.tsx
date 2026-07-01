@@ -126,13 +126,13 @@ export const AwaitingAnswer: Story = {
 
 // --- the new specialized tools, completed ---
 
-export const ReadLinesCompleted: Story = {
+export const ReadFileCompleted: Story = {
   args: {
-    name: "read_lines",
+    name: "read_file",
     arguments: {
       file_path: "/Users/me/proj/src/db/client.py",
-      start_line: 1,
-      line_count: 3,
+      offset: 1,
+      limit: 3,
       justification: "Reading the connection module before editing it",
     },
     toolCallId: "call_read",
@@ -143,23 +143,31 @@ export const ReadLinesCompleted: Story = {
       start_line: 1,
       end_line: 3,
       total_lines: 42,
-      content: "1: import psycopg2\n2: \n3: def connect(uri):",
+      content: "     1\timport psycopg2\n     2\t\n     3\tdef connect(uri):",
     },
   },
 };
 
-export const ApplyPatchCompleted: Story = {
+export const EditFileCompleted: Story = {
   args: {
-    name: "apply_patch",
+    name: "edit_file",
     arguments: {
       file_path: "/Users/me/proj/src/db/client.py",
-      diff: "@@ -1,3 +1,3 @@\n import psycopg2\n \n-def connect(uri):\n+def connect(uri, timeout=5):",
+      old_string: "def connect(uri):",
+      new_string: "def connect(uri, timeout=5):",
       justification: "Adding a timeout parameter to connect()",
       risk: "low",
     },
     toolCallId: "call_edit",
     status: "completed",
-    result: { code: "patch_completed", path: "/Users/me/proj/src/db/client.py", characters: 412 },
+    result: {
+      code: "edit_completed",
+      path: "/Users/me/proj/src/db/client.py",
+      characters: 412,
+      replacements: 1,
+      before: "import psycopg2\n\ndef connect(uri):\n    return psycopg2.connect(uri)\n",
+      after: "import psycopg2\n\ndef connect(uri, timeout=5):\n    return psycopg2.connect(uri, connect_timeout=timeout)\n",
+    },
   },
 };
 

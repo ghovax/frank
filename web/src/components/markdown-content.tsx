@@ -1,15 +1,16 @@
 "use client";
 
 import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { xcode } from "react-syntax-highlighter/dist/esm/styles/hljs";
+import { xcode, atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import type { Components } from "react-markdown";
 import type { Element } from "hast";
+import { useColorModeValue } from "./ui/color-mode";
 
 interface MarkdownContentProps {
   content: string;
@@ -37,153 +38,141 @@ function isDisplayMathParagraph(node: Element | undefined): boolean {
   );
 }
 
-const markdownComponents: Components = {
-  // Drop images with no real source — an empty `src` makes the browser re-fetch
-  // the whole page and logs a console error.
-  img({ src, alt }) {
-    if (!src || (typeof src === "string" && !src.trim())) return null;
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} style={{ maxWidth: "100%" }} />;
-  },
-  p({ node, children }) {
-    if (isDisplayMathParagraph(node)) {
-      return <Box textAlign="center" fontSize="inherit">{children}</Box>;
-    }
-    return <Text fontSize="inherit" lineHeight="1.65">{children}</Text>;
-  },
-  h1({ children }) {
-    return <Heading as="h1" fontSize="lg" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
-  },
-  h2({ children }) {
-    return <Heading as="h2" fontSize="md" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
-  },
-  h3({ children }) {
-    return <Heading as="h3" fontSize="sm" fontWeight="bold" lineHeight="1.4">{children}</Heading>;
-  },
-  h4({ children }) {
-    return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{children}</Heading>;
-  },
-  a({ href, children }) {
-    return (
-      <Link href={href} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
-        {children}
-      </Link>
-    );
-  },
-  ul({ children }) {
-    return <Box as="ul" pl={5} fontSize="inherit" listStyleType="disc" lineHeight="1.5">{children}</Box>;
-  },
-  ol({ children }) {
-    return <Box as="ol" pl={5} fontSize="inherit" listStyleType="decimal" lineHeight="1.5">{children}</Box>;
-  },
-  li({ children }) {
-    return <Box as="li" mb={0.5} fontSize="inherit" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
-  },
-  blockquote({ children }) {
-    return (
-      <Box borderLeft="2px solid" borderColor="border" pl={2} color="fg.muted" fontSize="inherit">
-        {children}
-      </Box>
-    );
-  },
-  code({ className, children }) {
-    const languageMatch = /language-(\w+)/.exec(className || "");
-    const codeString = String(children).replace(/\n$/, "");
-    // A fenced block is block-level whenever it declares a language OR spans
-    // multiple lines. Without this, a fenced block with no language falls
-    // through to the inline branch and inherits the document base font size —
-    // which is why a multi-line code block rendered oversized.
-    const isBlock = !!languageMatch || codeString.includes("\n");
+export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentProps) {
+  const syntaxTheme = useColorModeValue(xcode, atomOneDark);
 
-    if (isBlock) {
-      // Pin the block to the `sm` font size (and let the inner pre/code inherit
-      // it) so it never drifts with the surrounding inheritance chain — code
-      // blocks always read at the same size as body text.
+  const markdownComponents = useMemo<Components>(() => ({
+    img({ src, alt }) {
+      if (!src || (typeof src === "string" && !src.trim())) return null;
+      return <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} style={{ maxWidth: "100%" }} />;
+    },
+    p({ node, children }) {
+      if (isDisplayMathParagraph(node)) {
+        return <Box textAlign="center" fontSize="inherit">{children}</Box>;
+      }
+      return <Text fontSize="inherit" lineHeight="1.65">{children}</Text>;
+    },
+    h1({ children }) {
+      return <Heading as="h1" fontSize="lg" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
+    },
+    h2({ children }) {
+      return <Heading as="h2" fontSize="md" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
+    },
+    h3({ children }) {
+      return <Heading as="h3" fontSize="sm" fontWeight="bold" lineHeight="1.4">{children}</Heading>;
+    },
+    h4({ children }) {
+      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{children}</Heading>;
+    },
+    a({ href, children }) {
       return (
-        <Box
-          borderRadius="sm"
-          overflow="auto"
-          border="1px solid"
-          borderColor="border"
-          fontSize="xs"
-          my={2}
-          maxW="100%"
-          maxH="420px"
-          bg="bg.subtle"
-        >
-          <SyntaxHighlighter
-            style={xcode}
-            language={languageMatch ? languageMatch[1] : "text"}
-            PreTag="div"
-            customStyle={{
-              margin: 0,
-              borderRadius: "var(--chakra-radii-none)",
-              fontFamily: "var(--app-font-mono)",
-              fontSize: "inherit",
-              background: "var(--chakra-colors-bg-subtle)",
-              minWidth: "max-content",
-            }}
-            codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit", whiteSpace: "pre" } }}
-          >
-            {codeString}
-          </SyntaxHighlighter>
+        <Link href={href} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
+          {children}
+        </Link>
+      );
+    },
+    ul({ children }) {
+      return <Box as="ul" pl={5} fontSize="inherit" listStyleType="disc" lineHeight="1.5">{children}</Box>;
+    },
+    ol({ children }) {
+      return <Box as="ol" pl={5} fontSize="inherit" listStyleType="decimal" lineHeight="1.5">{children}</Box>;
+    },
+    li({ children }) {
+      return <Box as="li" mb={0.5} fontSize="inherit" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
+    },
+    blockquote({ children }) {
+      return (
+        <Box borderLeft="2px solid" borderColor="border" pl={2} color="fg.muted" fontSize="inherit">
+          {children}
         </Box>
       );
-    }
+    },
+    code({ className, children }) {
+      const languageMatch = /language-(\w+)/.exec(className || "");
+      const codeString = String(children).replace(/\n$/, "");
+      const isBlock = !!languageMatch || codeString.includes("\n");
 
-    return (
-      <Code fontFamily="var(--app-font-mono)" lineHeight="inherit" px={1} bg="bg.subtle">
-        {children}
-      </Code>
-    );
-  },
-  pre({ children }) {
-    // No wrapper: the code block's own bordered Box becomes the direct child of
-    // the content, so it picks up the shared block spacing (the `& > * + *`
-    // blockGap rule) above and below like every other block, instead of sitting
-    // inside an extra, unspaced div.
-    return <>{children}</>;
-  },
-  table({ children }) {
-    return (
-      <Box borderRadius="md" border="1px solid" borderColor="border" overflow="hidden">
-        <Box overflowX="auto">
-          <Box as="table" w="100%" fontSize="inherit" borderCollapse="collapse">
-            {children}
+      if (isBlock) {
+        return (
+          <Box
+            borderRadius="sm"
+            overflow="auto"
+            border="1px solid"
+            borderColor="border"
+            fontSize="xs"
+            my={2}
+            maxW="100%"
+            maxH="420px"
+            bg="bg.subtle"
+          >
+            <SyntaxHighlighter
+              style={syntaxTheme}
+              language={languageMatch ? languageMatch[1] : "text"}
+              PreTag="div"
+              customStyle={{
+                margin: 0,
+                borderRadius: "var(--chakra-radii-none)",
+                fontFamily: "var(--app-font-mono)",
+                fontSize: "inherit",
+                background: "var(--chakra-colors-bg-subtle)",
+                minWidth: "max-content",
+              }}
+              codeTagProps={{ style: { fontFamily: "inherit", fontSize: "inherit", whiteSpace: "pre" } }}
+            >
+              {codeString}
+            </SyntaxHighlighter>
+          </Box>
+        );
+      }
+
+      return (
+        <Code fontFamily="var(--app-font-mono)" lineHeight="inherit" px={1} bg="bg.subtle">
+          {children}
+        </Code>
+      );
+    },
+    pre({ children }) {
+      return <>{children}</>;
+    },
+    table({ children }) {
+      return (
+        <Box borderRadius="md" border="1px solid" borderColor="border" overflow="hidden">
+          <Box overflowX="auto">
+            <Box as="table" w="100%" fontSize="inherit" borderCollapse="collapse">
+              {children}
+            </Box>
           </Box>
         </Box>
-      </Box>
-    );
-  },
-  tr({ children }) {
-    return <Box as="tr" _notLast={{ borderBottom: "1px solid", borderColor: "border" }}>{children}</Box>;
-  },
-  th({ children }) {
-    return (
-      <Box as="th" textAlign="left" px={2.5} py={1.5} fontWeight="semibold" bg="bg.emphasized" color="fg" whiteSpace="nowrap">
-        {children}
-      </Box>
-    );
-  },
-  td({ children }) {
-    return (
-      <Box as="td" px={2.5} py={1.5} verticalAlign="top">
-        {children}
-      </Box>
-    );
-  },
-  hr() {
-    return <Box as="hr" border="none" borderTop="1px solid" borderColor="border" opacity={0.6} />;
-  },
-  strong({ children }) {
-    return <Text as="strong" fontSize="inherit" lineHeight="inherit" fontWeight="bold">{children}</Text>;
-  },
-  em({ children }) {
-    return <Text as="em" fontSize="inherit" lineHeight="inherit" fontStyle="italic">{children}</Text>;
-  },
-};
+      );
+    },
+    tr({ children }) {
+      return <Box as="tr" _notLast={{ borderBottom: "1px solid", borderColor: "border" }}>{children}</Box>;
+    },
+    th({ children }) {
+      return (
+        <Box as="th" textAlign="left" px={2.5} py={1.5} fontWeight="semibold" bg="bg.emphasized" color="fg" whiteSpace="nowrap">
+          {children}
+        </Box>
+      );
+    },
+    td({ children }) {
+      return (
+        <Box as="td" px={2.5} py={1.5} verticalAlign="top">
+          {children}
+        </Box>
+      );
+    },
+    hr() {
+      return <Box as="hr" border="none" borderTop="1px solid" borderColor="border" opacity={0.6} />;
+    },
+    strong({ children }) {
+      return <Text as="strong" fontSize="inherit" lineHeight="inherit" fontWeight="bold">{children}</Text>;
+    },
+    em({ children }) {
+      return <Text as="em" fontSize="inherit" lineHeight="inherit" fontStyle="italic">{children}</Text>;
+    },
+  }), [syntaxTheme]);
 
-export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentProps) {
   return (
     <Box
       fontSize={fontSize}

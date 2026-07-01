@@ -50,10 +50,10 @@ from harness.tools.tools import (
     call_mcp_tool_with_events,
     list_mcp_resources as list_mcp_resources_tool,
     read_mcp_resource as read_mcp_resource_tool,
-    read_lines as read_lines_tool,
+    read_file as read_file_tool,
     find_files as find_files_tool,
     search_content as search_content_tool,
-    apply_patch as apply_patch_tool,
+    edit_file as edit_file_tool,
     write_file as write_file_tool,
     fetch_url as fetch_url_tool,
     ask_user as ask_user_tool,
@@ -256,10 +256,10 @@ def _build_tools(
 ) -> list[BaseTool]:
     available = [
         bash_tool,
-        read_lines_tool,
+        read_file_tool,
         find_files_tool,
         search_content_tool,
-        apply_patch_tool,
+        edit_file_tool,
         write_file_tool,
         fetch_url_tool,
         load_skill_tool,
@@ -1846,17 +1846,16 @@ class AgentRuntime:
             finally:
                 self._release_filesystem_lease(lease_token)
 
-        elif tool_name == "read_lines":
+        elif tool_name == "read_file":
             file_path = str(tool_arguments.get("file_path", ""))
-            start_line = tool_arguments.get("start_line", 1) or 1
-            line_count_raw = tool_arguments.get("line_count")
-            line_count = int(line_count_raw) if line_count_raw not in (None, "") else None
-            read_all = bool(tool_arguments.get("read_all", False))
+            offset = tool_arguments.get("offset", 1) or 1
+            limit_raw = tool_arguments.get("limit")
+            limit = int(limit_raw) if limit_raw not in (None, "") else None
             result = await asyncio.to_thread(
-                file_tools.read_lines, self._working_directory, file_path, int(start_line), line_count, read_all,
+                file_tools.read_file, self._working_directory, file_path, int(offset), limit,
             )
             result_data = _maybe_json(result)
-            # Record the canonical path and hash so apply_patch/write_file can
+            # Record the canonical path and hash so edit_file/write_file can
             # reject stale edits.
             if isinstance(result_data, dict):
                 sha256 = result_data.get("sha256")
@@ -1895,7 +1894,7 @@ class AgentRuntime:
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
             )
 
-        elif tool_name in ("apply_patch", "write_file"):
+        elif tool_name in ("edit_file", "write_file"):
             if self._read_only:
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
                 yield StreamEvent(
@@ -1921,15 +1920,19 @@ class AgentRuntime:
                 return
             try:
                 expected_sha256 = self._read_files.get(resolved)
-                if tool_name == "apply_patch":
-                    diff = tool_arguments.get("diff", "")
-                    if not isinstance(diff, str):
-                        raise ValueError("diff must be a string.")
+                if tool_name == "edit_file":
+                    old_string = tool_arguments.get("old_string", "")
+                    new_string = tool_arguments.get("new_string", "")
+                    if not isinstance(old_string, str) or not isinstance(new_string, str):
+                        raise ValueError("old_string and new_string must be strings.")
+                    replace_all = bool(tool_arguments.get("replace_all", False))
                     result = await asyncio.to_thread(
-                        file_tools.apply_patch,
+                        file_tools.edit_file,
                         self._working_directory,
                         file_path,
-                        diff,
+                        old_string,
+                        new_string,
+                        replace_all,
                         expected_sha256=expected_sha256,
                     )
                 else:
@@ -1940,7 +1943,7 @@ class AgentRuntime:
                         file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
                     )
                 result_data = _maybe_json(result)
-                if tool_name == "apply_patch":
+                if tool_name == "edit_file":
                     if isinstance(result_data, dict) and isinstance(result_data.get("sha256"), str):
                         self._read_files[resolved] = result_data["sha256"]
                     else:

@@ -28,7 +28,7 @@ exa:
 sandbox:
   enabled: true
 workspace:
-  strategy: none
+  strategy: branch
 composio:
   enabled: false
   url: https://connect.composio.dev/mcp

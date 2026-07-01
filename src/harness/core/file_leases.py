@@ -42,7 +42,7 @@ class FileLeaseManager:
         self._condition = threading.Condition()
         self._leases: dict[str, FileLease] = {}
         self._lock_handles: dict[str, list] = {}
-        self._lock_directory = lock_directory or (Path(tempfile.gettempdir()) / "agentic-harness-file-leases")
+        self._lock_directory = lock_directory or (Path(tempfile.gettempdir()) / "daisy-file-leases")
         self._lock_directory.mkdir(parents=True, exist_ok=True)
         self._on_change = on_change
 
