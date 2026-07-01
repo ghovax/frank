@@ -89,7 +89,8 @@ class SessionWorkspaceManager:
         except ValueError:
             source_relative = Path()
         branch = f"daisy/session/{self._safe_branch_component(session_id)}"
-        head = self._git_text(source_repository_root, "rev-parse", "HEAD") or "HEAD"
+        base_ref = self._base_ref(source_repository_root)
+        head = self._git_text(source_repository_root, "rev-parse", base_ref) or "HEAD"
 
         if strategy == "branch":
             with self._process_lock():
@@ -162,6 +163,23 @@ class SessionWorkspaceManager:
                 return
         stderr = (result.stderr or result.stdout or "unknown git worktree error").strip()
         raise RuntimeError(f"Could not create session worktree: {stderr}")
+
+    def _base_ref(self, repository_root: Path) -> str:
+        """Resolve the ref that new session branches and worktrees branch from.
+
+        Sessions always branch from the repository's main line, never from the
+        currently checked-out ref. Otherwise starting a session while a previous
+        session branch is checked out would stack the new branch on top of it,
+        chaining session branches indefinitely. Prefer a local ``main`` (then
+        ``master``), fall back to the remote's default branch, and only as a last
+        resort use the current ``HEAD``."""
+        for candidate in ("main", "master"):
+            if self._branch_exists(repository_root, candidate):
+                return candidate
+        origin_head = self._git_text(repository_root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD")
+        if origin_head:
+            return origin_head.replace("refs/remotes/", "", 1)
+        return "HEAD"
 
     def _branch_exists(self, repository_root: Path, branch: str) -> bool:
         return self._run_git(

@@ -954,7 +954,7 @@ class AgentRuntime:
                 "available_agents": available_agents,
                 "is_sub_agent": self._is_sub_agent,
             })
-            sub_agent_context = ""
+            sub_agent_context = "This agent is initialized as the main orchestrator agent."
             if self._is_sub_agent:
                 sub_agent_context = self._prompt_loader.load("sub_agent_context", {})
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
@@ -976,7 +976,7 @@ class AgentRuntime:
             parts.append(self._turn_reminders)
         current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         parts.append(f"Current time: {current_time}")
-        parts.append(json.dumps({"PWD": self._working_directory or str(Path.cwd())}))
+        parts.append(json.dumps({"pwd": self._working_directory or str(Path.cwd())}))
         if self._active_goal:
             parts.append(json.dumps({"active_goal": self._active_goal}))
         tasks_data = self._task_manager.to_dict_list()
@@ -1139,7 +1139,7 @@ class AgentRuntime:
                 for steering_event in await self._drain_steering_messages():
                     yield steering_event
 
-            # Dynamic context (turn reminders, time, PWD, active goal) is injected
+            # Dynamic context (turn reminders, time, pwd, active goal) is injected
             # only on the first iteration of a turn — when the user just sent a
             # message. Subsequent iterations (after tool calls) skip it to avoid
             # re-sending the same reminders on every LLM call within the turn.
