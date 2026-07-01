@@ -480,7 +480,7 @@ function HomeContent() {
             </Flex>
             {sessions.length === 0 ? (
               <EmptyState.Root size="sm">
-                <EmptyState.Content>
+                <EmptyState.Content pt={4}>
                   <EmptyState.Indicator>
                     <LuFolder />
                   </EmptyState.Indicator>

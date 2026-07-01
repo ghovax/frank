@@ -424,22 +424,9 @@ export function ChatPanel({
             </Flex>
           ) : messages.length === 0 ? (
             <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
-              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={10}>
                 What should we build in {currentFolderName}?
               </Text>
-              <EmptyState.Root>
-                <EmptyState.Content>
-                  <EmptyState.Indicator>
-                    <LuMessageSquare />
-                  </EmptyState.Indicator>
-                  <VStack gap={1}>
-                    <EmptyState.Title>No messages yet</EmptyState.Title>
-                    <EmptyState.Description>
-                      Send a message to start this conversation
-                    </EmptyState.Description>
-                  </VStack>
-                </EmptyState.Content>
-              </EmptyState.Root>
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
