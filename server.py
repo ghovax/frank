@@ -15,7 +15,7 @@ from urllib.parse import quote, urljoin
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from sqlalchemy import Column, String, Text, create_engine, event
+from sqlalchemy import Boolean, Column, String, Text, create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
@@ -49,6 +49,9 @@ from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.mcp_client import MCPClientManager
 from harness.core.models import MODELS, available_models, find_model, resolve_litellm
 from harness.core.providers import PROVIDERS
+from harness.core.file_leases import FileLeaseManager
+from harness.core.session_worktrees import SessionWorkspace, SessionWorktreeManager
+from harness.core.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import (
     cancel_all_background_tasks,
@@ -76,7 +79,19 @@ class SessionRecord(Base):
 
     id = Column(String, primary_key=True)  # == A2A contextId
     agent = Column(String, nullable=False)
+    # Source path selected in the UI. Project-local agents/skills/instructions
+    # are resolved from here.
     working_directory = Column(Text, default="")
+    # Actual path where shell and file tools run. For Git projects this is a
+    # per-session worktree; for non-Git directories it falls back to the source.
+    runtime_working_directory = Column(Text, default="")
+    worktree_path = Column(Text, default="")
+    worktree_branch = Column(Text, default="")
+    source_repository_root = Column(Text, default="")
+    runtime_repository_root = Column(Text, default="")
+    worktree_head = Column(Text, default="")
+    worktree_isolated = Column(Boolean, default=False)
+    worktree_error = Column(Text, default="")
     title = Column(Text, default="")
     # Per-session model override (provider/model id); empty means use the global
     # default_model. Persisted so resuming a session keeps its chosen model.
@@ -145,6 +160,9 @@ _async_engine = None
 _task_store: Optional[AppendOnlyTaskStore] = None
 _registry: Optional[AgentRegistry] = None
 _mcp_manager: Optional[MCPClientManager] = None
+_main_loop: asyncio.AbstractEventLoop | None = None
+_file_lease_manager: FileLeaseManager | None = None
+_worktree_manager: SessionWorktreeManager | None = None
 # Composio Tool Router server(s), provisioned once at startup. Kept separate from
 # the mcp.json-derived servers so the file watcher's live reload re-merges them
 # instead of dropping Composio whenever mcp.json changes.
@@ -163,6 +181,11 @@ _conversations: dict[str, list] = {}
 # How many top-level turns are running per context. Drives the sidebar's
 # "running" spinner; a count rather than a flag so overlapping turns are handled.
 _running_contexts: dict[str, int] = {}
+
+
+def _notify_filesystem_lease_state() -> None:
+    _publish_broadcast({"type": "sessions_changed"})
+    _publish_broadcast({"type": "filesystem_leases_changed"})
 
 
 class _ContextEventBus:
@@ -248,7 +271,30 @@ def _notify_permission_state(context_id: str) -> None:
 _broadcaster = Broadcaster()
 # Keeps references to in-flight session-title generation tasks so they are not
 # garbage-collected before completing.
-_title_tasks: set[asyncio.Task] = set()
+_title_tasks: set[Any] = set()
+
+
+def _publish_broadcast(event: dict) -> None:
+    """Publish from either the event-loop thread or a worker thread."""
+    if _main_loop is not None and _main_loop.is_running():
+        _main_loop.call_soon_threadsafe(_broadcaster.publish, event)
+    else:
+        _broadcaster.publish(event)
+
+
+def _schedule_session_title(context_id: str, first_message: str) -> None:
+    if _main_loop is not None and _main_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(_finalize_session_title(context_id, first_message), _main_loop)
+        _title_tasks.add(future)
+        future.add_done_callback(_title_tasks.discard)
+        return
+    try:
+        task = asyncio.create_task(_finalize_session_title(context_id, first_message))
+        _title_tasks.add(task)
+        task.add_done_callback(_title_tasks.discard)
+    except RuntimeError:
+        # No running event loop (e.g. called outside a request) — keep the provisional title.
+        pass
 
 
 def _load_conversation(context_id: str) -> list:
@@ -273,21 +319,22 @@ def _save_conversation(context_id: str, messages: list) -> None:
     """Persist a context's dialogue history after a turn, so it survives a restart."""
     if _session_factory is None or not context_id:
         return
-    database_session = _session_factory()
-    try:
-        serialized = json.dumps(messages_to_dict(messages))
-        record = database_session.get(ConversationRecord, context_id)
-        now = datetime.now(timezone.utc).isoformat()
-        if record is None:
-            database_session.add(ConversationRecord(context_id=context_id, messages=serialized, updated_at=now))
-        else:
-            record.messages = serialized
-            record.updated_at = now
-        database_session.commit()
-    except Exception:
-        database_session.rollback()
-    finally:
-        database_session.close()
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            serialized = json.dumps(messages_to_dict(messages))
+            record = database_session.get(ConversationRecord, context_id)
+            now = datetime.now(timezone.utc).isoformat()
+            if record is None:
+                database_session.add(ConversationRecord(context_id=context_id, messages=serialized, updated_at=now))
+            else:
+                record.messages = serialized
+                record.updated_at = now
+            database_session.commit()
+        except Exception:
+            database_session.rollback()
+        finally:
+            database_session.close()
 
 
 def _session_model_for(context_id: str) -> str:
@@ -311,57 +358,118 @@ def _set_session_model(context_id: str, model_identifier: str) -> bool:
     turn rebuilds with the new model. Returns whether the session was found."""
     if _session_factory is None or not context_id:
         return False
-    database_session = _session_factory()
     updated = False
-    try:
-        record = database_session.get(SessionRecord, context_id)
-        if record is None:
-            return False
-        record.model = model_identifier or ""
-        database_session.commit()
-        updated = True
-    except Exception:
-        database_session.rollback()
-    finally:
-        database_session.close()
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(SessionRecord, context_id)
+            if record is None:
+                return False
+            record.model = model_identifier or ""
+            database_session.commit()
+            updated = True
+        except Exception:
+            database_session.rollback()
+        finally:
+            database_session.close()
     if updated:
         for executor in _executors.values():
             executor.reset_runtime(context_id)
     return updated
 
 
-def _record_session(context_id: str, agent: str, working_directory: str, first_message: str) -> None:
+def _session_workspace_from_record(record: SessionRecord) -> SessionWorkspace:
+    source = record.working_directory or ""
+    runtime = record.runtime_working_directory or source
+    return SessionWorkspace(
+        source_working_directory=source,
+        runtime_working_directory=runtime,
+        isolated=bool(record.worktree_isolated),
+        worktree_path=record.worktree_path or "",
+        worktree_branch=record.worktree_branch or "",
+        source_repository_root=record.source_repository_root or "",
+        runtime_repository_root=record.runtime_repository_root or "",
+        head=record.worktree_head or "",
+        isolation_error=record.worktree_error or "",
+    )
+
+
+def _record_session_visible(context_id: str) -> None:
+    _publish_broadcast({"type": "sessions_changed"})
+
+
+def _ensure_session_workspace(context_id: str, agent: str, working_directory: str, first_message: str) -> SessionWorkspace:
     assert _session_factory is not None
+    source_directory = working_directory or str(Path.home())
+
     database_session = _session_factory()
     try:
-        if database_session.get(SessionRecord, context_id) is not None:
-            return
-        # Provisional title so the sidebar shows something immediately; an LLM-
-        # generated title replaces it shortly via _finalize_session_title. The
-        # sidebar truncates for display, so the full first line is stored.
-        title = first_message.strip().split("\n", 1)[0]
-        database_session.add(SessionRecord(
-            id=context_id,
-            agent=agent,
-            working_directory=working_directory or "",
-            title=title,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        ))
-        database_session.commit()
+        record = database_session.get(SessionRecord, context_id)
+        if record is not None:
+            workspace = _session_workspace_from_record(record)
+            if workspace.runtime_working_directory:
+                return workspace
     finally:
         database_session.close()
 
+    if _worktree_manager is not None:
+        workspace = _worktree_manager.prepare_sync(context_id, source_directory)
+    else:
+        resolved = str(Path(source_directory).expanduser().resolve(strict=False))
+        workspace = SessionWorkspace(
+            source_working_directory=resolved,
+            runtime_working_directory=resolved,
+            isolated=False,
+            isolation_error="Session worktree manager is not initialized.",
+        )
+
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(SessionRecord, context_id)
+            if record is not None:
+                if not record.runtime_working_directory:
+                    record.runtime_working_directory = workspace.runtime_working_directory
+                    record.worktree_path = workspace.worktree_path
+                    record.worktree_branch = workspace.worktree_branch
+                    record.source_repository_root = workspace.source_repository_root
+                    record.runtime_repository_root = workspace.runtime_repository_root
+                    record.worktree_head = workspace.head
+                    record.worktree_isolated = workspace.isolated
+                    record.worktree_error = workspace.isolation_error
+                    database_session.commit()
+                return _session_workspace_from_record(record)
+            # Provisional title so the sidebar shows something immediately; an LLM-
+            # generated title replaces it shortly via _finalize_session_title. The
+            # sidebar truncates for display, so the full first line is stored.
+            title = first_message.strip().split("\n", 1)[0]
+            database_session.add(SessionRecord(
+                id=context_id,
+                agent=agent,
+                working_directory=workspace.source_working_directory,
+                runtime_working_directory=workspace.runtime_working_directory,
+                worktree_path=workspace.worktree_path,
+                worktree_branch=workspace.worktree_branch,
+                source_repository_root=workspace.source_repository_root,
+                runtime_repository_root=workspace.runtime_repository_root,
+                worktree_head=workspace.head,
+                worktree_isolated=workspace.isolated,
+                worktree_error=workspace.isolation_error,
+                title=title,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+            database_session.commit()
+        except Exception:
+            database_session.rollback()
+            raise
+        finally:
+            database_session.close()
+
     # Surface the new session immediately (its first turn is already marked
     # running, so the sidebar shows it with a spinner right away).
-    _broadcaster.publish({"type": "sessions_changed"})
-
-    try:
-        task = asyncio.create_task(_finalize_session_title(context_id, first_message))
-        _title_tasks.add(task)
-        task.add_done_callback(_title_tasks.discard)
-    except RuntimeError:
-        # No running event loop (e.g. called outside a request) — keep the provisional title.
-        pass
+    _publish_broadcast({"type": "sessions_changed"})
+    _schedule_session_title(context_id, first_message)
+    return workspace
 
 
 def _project_name(path: str) -> str:
@@ -388,22 +496,26 @@ def _record_project_path(path_value: str) -> str | None:
 
     resolved = str(path)
     assert _session_factory is not None
-    database_session = _session_factory()
-    try:
-        record = database_session.get(ProjectHistoryRecord, resolved)
-        selected_at = datetime.now(timezone.utc).isoformat()
-        if record is None:
-            database_session.add(ProjectHistoryRecord(
-                path=resolved,
-                name=_project_name(resolved),
-                selected_at=selected_at,
-            ))
-        else:
-            record.name = _project_name(resolved)
-            record.selected_at = selected_at
-        database_session.commit()
-    finally:
-        database_session.close()
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(ProjectHistoryRecord, resolved)
+            selected_at = datetime.now(timezone.utc).isoformat()
+            if record is None:
+                database_session.add(ProjectHistoryRecord(
+                    path=resolved,
+                    name=_project_name(resolved),
+                    selected_at=selected_at,
+                ))
+            else:
+                record.name = _project_name(resolved)
+                record.selected_at = selected_at
+            database_session.commit()
+        except Exception:
+            database_session.rollback()
+            raise
+        finally:
+            database_session.close()
     return resolved
 
 
@@ -416,26 +528,27 @@ def _record_model_selection(model_identifier: str) -> None:
     definition = find_model(model_identifier)
     if definition is None:
         return
-    database_session = _session_factory()
-    try:
-        record = database_session.get(ModelHistoryRecord, model_identifier)
-        selected_at = datetime.now(timezone.utc).isoformat()
-        if record is None:
-            database_session.add(ModelHistoryRecord(
-                model_id=model_identifier,
-                name=definition.name,
-                provider=definition.provider,
-                selected_at=selected_at,
-            ))
-        else:
-            record.name = definition.name
-            record.provider = definition.provider
-            record.selected_at = selected_at
-        database_session.commit()
-    except Exception:
-        database_session.rollback()
-    finally:
-        database_session.close()
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(ModelHistoryRecord, model_identifier)
+            selected_at = datetime.now(timezone.utc).isoformat()
+            if record is None:
+                database_session.add(ModelHistoryRecord(
+                    model_id=model_identifier,
+                    name=definition.name,
+                    provider=definition.provider,
+                    selected_at=selected_at,
+                ))
+            else:
+                record.name = definition.name
+                record.provider = definition.provider
+                record.selected_at = selected_at
+            database_session.commit()
+        except Exception:
+            database_session.rollback()
+        finally:
+            database_session.close()
 
 
 def _recent_models(limit: int = 8) -> list[dict[str, str]]:
@@ -456,6 +569,30 @@ def _recent_models(limit: int = 8) -> list[dict[str, str]]:
         ]
     finally:
         database_session.close()
+
+
+def _ensure_session_schema(sync_engine) -> None:
+    """SQLAlchemy create_all does not add columns to an existing SQLite table."""
+    inspector = inspect(sync_engine)
+    if "sessions" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("sessions")}
+    additions = {
+        "runtime_working_directory": "TEXT DEFAULT ''",
+        "worktree_path": "TEXT DEFAULT ''",
+        "worktree_branch": "TEXT DEFAULT ''",
+        "source_repository_root": "TEXT DEFAULT ''",
+        "runtime_repository_root": "TEXT DEFAULT ''",
+        "worktree_head": "TEXT DEFAULT ''",
+        "worktree_isolated": "BOOLEAN DEFAULT 0",
+        "worktree_error": "TEXT DEFAULT ''",
+    }
+    missing = [(name, definition) for name, definition in additions.items() if name not in existing]
+    if not missing:
+        return
+    with sync_engine.begin() as connection:
+        for name, definition in missing:
+            connection.execute(text(f"ALTER TABLE sessions ADD COLUMN {name} {definition}"))
 
 
 class SessionTitle(BaseModel):
@@ -514,23 +651,115 @@ async def _generate_session_title(first_message: str) -> str:
 
 async def _finalize_session_title(context_id: str, first_message: str) -> None:
     """Generate an LLM title for a new session and update the sidebar record."""
-    assert _session_factory is not None
     try:
         title = await _generate_session_title(first_message)
     except Exception:
         return  # Keep the provisional title on any failure.
     if not title:
         return
+    changed = await asyncio.to_thread(_set_session_title, context_id, title)
+    if changed:
+        _broadcaster.publish({"type": "sessions_changed"})
+
+
+def _set_session_title(context_id: str, title: str) -> bool:
+    assert _session_factory is not None
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(SessionRecord, context_id)
+            if record is None or record.title == title:
+                return False
+            record.title = title
+            database_session.commit()
+            return True
+        except Exception:
+            database_session.rollback()
+            return False
+        finally:
+            database_session.close()
+
+
+def _recent_projects_payload() -> dict[str, list[dict[str, str]]]:
+    """Recent working directories selected in the UI or used by sessions."""
+    assert _session_factory is not None
     database_session = _session_factory()
     try:
-        record = database_session.get(SessionRecord, context_id)
-        if record is None or record.title == title:
-            return
-        record.title = title
-        database_session.commit()
+        projects: dict[str, dict[str, str]] = {}
+        project_rows = database_session.query(ProjectHistoryRecord).order_by(ProjectHistoryRecord.selected_at.desc()).all()
+        for row in project_rows:
+            if row.path:
+                projects[row.path] = {
+                    "path": row.path,
+                    "name": row.name or _project_name(row.path),
+                    "last_used_at": row.selected_at,
+                }
+
+        session_rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).all()
+        for row in session_rows:
+            path = (row.working_directory or "").strip()
+            if not path:
+                continue
+            existing = projects.get(path)
+            if existing is None or row.created_at > existing["last_used_at"]:
+                projects[path] = {
+                    "path": path,
+                    "name": _project_name(path),
+                    "last_used_at": row.created_at,
+                }
+
+        return {
+            "projects": sorted(projects.values(), key=lambda project: project["last_used_at"], reverse=True)
+        }
     finally:
         database_session.close()
-    _broadcaster.publish({"type": "sessions_changed"})
+
+
+def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
+    """List recent chat sessions for the sidebar."""
+    assert _session_factory is not None
+    database_session = _session_factory()
+    try:
+        rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).limit(50).all()
+        return {
+            "sessions": [
+                {
+                    "session_id": row.id,
+                    "agent": row.agent,
+                    "title": row.title,
+                    "created_at": row.created_at,
+                    "working_directory": row.working_directory,
+                    "working_directory_name": _project_name(row.working_directory) if row.working_directory else "",
+                    "runtime_working_directory": row.runtime_working_directory or row.working_directory,
+                    "runtime_working_directory_name": (
+                        _project_name(row.runtime_working_directory)
+                        if row.runtime_working_directory
+                        else _project_name(row.working_directory) if row.working_directory else ""
+                    ),
+                    "worktree_path": row.worktree_path or "",
+                    "worktree_branch": row.worktree_branch or "",
+                    "source_repository_root": row.source_repository_root or "",
+                    "runtime_repository_root": row.runtime_repository_root or "",
+                    "worktree_head": row.worktree_head or "",
+                    "worktree_isolated": bool(row.worktree_isolated),
+                    "worktree_error": row.worktree_error or "",
+                    "model": row.model or "",
+                    "filesystem_leases": (
+                        _file_lease_manager.active_for_session(row.id)
+                        if _file_lease_manager is not None
+                        else []
+                    ),
+                    "running": row.id in _running_contexts,
+                    "awaiting_input": any(
+                        request_id.startswith(f"perm-{row.id}-") and not future.done()
+                        for request_id, future in _pending_permissions.items()
+                    ),
+                }
+                for row in rows
+            ]
+        }
+    finally:
+        database_session.close()
 
 
 def _card_for(agent_name: str, working_directory: str = ""):
@@ -567,7 +796,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         pending_permissions=_pending_permissions,
         pending_questions=_pending_questions,
         registry=_registry,
-        on_new_context=_record_session,
+        on_new_context=_record_session_visible,
         conversations=_conversations,
         on_turn_state=_set_turn_state,
         on_permission_state=_notify_permission_state,
@@ -575,6 +804,9 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         save_conversation=_save_conversation,
         session_model_for=_session_model_for,
         on_stream_event=_publish_stream_event,
+        file_lease_manager=_file_lease_manager,
+        ensure_session_workspace=_ensure_session_workspace,
+        ensure_mcp_servers=_ensure_mcp_servers_for,
     )
     handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
     _executors[agent_name] = executor
@@ -714,10 +946,14 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _composio_servers
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _composio_servers, _main_loop, _file_lease_manager, _worktree_manager
+    _main_loop = asyncio.get_running_loop()
+    _file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
+    _worktree_manager = SessionWorktreeManager()
     _global_configuration = GlobalConfiguration.load()
 
     database_path = database_file_path()
+    configure_sqlite_lock(database_path)
     sync_engine = create_engine(f"sqlite:///{database_path}")
 
     # SQLite concurrency: WAL lets readers run alongside the single writer (the
@@ -733,7 +969,9 @@ async def lifespan(application: FastAPI):
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
-    Base.metadata.create_all(sync_engine)
+    with sqlite_write_lock():
+        Base.metadata.create_all(sync_engine)
+        _ensure_session_schema(sync_engine)
     _session_factory = sessionmaker(bind=sync_engine)
 
     exa_key = _global_configuration.exa.effective_api_key
@@ -760,6 +998,15 @@ async def lifespan(application: FastAPI):
         # concurrently with writes.
         connect_args={"timeout": 30},
     )
+
+    @event.listens_for(_async_engine.sync_engine, "connect")
+    def _set_async_sqlite_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
     _task_store = AppendOnlyTaskStore(_async_engine)
     await _task_store.initialize()
 
@@ -984,44 +1231,13 @@ async def home_directory():
 
 @app.get("/projects/recent")
 async def recent_projects():
-    """Recent working directories selected in the UI or used by sessions."""
-    assert _session_factory is not None
-    database_session = _session_factory()
-    try:
-        projects: dict[str, dict[str, str]] = {}
-        project_rows = database_session.query(ProjectHistoryRecord).order_by(ProjectHistoryRecord.selected_at.desc()).all()
-        for row in project_rows:
-            if row.path:
-                projects[row.path] = {
-                    "path": row.path,
-                    "name": row.name or _project_name(row.path),
-                    "last_used_at": row.selected_at,
-                }
-
-        session_rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).all()
-        for row in session_rows:
-            path = (row.working_directory or "").strip()
-            if not path:
-                continue
-            existing = projects.get(path)
-            if existing is None or row.created_at > existing["last_used_at"]:
-                projects[path] = {
-                    "path": path,
-                    "name": _project_name(path),
-                    "last_used_at": row.created_at,
-                }
-
-        return {
-            "projects": sorted(projects.values(), key=lambda project: project["last_used_at"], reverse=True)
-        }
-    finally:
-        database_session.close()
+    return await asyncio.to_thread(_recent_projects_payload)
 
 
 @app.post("/projects/recent")
 async def record_recent_project(request: RecentProjectRequest):
     """Record a validated working directory selection."""
-    path = _record_project_path(request.path)
+    path = await asyncio.to_thread(_record_project_path, request.path)
     if not path:
         return {"saved": False}
     _broadcaster.publish({"type": "projects_changed"})
@@ -1066,7 +1282,7 @@ async def recent_models():
     """Recently selected models (newest first), mirroring the project history — a
     user can quickly switch back to a model they used before without scrolling the
     full catalog. Each entry is only recorded once it is actually selected."""
-    return {"models": _recent_models()}
+    return {"models": await asyncio.to_thread(_recent_models)}
 
 
 @app.get("/settings")
@@ -1096,7 +1312,8 @@ async def update_settings(request: SettingsUpdateRequest):
     global _composio_servers, _mcp_manager
     assert _global_configuration is not None
     configuration = _global_configuration
-    save_api_keys(
+    await asyncio.to_thread(
+        save_api_keys,
         exa_api_key=request.exa_api_key,
         composio_consumer_api_key=request.composio_consumer_api_key,
         provider_keys=request.provider_keys,
@@ -1129,7 +1346,7 @@ async def update_settings(request: SettingsUpdateRequest):
             configuration.default_model = model
         else:
             configuration.default_model = request.default_model
-        _record_model_selection(request.default_model)
+        await asyncio.to_thread(_record_model_selection, request.default_model)
 
     exa_key = configuration.exa.effective_api_key
     if exa_key:
@@ -1156,6 +1373,7 @@ async def update_settings(request: SettingsUpdateRequest):
 
     for executor in _executors.values():
         executor.reset_runtimes()
+    _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved"}
 
 
@@ -1163,10 +1381,11 @@ async def update_settings(request: SettingsUpdateRequest):
 async def update_sandbox(request: SandboxUpdateRequest):
     """Persist and apply the sandbox toggle independently from credentials."""
     assert _global_configuration is not None
-    save_api_keys(sandbox_enabled=request.enabled)
+    await asyncio.to_thread(save_api_keys, sandbox_enabled=request.enabled)
     _global_configuration.sandbox.enabled = request.enabled
     for executor in _executors.values():
         executor.reset_runtimes()
+    _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "sandbox_enabled": _global_configuration.sandbox.enabled}
 
 
@@ -1359,32 +1578,13 @@ def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
 
 @app.get("/sessions")
 async def list_sessions():
-    """List recent chat sessions for the sidebar."""
-    assert _session_factory is not None
-    database_session = _session_factory()
-    try:
-        rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).limit(50).all()
-        return {
-            "sessions": [
-                {
-                    "session_id": row.id,
-                    "agent": row.agent,
-                    "title": row.title,
-                    "created_at": row.created_at,
-                    "working_directory": row.working_directory,
-                    "working_directory_name": _project_name(row.working_directory) if row.working_directory else "",
-                    "model": row.model or "",
-                    "running": row.id in _running_contexts,
-                    "awaiting_input": any(
-                        request_id.startswith(f"perm-{row.id}-") and not future.done()
-                        for request_id, future in _pending_permissions.items()
-                    ),
-                }
-                for row in rows
-            ]
-        }
-    finally:
-        database_session.close()
+    return await asyncio.to_thread(_sessions_payload)
+
+
+@app.get("/filesystem/leases")
+async def filesystem_leases():
+    """Active filesystem mutation leases across all sessions in this backend."""
+    return {"leases": _file_lease_manager.active() if _file_lease_manager is not None else []}
 
 
 @app.get("/sessions/{context_id}/tasks")
@@ -1476,18 +1676,18 @@ async def update_session_model(context_id: str, request: SessionModelRequest):
     back to the global default). Persists to the sessions table and drops the cached
     runtime so the next turn runs on the new model. A non-empty selection is also
     recorded in the model history for quick switching."""
-    updated = _set_session_model(context_id, request.model)
+    updated = await asyncio.to_thread(_set_session_model, context_id, request.model)
     if not updated:
         raise HTTPException(status_code=404, detail="Session not found.")
     if request.model:
-        _record_model_selection(request.model)
+        await asyncio.to_thread(_record_model_selection, request.model)
     return {"status": "saved", "model": request.model or ""}
 
 
 @app.get("/sessions/{context_id}/model")
 async def get_session_model(context_id: str):
     """The per-session model override for a context ("" = global default)."""
-    return {"model": _session_model_for(context_id)}
+    return {"model": await asyncio.to_thread(_session_model_for, context_id)}
 
 
 @app.get("/preview/{file_path:path}")

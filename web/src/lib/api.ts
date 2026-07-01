@@ -163,6 +163,15 @@ export interface RecentProject {
   last_used_at: string;
 }
 
+export interface FilesystemLease {
+  owner_session_id: string;
+  scope: "file" | "worktree";
+  path: string;
+  working_directory: string;
+  description: string;
+  acquired_at: number;
+}
+
 // API credentials stored in ~/.harness/configuration.yaml.
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
@@ -330,10 +339,37 @@ export async function fetchHomeDirectory(): Promise<{ path: string; name: string
   return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
 
-export async function fetchSessions(): Promise<{ session_id: string; agent: string; title: string; created_at: string; working_directory?: string; working_directory_name?: string; running?: boolean; awaiting_input?: boolean; model?: string }[]> {
+export async function fetchSessions(): Promise<{
+  session_id: string;
+  agent: string;
+  title: string;
+  created_at: string;
+  working_directory?: string;
+  working_directory_name?: string;
+  runtime_working_directory?: string;
+  runtime_working_directory_name?: string;
+  worktree_path?: string;
+  worktree_branch?: string;
+  source_repository_root?: string;
+  runtime_repository_root?: string;
+  worktree_head?: string;
+  worktree_isolated?: boolean;
+  worktree_error?: string;
+  running?: boolean;
+  awaiting_input?: boolean;
+  model?: string;
+  filesystem_leases?: FilesystemLease[];
+}[]> {
   const response = await fetch(`${API_BASE}/sessions`);
   const data = await response.json();
   return data.sessions;
+}
+
+export async function fetchFilesystemLeases(): Promise<FilesystemLease[]> {
+  const response = await fetch(`${API_BASE}/filesystem/leases`);
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.leases ?? [];
 }
 
 // All A2A tasks for a session (context): the main turn tasks (with history +

@@ -33,6 +33,7 @@ from harness.core.configuration import (
     describe_available_agents,
 )
 from harness.core.litellm_model import ChatLiteLLMModel
+from harness.core.file_leases import FileLeaseConflict, FileLeaseManager
 from harness.core.models import resolve_litellm
 from harness.tools.tools import (
     bash as bash_tool,
@@ -264,6 +265,7 @@ class SubAgentRunner:
         stream_progress: bool = True,
         read_only_override: Optional[bool] = None,
         working_directory: str = "",
+        project_directory: str = "",
     ):
         self.task_identifier = task_identifier
         self.prompt = prompt
@@ -273,6 +275,7 @@ class SubAgentRunner:
             agent_configuration=agent_configuration,
             global_configuration=global_configuration,
             working_directory=working_directory,
+            project_directory=project_directory,
             is_sub_agent=True,
         )
         # An explicit override (from the spawning call or step)
@@ -587,7 +590,9 @@ class AgentRuntime:
         session_id: str = "",
         conversation: Optional[list] = None,
         working_directory: str = "",
+        project_directory: str = "",
         is_sub_agent: bool = False,
+        file_lease_manager: FileLeaseManager | None = None,
     ):
         self._session_id = session_id
         self._agent_configuration = agent_configuration
@@ -597,6 +602,7 @@ class AgentRuntime:
         self._on_record_event = on_record_event
         self._on_record_message = on_record_message
         self._working_directory = working_directory or str(Path.home())
+        self._project_directory = project_directory or self._working_directory
 
         # Precedence: a per-agent override (its model + provider combined), then
         # the configured default model (likewise combined into provider/model).
@@ -610,6 +616,7 @@ class AgentRuntime:
         )
 
         self._is_sub_agent = is_sub_agent
+        self._file_lease_manager = file_lease_manager
         self._tools = _build_tools(
             agent_configuration,
             global_configuration,
@@ -659,6 +666,27 @@ class AgentRuntime:
         self._task_reader: Optional[Callable] = None
         self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
 
+    def _canonical_working_directory(self) -> str:
+        return str(Path(self._working_directory or Path.home()).expanduser().resolve(strict=False))
+
+    def _canonical_file_path(self, file_path: str) -> str:
+        return str(file_tools.resolve_path(self._working_directory, file_path).expanduser().resolve(strict=False))
+
+    async def _acquire_filesystem_lease(self, *, scope: str, path: str, description: str) -> str:
+        if self._file_lease_manager is None:
+            return ""
+        return await self._file_lease_manager.acquire(
+            owner_session_id=self._session_id,
+            scope=scope,
+            path=path,
+            working_directory=self._canonical_working_directory(),
+            description=description,
+        )
+
+    def _release_filesystem_lease(self, token: str) -> None:
+        if token and self._file_lease_manager is not None:
+            self._file_lease_manager.release(token)
+
     @property
     def conversation(self) -> list:
         return self._conversation
@@ -670,6 +698,10 @@ class AgentRuntime:
     @property
     def working_directory(self) -> str:
         return self._working_directory
+
+    @property
+    def project_directory(self) -> str:
+        return self._project_directory
 
     @property
     def is_read_only(self) -> bool:
@@ -840,14 +872,15 @@ class AgentRuntime:
         """
         if self._cached_system_prompt is None:
             available_agents = describe_available_agents(
-                self._global_configuration.agent_directories_for(self._working_directory)
+                self._global_configuration.agent_directories_for(self._project_directory)
             )
-            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._working_directory)))
+            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
-            memories = load_memories(self._global_configuration.memory_directories_for(self._working_directory))
+            memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
             workspace_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = json.dumps({
                 "working_directory": self._working_directory,
+                "project_directory": self._project_directory,
                 "workspace_root": workspace_root,
                 "is_git_repo": is_git_repo,
                 "platform": platform.system(),
@@ -861,7 +894,7 @@ class AgentRuntime:
             self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
                 "system_prompt": self._system_prompt,
                 "context": context_json,
-                "instructions": load_instructions(self._working_directory),
+                "instructions": load_instructions(self._project_directory),
                 "skills": json.dumps(skills_payload(agent_skills)),
                 "memories": json.dumps(memories_payload(memories)),
                 "sub_agent_context": sub_agent_context,
@@ -1208,7 +1241,7 @@ class AgentRuntime:
     def _load_sub_agent(self, name: str) -> AgentConfiguration:
         return load_agent_configuration(
             name,
-            self._global_configuration.agent_directories_for(self._working_directory),
+            self._global_configuration.agent_directories_for(self._project_directory),
         )
 
     def _build_sub_agent_prompt(self, prompt: str, read_only: bool | None) -> str:
@@ -1643,14 +1676,40 @@ class AgentRuntime:
                         yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="command not approved by user", tool=tool_name)
                         return
 
-            result = await bash_tool.ainvoke(tool_arguments)
-            result_data = _maybe_json(result)
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
-            if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
-                task_identifier = result_data.get("task_identifier", "")
-                if task_identifier:
-                    self._background.track("bash", task_identifier)
-                    self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command})
+            lease_token = ""
+            if not read_only:
+                try:
+                    lease_token = await self._acquire_filesystem_lease(
+                        scope="worktree",
+                        path=self._canonical_working_directory(),
+                        description=f"mutating bash: {raw_command[:160]}",
+                    )
+                except FileLeaseConflict as exception:
+                    yield StreamEvent(
+                        StreamEvent.Type.ERROR,
+                        id=tool_call_identifier,
+                        code="filesystem_lease_conflict",
+                        message=str(exception),
+                        tool=tool_name,
+                    )
+                    return
+
+            try:
+                result = await bash_tool.ainvoke(tool_arguments)
+                result_data = _maybe_json(result)
+                yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
+                if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
+                    task_identifier = result_data.get("task_identifier", "")
+                    if task_identifier:
+                        self._background.track("bash", task_identifier)
+                        self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command})
+                        if lease_token and bash_tasks.add_done_callback(
+                            task_identifier,
+                            lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
+                        ):
+                            lease_token = ""
+            finally:
+                self._release_filesystem_lease(lease_token)
 
         elif tool_name == "read_file":
             file_path = str(tool_arguments.get("file_path", ""))
@@ -1666,7 +1725,7 @@ class AgentRuntime:
             if isinstance(result_data, dict) and not result_data.get("is_directory"):
                 sha256 = result_data.get("sha256")
                 if isinstance(sha256, str):
-                    self._read_files[str(file_tools.resolve_path(self._working_directory, file_path))] = sha256
+                    self._read_files[self._canonical_file_path(file_path)] = sha256
             yield StreamEvent(
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
             )
@@ -1708,45 +1767,63 @@ class AgentRuntime:
                 )
                 return
             file_path = str(tool_arguments.get("file_path", ""))
-            resolved = str(file_tools.resolve_path(self._working_directory, file_path))
+            resolved = self._canonical_file_path(file_path)
             expected_sha256 = self._read_files.get(resolved)
-            if tool_name == "replace_lines":
-                new_lines = tool_arguments.get("new_lines", [])
-                if not isinstance(new_lines, list):
-                    raise ValueError("new_lines must be a list of strings.")
-                result = await asyncio.to_thread(
-                    file_tools.replace_lines,
-                    self._working_directory,
-                    file_path,
-                    int(tool_arguments.get("start_line", 1) or 1),
-                    int(tool_arguments.get("end_line", 0) or 0),
-                    [str(line) for line in new_lines],
-                    expected_sha256=expected_sha256,
+            try:
+                lease_token = await self._acquire_filesystem_lease(
+                    scope="file",
+                    path=resolved,
+                    description=f"{tool_name}: {resolved}",
                 )
-            else:
-                content = tool_arguments.get("content", "")
-                if not isinstance(content, str):
-                    content = json.dumps(content)
-                result = await asyncio.to_thread(
-                    file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
+            except FileLeaseConflict as exception:
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR,
+                    id=tool_call_identifier,
+                    code="filesystem_lease_conflict",
+                    message=str(exception),
+                    tool=tool_name,
                 )
-            if tool_name == "replace_lines":
-                # The file has been modified — the model's previous read is now
-                # stale. Discard it so the next replace_lines forces a fresh
-                # read_file with current line numbers.
-                self._read_files.pop(resolved, None)
-            else:
-                # write_file: the model supplied the full content, so it knows
-                # the current state and can edit without re-reading.
-                self._read_files[resolved] = file_tools.content_sha256(content)
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
+                return
+            try:
+                if tool_name == "replace_lines":
+                    new_lines = tool_arguments.get("new_lines", [])
+                    if not isinstance(new_lines, list):
+                        raise ValueError("new_lines must be a list of strings.")
+                    result = await asyncio.to_thread(
+                        file_tools.replace_lines,
+                        self._working_directory,
+                        file_path,
+                        int(tool_arguments.get("start_line", 1) or 1),
+                        int(tool_arguments.get("end_line", 0) or 0),
+                        [str(line) for line in new_lines],
+                        expected_sha256=expected_sha256,
+                    )
+                else:
+                    content = tool_arguments.get("content", "")
+                    if not isinstance(content, str):
+                        content = json.dumps(content)
+                    result = await asyncio.to_thread(
+                        file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
+                    )
+                if tool_name == "replace_lines":
+                    # The file has been modified — the model's previous read is now
+                    # stale. Discard it so the next replace_lines forces a fresh
+                    # read_file with current line numbers.
+                    self._read_files.pop(resolved, None)
+                else:
+                    # write_file: the model supplied the full content, so it knows
+                    # the current state and can edit without re-reading.
+                    self._read_files[resolved] = file_tools.content_sha256(content)
+                yield StreamEvent(
+                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+                )
+            finally:
+                self._release_filesystem_lease(lease_token)
 
         elif tool_name == "load_skill":
             skill_name = str(tool_arguments.get("name", ""))
             all_skills = enabled_skills(
-                load_skills(self._global_configuration.skill_directories_for(self._working_directory))
+                load_skills(self._global_configuration.skill_directories_for(self._project_directory))
             )
             match = next((s for s in all_skills if s.identifier == skill_name), None)
             if match is None:
@@ -1899,7 +1976,15 @@ class AgentRuntime:
             self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt})
             child_task = None
             if self._delegate is not None:
-                async for delegated in self._delegate(sub_agent_name, sub_agent_prompt, self._a2a_task_id, sub_agent_read_only, child_depth, self._working_directory):
+                async for delegated in self._delegate(
+                    sub_agent_name,
+                    sub_agent_prompt,
+                    self._a2a_task_id,
+                    sub_agent_read_only,
+                    child_depth,
+                    self._working_directory,
+                    self._project_directory,
+                ):
                     delegated_kind = delegated.get("type")
                     common = {
                         "group_id": group_id,
@@ -1942,6 +2027,7 @@ class AgentRuntime:
                     stream_progress=self._agent_configuration.stream_agent_progress,
                     read_only_override=sub_agent_read_only,
                     working_directory=self._working_directory,
+                    project_directory=self._project_directory,
                 )
                 final_text = ""
                 common = {"group_id": group_id, "step_id": spawn_step_id, "child_task_id": ""}

@@ -49,10 +49,16 @@ from harness.core.configuration import (
     GlobalConfiguration,
     load_agent_configuration,
 )
+from harness.core.file_leases import FileLeaseManager
+from harness.core.session_worktrees import SessionWorkspace
 from harness.core.skills import Skill
 
 # Metadata key the client may set to steer the working directory of a turn.
 WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory"
+# Internal metadata keys used once the backend has resolved a session's isolated
+# runtime checkout. The UI sends only WORKING_DIRECTORY_METADATA_KEY.
+RUNTIME_WORKING_DIRECTORY_METADATA_KEY = "harness/runtimeWorkingDirectory"
+PROJECT_DIRECTORY_METADATA_KEY = "harness/projectDirectory"
 # Marks a sub-agent call delegated from another agent (one-shot, fresh state).
 DELEGATED_METADATA_KEY = "harness/delegated"
 # Forces a delegated sub-agent into read-only mode for this call.
@@ -217,6 +223,9 @@ class HarnessAgentExecutor(AgentExecutor):
         save_conversation: Optional[callable] = None,
         session_model_for: Optional[callable] = None,
         on_stream_event: Optional[callable] = None,
+        file_lease_manager: FileLeaseManager | None = None,
+        ensure_session_workspace: Optional[callable] = None,
+        ensure_mcp_servers: Optional[callable] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -246,6 +255,9 @@ class HarnessAgentExecutor(AgentExecutor):
         # live SSE stream so they follow the turn in real time (O(delta)) instead of
         # polling the task store and re-replaying the whole transcript (O(N)).
         self._on_stream_event = on_stream_event
+        self._file_lease_manager = file_lease_manager
+        self._ensure_session_workspace = ensure_session_workspace
+        self._ensure_mcp_servers = ensure_mcp_servers
         # One runtime per context preserves the conversation across turns.
         self._runtimes: dict[str, AgentRuntime] = {}
         self._aborts: dict[str, AgentRuntime] = {}
@@ -295,12 +307,13 @@ class HarnessAgentExecutor(AgentExecutor):
         self,
         context_id: str,
         working_directory: str,
+        project_directory: str,
         conversation: Optional[list] = None,
         is_sub_agent: bool = False,
         model_override: Optional[str] = None,
     ) -> AgentRuntime:
         configuration = load_agent_configuration(
-            self._agent_name, self._global_configuration.agent_directories_for(working_directory)
+            self._agent_name, self._global_configuration.agent_directories_for(project_directory)
         )
         # A per-session model override wins over the agent's own ``model`` field
         # and the global default. Applied on a copy so the loaded agent config is
@@ -315,7 +328,9 @@ class HarnessAgentExecutor(AgentExecutor):
             session_id=context_id,
             conversation=conversation,
             working_directory=working_directory or "",
+            project_directory=project_directory or working_directory or "",
             is_sub_agent=is_sub_agent,
+            file_lease_manager=self._file_lease_manager,
         )
         if self._registry is not None:
             runtime.set_delegate(self._registry.make_delegate(context_id))
@@ -334,14 +349,14 @@ class HarnessAgentExecutor(AgentExecutor):
             return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
         return read_task
 
-    def _runtime_for(self, context_id: str, working_directory: str) -> AgentRuntime:
+    async def _runtime_for(self, context_id: str, workspace: SessionWorkspace) -> AgentRuntime:
         runtime = self._runtimes.get(context_id)
         if runtime is None:
             # Restore a persisted conversation the first time a context is seen this
             # process (e.g. a session reopened after a restart), so the agent resumes
             # with the same history the UI is replaying rather than a blank slate.
             if context_id not in self._conversations and self._load_conversation is not None:
-                restored = self._load_conversation(context_id)
+                restored = await asyncio.to_thread(self._load_conversation, context_id)
                 if restored:
                     self._conversations[context_id] = restored
             # Seed from (and bind to) the process-wide dialogue history for this
@@ -350,10 +365,11 @@ class HarnessAgentExecutor(AgentExecutor):
             conversation = self._conversations.setdefault(context_id, [])
             model_override = ""
             if self._session_model_for is not None:
-                model_override = (self._session_model_for(context_id) or "").strip()
+                model_override = (await asyncio.to_thread(self._session_model_for, context_id) or "").strip()
             runtime = self._build_runtime(
                 context_id,
-                working_directory,
+                workspace.runtime_working_directory,
+                workspace.source_working_directory,
                 conversation=conversation,
                 model_override=model_override or None,
             )
@@ -361,6 +377,47 @@ class HarnessAgentExecutor(AgentExecutor):
         # A context's working directory is fixed at creation — a session stays
         # bound to the folder it was started in, so later turns never repoint it.
         return runtime
+
+    async def _workspace_for(
+        self,
+        *,
+        context_id: str,
+        requested_working_directory: str,
+        first_message: str,
+        delegated: bool,
+        metadata: dict,
+    ) -> SessionWorkspace:
+        if delegated:
+            runtime_directory = str(
+                metadata.get(RUNTIME_WORKING_DIRECTORY_METADATA_KEY)
+                or metadata.get(WORKING_DIRECTORY_METADATA_KEY)
+                or requested_working_directory
+                or ""
+            )
+            project_directory = str(
+                metadata.get(PROJECT_DIRECTORY_METADATA_KEY)
+                or requested_working_directory
+                or runtime_directory
+            )
+            return SessionWorkspace(
+                source_working_directory=project_directory,
+                runtime_working_directory=runtime_directory,
+                isolated=bool(metadata.get(RUNTIME_WORKING_DIRECTORY_METADATA_KEY)),
+            )
+        if self._ensure_session_workspace is not None:
+            return await asyncio.to_thread(
+                self._ensure_session_workspace,
+                context_id,
+                self._agent_name,
+                requested_working_directory,
+                first_message,
+            )
+        directory = requested_working_directory or ""
+        return SessionWorkspace(
+            source_working_directory=directory,
+            runtime_working_directory=directory,
+            isolated=False,
+        )
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         user_text = context.get_user_input()
@@ -370,7 +427,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # self-realization note the model repairs as its own output.
         widget_payload = _widget_event_payload(context.message)
         metadata = context.message.metadata or {}
-        working_directory = metadata.get(WORKING_DIRECTORY_METADATA_KEY, "")
+        requested_working_directory = str(metadata.get(WORKING_DIRECTORY_METADATA_KEY, ""))
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
 
@@ -438,9 +495,9 @@ class HarnessAgentExecutor(AgentExecutor):
             await text_buffer.flush(force=force)
             await sub_text_buffer.flush(force=force)
 
-        def save_runtime_conversation() -> None:
+        async def save_runtime_conversation() -> None:
             if not delegated and self._save_conversation is not None and runtime is not None:
-                self._save_conversation(task.context_id, runtime.conversation)
+                await asyncio.to_thread(self._save_conversation, task.context_id, runtime.conversation)
 
         # The runtime setup — building the agent runtime and its model client —
         # runs inside the try so any failure (e.g. missing API credentials) is
@@ -449,19 +506,34 @@ class HarnessAgentExecutor(AgentExecutor):
         try:
             await updater.start_work()
 
+            workspace = await self._workspace_for(
+                context_id=task.context_id,
+                requested_working_directory=requested_working_directory,
+                first_message=user_text,
+                delegated=delegated,
+                metadata=metadata,
+            )
+            if self._ensure_mcp_servers is not None and workspace.source_working_directory:
+                await self._ensure_mcp_servers(workspace.source_working_directory)
+
             if delegated:
                 # A delegated sub-agent call is a fresh, one-shot run (no shared
                 # conversation state with the parent turn).
-                runtime = self._build_runtime(task.context_id, working_directory, is_sub_agent=True)
+                runtime = self._build_runtime(
+                    task.context_id,
+                    workspace.runtime_working_directory,
+                    workspace.source_working_directory,
+                    is_sub_agent=True,
+                )
                 if READ_ONLY_METADATA_KEY in metadata:
                     runtime.set_read_only(bool(metadata[READ_ONLY_METADATA_KEY]))
             else:
                 is_new_context = task.context_id not in self._runtimes
-                runtime = self._runtime_for(task.context_id, working_directory)
+                runtime = await self._runtime_for(task.context_id, workspace)
                 if permission_mode:
                     runtime.set_permission_mode(permission_mode)
                 if is_new_context and self._on_new_context is not None:
-                    self._on_new_context(task.context_id, self._agent_name, working_directory, user_text)
+                    await asyncio.to_thread(self._on_new_context, task.context_id)
             self._aborts[task.id] = runtime
             runtime.set_a2a_task_id(task.id)
             runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
@@ -607,7 +679,7 @@ class HarnessAgentExecutor(AgentExecutor):
 
             if final_text.strip():
                 await updater.add_artifact([_text_part(final_text)], name="result", last_chunk=True)
-            save_runtime_conversation()
+            await save_runtime_conversation()
             if failed_message and not final_text.strip():
                 # failed_message carries raw, model-facing error text (e.g. a tool
                 # exception) — never leak it to the user. Surface a generic notice.
@@ -617,7 +689,7 @@ class HarnessAgentExecutor(AgentExecutor):
             else:
                 await updater.complete()
         except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
-            save_runtime_conversation()
+            await save_runtime_conversation()
             # Log the real exception server-side for debugging, but show the user a
             # generic message — never the raw exception text.
             logger.exception("Agent turn failed: %s", exception)
@@ -630,7 +702,8 @@ class HarnessAgentExecutor(AgentExecutor):
             # restore it. Delegated sub-agent runs have their own throwaway history
             # and don't touch the shared context, so they are not persisted.
             if not delegated and self._save_conversation is not None:
-                self._save_conversation(
+                await asyncio.to_thread(
+                    self._save_conversation,
                     task.context_id,
                     runtime.conversation if runtime is not None else self._conversations.get(task.context_id, []),
                 )
@@ -688,6 +761,7 @@ class AgentRegistry:
             read_only: Optional[bool] = None,
             depth: int = 1,
             working_directory: str = "",
+            project_directory: str = "",
         ):
             handler = self._handlers.get(agent_name)
             if handler is None:
@@ -696,8 +770,11 @@ class AgentRegistry:
             metadata: dict = {DELEGATED_METADATA_KEY: True, DEPTH_METADATA_KEY: depth}
             if read_only is not None:
                 metadata[READ_ONLY_METADATA_KEY] = bool(read_only)
+            if project_directory:
+                metadata[WORKING_DIRECTORY_METADATA_KEY] = project_directory
+                metadata[PROJECT_DIRECTORY_METADATA_KEY] = project_directory
             if working_directory:
-                metadata[WORKING_DIRECTORY_METADATA_KEY] = working_directory
+                metadata[RUNTIME_WORKING_DIRECTORY_METADATA_KEY] = working_directory
             message = Message(
                 role=Role.user,
                 parts=[Part(root=TextPart(text=prompt))],

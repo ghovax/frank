@@ -329,8 +329,8 @@ export function ChatInput({
       {/* Top row (above the input): history button on the left, Agents button
           on the right. The Agents button is always shown; the panel renders an
           empty state when there is no activity yet. */}
-      <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5, md: 2 }} flexWrap="wrap" px={2} pt={2}>
-        <Flex align="center" gap={{ base: 1.5, md: 2 }} flexShrink={0}>
+      <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5 }} flexWrap="wrap" px={2} pt={2}>
+        <Flex align="center" gap={{ base: 1.5 }} flexShrink={0}>
           {onToggleHistory && (
             <Button
               size="xs"
@@ -659,7 +659,7 @@ export function ChatInput({
             onClick={() => onSandboxEnabledChange?.(!sandboxEnabled)}
             disabled={!onSandboxEnabledChange}
           >
-            <Box display="flex" alignItems="center" color={sandboxEnabled ? "green.fg" : "red.fg"}>
+            <Box display="flex" alignItems="center">
               {sandboxEnabled ? <LuLock size={13} /> : <LuLockOpen size={13} />}
             </Box>
             {sandboxAppearance.label}

@@ -39,6 +39,14 @@ class TaskRegistry:
         self._tasks[identifier] = (task, output_path)
         return identifier
 
+    def add_done_callback(self, identifier: str, callback) -> bool:
+        entry = self._tasks.get(identifier)
+        if entry is None:
+            return False
+        task, _output_path = entry
+        task.add_done_callback(lambda _task: callback(identifier))
+        return True
+
     def collect_completed(self, identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
         allowed_identifiers = set(identifiers) if identifiers is not None else None
         completed = []

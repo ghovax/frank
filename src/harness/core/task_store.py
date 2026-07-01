@@ -49,6 +49,8 @@ from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskStore
 from a2a.types import Task
 
+from harness.core.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
+
 
 def _dump(model) -> str:
     """Serialize a pydantic model to a JSON string using field names, mirroring
@@ -183,8 +185,12 @@ class AppendOnlyTaskStore(TaskStore):
         self._initialized = False
 
     async def initialize(self) -> None:
-        async with self._engine.begin() as connection:
-            await connection.run_sync(self._metadata.create_all)
+        await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                await connection.run_sync(self._metadata.create_all)
+        finally:
+            release_sqlite_write_lock()
         self._initialized = True
 
     async def _ensure_initialized(self) -> None:
@@ -206,55 +212,59 @@ class AppendOnlyTaskStore(TaskStore):
         await self._ensure_initialized()
         history = task.history or []
         artifacts = task.artifacts or []
-        async with self._engine.begin() as connection:
-            # Head: tiny upsert of the latest status + metadata.
-            head_values = {
-                "id": task.id,
-                "context_id": task.context_id,
-                "kind": task.kind,
-                "status": _dump(task.status),
-                "task_metadata": json.dumps(task.metadata) if task.metadata is not None else None,
-            }
-            head_insert = sqlite_insert(self._head).values(**head_values)
-            await connection.execute(
-                head_insert.on_conflict_do_update(
-                    index_elements=[self._head.c.id],
-                    set_={
-                        "context_id": head_values["context_id"],
-                        "kind": head_values["kind"],
-                        "status": head_values["status"],
-                        "task_metadata": head_values["task_metadata"],
-                    },
-                )
-            )
-
-            # History: insert only the messages not yet persisted. The list only
-            # ever grows, so the already-stored prefix is never rewritten.
-            persisted = await self._history_count(connection, task.id)
-            new_messages = history[persisted:]
-            if new_messages:
+        await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                # Head: tiny upsert of the latest status + metadata.
+                head_values = {
+                    "id": task.id,
+                    "context_id": task.context_id,
+                    "kind": task.kind,
+                    "status": _dump(task.status),
+                    "task_metadata": json.dumps(task.metadata) if task.metadata is not None else None,
+                }
+                head_insert = sqlite_insert(self._head).values(**head_values)
                 await connection.execute(
-                    self._history.insert(),
-                    [
-                        {"task_id": task.id, "seq": persisted + offset, "message": _dump(message)}
-                        for offset, message in enumerate(new_messages)
-                    ],
-                )
-                self._persisted_count[task.id] = persisted + len(new_messages)
-
-            # Artifacts: upsert each by id (replace-in-place is safe and bounded).
-            for artifact in artifacts:
-                artifact_insert = sqlite_insert(self._artifacts).values(
-                    task_id=task.id,
-                    artifact_id=artifact.artifact_id,
-                    artifact=_dump(artifact),
-                )
-                await connection.execute(
-                    artifact_insert.on_conflict_do_update(
-                        index_elements=[self._artifacts.c.task_id, self._artifacts.c.artifact_id],
-                        set_={"artifact": _dump(artifact)},
+                    head_insert.on_conflict_do_update(
+                        index_elements=[self._head.c.id],
+                        set_={
+                            "context_id": head_values["context_id"],
+                            "kind": head_values["kind"],
+                            "status": head_values["status"],
+                            "task_metadata": head_values["task_metadata"],
+                        },
                     )
                 )
+
+                # History: insert only the messages not yet persisted. The list
+                # only ever grows, so the already-stored prefix is never rewritten.
+                persisted = await self._history_count(connection, task.id)
+                new_messages = history[persisted:]
+                if new_messages:
+                    await connection.execute(
+                        self._history.insert(),
+                        [
+                            {"task_id": task.id, "seq": persisted + offset, "message": _dump(message)}
+                            for offset, message in enumerate(new_messages)
+                        ],
+                    )
+                    self._persisted_count[task.id] = persisted + len(new_messages)
+
+                # Artifacts: upsert each by id (replace-in-place is safe and bounded).
+                for artifact in artifacts:
+                    artifact_insert = sqlite_insert(self._artifacts).values(
+                        task_id=task.id,
+                        artifact_id=artifact.artifact_id,
+                        artifact=_dump(artifact),
+                    )
+                    await connection.execute(
+                        artifact_insert.on_conflict_do_update(
+                            index_elements=[self._artifacts.c.task_id, self._artifacts.c.artifact_id],
+                            set_={"artifact": _dump(artifact)},
+                        )
+                    )
+        finally:
+            release_sqlite_write_lock()
 
     async def get(self, task_id: str, context: ServerCallContext | None = None) -> Optional[Task]:
         await self._ensure_initialized()
@@ -348,10 +358,14 @@ class AppendOnlyTaskStore(TaskStore):
 
     async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()
-        async with self._engine.begin() as connection:
-            await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
-            await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
-            await connection.execute(delete(self._head).where(self._head.c.id == task_id))
+        await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
+                await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
+                await connection.execute(delete(self._head).where(self._head.c.id == task_id))
+        finally:
+            release_sqlite_write_lock()
         self._persisted_count.pop(task_id, None)
 
     async def task_ids_for_context(self, context_id: str) -> list[str]:

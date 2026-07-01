@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuGripVertical, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuGitBranch, LuGripVertical, LuLock, LuMessageSquare, LuPlus, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 
 interface SessionEntry {
@@ -19,8 +19,15 @@ interface SessionEntry {
   createdAt: string;
   workingDirectory: string;
   workingDirectoryName: string;
+  runtimeWorkingDirectory: string;
+  runtimeWorkingDirectoryName: string;
+  worktreePath: string;
+  worktreeBranch: string;
+  worktreeIsolated: boolean;
+  worktreeError: string;
   running: boolean;
   awaitingInput: boolean;
+  filesystemLeases: FilesystemLease[];
   model?: string;
 }
 
@@ -102,6 +109,15 @@ function HomeContent() {
       .catch(() => setIsConnected(false));
   }, []);
 
+  const loadModelCatalog = useCallback(() => {
+    fetchModels()
+      .then((catalog) => {
+        setModels(catalog.models);
+        setModelProviders(catalog.providers);
+      })
+      .catch(() => {});
+  }, []);
+
   const selectWorkingDirectory = useCallback((directory: string) => {
     const path = directory.trim();
     setWorkingDirectory(path);
@@ -130,8 +146,15 @@ function HomeContent() {
         createdAt: session.created_at,
         workingDirectory: session.working_directory ?? "",
         workingDirectoryName: session.working_directory_name ?? "",
+        runtimeWorkingDirectory: session.runtime_working_directory ?? session.working_directory ?? "",
+        runtimeWorkingDirectoryName: session.runtime_working_directory_name ?? session.working_directory_name ?? "",
+        worktreePath: session.worktree_path ?? "",
+        worktreeBranch: session.worktree_branch ?? "",
+        worktreeIsolated: session.worktree_isolated ?? false,
+        worktreeError: session.worktree_error ?? "",
         running: session.running ?? false,
         awaitingInput: session.awaiting_input ?? false,
+        filesystemLeases: session.filesystem_leases ?? [],
         model: session.model ?? "",
       }))
     );
@@ -160,12 +183,7 @@ function HomeContent() {
     loadSettings();
     // The model catalog (provider list + curated models) drives the composer's
     // per-session model override and the settings dialog's default-model picker.
-    fetchModels()
-      .then((catalog) => {
-        setModels(catalog.models);
-        setModelProviders(catalog.providers);
-      })
-      .catch(() => {});
+    loadModelCatalog();
     fetchRecentModels()
       .then(setRecentModels)
       .catch(() => {});
@@ -185,11 +203,16 @@ function HomeContent() {
         loadAgents();
         loadAgentCards();
       }
-      if (event.type === "sessions_changed") loadSessions();
+      if (event.type === "sessions_changed" || event.type === "filesystem_leases_changed") loadSessions();
       if (event.type === "projects_changed") refreshRecentProjects();
+      if (event.type === "settings_changed") {
+        loadSettings();
+        loadModelCatalog();
+        fetchRecentModels().then(setRecentModels).catch(() => {});
+      }
     });
     return unsubscribe;
-  }, [applySessions, refreshRecentProjects, loadAgents, loadAgentCards]);
+  }, [applySessions, refreshRecentProjects, loadAgents, loadAgentCards, loadModelCatalog]);
 
   // Reload the agents and their cards whenever the selected folder changes (and
   // on first render): the available agents, skills and MCP servers are all
@@ -480,6 +503,10 @@ function HomeContent() {
                     <VStack gap={1} align="stretch">
                       {group.sessions.map((entry) => {
                         const sessionMeta = formatSessionTimestamp(entry.createdAt);
+                        const activeLease = entry.filesystemLeases[0];
+                        const worktreeTitle = entry.worktreeIsolated
+                          ? `Session worktree: ${entry.worktreeBranch}\n${entry.runtimeWorkingDirectory}`
+                          : entry.worktreeError || "This session is not backed by a Git worktree";
 
                         return (
                           <Box
@@ -501,13 +528,30 @@ function HomeContent() {
                                 <Box color="yellow.fg" flexShrink={0} display="flex" alignItems="center" title="Waiting for your approval">
                                   <LuTriangleAlert size={13} />
                                 </Box>
+                              ) : activeLease ? (
+                                <Box
+                                  color="orange.fg"
+                                  flexShrink={0}
+                                  display="flex"
+                                  alignItems="center"
+                                  title={`Filesystem lease: ${activeLease.scope} ${activeLease.path}`}
+                                >
+                                  <LuLock size={13} />
+                                </Box>
                               ) : entry.running ? (
                                 <Spinner size="xs" color="blue.fg" flexShrink={0} borderWidth="1.5px" />
                               ) : null}
                             </Flex>
-                            <Text fontSize="xs" color="fg.subtle" truncate>
-                              {sessionMeta}
-                            </Text>
+                            <Flex align="center" gap={1} minW={0}>
+                              {entry.worktreeIsolated && (
+                                <Box color="green.fg" flexShrink={0} display="flex" alignItems="center" title={worktreeTitle}>
+                                  <LuGitBranch size={11} />
+                                </Box>
+                              )}
+                              <Text fontSize="xs" color="fg.subtle" truncate>
+                                {sessionMeta}
+                              </Text>
+                            </Flex>
                           </Box>
                         );
                       })}
