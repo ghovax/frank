@@ -11,7 +11,8 @@ body {
   --app-font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-family: var(--app-font-sans);
   --chakra-fonts-body: var(--app-font-sans);
-  --chakra-fonts-heading: var(--app-font-sans);
+  --app-font-display: var(--font-display), var(--app-font-sans);
+  --chakra-fonts-heading: var(--app-font-display);
   --chakra-fonts-mono: var(--app-font-mono);
 }
 
