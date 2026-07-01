@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuGitBranch, LuGitFork, LuGripVertical, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -350,6 +350,21 @@ function HomeContent() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
+  // "Open folder" pairs the native directory picker with a fresh session: pick a
+  // directory, then start a brand-new conversation scoped to it. Starting the new
+  // chat first clears the active session so the restoration effect treats the
+  // chosen path as the new context's folder rather than clobbering it back to home.
+  async function handleOpenFolder() {
+    try {
+      const result = await browseWorkingDirectory();
+      if (result.cancelled || !result.path) return;
+      handleNewChat();
+      selectWorkingDirectory(result.path);
+    } catch {
+      // user cancelled or the picker was unavailable
+    }
+  }
+
   function handleResumeSession(entry: SessionEntry) {
     setSelectedAgent(entry.agent);
     setSelectedModel(entry.model ?? "");
@@ -481,7 +496,7 @@ function HomeContent() {
             zIndex={1}
             onPointerDown={handleHistoryResizeStart}
           />
-          <Flex align="center" gap={2} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
+          <Flex direction="column" gap={1.5} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
             <Button
               w="100%"
               size="xs"
@@ -493,6 +508,18 @@ function HomeContent() {
             >
               <LuPlus size={12} />
               New conversation
+            </Button>
+            <Button
+              w="100%"
+              size="xs"
+              gap={1.5}
+              variant="outline"
+              borderRadius="sm"
+              fontSize="xs"
+              onClick={handleOpenFolder}
+            >
+              <LuFolderOpen size={12} />
+              Open folder
             </Button>
           </Flex>
 
