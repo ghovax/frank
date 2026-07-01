@@ -52,7 +52,6 @@ export interface ChatTask {
   description: string;
   status: string;
   dependencies: string[];
-  result: string;
 }
 
 // A turn's input: either typed text or a structured widget interaction. Both
@@ -478,7 +477,6 @@ function asChatTask(value: unknown): ChatTask | null {
     description,
     status: String(record.status ?? "pending"),
     dependencies: Array.isArray(record.dependencies) ? record.dependencies.map(String) : [],
-    result: String(record.result ?? ""),
   };
 }
 

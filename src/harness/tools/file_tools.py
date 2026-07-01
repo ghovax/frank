@@ -11,15 +11,13 @@ tool-call wrapper surfaces them as ERROR events to the model.
 from __future__ import annotations
 
 import asyncio
-import difflib
+import hashlib
 import json
 import re
 import shutil
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
-
-from harness.core.configuration import PromptLoader
 
 from markdownify import markdownify as _markdownify
 
@@ -28,9 +26,6 @@ MAX_LINE_LENGTH = 2000
 MAX_GREP_RESULTS = 500
 MAX_GLOB_RESULTS = 1000
 MAX_FETCH_CHARS = 200_000
-
-_PROMPT_LOADER = PromptLoader(Path(__file__).parent / "descriptions")
-
 
 def _resolve(working_directory: str, file_path: str) -> Path:
     candidate = Path(file_path)
@@ -52,6 +47,10 @@ def _truncate_line(line: str) -> str:
 
 def _payload(code: str, **fields) -> str:
     return json.dumps({"code": code, **fields})
+
+
+def content_sha256(content: str) -> str:
+    return hashlib.sha256(content.encode()).hexdigest()
 
 
 def read_file(working_directory: str, file_path: str, offset: int = 1, limit: int | None = None) -> str:
@@ -80,6 +79,7 @@ def read_file(working_directory: str, file_path: str, offset: int = 1, limit: in
         start_line=start,
         end_line=end,
         total_lines=len(lines),
+        sha256=content_sha256(text),
         content=rendered,
     )
 
@@ -159,161 +159,50 @@ def search_content(
     return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
 
 
-# Models (notably DeepSeek) sometimes emit the literal escape text "\u2014"
-# instead of the actual character when reproducing non-ASCII text they read.
-# Decode those so old_string can still match the file's real characters.
-_UNICODE_ESCAPE = re.compile(r"\\u([0-9a-fA-F]{4})")
+def apply_line_replacement(content: str, start_line: int, end_line: int, new_lines: list[str]) -> str:
+    """Replace an inclusive 1-indexed line range. ``end_line < start_line`` inserts."""
+    if start_line < 1:
+        raise ValueError("start_line must be 1 or greater.")
+    if end_line < start_line - 1:
+        raise ValueError("end_line must be at least start_line - 1.")
+    if any("\n" in line or "\r" in line for line in new_lines):
+        raise ValueError("new_lines entries must not contain newline characters; use one list item per line.")
+
+    lines = content.split("\n")
+    if start_line > len(lines) + 1:
+        raise ValueError(f"start_line is past the end of the file. Last valid insertion line is {len(lines) + 1}.")
+    if end_line > len(lines):
+        raise ValueError(f"end_line is past the end of the file. Last existing line is {len(lines)}.")
+
+    start_index = start_line - 1
+    end_index = end_line
+    return "\n".join([*lines[:start_index], *new_lines, *lines[end_index:]])
 
 
-def _decode_unicode_escapes(text: str) -> str:
-    return _UNICODE_ESCAPE.sub(lambda match: chr(int(match.group(1), 16)), text)
-
-
-# Minimum similarity for a fuzzy old_string match. High enough to reject genuinely
-# wrong/hallucinated content while absorbing a few stray characters (escape
-# artifacts, a wrong punctuation mark, a single off line).
-MINIMUM_FUZZY_RATIO = 0.90
-
-
-def _best_fuzzy_span(content: str, old: str) -> tuple[str | None, float]:
-    """The span in ``content`` most likely to be what ``old`` meant, with its ratio.
-
-    Anchors on the longest common substring between ``content`` and ``old`` (so a
-    fragment ``old`` localizes, not just whole-line matches), then takes a span of
-    roughly ``len(old)`` around the anchor and refines the start by a few chars to
-    absorb a missing/extra character at either edge.
-    """
-    if not old:
-        return None, 0.0
-    matcher = difflib.SequenceMatcher(None, content, old, autojunk=False)
-    anchor = matcher.find_longest_match(0, len(content), 0, len(old))
-    if anchor.size == 0:
-        return None, 0.0
-    # Align old's start to the anchor: content[anchor.a - anchor.b : ... + len(old)].
-    base_start = max(0, anchor.a - anchor.b)
-    best_span: str | None = None
-    best_ratio = 0.0
-    for start in range(max(0, base_start - 3), min(len(content), base_start + 4)):
-        end = min(len(content), start + len(old))
-        candidate = content[start:end]
-        ratio = difflib.SequenceMatcher(None, old, candidate, autojunk=False).ratio()
-        if ratio > best_ratio:
-            best_ratio = ratio
-            best_span = candidate
-    return best_span, best_ratio
-
-
-def _find_matches(content: str, old: str) -> list[str]:
-    """Candidate exact spans in ``content`` that correspond to ``old``."""
-    candidates: list[str] = []
-    if old in content:
-        candidates.append(old)
-
-    original_lines = content.split("\n")
-    search_lines = old.split("\n")
-    if search_lines and search_lines[-1] == "":
-        search_lines.pop()
-    for i in range(len(original_lines) - len(search_lines) + 1):
-        window = original_lines[i:i + len(search_lines)]
-        if len(window) == len(search_lines) and all(a.strip() == b.strip() for a, b in zip(window, search_lines)):
-            block = "\n".join(window)
-            if block not in candidates:
-                candidates.append(block)
-
-    norm_old = re.sub(r"\s+", " ", old).strip()
-    if norm_old:
-        for line in original_lines:
-            if re.sub(r"\s+", " ", line).strip() == norm_old and line not in candidates:
-                candidates.append(line)
-    return candidates
-
-
-def _is_disproportionate(matched: str, old: str) -> bool:
-    matched_lines = matched.split("\n")
-    old_lines = old.split("\n")
-    if len(matched_lines) >= max(len(old_lines) + 3, len(old_lines) * 2):
-        return True
-    if len(old_lines) == 1:
-        return False
-    return len(matched.strip()) > max(len(old.strip()) + 500, len(old.strip()) * 4)
-
-
-def apply_edit(content: str, old_string: str, new_string: str, replace_all: bool = False) -> str:
-    """Return new_content. Raises on ambiguity or not-found."""
-    if old_string == new_string:
-        raise ValueError("No changes to apply: old_string and new_string are identical.")
-    if old_string == "":
-        return new_string
-
-    # Models sometimes emit literal "\uXXXX" escapes instead of the real
-    # character; decode so matching can succeed against the file's actual text.
-    old_string = _decode_unicode_escapes(old_string)
-
-    matches = _find_matches(content, old_string)
-    if not matches:
-        # Fuzzy fallback: tolerate a few stray characters / a missing line by
-        # matching the most similar span in the file when similarity is very high.
-        closest_span, closest_ratio = _best_fuzzy_span(content, old_string)
-        if closest_span is not None and closest_ratio >= MINIMUM_FUZZY_RATIO:
-            matches = [closest_span]
-        else:
-            hint = f"Closest match ({closest_ratio:.0%}): {closest_span!r}." if closest_span else ""
-            raise ValueError(_PROMPT_LOADER.load("edit_not_found", {"hint": hint}))
-    for matched in matches:
-        if _is_disproportionate(matched, old_string):
-            raise ValueError(
-                "Refusing replacement because the matched span is much larger than "
-                "old_string. Re-read the file and provide the full exact old_string.",
-            )
-
-    if replace_all:
-        new_content = content
-        for matched in matches:
-            new_content = new_content.replace(matched, new_string)
-        return new_content
-
-    literal_unique = [match for match in matches if match == old_string and content.count(match) == 1]
-    if literal_unique:
-        return content.replace(literal_unique[0], new_string, 1)
-    unique = [match for match in matches if content.count(match) == 1]
-    if not unique:
-        raise ValueError(
-            "Found multiple matches for old_string. Provide more surrounding context, "
-            "or set replace_all to true.",
-        )
-    return content.replace(unique[0], new_string, 1)
-
-
-def edit_file(
-    working_directory: str, file_path: str, old_string: str, new_string: str,
-    replace_all: bool, *, has_been_read: bool,
+def replace_lines(
+    working_directory: str, file_path: str, start_line: int, end_line: int, new_lines: list[str],
+    *, expected_sha256: str | None,
 ) -> str:
     path = _resolve(working_directory, file_path)
-    if old_string == "":
-        if path.exists():
-            raise ValueError(
-                "old_string cannot be empty when editing an existing file. Provide the "
-                "exact text to replace, or use write_file for a full-file replacement.",
-            )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(new_string)
-        return _edit_payload("edit_completed", path, created=True, before="", after=new_string)
-
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
     if path.is_dir():
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
-    if not has_been_read:
+    if expected_sha256 is None:
         raise PermissionError(f"You must read {path} with read_file before editing it.")
 
     content = path.read_text(errors="replace")
-    new_content = apply_edit(content, old_string, new_string, replace_all)
+    if content_sha256(content) != expected_sha256:
+        raise ValueError(f"{path} changed since it was last read. Re-read the file before editing it.")
+    new_content = apply_line_replacement(content, start_line, end_line, new_lines)
+    if new_content == content:
+        raise ValueError("No changes to apply: replacement produced identical content.")
     path.write_text(new_content)
-    return _edit_payload("edit_completed", path, created=False, before=content, after=new_content)
+    return _edit_payload("replace_completed", path, created=False, before=content, after=new_content)
 
 
 def _edit_payload(code: str, path: Path, *, created: bool, before: str, after: str) -> str:
-    """Result for edit_file/write_file. ``before``/``after`` carry the full old and
+    """Result for replace_lines/write_file. ``before``/``after`` carry the full old and
     new file content for the UI's diff viewer; ``model_context`` is the lean summary
     the model actually sees (the file contents are redundant in the model's context
     — it already read the file and supplied the replacement — so they are stripped
@@ -333,14 +222,16 @@ def _edit_payload(code: str, path: Path, *, created: bool, before: str, after: s
 
 
 def write_file(
-    working_directory: str, file_path: str, content: str, *, has_been_read: bool,
+    working_directory: str, file_path: str, content: str, *, expected_sha256: str | None,
 ) -> str:
     path = _resolve(working_directory, file_path)
     if path.exists() and path.is_dir():
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
-    if path.exists() and not has_been_read:
+    if path.exists() and expected_sha256 is None:
         raise PermissionError(f"You must read {path} with read_file before overwriting it.")
     before = path.read_text(errors="replace") if path.exists() and path.is_file() else ""
+    if path.exists() and path.is_file() and content_sha256(before) != expected_sha256:
+        raise ValueError(f"{path} changed since it was last read. Re-read the file before overwriting it.")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
     return _edit_payload("write_completed", path, created=before == "", before=before, after=content)
@@ -387,8 +278,9 @@ __all__ = [
     "read_file",
     "find_files",
     "search_content",
-    "apply_edit",
-    "edit_file",
+    "content_sha256",
+    "apply_line_replacement",
+    "replace_lines",
     "write_file",
     "fetch_url",
 ]

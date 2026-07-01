@@ -52,7 +52,7 @@ from harness.tools.tools import (
     read_file as read_file_tool,
     find_files as find_files_tool,
     search_content as search_content_tool,
-    edit_file as edit_file_tool,
+    replace_lines as replace_lines_tool,
     write_file as write_file_tool,
     fetch_url as fetch_url_tool,
     ask_user as ask_user_tool,
@@ -229,7 +229,7 @@ def _build_tools(
         read_file_tool,
         find_files_tool,
         search_content_tool,
-        edit_file_tool,
+        replace_lines_tool,
         write_file_tool,
         fetch_url_tool,
         load_skill_tool,
@@ -509,7 +509,6 @@ class Task(BaseModel):
     description: str
     status: str = "pending"
     dependencies: list[str] = []
-    result: str = ""
 
 
 class TaskManager:
@@ -537,12 +536,9 @@ class TaskManager:
         for update in updates:
             task_id = update.get("task_id", "")
             status = update.get("status", "")
-            result_value = update.get("result", "")
             for task in self._tasks:
                 if task.identifier == task_id:
                     task.status = status
-                    if result_value:
-                        task.result = result_value
                     updated_ids.append(task_id)
                     break
         if updated_ids:
@@ -632,10 +628,10 @@ class AgentRuntime:
 
         self._conversation: list = conversation if conversation is not None else []
         self._system_prompt = agent_configuration.system_prompt
-        # Files the model has read this session — edit_file/write_file refuse to
-        # touch an existing file until it has been read, matching opencode's edit
-        # guard and steering the model toward read-before-edit discipline.
-        self._read_files: set[str] = set()
+        # Files the model has read this session, keyed by canonical path with the
+        # content hash from the last read. Mutating tools compare against this so
+        # stale line numbers cannot overwrite externally changed content.
+        self._read_files: dict[str, str] = {}
         # How many delegation hops led to this runtime (0 = top-level chat agent).
         self._delegation_depth: int = 0
         self._calls_this_turn: int = 0
@@ -1015,10 +1011,18 @@ class AgentRuntime:
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
+            # Dynamic context (turn reminders, time, PWD, active goal) is injected
+            # only on the first iteration of a turn — when the user just sent a
+            # message. Subsequent iterations (after tool calls) skip it to avoid
+            # re-sending the same reminders on every LLM call within the turn.
+            dynamic_parts = (
+                [SystemMessage(content=self._build_dynamic_context())]
+                if self._calls_this_turn == 0 else []
+            )
             messages = (
                 [SystemMessage(content=self._build_static_system_prompt())]
                 + self._conversation
-                + [SystemMessage(content=self._build_dynamic_context())]
+                + dynamic_parts
             )
 
             # Open a thinking step for this iteration. One channel (THINKING)
@@ -1656,10 +1660,15 @@ class AgentRuntime:
             result = await asyncio.to_thread(
                 file_tools.read_file, self._working_directory, file_path, int(offset), limit,
             )
-            # Record the canonical path so edit_file/write_file accept it.
-            self._read_files.add(str(file_tools.resolve_path(self._working_directory, file_path)))
+            result_data = _maybe_json(result)
+            # Record the canonical path and hash so replace_lines/write_file can
+            # reject stale edits.
+            if isinstance(result_data, dict) and not result_data.get("is_directory"):
+                sha256 = result_data.get("sha256")
+                if isinstance(sha256, str):
+                    self._read_files[str(file_tools.resolve_path(self._working_directory, file_path))] = sha256
             yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
             )
 
         elif tool_name == "find_files":
@@ -1691,7 +1700,7 @@ class AgentRuntime:
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
             )
 
-        elif tool_name in ("edit_file", "write_file"):
+        elif tool_name in ("replace_lines", "write_file"):
             if self._read_only:
                 deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
                 yield StreamEvent(
@@ -1700,28 +1709,36 @@ class AgentRuntime:
                 return
             file_path = str(tool_arguments.get("file_path", ""))
             resolved = str(file_tools.resolve_path(self._working_directory, file_path))
-            has_been_read = resolved in self._read_files
-            if tool_name == "edit_file":
-                replace_all = tool_arguments.get("replace_all", False)
-                if isinstance(replace_all, str):
-                    replace_all = replace_all.lower() == "true"
+            expected_sha256 = self._read_files.get(resolved)
+            if tool_name == "replace_lines":
+                new_lines = tool_arguments.get("new_lines", [])
+                if not isinstance(new_lines, list):
+                    raise ValueError("new_lines must be a list of strings.")
                 result = await asyncio.to_thread(
-                    file_tools.edit_file,
+                    file_tools.replace_lines,
                     self._working_directory,
                     file_path,
-                    str(tool_arguments.get("old_string", "")),
-                    str(tool_arguments.get("new_string", "")),
-                    bool(replace_all),
-                    has_been_read=has_been_read,
+                    int(tool_arguments.get("start_line", 1) or 1),
+                    int(tool_arguments.get("end_line", 0) or 0),
+                    [str(line) for line in new_lines],
+                    expected_sha256=expected_sha256,
                 )
             else:
                 content = tool_arguments.get("content", "")
                 if not isinstance(content, str):
                     content = json.dumps(content)
                 result = await asyncio.to_thread(
-                    file_tools.write_file, self._working_directory, file_path, content, has_been_read=has_been_read,
+                    file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
                 )
-            self._read_files.add(resolved)
+            if tool_name == "replace_lines":
+                # The file has been modified — the model's previous read is now
+                # stale. Discard it so the next replace_lines forces a fresh
+                # read_file with current line numbers.
+                self._read_files.pop(resolved, None)
+            else:
+                # write_file: the model supplied the full content, so it knows
+                # the current state and can edit without re-reading.
+                self._read_files[resolved] = file_tools.content_sha256(content)
             yield StreamEvent(
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
             )

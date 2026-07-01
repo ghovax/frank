@@ -244,9 +244,9 @@ const FIELD_LABELS: Record<string, string> = {
   pattern: "Pattern",
   include: "Include",
   path: "Path",
-  old_string: "Old string",
-  new_string: "New string",
-  replace_all: "Replace all",
+  start_line: "Start line",
+  end_line: "End line",
+  new_lines: "New lines",
   content: "Content",
   url: "URL",
   format: "Format",
@@ -265,8 +265,7 @@ const FIELD_LABELS: Record<string, string> = {
   entries: "Entries",
   truncated: "Truncated",
   total_lines: "Total lines",
-  start_line: "Start line",
-  end_line: "End line",
+  sha256: "SHA-256",
   is_directory: "Directory",
   title: "Title",
   artifact: "Artifact",
@@ -295,18 +294,18 @@ function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function EditFileCallView({ args }: { args: Record<string, unknown> }) {
+function ReplaceLinesCallView({ args }: { args: Record<string, unknown> }) {
+  const newLines = Array.isArray(args.new_lines) ? args.new_lines.map(asString).join("\n") : asString(args.new_lines);
+
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.replace_all != null && <InlineField label="Replace all">{args.replace_all ? "Yes" : "No"}</InlineField>}
-      <Field label="Old string">
-        <MonoBlock>{asString(args.old_string) || " "}</MonoBlock>
-      </Field>
-      <Field label="New string">
-        <MonoBlock>{asString(args.new_string) || " "}</MonoBlock>
+      <InlineField label="Start line">{asString(args.start_line)}</InlineField>
+      <InlineField label="End line">{asString(args.end_line)}</InlineField>
+      <Field label="New lines">
+        <MonoBlock>{newLines || " "}</MonoBlock>
       </Field>
     </FieldList>
   );
@@ -461,8 +460,8 @@ function MatchListResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  // Shared by edit_file and write_file. Path is on the call card; the internal
-  // `code` status is dropped. edit_file carries `created`; write_file does not.
+  // Shared by replace_lines and write_file. Path is on the call card; the
+  // internal `code` status is dropped.
   const characters = asString(data.characters);
   const before = asString(data.before);
   const after = asString(data.after);
@@ -599,8 +598,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       return <WebPreviewCallView args={args} />;
     case "read_file":
       return <ReadFileCallView args={args} />;
-    case "edit_file":
-      return <EditFileCallView args={args} />;
+    case "replace_lines":
+      return <ReplaceLinesCallView args={args} />;
     case "write_file":
       return <WriteFileCallView args={args} />;
     case "search_content":
@@ -1195,7 +1194,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
     if (name === "read_task") return <ReadTaskResultView data={data} />;
     if (name === "read_file") return <ReadFileResultView data={data} />;
     if (name === "find_files" || name === "search_content") return <MatchListResultView data={data} />;
-    if (name === "edit_file" || name === "write_file") return <FileEditResultView data={data} />;
+    if (name === "replace_lines" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;

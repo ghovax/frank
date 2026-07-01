@@ -242,7 +242,7 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
             <DisabledBadge />
           ) : (
           <Text fontSize="xs" color="fg.subtle" flexShrink={0} fontWeight="medium">
-            Provides a total of {server.tools.length} {server.tools.length === 1 ? "tool" : "tools"}
+            {server.tools.length} {server.tools.length === 1 ? "tool" : "tools"}
           </Text>
           )
         }

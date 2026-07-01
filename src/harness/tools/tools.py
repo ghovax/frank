@@ -706,28 +706,28 @@ search_content.description = _load_tool_description("search_content")
 
 
 @tool
-def edit_file(
+def replace_lines(
     file_path: str,
-    old_string: str,
-    new_string: str,
-    replace_all: bool = False,
+    start_line: int,
+    end_line: int,
+    new_lines: list[str],
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Perform an exact string replacement in a file.
+    """Replace an inclusive range of lines in a file.
 
     Args:
         file_path: Absolute path (or path relative to the working directory).
-        old_string: The exact text to replace.
-        new_string: The text to replace it with (must differ from old_string).
-        replace_all: Replace every occurrence of old_string (default false).
+        start_line: First 1-indexed line to replace.
+        end_line: Last 1-indexed line to replace. Use start_line - 1 to insert before start_line.
+        new_lines: Replacement lines, one string per line and without newline terminators.
         justification: A concise, user-facing reason for this edit.
         risk: "low" for a targeted edit, "medium" broad, "high" hard to reverse.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-edit_file.description = _load_tool_description("edit_file")
+replace_lines.description = _load_tool_description("replace_lines")
 
 
 @tool

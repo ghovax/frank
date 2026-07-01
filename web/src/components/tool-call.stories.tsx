@@ -146,19 +146,20 @@ export const ReadFileCompleted: Story = {
   },
 };
 
-export const EditFileCompleted: Story = {
+export const ReplaceLinesCompleted: Story = {
   args: {
-    name: "edit_file",
+    name: "replace_lines",
     arguments: {
       file_path: "/Users/me/proj/src/db/client.py",
-      old_string: "def connect(uri):",
-      new_string: "def connect(uri, timeout=5):",
+      start_line: 3,
+      end_line: 3,
+      new_lines: ["def connect(uri, timeout=5):"],
       justification: "Adding a timeout parameter to connect()",
       risk: "low",
     },
     toolCallId: "call_edit",
     status: "completed",
-    result: { code: "edit_completed", path: "/Users/me/proj/src/db/client.py", created: false, characters: 412 },
+    result: { code: "replace_completed", path: "/Users/me/proj/src/db/client.py", created: false, characters: 412 },
   },
 };
 

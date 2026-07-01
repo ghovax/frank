@@ -14,7 +14,7 @@ from urllib.parse import quote, urljoin
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import Column, String, Text, create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -719,14 +719,12 @@ async def lifespan(application: FastAPI):
 
     database_path = database_file_path()
     sync_engine = create_engine(f"sqlite:///{database_path}")
-    Base.metadata.create_all(sync_engine)
-    _session_factory = sessionmaker(bind=sync_engine)
 
     # SQLite concurrency: WAL lets readers run alongside the single writer (the
     # task store writes on every streamed event, while the UI reads sessions /
     # projects), and a busy timeout makes a contended op wait instead of raising
-    # "database is locked". WAL is persistent once set; synchronous/busy_timeout
-    # are per-connection, so apply them on every connect.
+    # "database is locked". Register BEFORE create_all so the first pooled
+    # connection (from create_all itself) gets the pragmas.
     @event.listens_for(sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
         cursor = dbapi_connection.cursor()
@@ -734,6 +732,9 @@ async def lifespan(application: FastAPI):
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
+
+    Base.metadata.create_all(sync_engine)
+    _session_factory = sessionmaker(bind=sync_engine)
 
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
@@ -784,6 +785,22 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def _cors_exception_handler(request: Request, exc: Exception):
+    """Starlette's CORSMiddleware sits inside ServerErrorMiddleware, so exceptions
+    that reach the outer middleware bypass CORS entirely — the browser then blocks
+    the response and the frontend sees a CORS error instead of the real status.
+    Catch unhandled exceptions here and return a CORS-headed 500 so the client at
+    least sees the error code."""
+    import logging as _logging
+    _logging.getLogger("harness.server").exception("Unhandled error in %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
 
 
 class AgentInfo(BaseModel):

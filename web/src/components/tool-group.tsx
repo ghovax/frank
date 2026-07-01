@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuWrench } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { getToolCallDisplay } from "@/lib/tool-display";
@@ -29,7 +29,7 @@ const TOOL_SUMMARY: Record<string, { past: (count: number) => string; gerund: st
   read_file: { past: (n) => (n === 1 ? "read a file" : `read ${n} files`), gerund: "Reading files" },
   find_files: { past: (n) => (n === 1 ? "searched for files" : `searched for files ${n} times`), gerund: "Finding files" },
   search_content: { past: (n) => (n === 1 ? "searched file contents" : `searched file contents ${n} times`), gerund: "Searching content" },
-  edit_file: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
+  replace_lines: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
   write_file: { past: (n) => (n === 1 ? "wrote a file" : `wrote ${n} files`), gerund: "Writing files" },
   fetch_url: { past: (n) => (n === 1 ? "fetched a URL" : `fetched ${n} URLs`), gerund: "Fetching URLs" },
   open_web_preview: { past: (n) => (n === 1 ? "opened a preview" : `opened ${n} previews`), gerund: "Opening previews" },
@@ -106,6 +106,14 @@ export const ToolGroup = memo(function ToolGroup({
   const active = runningCount > 0 || inputRequired;
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const bodyOpen = manualOverride ?? (active || keepOpen);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll the body to the bottom when new tool calls arrive.
+  useEffect(() => {
+    if (bodyOpen && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [tools.length, bodyOpen]);
 
   // The header title is a category-aware summary of the whole batch (carrying the
   // count), not the last call's label. The icon represents the first/dominant
@@ -183,7 +191,7 @@ export const ToolGroup = memo(function ToolGroup({
               transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
               style={{ overflow: "hidden" }}
             >
-              <Box borderTop="1px solid" borderColor="border" bg="bg" px={2} py={2}>
+              <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2} py={2} maxH="320px" overflowY="auto">
                 <Flex direction="column" gap={1.5}>
                   {tools.map((tool, index) => (
                     <motion.div

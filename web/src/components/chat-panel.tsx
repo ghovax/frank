@@ -259,6 +259,15 @@ export function ChatPanel({
     onStreamingChangeRef.current?.(isStreaming);
   }, [isStreaming, scheduleScrollToBottom]);
 
+  // Scroll to bottom when history finishes loading. The layout effect on
+  // [messages] can fire before the DOM has settled after async history load,
+  // so this useEffect runs after paint, ensuring layout is final.
+  useEffect(() => {
+    if (!isHistoryLoading && messages.length > 0) {
+      forceScrollToBottom();
+    }
+  }, [isHistoryLoading, messages.length, forceScrollToBottom]);
+
   async function handlePermissionModeChange(nextMode: PermissionMode) {
     const previousMode = permissionMode;
     setPermissionModeState(nextMode);
@@ -457,7 +466,6 @@ export function ChatPanel({
                   return (
                     <motion.div
                       key={key}
-                      layout
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}

@@ -3,6 +3,7 @@
 import { Box, Button, Flex, HStack, Input, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { LuCheck } from "react-icons/lu";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { ToolArtifacts, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
@@ -142,20 +143,53 @@ function ToolQuestionPrompt({
             ) : null}
             <Text fontSize="sm">{item.question}</Text>
             {hasOptions ? (
-              <Flex wrap="wrap" gap={1.5}>
+              <Flex direction="column" gap={1}>
                 {item.options!.map((option) => {
                   const isSelected = !text && active.includes(option.label);
                   return (
-                    <Button
+                    <Flex
                       key={option.label}
-                      size="xs"
-                      variant={isSelected ? "solid" : "subtle"}
-                      colorPalette={isSelected ? "blue" : undefined}
-                      title={option.description}
+                      as="button"
+                      align="center"
+                      gap={2}
+                      px={2.5}
+                      py={2}
+                      borderRadius="sm"
+                      border="1px solid"
+                      borderColor={isSelected ? "blue.solid" : "border"}
+                      bg={isSelected ? "blue.subtle" : "bg"}
+                      cursor="pointer"
+                      textAlign="left"
+                      transition="all 120ms"
+                      _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
                       onClick={() => { if (!text) toggle(index, option.label, multiple); }}
+                      title={option.description}
                     >
-                      {option.label}
-                    </Button>
+                      <Box
+                        w="14px" h="14px" flexShrink={0}
+                        borderRadius={multiple ? "sm" : "full"}
+                        border="2px solid"
+                        borderColor={isSelected ? "blue.solid" : "border"}
+                        bg={isSelected ? "blue.solid" : "transparent"}
+                        display="flex" alignItems="center" justifyContent="center"
+                      >
+                        {isSelected && (
+                          <Box color="white" display="flex" alignItems="center" justifyContent="center" fontSize="10px">
+                            <LuCheck size={11} />
+                          </Box>
+                        )}
+                      </Box>
+                      <Flex direction="column" minW={0} flex={1}>
+                        <Text fontSize="sm" fontWeight="medium" color={isSelected ? "fg" : "fg.emphasized"}>
+                          {option.label}
+                        </Text>
+                        {option.description && (
+                          <Text fontSize="xs" color="fg.subtle" lineClamp={2}>
+                            {option.description}
+                          </Text>
+                        )}
+                      </Flex>
+                    </Flex>
                   );
                 })}
               </Flex>

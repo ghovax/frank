@@ -9,7 +9,6 @@ import {
   Menu,
   Portal,
   Select,
-  Spinner,
   Text,
   Textarea,
 } from "@chakra-ui/react";
@@ -100,7 +99,11 @@ function TaskStatusIcon({ status }: { status: string }) {
     );
   }
   if (status === "in_progress") {
-    return <Spinner size="xs" color="blue.solid" />;
+    return (
+      <Box color="blue.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
+        <LuCircle size={13} />
+      </Box>
+    );
   }
   if (status === "blocked") {
     return (
@@ -353,7 +356,7 @@ export function ChatInput({
             fontSize="xs"
             h="28px"
             px={2}
-            bg="bg.subtle"
+            bg="bg"
             borderColor="border"
             flexShrink={0}
             onClick={() => setSettingsOpen(true)}
@@ -368,7 +371,7 @@ export function ChatInput({
               h="28px"
               px={2}
               borderRadius="sm"
-              bg="bg.subtle"
+              bg="bg"
               border="1px solid"
               borderColor="border"
               flexShrink={0}
@@ -423,8 +426,8 @@ export function ChatInput({
               >
                 <Flex direction="column" gap={1.5}>
                   {tasks.map((task) => (
-                    <Flex key={task.identifier} align="flex-start" gap={2}>
-                      <Box mt="1px" display="flex" alignItems="center" flexShrink={0}>
+                    <Flex key={task.identifier} align="center" gap={2}>
+                      <Box display="flex" alignItems="center" flexShrink={0}>
                         <TaskStatusIcon status={task.status} />
                       </Box>
                       <Text fontSize="xs" fontWeight="medium" color="fg" lineClamp={2} flex={1} minW={0}>
