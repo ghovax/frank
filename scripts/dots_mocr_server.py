@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -27,6 +29,35 @@ def _check_api_key(authorization: str | None) -> None:
         return
     if authorization != f"Bearer {expected}":
         raise HTTPException(status_code=401, detail="Invalid Dots/MOCR API key.")
+
+
+@app.get("/health")
+def health():
+    importable = True
+    import_error = ""
+    try:
+        import dots_mocr.parser  # noqa: F401
+    except Exception as exception:  # noqa: BLE001
+        importable = False
+        import_error = str(exception)
+
+    model_server = _model_server_url()
+    model_server_ready = False
+    model_server_error = ""
+    try:
+        with urllib.request.urlopen(f"{model_server}/v1/models", timeout=2) as response:
+            model_server_ready = 200 <= response.status < 300
+    except (urllib.error.URLError, TimeoutError, OSError) as exception:
+        model_server_error = str(exception)
+
+    return {
+        "status": "ok" if importable and model_server_ready else "not_ready",
+        "dots_mocr_importable": importable,
+        "dots_mocr_import_error": import_error,
+        "model_server_url": model_server,
+        "model_server_ready": model_server_ready,
+        "model_server_error": model_server_error,
+    }
 
 
 @app.post("/parse")
@@ -85,6 +116,13 @@ def _inline_layout_cells(page: dict) -> dict:
             if isinstance(cells, list):
                 return {**page, "cells": cells}
     return page
+
+
+def _model_server_url() -> str:
+    protocol = os.environ.get("DAISY_DOTS_MOCR_PROTOCOL", "http")
+    host = os.environ.get("DAISY_DOTS_MOCR_HOST", "127.0.0.1")
+    port = int(os.environ.get("DAISY_DOTS_MOCR_PORT", "8000"))
+    return f"{protocol}://{host}:{port}"
 
 
 if __name__ == "__main__":
