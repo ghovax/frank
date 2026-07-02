@@ -669,7 +669,7 @@ def read_task(task_id: str = "", justification: str = "") -> str:
 
 
 @tool
-def write_tasks(tasks: list[dict]) -> str:
+def set_tasks(tasks: list[dict]) -> str:
     """Create new tasks in the task list. Tasks can depend on each other.
 
     Use this to break down complex work into steps that can run in
@@ -888,7 +888,7 @@ bash.description = _load_tool_description("bash")
 web_search.description = _load_tool_description("web_search")
 spawn_agent.description = _load_tool_description("spawn_agent")
 read_task.description = _load_tool_description("read_task")
-write_tasks.description = _load_tool_description("write_tasks")
+set_tasks.description = _load_tool_description("set_tasks")
 update_tasks.description = _load_tool_description("update_tasks")
 update_goal.description = _load_tool_description("update_goal")
 open_preview.description = _load_tool_description("open_preview")

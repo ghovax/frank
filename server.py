@@ -1456,6 +1456,24 @@ async def update_sandbox(request: SandboxUpdateRequest):
     return {"status": "saved", "sandbox_enabled": _global_configuration.sandbox.enabled}
 
 
+@app.get("/messages/history")
+async def get_message_history(working_directory: str = ""):
+    """Return the last 100 user messages sent in this project, newest first."""
+    if not working_directory:
+        return {"messages": []}
+    assert _task_store is not None
+    messages = await _task_store.get_user_messages(working_directory)
+    return {"messages": messages}
+
+
+@app.post("/messages/history")
+async def save_message_history(body: dict):
+    """Persist a user message for up/down arrow recall within the project."""
+    assert _task_store is not None
+    await _task_store.add_user_message(body["working_directory"], body["message"])
+    return {"ok": True}
+
+
 @app.get("/mcp/tools")
 async def mcp_tools(server: str = "", working_directory: str = ""):
     """List configured MCP servers with their enabled flag. Enabled servers carry

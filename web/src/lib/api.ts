@@ -490,6 +490,22 @@ export async function setPermissionMode(sessionId: string, mode: PermissionMode)
   if (!response.ok) throw new Error(`Failed to save permission mode (${response.status})`);
 }
 
+export async function fetchMessageHistory(workingDirectory: string): Promise<string[]> {
+  const response = await fetch(`${API_BASE}/messages/history?working_directory=${encodeURIComponent(workingDirectory)}`);
+  if (!response.ok) throw new Error(`Failed to fetch message history (${response.status})`);
+  const data = await response.json();
+  return data.messages as string[];
+}
+
+export async function saveMessageHistory(workingDirectory: string, message: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/messages/history`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ working_directory: workingDirectory, message }),
+  });
+  if (!response.ok) throw new Error(`Failed to save message history (${response.status})`);
+}
+
 // A2A protocol types (the subset the client consumes)
 
 export type A2APartKind = "text" | "data" | "file";

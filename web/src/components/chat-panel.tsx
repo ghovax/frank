@@ -110,18 +110,14 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
         break;
       }
     }
-    if (toolMessages.length === 1) {
-      items.push({ kind: "message", message: toolMessages[0] });
-    } else {
-      items.push({
-        kind: "tool_group",
-        // Key by the FIRST tool only: the key must stay stable as more tools
-        // stream into the group, or React remounts the whole group (re-running
-        // every card's entrance animation and resetting its open/closed state).
-        id: toolMessages[0].id,
-        messages: toolMessages,
-      });
-    }
+    // Always wrap tool calls in a ToolGroup so the transition from 1→2 tools
+    // is a smooth addition of a new child, not a full component swap.
+    items.push({
+      kind: "tool_group",
+      // Key by the FIRST tool only: stays stable as more tools stream in.
+      id: toolMessages[0].id,
+      messages: toolMessages,
+    });
   }
   return items;
 }
@@ -475,8 +471,8 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} py={12}>
-              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={10}>
+            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} my={12}>
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={4}>
                 What should we build in {currentFolderName}?
               </Text>
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />

@@ -568,7 +568,7 @@ class AgentConfiguration(BaseModel):
     reasoning_effort: str = "high"
     # Safety bound on the per-turn tool-calling loop. A runtime detail, defaulted
     # here rather than restated in every agent file.
-    maximum_iterations: int = 25
+    maximum_iterations: int = 256
     # default: per-command permission rules. auto: use the default rules plus an
     # LLM classifier to auto-approve safe bash calls and escalate the rest.
     # read_only: hard-block all writes (investigation agents). bypass: allow everything.

@@ -207,7 +207,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
       >
         <LuBot size={compact ? 13 : 15} />
         {chipProviderLabel ? (
-          <Flex as="span" align="center" gap={1.5} minW={0}>
+          <Flex as="span" align="center" minW={0}>
             <Box as="span" color="fg.muted" truncate>
               {chipProviderLabel}
             </Box>

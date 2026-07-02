@@ -103,9 +103,9 @@ export const ToolGroup = memo(function ToolGroup({
   const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length;
   const inputRequired = tools.some((tool) => toolStatus(tool.status) === "input_required");
   const failedCount = tools.filter((tool) => toolStatus(tool.status) === "failed").length;
-  const active = runningCount > 0 || inputRequired;
+  const active = runningCount > 0 || inputRequired || keepOpen;
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
-  const bodyOpen = manualOverride ?? (active || keepOpen);
+  const bodyOpen = manualOverride ?? false;
   const bodyRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll the body to the bottom when new tool calls arrive.
@@ -143,7 +143,7 @@ export const ToolGroup = memo(function ToolGroup({
         overflow="hidden"
         bg="bg.subtle"
         border="1px solid"
-        borderColor={active ? "blue.muted" : "border"}
+        borderColor="border"
       >
         <Flex
           as="button"

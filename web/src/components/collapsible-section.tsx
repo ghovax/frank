@@ -2,6 +2,7 @@
 
 import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { Children, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 
 interface CollapsibleSectionProps {
@@ -26,6 +27,7 @@ export function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
   const [showAll, setShowAll] = useState(false);
   const items = Children.toArray(children).filter(Boolean);
+  const hasMoreItems = items.length > initialVisibleCount;
   const visibleItems = showAll ? items : items.slice(0, initialVisibleCount);
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
 
@@ -58,24 +60,37 @@ export function CollapsibleSection({
           {title}
         </Text>
         {typeof count === "number" ? (
-          <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
-            {count}
+          <Text fontSize="xs" fontWeight="medium" color="fg.subtle" flexShrink={0} pr={1}>
+            {count} session{count !== 1 ? "s" : ""}
           </Text>
         ) : null}
       </Flex>
       {open ? (
-        <Flex direction="column" gap={1} px={1.5} py={1.5} borderTop="1px solid" borderColor="border" bg="bg">
-          {visibleItems}
-          {hiddenCount > 0 ? (
+        <Flex direction="column" gap={1} px={1.5} pt={1.5} pb={hasMoreItems ? 1.5 : 0.5} borderTop="1px solid" borderColor="border" bg="bg" overflow="hidden">
+          <AnimatePresence initial={false}>
+            {visibleItems.map((item, index) => (
+              <motion.div
+                key={(item as React.ReactElement)?.key ?? index}
+                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                animate={{ opacity: 1, height: "auto", marginBottom: 4 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                style={{ overflow: "hidden" }}
+              >
+                {item}
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {hasMoreItems ? (
             <Button
               size="xs"
               variant="ghost"
               borderRadius="sm"
               fontSize="xs"
               h="26px"
-              onClick={() => setShowAll(true)}
+              onClick={() => setShowAll((current) => !current)}
             >
-              Show {hiddenCount} more
+              {showAll ? "Show less" : `Show ${hiddenCount} more`}
             </Button>
           ) : null}
         </Flex>

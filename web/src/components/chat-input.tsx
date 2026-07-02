@@ -13,8 +13,8 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
-import { validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
+import { fetchMessageHistory, saveMessageHistory, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
@@ -175,7 +175,7 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
       </Box>
       <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
         {tokenUsage.contextTokens.toLocaleString()}
-        {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""} in context
+        {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
       </Text>
     </Flex>
   );
@@ -262,6 +262,9 @@ export function ChatInput({
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [messageHistory, setMessageHistory] = useState<string[]>([]);
+  const [configExpanded, setConfigExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [displayedThinkingLabel, setDisplayedThinkingLabel] = useState(thinkingLabel ?? "");
   const [thinkingVisible, setThinkingVisible] = useState(!!thinkingLabel);
@@ -333,7 +336,7 @@ export function ChatInput({
         variant: "solid" as const,
       };
   const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "green" }[] = [
-    { value: "none", label: "None", icon: <LuBan size={13} /> },
+    { value: "none", label: "Unmanaged", icon: <LuBan size={13} /> },
     { value: "branch", label: "Branch", icon: <LuGitBranch size={13} />, colorPalette: "purple" },
     { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "green" },
   ];
@@ -503,6 +506,15 @@ export function ChatInput({
     };
   }, [thinkingLabel]);
 
+  // Fetch message history when the working directory changes.
+  useEffect(() => {
+    if (!workingDirectory) {
+      setMessageHistory([]);
+      return;
+    }
+    fetchMessageHistory(workingDirectory).then(setMessageHistory).catch(() => {});
+  }, [workingDirectory]);
+
   function handleSubmit() {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
@@ -510,13 +522,36 @@ export function ChatInput({
     if (!workspaceStrategyValid) return;
     // While the agent is busy this enqueues for the next turn (handled upstream).
     onSend(trimmed);
+    setHistoryIndex(-1);
     setInputValue("");
+    // Persist to backend and prepend to local list for immediate recall.
+    setMessageHistory((previous) => [trimmed, ...previous]);
+    if (workingDirectory) {
+      saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleSubmit();
+      return;
+    }
+    if (event.key === "ArrowUp" && messageHistory.length > 0) {
+      event.preventDefault();
+      const nextIndex = historyIndex === -1
+        ? 0
+        : Math.min(messageHistory.length - 1, historyIndex + 1);
+      setHistoryIndex(nextIndex);
+      setInputValue(messageHistory[nextIndex]);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      const nextIndex = historyIndex <= 0 ? -1 : historyIndex - 1;
+      setHistoryIndex(nextIndex);
+      setInputValue(nextIndex === -1 ? "" : messageHistory[nextIndex]);
+      event.preventDefault();
+      return;
     }
   }
 
@@ -643,6 +678,29 @@ export function ChatInput({
               </Box>
             </Box>
           )}
+          <Button
+            size="xs"
+            variant="ghost"
+            borderRadius="sm"
+            flexShrink={0}
+            w="28px"
+            h="28px"
+            minW={0}
+            p={0}
+            onClick={() => setConfigExpanded((current) => !current)}
+          >
+            {configExpanded ? <LuChevronRight size={14} /> : <LuChevronLeft size={14} />}
+          </Button>
+          <AnimatePresence initial={false}>
+            {configExpanded && (
+              <motion.div
+                key="config-controls"
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: "auto" }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                style={{ overflow: "hidden", display: "flex", alignItems: "center", gap: "6px" }}
+              >
           <Select.Root
             collection={agentCollection}
             value={[selectedAgent]}
@@ -703,6 +761,9 @@ export function ChatInput({
             fallbackModelId={globalModel}
             compact
           />
+              </motion.div>
+            )}
+          </AnimatePresence>
           <ContextUsageChip tokenUsage={tokenUsage} />
           <Button
             size="xs"

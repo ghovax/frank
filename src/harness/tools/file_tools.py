@@ -21,8 +21,8 @@ from urllib.parse import urlparse
 
 from markdownify import markdownify as _markdownify
 
-DEFAULT_READ_LINES = 2000
-MAXIMUM_LINE_LENGTH = 2000
+DEFAULT_READ_LIMIT_LINES = 2048
+MAXIMUM_LINE_LENGTH = 2048
 MAXIMUM_GREP_RESULTS = 512
 MAXIMUM_GLOB_RESULTS = 1024
 MAXIMUM_FETCH_CHARS = 262_144
@@ -58,37 +58,37 @@ def read_file(
     working_directory: str,
     file_path: str,
     offset: int = 1,
-    limit: int | None = DEFAULT_READ_LINES,
+    limit: int | None = DEFAULT_READ_LIMIT_LINES,
 ) -> str:
     """Read a file and return its lines in ``cat -n`` format.
 
     ``offset`` is the 1-indexed line to start reading from and ``limit`` caps the
-    number of lines returned (defaulting to 2000). Each returned line is prefixed
+    number of lines returned (defaulting to 2048). Each returned line is prefixed
     with its right-aligned line number and a tab, exactly like ``cat -n``."""
-    path = _resolve(working_directory, file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Path does not exist: {path}")
+    resolved_path = _resolve(working_directory, file_path)
+    if not resolved_path.exists():
+        raise FileNotFoundError(f"Path does not exist: {resolved_path}")
 
-    if path.is_dir():
-        raise IsADirectoryError(f"Path is a directory, not a file: {path}")
+    if resolved_path.is_dir():
+        raise IsADirectoryError(f"Path is a directory, not a file: {resolved_path}")
 
-    text = path.read_text(errors="replace")
-    lines = text.split("\n")
-    start = max(1, offset)
-    effective_limit = limit if (limit is None or limit > 0) else DEFAULT_READ_LINES
-    end = len(lines) if effective_limit is None else min(len(lines), start - 1 + effective_limit)
-    selected = lines[start - 1:end]
-    rendered = "\n".join(f"{idx:6d}\t{_truncate_line(line)}" for idx, line in enumerate(selected, start=start))
-    truncated = start > 1 or end < len(lines)
+    file_content = resolved_path.read_text(errors="replace")
+    file_lines = file_content.split("\n")
+    start_line_index = max(1, offset)
+    effective_limit = limit if (limit is None or limit > 0) else DEFAULT_READ_LIMIT_LINES
+    end_line_index = len(file_lines) if effective_limit is None else min(len(file_lines), start_line_index - 1 + effective_limit)
+    selected_lines = file_lines[start_line_index - 1:end_line_index]
+    rendered_output = "\n".join(f"{line_number:6d}\t{_truncate_line(line)}" for line_number, line in enumerate(selected_lines, start=start_line_index))
+    is_truncated = start_line_index > 1 or end_line_index < len(file_lines)
     return _payload(
         "read_completed",
-        path=str(path),
-        start_line=start,
-        end_line=end,
-        total_lines=len(lines),
-        truncated=truncated,
-        sha256=content_sha256(text),
-        content=rendered,
+        path=str(resolved_path),
+        start_line=start_line_index,
+        end_line=end_line_index,
+        total_lines=len(file_lines),
+        truncated=is_truncated,
+        sha256=content_sha256(file_content),
+        content=rendered_output,
     )
 
 

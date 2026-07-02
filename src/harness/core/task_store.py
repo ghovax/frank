@@ -182,6 +182,16 @@ class AppendOnlyTaskStore(TaskStore):
         # task are processed sequentially by its TaskManager, so this needs no
         # locking; it lets the hot path skip a COUNT query.
         self._persisted_count: dict[str, int] = {}
+        # User message history, scoped to the working directory. Used for
+        # up/down arrow recall of previously sent messages within a project.
+        self._user_messages = Table(
+            "user_message_history",
+            self._metadata,
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("working_directory", String, index=True),
+            Column("message", Text),
+            Column("created_at", DateTime, server_default=func.now()),
+        )
         self._initialized = False
 
     async def initialize(self) -> None:
@@ -483,3 +493,26 @@ class AppendOnlyTaskStore(TaskStore):
                 )
             ).scalars().all()
         return list(rows)
+
+    async def add_user_message(self, working_directory: str, message: str) -> None:
+        """Store a user message in the project-scoped history."""
+        await self._ensure_initialized()
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                self._user_messages.insert().values(
+                    working_directory=working_directory,
+                    message=message,
+                )
+            )
+
+    async def get_user_messages(self, working_directory: str, limit: int = 100) -> list[str]:
+        """Retrieve the most recent user messages for a project, newest first."""
+        await self._ensure_initialized()
+        async with self._engine.begin() as connection:
+            result = await connection.execute(
+                select(self._user_messages.c.message)
+                .where(self._user_messages.c.working_directory == working_directory)
+                .order_by(self._user_messages.c.created_at.desc())
+                .limit(limit)
+            )
+        return [row[0] for row in result]

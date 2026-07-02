@@ -40,7 +40,7 @@ from harness.tools.tools import (
     web_search as web_search_tool,
     spawn_agent as spawn_tool,
     read_task as read_task_tool,
-    write_tasks as write_tasks_tool,
+    set_tasks as set_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
     open_preview as open_preview_tool,
@@ -297,7 +297,7 @@ def _build_tools(
         fetch_url_tool,
         load_skill_tool,
         web_search_tool,
-        write_tasks_tool,
+        set_tasks_tool,
         update_tasks_tool,
         update_goal_tool,
         read_task_tool,
@@ -2350,7 +2350,7 @@ class AgentRuntime:
             result_payload = child_task or {"code": "empty_response", "message": "Sub-agent produced no task."}
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_payload)
 
-        elif tool_name == "write_tasks":
+        elif tool_name == "set_tasks":
             task_definitions = tool_arguments.get("tasks", [])
             identifiers = self._task_manager.add_tasks(task_definitions)
             result_message = f"Created the tasks {', '.join(identifiers)}"
