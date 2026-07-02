@@ -4,7 +4,7 @@ import os
 import re
 import shlex
 from pathlib import Path
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 import yaml
 from pydantic import BaseModel
@@ -45,6 +45,7 @@ def save_api_keys(
     *,
     exa_api_key: str | None = None,
     composio_api_key: str | None = None,
+    dots_ocr: dict[str, object] | None = None,
     sandbox_enabled: bool | None = None,
     workspace_strategy: str | None = None,
     provider_keys: dict[str, str] | None = None,
@@ -63,6 +64,9 @@ def save_api_keys(
         data.setdefault("exa", {})["api_key"] = exa_api_key
     if composio_api_key is not None:
         data.setdefault("composio", {})["api_key"] = composio_api_key
+    if dots_ocr is not None:
+        section = data.setdefault("dots_ocr", {})
+        section.update(dots_ocr)
     if sandbox_enabled is not None:
         data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
     if workspace_strategy is not None:
@@ -131,6 +135,26 @@ class ComposioConfiguration(BaseModel):
         return os.environ.get("COMPOSIO_API_KEY") or self.api_key
 
 
+class DotsOCRConfiguration(BaseModel):
+    """Parser endpoint used by the research evidence plane for Dots/MOCR output.
+
+    The heavyweight model runtime is intentionally external to daisy. Local and
+    remote modes both point at an HTTP parser endpoint; "local" means the endpoint
+    is expected to run on the user's machine.
+    """
+    enabled: bool = False
+    mode: Literal["local", "remote"] = "local"
+    endpoint: str = ""
+    api_key: str = ""
+    model_name: str = "rednote-hilab/dots.mocr"
+    prompt_mode: str = "prompt_layout_all_en"
+    timeout_seconds: float = 900
+
+    @property
+    def effective_api_key(self) -> str:
+        return os.environ.get("DAISY_DOTS_OCR_API_KEY") or self.api_key
+
+
 class MCPServerConfiguration(BaseModel):
     enabled: bool = True
     transport: Literal["stdio", "streamable_http"] = "stdio"
@@ -181,6 +205,11 @@ class ProviderCredential(BaseModel):
 
 
 class GlobalConfiguration(BaseModel):
+    HOME_AGENTS_ROOT_DIRECTORY: ClassVar[str] = "~/.agents"
+    AGENTS_ROOT_DIRECTORY: ClassVar[str] = ".agents"
+    AGENTS_DIRECTORY: ClassVar[str] = ".agents/agents"
+    SKILLS_DIRECTORY: ClassVar[str] = ".agents/skills"
+
     providers: dict[str, ProviderCredential] = {}
     # The selected model and its provider are stored as separate fields so a human
     # editing configuration.yaml sees both explicitly; ``selected_model_identifier``
@@ -191,12 +220,9 @@ class GlobalConfiguration(BaseModel):
     sandbox: SandboxConfiguration = SandboxConfiguration()
     workspace: WorkspaceConfiguration = WorkspaceConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
+    dots_ocr: DotsOCRConfiguration = DotsOCRConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "senior-researcher"
-    agents_root_directory: str = ".agents"
-    home_agents_root_directory: str = "~/.agents"
-    agents_directory: str = ".agents/agents"
-    skills_directory: str = ".agents/skills"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).
     maximum_delegation_depth: int = 8
@@ -243,28 +269,28 @@ class GlobalConfiguration(BaseModel):
 
     def agents_root_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser(),
-            Path(self.agents_root_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser(),
+            Path(self.AGENTS_ROOT_DIRECTORY),
         ])
 
     def agent_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "agents",
-            Path(self.agents_root_directory) / "agents",
-            Path(self.agents_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
+            Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
+            Path(self.AGENTS_DIRECTORY),
         ])
 
     def skill_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "skills",
-            Path(self.agents_root_directory) / "skills",
-            Path(self.skills_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
+            Path(self.AGENTS_ROOT_DIRECTORY) / "skills",
+            Path(self.SKILLS_DIRECTORY),
         ])
 
     def memory_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "memories",
-            Path(self.agents_root_directory) / "memories",
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
+            Path(self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
     # Working-directory-scoped resolution.
@@ -289,13 +315,13 @@ class GlobalConfiguration(BaseModel):
 
     def home_agents_root(self) -> Path:
         """The global ``~/.agents`` root — the scope shared by every folder."""
-        return Path(self.home_agents_root_directory).expanduser()
+        return Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser()
 
     def project_agents_root_for(self, working_directory: str) -> Path:
         """The working directory's own ``.agents`` root — the project-local scope.
         Equals :meth:`home_agents_root` when the working directory is the home
         directory (in which case nothing is project-specific)."""
-        return self._resolve_local(working_directory, self.agents_root_directory)
+        return self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY)
 
     def agents_root_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
@@ -305,22 +331,22 @@ class GlobalConfiguration(BaseModel):
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "agents",
-            self._resolve_local(working_directory, self.agents_root_directory) / "agents",
-            self._resolve_local(working_directory, self.agents_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
+            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
+            self._resolve_local(working_directory, self.AGENTS_DIRECTORY),
         ])
 
     def skill_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "skills",
-            self._resolve_local(working_directory, self.agents_root_directory) / "skills",
-            self._resolve_local(working_directory, self.skills_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
+            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "skills",
+            self._resolve_local(working_directory, self.SKILLS_DIRECTORY),
         ])
 
     def memory_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "memories",
-            self._resolve_local(working_directory, self.agents_root_directory) / "memories",
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
+            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
     def mcp_configuration_for(self, working_directory: str) -> "MCPConfiguration":

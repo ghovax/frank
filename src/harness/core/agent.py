@@ -2494,6 +2494,7 @@ class AgentRuntime:
                 expected_revision=expected_revision,
                 idempotency_key=str(tool_arguments.get("idempotency_key", "")),
                 actor_id=self._a2a_task_id or self._session_id or "agent",
+                dots_ocr=self._global_configuration.dots_ocr,
             )
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 

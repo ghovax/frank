@@ -1,41 +1,100 @@
+# Model Provider Credentials
+#
+# Provider keys resolve in this order: this file first, then the provider's
+# conventional environment variable. First-party providers use LiteLLM's built-in
+# endpoints. OpenAI-compatible providers can also declare a base_url.
 providers:
   opencode:
-    api_key: sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92
-    base_url: https://opencode.ai/zen/go/v1
+    api_key: "sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92"
+    base_url: "https://opencode.ai/zen/go/v1"
   anthropic:
-    api_key: ''
+    api_key: ""
   openai:
-    api_key: ''
+    api_key: ""
   google:
-    api_key: ''
+    api_key: ""
   openrouter:
-    api_key: ''
+    api_key: ""
   xai:
-    api_key: ''
+    api_key: ""
   deepseek:
-    api_key: ''
+    api_key: ""
   groq:
-    api_key: ''
+    api_key: ""
   mistral:
-    api_key: ''
+    api_key: ""
   custom:
-    api_key: ''
-    base_url: ''
-selected_model: deepseek-v4-flash
-selected_provider: opencode
+    api_key: ""
+    base_url: ""
+
+# Default Model
+#
+# Stored as provider + model so the YAML is readable. The runtime recombines
+# these into the provider/model identifier used by LiteLLM.
+selected_provider: "opencode"
+selected_model: "deepseek-v4-flash"
+
+# Literature and Web Retrieval
+#
+# Exa powers the built-in web_search fallback. EXA_API_KEY can also provide this.
 exa:
-  api_key: ''
-sandbox:
-  enabled: true
-workspace:
-  strategy: none
+  api_key: ""
+
+# Hosted Tool Integrations
+#
+# Composio is exposed as a normal MCP server when enabled. COMPOSIO_API_KEY can
+# also provide the key.
 composio:
   enabled: false
-  url: https://connect.composio.dev/mcp
-  api_key: ck_7lCN7vVj1bG9CCfRZX4L
-  server_name: composio
-default_agent: senior-researcher
-agents_root_directory: .agents
-home_agents_root_directory: ~/.agents
-agents_directory: .agents/agents
-skills_directory: .agents/skills
+  url: "https://connect.composio.dev/mcp"
+  api_key: "ck_7lCN7vVj1bG9CCfRZX4L"
+  server_name: "composio"
+
+# Execution Behavior
+#
+# sandbox.enabled confines bash tools to the active workspace unless the user
+# grants permission. workspace.strategy controls optional branch/worktree setup.
+sandbox:
+  enabled: true
+
+workspace:
+  strategy: "none"
+
+# Research Document Parsing
+#
+# Dots/MOCR is used by the research evidence plane to parse PDFs/images into
+# page-level layout cells, citation anchors, tables, formulas, and figure regions.
+# The heavy OCR/VLM runtime runs outside daisy. Local mode means daisy calls a
+# parser endpoint on this machine; remote mode means the endpoint is elsewhere.
+#
+# prompt_mode options from upstream dots_mocr:
+# - prompt_layout_all_en: full layout detection plus text extraction; the normal
+#   research-ingestion mode because it preserves bbox, category, tables, formulas,
+#   captions, and body text.
+# - prompt_layout_only_en: layout detection only; no text extraction.
+# - prompt_ocr: plain OCR text extraction, excluding page-header/page-footer in
+#   upstream's benchmark-oriented formatting.
+# - prompt_grounding_ocr: OCR only inside a supplied bounding box; useful for
+#   targeted follow-up, not whole-document ingestion.
+# - prompt_web_parsing: webpage screenshot layout parsing.
+# - prompt_scene_spotting: scene-text detection and recognition.
+# - prompt_image_to_svg: structured graphic/image to SVG code.
+# - prompt_general: free-form visual QA with a custom prompt.
+#
+# model_name is the model id sent to the parser/model server. The actual upstream
+# model identifier is rednote-hilab/dots.mocr. If you deliberately launch vLLM
+# with a served alias, this value must match that alias.
+dots_ocr:
+  enabled: true
+  mode: "local"
+  endpoint: "http://127.0.0.1:8765/parse"
+  api_key: ""
+  model_name: "rednote-hilab/dots.mocr"
+  prompt_mode: "prompt_layout_all_en"
+  timeout_seconds: 900
+
+# Agent and Skill Discovery
+#
+# Directory roots are fixed in code: ~/.agents globally and .agents inside the
+# selected working directory. Only the default primary agent is configurable.
+default_agent: "senior-researcher"

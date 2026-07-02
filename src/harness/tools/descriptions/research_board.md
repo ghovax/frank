@@ -15,7 +15,7 @@ Arguments:
 Typical sequence:
 1. `insert/workspace` with an objective.
 2. `insert/source` for PDFs, Zotero items, DOIs, web pages, uploads, or database descriptors.
-3. `prepare/source` to run local acquisition/parsing/indexing. PDFs/images use local Dots/MOCR when installed; otherwise they are quarantined.
+3. `prepare/source` to run acquisition/parsing/indexing. PDFs/images use the configured Dots/MOCR parser endpoint; if it is disabled, unreachable, or returns unusable output, the source is quarantined.
 4. `inspect/workspace` to see current derived state.
 
 Source payloads should use:

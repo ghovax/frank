@@ -4,12 +4,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+from harness.core.configuration import DotsOCRConfiguration
 from harness.identifiers import new_id
 from harness.research.dots import (
     DOCUMENT_SUFFIXES,
     DotsBackendUnavailable,
     DotsParseError,
-    parse_with_local_dots,
+    parse_with_dots,
 )
 from harness.research.schema import (
     EVIDENCE_OPERATIONS,
@@ -31,6 +32,7 @@ def research_board(
     expected_revision: int | None = None,
     idempotency_key: str = "",
     actor_id: str = "agent",
+    dots_ocr: DotsOCRConfiguration | None = None,
 ) -> dict[str, Any]:
     store = get_store()
     action = (action or "").strip().lower()
@@ -40,7 +42,15 @@ def research_board(
         if action == "inspect":
             return _inspect(target, workspace_id, target_id)
         if action == "prepare":
-            return _prepare(workspace_id, target, target_id, payload, actor_id=actor_id, idempotency_key=idempotency_key)
+            return _prepare(
+                workspace_id,
+                target,
+                target_id,
+                payload,
+                actor_id=actor_id,
+                idempotency_key=idempotency_key,
+                dots_ocr=dots_ocr or DotsOCRConfiguration(),
+            )
         event = store.append_event(
             action=action,
             target=target,
@@ -193,6 +203,7 @@ def _prepare(
     *,
     actor_id: str,
     idempotency_key: str,
+    dots_ocr: DotsOCRConfiguration,
 ) -> dict[str, Any]:
     if target != "source":
         return {"code": "research_prepare_error", "message": "prepare currently targets source records."}
@@ -215,7 +226,9 @@ def _prepare(
             payload={
                 "source_id": source_id,
                 "status": "started",
-                "backend": "local_dots_mocr",
+                "backend": "dots_mocr",
+                "backend_mode": dots_ocr.mode,
+                "endpoint_configured": bool(dots_ocr.endpoint),
                 "requested": payload,
             },
         )
@@ -228,7 +241,7 @@ def _prepare(
             continue
         run_id = run_event["target_id"]
         try:
-            result = _prepare_source(workspace_id, source, run_id, actor_id=actor_id)
+            result = _prepare_source(workspace_id, source, run_id, actor_id=actor_id, dots_ocr=dots_ocr)
         except Exception as exception:  # noqa: BLE001
             result = _quarantine(
                 workspace_id,
@@ -242,7 +255,14 @@ def _prepare(
     return {"code": "research_prepare_completed", "workspace_id": workspace_id, "results": results}
 
 
-def _prepare_source(workspace_id: str, source: dict[str, Any], run_id: str, *, actor_id: str) -> dict[str, Any]:
+def _prepare_source(
+    workspace_id: str,
+    source: dict[str, Any],
+    run_id: str,
+    *,
+    actor_id: str,
+    dots_ocr: DotsOCRConfiguration,
+) -> dict[str, Any]:
     store = get_store()
     source_id = str(source.get("source_id"))
     source_kind = str(source.get("source_kind") or "document")
@@ -265,12 +285,12 @@ def _prepare_source(workspace_id: str, source: dict[str, Any], run_id: str, *, a
     if suffix in DOCUMENT_SUFFIXES:
         output_directory = research_database_path().parent / "research-artifacts" / workspace_id / source_id / run_id
         try:
-            pages = parse_with_local_dots(path, output_directory)
+            pages = parse_with_dots(path, output_directory, dots_ocr)
         except DotsBackendUnavailable as exception:
             return _quarantine(
                 workspace_id,
                 source_id,
-                "local_dots_mocr_unavailable",
+                "dots_mocr_unavailable",
                 str(exception),
                 actor_id=actor_id,
                 preparation_run_id=run_id,

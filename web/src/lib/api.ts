@@ -205,9 +205,30 @@ export interface ProviderCredential {
   base_url: string;
 }
 
+export interface DotsOCRSettings {
+  enabled: boolean;
+  mode: "local" | "remote";
+  endpoint: string;
+  api_key: string;
+  model_name: string;
+  prompt_mode: string;
+  timeout_seconds: number;
+}
+
+const DEFAULT_DOTS_OCR_SETTINGS: DotsOCRSettings = {
+  enabled: false,
+  mode: "local",
+  endpoint: "",
+  api_key: "",
+  model_name: "rednote-hilab/dots.mocr",
+  prompt_mode: "prompt_layout_all_en",
+  timeout_seconds: 900,
+};
+
 export interface Settings {
   exa_api_key: string;
   composio_api_key: string;
+  dots_ocr: DotsOCRSettings;
   sandbox_enabled: boolean;
   workspace_strategy: "none" | "branch" | "worktree";
   selected_model: string;
@@ -252,14 +273,16 @@ export interface FilesystemLease {
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
   if (!response.ok) {
-    return { exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", providers: {} };
+    return { exa_api_key: "", composio_api_key: "", dots_ocr: DEFAULT_DOTS_OCR_SETTINGS, sandbox_enabled: true, workspace_strategy: "none", selected_model: "", providers: {} };
   }
-  return response.json();
+  const settings = await response.json();
+  return { ...settings, dots_ocr: { ...DEFAULT_DOTS_OCR_SETTINGS, ...(settings.dots_ocr ?? {}) } };
 }
 
 export interface SaveSettingsPayload {
   exa_api_key: string;
   composio_api_key: string;
+  dots_ocr: DotsOCRSettings;
   provider_keys: Record<string, string>;
   provider_base_urls: Record<string, string>;
   selected_model: string;

@@ -59,8 +59,9 @@ The mutating tool is `research_board`. `research_evidence` is read-oriented.
    - Call `research_board` with `action="prepare", target="source"`.
    - Preparation is strict. A source that lacks full text/artifact or cannot be
      parsed is quarantined and must not support report claims.
-   - PDFs/images are prepared through the local Dots/MOCR backend when available.
-     If local Dots/MOCR is not importable, the source is quarantined.
+   - PDFs/images are prepared through the configured Dots/MOCR parser endpoint.
+     If Dots/MOCR is disabled, unreachable, or returns unusable output, the
+     source is quarantined.
 
 4. **Inspect quarantine**
    - Call `research_evidence` with `operation="quarantine"` before drafting the

@@ -114,11 +114,11 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
     case "open_preview":
       return args?.title ? `Previewing "${String(args.title)}"` : "Opening a preview";
     case "research_board":
-      return researchBoardLabel(args);
+      return "Updating research board";
     case "research_evidence":
-      return researchEvidenceLabel(args);
+      return "Reading research evidence";
     case "research_open":
-      return researchOpenLabel(args);
+      return "Opening research artifact";
     case "render_widget":
       return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
     case "write_tasks":
@@ -141,67 +141,6 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
 function shortPath(path: string): string {
   const parts = path.split("/");
   return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : path;
-}
-
-const RESEARCH_TARGET_LABELS: Record<string, string> = {
-  workspace: "workspace",
-  source: "source",
-  preparation_run: "preparation run",
-  evidence: "evidence",
-  anchor: "citation anchor",
-  report: "report",
-  note: "note",
-  quarantine: "quarantine record",
-};
-
-const RESEARCH_BOARD_LABELS: Record<string, (target: string) => string> = {
-  insert: (target) =>
-    target === "workspace" ? "Starting research workspace" : `Adding research ${target}`,
-  annotate: (target) => `Annotating research ${target}`,
-  exclude: (target) => `Excluding research ${target}`,
-  supersede: (target) => `Superseding research ${target}`,
-  prepare: (target) => `Preparing research ${target}`,
-  publish: (target) => `Publishing research ${target}`,
-  inspect: (target) => `Inspecting research ${target}`,
-};
-
-const RESEARCH_EVIDENCE_LABELS: Record<string, string> = {
-  source: "Reading research source",
-  anchor: "Reading citation anchor",
-  quarantine: "Reviewing quarantined sources",
-  validate_report: "Validating research report",
-};
-
-const RESEARCH_OPEN_LABELS: Record<string, string> = {
-  anchor: "Opening citation preview",
-  source: "Opening research source",
-  report: "Opening research report",
-};
-
-function researchKey(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-}
-
-function researchTarget(value: unknown): string {
-  const key = researchKey(value);
-  return RESEARCH_TARGET_LABELS[key] ?? (key ? key.replace(/_/g, " ") : "item");
-}
-
-function researchBoardLabel(args?: Record<string, unknown>): string {
-  const label = RESEARCH_BOARD_LABELS[researchKey(args?.action)];
-  return label ? label(researchTarget(args?.target)) : "Updating research board";
-}
-
-function researchEvidenceLabel(args?: Record<string, unknown>): string {
-  if (researchKey(args?.operation) === "search") {
-    const query = String(args?.query ?? "").trim();
-    return query ? `Searching evidence for "${query}"` : "Searching research evidence";
-  }
-  return RESEARCH_EVIDENCE_LABELS[researchKey(args?.operation)] ?? "Reading research evidence";
-}
-
-function researchOpenLabel(args?: Record<string, unknown>): string {
-  return RESEARCH_OPEN_LABELS[researchKey(args?.target)] ?? "Opening research artifact";
 }
 
 export function getToolCallDisplay(
