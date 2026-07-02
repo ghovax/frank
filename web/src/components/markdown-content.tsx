@@ -50,16 +50,16 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       if (isDisplayMathParagraph(node)) {
         return <Box textAlign="center" fontSize="inherit">{children}</Box>;
       }
-      return <Text fontSize="inherit" lineHeight="1.65">{children}</Text>;
+      return <Text fontSize="inherit">{children}</Text>;
     },
     h1({ children }) {
-      return <Heading as="h1" fontSize="lg" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
+      return <Heading as="h1" fontSize="lg" fontWeight="bold">{children}</Heading>;
     },
     h2({ children }) {
-      return <Heading as="h2" fontSize="md" fontWeight="bold" lineHeight="1.3">{children}</Heading>;
+      return <Heading as="h2" fontSize="md" fontWeight="bold">{children}</Heading>;
     },
     h3({ children }) {
-      return <Heading as="h3" fontSize="sm" fontWeight="bold" lineHeight="1.4">{children}</Heading>;
+      return <Heading as="h3" fontSize="sm" fontWeight="bold">{children}</Heading>;
     },
     h4({ children }) {
       return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{children}</Heading>;
@@ -72,10 +72,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       );
     },
     ul({ children }) {
-      return <Box as="ul" pl={5} fontSize="inherit" listStyleType="disc" lineHeight="1.5">{children}</Box>;
+      return <Box as="ul" pl={5} fontSize="inherit" listStyleType="disc">{children}</Box>;
     },
     ol({ children }) {
-      return <Box as="ol" pl={5} fontSize="inherit" listStyleType="decimal" lineHeight="1.5">{children}</Box>;
+      return <Box as="ol" pl={5} fontSize="inherit" listStyleType="decimal">{children}</Box>;
     },
     li({ children }) {
       return <Box as="li" mb={0.5} fontSize="inherit" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
@@ -126,7 +126,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       }
 
       return (
-        <Code fontFamily="var(--app-font-mono)" lineHeight="inherit" px={1} bg="bg.subtle">
+        <Code fontFamily="var(--app-font-mono)" px={1} bg="bg.subtle">
           {children}
         </Code>
       );
@@ -166,10 +166,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Box as="hr" border="none" borderTop="1px solid" borderColor="border" opacity={0.6} />;
     },
     strong({ children }) {
-      return <Text as="strong" fontSize="inherit" lineHeight="inherit" fontWeight="bold">{children}</Text>;
+      return <Text as="strong" fontSize="inherit" fontWeight="bold">{children}</Text>;
     },
     em({ children }) {
-      return <Text as="em" fontSize="inherit" lineHeight="inherit" fontStyle="italic">{children}</Text>;
+      return <Text as="em" fontSize="inherit" fontStyle="italic">{children}</Text>;
     },
   }), [syntaxTheme]);
 
@@ -199,12 +199,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
         // visually larger than proportional text at the same px, so 0.9em keeps
         // it from looking oversized in prose, headings, and tables alike).
         "& :not(pre) > code": {
-          fontSize: "0.9em",
-          lineHeight: "inherit",
+          fontSize: "0.875em",
         },
         "& strong, & em, & a": {
           fontSize: "inherit",
-          lineHeight: "inherit",
         },
         "& code, & pre, & kbd, & samp": {
           fontFamily: "var(--app-font-mono)",

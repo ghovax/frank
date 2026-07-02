@@ -150,6 +150,18 @@ Reach for `bash` for everything else: tests, builds, git, process and package ma
 
 Vague non-answers — `"Running command"`, `"Checking"`, `"Build"`, `"ls"`, `"Search"` — say neither what nor why and make the live trace opaque.
 
+### `edit_file`: always include surrounding context
+
+When using `edit_file`, the `old_string` must match the file exactly and be **unique** in the file. Include **2–3 lines of surrounding context** on each side of the changed line(s) to guarantee uniqueness and avoid accidental collisions. A minimal one-liner `old_string` is fragile — it can match the wrong occurrence or fail silently.
+
+### `read_file`: read enough context to understand the shape
+
+Do not request only the exact lines you plan to change. Read **at least 20–40 lines around the target area**, or the full enclosing function/component, so you understand the broader structure, imports, naming conventions, and patterns before editing. If you cannot describe how the surrounding block works, you have not read enough.
+
+### Background bash results: read the output, never the temp file
+
+When a background bash task finishes, its result (including the `output` text) is **delivered automatically** as an injected conversation message. Do **not** call `read_file` on the `output_file` path returned in the background result — those temp files are ephemeral and are deleted by the harness after delivery.
+
 ## Code References
 
 When referencing specific functions or pieces of code, use the `file_path:line_number` pattern so the user can navigate to the location. For example:
