@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "bun run build",
+    "beforeBuildCommand": "bash ../packaging/build-sidecar.sh && bun run build",
     "frontendDist": "../out"
   },
   "app": {
@@ -18,7 +18,7 @@
         "height": 760,
         "minWidth": 720,
         "minHeight": 500,
-        "titleBarStyle": "Transparent",
+        "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }
     ],
@@ -35,6 +35,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": ["server-bin/**/*"]
   }
 }

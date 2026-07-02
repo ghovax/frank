@@ -466,8 +466,8 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" gap={6} px={4} pt={{ base: 8, md: 16 }} pb={{ base: 8, md: 24 }}>
-              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
+            <Flex direction="column" align="center" gap={6} px={4} pt={{ base: 8, md: 16 }} pb={{ base: 8, md: 12 }}>
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={8}>
                 What should we build in {currentFolderName}?
               </Text>
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />

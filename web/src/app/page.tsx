@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuHouse, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -12,6 +12,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, saveSettings, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type PermissionMode, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
+import { useTray } from "@/lib/use-tray";
+import { OPEN_LAUNCHER_EVENT } from "@/components/connection-gate";
 
 interface SessionEntry {
   sessionId: string;
@@ -384,6 +386,25 @@ function HomeContent() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
+  // Keep the native menu-bar tray's recent list in sync, and let its "New Chat"
+  // and recent-conversation entries drive the app (desktop only).
+  const trayRecents = useMemo(
+    () =>
+      sessions.slice(0, 10).map((entry) => ({
+        id: entry.sessionId,
+        title: entry.title || "New conversation",
+      })),
+    [sessions]
+  );
+  useTray({
+    recents: trayRecents,
+    onNewChat: handleNewChat,
+    onOpenSession: (sessionId) => {
+      const entry = sessions.find((candidate) => candidate.sessionId === sessionId);
+      if (entry) handleResumeSession(entry);
+    },
+  });
+
   async function handleModelChange(model: string) {
     const previous = selectedModel;
     setSelectedModel(model);
@@ -503,6 +524,20 @@ function HomeContent() {
             onPointerDown={handleHistoryResizeStart}
           />
           <Flex direction="column" gap={1.5} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
+            <Button
+              w="100%"
+              size="xs"
+              gap={1.5}
+              variant="ghost"
+              borderRadius="sm"
+              fontSize="xs"
+              color="fg.muted"
+              onClick={() => window.dispatchEvent(new Event(OPEN_LAUNCHER_EVENT))}
+              title="Back to the connection screen"
+            >
+              <LuHouse size={12} />
+              Home
+            </Button>
             <Button
               w="100%"
               size="xs"

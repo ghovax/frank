@@ -334,6 +334,15 @@ export function ChatInput({
       colorPalette: "red",
     },
   }[permissionMode];
+  // Short label for the composer's permission chip — the full descriptive labels
+  // ("User-configured permissions", …) stay in the dropdown, but the trigger only
+  // needs a word so the bottom row doesn't sprawl and wrap.
+  const permissionShortLabel = {
+    default: "Default",
+    auto: "Auto",
+    read_only: "Read-only",
+    bypass: "Bypass",
+  }[permissionMode];
   const sandboxAppearance = sandboxEnabled
     ? {
         label: "Sandboxed",
@@ -930,7 +939,9 @@ export function ChatInput({
                 <Box display="flex" alignItems="center" color={permissionAppearance.color} flexShrink={0}>
                   {permissionAppearance.icon}
                 </Box>
-                <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+                  {permissionShortLabel}
+                </Text>
               </Select.Trigger>
               <Select.IndicatorGroup>
                 <Select.Indicator />
@@ -1026,7 +1037,7 @@ export function ChatInput({
                       const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
                       const choice = workspaceChoices.find((c) => c.value === item.value);
                       return (
-                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" disabled={gitModeUnavailable}>
+                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
                           <Flex align="center" gap={1.5}>
                             {choice?.icon}
                             <Text>{item.label}</Text>
@@ -1071,12 +1082,14 @@ export function ChatInput({
               variant="ghost"
               borderRadius="sm"
               h="28px"
-              px={2}
+              w="28px"
+              minW={0}
+              px={0}
               flexShrink={0}
+              title="Open folder"
               onClick={onBrowseFolder}
             >
               <LuFolder size={13} />
-              Open folder
             </Button>
           )}
           {!folderLocked ? (

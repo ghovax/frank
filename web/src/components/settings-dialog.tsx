@@ -69,7 +69,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                 and applied immediately.
               </Text>
               <Flex direction="column" gap={4}>
-                <Box maxH="260px" overflowY="auto" pr={1} display="flex" flexDir="column" gap={3}>
+                {/* overflowY:auto makes the browser clip overflow-x too, which cut off
+                    the focus ring on the sides — inner padding (with a compensating
+                    negative margin so the fields stay aligned) gives the ring room. */}
+                <Box maxH="260px" overflowY="auto" px={2} py={1} mx={-2} display="flex" flexDir="column" gap={3}>
                   <SecretField
                     label="Exa API key"
                     placeholder="xxxxxxxx-..."
