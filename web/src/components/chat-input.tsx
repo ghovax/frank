@@ -908,7 +908,7 @@ export function ChatInput({
                   <Box color="fg.muted" flexShrink={0}><LuFile size={13} /></Box>
                   <Box flex={1} minW={0}>
                     <Text fontSize="xs" fontWeight="medium" truncate title={attachment.filename}>{attachment.filename}</Text>
-                    <Text fontSize="2xs" color="fg.subtle" truncate>{attachment.mime_type} · {Math.ceil(attachment.size / 1024)} KB</Text>
+                    <Text fontSize="2xs" color="fg.subtle" truncate>{attachment.mime_type} — {Math.ceil(attachment.size / 1024)} KB</Text>
                   </Box>
                   <Button
                     size="xs"
@@ -1283,10 +1283,9 @@ export function ChatInput({
               maxW={{ base: "100%", md: "220px" }}
               title={`Project folder is locked for this session: ${currentDirectory}`}
             >
-              <Flex align="center" gap={0.5} flexShrink={0}>
+              <Box display="flex" alignItems="center" flexShrink={0} color="fg.muted">
                 <LuFolder size={13} />
-                <LuLock size={12} />
-              </Flex>
+              </Box>
               <Text fontSize="xs" fontWeight="medium" truncate>
                 {currentProjectName || "Project"}
               </Text>
