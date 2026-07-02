@@ -89,7 +89,7 @@ dots_ocr:
   mode: "local"
   endpoint: "http://127.0.0.1:8765/parse"
   api_key: ""
-  model_name: "rednote-hilab/dots.mocr"
+  model_name: "mlx-community/dots.mocr-mxfp4"
   prompt_mode: "prompt_layout_all_en"
   timeout_seconds: 900
 
