@@ -9,6 +9,7 @@ import {
   resolvePermission,
   resolveQuestion,
   fetchSessionTasks,
+  fetchSessionTasksPage,
   subscribeSessionStream,
   type A2AStreamResult,
   type A2AMessage,
@@ -19,6 +20,7 @@ import {
 } from "./api";
 import { isControlToolName, isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import type { WidgetEvent } from "@/components/widget-bridge";
+import { toaster } from "@/components/ui/toaster";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATask = A2ATaskWire;
@@ -40,6 +42,8 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
   "failed",
   "rejected",
 ]);
+
+const HISTORY_PAGE_LIMIT = 500;
 
 export interface ChatMessage {
   id: string;
@@ -286,6 +290,68 @@ function finishAgentStep(step: AgentStep, task: A2ATask | undefined): AgentStep 
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+interface FriendlyError {
+  code: string;
+  title: string;
+  message: string;
+  status?: number;
+}
+
+function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
+  const code = String(data.code ?? "turn_failed");
+  const status = typeof data.status === "number" ? data.status : undefined;
+  const fallback = (() => {
+    switch (code) {
+      case "provider_unavailable":
+        return { title: "Model temporarily unavailable", message: "The selected model provider is temporarily unavailable. Try again in a moment or switch models." };
+      case "rate_limited":
+        return { title: "Model rate limit reached", message: "The selected provider is rate limiting requests. Wait a bit or switch to another model." };
+      case "authentication_failed":
+        return { title: "Provider credentials need attention", message: "The selected provider rejected the configured credentials. Check the API key or choose another model." };
+      case "connection_failed":
+      case "network_error":
+        return { title: "Connection interrupted", message: "The model connection dropped before the turn finished. Check the connection and retry." };
+      case "server_error":
+        return { title: "Server request failed", message: "Daisy could not start the turn. Check the server log and try again." };
+      case "request_too_large":
+        return { title: "Request is too large", message: "The model could not accept this much context. Start a smaller follow-up or switch to a model with more capacity." };
+      case "request_rejected":
+        return { title: "Model rejected the request", message: "The model could not accept this turn. Adjust the request or switch models." };
+      default:
+        return { title: "Turn could not complete", message: "The turn stopped unexpectedly. The raw details were written to the server log." };
+    }
+  })();
+  return {
+    code,
+    status,
+    title: String(data.title ?? fallback.title),
+    message: String(data.message ?? fallback.message),
+  };
+}
+
+function friendlyErrorFromMessage(message: A2AMessage | undefined): FriendlyError | null {
+  for (const part of message?.parts ?? []) {
+    if (part.kind === "data" && part.data?.kind === "error") {
+      return friendlyErrorFromData(part.data);
+    }
+  }
+  return null;
+}
+
+function pushErrorMessage(state: ReduceState, error: FriendlyError): void {
+  state.lane = null;
+  state.messages = [
+    ...state.messages,
+    {
+      id: `error-${state.messages.length}`,
+      role: "error",
+      content: `${error.title} — ${error.message}`,
+      timestamp: new Date().toISOString(),
+      meta: { error },
+    },
+  ];
 }
 
 function streamedMcpResult(data: Record<string, unknown>): Record<string, unknown> {
@@ -841,9 +907,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
         );
         if (matched) break;
       }
-      // No matching tool call: drop it. Turn-level failures arrive as a generic
-      // failed status (not raw error text), and the model has already received the
-      // real error, so there is nothing user-facing to add here.
+      pushErrorMessage(state, friendlyErrorFromData(data));
       break;
     }
     case "agent_group_started":
@@ -969,6 +1033,8 @@ export function useChat(
   // offer a retry instead of showing a permanently blank conversation that only a
   // full page reload would recover.
   const [historyError, setHistoryError] = useState(false);
+  const [hasOlderHistory, setHasOlderHistory] = useState(false);
+  const [isOlderHistoryLoading, setIsOlderHistoryLoading] = useState(false);
   // Bumped to force the history-load effect to re-run (a manual retry).
   const [historyReloadNonce, setHistoryReloadNonce] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
@@ -977,6 +1043,10 @@ export function useChat(
   const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null });
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
+  const historyFragmentsRef = useRef<A2ATask[]>([]);
+  const historyPageCursorRef = useRef<number | null>(null);
+  const hasOlderHistoryRef = useRef(false);
+  const isOlderHistoryLoadingRef = useRef(false);
   const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   // Widget interactions that arrived mid-turn wait here and drain after the
   // current stream finishes. Kept separate from the user-visible text queue.
@@ -986,6 +1056,7 @@ export function useChat(
   // artifact + message; user-driven events (clicks) are never deduped.
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
+  const errorToastKeysRef = useRef<Set<string>>(new Set());
   // Tracks whether this session was running, so we do a final refresh when its
   // turn finishes (the subscribe stream closes once it is no longer running).
   const wasRunningRef = useRef(false);
@@ -1037,6 +1108,26 @@ export function useChat(
     });
   }, []);
 
+  const applyHistoryFragments = useCallback(() => {
+    const replayed = replayTasks(historyFragmentsRef.current);
+    stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage };
+    flushNow();
+  }, [flushNow]);
+
+  const notifyTurnError = useCallback((taskId: string, message: A2AMessage | undefined) => {
+    const error = friendlyErrorFromMessage(message);
+    if (!error) return;
+    const key = `${taskId || sessionIdRef.current || "turn"}:${error.code}:${error.status ?? ""}`;
+    if (errorToastKeysRef.current.has(key)) return;
+    errorToastKeysRef.current.add(key);
+    toaster.create({
+      type: "error",
+      title: error.title,
+      description: error.message,
+      closable: true,
+    });
+  }, []);
+
   // On unmount (e.g. switching sessions), close this hook's SSE connection so it
   // does not leak — a stack of orphaned streams exhausts the browser's per-host
   // connection pool and hangs later fetches. This only drops the client end; the
@@ -1078,6 +1169,7 @@ export function useChat(
     // a stale transcript after we have moved on.
     const controller = new AbortController();
     setHistoryError(false);
+    setHasOlderHistory(false);
     setIsHistoryLoading(true);
 
     // A dropped fetch (a momentary connection-pool exhaustion from switching
@@ -1089,13 +1181,15 @@ export function useChat(
     const loadHistory = async () => {
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         try {
-          const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+          const page = await fetchSessionTasksPage(initialSessionId, null, controller.signal, HISTORY_PAGE_LIMIT);
           if (cancelled) return;
-          const replayed = replayTasks(tasks);
-          stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage };
+          historyFragmentsRef.current = page.tasks;
+          historyPageCursorRef.current = page.next_before_row_id;
+          hasOlderHistoryRef.current = page.has_more;
+          setHasOlderHistory(page.has_more);
           setSessionId(initialSessionId);
           sessionIdRef.current = initialSessionId;
-          flushNow();
+          applyHistoryFragments();
           setIsHistoryLoading(false);
           return;
         } catch {
@@ -1116,7 +1210,30 @@ export function useChat(
       controller.abort();
       historyLoadedForRef.current = null;
     };
-  }, [initialSessionId, flushNow, historyReloadNonce, sessionRunning]);
+  }, [initialSessionId, applyHistoryFragments, historyReloadNonce, sessionRunning]);
+
+  const loadOlderHistory = useCallback(async () => {
+    const ctx = sessionIdRef.current;
+    const beforeRowId = historyPageCursorRef.current;
+    if (!ctx || beforeRowId == null || !hasOlderHistoryRef.current || isOlderHistoryLoadingRef.current) return;
+    isOlderHistoryLoadingRef.current = true;
+    setIsOlderHistoryLoading(true);
+    try {
+      const page = await fetchSessionTasksPage(ctx, beforeRowId, undefined, HISTORY_PAGE_LIMIT);
+      if (sessionIdRef.current !== ctx) return;
+      historyFragmentsRef.current = [...page.tasks, ...historyFragmentsRef.current];
+      historyPageCursorRef.current = page.next_before_row_id;
+      hasOlderHistoryRef.current = page.has_more;
+      setHasOlderHistory(page.has_more);
+      applyHistoryFragments();
+    } catch {
+      // Keep the already-loaded recent transcript visible; the user can trigger
+      // another older-page load by scrolling to the top again.
+    } finally {
+      isOlderHistoryLoadingRef.current = false;
+      setIsOlderHistoryLoading(false);
+    }
+  }, [applyHistoryFragments]);
 
   // Live updates for a session that is running on the server but is not being
   // driven by this hook (we switched back to it, or it was started elsewhere).
@@ -1187,6 +1304,10 @@ export function useChat(
   // effect from scratch (clearing the per-session guard so it actually re-fetches).
   const reloadHistory = useCallback(() => {
     historyLoadedForRef.current = null;
+    historyFragmentsRef.current = [];
+    historyPageCursorRef.current = null;
+    hasOlderHistoryRef.current = false;
+    setHasOlderHistory(false);
     setHistoryError(false);
     setIsHistoryLoading(true);
     setHistoryReloadNonce((nonce) => nonce + 1);
@@ -1230,6 +1351,9 @@ export function useChat(
           const kind = (result as { kind?: string }).kind;
           if (kind === "status-update") {
             const update = result as Extract<A2AStreamResult, { kind: "status-update" }>;
+            if (update.status?.state === "failed") {
+              notifyTurnError(update.taskId, update.status.message);
+            }
             if (update.contextId && !sessionIdRef.current) {
               sessionIdRef.current = update.contextId;
               setSessionId(update.contextId);
@@ -1281,7 +1405,7 @@ export function useChat(
         dataPart
       );
     },
-    [agent, workingDirectory, workspaceStrategy, permissionMode, flush, setQueue, acknowledgeSteering]
+    [agent, workingDirectory, workspaceStrategy, permissionMode, flush, setQueue, acknowledgeSteering, notifyTurnError]
   );
 
   useEffect(() => {
@@ -1413,6 +1537,10 @@ export function useChat(
     setTokenUsage(null);
     setSessionId(null);
     sessionIdRef.current = null;
+    historyFragmentsRef.current = [];
+    historyPageCursorRef.current = null;
+    hasOlderHistoryRef.current = false;
+    setHasOlderHistory(false);
   }, [abort]);
 
   return {
@@ -1425,7 +1553,10 @@ export function useChat(
     isStreaming,
     isHistoryLoading,
     historyError,
+    hasOlderHistory,
+    isOlderHistoryLoading,
     reloadHistory,
+    loadOlderHistory,
     send,
     sendWidgetEvent,
     abort,

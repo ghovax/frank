@@ -96,6 +96,8 @@ class SessionRecord(Base):
     # Per-session model override (provider/model id); empty means use the global
     # selected model. Persisted so resuming a session keeps its chosen model.
     model = Column(Text, default="")
+    # Per-session permission mode for future turns and frontend hydration.
+    permission_mode = Column(Text, default="default")
     created_at = Column(String, nullable=False)
 
 
@@ -353,6 +355,25 @@ def _session_model_for(context_id: str) -> str:
         database_session.close()
 
 
+def _normalize_permission_mode(mode: str) -> str:
+    return mode if mode in {"default", "auto", "read_only", "bypass"} else "default"
+
+
+def _session_permission_mode_for(context_id: str) -> str:
+    """Read a context's persisted permission mode for frontend hydration and
+    runtime rebuilds. Missing/invalid values fall back to the agent default."""
+    if _session_factory is None or not context_id:
+        return "default"
+    database_session = _session_factory()
+    try:
+        record = database_session.get(SessionRecord, context_id)
+        return _normalize_permission_mode(record.permission_mode or "default") if record is not None else "default"
+    except Exception:
+        return "default"
+    finally:
+        database_session.close()
+
+
 def _set_session_model(context_id: str, model_identifier: str) -> bool:
     """Persist a per-session model override and drop the cached runtime so the next
     turn rebuilds with the new model. Returns whether the session was found."""
@@ -376,6 +397,27 @@ def _set_session_model(context_id: str, model_identifier: str) -> bool:
         for executor in _executors.values():
             executor.reset_runtime(context_id)
     return updated
+
+
+def _set_session_permission_mode(context_id: str, mode: str) -> bool:
+    """Persist a session permission mode. Returns whether the session exists."""
+    if _session_factory is None or not context_id:
+        return False
+    normalized = _normalize_permission_mode(mode)
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(SessionRecord, context_id)
+            if record is None:
+                return False
+            record.permission_mode = normalized
+            database_session.commit()
+            return True
+        except Exception:
+            database_session.rollback()
+            return False
+        finally:
+            database_session.close()
 
 
 def _session_workspace_from_record(record: SessionRecord) -> SessionWorkspace:
@@ -403,6 +445,7 @@ def _ensure_session_workspace(
     agent: str,
     working_directory: str,
     workspace_strategy: str,
+    permission_mode: str,
     first_message: str,
 ) -> SessionWorkspace:
     assert _session_factory is not None
@@ -447,10 +490,8 @@ def _ensure_session_workspace(
                     record.workspace_error = workspace.error
                     database_session.commit()
                 return _session_workspace_from_record(record)
-            # Provisional title so the sidebar shows something immediately; an LLM-
-            # generated title replaces it shortly via _finalize_session_title. The
-            # sidebar truncates for display, so the full first line is stored.
-            title = first_message.strip().split("\n", 1)[0]
+            # Provisional title so the sidebar shows something immediately
+            title = "" # Empty title
             database_session.add(SessionRecord(
                 id=context_id,
                 agent=agent,
@@ -463,6 +504,7 @@ def _ensure_session_workspace(
                 runtime_repository_root=workspace.runtime_repository_root,
                 workspace_head=workspace.head,
                 workspace_error=workspace.error,
+                permission_mode=_normalize_permission_mode(permission_mode),
                 title=title,
                 created_at=datetime.now(timezone.utc).isoformat(),
             ))
@@ -589,6 +631,8 @@ def _ensure_session_schema(sync_engine) -> None:
         return
     existing = {column["name"] for column in inspector.get_columns("sessions")}
     additions = {
+        "model": "TEXT DEFAULT ''",
+        "permission_mode": "TEXT DEFAULT 'default'",
         "runtime_working_directory": "TEXT DEFAULT ''",
         "workspace_strategy": "TEXT DEFAULT 'none'",
         "workspace_path": "TEXT DEFAULT ''",
@@ -755,6 +799,7 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     "workspace_head": row.workspace_head or "",
                     "workspace_error": row.workspace_error or "",
                     "model": row.model or "",
+                    "permission_mode": _normalize_permission_mode(row.permission_mode or "default"),
                     "filesystem_leases": (
                         _file_lease_manager.active_for_session(row.id)
                         if _file_lease_manager is not None
@@ -814,6 +859,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         load_conversation=_load_conversation,
         save_conversation=_save_conversation,
         session_model_for=_session_model_for,
+        session_permission_mode_for=_session_permission_mode_for,
         on_stream_event=_publish_stream_event,
         file_lease_manager=_file_lease_manager,
         ensure_session_workspace=_ensure_session_workspace,
@@ -1652,6 +1698,27 @@ async def session_tasks(context_id: str):
     }
 
 
+@app.get("/sessions/{context_id}/tasks/page")
+async def session_task_page(context_id: str, before_row_id: int | None = None, limit: int = 400):
+    """A bounded replay page for fast session switching.
+
+    Returns the newest persisted task-history rows first on the initial call;
+    pass ``before_row_id`` from the previous response to load older rows. This
+    keeps long conversations interactive without waiting for the complete task
+    history to deserialize and cross the local HTTP boundary.
+    """
+    assert _task_store is not None
+    page = await _task_store.task_page_for_context(context_id, before_row_id=before_row_id, limit=limit)
+    return {
+        "tasks": [
+            task.model_dump(by_alias=True, exclude_none=True, mode="json")
+            for task in page["tasks"]
+        ],
+        "next_before_row_id": page["next_before_row_id"],
+        "has_more": page["has_more"],
+    }
+
+
 @app.get("/sessions/{context_id}/stream")
 async def session_stream(context_id: str, request: Request):
     """Live SSE stream of a session's structured parts for a non-driving viewer.
@@ -2014,9 +2081,13 @@ async def abort_tool_call(context_id: str, tool_call_id: str):
 
 @app.post("/chat/{context_id}/permissions/mode")
 async def set_permission_mode(context_id: str, request: PermissionModeRequest):
-    """Set the permission mode for a context's agent."""
+    """Set and persist the permission mode for a context's agent."""
+    persisted = await asyncio.to_thread(_set_session_permission_mode, context_id, request.mode)
+    if not persisted:
+        raise HTTPException(status_code=404, detail="Session not found.")
     updated = any(executor.set_permission_mode(context_id, request.mode) for executor in _executors.values())
-    return {"status": "updated" if updated else "not_found", "mode": request.mode}
+    _broadcaster.publish({"type": "sessions_changed"})
+    return {"status": "updated" if updated else "saved", "mode": _normalize_permission_mode(request.mode)}
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8822):

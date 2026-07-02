@@ -318,7 +318,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                                   <Flex align="center" gap={2} w="100%">
                                     <Text flex={1}>{model.label}</Text>
                                     {recentIds.has(model.value) ? (
-                                      <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>
+                                      <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
                                         Recent
                                       </Text>
                                     ) : null}
@@ -333,9 +333,8 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                                 bg="blue.subtle"
                                 color="blue.fg"
                                 fontWeight="medium"
-                                borderTop="1px solid"
                                 borderColor="border"
-                                mt={1}
+                                pt={1}
                                 _hover={{ bg: "blue.muted" }}
                               >
                                 {customModelItem.label}

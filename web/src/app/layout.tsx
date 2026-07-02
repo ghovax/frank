@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Provider } from "@/components/ui/provider";
+import { Toaster } from "@/components/ui/toaster";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
@@ -60,7 +61,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${sansFont.className} ${sansFont.variable} ${displayFont.variable} ${monoFont.variable}`} suppressHydrationWarning>
-        <Provider>{children}</Provider>
+        <Provider>
+          {children}
+          <Toaster />
+        </Provider>
       </body>
     </html>
   );

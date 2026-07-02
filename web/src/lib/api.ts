@@ -362,6 +362,7 @@ export async function fetchSessions(): Promise<{
   running?: boolean;
   awaiting_input?: boolean;
   model?: string;
+  permission_mode?: PermissionMode;
   filesystem_leases?: FilesystemLease[];
 }[]> {
   const response = await fetch(`${API_BASE}/sessions`);
@@ -385,6 +386,30 @@ export async function fetchSessionTasks(sessionId: string, signal?: AbortSignal)
   if (!response.ok) throw new Error(`Failed to load session tasks (${response.status})`);
   const data = await response.json();
   return data.tasks ?? [];
+}
+
+export interface SessionTasksPage {
+  tasks: A2ATask[];
+  next_before_row_id: number | null;
+  has_more: boolean;
+}
+
+export async function fetchSessionTasksPage(
+  sessionId: string,
+  beforeRowId?: number | null,
+  signal?: AbortSignal,
+  limit = 400
+): Promise<SessionTasksPage> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (beforeRowId != null) params.set("before_row_id", String(beforeRowId));
+  const response = await fetch(`${API_BASE}/sessions/${sessionId}/tasks/page?${params.toString()}`, { signal });
+  if (!response.ok) throw new Error(`Failed to load session task page (${response.status})`);
+  const data = await response.json();
+  return {
+    tasks: data.tasks ?? [],
+    next_before_row_id: data.next_before_row_id ?? null,
+    has_more: !!data.has_more,
+  };
 }
 
 export async function resolvePermission(
@@ -456,11 +481,12 @@ export async function browseWorkingDirectory(): Promise<{ path: string; cancelle
 }
 
 export async function setPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/permissions/mode`, {
+  const response = await fetch(`${API_BASE}/chat/${sessionId}/permissions/mode`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ mode }),
   });
+  if (!response.ok) throw new Error(`Failed to save permission mode (${response.status})`);
 }
 
 // A2A protocol types (the subset the client consumes)
@@ -471,6 +497,14 @@ export interface A2APart {
   kind: A2APartKind;
   text?: string;
   data?: Record<string, unknown>;
+}
+
+export interface A2AErrorData {
+  kind: "error";
+  code?: string;
+  title?: string;
+  message?: string;
+  status?: number;
 }
 
 export interface A2AMessage {
@@ -605,8 +639,7 @@ export function streamA2A(
   })
     .then(async (response) => {
       if (!response.ok || !response.body) {
-        const errorText = await response.text().catch(() => "Unknown error");
-        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", message: `Server error (${response.status}): ${errorText}` } }] } }, final: true });
+        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", code: "server_error", title: "Server request failed", message: "Daisy could not start the turn. Check the server log and try again.", status: response.status } }] } }, final: true });
         return;
       }
       const reader = response.body.getReader();
@@ -628,7 +661,7 @@ export function streamA2A(
     })
     .catch((error) => {
       if (error.name !== "AbortError") {
-        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", message: String(error) } }] } }, final: true });
+        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", code: "network_error", title: "Could not reach Daisy", message: "The browser lost its connection to the Daisy server. Check that the server is still running and retry." } }] } }, final: true });
       }
     })
     .finally(onDone);

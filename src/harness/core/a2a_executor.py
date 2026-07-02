@@ -20,6 +20,8 @@ import logging
 import uuid
 from typing import Awaitable, Callable, Optional
 
+from litellm import exceptions as litellm_exceptions
+
 logger = logging.getLogger(__name__)
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -155,6 +157,99 @@ def _data_part(kind: str, **fields) -> Part:
     return Part(root=DataPart(data={PART_KIND: kind, **fields}))
 
 
+def _provider_error_body(error: object) -> dict:
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        return body
+    response = getattr(error, "response", None)
+    if response is None:
+        return {}
+    try:
+        parsed = response.json()
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _provider_error_code(error: object) -> str:
+    code = getattr(error, "code", None)
+    if code:
+        return str(code)
+    body = _provider_error_body(error)
+    nested = body.get("error") if isinstance(body.get("error"), dict) else body
+    return str(nested.get("code") or "") if isinstance(nested, dict) else ""
+
+
+def _provider_status_code(error: object) -> int | None:
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+    response = getattr(error, "response", None)
+    response_status = getattr(response, "status_code", None)
+    return response_status if isinstance(response_status, int) else None
+
+
+def _safe_turn_error(error: object) -> dict[str, object]:
+    """Classify a turn-level failure without exposing raw provider/tool text."""
+    status_code = _provider_status_code(error)
+    provider_code = _provider_error_code(error)
+    fields: dict[str, object] = {}
+    if status_code is not None:
+        fields["status"] = status_code
+    if provider_code:
+        fields["providerCode"] = provider_code
+
+    if isinstance(error, litellm_exceptions.RateLimitError) or status_code == 429:
+        return {
+            **fields,
+            "code": "rate_limited",
+            "title": "Model rate limit reached",
+            "message": "The selected provider is rate limiting requests. Wait a bit or switch to another model.",
+        }
+    if isinstance(error, litellm_exceptions.AuthenticationError) or status_code in {401, 403}:
+        return {
+            **fields,
+            "code": "authentication_failed",
+            "title": "Provider credentials need attention",
+            "message": "The selected provider rejected the configured credentials. Check the API key or choose another model.",
+        }
+    if isinstance(error, litellm_exceptions.ServiceUnavailableError) or status_code in {502, 503, 504}:
+        return {
+            **fields,
+            "code": "provider_unavailable",
+            "title": "Model temporarily unavailable",
+            "message": "The selected model provider is temporarily unavailable. Try again in a moment or switch models.",
+        }
+    if isinstance(error, (litellm_exceptions.APIConnectionError, litellm_exceptions.Timeout, TimeoutError)) or status_code == 408:
+        return {
+            **fields,
+            "code": "connection_failed",
+            "title": "Connection interrupted",
+            "message": "The model connection dropped before the turn finished. Check the connection and retry.",
+        }
+    if isinstance(error, litellm_exceptions.BadRequestError) or status_code == 400:
+        request_too_large_codes = {"context_length_exceeded", "context_length_error", "input_too_large"}
+        if provider_code in request_too_large_codes:
+            return {
+                **fields,
+                "code": "request_too_large",
+                "title": "Request is too large",
+                "message": "The model could not accept this much context. Start a smaller follow-up or switch to a model with more capacity.",
+            }
+        return {
+            **fields,
+            "code": "request_rejected",
+            "title": "Model rejected the request",
+            "message": "The model could not accept this turn. Adjust the request or switch models.",
+        }
+    return {
+        **fields,
+        "code": "turn_failed",
+        "title": "Turn could not complete",
+        "message": "The turn stopped unexpectedly. The raw details were written to the server log.",
+    }
+
+
 class _TextPartBuffer:
     """Coalesce adjacent text chunks before publishing A2A task updates.
 
@@ -224,6 +319,7 @@ class HarnessAgentExecutor(AgentExecutor):
         load_conversation: Optional[callable] = None,
         save_conversation: Optional[callable] = None,
         session_model_for: Optional[callable] = None,
+        session_permission_mode_for: Optional[callable] = None,
         on_stream_event: Optional[callable] = None,
         file_lease_manager: FileLeaseManager | None = None,
         ensure_session_workspace: Optional[callable] = None,
@@ -246,6 +342,9 @@ class HarnessAgentExecutor(AgentExecutor):
         # id, or "" for the global default), so a runtime is built with the model
         # the user chose for that conversation rather than only the global default.
         self._session_model_for = session_model_for
+        # Resolves a context's persisted per-session permission mode so resumed
+        # sessions keep approval behavior after a runtime rebuild.
+        self._session_permission_mode_for = session_permission_mode_for
         # Notified (context_id, running) when a top-level turn starts/ends, so the
         # server can track which sessions are active and show a sidebar spinner.
         self._on_turn_state = on_turn_state
@@ -381,6 +480,8 @@ class HarnessAgentExecutor(AgentExecutor):
                 conversation=conversation,
                 model_override=model_override or None,
             )
+            if self._session_permission_mode_for is not None:
+                runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, context_id))
             self._runtimes[context_id] = runtime
         # A context's working directory is fixed at creation — a session stays
         # bound to the folder it was started in, so later turns never repoint it.
@@ -392,6 +493,7 @@ class HarnessAgentExecutor(AgentExecutor):
         context_id: str,
         requested_working_directory: str,
         requested_workspace_strategy: str,
+        requested_permission_mode: str,
         first_message: str,
         delegated: bool,
         metadata: dict,
@@ -420,6 +522,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 self._agent_name,
                 requested_working_directory,
                 requested_workspace_strategy,
+                requested_permission_mode,
                 first_message,
             )
         directory = requested_working_directory or ""
@@ -521,6 +624,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 context_id=task.context_id,
                 requested_working_directory=requested_working_directory,
                 requested_workspace_strategy=requested_workspace_strategy,
+                requested_permission_mode=permission_mode,
                 first_message=user_text,
                 delegated=delegated,
                 metadata=metadata,
@@ -714,20 +818,16 @@ class HarnessAgentExecutor(AgentExecutor):
             await save_runtime_conversation()
             if failed_message and not final_text.strip():
                 # failed_message carries raw, model-facing error text (e.g. a tool
-                # exception) — never leak it to the user. Surface a generic notice.
-                await updater.failed(updater.new_agent_message([_text_part(
-                    "Something went wrong and this turn could not complete."
-                )]))
+                # exception) — never leak it to the user. Surface a safe category.
+                await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(failed_message))]))
             else:
                 await updater.complete()
         except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
             await save_runtime_conversation()
-            # Log the real exception server-side for debugging, but show the user a
-            # generic message — never the raw exception text.
+            # Log the real exception server-side for debugging, but show the user
+            # only a safe category — never the raw exception text.
             logger.exception("Agent turn failed: %s", exception)
-            await updater.failed(updater.new_agent_message([_text_part(
-                "Something went wrong and this turn could not complete."
-            )]))
+            await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
         finally:
             self._aborts.pop(task.id, None)
             # Persist the conversation after a top-level turn so a later restart can

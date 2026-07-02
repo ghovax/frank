@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, saveSettings, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type ProviderOption, type RecentProject } from "@/lib/api";
+import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, saveSettings, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type PermissionMode, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
 
@@ -30,6 +30,7 @@ interface SessionEntry {
   awaitingInput: boolean;
   filesystemLeases: FilesystemLease[];
   model?: string;
+  permissionMode: PermissionMode;
 }
 
 function formatSessionTimestamp(value: string) {
@@ -76,6 +77,7 @@ function HomeContent() {
   // The globally-selected default model (from the catalog), shown on the composer
   // chip whenever there is no per-conversation override.
   const [globalModel, setGlobalModel] = useState<string>("");
+  const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyWidth, setHistoryWidth] = useState(280);
 
@@ -162,6 +164,7 @@ function HomeContent() {
         awaitingInput: session.awaiting_input ?? false,
         filesystemLeases: session.filesystem_leases ?? [],
         model: session.model ?? "",
+        permissionMode: session.permission_mode ?? "default",
       }))
     );
   }, []);
@@ -368,6 +371,7 @@ function HomeContent() {
   function handleResumeSession(entry: SessionEntry) {
     setSelectedAgent(entry.agent);
     setSelectedModel(entry.model ?? "");
+    setSelectedPermissionMode(entry.permissionMode);
     // The restoration effect rebinds the working directory to this session's
     // own persisted folder; no need to set (or re-record) it here.
     setActiveSessionId(entry.sessionId);
@@ -559,9 +563,9 @@ function HomeContent() {
                       const sessionMeta = formatSessionTimestamp(entry.createdAt);
                       const activeLease = entry.filesystemLeases[0];
                       const workspaceTitle = entry.workspaceStrategy === "worktree"
-                        ? `Session worktree: ${entry.workspaceBranch}\n${entry.runtimeWorkingDirectory}`
+                        ? entry.workspaceBranch
                         : entry.workspaceStrategy === "branch"
-                          ? `Session branch: ${entry.workspaceBranch}\n${entry.runtimeWorkingDirectory}`
+                          ? entry.workspaceBranch
                           : entry.workspaceError || "No automatic Git workspace";
 
                       return (
@@ -589,7 +593,6 @@ function HomeContent() {
                                 flexShrink={0}
                                 display="flex"
                                 alignItems="center"
-                                title={`Filesystem edit lease: ${activeLease.scope} ${activeLease.path}`}
                               >
                                 <LuPencilLine size={13} />
                               </Box>
@@ -637,6 +640,8 @@ function HomeContent() {
           agentCard={selectedCard}
           onAgentChange={handleAgentChange}
           initialSessionId={activeSessionId}
+          initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
+          onPermissionModeChange={setSelectedPermissionMode}
           sessionRunning={activeSessionRunning}
           onSessionCreated={handleSessionCreated}
           onSlashCommand={handleSlashCommand}

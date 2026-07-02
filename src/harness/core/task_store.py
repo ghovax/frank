@@ -356,6 +356,111 @@ class AppendOnlyTaskStore(TaskStore):
             tasks.append(Task.model_validate(data))
         return tasks
 
+    async def task_page_for_context(
+        self,
+        context_id: str,
+        *,
+        before_row_id: int | None = None,
+        limit: int = 400,
+    ) -> dict:
+        """A newest-first page of persisted task history for fast session replay.
+
+        The returned tasks are fragments: each has the normal A2A task shape but
+        only the history rows that fall in this page. Pages are queried newest
+        first by append-only ``row_id`` and returned oldest-to-newest within the
+        page so the client can prepend older pages and replay in chronological
+        order. The terminal ``status.message`` and artifacts are included only
+        when a fragment contains that task's newest persisted history row, which
+        prevents duplicated failed/status messages when a long task spans pages.
+        """
+        await self._ensure_initialized()
+        page_limit = max(1, min(limit, 1000))
+        async with self._engine.connect() as connection:
+            head_rows = (
+                await connection.execute(
+                    select(self._head).where(self._head.c.context_id == context_id)
+                )
+            ).mappings().all()
+            if not head_rows:
+                return {"tasks": [], "next_before_row_id": None, "has_more": False}
+
+            head_by_id = {str(row["id"]): row for row in head_rows}
+            task_ids: list[str] = []
+            for row in head_rows:
+                metadata = json.loads(row["task_metadata"]) if row["task_metadata"] else None
+                if isinstance(metadata, dict) and isinstance(metadata.get("referenceTaskIds"), list):
+                    continue
+                task_ids.append(str(row["id"]))
+            if not task_ids:
+                return {"tasks": [], "next_before_row_id": None, "has_more": False}
+
+            history_query = (
+                select(self._history.c.row_id, self._history.c.task_id, self._history.c.seq, self._history.c.message)
+                .where(self._history.c.task_id.in_(task_ids))
+                .order_by(self._history.c.row_id.desc())
+                .limit(page_limit + 1)
+            )
+            if before_row_id is not None:
+                history_query = history_query.where(self._history.c.row_id < before_row_id)
+            fetched_rows = (await connection.execute(history_query)).all()
+            has_more = len(fetched_rows) > page_limit
+            page_rows = fetched_rows[:page_limit]
+            if not page_rows:
+                return {"tasks": [], "next_before_row_id": None, "has_more": False}
+
+            first_row_by_task: dict[str, int] = {}
+            for row in page_rows:
+                task_id = str(row.task_id)
+                first_row_by_task[task_id] = min(first_row_by_task.get(task_id, int(row.row_id)), int(row.row_id))
+            page_task_ids = sorted(first_row_by_task, key=first_row_by_task.__getitem__)
+            maximum_seq_rows = (
+                await connection.execute(
+                    select(self._history.c.task_id, func.max(self._history.c.seq))
+                    .where(self._history.c.task_id.in_(page_task_ids))
+                    .group_by(self._history.c.task_id)
+                )
+            ).all()
+            maximum_seq_by_task = {str(task_id): int(maximum_seq) for task_id, maximum_seq in maximum_seq_rows if maximum_seq is not None}
+            artifact_rows = (
+                await connection.execute(
+                    select(self._artifacts.c.task_id, self._artifacts.c.artifact)
+                    .where(self._artifacts.c.task_id.in_(page_task_ids))
+                    .order_by(self._artifacts.c.task_id, self._artifacts.c.row_id)
+                )
+            ).all()
+
+        histories: dict[str, list[tuple[int, str]]] = {task_id: [] for task_id in page_task_ids}
+        include_status_message: dict[str, bool] = {task_id: False for task_id in page_task_ids}
+        for row in sorted(page_rows, key=lambda value: value.row_id):
+            task_id = str(row.task_id)
+            histories[task_id].append((int(row.row_id), row.message))
+            if int(row.seq) == maximum_seq_by_task.get(task_id):
+                include_status_message[task_id] = True
+
+        artifacts: dict[str, list[str]] = {task_id: [] for task_id in page_task_ids}
+        for task_id, artifact in artifact_rows:
+            artifacts[str(task_id)].append(artifact)
+
+        tasks: list[Task] = []
+        for task_id in page_task_ids:
+            head_row = head_by_id[task_id]
+            status = json.loads(head_row["status"])
+            if not include_status_message[task_id] and isinstance(status, dict):
+                status = {key: value for key, value in status.items() if key != "message"}
+            data = {
+                "id": task_id,
+                "context_id": head_row["context_id"],
+                "kind": head_row["kind"] or "task",
+                "status": status,
+                "metadata": json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else None,
+                "history": _compact_history([json.loads(message) for _, message in histories[task_id]]),
+                "artifacts": [json.loads(artifact) for artifact in artifacts[task_id]] or None,
+            }
+            tasks.append(Task.model_validate(data))
+
+        next_before_row_id = min(int(row.row_id) for row in page_rows)
+        return {"tasks": tasks, "next_before_row_id": next_before_row_id, "has_more": has_more}
+
     async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()
         await acquire_sqlite_write_lock()

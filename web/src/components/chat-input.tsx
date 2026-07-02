@@ -149,15 +149,6 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   const hasContext = tokenUsage.contextWindow > 0;
   const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
   const contextPercent = Math.min(100, Math.round(contextFraction * 100));
-  const title = `Context in use: ${tokenUsage.contextTokens.toLocaleString()} tokens` +
-    (hasContext ? ` of ${tokenUsage.contextWindow.toLocaleString()} (${contextPercent}% full)` : "") +
-    ` — input ${tokenUsage.contextInputTokens.toLocaleString()}, output ${tokenUsage.contextOutputTokens.toLocaleString()}` +
-    `\nSession total: ${tokenUsage.totalTokens.toLocaleString()} tokens across ${tokenUsage.modelCalls} model call${tokenUsage.modelCalls === 1 ? "" : "s"}` +
-    ` (input ${tokenUsage.inputTokens.toLocaleString()}` +
-    (tokenUsage.cacheReadTokens > 0 ? `, cache read ${tokenUsage.cacheReadTokens.toLocaleString()}` : "") +
-    `, output ${tokenUsage.outputTokens.toLocaleString()}` +
-    (tokenUsage.reasoningTokens > 0 ? `, reasoning ${tokenUsage.reasoningTokens.toLocaleString()}` : "") +
-    `)`;
   return (
     <Flex
       align="center"
@@ -170,7 +161,6 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
       bg="bg"
       color="fg.subtle"
       flexShrink={0}
-      title={title}
     >
       {hasContext && (
         <>
@@ -909,11 +899,11 @@ export function ChatInput({
               const gitModeUnavailable = choice.value !== "none" && !gitWorkspaceAvailable;
               const choiceDisabled = workspaceLocked || !onWorkspaceStrategyChange || gitModeUnavailable;
               const choiceTitle = workspaceLocked
-                ? "Workspace strategy is fixed for this chat"
+                ? "Workspace strategy cannot be changed anymore for this session"
                 : gitModeUnavailable
                   ? gitWorkspaceUnavailableLabel
                   : directoryState.repositoryRoot && choice.value !== "none"
-                    ? `Git repository: ${directoryState.repositoryRoot}`
+                    ? directoryState.repositoryRoot
                     : "Session workspace strategy";
               return (
                 <Button
@@ -1065,7 +1055,6 @@ export function ChatInput({
               bg="bg.subtle"
               color="fg.subtle"
               flexShrink={0}
-              title={`Project folder is fixed for this chat: ${currentDirectory}`}
             >
               <LuLock size={12} />
               <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">

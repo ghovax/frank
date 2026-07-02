@@ -29,6 +29,8 @@ interface ChatPanelProps {
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
+  initialPermissionMode?: PermissionMode;
+  onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
   onSessionCreated: (sessionId: string) => void;
   onSlashCommand?: (command: string) => void;
@@ -130,6 +132,8 @@ export function ChatPanel({
   agentCard,
   onAgentChange,
   initialSessionId,
+  initialPermissionMode = "default",
+  onPermissionModeChange,
   sessionRunning = false,
   onSessionCreated,
   workingDirectory,
@@ -156,8 +160,8 @@ export function ChatPanel({
   globalModel = "",
   onModelChange,
 }: ChatPanelProps) {
-  const [permissionMode, setPermissionModeState] = useState<PermissionMode>("default");
-  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
+  const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
+  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, hasOlderHistory, isOlderHistoryLoading, reloadHistory, loadOlderHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -167,6 +171,7 @@ export function ChatPanel({
   const isPinnedRef = useRef(true);
   const lastScrollTopRef = useRef(0);
   const onStreamingChangeRef = useRef(onStreamingChange);
+  const olderHistoryScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   const notifiedSessionIdRef = useRef<string | null>(null);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
@@ -192,7 +197,11 @@ export function ChatPanel({
       // Returned to the bottom — resume following new content.
       isPinnedRef.current = true;
     }
-  }, []);
+    if (container.scrollTop <= 160 && hasOlderHistory && !isOlderHistoryLoading) {
+      olderHistoryScrollAnchorRef.current = { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop };
+      void loadOlderHistory();
+    }
+  }, [hasOlderHistory, isOlderHistoryLoading, loadOlderHistory]);
 
   useEffect(() => {
     onStreamingChangeRef.current = onStreamingChange;
@@ -246,6 +255,16 @@ export function ChatPanel({
   }, [sessionId, onSessionCreated]);
 
   useLayoutEffect(() => {
+    const anchor = olderHistoryScrollAnchorRef.current;
+    if (anchor) {
+      olderHistoryScrollAnchorRef.current = null;
+      const container = scrollContainerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+        lastScrollTopRef.current = container.scrollTop;
+      }
+      return;
+    }
     scheduleScrollToBottom();
   }, [messages, queuedMessages, scheduleScrollToBottom]);
 
@@ -261,11 +280,15 @@ export function ChatPanel({
   // loaded transcript seeds its own "newest" preview rather than inheriting one
   // from the previous conversation. Render-phase prop-change adjustment (the same
   // pattern as previousActiveSteps below) rather than an effect, to stay lint-clean.
-  const [previousInitialSessionId, setPreviousInitialSessionId] = useState(initialSessionId);
-  if (initialSessionId !== previousInitialSessionId) {
-    setPreviousInitialSessionId(initialSessionId);
-    setSeenPreviewIds(new Set());
-    setActivePreviewId(null);
+  const [previousInitialSession, setPreviousInitialSession] = useState({ id: initialSessionId, permissionMode: initialPermissionMode });
+  if (initialSessionId !== previousInitialSession.id || initialPermissionMode !== previousInitialSession.permissionMode) {
+    const sessionChanged = initialSessionId !== previousInitialSession.id;
+    setPreviousInitialSession({ id: initialSessionId, permissionMode: initialPermissionMode });
+    setPermissionModeState(initialPermissionMode);
+    if (sessionChanged) {
+      setSeenPreviewIds(new Set());
+      setActivePreviewId(null);
+    }
   }
 
   useEffect(() => {
@@ -297,11 +320,13 @@ export function ChatPanel({
   async function handlePermissionModeChange(nextMode: PermissionMode) {
     const previousMode = permissionMode;
     setPermissionModeState(nextMode);
+    onPermissionModeChange?.(nextMode);
     if (!sessionId) return;
     try {
       await setPermissionMode(sessionId, nextMode);
     } catch {
       setPermissionModeState(previousMode);
+      onPermissionModeChange?.(previousMode);
     }
   }
 
@@ -443,6 +468,13 @@ export function ChatPanel({
             </Flex>
           ) : (
             <VStack ref={scrollContentRef} gap={2} align="stretch">
+              {(hasOlderHistory || isOlderHistoryLoading) && (
+                <Flex justify="center" py={1}>
+                  <Button size="2xs" variant="ghost" borderRadius="sm" loading={isOlderHistoryLoading} onClick={loadOlderHistory}>
+                    Older messages
+                  </Button>
+                </Flex>
+              )}
               <AnimatePresence initial={false}>
                 {renderedTimeline.map((item, itemIndex) => {
                   const isLastItem = itemIndex === renderedTimeline.length - 1;
