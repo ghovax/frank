@@ -234,6 +234,38 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
     }, ensure_ascii=False)
 
 
+def _utc_timestamp(datetime_value: datetime) -> str:
+    return datetime_value.isoformat()
+
+
+def _tool_timing_metadata(
+    *,
+    tool_name: str,
+    tool_call_identifier: str,
+    started_at: datetime,
+    completed_at: datetime,
+    duration_milliseconds: int,
+    background_task_identifier: str | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "tool_name": tool_name,
+        "tool_call_id": tool_call_identifier,
+        "started_at": _utc_timestamp(started_at),
+        "completed_at": _utc_timestamp(completed_at),
+        "duration_ms": duration_milliseconds,
+    }
+    if background_task_identifier:
+        metadata["background_task_identifier"] = background_task_identifier
+    return metadata
+
+
+def _model_visible_tool_result(content: str, metadata: dict[str, Any]) -> str:
+    return json.dumps({
+        "tool_metadata": metadata,
+        "result": _maybe_json(content),
+    }, ensure_ascii=False)
+
+
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
     """Return ``(workspace_root, is_git_repo)``. Walks up from the working
     directory for a ``.git`` marker; if found the workspace root is the repo
@@ -412,6 +444,7 @@ class BackgroundKind:
 @dataclass(frozen=True)
 class PendingBackgroundMessage:
     tool_call_id: str
+    scheduled_at: datetime
 
 
 @dataclass(frozen=True)
@@ -419,6 +452,8 @@ class BackgroundCompletion:
     tool_name: str
     task_identifier: str
     result: str
+    started_at: datetime
+    completed_at: datetime
     pending_message: PendingBackgroundMessage | None = None
 
 
@@ -452,18 +487,21 @@ class BackgroundTaskManager:
             tool_name: [] for tool_name in BACKGROUND_KINDS
         }
         self._pending_messages: dict[str, PendingBackgroundMessage] = {}
+        self._started_at: dict[str, datetime] = {}
 
     def track(self, tool_name: str, task_identifier: str) -> None:
         if not task_identifier:
             return
         self._tracked_ids.setdefault(tool_name, set()).add(task_identifier)
         self._completed_results.setdefault(tool_name, [])
+        self._started_at.setdefault(task_identifier, datetime.now(timezone.utc))
 
     def bind_model_message(self, task_identifier: str, tool_call_id: str) -> None:
         if not task_identifier:
             return
         self._pending_messages[task_identifier] = PendingBackgroundMessage(
             tool_call_id=tool_call_id,
+            scheduled_at=datetime.now(timezone.utc),
         )
 
     def poll(self):
@@ -481,10 +519,14 @@ class BackgroundTaskManager:
         results = []
         for tool_name, completed in self._completed_results.items():
             for task_identifier, result in completed:
+                completed_at = datetime.now(timezone.utc)
+                started_at = self._started_at.pop(task_identifier, completed_at)
                 results.append(BackgroundCompletion(
                     tool_name=tool_name,
                     task_identifier=task_identifier,
                     result=result,
+                    started_at=started_at,
+                    completed_at=completed_at,
                     pending_message=self._pending_messages.pop(task_identifier, None),
                 ))
             completed.clear()
@@ -707,9 +749,6 @@ class AgentRuntime:
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
         self._cached_system_prompt: str | None = None
-        # Distilled pointers re-injected every turn (via _build_dynamic_context)
-        # so the model keeps the highest-signal rules in focus near its reply.
-        self._turn_reminders: str | None = None
         self._task_manager = TaskManager()
         self._active_goal: str = ""
         self._execution_history: list[dict] = []
@@ -970,7 +1009,7 @@ class AgentRuntime:
             pass
 
     def _record_event(self, event_type: str, data: dict) -> None:
-        record = {"type": event_type, **data}
+        record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}
         self._execution_history.append(record)
         if self._on_record_event:
             self._on_record_event(event_type, data)
@@ -1020,13 +1059,24 @@ class AgentRuntime:
 
     def _build_dynamic_context(self) -> str:
         """Build the dynamic context injected at the end of the message list."""
-        if self._turn_reminders is None:
-            self._turn_reminders = self._prompt_loader.load("turn_reminders", {}).strip()
+        current_datetime = datetime.now(timezone.utc)
+        current_timestamp = current_datetime.strftime("%Y-%m-%d %H:%M:%S UTC")
+        turn_metadata = {
+            "current_timestamp": current_timestamp,
+            "current_timestamp_iso": current_datetime.isoformat(),
+            "timezone": "UTC",
+            "working_directory": self._working_directory or str(Path.cwd()),
+            "project_directory": self._project_directory,
+            "session_id": self._session_id,
+            "agent_name": self._agent_configuration.name,
+            "is_sub_agent": self._is_sub_agent,
+        }
+        turn_reminders = self._prompt_loader.load("turn_reminders", {
+            "turn_metadata": json.dumps(turn_metadata, sort_keys=True),
+        }).strip()
         parts = []
-        if self._turn_reminders:
-            parts.append(self._turn_reminders)
-        current_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        parts.append(f"Current time: {current_time}")
+        if turn_reminders:
+            parts.append(turn_reminders)
         parts.append(json.dumps({"pwd": self._working_directory or str(Path.cwd())}))
         if self._active_goal:
             parts.append(json.dumps({"active_goal": self._active_goal}))
@@ -1051,6 +1101,17 @@ class AgentRuntime:
                 completion.result,
                 code=f"{completion.tool_name}_result_truncated",
             )
+            duration_milliseconds = int((completion.completed_at - completion.started_at).total_seconds() * 1000)
+            background_metadata = _tool_timing_metadata(
+                tool_name=completion.tool_name,
+                tool_call_identifier=completion.pending_message.tool_call_id if completion.pending_message else "",
+                started_at=completion.started_at,
+                completed_at=completion.completed_at,
+                duration_milliseconds=duration_milliseconds,
+                background_task_identifier=completion.task_identifier,
+            )
+            if completion.pending_message:
+                background_metadata["scheduled_tool_message_at"] = _utc_timestamp(completion.pending_message.scheduled_at)
             # Append-only: the scheduled placeholder ToolMessage stays put and the
             # result lands as a *new* message. Rewriting the placeholder in place
             # would change the conversation mid-stream and invalidate the provider's
@@ -1060,10 +1121,9 @@ class AgentRuntime:
             self._conversation.append(SystemMessage(
                 content=json.dumps({
                     "type": "background_result",
-                    "tool": completion.tool_name,
-                    "task_identifier": completion.task_identifier,
-                    "result": capped_result,
-                }),
+                    "tool_metadata": background_metadata,
+                    "result": _maybe_json(capped_result),
+                }, ensure_ascii=False),
             ))
             events.append(StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
@@ -1085,6 +1145,12 @@ class AgentRuntime:
             self._record_message("tool", json.dumps(tool_call_entry.get("args", {})), tool_call_entry.get("name", ""))
         for tool_result_entry in tool_results:
             self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
+        if final_response:
+            self._record_event("assistant_response_completed", {
+                "content_characters": len(final_response),
+                "tool_call_count": len(tool_calls),
+                "tool_result_count": len(tool_results),
+            })
         self._record_message("ai", final_response)
 
     async def _drain_steering_messages(self) -> list[StreamEvent]:
@@ -1368,8 +1434,18 @@ class AgentRuntime:
                 content = outcome.get("content", "")
                 if not content:
                     content = "(interrupted)" if self._abort_event.is_set() else ""
+                model_visible_content = _model_visible_tool_result(
+                    content,
+                    outcome.get("metadata") or _tool_timing_metadata(
+                        tool_name=tool_call_data.get("name", ""),
+                        tool_call_identifier=tool_call_identifier,
+                        started_at=datetime.now(timezone.utc),
+                        completed_at=datetime.now(timezone.utc),
+                        duration_milliseconds=0,
+                    ),
+                )
                 self._conversation.append(
-                    ToolMessage(content=content, tool_call_id=tool_call_identifier)
+                    ToolMessage(content=model_visible_content, tool_call_id=tool_call_identifier)
                 )
                 background_task_identifier = outcome.get("background_task_identifier")
                 if background_task_identifier:
@@ -1447,6 +1523,8 @@ class AgentRuntime:
         tool_name = tool_call_data["name"]
         tool_arguments = tool_call_data["args"]
         tool_call_identifier = tool_call_data["id"]
+        started_at = datetime.now(timezone.utc)
+        started_monotonic = time.monotonic()
 
         yield StreamEvent(
             StreamEvent.Type.TOOL_CALL,
@@ -1454,7 +1532,12 @@ class AgentRuntime:
             arguments=tool_arguments,
             id=tool_call_identifier,
         )
-        turn_tool_calls_log.append({"name": tool_name, "arguments": tool_arguments})
+        turn_tool_calls_log.append({
+            "name": tool_name,
+            "arguments": tool_arguments,
+            "tool_call_id": tool_call_identifier,
+            "started_at": _utc_timestamp(started_at),
+        })
 
         result_content: str = ""
         background_task_identifier: str | None = None
@@ -1521,10 +1604,22 @@ class AgentRuntime:
             )
             turn_tool_results_log.append({"name": tool_name, "result": result_content})
 
+        completed_at = datetime.now(timezone.utc)
+        duration_milliseconds = int((time.monotonic() - started_monotonic) * 1000)
+        timing_metadata = _tool_timing_metadata(
+            tool_name=tool_name,
+            tool_call_identifier=tool_call_identifier,
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_milliseconds=duration_milliseconds,
+            background_task_identifier=background_task_identifier,
+        )
+
         outcomes[tool_call_identifier] = {
             "content": result_content,
             "background_task_identifier": background_task_identifier,
             "denied_commands": denied_commands,
+            "metadata": timing_metadata,
         }
 
     async def _drain_tools_concurrently(

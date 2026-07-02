@@ -340,12 +340,12 @@ function friendlyErrorFromMessage(message: A2AMessage | undefined): FriendlyErro
   return null;
 }
 
-function pushErrorMessage(state: ReduceState, error: FriendlyError): void {
+function pushErrorMessage(state: ReduceState, error: FriendlyError, sourceId?: string): void {
   state.lane = null;
   state.messages = [
     ...state.messages,
     {
-      id: `error-${state.messages.length}`,
+      id: stableMessageId(state, "error", sourceId),
       role: "error",
       content: `${error.title} — ${error.message}`,
       timestamp: new Date().toISOString(),
@@ -554,6 +554,27 @@ interface ReduceState {
   tasks: ChatTask[];
   lane: string | null; // id of the open assistant prose block, if any
   tokenUsage: TokenUsage | null; // latest cumulative token totals, if any reported
+  // Per-source occurrence counter so every rendered message gets a key derived
+  // from the stable server messageId (not its array position). This is what lets
+  // older pages prepend without re-keying — and thus without remounting/re-animating
+  // — the messages already on screen.
+  keyCounts: Map<string, number>;
+}
+
+function newReduceState(): ReduceState {
+  return { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null, keyCounts: new Map() };
+}
+
+// A stable, position-independent id for a rendered message. Derived from the
+// originating A2A messageId plus an occurrence counter (a single message can open
+// more than one prose lane, e.g. text → tool call → text), so re-replaying the
+// transcript with older pages prepended keeps every existing key byte-identical.
+// Falls back to a position-based id only when no messageId is available.
+function stableMessageId(state: ReduceState, prefix: string, sourceId: string | undefined): string {
+  if (!sourceId) return `${prefix}-pos-${state.messages.length}`;
+  const seen = state.keyCounts.get(sourceId) ?? 0;
+  state.keyCounts.set(sourceId, seen + 1);
+  return `${prefix}-${sourceId}-${seen}`;
 }
 
 function asChatTask(value: unknown): ChatTask | null {
@@ -691,11 +712,11 @@ function messageMatchesToolEvent(message: ChatMessage, name: string, toolCallId:
   return event ? isSameToolEvent(event, name, toolCallId) : false;
 }
 
-function pushAssistantText(state: ReduceState, text: string): void {
+function pushAssistantText(state: ReduceState, text: string, sourceId?: string): void {
   if (!text) return;
   finishRunningThinking(state);
   if (state.lane === null) {
-    const id = `assistant-${state.messages.length}`;
+    const id = stableMessageId(state, "asst", sourceId);
     state.lane = id;
     state.messages = [...state.messages, { id, role: "assistant", content: text, timestamp: new Date().toISOString() }];
   } else {
@@ -711,18 +732,18 @@ function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   state.lane = null;
   state.messages = [
     ...state.messages,
-    { id: `user-${state.messages.length}`, role: "user", content: text, timestamp: new Date().toISOString() },
+    { id: stableMessageId(state, "user", message.messageId), role: "user", content: text, timestamp: new Date().toISOString() },
   ];
 }
 
 function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
   for (const part of message.parts ?? []) {
     if (part.kind === "text") {
-      pushAssistantText(state, part.text ?? "");
+      pushAssistantText(state, part.text ?? "", message.messageId);
       continue;
     }
     if (part.kind !== "data" || !part.data) continue;
-    reduceDataPart(state, part.data);
+    reduceDataPart(state, part.data, message.messageId);
   }
 }
 
@@ -735,7 +756,7 @@ function steeringText(message: A2AMessage | undefined): string {
   return "";
 }
 
-function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void {
+function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
   const kind = String(data.kind ?? "");
   switch (kind) {
     case "steering": {
@@ -744,7 +765,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
       state.lane = null;
       state.messages = [
         ...state.messages,
-        { id: `user-${state.messages.length}`, role: "user", content: text, timestamp: new Date().toISOString() },
+        { id: stableMessageId(state, "user", sourceId), role: "user", content: text, timestamp: new Date().toISOString() },
       ];
       break;
     }
@@ -907,7 +928,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>): void
         );
         if (matched) break;
       }
-      pushErrorMessage(state, friendlyErrorFromData(data));
+      pushErrorMessage(state, friendlyErrorFromData(data), sourceId);
       break;
     }
     case "agent_group_started":
@@ -984,11 +1005,11 @@ function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, 
 // Reconstruct messages + agentGroups from a session's persisted A2A tasks. The
 // history arrives already compacted server-side (adjacent same-kind deltas merged),
 // so it is reduced as-is — no client-side compaction pass.
-function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[]; tokenUsage: TokenUsage | null } {
+function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[]; tokenUsage: TokenUsage | null; keyCounts: Map<string, number> } {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
-  const state: ReduceState = { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null };
+  const state: ReduceState = newReduceState();
   for (const task of mainTasks) {
     state.lane = null;
     // A task's full message stream is its history PLUS its trailing status
@@ -1008,7 +1029,7 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       else reduceAgentMessage(state, message);
     }
   }
-  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks, tokenUsage: state.tokenUsage };
+  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks, tokenUsage: state.tokenUsage, keyCounts: state.keyCounts };
 }
 
 export function useChat(
@@ -1017,6 +1038,7 @@ export function useChat(
   workingDirectory?: string,
   workspaceStrategy: WorkspaceStrategy = "none",
   permissionMode: PermissionMode = "default",
+  selectedModel: string = "",
   // Whether a turn is currently running on this session (from the server-tracked
   // running set). Drives the live subscribe stream when we are viewing — but not
   // driving — it.
@@ -1040,7 +1062,7 @@ export function useChat(
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
-  const stateRef = useRef<ReduceState>({ messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null });
+  const stateRef = useRef<ReduceState>(newReduceState());
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
   const historyFragmentsRef = useRef<A2ATask[]>([]);
@@ -1110,7 +1132,7 @@ export function useChat(
 
   const applyHistoryFragments = useCallback(() => {
     const replayed = replayTasks(historyFragmentsRef.current);
-    stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage };
+    stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage, keyCounts: replayed.keyCounts };
     flushNow();
   }, [flushNow]);
 
@@ -1212,28 +1234,61 @@ export function useChat(
     };
   }, [initialSessionId, applyHistoryFragments, historyReloadNonce, sessionRunning]);
 
-  const loadOlderHistory = useCallback(async () => {
+  // Transparent history fill. Once the newest page is on screen, pull every
+  // remaining older page back-to-back — no artificial delay — accumulating them in
+  // a ref WITHOUT re-rendering. A single prepend at the very end drops the whole
+  // history in at once, above the (bottom-pinned) viewport, so it lands instantly
+  // and invisibly instead of streaming page-by-page. Stable message keys (see
+  // stableMessageId) mean that one prepend leaves every on-screen message untouched
+  // — no remount, no flash, no layout shift.
+  const drainOlderHistory = useCallback(async () => {
     const ctx = sessionIdRef.current;
-    const beforeRowId = historyPageCursorRef.current;
-    if (!ctx || beforeRowId == null || !hasOlderHistoryRef.current || isOlderHistoryLoadingRef.current) return;
+    if (!ctx || isOlderHistoryLoadingRef.current) return;
+    if (historyPageCursorRef.current == null || !hasOlderHistoryRef.current) return;
+    // Never fill history over the top of a live turn: applying replayed history would
+    // rebuild state from the server transcript and drop the just-sent (not-yet-
+    // persisted) turn from view. Once the user drives this session, we leave older
+    // pages unloaded for the mount — the newest page they care about is already in.
+    if (streamedLocallyRef.current || isStreamingRef.current) return;
     isOlderHistoryLoadingRef.current = true;
     setIsOlderHistoryLoading(true);
+    let fetchedAny = false;
     try {
-      const page = await fetchSessionTasksPage(ctx, beforeRowId, undefined, HISTORY_PAGE_LIMIT);
-      if (sessionIdRef.current !== ctx) return;
-      historyFragmentsRef.current = [...page.tasks, ...historyFragmentsRef.current];
-      historyPageCursorRef.current = page.next_before_row_id;
-      hasOlderHistoryRef.current = page.has_more;
-      setHasOlderHistory(page.has_more);
-      applyHistoryFragments();
+      let cursor = historyPageCursorRef.current;
+      while (cursor != null && hasOlderHistoryRef.current) {
+        if (streamedLocallyRef.current || isStreamingRef.current) return;
+        const page = await fetchSessionTasksPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);
+        if (sessionIdRef.current !== ctx) return;
+        historyFragmentsRef.current = [...page.tasks, ...historyFragmentsRef.current];
+        historyPageCursorRef.current = page.next_before_row_id;
+        hasOlderHistoryRef.current = page.has_more;
+        cursor = page.next_before_row_id;
+        fetchedAny = true;
+      }
     } catch {
-      // Keep the already-loaded recent transcript visible; the user can trigger
-      // another older-page load by scrolling to the top again.
+      // Leave what we have loaded; the fill effect re-triggers and resumes from the
+      // last cursor since hasOlderHistoryRef is still true.
     } finally {
+      // Skip the apply if a local turn began mid-drain (guarded above too) — the
+      // fetched fragments stay in the ref, unused, rather than clobbering live state.
+      if (fetchedAny && sessionIdRef.current === ctx && !streamedLocallyRef.current && !isStreamingRef.current) {
+        setHasOlderHistory(hasOlderHistoryRef.current);
+        // One replay + render for the whole accumulated transcript.
+        applyHistoryFragments();
+      }
       isOlderHistoryLoadingRef.current = false;
       setIsOlderHistoryLoading(false);
     }
   }, [applyHistoryFragments]);
+
+  // Kick the drain once the newest page is in and settled — but not while a turn is
+  // streaming (see the clobber guard inside). Runs a single time per session (the
+  // drain clears hasOlderHistory when fully loaded); if a fetch fails mid-drain it
+  // re-triggers to resume.
+  useEffect(() => {
+    if (isHistoryLoading || isOlderHistoryLoading || isStreaming || !hasOlderHistory) return;
+    void drainOlderHistory();
+  }, [isHistoryLoading, isOlderHistoryLoading, isStreaming, hasOlderHistory, drainOlderHistory]);
 
   // Live updates for a session that is running on the server but is not being
   // driven by this hook (we switched back to it, or it was started elsewhere).
@@ -1252,7 +1307,7 @@ export function useChat(
 
     const applySnapshot = (tasks: A2ATask[]) => {
       const replayed = replayTasks(tasks);
-      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage };
+      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage, keyCounts: replayed.keyCounts };
       sessionIdRef.current = initialSessionId;
       setSessionId(initialSessionId);
       flushNow();
@@ -1402,10 +1457,11 @@ export function useChat(
         workingDirectory,
         workspaceStrategy,
         permissionMode,
+        selectedModel,
         dataPart
       );
     },
-    [agent, workingDirectory, workspaceStrategy, permissionMode, flush, setQueue, acknowledgeSteering, notifyTurnError]
+    [agent, workingDirectory, workspaceStrategy, permissionMode, selectedModel, flush, setQueue, acknowledgeSteering, notifyTurnError]
   );
 
   useEffect(() => {
@@ -1530,7 +1586,7 @@ export function useChat(
 
   const reset = useCallback(() => {
     abort();
-    stateRef.current = { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null };
+    stateRef.current = newReduceState();
     setMessages([]);
     setAgentGroups([]);
     setTasks([]);
@@ -1556,7 +1612,6 @@ export function useChat(
     hasOlderHistory,
     isOlderHistoryLoading,
     reloadHistory,
-    loadOlderHistory,
     send,
     sendWidgetEvent,
     abort,

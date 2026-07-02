@@ -446,6 +446,7 @@ def _ensure_session_workspace(
     working_directory: str,
     workspace_strategy: str,
     permission_mode: str,
+    model_identifier: str,
     first_message: str,
 ) -> SessionWorkspace:
     assert _session_factory is not None
@@ -463,6 +464,7 @@ def _ensure_session_workspace(
 
     requested_strategy = workspace_strategy if workspace_strategy in {"none", "branch", "worktree"} else ""
     strategy = requested_strategy or (_global_configuration.workspace.strategy if _global_configuration is not None else "none")
+    requested_model = (model_identifier or "").strip()
     if _workspace_manager is not None:
         workspace = _workspace_manager.prepare_sync(context_id, source_directory, strategy)
     else:
@@ -504,6 +506,7 @@ def _ensure_session_workspace(
                 runtime_repository_root=workspace.runtime_repository_root,
                 workspace_head=workspace.head,
                 workspace_error=workspace.error,
+                model=requested_model,
                 permission_mode=_normalize_permission_mode(permission_mode),
                 title=title,
                 created_at=datetime.now(timezone.utc).isoformat(),
@@ -518,6 +521,8 @@ def _ensure_session_workspace(
     # Surface the new session immediately (its first turn is already marked
     # running, so the sidebar shows it with a spinner right away).
     _publish_broadcast({"type": "sessions_changed"})
+    if requested_model:
+        _record_model_selection(requested_model)
     _schedule_session_title(context_id, first_message)
     return workspace
 

@@ -63,7 +63,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
 
     case "tool_call": {
       return (
-        <Box alignSelf="flex-start" w="100%" className="timeline-item">
+        <Box alignSelf="flex-start" w="100%">
           <ToolMessageCard message={message} onPermission={onPermission} onQuestion={onQuestion} agents={agents} activePreviewId={activePreviewId} onActivatePreview={onActivatePreview} />
         </Box>
       );

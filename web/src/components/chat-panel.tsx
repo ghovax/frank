@@ -161,17 +161,23 @@ export function ChatPanel({
   onModelChange,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, hasOlderHistory, isOlderHistoryLoading, reloadHistory, loadOlderHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
-    useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, sessionRunning);
+  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
+    useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, selectedModel, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
-  const scrollFrameRef = useRef<number | null>(null);
   // "Following" the bottom. Released the moment the user scrolls up and resumed
   // only when they return to the bottom — so auto-scroll never grabs them.
   const isPinnedRef = useRef(true);
   const lastScrollTopRef = useRef(0);
   const onStreamingChangeRef = useRef(onStreamingChange);
-  const olderHistoryScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  // Snapshot of the previous layout pass. Comparing the first key and the count
+  // tells a *top* prepend (an older page loading in) from a *bottom* append (a new
+  // turn), so the former can preserve the reader's exact viewport instead of
+  // jumping. Seeded on the first non-loading pass.
+  const scrollMetricsRef = useRef({ scrollHeight: 0, firstKey: "", count: 0 });
+  // Keys that have already been on screen — so an entrance animation plays at most
+  // once per row, and only for live-appended rows (see animatedKeys below).
+  const enteredKeysRef = useRef<Set<string>>(new Set());
   const notifiedSessionIdRef = useRef<string | null>(null);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
@@ -184,69 +190,43 @@ export function ChatPanel({
   const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
 
+  // Pinned == the viewport is at (or within a hair of) the bottom. That single
+  // fact drives everything: pinned means follow new content, unpinned means the
+  // reader has scrolled up to read history and must never be pulled back down.
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
-    const previousScrollTop = lastScrollTopRef.current;
-    lastScrollTopRef.current = container.scrollTop;
     const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
-    if (container.scrollTop < previousScrollTop - 1) {
-      // Any upward scroll releases follow mode — never pull the user back down.
-      isPinnedRef.current = false;
-    } else if (distanceFromBottom <= 8) {
-      // Returned to the bottom — resume following new content.
-      isPinnedRef.current = true;
-    }
-    if (container.scrollTop <= 160 && hasOlderHistory && !isOlderHistoryLoading) {
-      olderHistoryScrollAnchorRef.current = { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop };
-      void loadOlderHistory();
-    }
-  }, [hasOlderHistory, isOlderHistoryLoading, loadOlderHistory]);
+    isPinnedRef.current = distanceFromBottom <= 8;
+    lastScrollTopRef.current = container.scrollTop;
+  }, []);
 
   useEffect(() => {
     onStreamingChangeRef.current = onStreamingChange;
   }, [onStreamingChange]);
 
-  const scheduleScrollToBottom = useCallback(() => {
-    if (!isPinnedRef.current) return;
-    if (scrollFrameRef.current != null) return;
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      const container = scrollContainerRef.current;
-      if (!container || !isPinnedRef.current) return;
-      container.scrollTop = container.scrollHeight;
-      lastScrollTopRef.current = container.scrollTop;
-    });
-  }, []);
-
-  const forceScrollToBottom = useCallback(() => {
+  const scrollToBottom = useCallback(() => {
     isPinnedRef.current = true;
-    if (scrollFrameRef.current != null) {
-      window.cancelAnimationFrame(scrollFrameRef.current);
-      scrollFrameRef.current = null;
-    }
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      const container = scrollContainerRef.current;
-      if (!container) return;
-      container.scrollTop = container.scrollHeight;
-      lastScrollTopRef.current = container.scrollTop;
-    });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+    lastScrollTopRef.current = container.scrollTop;
+    scrollMetricsRef.current.scrollHeight = container.scrollHeight;
   }, []);
 
   const handleSend = useCallback((text: string) => {
-    forceScrollToBottom();
+    scrollToBottom();
     send(text);
-    forceScrollToBottom();
-  }, [forceScrollToBottom, send]);
+    scrollToBottom();
+  }, [scrollToBottom, send]);
 
   // A rendered widget posted an interaction back to the agent. It travels as a
   // structured turn (a typed DataPart), so just forward it intact.
   const handleWidgetEvent = useCallback((widgetEvent: WidgetEvent) => {
-    forceScrollToBottom();
+    scrollToBottom();
     sendWidgetEvent(widgetEvent);
-    forceScrollToBottom();
-  }, [forceScrollToBottom, sendWidgetEvent]);
+    scrollToBottom();
+  }, [scrollToBottom, sendWidgetEvent]);
 
   useEffect(() => {
     if (!sessionId || notifiedSessionIdRef.current === sessionId) return;
@@ -254,27 +234,50 @@ export function ChatPanel({
     onSessionCreated(sessionId);
   }, [sessionId, onSessionCreated]);
 
+  // The single owner of scroll position. It runs before paint on every content
+  // change and classifies it: a *top* prepend (an older page loading in) preserves
+  // the reader's exact viewport by the height delta; everything else (a new turn,
+  // streamed text) follows the bottom, but only while pinned. This one effect
+  // replaces the old anchor + rAF tangle that fought itself and yanked the reader.
   useLayoutEffect(() => {
-    const anchor = olderHistoryScrollAnchorRef.current;
-    if (anchor) {
-      olderHistoryScrollAnchorRef.current = null;
-      const container = scrollContainerRef.current;
-      if (container) {
-        container.scrollTop = container.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
-        lastScrollTopRef.current = container.scrollTop;
-      }
-      return;
+    const container = scrollContainerRef.current;
+    if (!container || isHistoryLoading) return;
+    const firstKey = messages.length > 0 ? messages[0].id : "";
+    const count = messages.length;
+    const previous = scrollMetricsRef.current;
+    const prepended = count > previous.count && firstKey !== previous.firstKey && previous.count > 0;
+    if (prepended) {
+      // Older messages landed above the viewport — shift down by exactly how much
+      // taller the content got, so what the reader is looking at stays fixed (and a
+      // bottom-pinned view stays pinned). This is what makes background paging
+      // invisible.
+      const delta = container.scrollHeight - previous.scrollHeight;
+      if (delta !== 0) container.scrollTop = container.scrollTop + delta;
+    } else if (isPinnedRef.current) {
+      container.scrollTop = container.scrollHeight;
     }
-    scheduleScrollToBottom();
-  }, [messages, queuedMessages, scheduleScrollToBottom]);
+    scrollMetricsRef.current = { scrollHeight: container.scrollHeight, firstKey, count };
+    lastScrollTopRef.current = container.scrollTop;
+  }, [messages, queuedMessages, isHistoryLoading]);
 
+  // Late-growing content (images, widgets, streamed text) keeps the bottom in view
+  // — but only while pinned, so a reader who scrolled up is never dragged down.
+  // Re-runs when the transcript container actually mounts (it is absent during the
+  // loading/empty states), otherwise the observer would never attach.
+  const timelineMounted = !isHistoryLoading && !historyError && messages.length > 0;
   useEffect(() => {
     const content = scrollContentRef.current;
-    if (!content) return;
-    const observer = new ResizeObserver(() => scheduleScrollToBottom());
+    const container = scrollContainerRef.current;
+    if (!content || !container) return;
+    const observer = new ResizeObserver(() => {
+      if (!isPinnedRef.current) return;
+      container.scrollTop = container.scrollHeight;
+      lastScrollTopRef.current = container.scrollTop;
+      scrollMetricsRef.current.scrollHeight = container.scrollHeight;
+    });
     observer.observe(content);
     return () => observer.disconnect();
-  }, [scheduleScrollToBottom]);
+  }, [timelineMounted]);
 
   // Reset the single-live-preview selection when the session changes, so a freshly
   // loaded transcript seeds its own "newest" preview rather than inheriting one
@@ -288,34 +291,21 @@ export function ChatPanel({
     if (sessionChanged) {
       setSeenPreviewIds(new Set());
       setActivePreviewId(null);
+      // Forget prior rows so the next session's first population seeds (no entrance
+      // animation on load) instead of treating everything as newly appended.
+      enteredKeysRef.current = new Set();
+      scrollMetricsRef.current = { scrollHeight: 0, firstKey: "", count: 0 };
+      isPinnedRef.current = true;
     }
   }
 
+  // New content is followed by the layout effect above (only while pinned); this
+  // just surfaces the streaming flag to the parent. The initial jump-to-bottom is
+  // also handled there: pinned starts true, so the first post-load pass lands at
+  // the bottom instantly.
   useEffect(() => {
-    return () => {
-      if (scrollFrameRef.current != null) {
-        window.cancelAnimationFrame(scrollFrameRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    // Follow new content only if the user is already at the bottom — starting a
-    // turn must not yank someone who has scrolled up to read earlier messages.
-    if (isStreaming) {
-      scheduleScrollToBottom();
-    }
     onStreamingChangeRef.current?.(isStreaming);
-  }, [isStreaming, scheduleScrollToBottom]);
-
-  // Scroll to bottom when history finishes loading. The layout effect on
-  // [messages] can fire before the DOM has settled after async history load,
-  // so this useEffect runs after paint, ensuring layout is final.
-  useEffect(() => {
-    if (!isHistoryLoading && messages.length > 0) {
-      forceScrollToBottom();
-    }
-  }, [isHistoryLoading, messages.length, forceScrollToBottom]);
+  }, [isStreaming]);
 
   async function handlePermissionModeChange(nextMode: PermissionMode) {
     const previousMode = permissionMode;
@@ -336,6 +326,31 @@ export function ChatPanel({
    );
   const currentFolderName = folderDisplayName(workingDirectory, recentProjects);
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
+  // Entrance animation is reserved for rows a *live turn* just appended at the
+  // bottom — never the initial load or a background history prepend, which arrive
+  // in bulk (and, for prepends, above the fold). The rule is purely positional and
+  // so immune to state-flag timing: a row animates only if its key has never been
+  // seen AND every row after it is also unseen (i.e. it is part of the trailing run
+  // of brand-new rows at the end of the list). The first population seeds the set
+  // with everything, so nothing animates on load. `enteredKeysRef` persists across
+  // renders; the panel remounts per session (page.tsx keys it), so it resets then.
+  const timelineKeys = renderedTimeline.map((item) => (item.kind === "tool_group" ? item.id : item.message.id));
+  const animatedKeys = new Set<string>();
+  if (enteredKeysRef.current.size > 0) {
+    // Not the first population: animate only the trailing run of never-seen rows.
+    for (let index = timelineKeys.length - 1; index >= 0; index -= 1) {
+      if (enteredKeysRef.current.has(timelineKeys[index])) break;
+      animatedKeys.add(timelineKeys[index]);
+    }
+  }
+  // Record every rendered key as seen (after commit), so it never re-animates on a
+  // later render or a background prepend. Idempotent, so StrictMode's double-invoke
+  // is harmless.
+  useEffect(() => {
+    for (const item of renderedTimeline) {
+      enteredKeysRef.current.add(item.kind === "tool_group" ? item.id : item.message.id);
+    }
+  }, [renderedTimeline]);
   const activeToolCount = messages.filter((message) =>
     message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
@@ -437,7 +452,7 @@ export function ChatPanel({
     <WidgetEventProvider onEvent={handleWidgetEvent}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
-        <Box ref={scrollContainerRef} flex={1} minH={0} overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none" }}>
+        <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none", scrollbarGutter: "stable" }}>
           {isHistoryLoading ? (
             <Flex h="100%" />
           ) : historyError ? (
@@ -467,14 +482,7 @@ export function ChatPanel({
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
-            <VStack ref={scrollContentRef} gap={2} align="stretch">
-              {(hasOlderHistory || isOlderHistoryLoading) && (
-                <Flex justify="center" py={1}>
-                  <Button size="2xs" variant="ghost" borderRadius="sm" loading={isOlderHistoryLoading} onClick={loadOlderHistory}>
-                    Older messages
-                  </Button>
-                </Flex>
-              )}
+            <VStack ref={scrollContentRef} gap={2} align="stretch" mt="auto">
               <AnimatePresence initial={false}>
                 {renderedTimeline.map((item, itemIndex) => {
                   const isLastItem = itemIndex === renderedTimeline.length - 1;
@@ -513,7 +521,7 @@ export function ChatPanel({
                   return (
                     <motion.div
                       key={key}
-                      initial={{ opacity: 0, y: 6 }}
+                      initial={animatedKeys.has(key) ? { opacity: 0, y: 6 } : false}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.18, ease: "easeOut" }}

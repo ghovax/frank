@@ -248,6 +248,8 @@ function HomeContent() {
       if (session) {
         setRestoredContext(contextKey);
         setWorkingDirectory(session.workingDirectory || homeProject?.path || "");
+        setSelectedModel(session.model ?? "");
+        setSelectedPermissionMode(session.permissionMode);
       }
     } else if (workingDirectory || homeProject) {
       // A brand-new chat inherits the working directory the user was just in —

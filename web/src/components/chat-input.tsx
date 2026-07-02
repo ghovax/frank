@@ -5,7 +5,6 @@ import {
   Button,
   createListCollection,
   Flex,
-  IconButton,
   Menu,
   Portal,
   Select,
@@ -412,6 +411,8 @@ export function ChatInput({
     : "Choose a valid working directory before using branch or worktree sessions.";
   const displayedWorkspaceStrategy =
     !workspaceLocked && gitWorkspaceUnavailable && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
+  const selectedWorkspaceChoice =
+    workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
   const workspaceStrategyValid = workspaceLocked || workspaceStrategy === "none" || gitWorkspaceAvailable;
   // The server owns each folder's display name (derived with real path tooling),
   // so the selector only ever reads names — it never parses a path itself.
@@ -894,38 +895,52 @@ export function ChatInput({
             {sandboxAppearance.label}
           </Button>
           <Flex align="center" gap={1.5} flexWrap="wrap">
-            {workspaceChoices.map((choice) => {
-              const active = displayedWorkspaceStrategy === choice.value;
-              const gitModeUnavailable = choice.value !== "none" && !gitWorkspaceAvailable;
-              const choiceDisabled = workspaceLocked || !onWorkspaceStrategyChange || gitModeUnavailable;
-              const choiceTitle = workspaceLocked
-                ? "Workspace strategy cannot be changed anymore for this session"
-                : gitModeUnavailable
+            {workspaceLocked ? (
+              <Button
+                size="xs"
+                variant="solid"
+                colorPalette={workspaceDetail?.colorPalette ?? selectedWorkspaceChoice.colorPalette}
+                borderRadius="sm"
+                fontSize="xs"
+                h="28px"
+                px={2}
+                flexShrink={0}
+                title={workspaceDetail?.title ?? "Workspace strategy for this session"}
+                disabled
+              >
+                {selectedWorkspaceChoice.icon}
+                {selectedWorkspaceChoice.label}
+              </Button>
+            ) : workspaceChoices.map((choice) => {
+                const active = displayedWorkspaceStrategy === choice.value;
+                const gitModeUnavailable = choice.value !== "none" && !gitWorkspaceAvailable;
+                const choiceDisabled = !onWorkspaceStrategyChange || gitModeUnavailable;
+                const choiceTitle = gitModeUnavailable
                   ? gitWorkspaceUnavailableLabel
                   : directoryState.repositoryRoot && choice.value !== "none"
                     ? directoryState.repositoryRoot
                     : "Session workspace strategy";
-              return (
-                <Button
-                  key={choice.value}
-                  size="xs"
-                  variant={active ? "solid" : "outline"}
-                  colorPalette={choice.colorPalette}
-                  borderRadius="sm"
-                  fontSize="xs"
-                  h="28px"
-                  px={2}
-                  flexShrink={0}
-                  aria-pressed={active}
-                  title={choiceTitle}
-                  disabled={choiceDisabled}
-                  onClick={() => onWorkspaceStrategyChange?.(choice.value)}
-                >
-                  {choice.icon}
-                  {choice.label}
-                </Button>
-              );
-            })}
+                return (
+                  <Button
+                    key={choice.value}
+                    size="xs"
+                    variant={active ? "solid" : "outline"}
+                    colorPalette={choice.colorPalette}
+                    borderRadius="sm"
+                    fontSize="xs"
+                    h="28px"
+                    px={2}
+                    flexShrink={0}
+                    aria-pressed={active}
+                    title={choiceTitle}
+                    disabled={choiceDisabled}
+                    onClick={() => onWorkspaceStrategyChange?.(choice.value)}
+                  >
+                    {choice.icon}
+                    {choice.label}
+                  </Button>
+                );
+              })}
             {!workspaceLocked && gitWorkspaceUnavailable && (
               <Flex
                 align="center"
@@ -949,45 +964,24 @@ export function ChatInput({
                 </Text>
               </Flex>
             )}
-            {workspaceLocked && workspaceDetail && workspaceDetail.label && (
-              <Flex
-                align="center"
-                gap={1.5}
-                h="28px"
-                px={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor={`${workspaceDetail.colorPalette}.muted`}
-                bg={`${workspaceDetail.colorPalette}.subtle`}
-                color={`${workspaceDetail.colorPalette}.fg`}
-                flexShrink={0}
-                maxW={{ base: "100%", md: "260px" }}
-                title={workspaceDetail.title}
-              >
-                <Box display="flex" alignItems="center" flexShrink={0}>
-                  {workspaceDetail.icon}
-                </Box>
-                <Text fontSize="xs" fontWeight="medium" truncate>
-                  {workspaceDetail.label}
-                </Text>
-              </Flex>
-            )}
           </Flex>
         </Flex>
         <Flex align="center" justify="flex-start" gap={1.5} flex={{ base: "1 1 100%", md: "0 1 auto" }} minW={0}>
-          <Button
-            size="xs"
-            variant="ghost"
-            borderRadius="sm"
-            h="28px"
-            px={2}
-            flexShrink={0}
-            disabled={folderLocked}
-            onClick={onBrowseFolder}
-          >
-            <LuFolder size={13} />
-            Open folder
-          </Button>
+          {!folderLocked && (
+            <Button
+              size="xs"
+              variant="ghost"
+              borderRadius="sm"
+              h="28px"
+              px={2}
+              flexShrink={0}
+              onClick={onBrowseFolder}
+            >
+              <LuFolder size={13} />
+              Open folder
+            </Button>
+          )}
+          {!folderLocked ? (
           <Menu.Root size="sm">
             <Menu.Trigger asChild>
               <Button
@@ -1045,20 +1039,24 @@ export function ChatInput({
               </Menu.Positioner>
             </Portal>
           </Menu.Root>
-          {folderLocked && (
+          ) : (
             <Flex
               align="center"
-              gap={1}
+              gap={1.5}
               h="28px"
               px={2}
               borderRadius="sm"
-              bg="bg.subtle"
-              color="fg.subtle"
+              border="1px solid"
+              borderColor="border"
+              bg="bg"
+              color="fg"
               flexShrink={0}
+              maxW={{ base: "100%", md: "220px" }}
+              title={currentDirectory}
             >
-              <LuLock size={12} />
-              <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-                Project cannot be changed anymore for this chat
+              <LuFolder size={13} />
+              <Text fontSize="xs" fontWeight="medium" truncate>
+                {currentProjectName || "Project"}
               </Text>
             </Flex>
           )}

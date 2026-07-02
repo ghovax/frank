@@ -133,7 +133,7 @@ export const ToolGroup = memo(function ToolGroup({
         : null;
 
   return (
-    <Box alignSelf="flex-start" w="100%" className="timeline-item">
+    <Box alignSelf="flex-start" w="100%">
       {/* Rendered as a proper card (same shell as a single ToolCall) so the group
           reads as a first-class entry in the timeline, not a bare label. The border
           tint tracks activity; the body is recessed (bg) so the nested tool cards
@@ -194,14 +194,8 @@ export const ToolGroup = memo(function ToolGroup({
               <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2} py={2} maxH="320px" overflowY="auto">
                 <Flex direction="column" gap={1.5}>
                   {tools.map((tool, index) => (
-                    <motion.div
-                      key={tool.toolCallId || `tool-${index}`}
-                      layout
-                      initial={{ opacity: 0, y: -6, scale: 0.985 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ type: "spring", stiffness: 420, damping: 30 }}
-                    >
                     <ToolCall
+                      key={tool.toolCallId || `tool-${index}`}
                       name={tool.name}
                       arguments={tool.arguments}
                       result={tool.result}
@@ -215,7 +209,6 @@ export const ToolGroup = memo(function ToolGroup({
                       activePreviewId={activePreviewId}
                       onActivatePreview={onActivatePreview}
                     />
-                    </motion.div>
                   ))}
                 </Flex>
               </Box>

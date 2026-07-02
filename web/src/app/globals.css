@@ -49,35 +49,15 @@ samp {
   }
 }
 
-.timeline-item {
-  animation: timeline-item-enter 160ms ease-out both;
-}
-
 .task-hover-root:hover .task-hover-panel,
 .task-hover-root:focus-within .task-hover-panel {
   display: block;
-}
-
-@keyframes timeline-item-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {
     color: var(--chakra-colors-fg-muted);
     background-image: none;
-    animation: none;
-  }
-
-  .timeline-item {
     animation: none;
   }
 }

@@ -69,6 +69,7 @@ export function proxyPreviewUrl(url: string): string {
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
 export const WORKSPACE_STRATEGY_METADATA_KEY = "harness/workspaceStrategy";
 export const PERMISSION_MODE_METADATA_KEY = "harness/permissionMode";
+export const SELECTED_MODEL_METADATA_KEY = "harness/selectedModel";
 
 export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
@@ -600,6 +601,7 @@ export function streamA2A(
   workingDirectory?: string,
   workspaceStrategy: WorkspaceStrategy = "none",
   permissionMode: PermissionMode = "default",
+  selectedModel: string = "",
   // Optional structured payload carried as a typed DataPart alongside (or instead
   // of) the text — e.g. a widget interaction posted back to the agent.
   dataPart?: Record<string, unknown>
@@ -619,6 +621,7 @@ export function streamA2A(
       ...(workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : {}),
       [WORKSPACE_STRATEGY_METADATA_KEY]: workspaceStrategy,
       [PERMISSION_MODE_METADATA_KEY]: permissionMode,
+      ...(selectedModel ? { [SELECTED_MODEL_METADATA_KEY]: selectedModel } : {}),
     },
   };
   if (contextId) message.contextId = contextId;

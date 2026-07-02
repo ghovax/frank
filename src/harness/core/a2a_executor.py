@@ -69,6 +69,8 @@ DELEGATED_METADATA_KEY = "harness/delegated"
 READ_ONLY_METADATA_KEY = "harness/readOnly"
 # Sets the permission mode for a top-level user turn.
 PERMISSION_MODE_METADATA_KEY = "harness/permissionMode"
+# Sets the per-session model override for a top-level user turn.
+SELECTED_MODEL_METADATA_KEY = "harness/selectedModel"
 # The delegation depth of a sub-agent call (how many hops from the chat agent).
 DEPTH_METADATA_KEY = "harness/depth"
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
@@ -426,7 +428,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # and the global default. Applied on a copy so the loaded agent config is
         # not mutated for other contexts.
         if model_override:
-            configuration = configuration.model_copy(update={"model": model_override})
+            configuration = configuration.model_copy(update={"model": model_override, "provider": None})
         runtime = AgentRuntime(
             agent_configuration=configuration,
             global_configuration=self._global_configuration,
@@ -494,6 +496,7 @@ class HarnessAgentExecutor(AgentExecutor):
         requested_working_directory: str,
         requested_workspace_strategy: str,
         requested_permission_mode: str,
+        requested_model: str,
         first_message: str,
         delegated: bool,
         metadata: dict,
@@ -523,6 +526,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 requested_working_directory,
                 requested_workspace_strategy,
                 requested_permission_mode,
+                requested_model,
                 first_message,
             )
         directory = requested_working_directory or ""
@@ -543,6 +547,7 @@ class HarnessAgentExecutor(AgentExecutor):
         requested_working_directory = str(metadata.get(WORKING_DIRECTORY_METADATA_KEY, ""))
         requested_workspace_strategy = str(metadata.get(WORKSPACE_STRATEGY_METADATA_KEY, ""))
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
+        requested_model = str(metadata.get(SELECTED_MODEL_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
 
         task = context.current_task
@@ -625,6 +630,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 requested_working_directory=requested_working_directory,
                 requested_workspace_strategy=requested_workspace_strategy,
                 requested_permission_mode=permission_mode,
+                requested_model=requested_model,
                 first_message=user_text,
                 delegated=delegated,
                 metadata=metadata,
