@@ -1,4 +1,48 @@
-const API_BASE = "http://localhost:8822";
+// Where the harness server lives. This is resolved at runtime, not baked in at
+// build time, because the desktop app can point at a local backend or a remote one
+// reached through an SSH tunnel (a configurable host:port). Resolution order:
+//   1. an explicit override set via `setApiBase` (persisted to localStorage), then
+//   2. a build-time default from NEXT_PUBLIC_DAISY_API_BASE, then
+//   3. the conventional local harness address.
+// The connection layer (profiles UI / local store) writes the override and reloads.
+const DEFAULT_API_BASE =
+  process.env.NEXT_PUBLIC_DAISY_API_BASE || "http://localhost:8822";
+const API_BASE_STORAGE_KEY = "daisy.apiBase";
+
+function readStoredApiBase(): string {
+  if (typeof window === "undefined") return DEFAULT_API_BASE;
+  try {
+    return window.localStorage.getItem(API_BASE_STORAGE_KEY) || DEFAULT_API_BASE;
+  } catch {
+    // localStorage can be unavailable in restricted contexts.
+    return DEFAULT_API_BASE;
+  }
+}
+
+let API_BASE = readStoredApiBase();
+
+// The address the client is currently talking to.
+export function getApiBase(): string {
+  return API_BASE;
+}
+
+// Point the client at a different harness server. Persists the choice so it
+// survives reloads. Callers typically reload the app afterwards so in-flight
+// streams and caches restart cleanly against the new backend.
+export function setApiBase(url: string): void {
+  const normalized = url.trim().replace(/\/+$/, "");
+  API_BASE = normalized || DEFAULT_API_BASE;
+  if (typeof window === "undefined") return;
+  try {
+    if (normalized) {
+      window.localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
+    } else {
+      window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+    }
+  } catch {
+    // Best-effort persistence; the in-memory value still applies this session.
+  }
+}
 
 type CacheEntry = {
   expiresAt: number;

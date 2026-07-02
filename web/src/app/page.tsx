@@ -471,7 +471,7 @@ function HomeContent() {
   }, [historyWidth]);
 
   return (
-    <Flex h="100dvh" minW={0}>
+    <Flex h="100dvh" minW={0} pt="var(--titlebar-height, 0px)" boxSizing="border-box">
       <AnimatePresence initial={false}>
         {historyOpen && (
           <MotionFlex
@@ -531,8 +531,8 @@ function HomeContent() {
 
           <Box flex={1} minH={0} overflowY="auto" px={2} py={2}>
             <Flex align="center" gap={1.5} mb={1.5} color="fg.muted">
-              <LuGripVertical size={12} />
-              <Text fontSize="xs" fontWeight="bold">
+              <LuGripVertical size={14} />
+              <Text fontSize="sm" fontWeight="bold">
                 Sessions
               </Text>
             </Flex>

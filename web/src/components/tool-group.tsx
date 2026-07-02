@@ -1,10 +1,12 @@
 "use client";
 
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { LuChevronDown, LuChevronRight, LuWrench } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { getToolCallDisplay } from "@/lib/tool-display";
+import { iconForFilePath } from "@/lib/file-icons";
+import { DiffStatBadge } from "./rolling-number";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
 import { ToolCall } from "./tool-call";
 
@@ -78,6 +80,42 @@ function summarizeToolGroup(tools: ToolEvent[], active: boolean): string {
   return joined.charAt(0).toUpperCase() + joined.slice(1);
 }
 
+interface FileChange {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+// Extract file paths and diff stats from tool arguments. Accumulates changes per
+// file across multiple edit_file / write_file calls in the same group.
+function extractFileChanges(tools: ToolEvent[]): FileChange[] {
+  const changes = new Map<string, FileChange>();
+  for (const tool of tools) {
+    const filePath = tool.arguments?.file_path as string | undefined;
+    if (!filePath) continue;
+    const existing = changes.get(filePath) ?? {
+      path: filePath,
+      additions: 0,
+      deletions: 0,
+    };
+    if (tool.name === "edit_file") {
+      const oldStr = (tool.arguments?.old_string as string) ?? "";
+      const newStr = (tool.arguments?.new_string as string) ?? "";
+      const oldLines = oldStr.split("\n");
+      const newLines = newStr.split("\n");
+      const oldSet = new Set(oldLines);
+      const newSet = new Set(newLines);
+      existing.deletions += oldLines.filter((line) => !newSet.has(line)).length;
+      existing.additions += newLines.filter((line) => !oldSet.has(line)).length;
+    } else if (tool.name === "write_file") {
+      const content = (tool.arguments?.content as string) ?? "";
+      existing.additions += content.split("\n").length;
+    }
+    changes.set(filePath, existing);
+  }
+  return [...changes.values()];
+}
+
 interface ToolGroupProps {
   tools: ToolEvent[];
   agents?: { id: string; name: string; title?: string }[];
@@ -115,9 +153,12 @@ export const ToolGroup = memo(function ToolGroup({
     }
   }, [tools.length, bodyOpen]);
 
-  // The header title is a category-aware summary of the whole batch (carrying the
-  // count), not the last call's label. The icon represents the first/dominant
-  // category so it matches the first phrase of the summary.
+  // Extract file changes from tool arguments for the file-centric heading. When the
+  // group includes file operations (edit_file, write_file) the heading shows the
+  // changed files with their extension icons and diff stats; other tools (bash,
+  // web_search, etc.) keep the original summary text.
+  const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
+  const hasFileChanges = fileChanges.length > 0;
   const summary = summarizeToolGroup(tools, active);
   const dominant = tools[0]
     ? getToolCallDisplay(tools[0].name, tools[0].arguments)
@@ -172,6 +213,24 @@ export const ToolGroup = memo(function ToolGroup({
           >
             {summary}
           </Text>
+          {hasFileChanges && fileChanges.length > 0 && (
+            <Flex align="center" gap={2} flexShrink={0} overflow="visible" flexWrap="wrap">
+              {fileChanges.map((file) => {
+                const FileIcon = iconForFilePath(file.path).icon;
+                return (
+                  <Flex key={file.path} align="center" gap={1.5} minW={0}>
+                    <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
+                      <FileIcon size={13} />
+                    </Box>
+                    <Text fontSize="xs" fontWeight="medium" truncate>
+                      {file.path.split("/").pop() ?? file.path}
+                    </Text>
+                    <DiffStatBadge additions={file.additions} deletions={file.deletions} />
+                  </Flex>
+                );
+              })}
+            </Flex>
+          )}
           {badge && (
             <Badge size="sm" variant="subtle" colorPalette={badge.colorPalette} borderRadius="sm" flexShrink={0}>
               {badge.label}

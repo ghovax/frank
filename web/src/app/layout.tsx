@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Provider } from "@/components/ui/provider";
 import { Toaster } from "@/components/ui/toaster";
+import { DesktopChrome } from "@/components/desktop-chrome";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
@@ -62,6 +63,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${sansFont.className} ${sansFont.variable} ${displayFont.variable} ${monoFont.variable}`} suppressHydrationWarning>
         <Provider>
+          <DesktopChrome />
           {children}
           <Toaster />
         </Provider>

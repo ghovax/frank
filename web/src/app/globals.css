@@ -6,6 +6,30 @@ body {
   padding: 0;
 }
 
+/* Native desktop titlebar. In a plain browser this is 0px so the layout is
+   unchanged; inside the Tauri app the window has a hidden/transparent titlebar
+   with native macOS traffic lights floating over the top-left, so we reserve a
+   strip of this height for dragging and keep content from hiding underneath. */
+:root {
+  --titlebar-height: 0px;
+}
+
+html[data-tauri="true"] {
+  --titlebar-height: 30px;
+}
+
+/* The draggable strip that spans the top of the window. `data-tauri-drag-region`
+   is what Tauri listens to for moving (and double-click to zoom) the window. It
+   sits above the reserved inset, so no interactive control is ever beneath it. */
+.titlebar-drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-height);
+  z-index: 1000;
+}
+
 body {
   --app-font-sans: var(--font-sans), system-ui, sans-serif;
   --app-font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

@@ -294,6 +294,16 @@ export function ChatInput({
     }),
     []
   );
+  const workspaceCollection = useMemo(
+    () => createListCollection({
+      items: [
+        { label: "Unmanaged", value: "none" },
+        { label: "Branch", value: "branch" },
+        { label: "Worktree", value: "worktree" },
+      ],
+    }),
+    []
+  );
   const permissionAppearance = {
     default: {
       icon: <LuShield size={13} />,
@@ -416,6 +426,11 @@ export function ChatInput({
     !workspaceLocked && gitWorkspaceUnavailable && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
   const selectedWorkspaceChoice =
     workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
+  const workspaceAppearance = {
+    none: { icon: <LuBan size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
+    branch: { icon: <LuGitBranch size={13} />, color: "purple.fg", bg: "purple.subtle", borderColor: "purple.muted", colorPalette: "purple" },
+    worktree: { icon: <LuGitFork size={13} />, color: "green.fg", bg: "green.subtle", borderColor: "green.muted", colorPalette: "green" },
+  }[displayedWorkspaceStrategy];
   const workspaceStrategyValid = workspaceLocked || workspaceStrategy === "none" || gitWorkspaceAvailable;
   // The server owns each folder's display name (derived with real path tooling),
   // so the selector only ever reads names — it never parses a path itself.
@@ -956,52 +971,74 @@ export function ChatInput({
             {sandboxAppearance.label}
           </Button>
           <Flex align="center" gap={1.5} flexWrap="wrap">
-            {workspaceLocked ? (
-              <Button
-                size="xs"
-                variant="solid"
-                colorPalette={workspaceDetail?.colorPalette ?? selectedWorkspaceChoice.colorPalette}
-                borderRadius="sm"
-                fontSize="xs"
-                h="28px"
-                px={2}
-                flexShrink={0}
-                title={workspaceDetail?.title ?? "Workspace strategy for this session"}
-                disabled
-              >
-                {selectedWorkspaceChoice.icon}
-                {selectedWorkspaceChoice.label}
-              </Button>
-            ) : workspaceChoices.map((choice) => {
-                const active = displayedWorkspaceStrategy === choice.value;
-                const gitModeUnavailable = choice.value !== "none" && !gitWorkspaceAvailable;
-                const choiceDisabled = !onWorkspaceStrategyChange || gitModeUnavailable;
-                const choiceTitle = gitModeUnavailable
-                  ? gitWorkspaceUnavailableLabel
-                  : directoryState.repositoryRoot && choice.value !== "none"
-                    ? directoryState.repositoryRoot
-                    : "Session workspace strategy";
-                return (
-                  <Button
-                    key={choice.value}
-                    size="xs"
-                    variant={active ? "solid" : "outline"}
-                    colorPalette={choice.colorPalette}
-                    borderRadius="sm"
-                    fontSize="xs"
-                    h="28px"
-                    px={2}
-                    flexShrink={0}
-                    aria-pressed={active}
-                    title={choiceTitle}
-                    disabled={choiceDisabled}
-                    onClick={() => onWorkspaceStrategyChange?.(choice.value)}
-                  >
-                    {choice.icon}
-                    {choice.label}
-                  </Button>
-                );
-              })}
+            <Select.Root
+              collection={workspaceCollection}
+              value={[displayedWorkspaceStrategy]}
+              onValueChange={(details) => {
+                const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
+                if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
+              }}
+              size="xs"
+              w="max-content"
+              minW="max-content"
+              maxW="none"
+              flexShrink={0}
+            >
+              <Select.Control w="max-content" minW="max-content" maxW="none">
+                <Select.Trigger
+                  w="max-content"
+                  borderRadius="sm"
+                  fontSize="xs"
+                  gap={1.5}
+                  px={2}
+                  pe={7}
+                  bg={workspaceAppearance.bg}
+                  border="1px solid"
+                  borderColor={workspaceAppearance.borderColor}
+                  colorPalette={workspaceAppearance.colorPalette}
+                  minW="max-content"
+                  maxW="none"
+                  whiteSpace="nowrap"
+                  fontWeight="medium"
+                  disabled={workspaceLocked}
+                  title={
+                    workspaceLocked
+                      ? workspaceDetail?.title ?? "Workspace strategy for this session"
+                      : directoryState.repositoryRoot && displayedWorkspaceStrategy !== "none"
+                        ? directoryState.repositoryRoot
+                        : "Session workspace strategy"
+                  }
+                  style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
+                >
+                  <Box display="flex" alignItems="center" color={workspaceAppearance.color} flexShrink={0}>
+                    {workspaceAppearance.icon}
+                  </Box>
+                  <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                </Select.Trigger>
+                <Select.IndicatorGroup>
+                  <Select.Indicator />
+                </Select.IndicatorGroup>
+              </Select.Control>
+              <Portal>
+                <Select.Positioner>
+                  <Select.Content borderRadius="sm" minW="max-content" w="max-content">
+                    {workspaceCollection.items.map((item) => {
+                      const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
+                      const choice = workspaceChoices.find((c) => c.value === item.value);
+                      return (
+                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" disabled={gitModeUnavailable}>
+                          <Flex align="center" gap={1.5}>
+                            {choice?.icon}
+                            <Text>{item.label}</Text>
+                          </Flex>
+                          <Select.ItemIndicator />
+                        </Select.Item>
+                      );
+                    })}
+                  </Select.Content>
+                </Select.Positioner>
+              </Portal>
+            </Select.Root>
             {!workspaceLocked && gitWorkspaceUnavailable && (
               <Flex
                 align="center"
@@ -1113,9 +1150,12 @@ export function ChatInput({
               color="fg"
               flexShrink={0}
               maxW={{ base: "100%", md: "220px" }}
-              title={currentDirectory}
+              title={`Project folder is locked for this session: ${currentDirectory}`}
             >
-              <LuFolder size={13} />
+              <Flex align="center" gap={0.5} flexShrink={0}>
+                <LuFolder size={13} />
+                <LuLock size={12} />
+              </Flex>
               <Text fontSize="xs" fontWeight="medium" truncate>
                 {currentProjectName || "Project"}
               </Text>

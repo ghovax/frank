@@ -96,12 +96,12 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
   const isHomeFolder = !workingDirectory || workingDirectory === homeDirectory;
 
   return (
-    <Box w="100%" maxW="640px" mx="auto">
+    <Box w="100%" maxW="640px" mx="auto" pb={4}>
       {hasSkills && (
         <>
           <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuListChecks size={13} />
-            <Text fontSize="xs" fontWeight="bold">Skills</Text>
+            <LuListChecks size={15} />
+            <Text fontSize="sm" fontWeight="bold">Skills</Text>
           </Flex>
           <Box mb={2} color="fg.muted">
             <Text fontSize="xs">Capabilities available to assist with your tasks.</Text>
@@ -122,8 +122,8 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
       {hasTools && (
         <Box mt={hasSkills ? 5 : 0}>
           <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuWrench size={13} />
-            <Text fontSize="xs" fontWeight="bold">Tools</Text>
+            <LuWrench size={15} />
+            <Text fontSize="sm" fontWeight="bold">Tools</Text>
           </Flex>
           <Box mb={2} color="fg.muted">
             <Text fontSize="xs">External tools the agent can call, exposed by the configured MCP servers and grouped by server.</Text>

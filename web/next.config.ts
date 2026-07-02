@@ -1,6 +1,24 @@
 import type { NextConfig } from "next";
 
+// The desktop app (Tauri) bundles the UI as a static export — Tauri serves the
+// pre-built `out/` directory and cannot run a Node server, so SSR/route handlers
+// are off. The UI is already a pure client-side SPA (all data comes from the
+// harness server over HTTP/SSE), so static export changes nothing at runtime.
+const isProduction = process.env.NODE_ENV === "production";
+// Tauri sets TAURI_DEV_HOST when serving the dev UI to a device on the LAN
+// (e.g. mobile); assets must then resolve against that host rather than localhost.
+// DAISY_PORT lets a developer run the dev server on a different port (default
+// 3000); assets must use the same port the server is bound to.
+const internalHost = process.env.TAURI_DEV_HOST || "localhost";
+const devPort = process.env.DAISY_PORT || "3000";
+
 const nextConfig: NextConfig = {
+  output: "export",
+  // next/image optimization needs a server; static export requires unoptimized.
+  images: {
+    unoptimized: true,
+  },
+  assetPrefix: isProduction ? undefined : `http://${internalHost}:${devPort}`,
   experimental: {
     optimizePackageImports: ["@chakra-ui/react"],
   },

@@ -199,7 +199,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
         // visually larger than proportional text at the same px, so 0.9em keeps
         // it from looking oversized in prose, headings, and tables alike).
         "& :not(pre) > code": {
-          fontSize: "0.875em",
+          fontSize: "0.9125em",
         },
         "& strong, & em, & a": {
           fontSize: "inherit",

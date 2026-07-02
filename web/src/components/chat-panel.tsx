@@ -398,18 +398,13 @@ export function ChatPanel({
     setPreviewPanelOpen(true);
   }, []);
 
-  // The live "Thinking" / "Working through N tool calls" label shown beside the
-  // toolbar. It stays present through quick reasoning/tool/reasoning transitions,
-  // so the input bar reads as one continuous active turn instead of blinking.
+  // The live "Thinking" label shown beside the toolbar while the agent is
+  // reasoning (no assistant text yet and no tool calls active). It stays
+  // present through quick reasoning/tool/reasoning transitions, so the input
+  // bar reads as one continuous active turn instead of blinking.
   const lastMessage = messages[messages.length - 1];
   const isAssistantStreaming = !!lastMessage && lastMessage.role === "assistant";
-  const liveStatusLabel = !isStreaming
-    ? null
-    : activeToolCount > 0
-      ? `Working through ${activeToolCount} ${activeToolCount === 1 ? "tool call" : "tool calls"}`
-      : isAssistantStreaming
-        ? null
-        : "Thinking";
+  const liveStatusLabel = !isStreaming || isAssistantStreaming ? null : "Thinking";
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
   // client-side after a change) rather than in an effect.
@@ -471,8 +466,8 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} my={12}>
-              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={4}>
+            <Flex direction="column" align="center" gap={6} px={4} pt={{ base: 8, md: 16 }} pb={{ base: 8, md: 24 }}>
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
                 What should we build in {currentFolderName}?
               </Text>
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />

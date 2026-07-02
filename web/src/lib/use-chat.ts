@@ -1254,7 +1254,7 @@ export function useChat(
     setIsOlderHistoryLoading(true);
     let fetchedAny = false;
     try {
-      let cursor = historyPageCursorRef.current;
+      let cursor: number | null = historyPageCursorRef.current;
       while (cursor != null && hasOlderHistoryRef.current) {
         if (streamedLocallyRef.current || isStreamingRef.current) return;
         const page = await fetchSessionTasksPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);

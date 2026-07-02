@@ -1,0 +1,3 @@
+# Rust build output and Tauri-generated code/schemas.
+/target
+/gen/schemas
