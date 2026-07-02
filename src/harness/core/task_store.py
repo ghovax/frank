@@ -32,6 +32,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Column,
+    DateTime,
     Integer,
     MetaData,
     String,

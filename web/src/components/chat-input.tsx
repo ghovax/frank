@@ -13,7 +13,7 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { SettingsDialog } from "./settings-dialog";
@@ -303,7 +303,7 @@ export function ChatInput({
       colorPalette: undefined,
     },
     auto: {
-      icon: <LuScan size={13} />,
+      icon: <LuZap size={13} />,
       color: "blue.fg",
       bg: "blue.subtle",
       borderColor: "blue.muted",
