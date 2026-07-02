@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ModelSelect } from "./model-select";
+import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 
@@ -586,6 +587,7 @@ export function ChatInput({
           empty state when there is no activity yet. */}
       <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5 }} flexWrap="wrap" px={2} pt={2}>
         <Flex align="center" gap={{ base: 1.5 }} flexShrink={0}>
+          <ConnectionSwitcher />
           {onToggleHistory && (
             <Button
               size="xs"

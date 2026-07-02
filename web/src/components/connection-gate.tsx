@@ -13,6 +13,7 @@ import { toaster } from "@/components/ui/toaster";
 import {
   activateConnection,
   checkConnection,
+  getLastTargetId,
   LOCAL_DEFAULT_URL,
   LOCAL_TARGET_ID,
   startLocalServer,
@@ -28,15 +29,32 @@ import {
 
 type Phase = "init" | "launcher" | "connecting" | "connected";
 
-// Event the status pill dispatches to reopen the launcher over a live session.
+// Event that reopens the launcher (home view) over a live session — dispatched by
+// the sidebar Home button and the connection switcher's "Connection settings".
 export const OPEN_LAUNCHER_EVENT = "daisy:open-launcher";
+
+// Event that asks the gate to switch to a specific target (LOCAL_TARGET_ID or a
+// saved connection's id) — dispatched by the connection switcher's menu entries.
+export const CONNECT_TO_EVENT = "daisy:connect-to";
+
+// Marks that the imminent reload is a deliberate connection switch (not a fresh
+// launch), so the reloaded gate auto-connects to the just-chosen backend instead of
+// returning to the launcher. A fresh launch has no flag and shows the launcher.
+const RECONNECT_FLAG = "daisy.reconnect";
+
+function reloadIntoConnection(): void {
+  try {
+    sessionStorage.setItem(RECONNECT_FLAG, "1");
+  } catch {
+    // best-effort; without it the reload simply lands on the launcher
+  }
+  window.location.reload();
+}
 
 export function ConnectionGate({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<Phase>("init");
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [statusLabel, setStatusLabel] = useState("Connecting…");
-  // The name of the backend currently connected — shown in the titlebar pill.
-  const [connectedLabel, setConnectedLabel] = useState("This machine");
   // The target ("local" or a profile id) whose last attempt failed, so its button
   // can offer a retry. Errors themselves surface as toasts, not inline.
   const [failedTarget, setFailedTarget] = useState<string | null>(null);
@@ -84,7 +102,6 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       }
       setFailedTarget(null);
       await activateConnection(url, LOCAL_TARGET_ID);
-      setConnectedLabel("This machine");
       if (wasConnectedRef.current) window.location.reload();
       else setPhase("connected");
     } catch (caught) {
@@ -103,7 +120,6 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       }
       setFailedTarget(null);
       await activateConnection(profile.url, profile.id, profile.id);
-      setConnectedLabel(profile.name);
       if (wasConnectedRef.current) window.location.reload();
       else setPhase("connected");
     } catch (caught) {
@@ -137,6 +153,27 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(OPEN_LAUNCHER_EVENT, open);
   }, [refreshConnections]);
 
+  // Switch to a specific backend from the connection switcher, without a detour
+  // through the launcher. Reconnecting a live session reloads on success.
+  useEffect(() => {
+    const onConnectTo = (event: Event) => {
+      const targetId = (event as CustomEvent<string>).detail;
+      wasConnectedRef.current = true;
+      if (targetId === LOCAL_TARGET_ID) {
+        void connectLocal();
+        return;
+      }
+      void listConnections()
+        .then((saved) => {
+          const profile = saved.find((entry) => entry.id === targetId);
+          if (profile) void connectRemote(profile);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener(CONNECT_TO_EVENT, onConnectTo as EventListener);
+    return () => window.removeEventListener(CONNECT_TO_EVENT, onConnectTo as EventListener);
+  }, [connectLocal, connectRemote]);
+
   const handleAddConnection = useCallback(async () => {
     const name = newName.trim();
     const url = newUrl.trim().replace(/\/+$/, "");
@@ -164,45 +201,9 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
   );
 
   if (phase === "connected") {
-    const reopenLauncher = () => {
-      wasConnectedRef.current = true;
-      setFailedTarget(null);
-      void refreshConnections();
-      setPhase("launcher");
-    };
-    return (
-      <>
-        {isTauri() && (
-          // Lives in the native titlebar strip (above the drag region so it's
-          // clickable); shows the current backend and reopens the launcher.
-          <Flex
-            position="fixed"
-            top={0}
-            right={0}
-            height="var(--titlebar-height, 0px)"
-            align="center"
-            pr={3}
-            zIndex={1001}
-          >
-            <Button
-              size="2xs"
-              variant="subtle"
-              borderRadius="full"
-              gap={1.5}
-              px={2.5}
-              onClick={reopenLauncher}
-              title="Switch connection"
-            >
-              <Box boxSize="7px" borderRadius="full" bg="green.solid" />
-              <Text fontSize="xs" truncate maxW="160px">
-                {connectedLabel}
-              </Text>
-            </Button>
-          </Flex>
-        )}
-        {children}
-      </>
-    );
+    // The live connection indicator/switcher lives in the chat input toolbar
+    // (ConnectionSwitcher), not here — this just renders the app.
+    return <>{children}</>;
   }
 
   const isBusy = phase === "connecting" || phase === "init";
