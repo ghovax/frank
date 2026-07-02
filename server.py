@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import platform
 import re
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 from urllib.parse import quote, urljoin
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import Boolean, Column, String, Text, create_engine, event, inspect, text
@@ -39,6 +40,7 @@ from harness.core.configuration import (
     GlobalConfiguration,
     PromptLoader,
     database_file_path,
+    harness_home_directory,
     list_agent_route_names,
     list_agents,
     load_agent_configuration,
@@ -1854,6 +1856,54 @@ async def preview_file(file_path: str):
             raise HTTPException(status_code=400, detail=f"Could not read file: {error}")
         return HTMLResponse(_inject_widget_runtime(markup), headers=no_store)
     return FileResponse(path, headers=no_store)
+
+
+@app.post("/research/uploads")
+async def upload_research_file(file: UploadFile = File(...)):
+    """Store a user-provided research artifact under Daisy's managed home.
+
+    The response is intentionally source-shaped so a model can insert it into the
+    research blackboard as an `origin_channel="upload"` source without inventing
+    metadata.
+    """
+    raw_name = Path(file.filename or "upload").name
+    upload_id = f"upload-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    target_directory = harness_home_directory() / "uploads" / upload_id
+    target_directory.mkdir(parents=True, exist_ok=True)
+    target_path = target_directory / raw_name
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with target_path.open("wb") as handle:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                digest.update(chunk)
+                handle.write(chunk)
+    finally:
+        await file.close()
+    mime_type = file.content_type or "application/octet-stream"
+    return {
+        "upload_id": upload_id,
+        "title": raw_name,
+        "filename": raw_name,
+        "path": str(target_path),
+        "mime_type": mime_type,
+        "size": size,
+        "sha256": digest.hexdigest(),
+        "source": {
+            "origin_channel": "upload",
+            "source_kind": "document",
+            "title": raw_name,
+            "path": str(target_path),
+            "metadata": {
+                "upload_id": upload_id,
+                "filename": raw_name,
+                "mime_type": mime_type,
+                "size": size,
+                "sha256": digest.hexdigest(),
+            },
+        },
+    }
 
 
 # A rewriting pass-through proxy for `open_preview` of external URLs. It serves

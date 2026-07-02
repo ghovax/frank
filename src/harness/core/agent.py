@@ -58,12 +58,16 @@ from harness.tools.tools import (
     fetch_url as fetch_url_tool,
     ask_user as ask_user_tool,
     load_skill as load_skill_tool,
+    research_board as research_board_tool,
+    research_evidence as research_evidence_tool,
+    research_open as research_open_tool,
     bash_tasks,
     web_tasks,
     spawned_tasks,
 )
 
 from harness.tools import file_tools
+from harness.research import service as research_service
 
 from harness.core.handoff import (
     build_task,
@@ -296,6 +300,9 @@ def _build_tools(
         write_file_tool,
         fetch_url_tool,
         load_skill_tool,
+        research_board_tool,
+        research_evidence_tool,
+        research_open_tool,
         web_search_tool,
         set_tasks_tool,
         update_tasks_tool,
@@ -2470,6 +2477,49 @@ class AgentRuntime:
                 if task_identifier:
                     self._background.track("web_search", task_identifier)
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
+
+        elif tool_name == "research_board":
+            payload = tool_arguments.get("payload")
+            parent_event_ids = tool_arguments.get("parent_event_ids")
+            expected_revision_raw = tool_arguments.get("expected_revision")
+            expected_revision = None if expected_revision_raw in (None, "") else int(expected_revision_raw)
+            result = await asyncio.to_thread(
+                research_service.research_board,
+                action=str(tool_arguments.get("action", "")),
+                target=str(tool_arguments.get("target", "")),
+                workspace_id=str(tool_arguments.get("workspace_id", "")),
+                target_id=str(tool_arguments.get("target_id", "")),
+                payload=payload if isinstance(payload, dict) else {},
+                parent_event_ids=parent_event_ids if isinstance(parent_event_ids, list) else [],
+                expected_revision=expected_revision,
+                idempotency_key=str(tool_arguments.get("idempotency_key", "")),
+                actor_id=self._a2a_task_id or self._session_id or "agent",
+            )
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+
+        elif tool_name == "research_evidence":
+            filters = tool_arguments.get("filters")
+            report = tool_arguments.get("report")
+            result = await asyncio.to_thread(
+                research_service.research_evidence,
+                operation=str(tool_arguments.get("operation", "")),
+                workspace_id=str(tool_arguments.get("workspace_id", "")),
+                query=str(tool_arguments.get("query", "")),
+                target_id=str(tool_arguments.get("target_id", "")),
+                filters=filters if isinstance(filters, dict) else {},
+                limit=int(tool_arguments.get("limit", 12) or 12),
+                report=report if isinstance(report, dict) else None,
+            )
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+
+        elif tool_name == "research_open":
+            result = await asyncio.to_thread(
+                research_service.research_open,
+                target=str(tool_arguments.get("target", "")),
+                workspace_id=str(tool_arguments.get("workspace_id", "")),
+                target_id=str(tool_arguments.get("target_id", "")),
+            )
+            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
         elif tool_name == "read_task":
             requested_task_id = tool_arguments.get("task_id", "")

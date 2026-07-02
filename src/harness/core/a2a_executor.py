@@ -95,6 +95,19 @@ def _widget_event_payload(message) -> Optional[dict]:
             }
     return None
 
+
+def _structured_data_payloads(message) -> list[dict]:
+    """Return non-widget DataPart payloads carried by the user turn."""
+    payloads: list[dict] = []
+    for part in (message.parts or []):
+        root = getattr(part, "root", part)
+        if isinstance(root, DataPart):
+            data = root.data
+            if data.get(PART_KIND) == WIDGET_EVENT_KIND:
+                continue
+            payloads.append(dict(data))
+    return payloads
+
 # Each agent profile is served as its own A2A agent under this prefix.
 AGENT_RPC_PREFIX = "/a2a/agents"
 
@@ -543,6 +556,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # below (once the runtime's prompt loader exists) into a behind-the-scenes
         # self-realization note the model repairs as its own output.
         widget_payload = _widget_event_payload(context.message)
+        structured_payloads = _structured_data_payloads(context.message)
         metadata = context.message.metadata or {}
         requested_working_directory = str(metadata.get(WORKING_DIRECTORY_METADATA_KEY, ""))
         requested_workspace_strategy = str(metadata.get(WORKSPACE_STRATEGY_METADATA_KEY, ""))
@@ -673,6 +687,11 @@ class HarnessAgentExecutor(AgentExecutor):
                     as_system_note = True
                 else:
                     turn_input = payload_json
+            elif structured_payloads:
+                turn_input = json.dumps({
+                    "text": user_text,
+                    "data_parts": structured_payloads,
+                }, ensure_ascii=False)
             else:
                 turn_input = user_text
 

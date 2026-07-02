@@ -523,7 +523,7 @@ function HomeContent() {
             zIndex={1}
             onPointerDown={handleHistoryResizeStart}
           />
-          <Flex direction="column" gap={1.5} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
+          <Flex direction="column" gap={1.5} px={2} py={2} borderBottom="1px solid" borderColor="border">
             <Button
               w="100%"
               size="xs"

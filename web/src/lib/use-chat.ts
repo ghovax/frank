@@ -84,13 +84,14 @@ export interface TokenUsage {
 // drive the same stream; a widget event travels as a typed DataPart, never as
 // prose, so the agent receives it as structured JSON.
 export type ChatInput =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; dataPart?: Record<string, unknown> }
   | { kind: "widget"; event: WidgetEvent };
 
 export interface QueuedMessage {
   id: string;
   text: string;
   steering: boolean;
+  dataPart?: Record<string, unknown>;
 }
 
 // An agent step's ordered timeline — prose, reasoning, and tool calls
@@ -1396,7 +1397,7 @@ export function useChat(
               event: input.event.event,
               data: input.event.data,
             }
-          : undefined;
+          : input.dataPart;
 
       abortControllerRef.current = streamA2A(
         text,
@@ -1444,7 +1445,7 @@ export function useChat(
           if (pendingText.length > 0) {
             const next = pendingText[0];
             setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
-            runStreamRef.current({ kind: "text", text: next.text });
+            runStreamRef.current({ kind: "text", text: next.text, dataPart: next.dataPart });
           } else if (pendingWidget.length > 0) {
             const [next, ...rest] = pendingWidget;
             queuedWidgetEventsRef.current = rest;
@@ -1469,11 +1470,11 @@ export function useChat(
   }, [runStream]);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, dataPart?: Record<string, unknown>) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       if (isStreamingRef.current) {
-        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false };
+        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataPart };
         const ctx = sessionIdRef.current;
         if (ctx) {
           setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
@@ -1495,7 +1496,7 @@ export function useChat(
         setQueue([...queuedMessagesRef.current, pending]);
         return;
       }
-      runStream({ kind: "text", text: trimmed });
+      runStream({ kind: "text", text: trimmed, dataPart });
     },
     [runStream, setQueue]
   );

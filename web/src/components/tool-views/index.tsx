@@ -755,7 +755,7 @@ function normalizeArtifact(value: unknown): Record<string, unknown> | null {
     else if (asString(artifact.html)) type = "html";
     else if (asString(artifact.data) || asString(artifact.url)) type = "image";
   }
-  if (!["iframe", "html", "image", "link"].includes(type)) return null;
+  if (!["iframe", "html", "image", "link", "research_anchor", "research_report", "research_source"].includes(type)) return null;
   return { ...artifact, type };
 }
 
@@ -1038,6 +1038,60 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
       </ArtifactFrame>
     );
   }
+  if (type === "research_anchor") {
+    const file = asString(artifact.file);
+    const pageIndex = artifact.page_index == null ? "" : String(artifact.page_index);
+    const bbox = Array.isArray(artifact.bbox) ? artifact.bbox.map(String).join(", ") : "";
+    const category = asString(artifact.category);
+    const text = asString(artifact.text);
+    const baseSrc = file ? filePreviewUrl(file) : "";
+    const pageNumber = Number(pageIndex);
+    const src = baseSrc
+      ? `${baseSrc}${Number.isFinite(pageNumber) ? `#page=${Math.max(1, pageNumber + 1)}` : ""}`
+      : "";
+    return (
+      <ArtifactFrame title={title}>
+        <FieldList>
+          <InlineField label="Anchor">{asString(artifact.anchor_id)}</InlineField>
+          {category ? <InlineField label="Category">{category}</InlineField> : null}
+          {pageIndex !== "" ? <InlineField label="Page">{String(Number(pageIndex) + 1)}</InlineField> : null}
+          {bbox ? <InlineField label="BBox">{bbox}</InlineField> : null}
+          {text ? (
+            <Field label="Extracted text">
+              <MarkdownContent content={text} fontSize="xs" />
+            </Field>
+          ) : null}
+        </FieldList>
+        {src ? (
+          <Box mt={2}>
+            <WidgetFrame
+              src={src}
+              sandbox="allow-scripts allow-same-origin allow-popups"
+              title={title}
+              artifactId={artifactId}
+              autoHeight={false}
+              fixedHeight="680px"
+            />
+          </Box>
+        ) : null}
+      </ArtifactFrame>
+    );
+  }
+  if (type === "research_report") {
+    const markdown = asString(artifact.markdown);
+    return (
+      <ArtifactFrame title={title}>
+        {markdown ? <MarkdownContent content={markdown} fontSize="sm" /> : <EmptyHint>No report content.</EmptyHint>}
+      </ArtifactFrame>
+    );
+  }
+  if (type === "research_source") {
+    return (
+      <ArtifactFrame title={title}>
+        <GenericView data={asRecord(artifact.source)} />
+      </ArtifactFrame>
+    );
+  }
   const href = safeWebUrl(asString(artifact.href) || asString(artifact.url) || asString(artifact.src));
   if (!href) return <ErrorView message="Link artifact did not include a safe URL." />;
   return (
@@ -1059,7 +1113,7 @@ export function PreviewArtifact({ artifact }: { artifact: Record<string, unknown
 export function extractToolArtifacts(name: string, content: string): Record<string, unknown>[] {
   // `render_widget` stays recognized so older persisted sessions still replay their
   // inline-html artifacts; new sessions use `open_preview`.
-  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget" && name !== "open_preview") return [];
+  if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "render_widget" && name !== "open_preview" && name !== "research_open") return [];
   const parsed = tryParse(content);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
   return collectArtifacts((parsed as Record<string, unknown>).artifacts);

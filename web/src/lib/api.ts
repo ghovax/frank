@@ -109,6 +109,34 @@ export function proxyPreviewUrl(url: string): string {
   return `${API_BASE}/preview-proxy?url=${encodeURIComponent(url)}`;
 }
 
+export interface ResearchUpload {
+  upload_id: string;
+  title: string;
+  filename: string;
+  path: string;
+  mime_type: string;
+  size: number;
+  sha256: string;
+  source: {
+    origin_channel: "upload";
+    source_kind: "document";
+    title: string;
+    path: string;
+    metadata: Record<string, unknown>;
+  };
+}
+
+export async function uploadResearchFile(file: File): Promise<ResearchUpload> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`${API_BASE}/research/uploads`, {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) throw new Error(`Failed to upload ${file.name} (${response.status})`);
+  return await response.json() as ResearchUpload;
+}
+
 // Metadata key understood by the harness A2A executor.
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
 export const WORKSPACE_STRATEGY_METADATA_KEY = "harness/workspaceStrategy";

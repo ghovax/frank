@@ -210,9 +210,9 @@ export function ChatPanel({
     scrollMetricsRef.current.scrollHeight = container.scrollHeight;
   }, []);
 
-  const handleSend = useCallback((text: string) => {
+  const handleSend = useCallback((text: string, dataPart?: Record<string, unknown>) => {
     scrollToBottom();
-    send(text);
+    send(text, dataPart);
     scrollToBottom();
   }, [scrollToBottom, send]);
 

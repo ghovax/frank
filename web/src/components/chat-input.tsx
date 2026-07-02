@@ -13,8 +13,8 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
-import { fetchMessageHistory, saveMessageHistory, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFile, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
@@ -23,7 +23,7 @@ import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 const MotionFlex = motion.create(Flex);
 
 interface ChatInputProps {
-  onSend: (text: string) => void;
+  onSend: (text: string, dataPart?: Record<string, unknown>) => void;
   onAbort: () => void;
   isStreaming: boolean;
   tasks?: ChatTask[];
@@ -262,7 +262,11 @@ export function ChatInput({
   tokenUsage,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [attachments, setAttachments] = useState<ResearchUpload[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [messageHistory, setMessageHistory] = useState<string[]>([]);
   const [configExpanded, setConfigExpanded] = useState(false);
@@ -540,19 +544,52 @@ export function ChatInput({
     fetchMessageHistory(workingDirectory).then(setMessageHistory).catch(() => {});
   }, [workingDirectory]);
 
+  async function handleFiles(files: FileList | File[]) {
+    const selected = Array.from(files);
+    if (selected.length === 0) return;
+    setUploadingCount((current) => current + selected.length);
+    for (const file of selected) {
+      try {
+        const uploaded = await uploadResearchFile(file);
+        setAttachments((current) => [...current, uploaded]);
+      } catch {
+        // The send button stays disabled only while uploads are in flight; a failed
+        // upload simply does not become an attachment.
+      } finally {
+        setUploadingCount((current) => Math.max(0, current - 1));
+      }
+    }
+  }
+
+  function removeAttachment(uploadId: string) {
+    setAttachments((current) => current.filter((attachment) => attachment.upload_id !== uploadId));
+  }
+
   function handleSubmit() {
     const trimmed = inputValue.trim();
-    if (!trimmed) return;
+    if (!trimmed && attachments.length === 0) return;
     if (!directoryValid) return;
     if (!workspaceStrategyValid) return;
+    if (uploadingCount > 0) return;
+    const sendText = trimmed || "Use the attached research source(s).";
+    const dataPart = attachments.length > 0
+      ? {
+          kind: "research_attachments",
+          attachments,
+          sources: attachments.map((attachment) => attachment.source),
+        }
+      : undefined;
     // While the agent is busy this enqueues for the next turn (handled upstream).
-    onSend(trimmed);
+    onSend(sendText, dataPart);
     setHistoryIndex(-1);
     setInputValue("");
+    setAttachments([]);
     // Persist to backend and prepend to local list for immediate recall.
-    setMessageHistory((previous) => [trimmed, ...previous]);
-    if (workingDirectory) {
-      saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+    if (trimmed) {
+      setMessageHistory((previous) => [trimmed, ...previous]);
+      if (workingDirectory) {
+        saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+      }
     }
   }
 
@@ -832,10 +869,68 @@ export function ChatInput({
         <Box
           bg="bg"
           border="1px solid"
-          borderColor={directoryValid ? "border" : "red.muted"}
+          borderColor={dragActive ? "blue.muted" : directoryValid ? "border" : "red.muted"}
           borderRadius="sm"
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            setDragActive(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragActive(false);
+            void handleFiles(event.dataTransfer.files);
+          }}
           _focusWithin={{ borderColor: "border.emphasized" }}
         >
+          {attachments.length > 0 || uploadingCount > 0 ? (
+            <Flex gap={1.5} px={2} pt={2} flexWrap="wrap">
+              {attachments.map((attachment) => (
+                <Flex
+                  key={attachment.upload_id}
+                  align="center"
+                  gap={1.5}
+                  maxW="260px"
+                  px={1.5}
+                  py={1}
+                  border="1px solid"
+                  borderColor="border"
+                  borderRadius="sm"
+                  bg="bg.subtle"
+                >
+                  <Box color="fg.muted" flexShrink={0}><LuFile size={13} /></Box>
+                  <Box flex={1} minW={0}>
+                    <Text fontSize="xs" fontWeight="medium" truncate title={attachment.filename}>{attachment.filename}</Text>
+                    <Text fontSize="2xs" color="fg.subtle" truncate>{attachment.mime_type} · {Math.ceil(attachment.size / 1024)} KB</Text>
+                  </Box>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    minW="20px"
+                    h="20px"
+                    px={0}
+                    onClick={() => removeAttachment(attachment.upload_id)}
+                  >
+                    <LuX size={11} />
+                  </Button>
+                </Flex>
+              ))}
+              {uploadingCount > 0 ? (
+                <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="sm" bg="bg.subtle">
+                  <Box color="blue.fg"><LuPaperclip size={13} /></Box>
+                  <Text fontSize="xs" color="fg.subtle">Uploading {uploadingCount}</Text>
+                </Flex>
+              ) : null}
+            </Flex>
+          ) : null}
           <Flex align="flex-end" gap={2} px={1.5} py={1.5}>
             <Textarea
               ref={inputRef}
@@ -865,6 +960,27 @@ export function ChatInput({
               _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />
             <Flex gap={1.5} flexShrink={0}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  if (event.target.files) void handleFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                variant="outline"
+                borderRadius="sm"
+                minW="32px"
+                h="32px"
+                px={0}
+                disabled={disabled || !directoryValid}
+              >
+                <LuPaperclip size={14} />
+              </Button>
               {isStreaming ? (
                 <Button
                   onClick={onAbort}
@@ -893,7 +1009,7 @@ export function ChatInput({
                   gap={1.5}
                   fontSize="xs"
                   fontWeight="medium"
-                  disabled={disabled || !directoryValid || !workspaceStrategyValid || !inputValue.trim()}
+                  disabled={disabled || !directoryValid || !workspaceStrategyValid || uploadingCount > 0 || (!inputValue.trim() && attachments.length === 0)}
                 >
                   <LuArrowUp size={16} />
                   Send
