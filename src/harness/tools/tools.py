@@ -6,118 +6,13 @@ import re
 import signal
 import sys
 from pathlib import Path
-from typing import Any, Callable, Iterable, Literal
+from typing import Any, Literal
 
 from exa_py import Exa
 from langchain.tools import tool
 
 from harness.identifiers import new_id
-
-
-class TaskRegistry:
-    """Manages a collection of background async tasks.
-
-    Each task writes its output to a file and is identified by a unique
-    string identifier prefixed with the registry's prefix.
-    """
-
-    def __init__(self, prefix: str):
-        self._prefix = prefix
-        self._output_directory = Path("/tmp")
-        self._tasks: dict[str, tuple[asyncio.Task, Path | None, Callable[[], None] | None]] = {}
-
-    def start(self, coroutine, output_path: Path | None = None, cancel_callback: Callable[[], None] | None = None) -> tuple[str, Path]:
-        identifier = new_id(self._prefix)
-        if output_path is None:
-            output_path = self._output_directory / f"{identifier}.log"
-        task = asyncio.create_task(coroutine)
-        self._tasks[identifier] = (task, output_path, cancel_callback)
-        return identifier, output_path
-
-    def register(
-        self,
-        task: asyncio.Task,
-        output_path: Path | None = None,
-        identifier: str | None = None,
-        cancel_callback: Callable[[], None] | None = None,
-    ) -> str:
-        if identifier is None:
-            identifier = new_id(self._prefix)
-        self._tasks[identifier] = (task, output_path, cancel_callback)
-        return identifier
-
-    def add_done_callback(self, identifier: str, callback) -> bool:
-        entry = self._tasks.get(identifier)
-        if entry is None:
-            return False
-        task, _output_path, _cancel_callback = entry
-        task.add_done_callback(lambda _task: callback(identifier))
-        return True
-
-    def collect_completed(self, identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
-        allowed_identifiers = set(identifiers) if identifiers is not None else None
-        completed = []
-        for identifier, (task, output_path, _cancel_callback) in list(self._tasks.items()):
-            if allowed_identifiers is not None and identifier not in allowed_identifiers:
-                continue
-            if task.done():
-                try:
-                    result = task.result()
-                except asyncio.CancelledError:
-                    result = json.dumps({
-                        "code": f"{self._prefix}_cancelled",
-                        "task_identifier": identifier,
-                        "output_file": str(output_path) if output_path else "",
-                    })
-                except Exception as exception:
-                    result = str(exception)
-                completed.append((identifier, result))
-                del self._tasks[identifier]
-        return completed
-
-    def cancel(self, identifier: str) -> bool:
-        entry = self._tasks.get(identifier)
-        if entry is None:
-            return False
-        task, _output_path, cancel_callback = entry
-        if cancel_callback is not None:
-            cancel_callback()
-        task.cancel()
-        return True
-
-    def cancel_many(self, identifiers: Iterable[str]) -> None:
-        for identifier in list(identifiers):
-            self.cancel(identifier)
-
-    def cancel_all(self) -> None:
-        for identifier in list(self._tasks):
-            self.cancel(identifier)
-            self._tasks.pop(identifier, None)
-
-    @property
-    def active_count(self) -> int:
-        return sum(1 for task, _, _ in self._tasks.values() if not task.done())
-
-    def active_count_for(self, identifiers: Iterable[str]) -> int:
-        allowed_identifiers = set(identifiers)
-        return sum(
-            1
-            for identifier, (task, _, _) in self._tasks.items()
-            if identifier in allowed_identifiers and not task.done()
-        )
-
-    def list_active(self, identifiers: Iterable[str] | None = None) -> list[str]:
-        allowed_identifiers = set(identifiers) if identifiers is not None else None
-        return [
-            identifier
-            for identifier, (task, _, _) in self._tasks.items()
-            if (allowed_identifiers is None or identifier in allowed_identifiers) and not task.done()
-        ]
-
-
-bash_tasks = TaskRegistry("bg")
-web_tasks = TaskRegistry("search")
-spawned_tasks = TaskRegistry("agent")
+from harness.core.background import current_background_jobs, cancel_all_background_jobs
 
 _exa_client: Exa | None = None
 _mcp_client_manager: Any | None = None
@@ -258,17 +153,15 @@ async def bash(
             "size": len(output),
         })
 
-    task = asyncio.create_task(run())
-    task_identifier = bash_tasks.register(task, output_path, cancel_callback=cancel_process)
+    task_identifier = current_background_jobs().spawn(
+        "bash", run(), output_path=output_path, cancel_callback=cancel_process,
+        spec={"command": command, "read_only": read_only, "risk": risk},
+    )
     return json.dumps({
         "code": "bash_started",
         "task_identifier": task_identifier,
         "output_file": str(output_path),
     })
-
-
-def collect_background_bash_results(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
-    return bash_tasks.collect_completed(identifiers)
 
 
 @tool
@@ -338,8 +231,10 @@ async def web_search(
             output_path.write_text(payload)
             return payload
 
-    task = asyncio.create_task(run())
-    web_tasks.register(task, output_path, identifier=task_identifier)
+    current_background_jobs().spawn(
+        "web_search", run(), identifier=task_identifier, output_path=output_path,
+        spec={"query": query, "result_count": result_count},
+    )
     # The started acknowledgement intentionally omits any file path or other
     # fetch-looking handle: the only thing the model needs is the id to match the
     # auto-delivered result against. The "do not poll/read_task" guidance is
@@ -349,10 +244,6 @@ async def web_search(
         "code": "web_search_started",
         "task_identifier": task_identifier,
     })
-
-
-def collect_web_search_results(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
-    return web_tasks.collect_completed(identifiers)
 
 
 @tool
@@ -470,41 +361,15 @@ def spawn_agent(prompt: str = "", agent: str = "assistant", read_only: bool = Fa
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-def register_spawned_task(task_identifier: str, coroutine):
-    task = asyncio.create_task(coroutine)
-    spawned_tasks.register(task, identifier=task_identifier)
-
-
-def collect_completed_agents(identifiers: Iterable[str] | None = None) -> list[tuple[str, str]]:
-    return spawned_tasks.collect_completed(identifiers)
-
-
 _WIDGET_UPDATE_MODES = {"append", "replace", "update", "upsert"}
 
-# Injected into model-authored widget HTML. Two jobs, both over the same
-# back-channel the front end already listens on: (1) report an uncaught error or
-# rejected promise as a structured `render_error` event so the model can see the
-# failure and iterate; (2) report the document's content height as a
-# `__widget_resize` event so the front end can size the widget automatically —
-# the model never has to guess a height.
-_WIDGET_RUNTIME = (
-    "<script>(function(){"
-    "function send(event,data){try{window.parent.postMessage("
-    "{source:'harness-widget',event:event,data:data},'*');}catch(error){}}"
-    "function report(message,source){send('render_error',{message:String(message),source:source||''});}"
-    "window.addEventListener('error',function(event){"
-    "report(event.message||(event.error&&event.error.message)||'script error',event.filename||'');});"
-    "window.addEventListener('unhandledrejection',function(event){"
-    "report((event.reason&&event.reason.message)||String(event.reason),'promise');});"
-    "function measure(){var body=document.body;var root=document.documentElement;"
-    "var height=Math.max(root?root.scrollHeight:0,body?body.scrollHeight:0,body?body.offsetHeight:0);"
-    "if(height>0){send('__widget_resize',{height:height});}}"
-    "function start(){measure();if(window.ResizeObserver){var observer=new ResizeObserver(measure);"
-    "observer.observe(document.documentElement);if(document.body){observer.observe(document.body);}}}"
-    "if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',start);}else{start();}"
-    "window.addEventListener('load',measure);setTimeout(measure,300);setTimeout(measure,1000);"
-    "})();</script>"
-)
+# Runtime scripts injected into previewed HTML live as their own properly
+# formatted .js files under assets/, read once at import and wrapped in a
+# <script> tag for inline injection — so they can be edited and linted like code
+# instead of minified strings. ASSETS_DIRECTORY is also read by server.py for the
+# preview-proxy runtime.
+ASSETS_DIRECTORY = Path(__file__).parent / "assets"
+_WIDGET_RUNTIME = f"<script>\n{(ASSETS_DIRECTORY / 'widget_runtime.js').read_text(encoding='utf-8')}</script>"
 
 
 def _widget_update_mode(value: str) -> str:
@@ -976,9 +841,7 @@ read_mcp_resource.description = _load_tool_description("read_mcp_resource")
 
 
 def cancel_all_background_tasks() -> None:
-    bash_tasks.cancel_all()
-    web_tasks.cancel_all()
-    spawned_tasks.cancel_all()
+    cancel_all_background_jobs()
 
 
 def _cleanup_on_exit():

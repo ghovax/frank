@@ -56,6 +56,7 @@ from harness.core.session_workspaces import SessionWorkspace, SessionWorkspaceMa
 from harness.core.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import (
+    ASSETS_DIRECTORY,
     cancel_all_background_tasks,
     set_exa_client,
     set_mcp_client_manager,
@@ -1078,6 +1079,12 @@ async def lifespan(application: FastAPI):
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
+    # Recover background jobs persisted by a previous run: interrupted ones are
+    # flagged for re-run and every context with a deliverable result is woken with
+    # an autonomous turn so the agent picks the work back up on its own.
+    for executor in _executors.values():
+        await executor.resume_pending_on_startup()
+
     watcher = asyncio.create_task(_watch_agents_and_skills(application))
     try:
         yield
@@ -1995,31 +2002,21 @@ def _rewrite_proxy_srcset(value: str, base: str) -> str:
     return ", ".join(rewritten)
 
 
+_PROXY_RUNTIME_TEMPLATE = (ASSETS_DIRECTORY / "proxy_runtime.js").read_text(encoding="utf-8")
+
+
 def _proxy_runtime(base: str) -> str:
     """A small shim injected into every proxied page so URLs built *by scripts*
     (fetch/XHR, history navigations, dynamically created elements) also go through
     the proxy and resolve against the real origin — not our localhost — and so a
-    cross-origin ``history.replaceState`` no longer throws."""
-    base_json = json.dumps(base)
-    proxy_json = json.dumps(f"{_PROXY_PATH}?url=")
-    return (
-        "<script>(function(){"
-        f"var BASE={base_json};var PROXY={proxy_json};"
-        "function abs(u){try{return new URL(u,BASE).href;}catch(e){return null;}}"
-        "function prox(u){if(typeof u!=='string'||!u)return u;"
-        "if(/^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i.test(u))return u;"
-        "if(u.indexOf(PROXY)!==-1)return u;var a=abs(u);"
-        "if(!a||!/^https?:/i.test(a))return u;return PROXY+encodeURIComponent(a);}"
-        "['pushState','replaceState'].forEach(function(m){var o=history[m];history[m]=function(s,t,u){"
-        "try{return o.call(history,s,t,u);}catch(e){try{return o.call(history,s,t);}catch(_){}}};});"
-        "if(window.fetch){var of=window.fetch;window.fetch=function(i,n){try{"
-        "if(typeof i==='string')i=prox(i);else if(i&&i.url)i=new Request(prox(i.url),i);}catch(e){}"
-        "return of.call(this,i,n);};}"
-        "if(window.XMLHttpRequest){var oo=XMLHttpRequest.prototype.open;"
-        "XMLHttpRequest.prototype.open=function(m,u){try{u=prox(u);}catch(e){}"
-        "return oo.apply(this,[m,u].concat([].slice.call(arguments,2)));};}"
-        "})();</script>"
+    cross-origin ``history.replaceState`` no longer throws. The script itself lives
+    in ``assets/proxy_runtime.js``; the per-page origin/prefix are substituted in."""
+    source = (
+        _PROXY_RUNTIME_TEMPLATE
+        .replace("__HARNESS_PROXY_BASE__", json.dumps(base))
+        .replace("__HARNESS_PROXY_URL__", json.dumps(f"{_PROXY_PATH}?url="))
     )
+    return f"<script>\n{source}</script>"
 
 
 def _rewrite_proxy_html(markup: str, base: str) -> str:

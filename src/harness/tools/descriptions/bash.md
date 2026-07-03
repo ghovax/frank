@@ -1,6 +1,6 @@
 **Execute a bash command** and return its output.
 
-Fast commands (under ~2s) return output directly. Slow commands return immediately with a task identifier and output file path — the result is **auto-injected** into the conversation when it finishes.
+Fast commands (under ~2s) return output directly. Slow commands return immediately with a task identifier and output file path — the result is **auto-injected** into the conversation when it finishes. You do not block on it: if the rest of your work depends on the result, finish your turn, and the harness will start a fresh turn on its own and re-engage you the moment the command completes (even minutes later) — so a long build, test run, or scan is never lost and never holds a turn open.
 
 **Prefer the specialized tools over shell** for the operations they cover — they are faster, cheaper, and give the model better-shaped results:
 - *File search:* use **find_files** (not `find` or `ls`)

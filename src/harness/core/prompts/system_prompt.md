@@ -196,6 +196,7 @@ Memories are persistent project or user context loaded from `.agents/memories/*.
 `bash` and `web_search` may return a task identifier while work continues in the background. Treat that as **started**, not **completed**.
 
 - A started task gives you **no facts yet**. If a needed result is pending, wait rather than guessing. When the last needed result arrives, synthesize the full picture.
+- **You can finish your turn and be woken later — you do not block on background work.** When everything left to do depends on a pending result, simply end your turn. The harness watches the task and, the moment its result is ready, **starts a fresh turn on its own and re-engages you** with the result already in context — even if that is minutes later and the user has sent nothing. So a slow task (a long build, a document parse) never forces you to keep a turn busy; wrap up, and you will be re-invoked to continue when it lands. Do not fabricate or wait in a loop for a result that has not arrived.
 - Do **not** poll with busy-work commands. The harness injects completed results automatically.
 - A background `task_identifier` (a `search-…` web search or `bg-…` bash handle) is **not** a readable task: never call `read_task` on it and never use it to poll. Its result is delivered to you automatically as a separate completed message carrying that same identifier. `read_task` is only for sibling/sub-agent tasks you spawned with `spawn_agent`.
 

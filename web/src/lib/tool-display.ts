@@ -70,7 +70,7 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuSearchCheck, iconColor: "teal.fg" };
     case "research_open":
       return { icon: LuPanelRightOpen, iconColor: "blue.fg" };
-    case "write_tasks":
+    case "set_tasks":
     case "update_tasks":
       return { icon: LuListChecks, iconColor: "teal.fg" };
     case "call_mcp_tool":
@@ -121,8 +121,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return "Opening research artifact";
     case "render_widget":
       return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
-    case "write_tasks":
-      return "Creating tasks";
+    case "set_tasks":
+      return "Updating the task list";
     case "update_tasks":
       return "Updating tasks";
     case "call_mcp_tool":

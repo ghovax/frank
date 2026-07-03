@@ -1453,6 +1453,11 @@ export function useChat(
           } else {
             isStreamingRef.current = false;
             setIsStreaming(false);
+            // Our locally-driven turn is over. Return to viewer mode so that if the
+            // harness later wakes this session on its own (an autonomous background
+            // resume), the read-only subscribe stream picks the new turn up live
+            // instead of the wake only appearing on a manual reload.
+            streamedLocallyRef.current = false;
           }
         },
         workingDirectory,

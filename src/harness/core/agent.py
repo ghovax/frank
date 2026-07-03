@@ -22,6 +22,8 @@ from langchain_core.messages.ai import add_ai_message_chunks
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, SecretStr
 
+from a2a.types import Task, TaskState
+
 
 from harness.core.configuration import (
     AgentConfiguration,
@@ -61,9 +63,14 @@ from harness.tools.tools import (
     research_board as research_board_tool,
     research_evidence as research_evidence_tool,
     research_open as research_open_tool,
-    bash_tasks,
-    web_tasks,
-    spawned_tasks,
+)
+from harness.core.background import (
+    BackgroundJobs,
+    BackgroundCompletion,
+    background_completion_event,
+    background_include_result,
+    bind_background_jobs,
+    unbind_background_jobs,
 )
 
 from harness.tools import file_tools
@@ -119,8 +126,6 @@ def build_chat_model(
         reasoning_effort=agent_configuration.reasoning_effort,
     )
 
-from a2a.types import Task, TaskState
-
 
 class StreamEvent:
     class Type(str, Enum):
@@ -160,9 +165,6 @@ class StreamEvent:
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
-
-
-_agent_event_queues: dict[str, asyncio.Queue["StreamEvent | None"]] = {}
 
 
 def _maybe_json(value: str) -> Any:
@@ -356,7 +358,6 @@ class SubAgentRunner:
         """Yield each event as the sub-agent produces it, guaranteeing the run
         ends with a non-empty final report.
 
-        Also pushes events to ``_agent_event_queues`` for background monitoring.
         The final DONE event always carries the artifact text in ``text``.
         """
         outcome = {"text": "", "stop_reason": "completed"}
@@ -374,13 +375,7 @@ class SubAgentRunner:
         done_event = StreamEvent(
             StreamEvent.Type.DONE, text=outcome["text"], stop_reason=outcome["stop_reason"],
         )
-        queue = _agent_event_queues.get(self.task_identifier)
-        if queue is not None:
-            await queue.put(done_event)
         yield done_event
-
-        if queue is not None:
-            await queue.put(None)
 
     async def _drain(
         self, prompt: str, always_yield_text: bool, outcome: dict,
@@ -389,7 +384,6 @@ class SubAgentRunner:
         recording ``(text, stop_reason)`` into ``outcome``. DONE events are
         swallowed so :meth:`run_stream` can emit a single terminal DONE."""
         async for event in self._runtime.stream(prompt):
-            queue = _agent_event_queues.get(self.task_identifier)
             if event.type == StreamEvent.Type.DONE:
                 text = event.data.get("text", "")
                 if text.strip():
@@ -397,8 +391,6 @@ class SubAgentRunner:
                 outcome["stop_reason"] = event.data.get("stop_reason", outcome["stop_reason"])
                 continue
             if event.type == StreamEvent.Type.TEXT_CHUNK:
-                if queue is not None and self._stream_progress:
-                    await queue.put(event)
                 if self._stream_progress or always_yield_text:
                     yield event
                 continue
@@ -406,8 +398,6 @@ class SubAgentRunner:
                 outcome["stop_reason"] = "error"
                 if not outcome["text"]:
                     outcome["text"] = event.data.get("message", "unknown")
-            if queue is not None:
-                await queue.put(event)
             yield event
 
     async def run_to_task(self) -> Task:
@@ -440,173 +430,7 @@ class SubAgentRunner:
         return json.dumps(serialize_task(task))
 
 
-@dataclass(frozen=True)
-class BackgroundKind:
-    registry: Any
-    active_context_key: str
-    completed_event_type: str
-    include_result_in_event: bool = False
-
-
-@dataclass(frozen=True)
-class PendingBackgroundMessage:
-    tool_call_id: str
-    scheduled_at: datetime
-
-
-@dataclass(frozen=True)
-class BackgroundCompletion:
-    tool_name: str
-    task_identifier: str
-    result: str
-    started_at: datetime
-    completed_at: datetime
-    pending_message: PendingBackgroundMessage | None = None
-
-
-BACKGROUND_KINDS: dict[str, BackgroundKind] = {
-    "bash": BackgroundKind(
-        registry=bash_tasks,
-        active_context_key="pending_bash_commands",
-        completed_event_type="background_bash_completed",
-    ),
-    "web_search": BackgroundKind(
-        registry=web_tasks,
-        active_context_key="pending_web_searches",
-        completed_event_type="background_web_search_completed",
-    ),
-    "agent": BackgroundKind(
-        registry=spawned_tasks,
-        active_context_key="pending_agents",
-        completed_event_type="agent_completed",
-        include_result_in_event=True,
-    ),
-}
-
-
-class BackgroundTaskManager:
-    def __init__(self, record_event: Callable[[str, dict], None]):
-        self._record_event = record_event
-        self._tracked_ids: dict[str, set[str]] = {
-            tool_name: set() for tool_name in BACKGROUND_KINDS
-        }
-        self._completed_results: dict[str, list[tuple[str, str]]] = {
-            tool_name: [] for tool_name in BACKGROUND_KINDS
-        }
-        self._pending_messages: dict[str, PendingBackgroundMessage] = {}
-        self._started_at: dict[str, datetime] = {}
-
-    def track(self, tool_name: str, task_identifier: str) -> None:
-        if not task_identifier:
-            return
-        self._tracked_ids.setdefault(tool_name, set()).add(task_identifier)
-        self._completed_results.setdefault(tool_name, [])
-        self._started_at.setdefault(task_identifier, datetime.now(timezone.utc))
-
-    def bind_model_message(self, task_identifier: str, tool_call_id: str) -> None:
-        if not task_identifier:
-            return
-        self._pending_messages[task_identifier] = PendingBackgroundMessage(
-            tool_call_id=tool_call_id,
-            scheduled_at=datetime.now(timezone.utc),
-        )
-
-    def poll(self):
-        for tool_name, kind in BACKGROUND_KINDS.items():
-            tracked_ids = self._tracked_ids[tool_name]
-            completed = kind.registry.collect_completed(tracked_ids)
-            self._completed_results[tool_name].extend(completed)
-            for task_identifier, _ in completed:
-                tracked_ids.discard(task_identifier)
-
-    def has_results(self) -> bool:
-        return any(self._completed_results.values())
-
-    def drain_results(self) -> list[BackgroundCompletion]:
-        results = []
-        for tool_name, completed in self._completed_results.items():
-            for task_identifier, result in completed:
-                completed_at = datetime.now(timezone.utc)
-                started_at = self._started_at.pop(task_identifier, completed_at)
-                results.append(BackgroundCompletion(
-                    tool_name=tool_name,
-                    task_identifier=task_identifier,
-                    result=result,
-                    started_at=started_at,
-                    completed_at=completed_at,
-                    pending_message=self._pending_messages.pop(task_identifier, None),
-                ))
-            completed.clear()
-        return results
-
-    def has_pending(self) -> bool:
-        return self.active_background_count() > 0
-
-    def active_background_count(self) -> int:
-        return sum(
-            kind.registry.active_count_for(self._tracked_ids[tool_name])
-            for tool_name, kind in BACKGROUND_KINDS.items()
-        )
-
-    async def wait_for_any(
-        self,
-        abort_event: "asyncio.Event",
-        poll_interval: float = 0.2,
-        timeout: float = 120.0,
-        wake_event: "asyncio.Event | None" = None,
-    ) -> None:
-        """Wait until at least one tracked background task completes, all finish,
-        the turn is aborted, steering arrives, or ``timeout`` elapses — polling
-        the registries meanwhile.
-
-        Completion is poll-driven (the tool registries expose no event), so this
-        sleeps in short, abort-responsive increments rather than blocking a frame.
-        Without this, a model that fires off parallel web searches and then emits
-        no further tool calls would end the turn before the results land, leaving
-        the completed searches orphaned and never synthesized."""
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        while self.has_pending() and not self.has_results():
-            if abort_event.is_set() or (wake_event is not None and wake_event.is_set()) or loop.time() >= deadline:
-                return
-            self.poll()
-            if self.has_results() or not self.has_pending():
-                return
-            try:
-                await asyncio.wait_for(abort_event.wait(), timeout=poll_interval)
-            except asyncio.TimeoutError:
-                continue
-
-    def active_tasks(self) -> dict[str, list[str]]:
-        active = {
-            kind.active_context_key: kind.registry.list_active(self._tracked_ids[tool_name])
-            for tool_name, kind in BACKGROUND_KINDS.items()
-        }
-        return active
-
-    def active_non_empty_tasks(self) -> dict[str, list[str]]:
-        active = {}
-        for tool_name, kind in BACKGROUND_KINDS.items():
-            active_ids = kind.registry.list_active(self._tracked_ids[tool_name])
-            if active_ids:
-                active[kind.active_context_key] = active_ids
-        return active
-
-    def cancel_pending(self) -> None:
-        for tool_name, kind in BACKGROUND_KINDS.items():
-            tracked_ids = set(self._tracked_ids[tool_name])
-            kind.registry.cancel_many(tracked_ids)
-            self._tracked_ids[tool_name].clear()
-
-    def record_completed(self, tool_name: str, task_identifier: str, result: str) -> None:
-        kind = BACKGROUND_KINDS[tool_name]
-        data = {"task_identifier": task_identifier}
-        if kind.include_result_in_event:
-            data["result"] = result
-        self._record_event(kind.completed_event_type, data)
-
-
-class Task(BaseModel):
+class TodoTask(BaseModel):
     identifier: str = ""
     description: str
     status: str = "pending"
@@ -615,7 +439,7 @@ class Task(BaseModel):
 
 class TaskManager:
     def __init__(self):
-        self._tasks: list[Task] = []
+        self._tasks: list[TodoTask] = []
         self._next_identifier: int = 1
 
     def add_tasks(self, task_definitions: list[dict]) -> list[str]:
@@ -623,7 +447,7 @@ class TaskManager:
         for definition in task_definitions:
             identifier = f"task-{self._next_identifier}"
             self._next_identifier += 1
-            task = Task(
+            task = TodoTask(
                 identifier=identifier,
                 description=definition.get("description", ""),
                 dependencies=definition.get("dependencies", []),
@@ -669,9 +493,6 @@ class TaskManager:
 
 
 class AgentRuntime:
-    # Maximum time to block a turn waiting for in-flight background tasks
-    # (searches, sub-agents, slow bash) before invoking the model anyway.
-    _BACKGROUND_WAIT_SECONDS = 30.0
     _GOAL_CONTINUATION_LIMIT = 3
     # Sub-agents (delegation depth > 0) get a tighter iteration budget than the
     # top-level chat agent so a looping sub-agent fails fast instead of burning
@@ -726,7 +547,10 @@ class AgentRuntime:
             parallel_tool_calls=True,
         )
         self._permissions = PermissionEvaluator(agent_configuration)
-        self._background = BackgroundTaskManager(self._record_event)
+        self._background = BackgroundJobs(
+            context_id=session_id,
+            agent_name=agent_configuration.identifier,
+        )
         # Command patterns the user chose to "always allow" this session — matching
         # bash commands then skip the sandbox/approval prompts. Scoped to this
         # runtime (this context), populated on demand from an LLM-derived rule.
@@ -800,6 +624,35 @@ class AgentRuntime:
         return self._conversation
 
     @property
+    def background_jobs(self) -> "BackgroundJobs":
+        """This runtime's background-job runner. The executor's resume pump reads it
+        to know when in-flight work has completed."""
+        return self._background
+
+    def inject_stored_background_result(
+        self, *, kind: str, identifier: str, tool_call_identifier: str, result: str
+    ) -> None:
+        """Append a background result restored from the durable store as a
+        `background_result` message, so a runtime rebuilt after a restart replays it
+        to the model exactly like a live completion would."""
+        capped_result = _cap_model_result_payload(result, code=f"{kind}_result_truncated")
+        metadata = _tool_timing_metadata(
+            tool_name=kind,
+            tool_call_identifier=tool_call_identifier,
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            duration_milliseconds=0,
+            background_task_identifier=identifier,
+        )
+        self._conversation.append(SystemMessage(
+            content=json.dumps({
+                "type": "background_result",
+                "tool_metadata": metadata,
+                "result": _maybe_json(capped_result),
+            }, ensure_ascii=False),
+        ))
+
+    @property
     def token_usage(self) -> dict[str, int]:
         return dict(self._token_usage)
 
@@ -857,7 +710,7 @@ class AgentRuntime:
 
     def abort(self) -> None:
         self._abort_event.set()
-        self._background.cancel_pending()
+        self._background.cancel_all()
         for task in list(self._active_tool_tasks.values()):
             task.cancel()
 
@@ -1091,34 +944,28 @@ class AgentRuntime:
         if tasks_data:
             parts.append(json.dumps({"tasks": tasks_data}))
         parts.append(json.dumps({"background_processes": {
-            "running": self._background.active_tasks(),
-            "active_count": self._background.active_background_count(),
+            "running": self._background.active_by_context_key(),
+            "active_count": self._background.active_count(),
             "recent_events": self._execution_history[-20:],
         }}))
         return "\n".join(parts)
 
     def _background_result_events(self) -> list[StreamEvent]:
-        self._background.poll()
         events: list[StreamEvent] = []
-        if not self._background.has_results():
-            return events
-
-        for completion in self._background.drain_results():
+        for completion in self._background.drain_completed():
             capped_result = _cap_model_result_payload(
                 completion.result,
-                code=f"{completion.tool_name}_result_truncated",
+                code=f"{completion.kind}_result_truncated",
             )
             duration_milliseconds = int((completion.completed_at - completion.started_at).total_seconds() * 1000)
             background_metadata = _tool_timing_metadata(
-                tool_name=completion.tool_name,
-                tool_call_identifier=completion.pending_message.tool_call_id if completion.pending_message else "",
+                tool_name=completion.kind,
+                tool_call_identifier=completion.tool_call_identifier,
                 started_at=completion.started_at,
                 completed_at=completion.completed_at,
                 duration_milliseconds=duration_milliseconds,
-                background_task_identifier=completion.task_identifier,
+                background_task_identifier=completion.identifier,
             )
-            if completion.pending_message:
-                background_metadata["scheduled_tool_message_at"] = _utc_timestamp(completion.pending_message.scheduled_at)
             # Append-only: the scheduled placeholder ToolMessage stays put and the
             # result lands as a *new* message. Rewriting the placeholder in place
             # would change the conversation mid-stream and invalidate the provider's
@@ -1134,16 +981,15 @@ class AgentRuntime:
             ))
             events.append(StreamEvent(
                 StreamEvent.Type.TOOL_RESULT,
-                id=(completion.pending_message.tool_call_id if completion.pending_message else ""),
-                name=completion.tool_name,
+                id=completion.tool_call_identifier,
+                name=completion.kind,
                 result=_maybe_json(capped_result),
-                task_id=completion.task_identifier,
+                task_id=completion.identifier,
             ))
-            self._background.record_completed(
-                completion.tool_name,
-                completion.task_identifier,
-                capped_result,
-            )
+            completion_event_data: dict[str, Any] = {"task_identifier": completion.identifier}
+            if background_include_result(completion.kind):
+                completion_event_data["result"] = capped_result
+            self._record_event(background_completion_event(completion.kind), completion_event_data)
         return events
 
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
@@ -1230,38 +1076,13 @@ class AgentRuntime:
                 self._calls_this_turn += 1
                 continue
 
-            steering_events = await self._drain_steering_messages()
-            if steering_events:
-                for steering_event in steering_events:
-                    yield steering_event
-            elif self._background.has_pending():
-                yield StreamEvent(
-                    StreamEvent.Type.STATUS,
-                    code="waiting_for_tools",
-                    active=self._background.active_tasks(),
-                )
-                await self._background.wait_for_any(
-                    self._abort_event,
-                    timeout=self._BACKGROUND_WAIT_SECONDS,
-                    wake_event=self._steering_available,
-                )
-                if self._abort_event.is_set():
-                    if self._has_queued_steering():
-                        self._abort_event.clear()
-                        for steering_event in await self._drain_steering_messages():
-                            yield steering_event
-                        self._calls_this_turn += 1
-                        continue
-                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                    return
-                background_events = self._background_result_events()
-                if background_events:
-                    for background_event in background_events:
-                        yield background_event
-                    self._calls_this_turn += 1
-                    continue
-                for steering_event in await self._drain_steering_messages():
-                    yield steering_event
+            # In-flight background work no longer holds the turn open. Completed
+            # results are drained above and delivered mid-turn while the model is
+            # still working; if the model goes idle with work still pending, the turn
+            # simply ends and the executor's resume pump wakes the agent with an
+            # autonomous turn the moment the next result lands.
+            for steering_event in await self._drain_steering_messages():
+                yield steering_event
 
             # Dynamic context (turn reminders, time, pwd, active goal) is injected
             # only on the first iteration of a turn — when the user just sent a
@@ -1367,33 +1188,11 @@ class AgentRuntime:
                     self._calls_this_turn += 1
                     continue
 
-                # If background work (parallel web searches, background bash) is
-                # still in flight, the model's "no tool calls" would otherwise end
-                # the turn before the results land — leaving them orphaned. Wait
-                # for the next completion, then drain and re-invoke so the model
-                # actually sees and synthesizes the results.
-                if self._background.has_pending():
-                    await self._background.wait_for_any(
-                        self._abort_event,
-                        timeout=self._BACKGROUND_WAIT_SECONDS,
-                        wake_event=self._steering_available,
-                    )
-                    if self._abort_event.is_set():
-                        if self._has_queued_steering():
-                            self._abort_event.clear()
-                            for steering_event in await self._drain_steering_messages():
-                                yield steering_event
-                            self._calls_this_turn += 1
-                            continue
-                        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                        return
-                background_events = self._background_result_events()
-                if background_events:
-                    for background_event in background_events:
-                        yield background_event
-                    self._calls_this_turn += 1
-                    continue
-
+                # The model produced no tool calls. Any still-running background work
+                # does not hold the turn open: it ends here, and the executor's resume
+                # pump wakes the agent with an autonomous turn once the next result
+                # lands. Results that already completed were drained at the top of the
+                # loop, so nothing in hand is lost by finishing now.
                 final_text = response.content or ""
                 turn_final_response = final_text
                 self._conversation.append(response)
@@ -1456,7 +1255,7 @@ class AgentRuntime:
                 )
                 background_task_identifier = outcome.get("background_task_identifier")
                 if background_task_identifier:
-                    self._background.bind_model_message(
+                    self._background.bind_tool_call(
                         background_task_identifier, tool_call_identifier,
                     )
                 denied_commands = outcome.get("denied_commands", [])
@@ -1987,15 +1786,18 @@ class AgentRuntime:
                     return
 
             try:
-                result = await bash_tool.ainvoke(tool_arguments)
+                background_token = bind_background_jobs(self._background)
+                try:
+                    result = await bash_tool.ainvoke(tool_arguments)
+                finally:
+                    unbind_background_jobs(background_token)
                 result_data = _maybe_json(result)
                 yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
                 if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
                     task_identifier = result_data.get("task_identifier", "")
                     if task_identifier:
-                        self._background.track("bash", task_identifier)
                         self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": command})
-                        if lease_token and bash_tasks.add_done_callback(
+                        if lease_token and self._background.add_done_callback(
                             task_identifier,
                             lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
                         ):
@@ -2467,15 +2269,16 @@ class AgentRuntime:
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
         elif tool_name == "web_search":
-            result = await web_search_tool.ainvoke(tool_arguments)
+            background_token = bind_background_jobs(self._background)
+            try:
+                result = await web_search_tool.ainvoke(tool_arguments)
+            finally:
+                unbind_background_jobs(background_token)
             result_data = _maybe_json(result)
             if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
                 # Attach the "don't poll/read_task this" guidance from a prompt
                 # template, keeping user-facing wording out of the tool code.
                 result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
-                task_identifier = result_data.get("task_identifier", "")
-                if task_identifier:
-                    self._background.track("web_search", task_identifier)
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
 
         elif tool_name == "research_board":

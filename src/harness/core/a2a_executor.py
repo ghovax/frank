@@ -51,6 +51,7 @@ from harness.core.configuration import (
     GlobalConfiguration,
     load_agent_configuration,
 )
+from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
 from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
@@ -78,6 +79,18 @@ PART_KIND = "kind"
 # A user turn whose input is a widget interaction carries it as a DataPart of
 # this kind rather than as prose, so the payload reaches the model intact.
 WIDGET_EVENT_KIND = "widget_event"
+# Marks a turn the harness started on its own — not from user input — to deliver a
+# background result that landed after the previous turn ended (an autonomous wake).
+AUTONOMOUS_RESUME_METADATA_KEY = "harness/autonomousResume"
+# The system note that opens an autonomous wake turn. The actual result is drained
+# into the conversation as a `background_result` message before the model runs, so
+# this only frames why the model is being re-engaged.
+BACKGROUND_RESUME_NOTE = (
+    "A background task you started earlier has finished while this conversation was "
+    "idle. Its result is now available in the conversation. Review it and continue "
+    "the work it unblocks; if nothing remains to do, give the user a short update on "
+    "what completed."
+)
 
 
 def _widget_event_payload(message) -> Optional[dict]:
@@ -383,6 +396,18 @@ class HarnessAgentExecutor(AgentExecutor):
         # of this, so switching agents mid-session continues the same conversation
         # with a different persona rather than starting over.
         self._conversations: dict[str, list] = conversations if conversations is not None else {}
+        # Serializes turns per context so a user turn and an autonomous background
+        # wake never drive the same (shared) runtime concurrently. Delegated
+        # sub-agent turns share their parent's context and run *inside* the parent
+        # turn, so they deliberately do not take this lock (that would deadlock).
+        self._context_locks: dict[str, asyncio.Lock] = {}
+        # One background-resume pump per context: after a turn ends with work still
+        # in flight, the pump waits (event-driven) for each result and drives an
+        # autonomous turn to deliver it, so the agent wakes itself up.
+        self._resume_pumps: dict[str, asyncio.Task] = {}
+        # Holds startup-recovery wake tasks so they are not garbage-collected before
+        # they finish driving their turn.
+        self._startup_resume_tasks: set[asyncio.Task] = set()
 
     def abort_context(self, context_id: str) -> bool:
         runtime = self._runtimes.get(context_id)
@@ -424,6 +449,64 @@ class HarnessAgentExecutor(AgentExecutor):
         used when the session's model override changes, so the new model takes
         effect without a server restart."""
         self._runtimes.pop(context_id, None)
+
+    def _context_lock(self, context_id: str) -> asyncio.Lock:
+        lock = self._context_locks.get(context_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._context_locks[context_id] = lock
+        return lock
+
+    def _arm_resume_pump(self, context_id: str) -> None:
+        """Ensure a resume pump watches this context while it has background work in
+        flight. Idempotent — a live pump is left running."""
+        runtime = self._runtimes.get(context_id)
+        if runtime is None or not runtime.background_jobs.has_pending():
+            return
+        existing = self._resume_pumps.get(context_id)
+        if existing is not None and not existing.done():
+            return
+        self._resume_pumps[context_id] = asyncio.create_task(self._resume_pump(context_id))
+
+    async def _resume_pump(self, context_id: str) -> None:
+        """Wait (event-driven, at zero cost) for each background result to land while
+        the context is otherwise idle, driving an autonomous turn to deliver each. It
+        loops until nothing is pending, then retires."""
+        try:
+            while True:
+                runtime = self._runtimes.get(context_id)
+                if runtime is None or not runtime.background_jobs.has_pending():
+                    return
+                await runtime.background_jobs.wait_for_completion()
+                # A result landed — drive an autonomous turn to deliver it. If a
+                # concurrent user turn already drained it, that turn no-ops.
+                await self._run_autonomous_turn(context_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Background-resume pump failed for context %s", context_id)
+        finally:
+            self._resume_pumps.pop(context_id, None)
+
+    async def _run_autonomous_turn(self, context_id: str) -> None:
+        """Start a turn the user did not initiate, to deliver a completed background
+        result. It reuses the ordinary turn path via a self-sent A2A message, so the
+        wake is a real, persisted, replayable task streamed to viewers like any other
+        turn — the agent genuinely picks the work back up on its own."""
+        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+        if handler is None:
+            return
+        message = Message(
+            role=Role.user,
+            parts=[Part(root=TextPart(text=BACKGROUND_RESUME_NOTE))],
+            message_id=uuid.uuid4().hex,
+            context_id=context_id,
+            metadata={AUTONOMOUS_RESUME_METADATA_KEY: True},
+        )
+        async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
+            # Drive to completion; viewers receive the turn through the stream-event
+            # fan-out and the persisted task, so the yielded events are not needed here.
+            pass
 
     def _build_runtime(
         self,
@@ -498,9 +581,46 @@ class HarnessAgentExecutor(AgentExecutor):
             if self._session_permission_mode_for is not None:
                 runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, context_id))
             self._runtimes[context_id] = runtime
+            # First time this process builds a runtime for the context: replay any
+            # background results the durable store holds but never delivered (e.g.
+            # a parse that finished, or was interrupted, across a restart), so the
+            # model sees them as soon as this — or the autonomous wake — runs.
+            self._replay_stored_background_results(context_id, runtime)
         # A context's working directory is fixed at creation — a session stays
         # bound to the folder it was started in, so later turns never repoint it.
         return runtime
+
+    def _replay_stored_background_results(self, context_id: str, runtime: AgentRuntime) -> None:
+        store = get_background_job_store()
+        for job in store.undelivered_jobs(context_id, self._agent_name):
+            runtime.inject_stored_background_result(
+                kind=job["kind"],
+                identifier=job["job_id"],
+                tool_call_identifier=job["tool_call_id"],
+                result=job["result"] or "",
+            )
+            store.mark_delivered(job["job_id"])
+
+    async def resume_pending_on_startup(self) -> None:
+        """After a restart, recover this agent's persisted background work. A job that
+        was still running cannot be resurrected as a live coroutine, so it is recorded
+        as interrupted (the model is told to re-run it if the result is still needed);
+        then every context that now has a deliverable result is woken autonomously."""
+        store = get_background_job_store()
+        for job in store.running_jobs(self._agent_name):
+            store.mark_abandoned(job["job_id"], json.dumps({
+                "code": f"{job['kind']}_interrupted",
+                "task_identifier": job["job_id"],
+                "message": (
+                    "This task was interrupted by a server restart before it finished. "
+                    "Re-run it if the result is still needed."
+                ),
+                "spec": job["spec"],
+            }))
+        for context_id in store.contexts_with_undelivered(self._agent_name):
+            wake_task = asyncio.create_task(self._run_autonomous_turn(context_id))
+            self._startup_resume_tasks.add(wake_task)
+            wake_task.add_done_callback(self._startup_resume_tasks.discard)
 
     async def _workspace_for(
         self,
@@ -563,6 +683,7 @@ class HarnessAgentExecutor(AgentExecutor):
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
         requested_model = str(metadata.get(SELECTED_MODEL_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
+        autonomous = bool(metadata.get(AUTONOMOUS_RESUME_METADATA_KEY))
 
         task = context.current_task
         if task is None:
@@ -574,6 +695,27 @@ class HarnessAgentExecutor(AgentExecutor):
                 task.metadata = {**(task.metadata or {}), "referenceTaskIds": reference_task_ids}
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
+
+        # Serialize non-delegated turns per context so a user turn and an autonomous
+        # background wake never drive the shared runtime concurrently. Delegated
+        # sub-agent turns share the parent's context and run inside it, so they must
+        # not take this lock (that would deadlock against the parent).
+        context_serialization_lock = None if delegated else self._context_lock(task.context_id)
+        if context_serialization_lock is not None:
+            await context_serialization_lock.acquire()
+
+        # An autonomous wake with nothing left to deliver — a concurrent user turn
+        # already drained the result while this one waited on the lock — is a no-op:
+        # close the task without a model call rather than emit an empty turn.
+        if autonomous:
+            existing_runtime = self._runtimes.get(task.context_id)
+            has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
+            has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._agent_name)
+            if not has_live_result and not has_stored_result:
+                if context_serialization_lock is not None:
+                    context_serialization_lock.release()
+                await updater.complete()
+                return
 
         final_text = ""
         failed_message = ""
@@ -677,7 +819,7 @@ class HarnessAgentExecutor(AgentExecutor):
             # A render_error is injected as the model's own realization (a system
             # note), never as a user message; every other widget event is the
             # turn's structured JSON input.
-            as_system_note = False
+            as_system_note = autonomous
             if widget_payload is not None:
                 payload_json = json.dumps({"widget_event": widget_payload}, ensure_ascii=False)
                 if widget_payload.get("event") == "render_error":
@@ -867,6 +1009,13 @@ class HarnessAgentExecutor(AgentExecutor):
             if track_running:
                 self._active_contexts.discard(task.context_id)
                 self._on_turn_state(task.context_id, False)
+            if context_serialization_lock is not None:
+                context_serialization_lock.release()
+            # If background work is still in flight after this turn, make sure a
+            # resume pump is watching so the next completion wakes the agent on its
+            # own. Delegated turns don't own the context lifecycle, so they skip it.
+            if not delegated:
+                self._arm_resume_pump(task.context_id)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or (context.current_task.id if context.current_task else "")
