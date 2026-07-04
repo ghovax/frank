@@ -743,7 +743,13 @@ function artifactSandbox(artifact: Record<string, unknown>, usesInlineHtml: bool
     IFRAME_SANDBOX_TOKENS.has(token) && !(usesInlineHtml && token === "allow-same-origin")
   ));
   if (filteredTokens.length > 0) return filteredTokens.join(" ");
-  return usesInlineHtml ? "allow-scripts allow-popups" : "allow-scripts allow-same-origin allow-popups";
+  // Inline (model-authored) HTML stays tightly sandboxed — no same-origin. A page
+  // loaded by reference (a local file or a proxied external site) is a real
+  // mini-browser, so it gets the fuller browsing set (forms, modals, downloads,
+  // popups) it needs to behave like a native tab.
+  return usesInlineHtml
+    ? "allow-scripts allow-popups"
+    : "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms allow-modals allow-downloads allow-presentation";
 }
 
 function normalizeArtifact(value: unknown): Record<string, unknown> | null {
@@ -1051,6 +1057,17 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
 
 export function PreviewArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   return <RenderArtifact artifact={artifact} />;
+}
+
+// The external http(s) URL an artifact previews, or "" when it is not an external
+// web page (a local file, inline HTML, an image). The preview panel uses this to
+// decide whether to hand the render to the native webview (desktop) instead of the
+// proxied iframe.
+export function externalPreviewUrl(artifact: Record<string, unknown>): string {
+  const normalized = normalizeArtifact(artifact);
+  if (normalized?.type !== "iframe") return "";
+  if (asString(artifact.file) || asString(artifact.srcdoc)) return "";
+  return safeWebUrl(asString(artifact.src));
 }
 
 // Renderable artifacts (maps, images, HTML) returned by an MCP tool/resource.

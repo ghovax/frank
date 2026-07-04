@@ -100,7 +100,7 @@ def find_files(working_directory: str, pattern: str) -> str:
     matches = [match for match in base.glob(pattern) if not match.is_dir()]
     matches.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
     matches = matches[:MAXIMUM_GLOB_RESULTS]
-    paths = [str(m) for m in matches]
+    paths = [str(match) for match in matches]
     return _payload("find_completed", pattern=pattern, matches=paths, count=len(paths))
 
 

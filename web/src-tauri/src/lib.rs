@@ -21,13 +21,22 @@ use std::time::Duration;
 use serde::Deserialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::webview::WebviewBuilder;
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Runtime, WebviewUrl};
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 const LOCAL_HOST: &str = "127.0.0.1";
 const LOCAL_PORT: u16 = 8822;
 const TRAY_ID: &str = "daisy-tray";
 const MAIN_WINDOW: &str = "main";
+// The embedded native webview used to preview external websites at full browser
+// fidelity (real engine, top-level navigation — X-Frame-Options never applies). It
+// floats over the app's preview panel, positioned to that panel's rect by the UI.
+const PREVIEW_WEBVIEW: &str = "daisy-preview";
+// Where the preview webview parks when hidden — far off-screen so it stays alive
+// (scripts, media, session) without being visible. Cheaper and less flickery than
+// tearing it down and rebuilding on every open/close.
+const PREVIEW_OFFSCREEN: f64 = -32000.0;
 
 // ---- local server supervision ---------------------------------------------
 
@@ -126,6 +135,107 @@ fn start_local_server(
 #[tauri::command]
 fn stop_local_server(state: tauri::State<'_, LocalServer>) -> Result<(), String> {
     kill_local_server(&state);
+    Ok(())
+}
+
+// ---- native website preview ------------------------------------------------
+
+// Only ever preview real web pages; anything else is rejected so the embedded
+// webview can never be pointed at a local or non-web scheme.
+fn parse_preview_url(url: &str) -> Result<tauri::Url, String> {
+    let parsed = tauri::Url::parse(url).map_err(|error| format!("invalid preview url: {error}"))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(parsed),
+        other => Err(format!("unsupported preview url scheme: {other}")),
+    }
+}
+
+// Show the preview webview at the given rect (logical/CSS pixels relative to the
+// main window's content), creating it on first use and navigating it when the URL
+// changes. The UI drives every call from the preview panel's measured bounds.
+#[tauri::command]
+fn preview_show(
+    app: AppHandle,
+    url: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let target = parse_preview_url(&url)?;
+    let width = width.max(1.0);
+    let height = height.max(1.0);
+    if let Some(webview) = app.get_webview(PREVIEW_WEBVIEW) {
+        // Re-navigate only when the destination actually changed, so repositioning
+        // the panel (scroll/resize) never reloads the page.
+        if webview.url().map(|current| current != target).unwrap_or(true) {
+            webview.navigate(target).map_err(|error| error.to_string())?;
+        }
+        webview
+            .set_position(LogicalPosition::new(x, y))
+            .map_err(|error| error.to_string())?;
+        webview
+            .set_size(LogicalSize::new(width, height))
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    // A WebviewWindow is a Window plus its primary Webview; the multiwebview
+    // `add_child` lives on the underlying Window, reached via `.as_ref().window()`.
+    let main_window = app
+        .get_webview_window(MAIN_WINDOW)
+        .ok_or_else(|| "main window is not available".to_string())?;
+    let window = main_window.as_ref().window();
+    let builder = WebviewBuilder::new(PREVIEW_WEBVIEW, WebviewUrl::External(target));
+    window
+        .add_child(
+            builder,
+            LogicalPosition::new(x, y),
+            LogicalSize::new(width, height),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+// Move/resize the preview webview to a new rect without touching its navigation —
+// called as the panel is resized or the window layout shifts.
+#[tauri::command]
+fn preview_set_bounds(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if let Some(webview) = app.get_webview(PREVIEW_WEBVIEW) {
+        webview
+            .set_position(LogicalPosition::new(x, y))
+            .map_err(|error| error.to_string())?;
+        webview
+            .set_size(LogicalSize::new(width.max(1.0), height.max(1.0)))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+// Park the preview webview off-screen (kept alive) so the panel can close, a modal
+// can cover the area, or the transcript can scroll without the native layer showing
+// through.
+#[tauri::command]
+fn preview_hide(app: AppHandle) -> Result<(), String> {
+    if let Some(webview) = app.get_webview(PREVIEW_WEBVIEW) {
+        webview
+            .set_position(LogicalPosition::new(PREVIEW_OFFSCREEN, PREVIEW_OFFSCREEN))
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+// Tear the preview webview down entirely (its scripts, media, and network stop).
+#[tauri::command]
+fn preview_close(app: AppHandle) -> Result<(), String> {
+    if let Some(webview) = app.get_webview(PREVIEW_WEBVIEW) {
+        webview.close().map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -248,7 +358,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_local_server,
             stop_local_server,
-            update_tray_recent
+            update_tray_recent,
+            preview_show,
+            preview_set_bounds,
+            preview_hide,
+            preview_close
         ])
         .setup(|app| {
             let handle = app.handle();

@@ -268,6 +268,22 @@ def _model_visible_tool_result(content: str, metadata: dict[str, Any]) -> str:
     }, ensure_ascii=False)
 
 
+def _content_text(content: str | list) -> str:
+    """The plain-text form of a message content that may be a multimodal list.
+
+    A multimodal user turn carries a content list (text blocks interleaved with
+    ``image_url`` blocks); the event-log recorder and any string-only consumer
+    want just the prose, so the text blocks are concatenated and the media blocks
+    dropped."""
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(str(block.get("text", "")))
+    return "\n".join(parts)
+
+
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
     """Return ``(workspace_root, is_git_repo)``. Walks up from the working
     directory for a ``.git`` marker; if found the workspace root is the repo
@@ -1038,10 +1054,18 @@ class AgentRuntime:
         return self._prompt_loader.load("preview_render_error", {"payload": payload})
 
     async def stream(
-        self, user_message: str, as_system_note: bool = False
+        self, user_message: str | list, as_system_note: bool = False
     ) -> AsyncIterator[StreamEvent]:
         self._abort_event.clear()
         self._calls_this_turn = 0
+
+        # A turn's input is usually plain text, but an attachment turn carries a
+        # multimodal content list (a text block plus one image_url block per
+        # attached image) so a vision model actually sees the pixels. LangChain's
+        # HumanMessage accepts either, and the model adapter passes the content
+        # straight through to the provider. The event-log recorder only wants a
+        # string, so a flattened text form is derived for it.
+        recorded_user_message = user_message if isinstance(user_message, str) else _content_text(user_message)
 
         # A self-realization note (e.g. a widget render error) enters the
         # conversation as a system message so the model treats it as its own
@@ -1217,7 +1241,7 @@ class AgentRuntime:
                     continue
                 self._calls_this_turn = 0
                 self._record_turn(
-                    user_message, turn_tool_calls_log,
+                    recorded_user_message, turn_tool_calls_log,
                     turn_tool_results_log, turn_final_response,
                 )
                 yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
@@ -1283,7 +1307,7 @@ class AgentRuntime:
                         yield steering_event
                     self._calls_this_turn += 1
                     continue
-                self._record_turn(user_message, turn_tool_calls_log, turn_tool_results_log, "")
+                self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
 
@@ -1293,7 +1317,7 @@ class AgentRuntime:
             self._calls_this_turn += 1
 
         self._record_turn(
-            user_message, turn_tool_calls_log,
+            recorded_user_message, turn_tool_calls_log,
             turn_tool_results_log, "",
         )
         yield StreamEvent(

@@ -1,9 +1,11 @@
 "use client";
 
-import { Box, Text } from "@chakra-ui/react";
+import { Box, Flex } from "@chakra-ui/react";
 import { memo } from "react";
-import type { ChatMessage } from "@/lib/use-chat";
+import { LuInfo } from "react-icons/lu";
+import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import { AttachmentChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ToolGroup } from "./tool-group";
@@ -42,12 +44,19 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
 
 export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview }: ChatMessageProps) {
   switch (message.role) {
-    case "user":
+    case "user": {
+      const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
       return (
-        <Box alignSelf="flex-end" bg="bg.muted" border="1px solid" borderColor="border" px={2} py={1.5} borderRadius="sm" maxW="80%">
-          <MarkdownContent content={message.content} />
-        </Box>
+        <Flex direction="column" alignSelf="flex-end" align="flex-end" gap={1.5} maxW="80%">
+          {attachments.length > 0 && <AttachmentChips attachments={attachments} />}
+          {message.content.trim() && (
+            <Box bg="bg.muted" border="1px solid" borderColor="border" px={2} py={1.5} borderRadius="sm" maxW="100%">
+              <MarkdownContent content={message.content} />
+            </Box>
+          )}
+        </Flex>
       );
+    }
 
     case "assistant":
       if (!message.content) return null;
@@ -70,9 +79,20 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     }
 
     case "error":
+      // A turn failure reads like a normal assistant note — plain, left-aligned
+      // prose — rather than an alarming red box, so it sits naturally in the
+      // conversation. A small muted marker is the only hint that it is a system
+      // message and not the model's own words.
       return (
-        <Box alignSelf="flex-start" bg="red.subtle" border="1px solid" borderColor="red.muted" px={2} py={1.5} borderRadius="sm" maxW="80%">
-          <Text fontSize="xs" color="red.fg">{message.content}</Text>
+        <Box alignSelf="flex-start" px={1}>
+          <Flex align="flex-start" gap={1.5} color="fg.muted">
+            <Box mt="2px" flexShrink={0} color="fg.subtle">
+              <LuInfo size={13} />
+            </Box>
+            <Box minW={0}>
+              <MarkdownContent content={message.content} />
+            </Box>
+          </Flex>
         </Box>
       );
 

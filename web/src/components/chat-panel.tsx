@@ -14,7 +14,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
-import { extractToolArtifacts, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
+import { extractToolArtifacts, externalPreviewUrl, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
+import { NativeWebview } from "./native-webview";
+import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { AgentsPanel } from "./agents-panel";
@@ -724,9 +726,24 @@ export function ChatPanel({
                 <LuX size={13} />
               </IconButton>
             </Flex>
-            <Box flex={1} minH={0} overflowY="auto" p={2}>
-              <PreviewArtifact artifact={activePreviewEntry.artifact} />
-            </Box>
+            {(() => {
+              // Desktop: an external website renders in the embedded native webview
+              // (real browser engine, top-level navigation — full fidelity). Local
+              // files, inline HTML, and the web build keep the proxied iframe.
+              const nativeUrl = nativePreviewAvailable() ? externalPreviewUrl(activePreviewEntry.artifact) : "";
+              if (nativeUrl) {
+                return (
+                  <Box flex={1} minH={0}>
+                    <NativeWebview key={nativeUrl} url={nativeUrl} />
+                  </Box>
+                );
+              }
+              return (
+                <Box flex={1} minH={0} overflowY="auto" p={2}>
+                  <PreviewArtifact artifact={activePreviewEntry.artifact} />
+                </Box>
+              );
+            })()}
           </MotionFlex>
         )}
         {agentsPanelOpen && (

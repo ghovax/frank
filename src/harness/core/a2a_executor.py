@@ -15,9 +15,11 @@ prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from litellm import exceptions as litellm_exceptions
@@ -128,6 +130,48 @@ def _structured_data_payloads(message) -> list[dict]:
             payloads.append(dict(data))
     return payloads
 
+
+# Attachments whose mime type starts with this are viewable by a vision model, so
+# they are inlined into the turn as image content blocks. Everything else stays a
+# text-only reference (path + metadata) the model opens with its file tools.
+_INLINE_IMAGE_MIME_PREFIX = "image/"
+# A generous ceiling on an inlined image so a huge upload cannot blow up the
+# request (and the persisted conversation it becomes part of). Larger images are
+# left as text references rather than inlined.
+_MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _image_attachments(structured_payloads: list[dict]) -> list[dict]:
+    """Every image attachment carried by the turn's research_attachments parts."""
+    images: list[dict] = []
+    for payload in structured_payloads:
+        if payload.get(PART_KIND) != "research_attachments":
+            continue
+        for attachment in payload.get("attachments") or []:
+            if not isinstance(attachment, dict):
+                continue
+            if str(attachment.get("mime_type", "")).startswith(_INLINE_IMAGE_MIME_PREFIX):
+                images.append(attachment)
+    return images
+
+
+def _image_content_block(attachment: dict) -> Optional[dict]:
+    """Build an OpenAI-shaped ``image_url`` content block from an attachment by
+    reading the stored file and base64-encoding it as a data URI. Returns ``None``
+    when the file is missing, unreadable, or too large to inline."""
+    path = str(attachment.get("path") or "")
+    if not path:
+        return None
+    mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return None
+    if len(raw) > _MAXIMUM_INLINE_IMAGE_BYTES:
+        return None
+    encoded = base64.b64encode(raw).decode("ascii")
+    return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
+
 # Each agent profile is served as its own A2A agent under this prefix.
 AGENT_RPC_PREFIX = "/a2a/agents"
 
@@ -224,8 +268,12 @@ def _provider_status_code(error: object) -> int | None:
     return response_status if isinstance(response_status, int) else None
 
 
-def _safe_turn_error(error: object) -> dict[str, object]:
-    """Classify a turn-level failure without exposing raw provider/tool text."""
+def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, object]:
+    """Classify a turn-level failure without exposing raw provider/tool text.
+
+    ``had_images`` marks a turn that carried an attached image, so a provider's
+    generic 400 is reframed into the real cause the user can act on: a text-only
+    model cannot read images."""
     status_code = _provider_status_code(error)
     provider_code = _provider_error_code(error)
     fields: dict[str, object] = {}
@@ -233,6 +281,17 @@ def _safe_turn_error(error: object) -> dict[str, object]:
         fields["status"] = status_code
     if provider_code:
         fields["providerCode"] = provider_code
+
+    # A turn with an image that the provider rejects almost always means the
+    # selected model is text-only — the most common, most actionable cause, and one
+    # the raw "invalid request" gives no hint of.
+    if had_images and (isinstance(error, litellm_exceptions.BadRequestError) or status_code == 400):
+        return {
+            **fields,
+            "code": "image_unsupported",
+            "title": "This model can't read images",
+            "message": "The selected model rejected the attached image — it looks like a text-only model. Switch to a vision-capable model and try again.",
+        }
 
     if isinstance(error, litellm_exceptions.RateLimitError) or status_code == 429:
         return {
@@ -729,6 +788,9 @@ class HarnessAgentExecutor(AgentExecutor):
 
         final_text = ""
         failed_message = ""
+        # Whether this turn carried an inlined image, so a provider rejection can be
+        # reframed as the actionable "this model can't read images" case.
+        turn_has_images = False
         runtime: AgentRuntime | None = None
         # Whether this turn has marked the context running/steerable. Set inside the
         # try (past the autonomous no-op check) so the finally only reverts state this
@@ -865,10 +927,26 @@ class HarnessAgentExecutor(AgentExecutor):
                 else:
                     turn_input = payload_json
             elif structured_payloads:
-                turn_input = json.dumps({
+                # The structured metadata (source records for the blackboard, file
+                # paths) always rides along as a text block so the model can act on
+                # the attachments with its tools. Any attached image is ALSO inlined
+                # as an image content block so a vision model actually sees it —
+                # without this the model only ever received the JSON metadata and
+                # (correctly) reported it could not perceive the picture.
+                text_payload = json.dumps({
                     "text": user_text,
                     "data_parts": structured_payloads,
                 }, ensure_ascii=False)
+                image_blocks = [
+                    block
+                    for attachment in _image_attachments(structured_payloads)
+                    if (block := _image_content_block(attachment)) is not None
+                ]
+                if image_blocks:
+                    turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
+                    turn_has_images = True
+                else:
+                    turn_input = text_payload
             else:
                 turn_input = user_text
 
@@ -1029,7 +1107,7 @@ class HarnessAgentExecutor(AgentExecutor):
             # Log the real exception server-side for debugging, but show the user
             # only a safe category — never the raw exception text.
             logger.exception("Agent turn failed: %s", exception)
-            await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
+            await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception, had_images=turn_has_images))]))
         finally:
             self._aborts.pop(task.id, None)
             # Persist the conversation after a top-level turn so a later restart can

@@ -13,8 +13,9 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFile, LuFolder, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
+import { AttachmentChip } from "./attachment-chips";
 import { ModelSelect } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
@@ -893,35 +894,16 @@ export function ChatInput({
           {attachments.length > 0 || uploadingCount > 0 ? (
             <Flex gap={1.5} px={2} pt={2} flexWrap="wrap">
               {attachments.map((attachment) => (
-                <Flex
+                <AttachmentChip
                   key={attachment.upload_id}
-                  align="center"
-                  gap={1.5}
-                  maxW="260px"
-                  px={1.5}
-                  py={1}
-                  border="1px solid"
-                  borderColor="border"
-                  borderRadius="sm"
-                  bg="bg.subtle"
-                >
-                  <Box color="fg.muted" flexShrink={0}><LuFile size={13} /></Box>
-                  <Box flex={1} minW={0}>
-                    <Text fontSize="xs" fontWeight="medium" truncate title={attachment.filename}>{attachment.filename}</Text>
-                    <Text fontSize="2xs" color="fg.subtle" truncate>{attachment.mime_type} — {Math.ceil(attachment.size / 1024)} KB</Text>
-                  </Box>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    borderRadius="sm"
-                    minW="20px"
-                    h="20px"
-                    px={0}
-                    onClick={() => removeAttachment(attachment.upload_id)}
-                  >
-                    <LuX size={11} />
-                  </Button>
-                </Flex>
+                  attachment={{
+                    filename: attachment.filename,
+                    path: attachment.path,
+                    mimeType: attachment.mime_type,
+                    size: attachment.size,
+                  }}
+                  onRemove={() => removeAttachment(attachment.upload_id)}
+                />
               ))}
               {uploadingCount > 0 ? (
                 <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="sm" bg="bg.subtle">

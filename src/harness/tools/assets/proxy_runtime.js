@@ -11,6 +11,7 @@
 (function () {
   var BASE = __HARNESS_PROXY_BASE__;
   var PROXY = __HARNESS_PROXY_URL__;
+  var WS_PROXY = __HARNESS_WS_PROXY_URL__;
 
   function abs(url) {
     try {
@@ -35,6 +36,30 @@
       return url;
     }
     return PROXY + encodeURIComponent(absolute);
+  }
+
+  // A WebSocket URL routed to the same-origin bridge endpoint. A relative or
+  // http(s) URL (resolved against the real origin) is normalized to ws(s) first,
+  // then wrapped so the browser opens the socket to us and we relay it upstream.
+  function wsProx(url) {
+    if (typeof url !== "string" || !url) {
+      return url;
+    }
+    try {
+      var absolute = new URL(url, BASE);
+      if (absolute.protocol === "http:") {
+        absolute.protocol = "ws:";
+      } else if (absolute.protocol === "https:") {
+        absolute.protocol = "wss:";
+      }
+      if (!/^wss?:$/i.test(absolute.protocol)) {
+        return url;
+      }
+      var wsBase = window.location.origin.replace(/^http/i, "ws");
+      return wsBase + WS_PROXY + encodeURIComponent(absolute.href);
+    } catch (error) {
+      return url;
+    }
   }
 
   // Swallow the cross-origin throw some pages hit when calling history APIs from
@@ -79,6 +104,46 @@
         // Leave the original URL untouched if it cannot be proxied.
       }
       return originalOpen.apply(this, [method, url].concat([].slice.call(arguments, 2)));
+    };
+  }
+
+  // Route WebSocket connections through the same-origin bridge so realtime features
+  // (live scores, chat, telemetry) work from the framed page instead of being
+  // blocked as cross-origin.
+  if (window.WebSocket) {
+    var NativeWebSocket = window.WebSocket;
+    var ProxiedWebSocket = function (url, protocols) {
+      var target = wsProx(url);
+      return protocols === undefined
+        ? new NativeWebSocket(target)
+        : new NativeWebSocket(target, protocols);
+    };
+    ProxiedWebSocket.prototype = NativeWebSocket.prototype;
+    ["CONNECTING", "OPEN", "CLOSING", "CLOSED"].forEach(function (key) {
+      try {
+        ProxiedWebSocket[key] = NativeWebSocket[key];
+      } catch (error) {
+        // Read-only in some engines; the prototype still carries the constants.
+      }
+    });
+    window.WebSocket = ProxiedWebSocket;
+  }
+
+  // Server-sent events are plain GETs, so they route through the HTTP proxy.
+  if (window.EventSource) {
+    var NativeEventSource = window.EventSource;
+    var ProxiedEventSource = function (url, config) {
+      return new NativeEventSource(prox(url), config);
+    };
+    ProxiedEventSource.prototype = NativeEventSource.prototype;
+    window.EventSource = ProxiedEventSource;
+  }
+
+  // Analytics/telemetry beacons, so a page's fire-and-forget POSTs still resolve.
+  if (navigator.sendBeacon) {
+    var nativeSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function (url, data) {
+      return nativeSendBeacon(prox(url), data);
     };
   }
 })();

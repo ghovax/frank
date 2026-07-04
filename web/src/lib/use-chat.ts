@@ -45,6 +45,16 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
 
 const HISTORY_PAGE_LIMIT = 500;
 
+// A file the user attached to a turn — the metadata needed to render a chip and
+// preview it (name, on-disk path served by /preview, mime, size). Carried on the
+// user message's `meta.attachments`, both on the live send and on replay.
+export interface MessageAttachment {
+  filename: string;
+  path: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool_call" | "thinking" | "error";
@@ -320,6 +330,8 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
         return { title: "Request is too large", message: "The model could not accept this much context. Start a smaller follow-up or switch to a model with more capacity." };
       case "request_rejected":
         return { title: "Model rejected the request", message: "The model could not accept this turn. Adjust the request or switch models." };
+      case "image_unsupported":
+        return { title: "This model can't read images", message: "The selected model rejected the attached image — it looks like a text-only model. Switch to a vision-capable model and try again." };
       default:
         return { title: "Turn could not complete", message: "The turn stopped unexpectedly. The raw details were written to the server log." };
     }
@@ -728,19 +740,59 @@ function pushAssistantText(state: ReduceState, text: string, sourceId?: string):
   }
 }
 
+// Normalize the attachments carried by a `research_attachments` data payload into
+// the lean shape the UI renders. Shared by the live send path (the outgoing
+// dataPart) and replay (the persisted user-message data part), so a chip looks
+// identical whether it was just sent or reloaded from history.
+function attachmentsFromData(data: Record<string, unknown> | undefined): MessageAttachment[] {
+  if (!data || data.kind !== "research_attachments") return [];
+  const raw = Array.isArray(data.attachments) ? data.attachments : [];
+  const attachments: MessageAttachment[] = [];
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    const path = String(record.path ?? "");
+    const filename = String(record.filename ?? record.title ?? "");
+    if (!path && !filename) continue;
+    attachments.push({
+      filename: filename || path.split("/").pop() || "attachment",
+      path,
+      mimeType: String(record.mime_type ?? ""),
+      size: Number(record.size ?? 0),
+    });
+  }
+  return attachments;
+}
+
+// The attachments carried on a whole message's parts (replay path — the persisted
+// user message keeps its research_attachments DataPart alongside the text part).
+function attachmentsFromMessage(message: A2AMessage): MessageAttachment[] {
+  const attachments: MessageAttachment[] = [];
+  for (const part of message.parts ?? []) {
+    if (part.kind === "data") attachments.push(...attachmentsFromData(part.data));
+  }
+  return attachments;
+}
+
 function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
-  // A user-role message with no visible prose is a silent widget interaction (the
-  // user clicked something in a widget; the payload is a data part, not text). The
-  // live path renders nothing for these, so replay must match — never a blank
-  // bubble. (Autonomous background-resume wakes are agent-authored, not user
-  // messages, so they never reach this path at all.) A typed user turn always
-  // carries prose, so this only skips genuinely silent interactions.
-  if (!text.trim()) return;
+  const attachments = attachmentsFromMessage(message);
+  // A user-role message with no visible prose AND no attachments is a silent
+  // widget interaction (the user clicked something in a widget; the payload is a
+  // data part, not text). The live path renders nothing for these, so replay must
+  // match — never a blank bubble. (Autonomous background-resume wakes are
+  // agent-authored, not user messages, so they never reach this path at all.) A
+  // typed user turn always carries prose; an attachment-only turn carries chips.
+  if (!text.trim() && attachments.length === 0) return;
   state.lane = null;
   state.messages = [
     ...state.messages,
-    { id: stableMessageId(state, "user", message.messageId), role: "user", content: text, timestamp: new Date().toISOString() },
+    {
+      id: stableMessageId(state, "user", message.messageId),
+      role: "user",
+      content: text,
+      timestamp: new Date().toISOString(),
+      ...(attachments.length > 0 ? { meta: { attachments } } : {}),
+    },
   ];
 }
 
@@ -1382,10 +1434,18 @@ export function useChat(
       // delivered to the model but never shown as a chat entry (an error is the
       // model's own realization; an interaction is silent), so only text appears.
       stateRef.current.lane = null;
+      const userMessageId = crypto.randomUUID();
       if (input.kind === "text") {
+        const attachments = attachmentsFromData(input.dataPart);
         stateRef.current.messages = [
           ...stateRef.current.messages,
-          { id: `user-${Date.now()}`, role: "user", content: input.text, timestamp: new Date().toISOString() },
+          {
+            id: stableMessageId(stateRef.current, "user", userMessageId),
+            role: "user",
+            content: input.text,
+            timestamp: new Date().toISOString(),
+            ...(attachments.length > 0 ? { meta: { attachments } } : {}),
+          },
         ];
         flush();
       }
@@ -1477,6 +1537,7 @@ export function useChat(
         workspaceStrategy,
         permissionMode,
         selectedModel,
+        userMessageId,
         dataPart
       );
     },

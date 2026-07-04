@@ -722,6 +722,7 @@ export function streamA2A(
   workspaceStrategy: WorkspaceStrategy = "none",
   permissionMode: PermissionMode = "default",
   selectedModel: string = "",
+  messageId: string = crypto.randomUUID(),
   // Optional structured payload carried as a typed DataPart alongside (or instead
   // of) the text — e.g. a widget interaction posted back to the agent.
   dataPart?: Record<string, unknown>
@@ -736,7 +737,7 @@ export function streamA2A(
   const message: A2AMessage = {
     role: "user",
     parts,
-    messageId: crypto.randomUUID(),
+    messageId,
     metadata: {
       ...(workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : {}),
       [WORKSPACE_STRATEGY_METADATA_KEY]: workspaceStrategy,
