@@ -17,6 +17,14 @@ from harness.core.background import current_background_jobs, cancel_all_backgrou
 _exa_client: Exa | None = None
 _mcp_client_manager: Any | None = None
 
+# How long a bash command may run before it is handed off to the background. Fast
+# commands (ls, cat, grep, git status, …) finish within this window and return
+# their output directly; only genuinely slow ones stay backgrounded and are
+# auto-injected when they complete. Keeping quick commands inline is what stops a
+# fast command that finishes just after the model answered from orphaning into a
+# pending job that would later trigger a redundant autonomous wake.
+_BASH_INLINE_SETTLE_SECONDS = 2.0
+
 
 def set_exa_client(client: Exa | None) -> None:
     global _exa_client
@@ -153,10 +161,18 @@ async def bash(
             "size": len(output),
         })
 
-    task_identifier = current_background_jobs().spawn(
+    jobs = current_background_jobs()
+    task_identifier = jobs.spawn(
         "bash", run(), output_path=output_path, cancel_callback=cancel_process,
         spec={"command": command, "read_only": read_only, "risk": risk},
     )
+    # Fast commands finish inline and return their output directly; only genuinely
+    # slow ones stay backgrounded and are auto-injected when they complete. A job
+    # settled inline never becomes a pending background job, so it cannot later wake
+    # the agent with a now-redundant result.
+    settled = await jobs.settle_inline(task_identifier, _BASH_INLINE_SETTLE_SECONDS)
+    if settled is not None:
+        return settled.result
     return json.dumps({
         "code": "bash_started",
         "task_identifier": task_identifier,

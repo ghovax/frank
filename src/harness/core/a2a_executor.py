@@ -82,6 +82,13 @@ WIDGET_EVENT_KIND = "widget_event"
 # Marks a turn the harness started on its own — not from user input — to deliver a
 # background result that landed after the previous turn ended (an autonomous wake).
 AUTONOMOUS_RESUME_METADATA_KEY = "harness/autonomousResume"
+# DataPart kind that opens an autonomous wake task. A2A has no "system/harness"
+# message role — only `user` and `agent` — so a harness-initiated turn is modelled
+# honestly as an *agent* message (the agent resumed itself) carrying this single,
+# prose-less part. It renders as nothing (the reducer ignores unknown kinds), so the
+# wake never fabricates a user message; the framing note reaches only the model, as a
+# system note. This is the explicit marker the transcript is keyed on, not a heuristic.
+AUTONOMOUS_RESUME_KIND = "autonomous_resume"
 # The system note that opens an autonomous wake turn. The actual result is drained
 # into the conversation as a `background_result` message before the model runs, so
 # this only frames why the model is being re-engaged.
@@ -496,9 +503,25 @@ class HarnessAgentExecutor(AgentExecutor):
         handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
         if handler is None:
             return
+        # Nothing left to deliver — a concurrent user turn already drained the result
+        # while the pump was scheduling this wake — so don't even mint a task. The
+        # executor re-checks this under the per-context lock (that's the authoritative
+        # guard against the race); short-circuiting here just avoids creating an empty,
+        # invisible wake task in the common case.
+        runtime = self._runtimes.get(context_id)
+        has_live_result = runtime is not None and runtime.background_jobs.has_completed_undelivered()
+        has_stored_result = get_background_job_store().has_undelivered_jobs(context_id, self._agent_name)
+        if not has_live_result and not has_stored_result:
+            return
+        # An agent-authored message (the agent resumed itself), carrying only the
+        # prose-less `autonomous_resume` part. Modelling it as `agent` rather than
+        # `user` keeps the persisted A2A task honest — no consumer, ours or an
+        # external one, sees a user message the user never sent — and the part renders
+        # as nothing. The framing note reaches only the model, injected as a system
+        # note in `execute`. It is still a real, replayable task streamed to viewers.
         message = Message(
-            role=Role.user,
-            parts=[Part(root=TextPart(text=BACKGROUND_RESUME_NOTE))],
+            role=Role.agent,
+            parts=[_data_part(AUTONOMOUS_RESUME_KIND)],
             message_id=uuid.uuid4().hex,
             context_id=context_id,
             metadata={AUTONOMOUS_RESUME_METADATA_KEY: True},
@@ -826,7 +849,13 @@ class HarnessAgentExecutor(AgentExecutor):
             # note), never as a user message; every other widget event is the
             # turn's structured JSON input.
             as_system_note = autonomous
-            if widget_payload is not None:
+            if autonomous:
+                # The wake message carries no prose (only an `autonomous_resume`
+                # part); the framing note is supplied here and injected into the
+                # model as a system note, so it steers the model without ever
+                # appearing as user input in the transcript.
+                turn_input = BACKGROUND_RESUME_NOTE
+            elif widget_payload is not None:
                 payload_json = json.dumps({"widget_event": widget_payload}, ensure_ascii=False)
                 if widget_payload.get("event") == "render_error":
                     # The same JSON payload, wrapped in a self-realization note and

@@ -730,6 +730,13 @@ function pushAssistantText(state: ReduceState, text: string, sourceId?: string):
 
 function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
+  // A user-role message with no visible prose is a silent widget interaction (the
+  // user clicked something in a widget; the payload is a data part, not text). The
+  // live path renders nothing for these, so replay must match — never a blank
+  // bubble. (Autonomous background-resume wakes are agent-authored, not user
+  // messages, so they never reach this path at all.) A typed user turn always
+  // carries prose, so this only skips genuinely silent interactions.
+  if (!text.trim()) return;
   state.lane = null;
   state.messages = [
     ...state.messages,

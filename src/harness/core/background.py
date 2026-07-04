@@ -238,6 +238,41 @@ class BackgroundJobs:
         if completion_getter.done() and not completion_getter.cancelled() and completion_getter.exception() is None:
             self._completed_identifiers.put_nowait(completion_getter.result())
 
+    async def settle_inline(self, identifier: str, timeout: float) -> BackgroundCompletion | None:
+        """Give a just-spawned job a brief window to finish *inline*.
+
+        If it completes within ``timeout`` it is drained here — removed from tracking
+        and marked delivered in the durable store — and its completion is returned so
+        the caller can hand the result straight back (this is the "fast commands
+        return directly" path for bash). Crucially, a job settled this way never
+        becomes an orphaned pending job, so it can never trigger a spurious autonomous
+        wake once the model has already moved on. If the window closes with the job
+        still running, ``None`` is returned and it stays backgrounded exactly as
+        before, to be delivered by the usual completion path.
+        """
+        record = self._jobs.get(identifier)
+        if record is None:
+            return None
+        try:
+            await asyncio.wait_for(asyncio.shield(record.task), timeout)
+        except asyncio.TimeoutError:
+            return None
+        except Exception:
+            # The task finished by raising; the error is captured when the completion
+            # is built below, so treat it as settled rather than propagating.
+            pass
+        record = self._jobs.pop(identifier, None)
+        if record is None:
+            return None
+        # The done-callback already enqueued this id on `_completed_identifiers`; we
+        # leave it there because `drain_completed` skips ids no longer in `_jobs`
+        # (its own dedup), so the stale signal is harmless. Removing from `_jobs` is
+        # what makes `has_pending()`/`has_completed_undelivered()` forget the job, so
+        # no resume pump wakes for it.
+        if self._context_id:
+            get_background_job_store().mark_delivered(identifier)
+        return self._build_completion(record)
+
     def drain_completed(self) -> list[BackgroundCompletion]:
         """Remove and return every finished job that has signalled completion."""
         signalled: list[str] = []
