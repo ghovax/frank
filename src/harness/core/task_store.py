@@ -42,13 +42,14 @@ from sqlalchemy import (
     delete,
     func,
     select,
+    update,
 )
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskStore
-from a2a.types import Task
+from a2a.types import Task, TaskState
 
 from harness.core.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
 
@@ -135,6 +136,23 @@ def _compact_history(messages: list) -> list:
     return compacted
 
 
+_TERMINAL_TASK_STATES = {
+    TaskState.completed.value,
+    TaskState.canceled.value,
+    TaskState.failed.value,
+    TaskState.rejected.value,
+}
+
+
+def _task_state_value(task: Task) -> str:
+    state = task.status.state
+    return state.value if isinstance(state, TaskState) else str(state)
+
+
+def _is_terminal_task(task: Task) -> bool:
+    return _task_state_value(task) in _TERMINAL_TASK_STATES
+
+
 class AppendOnlyTaskStore(TaskStore):
     """A2A task store that persists history/artifacts incrementally.
 
@@ -196,12 +214,12 @@ class AppendOnlyTaskStore(TaskStore):
         self._initialized = False
 
     async def initialize(self) -> None:
-        await acquire_sqlite_write_lock()
+        write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
                 await connection.run_sync(self._metadata.create_all)
         finally:
-            release_sqlite_write_lock()
+            release_sqlite_write_lock(write_lock)
         self._initialized = True
 
     async def _ensure_initialized(self) -> None:
@@ -219,11 +237,49 @@ class AppendOnlyTaskStore(TaskStore):
         self._persisted_count[task_id] = count
         return count
 
+    async def _compact_persisted_history(self, connection, task_id: str, messages: list) -> int:
+        compacted_messages = _compact_history(messages)
+        existing_rows = (
+            await connection.execute(
+                select(self._history.c.row_id)
+                .where(self._history.c.task_id == task_id)
+                .order_by(self._history.c.seq)
+            )
+        ).all()
+
+        for message_index, message in enumerate(compacted_messages):
+            if message_index < len(existing_rows):
+                await connection.execute(
+                    update(self._history)
+                    .where(self._history.c.row_id == existing_rows[message_index].row_id)
+                    .values(message=json.dumps(message))
+                )
+            else:
+                await connection.execute(
+                    self._history.insert().values(
+                        task_id=task_id,
+                        seq=message_index,
+                        message=json.dumps(message),
+                    )
+                )
+
+        if compacted_messages:
+            await connection.execute(
+                delete(self._history).where(
+                    self._history.c.task_id == task_id,
+                    self._history.c.seq >= len(compacted_messages),
+                )
+            )
+        else:
+            await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
+        return len(compacted_messages)
+
     async def save(self, task: Task, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()
         history = task.history or []
         artifacts = task.artifacts or []
-        await acquire_sqlite_write_lock()
+        terminal = _is_terminal_task(task)
+        write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
                 # Head: tiny upsert of the latest status + metadata.
@@ -247,19 +303,27 @@ class AppendOnlyTaskStore(TaskStore):
                     )
                 )
 
-                # History: insert only the messages not yet persisted. The list
-                # only ever grows, so the already-stored prefix is never rewritten.
-                persisted = await self._history_count(connection, task.id)
-                new_messages = history[persisted:]
-                if new_messages:
-                    await connection.execute(
-                        self._history.insert(),
-                        [
-                            {"task_id": task.id, "seq": persisted + offset, "message": _dump(message)}
-                            for offset, message in enumerate(new_messages)
-                        ],
+                if terminal:
+                    compacted_count = await self._compact_persisted_history(
+                        connection,
+                        task.id,
+                        [message.model_dump(mode="json") for message in history],
                     )
-                    self._persisted_count[task.id] = persisted + len(new_messages)
+                    self._persisted_count[task.id] = compacted_count
+                else:
+                    # History: insert only the messages not yet persisted. The list
+                    # only ever grows, so the already-stored prefix is never rewritten.
+                    persisted = await self._history_count(connection, task.id)
+                    new_messages = history[persisted:]
+                    if new_messages:
+                        await connection.execute(
+                            self._history.insert(),
+                            [
+                                {"task_id": task.id, "seq": persisted + offset, "message": _dump(message)}
+                                for offset, message in enumerate(new_messages)
+                            ],
+                        )
+                        self._persisted_count[task.id] = persisted + len(new_messages)
 
                 # Artifacts: upsert each by id (replace-in-place is safe and bounded).
                 for artifact in artifacts:
@@ -275,7 +339,7 @@ class AppendOnlyTaskStore(TaskStore):
                         )
                     )
         finally:
-            release_sqlite_write_lock()
+            release_sqlite_write_lock(write_lock)
 
     async def get(self, task_id: str, context: ServerCallContext | None = None) -> Optional[Task]:
         await self._ensure_initialized()
@@ -474,14 +538,14 @@ class AppendOnlyTaskStore(TaskStore):
 
     async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()
-        await acquire_sqlite_write_lock()
+        write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
                 await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
                 await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
                 await connection.execute(delete(self._head).where(self._head.c.id == task_id))
         finally:
-            release_sqlite_write_lock()
+            release_sqlite_write_lock(write_lock)
         self._persisted_count.pop(task_id, None)
 
     async def task_ids_for_context(self, context_id: str) -> list[str]:

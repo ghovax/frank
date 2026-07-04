@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.core.configuration import harness_home_directory
-from harness.core.sqlite_lock import sqlite_write_lock
+from harness.core.sqlite_lock import background_sqlite_write_lock, configure_background_sqlite_lock
 
 
 BACKGROUND_DATABASE_FILENAME = "background.db"
@@ -66,6 +66,7 @@ class BackgroundJobStore:
     def __init__(self, database_path: Path | None = None):
         self.database_path = database_path or background_database_path()
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        configure_background_sqlite_lock(self.database_path)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -75,7 +76,7 @@ class BackgroundJobStore:
         return connection
 
     def _initialize(self) -> None:
-        with sqlite_write_lock():
+        with background_sqlite_write_lock():
             with self._connect() as connection:
                 connection.execute(
                     """
@@ -111,7 +112,7 @@ class BackgroundJobStore:
         spec: dict[str, Any],
         tool_call_id: str = "",
     ) -> None:
-        with sqlite_write_lock():
+        with background_sqlite_write_lock():
             with self._connect() as connection:
                 connection.execute(
                     """
@@ -134,7 +135,7 @@ class BackgroundJobStore:
 
     def record_finished(self, job_id: str, result: str, *, status: str = STATUS_COMPLETED) -> None:
         """Mark a job completed (or failed — both carry a result payload the model reads)."""
-        with sqlite_write_lock():
+        with background_sqlite_write_lock():
             with self._connect() as connection:
                 connection.execute(
                     "UPDATE background_jobs SET status = ?, result_json = ?, completed_at = ? WHERE job_id = ?",
@@ -142,7 +143,7 @@ class BackgroundJobStore:
                 )
 
     def mark_delivered(self, job_id: str) -> None:
-        with sqlite_write_lock():
+        with background_sqlite_write_lock():
             with self._connect() as connection:
                 connection.execute(
                     "UPDATE background_jobs SET status = ?, delivered_at = ? WHERE job_id = ?",
@@ -150,7 +151,7 @@ class BackgroundJobStore:
                 )
 
     def mark_abandoned(self, job_id: str, result: str) -> None:
-        with sqlite_write_lock():
+        with background_sqlite_write_lock():
             with self._connect() as connection:
                 connection.execute(
                     "UPDATE background_jobs SET status = ?, result_json = ?, completed_at = ? WHERE job_id = ?",

@@ -485,16 +485,39 @@ export async function fetchSessionTasksPage(
   };
 }
 
+// The outcome of resolving a pending prompt. `ok` means the decision/answer
+// actually reached its waiting request. `status` distinguishes the cases so the
+// caller can phrase feedback: "resolved" (delivered), "stale" (someone already
+// answered it), "unknown" (no such pending request — the turn moved on or the
+// server restarted), "error"/"network" (the call itself failed).
+export interface ResolveResult {
+  ok: boolean;
+  status: "resolved" | "stale" | "unknown" | "error" | "network";
+}
+
+async function postResolve(url: string, payload: Record<string, unknown>): Promise<ResolveResult> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) return { ok: false, status: "error" };
+    const data = await response.json().catch(() => ({}));
+    const status = String((data as { status?: unknown }).status ?? "");
+    if (status === "resolved" || status === "stale") return { ok: true, status };
+    return { ok: false, status: status === "unknown" ? "unknown" : "error" };
+  } catch {
+    return { ok: false, status: "network" };
+  }
+}
+
 export async function resolvePermission(
   sessionId: string,
   requestId: string,
   decision: "deny" | "allow_once" | "allow_always"
-): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/permission`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ request_id: requestId, decision }),
-  });
+): Promise<ResolveResult> {
+  return postResolve(`${API_BASE}/chat/${sessionId}/permission`, { request_id: requestId, decision });
 }
 
 // Answer a pending ask_user question. `answers` is one entry per question (in
@@ -504,12 +527,8 @@ export async function resolveQuestion(
   sessionId: string,
   requestId: string,
   answers: unknown[]
-): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/question`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ request_id: requestId, answers }),
-  });
+): Promise<ResolveResult> {
+  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers });
 }
 
 export async function steerSession(sessionId: string, message: string): Promise<boolean> {
@@ -523,12 +542,25 @@ export async function steerSession(sessionId: string, message: string): Promise<
   return !!data.queued;
 }
 
-export async function abortSession(sessionId: string): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
+// Returns whether the abort request actually reached the server. A false result
+// means the turn may still be running, so the caller can tell the user rather than
+// leave them believing they stopped it.
+export async function abortSession(sessionId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
-export async function abortToolCall(sessionId: string, toolCallId: string): Promise<void> {
-  await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
+export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function validateWorkingDirectory(directory: string): Promise<{

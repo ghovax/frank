@@ -1481,13 +1481,17 @@ export function useChat(
   }, [runStream]);
 
   const send = useCallback(
-    (text: string, dataPart?: Record<string, unknown>) => {
+    (text: string, dataPart?: Record<string, unknown>, queueOnly = false) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       if (isStreamingRef.current) {
         const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataPart };
         const ctx = sessionIdRef.current;
-        if (ctx) {
+        // While the turn is paused on a pending decision (a permission or question
+        // prompt), a new message can only be plain-queued — never steered. Steering
+        // could not be honored until the decision is resolved anyway, and a "Steering
+        // next opening" chip would misrepresent that. It drains when the turn ends.
+        if (ctx && !queueOnly) {
           setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
           steerSession(ctx, trimmed)
             .then((queued) => {
@@ -1533,11 +1537,37 @@ export function useChat(
     [runStream]
   );
 
+  // Settle a stuck prompt card and tell the user when their decision/answer could
+  // not be delivered — a dropped connection, or a request that already expired
+  // because the turn moved on. Without this the card stays at "input required" and
+  // the composer stays gated, with no hint that the click was lost.
+  const notifyResolveFailure = useCallback((requestId: string, kind: "decision" | "answer", status: string) => {
+    stateRef.current.messages = stateRef.current.messages.map((message) => {
+      const permission = message.meta?.permission as { requestId?: string } | undefined;
+      const question = message.meta?.question as { requestId?: string } | undefined;
+      if (message.role !== "tool_call" || (permission?.requestId !== requestId && question?.requestId !== requestId)) return message;
+      return { ...message, meta: { ...message.meta, status: "failed" } };
+    });
+    flush();
+    toaster.create({
+      type: "error",
+      title: kind === "decision" ? "Couldn't submit your decision" : "Couldn't submit your answer",
+      description: status === "network"
+        ? "The server did not respond. Check the connection and try again."
+        : "This request is no longer active — the turn may have already moved on.",
+      closable: true,
+    });
+  }, [flush]);
+
   const handlePermission = useCallback(
     async (requestId: string, decision: PermissionDecision) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
-      await resolvePermission(ctx, requestId, decision);
+      const result = await resolvePermission(ctx, requestId, decision);
+      if (!result.ok) {
+        notifyResolveFailure(requestId, "decision", result.status);
+        return;
+      }
       // Record the decision and hand the card back to its normal lifecycle: an
       // approval resumes as "running" (the result/error finalizes it), a denial
       // is settled by the error the backend emits for this tool call.
@@ -1551,14 +1581,18 @@ export function useChat(
       });
       flush();
     },
-    [flush]
+    [flush, notifyResolveFailure]
   );
 
   const handleQuestion = useCallback(
     async (requestId: string, answers: QuestionAnswer[]) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
-      await resolveQuestion(ctx, requestId, answers);
+      const result = await resolveQuestion(ctx, requestId, answers);
+      if (!result.ok) {
+        notifyResolveFailure(requestId, "answer", result.status);
+        return;
+      }
       // Record the answer and hand the card back to its running lifecycle; the
       // tool_result finalizes it (same shape as a resolved permission).
       stateRef.current.messages = stateRef.current.messages.map((message) => {
@@ -1571,19 +1605,68 @@ export function useChat(
       });
       flush();
     },
-    [flush]
+    [flush, notifyResolveFailure]
   );
 
   const abort = useCallback(() => {
     const ctx = sessionIdRef.current;
-    if (ctx) abortSession(ctx);
-    else abortControllerRef.current?.abort();
-  }, []);
+    if (!ctx) {
+      abortControllerRef.current?.abort();
+      return;
+    }
+    // A Stop while the turn is paused on a decision auto-settles that decision:
+    // deny every pending permission and cancel every pending question, so the
+    // request is answered rather than left hanging. Without this the tool cards
+    // stay stuck at "input required" after the turn is torn down, and the backend
+    // permission future is only abandoned (never cleanly rejected).
+    let settledAny = false;
+    for (const message of stateRef.current.messages) {
+      if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
+      const permission = message.meta?.permission as { requestId?: string } | undefined;
+      const question = message.meta?.question as { requestId?: string } | undefined;
+      if (permission?.requestId) {
+        settledAny = true;
+        void resolvePermission(ctx, permission.requestId, "deny");
+      } else if (question?.requestId) {
+        settledAny = true;
+        void resolveQuestion(ctx, question.requestId, []);
+      }
+    }
+    if (settledAny) {
+      stateRef.current.messages = stateRef.current.messages.map((message) =>
+        message.role === "tool_call" && message.meta?.status === "input_required"
+          ? { ...message, meta: { ...message.meta, status: "failed" } }
+          : message
+      );
+      flush();
+    }
+    // Tell the user if the stop request never reached the server — the turn may still
+    // be running, and silently doing nothing would leave them stuck expecting it to end.
+    void abortSession(ctx).then((ok) => {
+      if (!ok) {
+        toaster.create({
+          type: "error",
+          title: "Couldn't stop the turn",
+          description: "The server did not confirm the stop. It may still be running — check the connection and retry.",
+          closable: true,
+        });
+      }
+    });
+  }, [flush]);
 
   const abortTool = useCallback((toolCallId: string) => {
     const ctx = sessionIdRef.current;
     if (!ctx || !toolCallId) return;
-    void abortToolCall(ctx, toolCallId);
+    void abortToolCall(ctx, toolCallId).then((ok) => {
+      if (!ok) {
+        toaster.create({
+          type: "error",
+          title: "Couldn't stop that tool call",
+          description: "The server did not confirm the cancellation. Check the connection and retry.",
+          closable: true,
+        });
+      }
+    });
     stateRef.current.messages = stateRef.current.messages.map((message) => (
       message.role === "tool_call" && message.meta?.toolCallId === toolCallId
         ? { ...message, meta: { ...message.meta, status: "failed" } }

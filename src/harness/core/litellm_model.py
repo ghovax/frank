@@ -46,7 +46,13 @@ class ChatLiteLLMModel(BaseChatModel):
     temperature: float = 0.0
     reasoning_effort: Optional[str] = None
     maximum_tokens: Optional[int] = None
-    timeout: Optional[float] = None
+    # A bounded request timeout so a stalled or half-dead provider connection cannot
+    # hang a turn forever. The streaming loop only checks for aborts BETWEEN chunks,
+    # so if the provider stops sending bytes entirely the turn is otherwise
+    # unrecoverable (Stop cannot interrupt an await that never resumes). The value is
+    # deliberately generous — it bounds a truly dead connection without cutting off a
+    # legitimately long generation. LiteLLM forwards it to the underlying HTTP client.
+    timeout: Optional[float] = 300.0
     default_headers: dict[str, str] = {}
 
     @property

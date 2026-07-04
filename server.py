@@ -1561,7 +1561,13 @@ async def mcp_read_resource(request: MCPResourceReadRequest):
 @app.post("/directory/validate")
 async def validate_directory(request: DirectoryValidationRequest):
     """Validate that a path is an existing absolute directory and report Git workspace availability."""
-    directory = request.directory.strip()
+    # The git probes below spawn subprocesses that can block for seconds (a slow or
+    # networked repository), so the whole thing runs off the event loop — a blocking
+    # subprocess on the loop thread would freeze every other request until it returns.
+    return await asyncio.to_thread(_validate_directory_payload, request.directory.strip())
+
+
+def _validate_directory_payload(directory: str) -> dict[str, object]:
     if not directory:
         return {
             "valid": False,
@@ -1612,6 +1618,13 @@ async def validate_directory(request: DirectoryValidationRequest):
 @app.post("/directory/browse")
 async def browse_directory():
     """Open a native folder picker on the local server machine and return an absolute path."""
+    # The native picker blocks until the user chooses or cancels — up to five minutes.
+    # It MUST run off the event loop: on the loop thread it would freeze the entire
+    # server (every request hanging) for as long as the dialog stays open.
+    return await asyncio.to_thread(_open_folder_picker)
+
+
+def _open_folder_picker() -> dict[str, object]:
     system = platform.system()
     try:
         if system == "Darwin":

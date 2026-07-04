@@ -1,67 +1,37 @@
-# Model Provider Credentials
-#
-# Provider keys resolve in this order: this file first, then the provider's
-# conventional environment variable. First-party providers use LiteLLM's built-in
-# endpoints. OpenAI-compatible providers can also declare a base_url.
 providers:
   opencode:
-    api_key: "sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92"
-    base_url: "https://opencode.ai/zen/go/v1"
+    api_key: sk-bmbJZeXN9mVmbAQW3FbnAb8mJGfZjRLVWdpphLdl2b0o58C1UjAGOFr58vWWdJ92
+    base_url: https://opencode.ai/zen/go/v1
   anthropic:
-    api_key: ""
+    api_key: ''
   openai:
-    api_key: ""
+    api_key: ''
   google:
-    api_key: ""
+    api_key: ''
   openrouter:
-    api_key: ""
+    api_key: ''
   xai:
-    api_key: ""
+    api_key: ''
   deepseek:
-    api_key: ""
+    api_key: ''
   groq:
-    api_key: ""
+    api_key: ''
   mistral:
-    api_key: ""
+    api_key: ''
   custom:
-    api_key: ""
-    base_url: ""
-
-# Default Model
-#
-# Stored as provider + model so the YAML is readable. The runtime recombines
-# these into the provider/model identifier used by LiteLLM.
-selected_provider: "opencode"
-selected_model: "deepseek-v4-flash"
-
-# Literature and Web Retrieval
-#
-# Exa powers the built-in web_search fallback. EXA_API_KEY can also provide this.
+    api_key: ''
+    base_url: ''
+selected_provider: opencode
+selected_model: deepseek-v4-flash
 exa:
-  api_key: ""
-
-# Hosted Tool Integrations
-#
-# Composio is exposed as a normal MCP server when enabled. COMPOSIO_API_KEY can
-# also provide the key.
+  api_key: ''
 composio:
   enabled: false
-  url: "https://connect.composio.dev/mcp"
-  api_key: "ck_7lCN7vVj1bG9CCfRZX4L"
-  server_name: "composio"
-
-# Execution Behavior
-#
-# sandbox.enabled confines bash tools to the active workspace unless the user
-# grants permission. workspace.strategy controls optional branch/worktree setup.
+  url: https://connect.composio.dev/mcp
+  api_key: ck_7lCN7vVj1bG9CCfRZX4L
+  server_name: composio
 sandbox:
   enabled: true
-
 workspace:
-  strategy: "none"
-
-# Agent and Skill Discovery
-#
-# Directory roots are fixed in code: ~/.agents globally and .agents inside the
-# selected working directory. Only the default primary agent is configurable.
-default_agent: "senior-researcher"
+  strategy: none
+default_agent: senior-researcher

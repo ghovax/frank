@@ -290,7 +290,7 @@ class _TextPartBuffer:
         self,
         emit: Callable[[tuple[str, ...], str], Awaitable[None]],
         *,
-        flush_interval: float = 0.05,
+        flush_interval: float = 0.016,
         flush_size: int = 512,
     ):
         self._emit = emit
