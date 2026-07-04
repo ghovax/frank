@@ -15,7 +15,7 @@ import httpx
 DEFAULT_SOURCES = ["openalex", "crossref", "arxiv", "pubmed", "europepmc", "semanticscholar"]
 REQUEST_TIMEOUT = httpx.Timeout(30.0)
 PER_RUN_TIMEOUT = 45.0  # A source still running after this is recorded as timed out, not awaited forever.
-DEFAULT_LOG_PATH = os.path.join(tempfile.gettempdir(), "paperscanner.log")
+DEFAULT_LOG_PATH = os.path.join(tempfile.gettempdir(), "scholar.log")
 
 RANK_WEIGHTS = {
     "lexical_relevance": 1.0,
@@ -38,7 +38,7 @@ FACET_FIELDS = {
 }
 
 
-logger = logging.getLogger("paperscanner")
+logger = logging.getLogger("scholar")
 
 
 def configure_logging(log_path: str = DEFAULT_LOG_PATH) -> None:
@@ -58,7 +58,7 @@ def configure_logging(log_path: str = DEFAULT_LOG_PATH) -> None:
 
 def _http_get(url: str, params: dict | None = None, headers: dict | None = None) -> httpx.Response:
     """Issue a redirect-following GET with the project user agent and shared timeout."""
-    merged = {"User-Agent": "PaperScanner/1.0", **(headers or {})}
+    merged = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36", **(headers or {})}
     with httpx.Client(timeout=REQUEST_TIMEOUT, follow_redirects=True, headers=merged) as client:
         return client.get(url, params=params)
 

@@ -65,7 +65,7 @@ function StepCard({
         title={step.goal || "Agent task"}
         badges={
           <>
-            <Badge size="sm" variant="surface" colorPalette="gray" borderRadius="sm" flexShrink={0}>
+            <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
               {agentLabel || "Agent"}
             </Badge>
             <AgentStateBadge state={step.state} />
@@ -76,18 +76,11 @@ function StepCard({
         onToggle={() => setOpen((current) => !current)}
       />
 
-      {open && <ToolCardBody>
-        {step.stepId && (
-          <Box mb={2}>
-            <ToolMetaRow label="Step">
-              <Text truncate>{step.stepId}</Text>
-            </ToolMetaRow>
-          </Box>
-        )}
-        {step.parts.length > 0 && (
+      {open && step.parts.length > 0 && (
+        <ToolCardBody>
           <AgentTimeline parts={step.parts} agents={agents} />
-        )}
-      </ToolCardBody>}
+        </ToolCardBody>
+      )}
     </ToolCard>
   );
 }

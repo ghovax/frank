@@ -2,7 +2,7 @@
 
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { LuChevronDown, LuChevronRight, LuWrench } from "react-icons/lu";
+import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import { iconForFilePath } from "@/lib/file-icons";
@@ -21,35 +21,9 @@ function toolStatus(status: unknown): ToolEventStatus | undefined {
   return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined;
 }
 
-// Per-tool phrasing for the group header summary: a past-tense phrase (carrying
-// its count) for the completed state, and a gerund for the running state. This is
-// what lets a group read as "Searched the web 8 times" or "Ran 2 commands and
-// edited a file" instead of a generic "8 tool calls".
-const TOOL_SUMMARY: Record<string, { past: (count: number) => string; gerund: string }> = {
-  web_search: { past: (n) => (n === 1 ? "searched the web" : `searched the web ${n} times`), gerund: "Searching the web" },
-  bash: { past: (n) => (n === 1 ? "ran a command" : `ran ${n} commands`), gerund: "Running commands" },
-  read_file: { past: (n) => (n === 1 ? "read a file" : `read files ${n} times`), gerund: "Reading files" },
-  find_files: { past: (n) => (n === 1 ? "searched for files" : `searched for files ${n} times`), gerund: "Finding files" },
-  search_content: { past: (n) => (n === 1 ? "searched file contents" : `searched file contents ${n} times`), gerund: "Searching content" },
-  edit_file: { past: (n) => (n === 1 ? "edited a file" : `edited ${n} files`), gerund: "Editing files" },
-  write_file: { past: (n) => (n === 1 ? "wrote a file" : `wrote ${n} files`), gerund: "Writing files" },
-  fetch_url: { past: (n) => (n === 1 ? "fetched a URL" : `fetched ${n} URLs`), gerund: "Fetching URLs" },
-  open_preview: { past: (n) => (n === 1 ? "opened a preview" : `opened ${n} previews`), gerund: "Opening previews" },
-  render_widget: { past: (n) => (n === 1 ? "rendered a widget" : `rendered ${n} widgets`), gerund: "Rendering widgets" },
-  spawn_agent: { past: (n) => (n === 1 ? "delegated to an agent" : `delegated to ${n} agents`), gerund: "Delegating to agents" },
-  load_skill: { past: (n) => (n === 1 ? "loaded a skill" : `loaded ${n} skills`), gerund: "Loading skills" },
-  ask_user: { past: (n) => (n === 1 ? "asked a question" : `asked ${n} questions`), gerund: "Asking" },
-  call_mcp_tool: { past: (n) => (n === 1 ? "called an MCP tool" : `called ${n} MCP tools`), gerund: "Calling MCP tools" },
-  read_mcp_resource: { past: (n) => (n === 1 ? "read an MCP resource" : `read ${n} MCP resources`), gerund: "Reading MCP resources" },
-  read_task: { past: (n) => (n === 1 ? "read a task" : `read ${n} tasks`), gerund: "Reading tasks" },
-};
-const DEFAULT_TOOL_SUMMARY = {
-  past: (n: number) => (n === 1 ? "ran a tool call" : `ran ${n} tool calls`),
-  gerund: "Working",
-};
-
-// Tally the tools by name, preserving first-seen order (so the summary reads in
-// the order work actually happened).
+// Tally the tools by name, preserving first-seen order (so the recap reads in the
+// order work actually happened): each distinct tool becomes one icon plus how many
+// times it was invoked.
 function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, number> } {
   const order: string[] = [];
   const counts = new Map<string, number>();
@@ -59,25 +33,6 @@ function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, 
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return { order, counts };
-}
-
-function summarizeToolGroup(tools: ToolEvent[], active: boolean): string {
-  const { order, counts } = tallyTools(tools);
-  if (active) {
-    // While running: the gerund of the work underway. A single category is named
-    // specifically; a mixed batch falls back to a generic "Working on N…".
-    if (order.length === 1) {
-      return `${(TOOL_SUMMARY[order[0]] ?? DEFAULT_TOOL_SUMMARY).gerund}…`;
-    }
-    return `Working on ${tools.length} ${tools.length === 1 ? "tool call" : "tool calls"}…`;
-  }
-  // Done: compose a past-tense summary that carries the counts, e.g.
-  // "Searched the web 8 times" or "Ran 2 commands and edited a file".
-  const phrases = order.map((name) => (TOOL_SUMMARY[name] ?? DEFAULT_TOOL_SUMMARY).past(counts.get(name)!));
-  const joined = phrases.length === 1
-    ? phrases[0]
-    : `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
-  return joined.charAt(0).toUpperCase() + joined.slice(1);
 }
 
 interface FileChange {
@@ -153,24 +108,21 @@ export const ToolGroup = memo(function ToolGroup({
     }
   }, [tools.length, bodyOpen]);
 
-  // Extract file changes from tool arguments for the file-centric heading. When the
-  // group includes file operations (edit_file, write_file) the heading shows the
-  // changed files with their extension icons and diff stats; other tools (bash,
-  // web_search, etc.) keep the original summary text.
+  // Extract file changes from tool arguments for the right side of the header: when
+  // the group includes file operations (edit_file, write_file) it shows the changed
+  // files with their extension icons and diff stats, alongside the status badge.
   const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
   const hasFileChanges = fileChanges.length > 0;
-  const summary = summarizeToolGroup(tools, active);
-  const dominant = tools[0]
-    ? getToolCallDisplay(tools[0].name, tools[0].arguments)
-    : { icon: LuWrench, iconColor: "fg.muted" };
-  const DominantIcon = dominant.icon;
+  // The left side is a live recap: one icon per distinct tool with its invocation
+  // count, preceded by a generic "doing something" word that shimmers while active.
+  const tally = useMemo(() => tallyTools(tools), [tools]);
 
   const badge = inputRequired
     ? { label: "Input required", colorPalette: "yellow" }
     : failedCount > 0
-      ? { label: "Failed", colorPalette: "red" }
+      ? { label: `${failedCount} failed`, colorPalette: "red" }
       : runningCount > 0
-        ? { label: "Running", colorPalette: "blue" }
+        ? { label: `${runningCount} running`, colorPalette: "blue" }
         : null;
 
   return (
@@ -198,27 +150,53 @@ export const ToolGroup = memo(function ToolGroup({
           textAlign="left"
           cursor="pointer"
           _hover={{ bg: "bg.muted" }}
-          onClick={() => setManualOverride((current) => !(current ?? active))}
+          onClick={() => setManualOverride((current) => current === null ? true : !current)}
         >
-          <Box fontSize="sm" flexShrink={0} color={active ? dominant.iconColor : "fg.muted"}>
-            <DominantIcon size={13} />
-          </Box>
-          <Text
-            fontSize="xs"
-            fontWeight="medium"
-            flex={1}
-            minW={0}
-            truncate
-            className={active ? "running-title-shimmer" : undefined}
-          >
-            {summary}
-          </Text>
+          <Flex align="center" gap={2} flex={1} minW={0}>
+            <Text
+              fontSize="xs"
+              fontWeight="medium"
+              flexShrink={0}
+              whiteSpace="nowrap"
+              // While active, leave the color unset so the shimmer class controls it:
+              // an inline color would override the gradient's transparent fill (inline
+              // beats class) and the shimmer would silently not render.
+              color={active ? undefined : "fg.muted"}
+              className={active ? "running-title-shimmer" : undefined}
+            >
+              {active ? "Still working" : "Actions taken"}
+            </Text>
+            <Flex align="center" gap={2} minW={0} flexWrap="wrap">
+              {tally.order.map((name) => {
+                const display = getToolCallDisplay(name);
+                const ToolIcon = display.icon;
+                const count = tally.counts.get(name) ?? 0;
+                return (
+                  <Flex
+                    key={name}
+                    align="center"
+                    gap={1}
+                    flexShrink={0}
+                    title={display.label}
+                    color={active ? display.iconColor : "fg.muted"}
+                  >
+                    <ToolIcon size={13} />
+                    {count > 1 && (
+                      <Text fontSize="xs" fontWeight="medium" color="fg.muted">
+                        {count}
+                      </Text>
+                    )}
+                  </Flex>
+                );
+              })}
+            </Flex>
+          </Flex>
           {hasFileChanges && fileChanges.length > 0 && (
-            <Flex align="center" gap={2} flexShrink={0} overflow="visible" flexWrap="wrap">
-              {fileChanges.map((file) => {
+            <Flex align="center" gap={2} flexShrink={1} minW={0} overflow="hidden">
+              {fileChanges.slice(0, 3).map((file) => {
                 const FileIcon = iconForFilePath(file.path).icon;
                 return (
-                  <Flex key={file.path} align="center" gap={1.5} minW={0}>
+                  <Flex key={file.path} align="center" gap={1.5} minW={0} flexShrink={1}>
                     <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
                       <FileIcon size={13} />
                     </Box>
@@ -229,6 +207,11 @@ export const ToolGroup = memo(function ToolGroup({
                   </Flex>
                 );
               })}
+              {fileChanges.length > 3 && (
+                <Badge size="sm" variant="surface" colorPalette="gray" borderRadius="sm" flexShrink={0}>
+                  {fileChanges.length} files
+                </Badge>
+              )}
             </Flex>
           )}
           {badge && (

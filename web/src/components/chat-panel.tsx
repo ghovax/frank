@@ -9,14 +9,17 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuClock, LuNavigation, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuClock, LuFolder, LuFolderOpen, LuNavigation, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
-import { extractToolArtifacts, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
+import { extractToolArtifacts, externalPreviewUrl, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
+import { NativeWebview } from "./native-webview";
+import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
+import { QuestionOverlay } from "./question-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
 import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
@@ -51,7 +54,7 @@ interface ChatPanelProps {
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
-  models?: { id: string; name: string; provider: string; available: boolean }[];
+  models?: { id: string; name: string; provider: string; available: boolean; curated: boolean }[];
   modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
   recentModels?: { id: string; name: string; provider: string }[];
   selectedModel?: string;
@@ -175,6 +178,10 @@ export function ChatPanel({
   // once per row, and only for live-appended rows (see animatedKeys below).
   const enteredKeysRef = useRef<Set<string>>(new Set());
   const notifiedSessionIdRef = useRef<string | null>(null);
+  // Whether the turn is currently paused on a pending decision (a permission or
+  // question prompt on a tool call). Read via a ref inside handleSend so a new
+  // message is queued rather than steered while a decision is outstanding.
+  const hasInputRequiredRef = useRef(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
@@ -185,6 +192,10 @@ export function ChatPanel({
   const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
   const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
+  // Whether the transcript is scrolled to (or near) the bottom. Drives the floating
+  // "jump to latest" affordance so a reader who scrolled up to read history can
+  // return to the live tail in one click instead of scrolling all the way down.
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   // Pinned == the viewport is at (or within a hair of) the bottom. That single
   // fact drives everything: pinned means follow new content, unpinned means the
@@ -193,7 +204,12 @@ export function ChatPanel({
     const container = scrollContainerRef.current;
     if (!container) return;
     const distanceFromBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
-    isPinnedRef.current = distanceFromBottom <= 8;
+    const atBottom = distanceFromBottom <= 8;
+    isPinnedRef.current = atBottom;
+    // A larger threshold for showing the jump button than for "pinned": the button
+    // should not flash for a hair of scroll, but pinning must stay strict so the
+    // live tail never fights a reader who nudged up a pixel.
+    setIsAtBottom(distanceFromBottom <= 120);
     lastScrollTopRef.current = container.scrollTop;
   }, []);
 
@@ -203,6 +219,7 @@ export function ChatPanel({
 
   const scrollToBottom = useCallback(() => {
     isPinnedRef.current = true;
+    setIsAtBottom(true);
     const container = scrollContainerRef.current;
     if (!container) return;
     container.scrollTop = container.scrollHeight;
@@ -210,9 +227,10 @@ export function ChatPanel({
     scrollMetricsRef.current.scrollHeight = container.scrollHeight;
   }, []);
 
-  const handleSend = useCallback((text: string) => {
+  const handleSend = useCallback((text: string, dataPart?: Record<string, unknown>) => {
     scrollToBottom();
-    send(text);
+    // Queue (never steer) while a decision prompt is outstanding — see hasInputRequiredRef.
+    send(text, dataPart, hasInputRequiredRef.current);
     scrollToBottom();
   }, [scrollToBottom, send]);
 
@@ -405,6 +423,21 @@ export function ChatPanel({
   const lastMessage = messages[messages.length - 1];
   const isAssistantStreaming = !!lastMessage && lastMessage.role === "assistant";
   const liveStatusLabel = !isStreaming || isAssistantStreaming ? null : "Thinking";
+  // A tool call awaiting the user's approval or answer pauses the turn. While it is
+  // outstanding, the composer may only queue (see handleSend) and Stop auto-denies it.
+  const hasInputRequired = messages.some(
+    (message) => message.role === "tool_call" && message.meta?.status === "input_required"
+  );
+  hasInputRequiredRef.current = hasInputRequired;
+  // The first pending ask_user question, surfaced as an overlay above the input.
+  const pendingQuestion = useMemo(() => {
+    for (const message of messages) {
+      if (message.role === "tool_call" && message.meta?.status === "input_required" && message.meta?.question) {
+        return message.meta.question as import("@/lib/tool-event").ToolQuestion;
+      }
+    }
+    return null;
+  }, [messages]);
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
   // client-side after a change) rather than in an effect.
@@ -443,6 +476,7 @@ export function ChatPanel({
     <WidgetEventProvider onEvent={handleWidgetEvent}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
+        <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none", scrollbarGutter: "stable" }}>
           {isHistoryLoading ? (
             <Flex h="100%" />
@@ -467,13 +501,38 @@ export function ChatPanel({
             </Flex>
           ) : messages.length === 0 ? (
             <Flex direction="column" align="center" gap={6} px={4} pt={{ base: 8, md: 16 }} pb={{ base: 8, md: 12 }}>
-              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center" pb={8}>
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
                 What should we build in {currentFolderName}?
               </Text>
+              {/* Center-of-screen shortcuts for the actions a user reaches for from a
+                  blank conversation, so they don't have to hunt the sidebar or the
+                  composer toolbar: open a folder, or jump straight to a recent project. */}
+              <Flex gap={2} wrap="wrap" justify="center" pb={2}>
+                {onBrowseFolder && (
+                  <Button size="sm" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
+                    <LuFolderOpen size={14} />
+                    Open a folder
+                  </Button>
+                )}
+                {(recentProjects ?? []).slice(0, 4).map((project) => (
+                  <Button
+                    key={project.path}
+                    size="sm"
+                    variant="subtle"
+                    borderRadius="md"
+                    disabled={project.path === workingDirectory}
+                    onClick={() => onWorkingDirectoryChange?.(project.path)}
+                    title={project.path}
+                  >
+                    <LuFolder size={13} />
+                    {project.name}
+                  </Button>
+                ))}
+              </Flex>
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
-            <VStack ref={scrollContentRef} gap={2} align="stretch" mt="auto">
+            <VStack ref={scrollContentRef} gap={2} align="stretch">
               <AnimatePresence initial={false}>
                 {renderedTimeline.map((item, itemIndex) => {
                   const isLastItem = itemIndex === renderedTimeline.length - 1;
@@ -524,42 +583,74 @@ export function ChatPanel({
                 })}
               </AnimatePresence>
               {queuedMessages.map((message, index) => (
-                <Box
-                  key={message.id}
-                  alignSelf="flex-end"
-                  maxW="80%"
-                  px={2}
-                  py={1.5}
-                  borderRadius="sm"
-                  border="1px dashed"
-                  borderColor="border"
-                  bg="bg.subtle"
-                  opacity={0.55}
-                  cursor="pointer"
-                  title="Queued — click to remove"
-                  onClick={() => dequeueMessage(index)}
-                >
-                  <Flex align="center" gap={1.5}>
-                    <Box as="span" display="inline-flex" alignItems="center">
-                      {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
-                    </Box>
-                    <Text fontSize="xs" color="fg.subtle" fontWeight="medium">
-                      {message.steering ? "Steering next opening" : "Queued"}
-                    </Text>
-                  </Flex>
-                  <Text fontSize="sm" color="fg.muted">{message.text}</Text>
-                </Box>
+                <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
+                  <IconButton
+                    aria-label="Delete queued message"
+                    size="xs"
+                    variant="ghost"
+                    colorPalette="red"
+                    borderRadius="sm"
+                    mt="2px"
+                    flexShrink={0}
+                    onClick={() => dequeueMessage(index)}
+                  >
+                    <LuTrash2 size={11} />
+                  </IconButton>
+                  <Box
+                    px={2}
+                    py={1.5}
+                    borderRadius="sm"
+                    border="1px dashed"
+                    borderColor="border"
+                    bg="bg.subtle"
+                    opacity={0.7}
+                    flex={1}
+                    minW={0}
+                  >
+                    <Flex align="center" gap={1.5}>
+                      <Box as="span" display="inline-flex" alignItems="center">
+                        {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
+                      </Box>
+                      <Text fontSize="xs" color="fg.subtle" fontWeight="medium">
+                        {message.steering ? "Steering next opening" : "Queued"}
+                      </Text>
+                    </Flex>
+                    <Text fontSize="sm" color="fg.muted">{message.text}</Text>
+                  </Box>
+                </Flex>
               ))}
             </VStack>
           )}
         </Box>
+        {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (
+          <IconButton
+            aria-label="Jump to latest"
+            title="Jump to latest"
+            size="sm"
+            variant="solid"
+            colorPalette="gray"
+            borderRadius="full"
+            position="absolute"
+            bottom={3}
+            left="50%"
+            transform="translateX(-50%)"
+            zIndex={2}
+            boxShadow="md"
+            onClick={scrollToBottom}
+          >
+            <LuArrowDown />
+          </IconButton>
+        )}
+        </Box>
 
+        {pendingQuestion && (
+          <QuestionOverlay question={pendingQuestion} onQuestion={handleQuestion} />
+        )}
         <ChatInput
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          tasks={tasks}
-          disabled={!isConnected}
+          disabled={!isConnected || !!pendingQuestion}
           sessionId={sessionId}
           workingDirectory={workingDirectory}
           recentProjects={recentProjects}
@@ -648,9 +739,24 @@ export function ChatPanel({
                 <LuX size={13} />
               </IconButton>
             </Flex>
-            <Box flex={1} minH={0} overflowY="auto" p={2}>
-              <PreviewArtifact artifact={activePreviewEntry.artifact} />
-            </Box>
+            {(() => {
+              // Desktop: an external website renders in the embedded native webview
+              // (real browser engine, top-level navigation — full fidelity). Local
+              // files, inline HTML, and the web build keep the proxied iframe.
+              const nativeUrl = nativePreviewAvailable() ? externalPreviewUrl(activePreviewEntry.artifact) : "";
+              if (nativeUrl) {
+                return (
+                  <Box flex={1} minH={0}>
+                    <NativeWebview key={nativeUrl} url={nativeUrl} />
+                  </Box>
+                );
+              }
+              return (
+                <Box flex={1} minH={0} overflowY="auto" p={2}>
+                  <PreviewArtifact artifact={activePreviewEntry.artifact} />
+                </Box>
+              );
+            })()}
           </MotionFlex>
         )}
         {agentsPanelOpen && (

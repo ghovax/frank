@@ -1,70 +1,98 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useRef, useState } from "react";
 
-// Animates from 0 (on mount) or the previous value to the new target using
-// requestAnimationFrame, so the number visibly counts up as edits arrive.
-function useAnimatedValue(target: number, duration = 450): number {
+const MotionSpan = motion.span;
+
+function normalizedValue(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+}
+
+function useAnimatedValue(target: number, duration = 520): { displayValue: number; direction: 1 | -1 } {
+  const prefersReducedMotion = useReducedMotion();
   const [display, setDisplay] = useState(0);
-  const previousRef = useRef(0);
+  const [direction, setDirection] = useState<1 | -1>(1);
+  const displayRef = useRef(0);
 
   useEffect(() => {
-    if (!Number.isFinite(target)) {
-      previousRef.current = 0;
-      setDisplay(0);
+    const targetValue = normalizedValue(target);
+    if (prefersReducedMotion) {
+      displayRef.current = targetValue;
+      setDisplay(targetValue);
       return;
     }
 
-    if (target === previousRef.current) {
-      setDisplay(target);
+    const startValue = displayRef.current;
+    const delta = targetValue - startValue;
+    if (delta === 0) {
+      setDisplay(targetValue);
       return;
     }
 
-    const startValue = previousRef.current;
+    setDirection(delta > 0 ? 1 : -1);
     const startTime = performance.now();
-    let frameId: number;
+    const distanceAdjustedDuration = Math.min(760, Math.max(220, duration + Math.min(Math.abs(delta), 24) * 8));
+    let animationFrame: number;
 
     function tick(now: number) {
       const elapsed = now - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      // Ease-out cubic: fast start, slow end
+      const progress = Math.min(elapsed / distanceAdjustedDuration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      const current = Math.round(startValue + (target - startValue) * eased);
+      const currentValue = Math.round(startValue + delta * eased);
 
-      setDisplay(current);
+      displayRef.current = currentValue;
+      setDisplay(currentValue);
 
       if (progress < 1) {
-        frameId = requestAnimationFrame(tick);
+        animationFrame = requestAnimationFrame(tick);
       } else {
-        previousRef.current = target;
+        displayRef.current = targetValue;
+        setDisplay(targetValue);
       }
     }
 
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [target, duration]);
+    animationFrame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [duration, prefersReducedMotion, target]);
 
-  return display;
+  return { displayValue: display, direction };
 }
 
-// A single digit — rendered as plain text since the counter hook drives the
-// visible stepping animation (the old cylinder-based approach didn't animate
-// because values jumped directly to the final number without intermediate steps).
-const Digit = memo(function Digit({ digit }: { digit: number }) {
+const Digit = memo(function Digit({ digit, direction }: { digit: number; direction: 1 | -1 }) {
   const safeDigit = Number.isFinite(digit) ? digit : 0;
   return (
     <Box
       as="span"
-      display="inline-flex"
+      display="inline-block"
+      position="relative"
       h="1em"
-      minW="0.5em"
-      alignItems="center"
-      justifyContent="center"
+      minW="0.58em"
+      overflow="hidden"
+      lineHeight="1em"
       fontVariantNumeric="tabular-nums"
+      verticalAlign="-0.12em"
     >
-      {safeDigit}
+      <AnimatePresence initial={false} custom={direction} mode="popLayout">
+        <MotionSpan
+          key={safeDigit}
+          custom={direction}
+          initial={{ y: direction > 0 ? "100%" : "-100%", opacity: 0.3 }}
+          animate={{ y: "0%", opacity: 1 }}
+          exit={{ y: direction > 0 ? "-100%" : "100%", opacity: 0.3 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {safeDigit}
+        </MotionSpan>
+      </AnimatePresence>
     </Box>
   );
 });
@@ -76,8 +104,8 @@ interface RollingNumberProps {
 export const RollingNumber = memo(function RollingNumber({
   value,
 }: RollingNumberProps) {
-  const displayValue = useAnimatedValue(value);
-  const safeValue = Number.isFinite(displayValue) ? Math.max(0, displayValue) : 0;
+  const { displayValue, direction } = useAnimatedValue(value);
+  const safeValue = normalizedValue(displayValue);
   const digits = String(safeValue).split("").map(Number);
   return (
     <Box
@@ -88,7 +116,7 @@ export const RollingNumber = memo(function RollingNumber({
       whiteSpace="nowrap"
     >
       {digits.map((digit, index) => (
-        <Digit key={index} digit={digit} />
+        <Digit key={digits.length - index - 1} digit={digit} direction={direction} />
       ))}
     </Box>
   );

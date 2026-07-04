@@ -62,7 +62,7 @@ def _fuse_group(group: list[dict]) -> dict:
     }
 
 
-def _normalize_min_max(values: np.ndarray) -> np.ndarray:
+def _normalize_minimum_maximum(values: np.ndarray) -> np.ndarray:
     """Scale an array into the 0..1 range; a flat array (no spread) maps to all zeros."""
     spread = values.max() - values.min()
     return np.zeros_like(values) if spread == 0 else (values - values.min()) / spread
@@ -71,11 +71,11 @@ def _normalize_min_max(values: np.ndarray) -> np.ndarray:
 def score_papers(papers: list[dict], current_year: int) -> np.ndarray:
     """Compute a weighted composite score for every paper, one matrix row per ranking signal."""
     signal_matrix = np.vstack([
-        _normalize_min_max(np.array([1.0 / (paper.get("source_rank", 999) + 1) for paper in papers])),
-        _normalize_min_max(np.log1p([paper.get("citations", 0) for paper in papers])),
-        _normalize_min_max(np.array([paper.get("year") or current_year for paper in papers], dtype=float)),
-        _normalize_min_max(np.array([len(paper.get("found_by", [])) for paper in papers], dtype=float)),
-        _normalize_min_max(np.array([paper.get("fwci", 0.0) for paper in papers])),
+        _normalize_minimum_maximum(np.array([1.0 / (paper.get("source_rank", 999) + 1) for paper in papers])),
+        _normalize_minimum_maximum(np.log1p([paper.get("citations", 0) for paper in papers])),
+        _normalize_minimum_maximum(np.array([paper.get("year") or current_year for paper in papers], dtype=float)),
+        _normalize_minimum_maximum(np.array([len(paper.get("found_by", [])) for paper in papers], dtype=float)),
+        _normalize_minimum_maximum(np.array([paper.get("fwci", 0.0) for paper in papers])),
     ])
     return np.array(list(RANK_WEIGHTS.values())) @ signal_matrix
 

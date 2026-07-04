@@ -13,7 +13,7 @@ import { MarkdownContent } from "./markdown-content";
 function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
   const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
-  return <Box as="span" fontFamily="var(--app-font-mono)">{identifier}</Box>;
+  return <Box as="span" fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Box>;
 }
 
 // MCP tool descriptions come from Python docstrings, which carry an Args:/

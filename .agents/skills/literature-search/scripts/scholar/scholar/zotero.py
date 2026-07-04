@@ -499,7 +499,7 @@ def _creators_from_names(names: list[str]) -> list[dict]:
 def _crossref_item(doi: str) -> dict:
     """Fetch one CrossRef record and shape the journal-article fields Zotero needs (creators, bib, abstract)."""
     response = _http_get(f"https://api.crossref.org/works/{urllib.parse.quote(doi)}",
-                         headers={"User-Agent": "PaperScanner/1.0"})
+                         headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"})
     response.raise_for_status()
     message = response.json()["message"]
     creators = []

@@ -15,9 +15,11 @@ prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from litellm import exceptions as litellm_exceptions
@@ -51,6 +53,7 @@ from harness.core.configuration import (
     GlobalConfiguration,
     load_agent_configuration,
 )
+from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
 from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
@@ -78,6 +81,25 @@ PART_KIND = "kind"
 # A user turn whose input is a widget interaction carries it as a DataPart of
 # this kind rather than as prose, so the payload reaches the model intact.
 WIDGET_EVENT_KIND = "widget_event"
+# Marks a turn the harness started on its own — not from user input — to deliver a
+# background result that landed after the previous turn ended (an autonomous wake).
+AUTONOMOUS_RESUME_METADATA_KEY = "harness/autonomousResume"
+# DataPart kind that opens an autonomous wake task. A2A has no "system/harness"
+# message role — only `user` and `agent` — so a harness-initiated turn is modelled
+# honestly as an *agent* message (the agent resumed itself) carrying this single,
+# prose-less part. It renders as nothing (the reducer ignores unknown kinds), so the
+# wake never fabricates a user message; the framing note reaches only the model, as a
+# system note. This is the explicit marker the transcript is keyed on, not a heuristic.
+AUTONOMOUS_RESUME_KIND = "autonomous_resume"
+# The system note that opens an autonomous wake turn. The actual result is drained
+# into the conversation as a `background_result` message before the model runs, so
+# this only frames why the model is being re-engaged.
+BACKGROUND_RESUME_NOTE = (
+    "A background task you started earlier has finished while this conversation was "
+    "idle. Its result is now available in the conversation. Review it and continue "
+    "the work it unblocks; if nothing remains to do, give the user a short update on "
+    "what completed."
+)
 
 
 def _widget_event_payload(message) -> Optional[dict]:
@@ -94,6 +116,61 @@ def _widget_event_payload(message) -> Optional[dict]:
                 "data": root.data.get("data"),
             }
     return None
+
+
+def _structured_data_payloads(message) -> list[dict]:
+    """Return non-widget DataPart payloads carried by the user turn."""
+    payloads: list[dict] = []
+    for part in (message.parts or []):
+        root = getattr(part, "root", part)
+        if isinstance(root, DataPart):
+            data = root.data
+            if data.get(PART_KIND) == WIDGET_EVENT_KIND:
+                continue
+            payloads.append(dict(data))
+    return payloads
+
+
+# Attachments whose mime type starts with this are viewable by a vision model, so
+# they are inlined into the turn as image content blocks. Everything else stays a
+# text-only reference (path + metadata) the model opens with its file tools.
+_INLINE_IMAGE_MIME_PREFIX = "image/"
+# A generous ceiling on an inlined image so a huge upload cannot blow up the
+# request (and the persisted conversation it becomes part of). Larger images are
+# left as text references rather than inlined.
+_MAXIMUM_INLINE_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _image_attachments(structured_payloads: list[dict]) -> list[dict]:
+    """Every image attachment carried by the turn's research_attachments parts."""
+    images: list[dict] = []
+    for payload in structured_payloads:
+        if payload.get(PART_KIND) != "research_attachments":
+            continue
+        for attachment in payload.get("attachments") or []:
+            if not isinstance(attachment, dict):
+                continue
+            if str(attachment.get("mime_type", "")).startswith(_INLINE_IMAGE_MIME_PREFIX):
+                images.append(attachment)
+    return images
+
+
+def _image_content_block(attachment: dict) -> Optional[dict]:
+    """Build an OpenAI-shaped ``image_url`` content block from an attachment by
+    reading the stored file and base64-encoding it as a data URI. Returns ``None``
+    when the file is missing, unreadable, or too large to inline."""
+    path = str(attachment.get("path") or "")
+    if not path:
+        return None
+    mime_type = str(attachment.get("mime_type") or "application/octet-stream")
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        return None
+    if len(raw) > _MAXIMUM_INLINE_IMAGE_BYTES:
+        return None
+    encoded = base64.b64encode(raw).decode("ascii")
+    return {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
 
 # Each agent profile is served as its own A2A agent under this prefix.
 AGENT_RPC_PREFIX = "/a2a/agents"
@@ -191,8 +268,12 @@ def _provider_status_code(error: object) -> int | None:
     return response_status if isinstance(response_status, int) else None
 
 
-def _safe_turn_error(error: object) -> dict[str, object]:
-    """Classify a turn-level failure without exposing raw provider/tool text."""
+def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, object]:
+    """Classify a turn-level failure without exposing raw provider/tool text.
+
+    ``had_images`` marks a turn that carried an attached image, so a provider's
+    generic 400 is reframed into the real cause the user can act on: a text-only
+    model cannot read images."""
     status_code = _provider_status_code(error)
     provider_code = _provider_error_code(error)
     fields: dict[str, object] = {}
@@ -200,6 +281,17 @@ def _safe_turn_error(error: object) -> dict[str, object]:
         fields["status"] = status_code
     if provider_code:
         fields["providerCode"] = provider_code
+
+    # A turn with an image that the provider rejects almost always means the
+    # selected model is text-only — the most common, most actionable cause, and one
+    # the raw "invalid request" gives no hint of.
+    if had_images and (isinstance(error, litellm_exceptions.BadRequestError) or status_code == 400):
+        return {
+            **fields,
+            "code": "image_unsupported",
+            "title": "This model can't read images",
+            "message": "The selected model rejected the attached image — it looks like a text-only model. Switch to a vision-capable model and try again.",
+        }
 
     if isinstance(error, litellm_exceptions.RateLimitError) or status_code == 429:
         return {
@@ -264,7 +356,7 @@ class _TextPartBuffer:
         self,
         emit: Callable[[tuple[str, ...], str], Awaitable[None]],
         *,
-        flush_interval: float = 0.05,
+        flush_interval: float = 0.016,
         flush_size: int = 512,
     ):
         self._emit = emit
@@ -370,6 +462,18 @@ class HarnessAgentExecutor(AgentExecutor):
         # of this, so switching agents mid-session continues the same conversation
         # with a different persona rather than starting over.
         self._conversations: dict[str, list] = conversations if conversations is not None else {}
+        # Serializes turns per context so a user turn and an autonomous background
+        # wake never drive the same (shared) runtime concurrently. Delegated
+        # sub-agent turns share their parent's context and run *inside* the parent
+        # turn, so they deliberately do not take this lock (that would deadlock).
+        self._context_locks: dict[str, asyncio.Lock] = {}
+        # One background-resume pump per context: after a turn ends with work still
+        # in flight, the pump waits (event-driven) for each result and drives an
+        # autonomous turn to deliver it, so the agent wakes itself up.
+        self._resume_pumps: dict[str, asyncio.Task] = {}
+        # Holds startup-recovery wake tasks so they are not garbage-collected before
+        # they finish driving their turn.
+        self._startup_resume_tasks: set[asyncio.Task] = set()
 
     def abort_context(self, context_id: str) -> bool:
         runtime = self._runtimes.get(context_id)
@@ -411,6 +515,80 @@ class HarnessAgentExecutor(AgentExecutor):
         used when the session's model override changes, so the new model takes
         effect without a server restart."""
         self._runtimes.pop(context_id, None)
+
+    def _context_lock(self, context_id: str) -> asyncio.Lock:
+        lock = self._context_locks.get(context_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._context_locks[context_id] = lock
+        return lock
+
+    def _arm_resume_pump(self, context_id: str) -> None:
+        """Ensure a resume pump watches this context while it has background work in
+        flight. Idempotent — a live pump is left running."""
+        runtime = self._runtimes.get(context_id)
+        if runtime is None or not runtime.background_jobs.has_pending():
+            return
+        existing = self._resume_pumps.get(context_id)
+        if existing is not None and not existing.done():
+            return
+        self._resume_pumps[context_id] = asyncio.create_task(self._resume_pump(context_id))
+
+    async def _resume_pump(self, context_id: str) -> None:
+        """Wait (event-driven, at zero cost) for each background result to land while
+        the context is otherwise idle, driving an autonomous turn to deliver each. It
+        loops until nothing is pending, then retires."""
+        try:
+            while True:
+                runtime = self._runtimes.get(context_id)
+                if runtime is None or not runtime.background_jobs.has_pending():
+                    return
+                await runtime.background_jobs.wait_for_completion()
+                # A result landed — drive an autonomous turn to deliver it. If a
+                # concurrent user turn already drained it, that turn no-ops.
+                await self._run_autonomous_turn(context_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Background-resume pump failed for context %s", context_id)
+        finally:
+            self._resume_pumps.pop(context_id, None)
+
+    async def _run_autonomous_turn(self, context_id: str) -> None:
+        """Start a turn the user did not initiate, to deliver a completed background
+        result. It reuses the ordinary turn path via a self-sent A2A message, so the
+        wake is a real, persisted, replayable task streamed to viewers like any other
+        turn — the agent genuinely picks the work back up on its own."""
+        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+        if handler is None:
+            return
+        # Nothing left to deliver — a concurrent user turn already drained the result
+        # while the pump was scheduling this wake — so don't even mint a task. The
+        # executor re-checks this under the per-context lock (that's the authoritative
+        # guard against the race); short-circuiting here just avoids creating an empty,
+        # invisible wake task in the common case.
+        runtime = self._runtimes.get(context_id)
+        has_live_result = runtime is not None and runtime.background_jobs.has_completed_undelivered()
+        has_stored_result = get_background_job_store().has_undelivered_jobs(context_id, self._agent_name)
+        if not has_live_result and not has_stored_result:
+            return
+        # An agent-authored message (the agent resumed itself), carrying only the
+        # prose-less `autonomous_resume` part. Modelling it as `agent` rather than
+        # `user` keeps the persisted A2A task honest — no consumer, ours or an
+        # external one, sees a user message the user never sent — and the part renders
+        # as nothing. The framing note reaches only the model, injected as a system
+        # note in `execute`. It is still a real, replayable task streamed to viewers.
+        message = Message(
+            role=Role.agent,
+            parts=[_data_part(AUTONOMOUS_RESUME_KIND)],
+            message_id=uuid.uuid4().hex,
+            context_id=context_id,
+            metadata={AUTONOMOUS_RESUME_METADATA_KEY: True},
+        )
+        async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
+            # Drive to completion; viewers receive the turn through the stream-event
+            # fan-out and the persisted task, so the yielded events are not needed here.
+            pass
 
     def _build_runtime(
         self,
@@ -485,9 +663,46 @@ class HarnessAgentExecutor(AgentExecutor):
             if self._session_permission_mode_for is not None:
                 runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, context_id))
             self._runtimes[context_id] = runtime
+            # First time this process builds a runtime for the context: replay any
+            # background results the durable store holds but never delivered (e.g.
+            # a parse that finished, or was interrupted, across a restart), so the
+            # model sees them as soon as this — or the autonomous wake — runs.
+            self._replay_stored_background_results(context_id, runtime)
         # A context's working directory is fixed at creation — a session stays
         # bound to the folder it was started in, so later turns never repoint it.
         return runtime
+
+    def _replay_stored_background_results(self, context_id: str, runtime: AgentRuntime) -> None:
+        store = get_background_job_store()
+        for job in store.undelivered_jobs(context_id, self._agent_name):
+            runtime.inject_stored_background_result(
+                kind=job["kind"],
+                identifier=job["job_id"],
+                tool_call_identifier=job["tool_call_id"],
+                result=job["result"] or "",
+            )
+            store.mark_delivered(job["job_id"])
+
+    async def resume_pending_on_startup(self) -> None:
+        """After a restart, recover this agent's persisted background work. A job that
+        was still running cannot be resurrected as a live coroutine, so it is recorded
+        as interrupted (the model is told to re-run it if the result is still needed);
+        then every context that now has a deliverable result is woken autonomously."""
+        store = get_background_job_store()
+        for job in store.running_jobs(self._agent_name):
+            store.mark_abandoned(job["job_id"], json.dumps({
+                "code": f"{job['kind']}_interrupted",
+                "task_identifier": job["job_id"],
+                "message": (
+                    "This task was interrupted by a server restart before it finished. "
+                    "Re-run it if the result is still needed."
+                ),
+                "spec": job["spec"],
+            }))
+        for context_id in store.contexts_with_undelivered(self._agent_name):
+            wake_task = asyncio.create_task(self._run_autonomous_turn(context_id))
+            self._startup_resume_tasks.add(wake_task)
+            wake_task.add_done_callback(self._startup_resume_tasks.discard)
 
     async def _workspace_for(
         self,
@@ -543,12 +758,14 @@ class HarnessAgentExecutor(AgentExecutor):
         # below (once the runtime's prompt loader exists) into a behind-the-scenes
         # self-realization note the model repairs as its own output.
         widget_payload = _widget_event_payload(context.message)
+        structured_payloads = _structured_data_payloads(context.message)
         metadata = context.message.metadata or {}
         requested_working_directory = str(metadata.get(WORKING_DIRECTORY_METADATA_KEY, ""))
         requested_workspace_strategy = str(metadata.get(WORKSPACE_STRATEGY_METADATA_KEY, ""))
         permission_mode = str(metadata.get(PERMISSION_MODE_METADATA_KEY, ""))
         requested_model = str(metadata.get(SELECTED_MODEL_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
+        autonomous = bool(metadata.get(AUTONOMOUS_RESUME_METADATA_KEY))
 
         task = context.current_task
         if task is None:
@@ -561,17 +778,26 @@ class HarnessAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
+        # Serialize non-delegated turns per context so a user turn and an autonomous
+        # background wake never drive the shared runtime concurrently. Delegated
+        # sub-agent turns share the parent's context and run inside it, so they must
+        # not take this lock (that would deadlock against the parent).
+        context_serialization_lock = None if delegated else self._context_lock(task.context_id)
+        if context_serialization_lock is not None:
+            await context_serialization_lock.acquire()
+
         final_text = ""
         failed_message = ""
+        # Whether this turn carried an inlined image, so a provider rejection can be
+        # reframed as the actionable "this model can't read images" case.
+        turn_has_images = False
         runtime: AgentRuntime | None = None
-
-        # A top-level user turn marks its session as running so the sidebar can
-        # show a spinner. Delegated sub-agent turns run within their parent turn,
-        # which is already counted, so they are not tracked separately.
-        track_running = not delegated and self._on_turn_state is not None
-        if track_running:
-            self._on_turn_state(task.context_id, True)
-            self._active_contexts.add(task.context_id)
+        # Whether this turn has marked the context running/steerable. Set inside the
+        # try (past the autonomous no-op check) so the finally only reverts state this
+        # turn actually established. Everything after acquire() lives inside that try,
+        # so no early return or raised exception can strand the per-context lock — a
+        # leaked lock deadlocks every later turn on this session until a restart.
+        track_running = False
 
         async def emit(part: Part) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
@@ -623,6 +849,27 @@ class HarnessAgentExecutor(AgentExecutor):
         # surfaced as a clean A2A `failed` status rather than escaping and tearing
         # down the SSE stream mid-flight.
         try:
+            # An autonomous wake with nothing left to deliver — a concurrent user turn
+            # already drained the result while this one waited on the lock — is a no-op:
+            # close the task without a model call rather than emit an empty turn. The
+            # finally still runs on this early return, releasing the lock.
+            if autonomous:
+                existing_runtime = self._runtimes.get(task.context_id)
+                has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
+                has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._agent_name)
+                if not has_live_result and not has_stored_result:
+                    await updater.complete()
+                    return
+
+            # A top-level user turn marks its session as running so the sidebar can
+            # show a spinner and the turn becomes steerable. Delegated sub-agent turns
+            # run within their parent turn, which is already counted, so they are not
+            # tracked separately.
+            track_running = not delegated and self._on_turn_state is not None
+            if track_running:
+                self._on_turn_state(task.context_id, True)
+                self._active_contexts.add(task.context_id)
+
             await updater.start_work()
 
             workspace = await self._workspace_for(
@@ -663,8 +910,14 @@ class HarnessAgentExecutor(AgentExecutor):
             # A render_error is injected as the model's own realization (a system
             # note), never as a user message; every other widget event is the
             # turn's structured JSON input.
-            as_system_note = False
-            if widget_payload is not None:
+            as_system_note = autonomous
+            if autonomous:
+                # The wake message carries no prose (only an `autonomous_resume`
+                # part); the framing note is supplied here and injected into the
+                # model as a system note, so it steers the model without ever
+                # appearing as user input in the transcript.
+                turn_input = BACKGROUND_RESUME_NOTE
+            elif widget_payload is not None:
                 payload_json = json.dumps({"widget_event": widget_payload}, ensure_ascii=False)
                 if widget_payload.get("event") == "render_error":
                     # The same JSON payload, wrapped in a self-realization note and
@@ -673,6 +926,27 @@ class HarnessAgentExecutor(AgentExecutor):
                     as_system_note = True
                 else:
                     turn_input = payload_json
+            elif structured_payloads:
+                # The structured metadata (source records for the blackboard, file
+                # paths) always rides along as a text block so the model can act on
+                # the attachments with its tools. Any attached image is ALSO inlined
+                # as an image content block so a vision model actually sees it —
+                # without this the model only ever received the JSON metadata and
+                # (correctly) reported it could not perceive the picture.
+                text_payload = json.dumps({
+                    "text": user_text,
+                    "data_parts": structured_payloads,
+                }, ensure_ascii=False)
+                image_blocks = [
+                    block
+                    for attachment in _image_attachments(structured_payloads)
+                    if (block := _image_content_block(attachment)) is not None
+                ]
+                if image_blocks:
+                    turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
+                    turn_has_images = True
+                else:
+                    turn_input = text_payload
             else:
                 turn_input = user_text
 
@@ -833,21 +1107,43 @@ class HarnessAgentExecutor(AgentExecutor):
             # Log the real exception server-side for debugging, but show the user
             # only a safe category — never the raw exception text.
             logger.exception("Agent turn failed: %s", exception)
-            await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
+            await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception, had_images=turn_has_images))]))
         finally:
             self._aborts.pop(task.id, None)
             # Persist the conversation after a top-level turn so a later restart can
             # restore it. Delegated sub-agent runs have their own throwaway history
-            # and don't touch the shared context, so they are not persisted.
-            if not delegated and self._save_conversation is not None:
+            # and don't touch the shared context, so they are not persisted. Only save
+            # when there is something to save (a built runtime, or an already-cached
+            # conversation) — an autonomous no-op wake has neither, and blindly saving
+            # an empty list would clobber the persisted history.
+            if not delegated and self._save_conversation is not None and (
+                runtime is not None or task.context_id in self._conversations
+            ):
                 await asyncio.to_thread(
                     self._save_conversation,
                     task.context_id,
                     runtime.conversation if runtime is not None else self._conversations.get(task.context_id, []),
                 )
+            # Stop accepting steering for this context before draining the queue, then
+            # discard anything that arrived too late to be honored (raced in after the
+            # loop's final drain, or while the turn was ending/failing). Such messages
+            # were never applied to the conversation; the client re-sends them as a
+            # fresh turn on stream close, so leaving them queued here would double-
+            # apply them when the next turn drains the runtime at its first boundary.
             if track_running:
                 self._active_contexts.discard(task.context_id)
+            cached_runtime = self._runtimes.get(task.context_id)
+            if cached_runtime is not None:
+                cached_runtime.discard_pending_steering()
+            if track_running:
                 self._on_turn_state(task.context_id, False)
+            if context_serialization_lock is not None:
+                context_serialization_lock.release()
+            # If background work is still in flight after this turn, make sure a
+            # resume pump is watching so the next completion wakes the agent on its
+            # own. Delegated turns don't own the context lifecycle, so they skip it.
+            if not delegated:
+                self._arm_resume_pump(task.context_id)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or (context.current_task.id if context.current_task else "")

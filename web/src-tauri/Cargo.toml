@@ -17,7 +17,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# `unstable` is required for the multiwebview API (Window::add_child) used to embed
+# the native website-preview webview inside the main window.
+tauri = { version = "2", features = ["tray-icon", "unstable"] }
 # The front-end-local store (saved connection profiles, UI prefs) lives in its own
 # SQLite database, separate from the harness server's history.db.
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }

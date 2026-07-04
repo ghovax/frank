@@ -1,4 +1,4 @@
-You attempted to end your turn while an active goal is still unresolved:
+You attempted to end your turn while an **active goal** is still unresolved:
 
 {{ goal }}
 

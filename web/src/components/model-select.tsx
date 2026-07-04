@@ -47,6 +47,7 @@ interface ProviderItem {
 interface ModelItem {
   value: string;
   label: string;
+  curated: boolean;
 }
 
 function providerForModel(modelId: string, models: ModelOption[]): string {
@@ -63,6 +64,17 @@ function suffixForModel(modelId: string): string {
 function displayModelName(modelId: string, models: ModelOption[]): string {
   if (!modelId) return "Model";
   return models.find((model) => model.id === modelId)?.name ?? modelId;
+}
+
+/**
+ * Whether a model's display name is a fallback to its raw ID rather than a
+ * proper human-readable label. When true, the frontend renders it in monospace
+ * to signal "this is a technical identifier, not a curated display name."
+ */
+function modelNameIsFallbackId(modelId: string, models: ModelOption[]): boolean {
+  const model = models.find((m) => m.id === modelId);
+  if (!model) return true; // unknown model — treat as fallback, render monospace
+  return model.name === suffixForModel(modelId);
 }
 
 function providerName(providerId: string, providers: ProviderOption[]): string {
@@ -115,8 +127,8 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         if (leftRecent !== rightRecent) return leftRecent ? -1 : 1;
         return left.name.localeCompare(right.name);
       });
-    const items = providerModels.map((model) => ({ value: model.id, label: model.name }));
-    items.push({ value: CUSTOM_MODEL, label: "Other model" });
+    const items = providerModels.map((model) => ({ value: model.id, label: model.name, curated: model.curated }));
+    items.push({ value: CUSTOM_MODEL, label: "Select unlisted third-party model...", curated: false });
     return items;
   }, [models, recentIds, selectedProvider]);
   const modelCollection = useMemo(() => createListCollection({ items: modelItems }), [modelItems]);
@@ -136,6 +148,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
       : firstKnownModel;
   const effectiveModelId = value || fallbackModelId;
   const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : "Model";
+  const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
   const selectedProviderLabel = providerName(selectedProvider, providers);
   const selectedProviderKey = providerKeys[selectedProvider] ?? "";
@@ -214,12 +227,12 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
             <Box as="span" color="fg.subtle" display="flex" alignItems="center" flexShrink={0}>
               <LuChevronRight size={compact ? 11 : 13} />
             </Box>
-            <Box as="span" truncate>
+            <Box as="span" truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
               {chipModelName}
             </Box>
           </Flex>
         ) : (
-          <Box as="span" truncate>
+          <Box as="span" truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
             {chipModelName}
           </Box>
         )}
@@ -316,7 +329,13 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                               .map((model) => (
                                 <Select.Item item={model} key={model.value} fontWeight="medium">
                                   <Flex align="center" gap={2} w="100%">
-                                    <Text flex={1}>{model.label}</Text>
+                                    {suffixForModel(model.value) !== model.label ? (
+                                      <Text flex={1}>{model.label}</Text>
+                                    ) : (
+                                      <Text flex={1} fontFamily="var(--app-font-mono)" fontSize="xs">
+                                        {model.label}
+                                      </Text>
+                                    )}
                                     {recentIds.has(model.value) ? (
                                       <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
                                         Recent
@@ -327,19 +346,22 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                                 </Select.Item>
                               ))}
                             {customModelItem ? (
-                              <Select.Item
-                                item={customModelItem}
-                                key={customModelItem.value}
-                                bg="blue.subtle"
-                                color="blue.fg"
-                                fontWeight="medium"
-                                borderColor="border"
-                                pt={1}
-                                _hover={{ bg: "blue.muted" }}
-                              >
-                                {customModelItem.label}
-                                <Select.ItemIndicator />
-                              </Select.Item>
+                              <>
+                                <Box borderTop="1px solid" borderColor="border" my={1.5} />
+                                <Select.Item
+                                  item={customModelItem}
+                                  key={customModelItem.value}
+                                  bg="blue.subtle"
+                                  color="blue.fg"
+                                  fontWeight="medium"
+                                  borderColor="border"
+                                  pt={1}
+                                  _hover={{ bg: "blue.muted" }}
+                                >
+                                  {customModelItem.label}
+                                  <Select.ItemIndicator />
+                                </Select.Item>
+                              </>
                             ) : null}
                           </Select.Content>
                         </Select.Positioner>
@@ -364,7 +386,11 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                         onChange={(event) => setModelSuffix(event.target.value)}
                       />
                       <Text fontSize="xs" color="fg.muted" mt={1.5}>
-                        Sent to LiteLLM as {selectedProvider}/{modelSuffix || "model-name"}.
+                        Sent to LiteLLM as{" "}
+                        <Box as="span" fontFamily="var(--app-font-mono)">
+                          {selectedProvider}/{modelSuffix || "model-name"}
+                        </Box>
+                        .
                       </Text>
                     </Box>
                   ) : null}

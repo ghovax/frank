@@ -1,6 +1,6 @@
 ---
-name: configure-harness
-title: Configure the agentic harness
+name: harness-configuration
+title: Configure the agentic harness via the built-in files and patterns
 description: Configure the agentic harness — provider credentials and model, permission modes, sandbox, sub-agents, skills, MCP servers, and memories. Use when the user wants to add/change a provider key or model, add/change an agent or skill, connect an MCP server, set the Composio/Exa key, toggle the sandbox, or switch permission behavior.
 enabled: true
 ---

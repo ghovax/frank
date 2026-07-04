@@ -1,0 +1,40 @@
+%% Evidence blackboard — how a source becomes a queryable knowledge graph.
+%% The store is append-only SQLite under ~/.blackboard; writes are events, reads are
+%% read-only SQL over projected tables (works, anchors, citations, claims, ...) and
+%% the anchors_fts full-text index. Discovery (finding papers, resolving references
+%% to DOIs) is the scholar engine's job, composed in at the marked steps.
+%% Render with any Mermaid viewer, or read top-to-bottom as an ordered message log.
+sequenceDiagram
+    actor Driver as Claude (skill driver)
+    participant Scholar as scholar engine (discovery)
+    participant Board as blackboard package
+    participant Store as SQLite (~/.blackboard)
+    participant Datalab as Datalab (Marker) parser
+    participant Enrich as Enrichment (LLM/VLM)
+
+    Driver->>Scholar: search / fulltext / zotero_items
+    Scholar-->>Driver: PDFs and DOIs
+    Driver->>Board: add_source (binds the source to a canonical work)
+    Board->>Store: append work + source events
+
+    note over Driver,Enrich: ingest runs as a background bash command (slow, model/network-bound)
+    Driver->>Board: ingest(board, source)
+    Board->>Datalab: parse the document
+    Datalab-->>Board: Marker block tree, stored verbatim
+    Board->>Enrich: citation markers, figure descriptions, per-block aspect, bibliography split into entries
+    Enrich-->>Board: derived facts (references left unresolved)
+    Board->>Store: append aspect-tagged anchors, citations, bibliography, figures
+    Board->>Store: quarantine any unreadable source
+    Board-->>Driver: harness wakes the driver with the ingest result
+
+    Driver->>Scholar: resolve each unresolved bibliography entry to a DOI
+    Scholar-->>Driver: DOIs
+    Driver->>Board: link_reference (attach cited work, close citation edges)
+    Driver->>Board: add_claim + cite_evidence (facts backed by anchors across works)
+    Driver->>Board: classify (tag works with topics)
+    Board->>Store: append works, claim_support, work_topics
+
+    Driver->>Board: query("SELECT ... FROM claims / citations / works / anchors_fts ...")
+    Board->>Store: read-only SQL (SELECT/WITH only)
+    Store-->>Board: rows
+    Board-->>Driver: evidence and graph structure backing each claim

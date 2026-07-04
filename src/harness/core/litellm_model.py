@@ -45,8 +45,14 @@ class ChatLiteLLMModel(BaseChatModel):
     api_base: Optional[str] = None
     temperature: float = 0.0
     reasoning_effort: Optional[str] = None
-    max_tokens: Optional[int] = None
-    timeout: Optional[float] = None
+    maximum_tokens: Optional[int] = None
+    # A bounded request timeout so a stalled or half-dead provider connection cannot
+    # hang a turn forever. The streaming loop only checks for aborts BETWEEN chunks,
+    # so if the provider stops sending bytes entirely the turn is otherwise
+    # unrecoverable (Stop cannot interrupt an await that never resumes). The value is
+    # deliberately generous — it bounds a truly dead connection without cutting off a
+    # legitimately long generation. LiteLLM forwards it to the underlying HTTP client.
+    timeout: Optional[float] = 300.0
     default_headers: dict[str, str] = {}
 
     @property
@@ -156,8 +162,8 @@ class ChatLiteLLMModel(BaseChatModel):
             params["api_base"] = self.api_base
         if self.reasoning_effort:
             params["reasoning_effort"] = self.reasoning_effort
-        if self.max_tokens is not None:
-            params["max_tokens"] = self.max_tokens
+        if self.maximum_tokens is not None:
+            params["max_tokens"] = self.maximum_tokens  # litellm/OpenAI API param name
         if self.timeout is not None:
             params["timeout"] = self.timeout
         if self.default_headers:

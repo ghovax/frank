@@ -13,8 +13,9 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
-import { fetchMessageHistory, saveMessageHistory, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
+import { AttachmentChip } from "./attachment-chips";
 import { ModelSelect } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
@@ -23,10 +24,9 @@ import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 const MotionFlex = motion.create(Flex);
 
 interface ChatInputProps {
-  onSend: (text: string) => void;
+  onSend: (text: string, dataPart?: Record<string, unknown>) => void;
   onAbort: () => void;
   isStreaming: boolean;
-  tasks?: ChatTask[];
   disabled?: boolean;
   sessionId?: string | null;
   workingDirectory?: string;
@@ -69,42 +69,6 @@ interface ChatInputProps {
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
-}
-
-// A clean, symmetric progress ring (SVG arc) for the aggregate task completion.
-// Full blue arc = progress; muted track behind it. Switches to a check at 100%.
-// Sized to 13px so it reads at the exact same scale as the other control icons.
-function TaskProgressRing({ progress }: { progress: number }) {
-  const clamped = Math.max(0, Math.min(100, progress));
-  if (clamped >= 100) {
-    return (
-      <Box color="green.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
-        <LuCheck size={13} />
-      </Box>
-    );
-  }
-  const radius = 5.5;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - clamped / 100);
-  return (
-    <Box w="13px" h="13px" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
-      <svg width="13" height="13" viewBox="0 0 14 14">
-        <circle cx="7" cy="7" r={radius} fill="none" stroke="var(--chakra-colors-bg-muted)" strokeWidth="2" />
-        <circle
-          cx="7"
-          cy="7"
-          r={radius}
-          fill="none"
-          stroke="var(--chakra-colors-blue-solid)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          transform="rotate(-90 7 7)"
-        />
-      </svg>
-    </Box>
-  );
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -182,49 +146,10 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   );
 }
 
-// One icon per task status — the status is conveyed visually, not by a text label.
-function TaskStatusIcon({ status }: { status: string }) {
-  if (status === "completed") {
-    return (
-      <Box color="green.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuCheck size={13} />
-      </Box>
-    );
-  }
-  if (status === "in_progress") {
-    return (
-      <Box color="blue.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuCircle size={13} />
-      </Box>
-    );
-  }
-  if (status === "blocked") {
-    return (
-      <Box color="red.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuTriangleAlert size={13} />
-      </Box>
-    );
-  }
-  if (status === "failed" || status === "cancelled" || status === "canceled" || status === "deleted") {
-    return (
-      <Box color="fg.subtle" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuX size={13} />
-      </Box>
-    );
-  }
-  // pending / unknown — a hollow dot reads as "not started".
-  return (
-    <Box color="fg.subtle" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-      <LuCircle size={13} />
-    </Box>
-  );
-}
-
 export function ChatInput({
   onSend,
   onAbort,
   isStreaming,
-  tasks = [],
   disabled,
   sessionId,
   workingDirectory,
@@ -262,9 +187,14 @@ export function ChatInput({
   tokenUsage,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
+  const [attachments, setAttachments] = useState<ResearchUpload[]>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [messageHistory, setMessageHistory] = useState<string[]>([]);
+  const draftInputRef = useRef("");
   const [configExpanded, setConfigExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [displayedThinkingLabel, setDisplayedThinkingLabel] = useState(thinkingLabel ?? "");
@@ -356,7 +286,7 @@ export function ChatInput({
         variant: "solid" as const,
       };
   const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "green" }[] = [
-    { value: "none", label: "Unmanaged", icon: <LuBan size={13} /> },
+    { value: "none", label: "Unmanaged", icon: <LuHardDrive size={13} /> },
     { value: "branch", label: "Branch", icon: <LuGitBranch size={13} />, colorPalette: "purple" },
     { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "green" },
   ];
@@ -375,8 +305,7 @@ export function ChatInput({
           colorPalette: workspaceStrategy === "worktree" ? "green" as const : "purple" as const,
         }
       : null;
-  const completedTasks = tasks.filter((task) => task.status === "completed").length;
-  const taskProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+
   const historyAppearance = historyOpen
     ? {
         variant: "solid" as const,
@@ -437,7 +366,7 @@ export function ChatInput({
   const selectedWorkspaceChoice =
     workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
   const workspaceAppearance = {
-    none: { icon: <LuBan size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
+    none: { icon: <LuHardDrive size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
     branch: { icon: <LuGitBranch size={13} />, color: "purple.fg", bg: "purple.subtle", borderColor: "purple.muted", colorPalette: "purple" },
     worktree: { icon: <LuGitFork size={13} />, color: "green.fg", bg: "green.subtle", borderColor: "green.muted", colorPalette: "green" },
   }[displayedWorkspaceStrategy];
@@ -540,19 +469,52 @@ export function ChatInput({
     fetchMessageHistory(workingDirectory).then(setMessageHistory).catch(() => {});
   }, [workingDirectory]);
 
+  async function handleFiles(files: FileList | File[]) {
+    const selected = Array.from(files);
+    if (selected.length === 0) return;
+    setUploadingCount((current) => current + selected.length);
+    for (const file of selected) {
+      try {
+        const uploaded = await uploadResearchFile(file);
+        setAttachments((current) => [...current, uploaded]);
+      } catch {
+        // The send button stays disabled only while uploads are in flight; a failed
+        // upload simply does not become an attachment.
+      } finally {
+        setUploadingCount((current) => Math.max(0, current - 1));
+      }
+    }
+  }
+
+  function removeAttachment(uploadId: string) {
+    setAttachments((current) => current.filter((attachment) => attachment.upload_id !== uploadId));
+  }
+
   function handleSubmit() {
     const trimmed = inputValue.trim();
-    if (!trimmed) return;
+    if (!trimmed && attachments.length === 0) return;
     if (!directoryValid) return;
     if (!workspaceStrategyValid) return;
+    if (uploadingCount > 0) return;
+    const sendText = trimmed || "Use the attached research source(s).";
+    const dataPart = attachments.length > 0
+      ? {
+          kind: "research_attachments",
+          attachments,
+          sources: attachments.map((attachment) => attachment.source),
+        }
+      : undefined;
     // While the agent is busy this enqueues for the next turn (handled upstream).
-    onSend(trimmed);
+    onSend(sendText, dataPart);
     setHistoryIndex(-1);
     setInputValue("");
+    setAttachments([]);
     // Persist to backend and prepend to local list for immediate recall.
-    setMessageHistory((previous) => [trimmed, ...previous]);
-    if (workingDirectory) {
-      saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+    if (trimmed) {
+      setMessageHistory((previous) => [trimmed, ...previous]);
+      if (workingDirectory) {
+        saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+      }
     }
   }
 
@@ -564,6 +526,11 @@ export function ChatInput({
     }
     if (event.key === "ArrowUp" && messageHistory.length > 0) {
       event.preventDefault();
+      // Save the current draft when first navigating up, so it can be
+      // restored when the user navigates back down past all history items.
+      if (historyIndex === -1) {
+        draftInputRef.current = inputValue;
+      }
       const nextIndex = historyIndex === -1
         ? 0
         : Math.min(messageHistory.length - 1, historyIndex + 1);
@@ -574,7 +541,8 @@ export function ChatInput({
     if (event.key === "ArrowDown") {
       const nextIndex = historyIndex <= 0 ? -1 : historyIndex - 1;
       setHistoryIndex(nextIndex);
-      setInputValue(nextIndex === -1 ? "" : messageHistory[nextIndex]);
+      // Restore the saved draft when navigating back to the "no history" position.
+      setInputValue(nextIndex === -1 ? draftInputRef.current : messageHistory[nextIndex]);
       event.preventDefault();
       return;
     }
@@ -587,7 +555,6 @@ export function ChatInput({
           empty state when there is no activity yet. */}
       <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5 }} flexWrap="wrap" px={2} pt={2}>
         <Flex align="center" gap={{ base: 1.5 }} flexShrink={0}>
-          <ConnectionSwitcher />
           {onToggleHistory && (
             <Button
               size="xs"
@@ -652,58 +619,6 @@ export function ChatInput({
         </Flex>
 
         <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">
-          {tasks.length > 0 && (
-            <Box position="relative" className="task-hover-root" flexShrink={0}>
-              <Flex
-                align="center"
-                gap={1.5}
-                h="28px"
-                px={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor="border"
-                bg="bg"
-                fontSize="xs"
-                fontWeight="medium"
-                cursor="default"
-              >
-                <TaskProgressRing progress={taskProgress} />
-                <Text fontSize="xs" fontWeight="medium">
-                  Tasks {completedTasks}/{tasks.length}
-                </Text>
-              </Flex>
-              <Box
-                display="none"
-                className="task-hover-panel"
-                position="absolute"
-                right={0}
-                bottom="calc(100% + 6px)"
-                w="min(360px, calc(100vw - 24px))"
-                maxH="260px"
-                overflowY="auto"
-                p={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor="border"
-                bg="bg"
-                boxShadow="lg"
-                zIndex={5}
-              >
-                <Flex direction="column" gap={1.5}>
-                  {tasks.map((task) => (
-                    <Flex key={task.identifier} align="center" gap={2}>
-                      <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                        <TaskStatusIcon status={task.status} />
-                      </Box>
-                      <Text fontSize="xs" fontWeight="medium" color="fg" truncate flex={1} minW={0} title={task.description}>
-                        {task.description}
-                      </Text>
-                    </Flex>
-                  ))}
-                </Flex>
-              </Box>
-            </Box>
-          )}
           <Button
             size="xs"
             variant="ghost"
@@ -832,10 +747,49 @@ export function ChatInput({
         <Box
           bg="bg"
           border="1px solid"
-          borderColor={directoryValid ? "border" : "red.muted"}
+          borderColor={dragActive ? "blue.muted" : directoryValid ? "border" : "red.muted"}
           borderRadius="sm"
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            setDragActive(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragActive(false);
+            void handleFiles(event.dataTransfer.files);
+          }}
           _focusWithin={{ borderColor: "border.emphasized" }}
         >
+          {attachments.length > 0 || uploadingCount > 0 ? (
+            <Flex gap={1.5} px={2} pt={2} flexWrap="wrap">
+              {attachments.map((attachment) => (
+                <AttachmentChip
+                  key={attachment.upload_id}
+                  attachment={{
+                    filename: attachment.filename,
+                    path: attachment.path,
+                    mimeType: attachment.mime_type,
+                    size: attachment.size,
+                  }}
+                  onRemove={() => removeAttachment(attachment.upload_id)}
+                />
+              ))}
+              {uploadingCount > 0 ? (
+                <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="sm" bg="bg.subtle">
+                  <Box color="blue.fg"><LuPaperclip size={13} /></Box>
+                  <Text fontSize="xs" color="fg.subtle">Uploading {uploadingCount}</Text>
+                </Flex>
+              ) : null}
+            </Flex>
+          ) : null}
           <Flex align="flex-end" gap={2} px={1.5} py={1.5}>
             <Textarea
               ref={inputRef}
@@ -865,6 +819,32 @@ export function ChatInput({
               _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />
             <Flex gap={1.5} flexShrink={0}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  if (event.target.files) void handleFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                variant="subtle"
+                colorPalette="gray"
+                borderRadius="sm"
+                minW="70px"
+                h="32px"
+                px={2}
+                gap={1.5}
+                fontSize="xs"
+                fontWeight="medium"
+                disabled={disabled || !directoryValid}
+              >
+                <LuPaperclip size={14} />
+                Attach files
+              </Button>
               {isStreaming ? (
                 <Button
                   onClick={onAbort}
@@ -893,7 +873,7 @@ export function ChatInput({
                   gap={1.5}
                   fontSize="xs"
                   fontWeight="medium"
-                  disabled={disabled || !directoryValid || !workspaceStrategyValid || !inputValue.trim()}
+                  disabled={disabled || !directoryValid || !workspaceStrategyValid || uploadingCount > 0 || (!inputValue.trim() && attachments.length === 0)}
                 >
                   <LuArrowUp size={16} />
                   Send
@@ -904,9 +884,10 @@ export function ChatInput({
         </Box>
       </Box>
 
-      {/* Bottom row (below the input): permission, sandbox, and project controls. */}
+      {/* Bottom row (below the input): connection, permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
         <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
+          <ConnectionSwitcher />
           <Select.Root
             collection={permissionCollection}
             value={[permissionMode]}
@@ -1071,7 +1052,7 @@ export function ChatInput({
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
-                  Git workspace unavailable
+                  Unconfigured workspace
                 </Text>
               </Flex>
             )}
@@ -1167,10 +1148,9 @@ export function ChatInput({
               maxW={{ base: "100%", md: "220px" }}
               title={`Project folder is locked for this session: ${currentDirectory}`}
             >
-              <Flex align="center" gap={0.5} flexShrink={0}>
+              <Box display="flex" alignItems="center" flexShrink={0} color="fg.muted">
                 <LuFolder size={13} />
-                <LuLock size={12} />
-              </Flex>
+              </Box>
               <Text fontSize="xs" fontWeight="medium" truncate>
                 {currentProjectName || "Project"}
               </Text>

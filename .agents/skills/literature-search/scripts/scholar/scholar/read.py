@@ -488,7 +488,7 @@ def _extract_figure_images(pdf_bytes: bytes, out_dir: str | None = None) -> tupl
 
     JPEG cannot hold alpha or CMYK, so such pixmaps are converted to RGB first.
     """
-    workdir = (pathlib.Path(out_dir) if out_dir else pathlib.Path(tempfile.mkdtemp(prefix="paperscanner_"))).resolve()
+    workdir = (pathlib.Path(out_dir) if out_dir else pathlib.Path(tempfile.mkdtemp(prefix="scholar_"))).resolve()
     workdir.mkdir(parents=True, exist_ok=True)
     image_paths: list[str] = []
     with fitz.open(stream=pdf_bytes, filetype="pdf") as opened:
@@ -550,7 +550,7 @@ def fulltext(paper_id, *, download=False, out_path=None, out_dir=None, email=Non
             if out_path:
                 target = pathlib.Path(out_path)
             else:
-                directory = pathlib.Path(out_dir) if out_dir else pathlib.Path(tempfile.mkdtemp(prefix="paperscanner_"))
+                directory = pathlib.Path(out_dir) if out_dir else pathlib.Path(tempfile.mkdtemp(prefix="scholar_"))
                 stem = (record["ids"].get("doi") or record["ids"].get("arxiv") or "paper").replace("/", "_")
                 target = directory / f"{stem}.pdf"
             target = target.resolve()

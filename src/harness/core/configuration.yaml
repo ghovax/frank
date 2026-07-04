@@ -1,7 +1,8 @@
-# Per-provider credentials. Each provider key resolves as: this value, then the
-# provider's environment variable (for example ANTHROPIC_API_KEY). First-party
-# providers use LiteLLM's built-in endpoints. OpenAI-compatible providers can
-# declare their endpoint here.
+# Model Provider Credentials
+#
+# Provider keys resolve in this order: this file first, then the provider's
+# conventional environment variable. First-party providers use LiteLLM's built-in
+# endpoints. OpenAI-compatible providers can also declare a base_url.
 providers:
   opencode:
     api_key: ""
@@ -26,29 +27,41 @@ providers:
     api_key: ""
     base_url: ""
 
-selected_model: "deepseek-v4-flash"
+# Default Model
+#
+# Stored as provider + model so the YAML is readable. The runtime recombines
+# these into the provider/model identifier used by LiteLLM.
 selected_provider: "opencode"
+selected_model: "deepseek-v4-flash"
 
+# Literature and Web Retrieval
+#
+# Exa powers the built-in web_search fallback. EXA_API_KEY can also provide this.
 exa:
   api_key: ""
 
-sandbox:
-  enabled: true
-
-workspace:
-  strategy: "none"
-
-# Composio: point at the hosted MCP ("connect") URL from the Composio dashboard
-# and the harness exposes its tools through the normal MCP path (call_mcp_tool)
-# under server_name. The API key may also come from COMPOSIO_API_KEY.
+# Hosted Tool Integrations
+#
+# Composio is exposed as a normal MCP server when enabled. COMPOSIO_API_KEY can
+# also provide the key.
 composio:
   enabled: false
   url: "https://connect.composio.dev/mcp"
   api_key: ""
   server_name: "composio"
 
-default_agent: senior-researcher
-agents_root_directory: .agents
-home_agents_root_directory: ~/.agents
-agents_directory: .agents/agents
-skills_directory: .agents/skills
+# Execution Behavior
+#
+# sandbox.enabled confines bash tools to the active workspace unless the user
+# grants permission. workspace.strategy controls optional branch/worktree setup.
+sandbox:
+  enabled: true
+
+workspace:
+  strategy: "none"
+
+# Agent and Skill Discovery
+#
+# Directory roots are fixed in code: ~/.agents globally and .agents inside the
+# selected working directory. Only the default primary agent is configurable.
+default_agent: "senior-researcher"

@@ -21,21 +21,17 @@ providers:
   custom:
     api_key: ''
     base_url: ''
-selected_model: deepseek-v4-flash
 selected_provider: opencode
+selected_model: deepseek-v4-flash
 exa:
   api_key: ''
-sandbox:
-  enabled: true
-workspace:
-  strategy: none
 composio:
   enabled: false
   url: https://connect.composio.dev/mcp
   api_key: ck_7lCN7vVj1bG9CCfRZX4L
   server_name: composio
+sandbox:
+  enabled: true
+workspace:
+  strategy: none
 default_agent: senior-researcher
-agents_root_directory: .agents
-home_agents_root_directory: ~/.agents
-agents_directory: .agents/agents
-skills_directory: .agents/skills

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
+import logging
 from dataclasses import dataclass
-from pathlib import Path
 
-import litellm
+import httpx
 
 from harness.core.providers import (
     PROVIDERS,
@@ -19,105 +18,110 @@ from harness.core.providers import (
 class ModelDefinition:
     """A pickable model. The ``identifier`` is the canonical, provider-namespaced
     technical id a user references the model by (``anthropic/claude-sonnet-4``,
-    ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label. Both mirror
-    the id/name pair the skills and agents use elsewhere, so the picker, the
-    configuration, and the persisted per-session override all speak the same id."""
+    ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label from the
+    models.dev catalog, falling back to the raw model suffix when no display name
+    is available (the frontend renders those in monospace).
+
+    ``curated`` is always ``False`` — all models now come from the models.dev
+    discovery API, and the field is retained only for backward compatibility with
+    the frontend type.
+    """
 
     identifier: str
     name: str
     provider: str
+    curated: bool = False
 
 
-def _load_catalog() -> list[ModelDefinition]:
-    # The catalog lives in a sibling JSON file so adding or trimming a model is a
-    # data edit, not a code change. The shape is designed so an automatic
-    # discover_models (OpenAI /v1/models, Ollama /api/tags, ...) can append fetched
-    # entries to the file later without touching this loader.
-    catalog_path = Path(__file__).resolve().parent / "models.json"
-    raw_entries = json.loads(catalog_path.read_text())
-    return [
-        ModelDefinition(
-            identifier=entry["id"],
-            name=entry["name"],
-            provider=entry["provider"],
-        )
-        for entry in raw_entries
-    ]
-
-
-_LITELLM_PROVIDER_KEYS = {
-    "openai": "openai",
+# Map models.dev provider IDs to our local provider identifiers.
+# models.dev uses kebab-case; we use snake_case (or the original provider name).
+_MODELS_DEV_PROVIDER_MAP: dict[str, str] = {
+    # Direct matches: models.dev kebab-case = our snake_case
     "anthropic": "anthropic",
-    "google": "gemini",
-    "openrouter": "openrouter",
-    "xai": "xai",
+    "openai": "openai",
+    "google": "google",
     "deepseek": "deepseek",
+    "xai": "xai",
     "groq": "groq",
     "mistral": "mistral",
+    "openrouter": "openrouter",
+    "cohere": "cohere",
+    "perplexity": "perplexity",
+    "deepinfra": "deepinfra",
+    "hyperbolic": "hyperbolic",
+    "cerebras": "cerebras",
+    "minimax": "minimax",
+    "nebius": "nebius",
+    "ovhcloud": "ovhcloud",
+    "wandb": "wandb",
+    "inception": "inception",
+    "morph": "morph",
+    "oci": "oci",
+    "databricks": "databricks",
+    "zai": "zai",
+    # Mismatched names
+    "fireworks-ai": "fireworks_ai",
+    "novita-ai": "novita",
+    "moonshotai": "moonshot",
+    "togetherai": "together_ai",
+    "cloudflare-workers-ai": "cloudflare",
+    "github-copilot": "github_copilot",
+    "zhipuai": "zai",
+    "zhipuai-coding-plan": "zai_code",
+    "zai-coding-plan": "zai_code",
+    "friendli": "friendliai",
+    "opencode": "opencode",
+    "opencode-go": "opencode",
+    "kimi-for-coding": "moonshot",
+    "minimax-cn": "minimax",
+    "minimax-coding-plan": "minimax",
+    "minimax-cn-coding-plan": "minimax",
+    "moonshotai-cn": "moonshot",
+    "scaleway": "scaleway",
 }
 
-_NON_CHAT_MODEL_MARKERS = (
-    "audio",
-    "batch",
-    "clip",
-    "dall-e",
-    "embed",
-    "embedding",
-    "image",
-    "imagen",
-    "moderation",
-    "ocr",
-    "rerank",
-    "sora",
-    "speech",
-    "stable-image",
-    "tts",
-    "transcribe",
-    "veo",
-    "video",
-    "vision",
-    "whisper",
-)
+
+def _catalog() -> list[ModelDefinition]:
+    """Model catalog from models.dev's open-source API.
+
+    Best-effort — returns an empty list when the API is unreachable so the server
+    can still start without a model catalog.
+    """
+    MODELS_DEV_URL = "https://models.dev/api.json"
+    try:
+        response = httpx.get(MODELS_DEV_URL, timeout=5)
+        response.raise_for_status()
+        raw = response.json()
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Could not fetch model catalog from %s — no models available",
+            MODELS_DEV_URL,
+        )
+        return []
+
+    models: dict[str, ModelDefinition] = {}
+    for models_dev_id, provider_info in raw.items():
+        local_id = _MODELS_DEV_PROVIDER_MAP.get(models_dev_id)
+        if local_id is None:
+            continue
+        # Skip providers not registered in this version of Daisy
+        if get_provider_definition(local_id) is None:
+            continue
+        for model_id, model_info in provider_info.get("models", {}).items():
+            name = model_info.get("name", "") or model_id
+            identifier = f"{local_id}/{model_id}"
+            # Deduplicate: when multiple models.dev provider IDs map to the same
+            # local provider and carry the same model, keep the first occurrence.
+            models.setdefault(identifier, ModelDefinition(
+                identifier=identifier,
+                name=name,
+                provider=local_id,
+                curated=False,
+            ))
+    return list(models.values())
 
 
-def _display_name(model_suffix: str) -> str:
-    return model_suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
-
-
-def _normalize_litellm_model(provider_identifier: str, model_name: str) -> ModelDefinition | None:
-    value = model_name.strip()
-    if not value:
-        return None
-    lowered = value.lower()
-    if any(marker in lowered for marker in _NON_CHAT_MODEL_MARKERS):
-        return None
-    litellm_key = _LITELLM_PROVIDER_KEYS[provider_identifier]
-    prefix = f"{litellm_key}/"
-    suffix = value[len(prefix):] if value.startswith(prefix) else value
-    if not suffix:
-        return None
-    identifier = f"{provider_identifier}/{suffix}"
-    return ModelDefinition(identifier=identifier, name=_display_name(suffix), provider=provider_identifier)
-
-
-def _litellm_catalog() -> list[ModelDefinition]:
-    models: list[ModelDefinition] = []
-    for provider_identifier, litellm_key in _LITELLM_PROVIDER_KEYS.items():
-        for model_name in sorted(litellm.models_by_provider.get(litellm_key, ())):
-            model = _normalize_litellm_model(provider_identifier, model_name)
-            if model is not None:
-                models.append(model)
-    return models
-
-
-def _merged_catalog() -> list[ModelDefinition]:
-    merged: dict[str, ModelDefinition] = {}
-    for model in _load_catalog() + _litellm_catalog():
-        merged.setdefault(model.identifier, model)
-    return list(merged.values())
-
-
-MODELS: list[ModelDefinition] = _merged_catalog()
+MODELS: list[ModelDefinition] = _catalog()
 
 
 def list_models() -> list[ModelDefinition]:

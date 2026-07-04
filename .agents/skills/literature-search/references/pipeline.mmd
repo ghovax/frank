@@ -1,4 +1,4 @@
-%% Paper Scanner pipeline — the scholar package's functions across three layers.
+%% scholar pipeline — the package's functions across three layers.
 %% The connective tissue between layers is a paper's id (DOI/arXiv/PMID/PMCID/OpenAlex):
 %% layer 1 and 2 emit records carrying ids, which are fed into layer 2 and 3 calls.
 %% Render with any Mermaid viewer, or read top-to-bottom as an ordered message log.
@@ -29,7 +29,7 @@ sequenceDiagram
 
     note over Driver,Full: Layer 3 - read  (fulltext / figures), only for the top papers that matter
     Driver->>Scholar: fulltext(download=True) or figures with a paper id
-    Scholar->>Full: walk the open-access ladder, then Sci-Hub, then Anna's Archive; extract embedded figures with PyMuPDF
+    Scholar->>Full: walk the open-access ladder, then Sci-Hub, then Anna's Archive, extract embedded figures with PyMuPDF
     Full-->>Scholar: the saved PDF path, or JPG figure images in a temp directory
     Scholar-->>Driver: pdf_path / image paths (Claude reads the PDF directly)
 

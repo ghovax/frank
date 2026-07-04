@@ -24,7 +24,7 @@ class _SpacedMarkdownRenderer(MarkdownRenderer):
 from .zotero import zotero_get
 
 # Vault is at the repo root, five levels above this file:
-# obsidian.py → scholar/ → scripts/ → paper-scanner/ → skills/ → .claude/ → repo root
+# obsidian.py → scholar/ → scripts/ → literature-search/ → skills/ → .claude/ → repo root
 _DEFAULT_VAULT = pathlib.Path(__file__).parents[5] / "vault"
 
 

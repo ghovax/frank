@@ -45,6 +45,16 @@ const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
 
 const HISTORY_PAGE_LIMIT = 500;
 
+// A file the user attached to a turn — the metadata needed to render a chip and
+// preview it (name, on-disk path served by /preview, mime, size). Carried on the
+// user message's `meta.attachments`, both on the live send and on replay.
+export interface MessageAttachment {
+  filename: string;
+  path: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool_call" | "thinking" | "error";
@@ -84,13 +94,14 @@ export interface TokenUsage {
 // drive the same stream; a widget event travels as a typed DataPart, never as
 // prose, so the agent receives it as structured JSON.
 export type ChatInput =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; dataPart?: Record<string, unknown> }
   | { kind: "widget"; event: WidgetEvent };
 
 export interface QueuedMessage {
   id: string;
   text: string;
   steering: boolean;
+  dataPart?: Record<string, unknown>;
 }
 
 // An agent step's ordered timeline — prose, reasoning, and tool calls
@@ -319,6 +330,8 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
         return { title: "Request is too large", message: "The model could not accept this much context. Start a smaller follow-up or switch to a model with more capacity." };
       case "request_rejected":
         return { title: "Model rejected the request", message: "The model could not accept this turn. Adjust the request or switch models." };
+      case "image_unsupported":
+        return { title: "This model can't read images", message: "The selected model rejected the attached image — it looks like a text-only model. Switch to a vision-capable model and try again." };
       default:
         return { title: "Turn could not complete", message: "The turn stopped unexpectedly. The raw details were written to the server log." };
     }
@@ -727,12 +740,59 @@ function pushAssistantText(state: ReduceState, text: string, sourceId?: string):
   }
 }
 
+// Normalize the attachments carried by a `research_attachments` data payload into
+// the lean shape the UI renders. Shared by the live send path (the outgoing
+// dataPart) and replay (the persisted user-message data part), so a chip looks
+// identical whether it was just sent or reloaded from history.
+function attachmentsFromData(data: Record<string, unknown> | undefined): MessageAttachment[] {
+  if (!data || data.kind !== "research_attachments") return [];
+  const raw = Array.isArray(data.attachments) ? data.attachments : [];
+  const attachments: MessageAttachment[] = [];
+  for (const entry of raw) {
+    const record = asRecord(entry);
+    const path = String(record.path ?? "");
+    const filename = String(record.filename ?? record.title ?? "");
+    if (!path && !filename) continue;
+    attachments.push({
+      filename: filename || path.split("/").pop() || "attachment",
+      path,
+      mimeType: String(record.mime_type ?? ""),
+      size: Number(record.size ?? 0),
+    });
+  }
+  return attachments;
+}
+
+// The attachments carried on a whole message's parts (replay path — the persisted
+// user message keeps its research_attachments DataPart alongside the text part).
+function attachmentsFromMessage(message: A2AMessage): MessageAttachment[] {
+  const attachments: MessageAttachment[] = [];
+  for (const part of message.parts ?? []) {
+    if (part.kind === "data") attachments.push(...attachmentsFromData(part.data));
+  }
+  return attachments;
+}
+
 function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
+  const attachments = attachmentsFromMessage(message);
+  // A user-role message with no visible prose AND no attachments is a silent
+  // widget interaction (the user clicked something in a widget; the payload is a
+  // data part, not text). The live path renders nothing for these, so replay must
+  // match — never a blank bubble. (Autonomous background-resume wakes are
+  // agent-authored, not user messages, so they never reach this path at all.) A
+  // typed user turn always carries prose; an attachment-only turn carries chips.
+  if (!text.trim() && attachments.length === 0) return;
   state.lane = null;
   state.messages = [
     ...state.messages,
-    { id: stableMessageId(state, "user", message.messageId), role: "user", content: text, timestamp: new Date().toISOString() },
+    {
+      id: stableMessageId(state, "user", message.messageId),
+      role: "user",
+      content: text,
+      timestamp: new Date().toISOString(),
+      ...(attachments.length > 0 ? { meta: { attachments } } : {}),
+    },
   ];
 }
 
@@ -1374,10 +1434,18 @@ export function useChat(
       // delivered to the model but never shown as a chat entry (an error is the
       // model's own realization; an interaction is silent), so only text appears.
       stateRef.current.lane = null;
+      const userMessageId = crypto.randomUUID();
       if (input.kind === "text") {
+        const attachments = attachmentsFromData(input.dataPart);
         stateRef.current.messages = [
           ...stateRef.current.messages,
-          { id: `user-${Date.now()}`, role: "user", content: input.text, timestamp: new Date().toISOString() },
+          {
+            id: stableMessageId(stateRef.current, "user", userMessageId),
+            role: "user",
+            content: input.text,
+            timestamp: new Date().toISOString(),
+            ...(attachments.length > 0 ? { meta: { attachments } } : {}),
+          },
         ];
         flush();
       }
@@ -1396,7 +1464,7 @@ export function useChat(
               event: input.event.event,
               data: input.event.data,
             }
-          : undefined;
+          : input.dataPart;
 
       abortControllerRef.current = streamA2A(
         text,
@@ -1438,13 +1506,19 @@ export function useChat(
         () => {
           stateRef.current.lane = null;
           // Drain queued text first (user intent), then any widget events that
-          // arrived mid-turn.
-          const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
+          // arrived mid-turn. A message still flagged `steering` here was accepted by
+          // the backend but never echoed back (`acknowledgeSteering` clears the flag
+          // when steering is honored mid-turn) — the turn ended, failed, or raced past
+          // its last drain before applying it. It was NOT applied, so treat it exactly
+          // like any other pending message and send it as a fresh turn, rather than
+          // stranding it forever as a "Steering next opening" chip. The backend
+          // discards its own copy on stream close, so this can't double-apply.
+          const pendingText = queuedMessagesRef.current;
           const pendingWidget = queuedWidgetEventsRef.current;
           if (pendingText.length > 0) {
             const next = pendingText[0];
             setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
-            runStreamRef.current({ kind: "text", text: next.text });
+            runStreamRef.current({ kind: "text", text: next.text, dataPart: next.dataPart });
           } else if (pendingWidget.length > 0) {
             const [next, ...rest] = pendingWidget;
             queuedWidgetEventsRef.current = rest;
@@ -1452,12 +1526,18 @@ export function useChat(
           } else {
             isStreamingRef.current = false;
             setIsStreaming(false);
+            // Our locally-driven turn is over. Return to viewer mode so that if the
+            // harness later wakes this session on its own (an autonomous background
+            // resume), the read-only subscribe stream picks the new turn up live
+            // instead of the wake only appearing on a manual reload.
+            streamedLocallyRef.current = false;
           }
         },
         workingDirectory,
         workspaceStrategy,
         permissionMode,
         selectedModel,
+        userMessageId,
         dataPart
       );
     },
@@ -1469,13 +1549,17 @@ export function useChat(
   }, [runStream]);
 
   const send = useCallback(
-    (text: string) => {
+    (text: string, dataPart?: Record<string, unknown>, queueOnly = false) => {
       const trimmed = text.trim();
       if (!trimmed) return;
       if (isStreamingRef.current) {
-        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false };
+        const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataPart };
         const ctx = sessionIdRef.current;
-        if (ctx) {
+        // While the turn is paused on a pending decision (a permission or question
+        // prompt), a new message can only be plain-queued — never steered. Steering
+        // could not be honored until the decision is resolved anyway, and a "Steering
+        // next opening" chip would misrepresent that. It drains when the turn ends.
+        if (ctx && !queueOnly) {
           setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
           steerSession(ctx, trimmed)
             .then((queued) => {
@@ -1495,7 +1579,7 @@ export function useChat(
         setQueue([...queuedMessagesRef.current, pending]);
         return;
       }
-      runStream({ kind: "text", text: trimmed });
+      runStream({ kind: "text", text: trimmed, dataPart });
     },
     [runStream, setQueue]
   );
@@ -1521,11 +1605,37 @@ export function useChat(
     [runStream]
   );
 
+  // Settle a stuck prompt card and tell the user when their decision/answer could
+  // not be delivered — a dropped connection, or a request that already expired
+  // because the turn moved on. Without this the card stays at "input required" and
+  // the composer stays gated, with no hint that the click was lost.
+  const notifyResolveFailure = useCallback((requestId: string, kind: "decision" | "answer", status: string) => {
+    stateRef.current.messages = stateRef.current.messages.map((message) => {
+      const permission = message.meta?.permission as { requestId?: string } | undefined;
+      const question = message.meta?.question as { requestId?: string } | undefined;
+      if (message.role !== "tool_call" || (permission?.requestId !== requestId && question?.requestId !== requestId)) return message;
+      return { ...message, meta: { ...message.meta, status: "failed" } };
+    });
+    flush();
+    toaster.create({
+      type: "error",
+      title: kind === "decision" ? "Couldn't submit your decision" : "Couldn't submit your answer",
+      description: status === "network"
+        ? "The server did not respond. Check the connection and try again."
+        : "This request is no longer active — the turn may have already moved on.",
+      closable: true,
+    });
+  }, [flush]);
+
   const handlePermission = useCallback(
     async (requestId: string, decision: PermissionDecision) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
-      await resolvePermission(ctx, requestId, decision);
+      const result = await resolvePermission(ctx, requestId, decision);
+      if (!result.ok) {
+        notifyResolveFailure(requestId, "decision", result.status);
+        return;
+      }
       // Record the decision and hand the card back to its normal lifecycle: an
       // approval resumes as "running" (the result/error finalizes it), a denial
       // is settled by the error the backend emits for this tool call.
@@ -1539,14 +1649,18 @@ export function useChat(
       });
       flush();
     },
-    [flush]
+    [flush, notifyResolveFailure]
   );
 
   const handleQuestion = useCallback(
     async (requestId: string, answers: QuestionAnswer[]) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
-      await resolveQuestion(ctx, requestId, answers);
+      const result = await resolveQuestion(ctx, requestId, answers);
+      if (!result.ok) {
+        notifyResolveFailure(requestId, "answer", result.status);
+        return;
+      }
       // Record the answer and hand the card back to its running lifecycle; the
       // tool_result finalizes it (same shape as a resolved permission).
       stateRef.current.messages = stateRef.current.messages.map((message) => {
@@ -1559,19 +1673,68 @@ export function useChat(
       });
       flush();
     },
-    [flush]
+    [flush, notifyResolveFailure]
   );
 
   const abort = useCallback(() => {
     const ctx = sessionIdRef.current;
-    if (ctx) abortSession(ctx);
-    else abortControllerRef.current?.abort();
-  }, []);
+    if (!ctx) {
+      abortControllerRef.current?.abort();
+      return;
+    }
+    // A Stop while the turn is paused on a decision auto-settles that decision:
+    // deny every pending permission and cancel every pending question, so the
+    // request is answered rather than left hanging. Without this the tool cards
+    // stay stuck at "input required" after the turn is torn down, and the backend
+    // permission future is only abandoned (never cleanly rejected).
+    let settledAny = false;
+    for (const message of stateRef.current.messages) {
+      if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
+      const permission = message.meta?.permission as { requestId?: string } | undefined;
+      const question = message.meta?.question as { requestId?: string } | undefined;
+      if (permission?.requestId) {
+        settledAny = true;
+        void resolvePermission(ctx, permission.requestId, "deny");
+      } else if (question?.requestId) {
+        settledAny = true;
+        void resolveQuestion(ctx, question.requestId, []);
+      }
+    }
+    if (settledAny) {
+      stateRef.current.messages = stateRef.current.messages.map((message) =>
+        message.role === "tool_call" && message.meta?.status === "input_required"
+          ? { ...message, meta: { ...message.meta, status: "failed" } }
+          : message
+      );
+      flush();
+    }
+    // Tell the user if the stop request never reached the server — the turn may still
+    // be running, and silently doing nothing would leave them stuck expecting it to end.
+    void abortSession(ctx).then((ok) => {
+      if (!ok) {
+        toaster.create({
+          type: "error",
+          title: "Couldn't stop the turn",
+          description: "The server did not confirm the stop. It may still be running — check the connection and retry.",
+          closable: true,
+        });
+      }
+    });
+  }, [flush]);
 
   const abortTool = useCallback((toolCallId: string) => {
     const ctx = sessionIdRef.current;
     if (!ctx || !toolCallId) return;
-    void abortToolCall(ctx, toolCallId);
+    void abortToolCall(ctx, toolCallId).then((ok) => {
+      if (!ok) {
+        toaster.create({
+          type: "error",
+          title: "Couldn't stop that tool call",
+          description: "The server did not confirm the cancellation. Check the connection and retry.",
+          closable: true,
+        });
+      }
+    });
     stateRef.current.messages = stateRef.current.messages.map((message) => (
       message.role === "tool_call" && message.meta?.toolCallId === toolCallId
         ? { ...message, meta: { ...message.meta, status: "failed" } }
@@ -1606,7 +1769,7 @@ export function useChat(
     tokenUsage,
     queuedMessages,
     sessionId,
-    isStreaming,
+    isStreaming: isStreaming || sessionRunning,
     isHistoryLoading,
     historyError,
     hasOlderHistory,

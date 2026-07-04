@@ -109,6 +109,34 @@ export function proxyPreviewUrl(url: string): string {
   return `${API_BASE}/preview-proxy?url=${encodeURIComponent(url)}`;
 }
 
+export interface ResearchUpload {
+  upload_id: string;
+  title: string;
+  filename: string;
+  path: string;
+  mime_type: string;
+  size: number;
+  sha256: string;
+  source: {
+    origin_channel: "upload";
+    source_kind: "document";
+    title: string;
+    path: string;
+    metadata: Record<string, unknown>;
+  };
+}
+
+export async function uploadResearchFile(file: File): Promise<ResearchUpload> {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch(`${API_BASE}/research/uploads`, {
+    method: "POST",
+    body,
+  });
+  if (!response.ok) throw new Error(`Failed to upload ${file.name} (${response.status})`);
+  return await response.json() as ResearchUpload;
+}
+
 // Metadata key understood by the harness A2A executor.
 export const WORKING_DIRECTORY_METADATA_KEY = "harness/workingDirectory";
 export const WORKSPACE_STRATEGY_METADATA_KEY = "harness/workspaceStrategy";
@@ -191,6 +219,7 @@ export interface ModelOption {
   name: string;
   provider: string;
   available: boolean;
+  curated: boolean;
 }
 
 export interface ProviderOption {
@@ -226,7 +255,7 @@ export async function fetchSettings(): Promise<Settings> {
   if (!response.ok) {
     return { exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", providers: {} };
   }
-  return response.json();
+  return (await response.json()) as Settings;
 }
 
 export interface SaveSettingsPayload {
@@ -457,16 +486,39 @@ export async function fetchSessionTasksPage(
   };
 }
 
+// The outcome of resolving a pending prompt. `ok` means the decision/answer
+// actually reached its waiting request. `status` distinguishes the cases so the
+// caller can phrase feedback: "resolved" (delivered), "stale" (someone already
+// answered it), "unknown" (no such pending request — the turn moved on or the
+// server restarted), "error"/"network" (the call itself failed).
+export interface ResolveResult {
+  ok: boolean;
+  status: "resolved" | "stale" | "unknown" | "error" | "network";
+}
+
+async function postResolve(url: string, payload: Record<string, unknown>): Promise<ResolveResult> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) return { ok: false, status: "error" };
+    const data = await response.json().catch(() => ({}));
+    const status = String((data as { status?: unknown }).status ?? "");
+    if (status === "resolved" || status === "stale") return { ok: true, status };
+    return { ok: false, status: status === "unknown" ? "unknown" : "error" };
+  } catch {
+    return { ok: false, status: "network" };
+  }
+}
+
 export async function resolvePermission(
   sessionId: string,
   requestId: string,
   decision: "deny" | "allow_once" | "allow_always"
-): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/permission`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ request_id: requestId, decision }),
-  });
+): Promise<ResolveResult> {
+  return postResolve(`${API_BASE}/chat/${sessionId}/permission`, { request_id: requestId, decision });
 }
 
 // Answer a pending ask_user question. `answers` is one entry per question (in
@@ -476,12 +528,8 @@ export async function resolveQuestion(
   sessionId: string,
   requestId: string,
   answers: unknown[]
-): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/question`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ request_id: requestId, answers }),
-  });
+): Promise<ResolveResult> {
+  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers });
 }
 
 export async function steerSession(sessionId: string, message: string): Promise<boolean> {
@@ -495,12 +543,25 @@ export async function steerSession(sessionId: string, message: string): Promise<
   return !!data.queued;
 }
 
-export async function abortSession(sessionId: string): Promise<void> {
-  await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
+// Returns whether the abort request actually reached the server. A false result
+// means the turn may still be running, so the caller can tell the user rather than
+// leave them believing they stopped it.
+export async function abortSession(sessionId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
-export async function abortToolCall(sessionId: string, toolCallId: string): Promise<void> {
-  await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
+export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function validateWorkingDirectory(directory: string): Promise<{
@@ -662,6 +723,7 @@ export function streamA2A(
   workspaceStrategy: WorkspaceStrategy = "none",
   permissionMode: PermissionMode = "default",
   selectedModel: string = "",
+  messageId: string = crypto.randomUUID(),
   // Optional structured payload carried as a typed DataPart alongside (or instead
   // of) the text — e.g. a widget interaction posted back to the agent.
   dataPart?: Record<string, unknown>
@@ -676,7 +738,7 @@ export function streamA2A(
   const message: A2AMessage = {
     role: "user",
     parts,
-    messageId: crypto.randomUUID(),
+    messageId,
     metadata: {
       ...(workingDirectory ? { [WORKING_DIRECTORY_METADATA_KEY]: workingDirectory } : {}),
       [WORKSPACE_STRATEGY_METADATA_KEY]: workspaceStrategy,

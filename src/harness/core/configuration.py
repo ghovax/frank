@@ -4,7 +4,7 @@ import os
 import re
 import shlex
 from pathlib import Path
-from typing import Literal, Optional
+from typing import ClassVar, Literal, Optional
 
 import yaml
 from pydantic import BaseModel
@@ -181,6 +181,11 @@ class ProviderCredential(BaseModel):
 
 
 class GlobalConfiguration(BaseModel):
+    HOME_AGENTS_ROOT_DIRECTORY: ClassVar[str] = "~/.agents"
+    AGENTS_ROOT_DIRECTORY: ClassVar[str] = ".agents"
+    AGENTS_DIRECTORY: ClassVar[str] = ".agents/agents"
+    SKILLS_DIRECTORY: ClassVar[str] = ".agents/skills"
+
     providers: dict[str, ProviderCredential] = {}
     # The selected model and its provider are stored as separate fields so a human
     # editing configuration.yaml sees both explicitly; ``selected_model_identifier``
@@ -193,10 +198,6 @@ class GlobalConfiguration(BaseModel):
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "senior-researcher"
-    agents_root_directory: str = ".agents"
-    home_agents_root_directory: str = "~/.agents"
-    agents_directory: str = ".agents/agents"
-    skills_directory: str = ".agents/skills"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).
     maximum_delegation_depth: int = 8
@@ -243,28 +244,28 @@ class GlobalConfiguration(BaseModel):
 
     def agents_root_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser(),
-            Path(self.agents_root_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser(),
+            Path(self.AGENTS_ROOT_DIRECTORY),
         ])
 
     def agent_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "agents",
-            Path(self.agents_root_directory) / "agents",
-            Path(self.agents_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
+            Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
+            Path(self.AGENTS_DIRECTORY),
         ])
 
     def skill_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "skills",
-            Path(self.agents_root_directory) / "skills",
-            Path(self.skills_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
+            Path(self.AGENTS_ROOT_DIRECTORY) / "skills",
+            Path(self.SKILLS_DIRECTORY),
         ])
 
     def memory_directories(self) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "memories",
-            Path(self.agents_root_directory) / "memories",
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
+            Path(self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
     # Working-directory-scoped resolution.
@@ -289,13 +290,13 @@ class GlobalConfiguration(BaseModel):
 
     def home_agents_root(self) -> Path:
         """The global ``~/.agents`` root — the scope shared by every folder."""
-        return Path(self.home_agents_root_directory).expanduser()
+        return Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser()
 
     def project_agents_root_for(self, working_directory: str) -> Path:
         """The working directory's own ``.agents`` root — the project-local scope.
         Equals :meth:`home_agents_root` when the working directory is the home
         directory (in which case nothing is project-specific)."""
-        return self._resolve_local(working_directory, self.agents_root_directory)
+        return self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY)
 
     def agents_root_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
@@ -305,22 +306,22 @@ class GlobalConfiguration(BaseModel):
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "agents",
-            self._resolve_local(working_directory, self.agents_root_directory) / "agents",
-            self._resolve_local(working_directory, self.agents_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
+            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
+            self._resolve_local(working_directory, self.AGENTS_DIRECTORY),
         ])
 
     def skill_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "skills",
-            self._resolve_local(working_directory, self.agents_root_directory) / "skills",
-            self._resolve_local(working_directory, self.skills_directory),
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "skills",
+            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "skills",
+            self._resolve_local(working_directory, self.SKILLS_DIRECTORY),
         ])
 
     def memory_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
-            Path(self.home_agents_root_directory).expanduser() / "memories",
-            self._resolve_local(working_directory, self.agents_root_directory) / "memories",
+            Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "memories",
+            self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
     def mcp_configuration_for(self, working_directory: str) -> "MCPConfiguration":
@@ -561,7 +562,7 @@ class AgentConfiguration(BaseModel):
     # Empty means every available skill is offered to the agent by default.
     skills: list[str] = []
     # The model and its provider are separate fields, mirroring the global config:
-    # a human editing an agent.md sees both explicitly. ``model_identifier``
+    # a human editing an AGENT.md sees both explicitly. ``model_identifier``
     # recombines them into the ``provider/model`` form the factory expects.
     model: Optional[str] = None
     provider: Optional[str] = None
@@ -610,7 +611,7 @@ class AgentConfiguration(BaseModel):
 
         frontmatter = yaml.safe_load(frontmatter_match.group(1)) or {}
         markdown_body = frontmatter_match.group(2).strip()
-        default_identifier = path.parent.name if path.name == "agent.md" else path.stem
+        default_identifier = path.parent.name if path.name.upper() == "AGENT.MD" else path.stem
         frontmatter.setdefault("name", default_identifier)
         frontmatter.setdefault("title", frontmatter["name"])
         if "connection-type" in frontmatter:
@@ -698,7 +699,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
-        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/agent.md"))]
+        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/AGENT.md"))]
         for path in candidates:
             try:
                 configuration = AgentConfiguration.from_markdown(path)
@@ -709,7 +710,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
                     for alias in configuration.aliases:
                         paths[alias] = path
             except Exception:
-                fallback = path.parent.name if path.name == "agent.md" else path.stem
+                fallback = path.parent.name if path.name.upper() == "AGENT.MD" else path.stem
                 paths[fallback] = path
     return paths
 

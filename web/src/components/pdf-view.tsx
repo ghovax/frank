@@ -1,0 +1,243 @@
+"use client";
+
+import { Box, Flex, Spinner, Text } from "@chakra-ui/react";
+import { useEffect, useRef, useState } from "react";
+import { LuTriangleAlert } from "react-icons/lu";
+import * as pdfjsLib from "pdfjs-dist";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+
+// Render PDFs with PDF.js (to a <canvas>) rather than relying on the browser's
+// built-in PDF plugin in an <iframe> — that path is inconsistent across browsers
+// and does not work at all in some webviews (e.g. WKWebView), which is why a PDF
+// attachment previously showed only a blank/"open" placeholder. Canvas rendering is
+// identical everywhere and lets us do both the hover thumbnail and the full viewer.
+
+// The worker must be configured before getDocument(). `new URL(..., import.meta.url)`
+// makes the bundler emit the worker as an asset and hands back its real URL, so this
+// works under the Next build and the static export alike.
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
+
+// Cache the fetched bytes per URL so repeated hovers (and the hover → lightbox
+// hand-off) don't re-download the file. getDocument transfers the buffer it is
+// given, so every open gets a fresh copy of the cached bytes.
+const pdfBytesCache = new Map<string, Promise<ArrayBuffer>>();
+
+function loadPdfBytes(url: string): Promise<ArrayBuffer> {
+  let pending = pdfBytesCache.get(url);
+  if (!pending) {
+    pending = fetch(url).then((response) => {
+      if (!response.ok) throw new Error(`Failed to load PDF (${response.status})`);
+      return response.arrayBuffer();
+    });
+    pending.catch(() => pdfBytesCache.delete(url)); // never cache a failed fetch
+    pdfBytesCache.set(url, pending);
+  }
+  return pending;
+}
+
+async function openDocument(url: string): Promise<PDFDocumentProxy> {
+  const bytes = await loadPdfBytes(url);
+  return pdfjsLib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
+}
+
+// Render one page into a canvas, fitted to `cssWidth` and sharp on HiDPI screens.
+async function renderPageToCanvas(
+  page: Awaited<ReturnType<PDFDocumentProxy["getPage"]>>,
+  canvas: HTMLCanvasElement,
+  cssWidth: number,
+): Promise<void> {
+  const baseViewport = page.getViewport({ scale: 1 });
+  const scale = cssWidth / baseViewport.width;
+  const viewport = page.getViewport({ scale });
+  const outputScale = window.devicePixelRatio || 1;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  canvas.style.width = `${Math.floor(viewport.width)}px`;
+  canvas.style.height = `${Math.floor(viewport.height)}px`;
+  const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
+  await page.render({ canvasContext: context, viewport, transform }).promise;
+}
+
+function PdfStatus({ kind }: { kind: "loading" | "error" }) {
+  return (
+    <Flex position="absolute" inset={0} align="center" justify="center" direction="column" gap={2} color="fg.subtle">
+      {kind === "loading" ? (
+        <>
+          <Spinner size="sm" borderWidth="2px" />
+          <Text fontSize="xs">Rendering PDF…</Text>
+        </>
+      ) : (
+        <>
+          <LuTriangleAlert size={18} />
+          <Text fontSize="xs">Could not render this PDF</Text>
+        </>
+      )}
+    </Flex>
+  );
+}
+
+// The first page of a PDF, rendered small — used as the hover preview thumbnail.
+export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    let document: PDFDocumentProxy | null = null;
+    setStatus("loading");
+    (async () => {
+      document = await openDocument(url);
+      const page = await document.getPage(1);
+      if (cancelled || !canvasRef.current) return;
+      await renderPageToCanvas(page, canvasRef.current, width);
+      if (!cancelled) setStatus("ready");
+    })().catch(() => {
+      if (!cancelled) setStatus("error");
+    });
+    return () => {
+      cancelled = true;
+      document?.destroy().catch(() => {});
+    };
+  }, [url, width]);
+
+  return (
+    <Box position="relative" minH="120px" minW={`${width}px`} display="flex" justifyContent="center">
+      <canvas ref={canvasRef} style={{ display: status === "ready" ? "block" : "none", borderRadius: 2 }} />
+      {status !== "ready" && <PdfStatus kind={status === "error" ? "error" : "loading"} />}
+    </Box>
+  );
+}
+
+// One page inside the full document view. Rendered lazily (only once near the
+// viewport) so a long PDF does not rasterize every page up front.
+function PdfPageView({
+  document,
+  pageNumber,
+  width,
+  eager,
+}: {
+  document: PDFDocumentProxy;
+  pageNumber: number;
+  width: number;
+  eager: boolean;
+}) {
+  const holderRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [visible, setVisible] = useState(eager);
+  // A portrait-A4 ratio keeps the placeholder roughly page-shaped before render, so
+  // the scroll height is stable and lazy pages don't jump as they appear.
+  const [aspect, setAspect] = useState(1.414);
+
+  useEffect(() => {
+    if (visible) return;
+    const element = holderRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "800px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      const page = await document.getPage(pageNumber);
+      if (cancelled || !canvasRef.current) return;
+      const baseViewport = page.getViewport({ scale: 1 });
+      setAspect(baseViewport.height / baseViewport.width);
+      await renderPageToCanvas(page, canvasRef.current, width);
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, document, pageNumber, width]);
+
+  return (
+    <Box
+      ref={holderRef}
+      mx="auto"
+      bg="white"
+      boxShadow="sm"
+      style={{ width: `${width}px`, minHeight: visible ? undefined : `${Math.round(width * aspect)}px` }}
+    >
+      {visible && <canvas ref={canvasRef} style={{ display: "block", width: `${width}px` }} />}
+    </Box>
+  );
+}
+
+// The whole PDF, one page under the next, scrollable — used in the click-to-open
+// lightbox. Fits pages to the container width and re-fits on resize.
+export function PdfDocumentView({ url }: { url: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [pageWidth, setPageWidth] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let opened: PDFDocumentProxy | null = null;
+    setStatus("loading");
+    setDocument(null);
+    (async () => {
+      opened = await openDocument(url);
+      if (cancelled) {
+        opened.destroy().catch(() => {});
+        return;
+      }
+      setDocument(opened);
+      setStatus("ready");
+    })().catch(() => {
+      if (!cancelled) setStatus("error");
+    });
+    return () => {
+      cancelled = true;
+      opened?.destroy().catch(() => {});
+    };
+  }, [url]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const measure = () => {
+      // Leave a little breathing room; cap so pages stay readable on wide screens.
+      const available = element.clientWidth - 24;
+      setPageWidth(Math.max(240, Math.min(900, available)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [document]);
+
+  return (
+    <Box ref={containerRef} position="relative" w="100%" h="100%" overflowY="auto" bg="bg.subtle" py={3}>
+      {status === "ready" && document && pageWidth > 0 && (
+        <Flex direction="column" gap={3} align="center">
+          {Array.from({ length: document.numPages }, (_, index) => (
+            <PdfPageView
+              key={index}
+              document={document}
+              pageNumber={index + 1}
+              width={pageWidth}
+              eager={index < 2}
+            />
+          ))}
+        </Flex>
+      )}
+      {status !== "ready" && <PdfStatus kind={status === "error" ? "error" : "loading"} />}
+    </Box>
+  );
+}

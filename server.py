@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import platform
 import re
@@ -10,9 +11,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
-from urllib.parse import quote, urljoin
+from urllib.parse import quote, urljoin, urlparse
 
-from fastapi import FastAPI, HTTPException, Request
+import websockets
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import Boolean, Column, String, Text, create_engine, event, inspect, text
@@ -39,6 +41,7 @@ from harness.core.configuration import (
     GlobalConfiguration,
     PromptLoader,
     database_file_path,
+    harness_home_directory,
     list_agent_route_names,
     list_agents,
     load_agent_configuration,
@@ -54,6 +57,7 @@ from harness.core.session_workspaces import SessionWorkspace, SessionWorkspaceMa
 from harness.core.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
 from harness.core.skills import load_skills, skills_for_agent
 from harness.tools.tools import (
+    ASSETS_DIRECTORY,
     cancel_all_background_tasks,
     set_exa_client,
     set_mcp_client_manager,
@@ -1076,6 +1080,12 @@ async def lifespan(application: FastAPI):
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
+    # Recover background jobs persisted by a previous run: interrupted ones are
+    # flagged for re-run and every context with a deliverable result is woken with
+    # an autonomous turn so the agent picks the work back up on its own.
+    for executor in _executors.values():
+        await executor.resume_pending_on_startup()
+
     watcher = asyncio.create_task(_watch_agents_and_skills(application))
     try:
         yield
@@ -1084,6 +1094,8 @@ async def lifespan(application: FastAPI):
         cancel_all_background_tasks()
         if _mcp_manager is not None:
             await _mcp_manager.aclose()
+        if _proxy_client is not None:
+            await _proxy_client.aclose()
 
 
 app = FastAPI(title="harness", lifespan=lifespan)
@@ -1322,6 +1334,7 @@ async def list_models_endpoint():
             "name": model.name,
             "provider": model.provider,
             "available": model.identifier in available_identifiers,
+            "curated": model.curated,
         }
         for model in MODELS
     ]
@@ -1552,7 +1565,13 @@ async def mcp_read_resource(request: MCPResourceReadRequest):
 @app.post("/directory/validate")
 async def validate_directory(request: DirectoryValidationRequest):
     """Validate that a path is an existing absolute directory and report Git workspace availability."""
-    directory = request.directory.strip()
+    # The git probes below spawn subprocesses that can block for seconds (a slow or
+    # networked repository), so the whole thing runs off the event loop — a blocking
+    # subprocess on the loop thread would freeze every other request until it returns.
+    return await asyncio.to_thread(_validate_directory_payload, request.directory.strip())
+
+
+def _validate_directory_payload(directory: str) -> dict[str, object]:
     if not directory:
         return {
             "valid": False,
@@ -1603,6 +1622,13 @@ async def validate_directory(request: DirectoryValidationRequest):
 @app.post("/directory/browse")
 async def browse_directory():
     """Open a native folder picker on the local server machine and return an absolute path."""
+    # The native picker blocks until the user chooses or cancels — up to five minutes.
+    # It MUST run off the event loop: on the loop thread it would freeze the entire
+    # server (every request hanging) for as long as the dialog stays open.
+    return await asyncio.to_thread(_open_folder_picker)
+
+
+def _open_folder_picker() -> dict[str, object]:
     system = platform.system()
     try:
         if system == "Darwin":
@@ -1856,6 +1882,54 @@ async def preview_file(file_path: str):
     return FileResponse(path, headers=no_store)
 
 
+@app.post("/research/uploads")
+async def upload_research_file(file: UploadFile = File(...)):
+    """Store a user-provided research artifact under Daisy's managed home.
+
+    The response is intentionally source-shaped so a model can insert it into the
+    research blackboard as an `origin_channel="upload"` source without inventing
+    metadata.
+    """
+    raw_name = Path(file.filename or "upload").name
+    upload_id = f"upload-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    target_directory = harness_home_directory() / "uploads" / upload_id
+    target_directory.mkdir(parents=True, exist_ok=True)
+    target_path = target_directory / raw_name
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with target_path.open("wb") as handle:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                digest.update(chunk)
+                handle.write(chunk)
+    finally:
+        await file.close()
+    mime_type = file.content_type or "application/octet-stream"
+    return {
+        "upload_id": upload_id,
+        "title": raw_name,
+        "filename": raw_name,
+        "path": str(target_path),
+        "mime_type": mime_type,
+        "size": size,
+        "sha256": digest.hexdigest(),
+        "source": {
+            "origin_channel": "upload",
+            "source_kind": "document",
+            "title": raw_name,
+            "path": str(target_path),
+            "metadata": {
+                "upload_id": upload_id,
+                "filename": raw_name,
+                "mime_type": mime_type,
+                "size": size,
+                "sha256": digest.hexdigest(),
+            },
+        },
+    }
+
+
 # A rewriting pass-through proxy for `open_preview` of external URLs. It serves
 # the page — and *every* asset and request it makes — back through this one route,
 # so to the framed page everything looks same-origin (our localhost). That is what
@@ -1874,7 +1948,10 @@ _PROXY_BROWSER_HEADERS = {
 # URL schemes that must never be rewritten through the proxy.
 _PROXY_SKIP_SCHEMES = ("data:", "blob:", "javascript:", "mailto:", "tel:", "about:", "#", "vbscript:")
 # Response headers dropped when re-serving (framing blockers + hop-by-hop/encoding
-# headers that no longer match the rewritten body).
+# headers that no longer match the rewritten body). set-cookie is dropped from the
+# BROWSER response (its cookies would be scoped to our localhost origin, useless)
+# but the cookies are still stored server-side by the shared cookie-jar client and
+# replayed upstream, so login/consent/session flows survive across proxied requests.
 _PROXY_DROP_HEADERS = {
     "x-frame-options",
     "content-security-policy",
@@ -1885,8 +1962,44 @@ _PROXY_DROP_HEADERS = {
     "content-length",
     "transfer-encoding",
     "connection",
+    "keep-alive",
     "set-cookie",
+    "strict-transport-security",
+    "report-to",
+    "reporting-endpoints",
 }
+# Request headers never forwarded upstream — hop-by-hop, or ones httpx/the target
+# must recompute for the real origin rather than inherit from our localhost frame.
+_PROXY_DROP_REQUEST_HEADERS = {
+    "host",
+    "connection",
+    "keep-alive",
+    "content-length",
+    "accept-encoding",
+    "origin",
+    "referer",
+    "cookie",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "sec-fetch-user",
+}
+
+# One long-lived client so the upstream cookie jar (session, consent, CSRF cookies)
+# persists across every proxied request. Cookies are domain-scoped by httpx, so
+# different previewed sites never share them. Created lazily on the running loop.
+_proxy_client: Optional[httpx.AsyncClient] = None
+
+
+def _get_proxy_client() -> httpx.AsyncClient:
+    global _proxy_client
+    if _proxy_client is None:
+        _proxy_client = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=30.0,
+            headers=_PROXY_BROWSER_HEADERS,
+        )
+    return _proxy_client
 
 _PROXY_HTML_ATTR_RE = re.compile(
     r'(?P<pre>\b(?:src|href|action|formaction|poster|data-src|data-href|data-url)\s*=\s*)'
@@ -1921,12 +2034,76 @@ def _proxy_ref(raw: str, base: str) -> str:
 
 def _rewrite_proxy_css(text: str, base: str) -> str:
     text = _PROXY_CSS_URL_RE.sub(
-        lambda m: f'url({m.group("q")}{_proxy_ref(m.group("url"), base)}{m.group("q")})', text
+        lambda match: f'url({match.group("q")}{_proxy_ref(match.group("url"), base)}{match.group("q")})', text
     )
     text = _PROXY_CSS_IMPORT_RE.sub(
-        lambda m: f'{m.group("pre")}{m.group("q")}{_proxy_ref(m.group("url"), base)}{m.group("q")}', text
+        lambda match: f'{match.group("pre")}{match.group("q")}{_proxy_ref(match.group("url"), base)}{match.group("q")}', text
     )
     return text
+
+
+# ES-module specifiers the browser resolves itself (static import/export-from and
+# string-literal dynamic import). Served from our /preview-proxy path, relative
+# specifiers would otherwise resolve against localhost and 404 — so every literal
+# specifier is rewritten to an absolute, proxied URL. Computed specifiers in a
+# dynamic import() cannot be rewritten statically (the runtime shim cannot patch the
+# import operator either); those remain a known gap.
+_PROXY_JS_STATIC_IMPORT_RE = re.compile(
+    r'(?P<pre>\b(?:import|export)\b[^;\n]*?\bfrom\s*)(?P<q>["\'])(?P<url>[^"\']+)(?P=q)',
+    re.IGNORECASE,
+)
+_PROXY_JS_BARE_IMPORT_RE = re.compile(
+    r'(?P<pre>\bimport\s*)(?P<q>["\'])(?P<url>[^"\']+)(?P=q)',
+    re.IGNORECASE,
+)
+_PROXY_JS_DYNAMIC_IMPORT_RE = re.compile(
+    r'(?P<pre>\bimport\s*\(\s*)(?P<q>["\'])(?P<url>[^"\']+)(?P=q)(?P<post>\s*\))',
+    re.IGNORECASE,
+)
+
+
+def _rewrite_proxy_js(text: str, base: str) -> str:
+    """Rewrite ES-module import/export specifiers in a served script to proxied,
+    absolute URLs. Applied to any response whose content type is JavaScript; the
+    patterns only touch module syntax, which a classic script would not contain."""
+    text = _PROXY_JS_STATIC_IMPORT_RE.sub(
+        lambda match: f'{match.group("pre")}{match.group("q")}{_proxy_ref(match.group("url"), base)}{match.group("q")}', text
+    )
+    text = _PROXY_JS_DYNAMIC_IMPORT_RE.sub(
+        lambda match: f'{match.group("pre")}{match.group("q")}{_proxy_ref(match.group("url"), base)}{match.group("q")}{match.group("post")}', text
+    )
+    text = _PROXY_JS_BARE_IMPORT_RE.sub(
+        lambda match: f'{match.group("pre")}{match.group("q")}{_proxy_ref(match.group("url"), base)}{match.group("q")}', text
+    )
+    return text
+
+
+_PROXY_IMPORTMAP_RE = re.compile(
+    r'(<script[^>]*\btype\s*=\s*["\']importmap["\'][^>]*>)(?P<body>.*?)(</script>)',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _rewrite_importmap_urls(node: Any, base: str) -> Any:
+    """Route every URL value in an import map (imports + scopes) through the proxy so
+    bare specifiers the map resolves still load from the real origin."""
+    if isinstance(node, dict):
+        return {key: _rewrite_importmap_urls(value, base) for key, value in node.items()}
+    if isinstance(node, str):
+        return _proxy_ref(node, base)
+    return node
+
+
+def _rewrite_proxy_importmap(markup: str, base: str) -> str:
+    def _replace(match: re.Match) -> str:
+        try:
+            parsed = json.loads(match.group("body"))
+        except (ValueError, TypeError):
+            return match.group(0)
+        rewritten = json.dumps(_rewrite_importmap_urls(parsed, base))
+        return f"{match.group(1)}{rewritten}{match.group(3)}"
+
+    return _PROXY_IMPORTMAP_RE.sub(_replace, markup)
 
 
 def _rewrite_proxy_srcset(value: str, base: str) -> str:
@@ -1941,45 +2118,39 @@ def _rewrite_proxy_srcset(value: str, base: str) -> str:
     return ", ".join(rewritten)
 
 
+_PROXY_RUNTIME_TEMPLATE = (ASSETS_DIRECTORY / "proxy_runtime.js").read_text(encoding="utf-8")
+
+
 def _proxy_runtime(base: str) -> str:
     """A small shim injected into every proxied page so URLs built *by scripts*
     (fetch/XHR, history navigations, dynamically created elements) also go through
     the proxy and resolve against the real origin — not our localhost — and so a
-    cross-origin ``history.replaceState`` no longer throws."""
-    base_json = json.dumps(base)
-    proxy_json = json.dumps(f"{_PROXY_PATH}?url=")
-    return (
-        "<script>(function(){"
-        f"var BASE={base_json};var PROXY={proxy_json};"
-        "function abs(u){try{return new URL(u,BASE).href;}catch(e){return null;}}"
-        "function prox(u){if(typeof u!=='string'||!u)return u;"
-        "if(/^(data:|blob:|javascript:|about:|mailto:|tel:|#)/i.test(u))return u;"
-        "if(u.indexOf(PROXY)!==-1)return u;var a=abs(u);"
-        "if(!a||!/^https?:/i.test(a))return u;return PROXY+encodeURIComponent(a);}"
-        "['pushState','replaceState'].forEach(function(m){var o=history[m];history[m]=function(s,t,u){"
-        "try{return o.call(history,s,t,u);}catch(e){try{return o.call(history,s,t);}catch(_){}}};});"
-        "if(window.fetch){var of=window.fetch;window.fetch=function(i,n){try{"
-        "if(typeof i==='string')i=prox(i);else if(i&&i.url)i=new Request(prox(i.url),i);}catch(e){}"
-        "return of.call(this,i,n);};}"
-        "if(window.XMLHttpRequest){var oo=XMLHttpRequest.prototype.open;"
-        "XMLHttpRequest.prototype.open=function(m,u){try{u=prox(u);}catch(e){}"
-        "return oo.apply(this,[m,u].concat([].slice.call(arguments,2)));};}"
-        "})();</script>"
+    cross-origin ``history.replaceState`` no longer throws. The script itself lives
+    in ``assets/proxy_runtime.js``; the per-page origin/prefix are substituted in."""
+    source = (
+        _PROXY_RUNTIME_TEMPLATE
+        .replace("__HARNESS_PROXY_BASE__", json.dumps(base))
+        .replace("__HARNESS_PROXY_URL__", json.dumps(f"{_PROXY_PATH}?url="))
+        .replace("__HARNESS_WS_PROXY_URL__", json.dumps("/preview-proxy-ws?url="))
     )
+    return f"<script>\n{source}</script>"
 
 
 def _rewrite_proxy_html(markup: str, base: str) -> str:
     markup = _PROXY_CSP_META_RE.sub("", markup)
     markup = _PROXY_BASE_TAG_RE.sub("", markup)
     markup = _PROXY_STRIP_ATTR_RE.sub("", markup)
+    # Import maps first — their JSON must be rewritten before the generic attribute
+    # pass could disturb the <script> body.
+    markup = _rewrite_proxy_importmap(markup, base)
     markup = _PROXY_HTML_ATTR_RE.sub(
-        lambda m: f'{m.group("pre")}{m.group("q")}{_proxy_ref(m.group("url"), base)}{m.group("q")}', markup
+        lambda match: f'{match.group("pre")}{match.group("q")}{_proxy_ref(match.group("url"), base)}{match.group("q")}', markup
     )
     markup = _PROXY_HTML_SRCSET_RE.sub(
-        lambda m: f'{m.group("pre")}{m.group("q")}{_rewrite_proxy_srcset(m.group("val"), base)}{m.group("q")}', markup
+        lambda match: f'{match.group("pre")}{match.group("q")}{_rewrite_proxy_srcset(match.group("val"), base)}{match.group("q")}', markup
     )
     markup = _PROXY_STYLE_BLOCK_RE.sub(
-        lambda m: f'{m.group(1)}{_rewrite_proxy_css(m.group("body"), base)}{m.group(3)}', markup
+        lambda match: f'{match.group(1)}{_rewrite_proxy_css(match.group("body"), base)}{match.group(3)}', markup
     )
     runtime = _proxy_runtime(base)
     head_match = re.search(r"<head[^>]*>", markup, re.IGNORECASE)
@@ -1988,35 +2159,114 @@ def _rewrite_proxy_html(markup: str, base: str) -> str:
     return runtime + markup
 
 
-@app.get("/preview-proxy")
-async def preview_proxy(url: str):
+def _proxy_forward_headers(request: Request, target_url: str) -> dict[str, str]:
+    """The request headers to forward upstream: the browser's own headers (so the
+    site sees a real browser) minus hop-by-hop/localhost-specific ones, with Origin
+    and Referer rewritten to the target's own origin rather than our localhost frame
+    (many APIs reject a mismatched Origin, or vary their response by Referer)."""
+    forwarded = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in _PROXY_DROP_REQUEST_HEADERS
+    }
+    parsed = urlparse(target_url)
+    if parsed.scheme and parsed.netloc:
+        forwarded["Referer"] = f"{parsed.scheme}://{parsed.netloc}/"
+        forwarded["Origin"] = f"{parsed.scheme}://{parsed.netloc}"
+    return forwarded
+
+
+@app.api_route("/preview-proxy", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+async def preview_proxy(url: str, request: Request):
     """Fetch an external ``http(s)`` URL server-side and re-serve it (and everything
     it links to) from our own origin, rewritten so the framed page behaves as if it
     were same-origin. This is what makes ``open_preview`` a real mini-browser for
-    sites that block direct framing. Localhost-only, like the rest of the API."""
+    sites that block direct framing.
+
+    All HTTP methods and request bodies are forwarded, a shared cookie jar keeps
+    session/consent state across requests, and HTML/CSS/JS bodies are rewritten so
+    links, styles, and ES-module imports keep flowing through the proxy.
+    Localhost-only, like the rest of the API."""
     if not url.lower().startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Only http(s) URLs can be previewed.")
+    body = await request.body()
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
-            upstream = await client.get(url, headers=_PROXY_BROWSER_HEADERS)
+        upstream = await _get_proxy_client().request(
+            request.method,
+            url,
+            content=body or None,
+            headers=_proxy_forward_headers(request, url),
+        )
     except httpx.HTTPError as error:
         raise HTTPException(status_code=502, detail=f"Could not load {url}: {error}")
 
     final_url = str(upstream.url)
     content_type = upstream.headers.get("content-type", "application/octet-stream")
     lowered = content_type.lower()
+    status = upstream.status_code
     if "html" in lowered:
-        return HTMLResponse(_rewrite_proxy_html(upstream.text, final_url))
+        return HTMLResponse(_rewrite_proxy_html(upstream.text, final_url), status_code=status)
     if "css" in lowered:
-        return Response(_rewrite_proxy_css(upstream.text, final_url), media_type=content_type)
-    # Scripts, images, fonts, JSON, … — re-serve verbatim from our origin (httpx has
+        return Response(_rewrite_proxy_css(upstream.text, final_url), media_type=content_type, status_code=status)
+    if any(token in lowered for token in ("javascript", "ecmascript", "text/jsx")):
+        return Response(_rewrite_proxy_js(upstream.text, final_url), media_type=content_type, status_code=status)
+    # Images, fonts, JSON, media, … — re-serve verbatim from our origin (httpx has
     # already decoded any transfer encoding), minus the headers that no longer apply.
     safe_headers = {
         key: value
         for key, value in upstream.headers.items()
         if key.lower() not in _PROXY_DROP_HEADERS
     }
-    return Response(content=upstream.content, media_type=content_type, headers=safe_headers)
+    return Response(content=upstream.content, media_type=content_type, headers=safe_headers, status_code=status)
+
+
+@app.websocket("/preview-proxy-ws")
+async def preview_proxy_ws(client_socket: WebSocket):
+    """Bridge a WebSocket opened by a proxied page to its real upstream server. The
+    injected runtime rewrites ``new WebSocket(...)`` to point here (same-origin, so
+    the browser allows it from the framed page); this relays frames both ways. Text
+    and binary frames are forwarded verbatim."""
+    target = client_socket.query_params.get("url", "")
+    if not target.lower().startswith(("ws://", "wss://")):
+        await client_socket.close(code=1008)
+        return
+    await client_socket.accept()
+    try:
+        async with websockets.connect(target, open_timeout=20) as upstream_socket:
+            async def pump_client_to_upstream() -> None:
+                while True:
+                    message = await client_socket.receive()
+                    if message.get("type") == "websocket.disconnect":
+                        await upstream_socket.close()
+                        return
+                    if message.get("text") is not None:
+                        await upstream_socket.send(message["text"])
+                    elif message.get("bytes") is not None:
+                        await upstream_socket.send(message["bytes"])
+
+            async def pump_upstream_to_client() -> None:
+                async for frame in upstream_socket:
+                    if isinstance(frame, (bytes, bytearray)):
+                        await client_socket.send_bytes(bytes(frame))
+                    else:
+                        await client_socket.send_text(frame)
+
+            client_pump = asyncio.create_task(pump_client_to_upstream())
+            upstream_pump = asyncio.create_task(pump_upstream_to_client())
+            done, pending = await asyncio.wait(
+                {client_pump, upstream_pump}, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+    except (WebSocketDisconnect, OSError, websockets.WebSocketException, asyncio.TimeoutError):
+        # A dropped or refused upstream WebSocket ends the bridge quietly — the page
+        # sees a closed socket, exactly as it would talking to the origin directly.
+        pass
+    finally:
+        try:
+            await client_socket.close()
+        except RuntimeError:
+            pass
 
 
 @app.get("/events")
