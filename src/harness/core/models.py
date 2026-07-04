@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-import json
+import logging
 from dataclasses import dataclass
-from pathlib import Path
+
+import httpx
 
 from harness.core.providers import (
+    PROVIDERS,
+    ProviderDefinition,
     get_provider_definition,
     resolve_api_key,
     resolve_base_url,
@@ -15,13 +18,13 @@ from harness.core.providers import (
 class ModelDefinition:
     """A pickable model. The ``identifier`` is the canonical, provider-namespaced
     technical id a user references the model by (``anthropic/claude-sonnet-4``,
-    ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label. Both mirror
-    the id/name pair the skills and agents use elsewhere, so the picker, the
-    configuration, and the persisted per-session override all speak the same id.
+    ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label from the
+    models.dev catalog, falling back to the raw model suffix when no display name
+    is available (the frontend renders those in monospace).
 
-    ``curated`` is ``True`` for entries hand-written in ``models.json`` (which
-    carry a human-readable name) and ``False`` for auto-discovered entries (whose
-    ``name`` field holds the raw model suffix the frontend renders in monospace).
+    ``curated`` is always ``False`` — all models now come from the models.dev
+    discovery API, and the field is retained only for backward compatibility with
+    the frontend type.
     """
 
     identifier: str
@@ -30,33 +33,95 @@ class ModelDefinition:
     curated: bool = False
 
 
-def _load_catalog() -> list[ModelDefinition]:
-    # The catalog lives in a sibling JSON file so adding or trimming a model is a
-    # data edit, not a code change. The shape is designed so an automatic
-    # discover_models (OpenAI /v1/models, Ollama /api/tags, ...) can append fetched
-    # entries to the file later without touching this loader.
-    catalog_path = Path(__file__).resolve().parent / "models.json"
-    raw_entries = json.loads(catalog_path.read_text())
-    return [
-        ModelDefinition(
-            identifier=entry["id"],
-            name=entry["name"],
-            provider=entry["provider"],
-            curated=True,
+# Map models.dev provider IDs to our local provider identifiers.
+# models.dev uses kebab-case; we use snake_case (or the original provider name).
+_MODELS_DEV_PROVIDER_MAP: dict[str, str] = {
+    # Direct matches: models.dev kebab-case = our snake_case
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "google": "google",
+    "deepseek": "deepseek",
+    "xai": "xai",
+    "groq": "groq",
+    "mistral": "mistral",
+    "openrouter": "openrouter",
+    "cohere": "cohere",
+    "perplexity": "perplexity",
+    "deepinfra": "deepinfra",
+    "hyperbolic": "hyperbolic",
+    "cerebras": "cerebras",
+    "minimax": "minimax",
+    "nebius": "nebius",
+    "ovhcloud": "ovhcloud",
+    "wandb": "wandb",
+    "inception": "inception",
+    "morph": "morph",
+    "oci": "oci",
+    "databricks": "databricks",
+    "zai": "zai",
+    # Mismatched names
+    "fireworks-ai": "fireworks_ai",
+    "novita-ai": "novita",
+    "moonshotai": "moonshot",
+    "togetherai": "together_ai",
+    "cloudflare-workers-ai": "cloudflare",
+    "github-copilot": "github_copilot",
+    "zhipuai": "zai",
+    "zhipuai-coding-plan": "zai_code",
+    "zai-coding-plan": "zai_code",
+    "friendli": "friendliai",
+    "opencode": "opencode",
+    "opencode-go": "opencode",
+    "kimi-for-coding": "moonshot",
+    "minimax-cn": "minimax",
+    "minimax-coding-plan": "minimax",
+    "minimax-cn-coding-plan": "minimax",
+    "moonshotai-cn": "moonshot",
+    "scaleway": "scaleway",
+}
+
+
+def _catalog() -> list[ModelDefinition]:
+    """Model catalog from models.dev's open-source API.
+
+    Best-effort — returns an empty list when the API is unreachable so the server
+    can still start without a model catalog.
+    """
+    MODELS_DEV_URL = "https://models.dev/api.json"
+    try:
+        response = httpx.get(MODELS_DEV_URL, timeout=5)
+        response.raise_for_status()
+        raw = response.json()
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Could not fetch model catalog from %s — no models available",
+            MODELS_DEV_URL,
         )
-        for entry in raw_entries
-    ]
+        return []
+
+    models: dict[str, ModelDefinition] = {}
+    for models_dev_id, provider_info in raw.items():
+        local_id = _MODELS_DEV_PROVIDER_MAP.get(models_dev_id)
+        if local_id is None:
+            continue
+        # Skip providers not registered in this version of Daisy
+        if get_provider_definition(local_id) is None:
+            continue
+        for model_id, model_info in provider_info.get("models", {}).items():
+            name = model_info.get("name", "") or model_id
+            identifier = f"{local_id}/{model_id}"
+            # Deduplicate: when multiple models.dev provider IDs map to the same
+            # local provider and carry the same model, keep the first occurrence.
+            models.setdefault(identifier, ModelDefinition(
+                identifier=identifier,
+                name=name,
+                provider=local_id,
+                curated=False,
+            ))
+    return list(models.values())
 
 
-
-def _merged_catalog() -> list[ModelDefinition]:
-    # Only models.json — no LiteLLM auto-discovery. The curated file keeps the
-    # catalog focused on current, well-known models without old/experimental
-    # noise that LiteLLM's indiscriminate catalog pulls in.
-    return list(_load_catalog())
-
-
-MODELS: list[ModelDefinition] = _merged_catalog()
+MODELS: list[ModelDefinition] = _catalog()
 
 
 def list_models() -> list[ModelDefinition]:

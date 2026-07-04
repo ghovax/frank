@@ -66,8 +66,15 @@ function displayModelName(modelId: string, models: ModelOption[]): string {
   return models.find((model) => model.id === modelId)?.name ?? modelId;
 }
 
-function modelCurated(modelId: string, models: ModelOption[]): boolean {
-  return models.find((model) => model.id === modelId)?.curated ?? false;
+/**
+ * Whether a model's display name is a fallback to its raw ID rather than a
+ * proper human-readable label. When true, the frontend renders it in monospace
+ * to signal "this is a technical identifier, not a curated display name."
+ */
+function modelNameIsFallbackId(modelId: string, models: ModelOption[]): boolean {
+  const model = models.find((m) => m.id === modelId);
+  if (!model) return true; // unknown model — treat as fallback, render monospace
+  return model.name === suffixForModel(modelId);
 }
 
 function providerName(providerId: string, providers: ProviderOption[]): string {
@@ -141,7 +148,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
       : firstKnownModel;
   const effectiveModelId = value || fallbackModelId;
   const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : "Model";
-  const chipCurated = effectiveModelId ? modelCurated(effectiveModelId, models) : false;
+  const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
   const selectedProviderLabel = providerName(selectedProvider, providers);
   const selectedProviderKey = providerKeys[selectedProvider] ?? "";
@@ -220,12 +227,12 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
             <Box as="span" color="fg.subtle" display="flex" alignItems="center" flexShrink={0}>
               <LuChevronRight size={compact ? 11 : 13} />
             </Box>
-            <Box as="span" truncate fontFamily={chipCurated ? undefined : "var(--app-font-mono)"} fontSize={chipCurated ? undefined : "xs"}>
+            <Box as="span" truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
               {chipModelName}
             </Box>
           </Flex>
         ) : (
-          <Box as="span" truncate fontFamily={chipCurated ? undefined : "var(--app-font-mono)"} fontSize={chipCurated ? undefined : "xs"}>
+          <Box as="span" truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
             {chipModelName}
           </Box>
         )}
@@ -322,7 +329,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                               .map((model) => (
                                 <Select.Item item={model} key={model.value} fontWeight="medium">
                                   <Flex align="center" gap={2} w="100%">
-                                    {model.curated ? (
+                                    {suffixForModel(model.value) !== model.label ? (
                                       <Text flex={1}>{model.label}</Text>
                                     ) : (
                                       <Text flex={1} fontFamily="var(--app-font-mono)" fontSize="xs">

@@ -74,6 +74,20 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             env_vars=("XAI_API_KEY",),
         ),
         ProviderDefinition(
+            identifier="zai",
+            name="Zhipu AI",
+            litellm_prefix="zai",
+            env_vars=("ZAI_API_KEY",),
+        ),
+        ProviderDefinition(
+            identifier="zai_code",
+            name="Zhipu AI Coding Plan",
+            litellm_prefix="openai",
+            env_vars=("ZAI_API_KEY",),
+            default_base_url="https://api.z.ai/api/coding/paas/v4",
+            openai_compatible=True,
+        ),
+        ProviderDefinition(
             identifier="deepseek",
             name="DeepSeek",
             litellm_prefix="deepseek",
@@ -216,6 +230,14 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             name="OVHcloud",
             litellm_prefix="ovhcloud",
             env_vars=("OVHCLOUD_API_KEY",),
+        ),
+        ProviderDefinition(
+            identifier="scaleway",
+            name="Scaleway",
+            litellm_prefix="openai",
+            env_vars=("SCALEWAY_API_KEY",),
+            default_base_url="https://api.scaleway.ai/v1",
+            openai_compatible=True,
         ),
         ProviderDefinition(
             identifier="volcengine",

@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
 import { LuCheck, LuChevronLeft, LuChevronRight } from "react-icons/lu";
 import type { QuestionAnswer, ToolQuestion } from "@/lib/tool-event";
+import { MarkdownContent } from "./markdown-content";
 
 interface QuestionOverlayProps {
   question: ToolQuestion;
@@ -105,12 +106,7 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
           </Flex>
 
           <Flex direction="column" gap={2.5}>
-            {item.header && (
-              <Text fontSize="xs" fontWeight="semibold">
-                {item.header}
-              </Text>
-            )}
-            <Text fontSize="sm">{item.question}</Text>
+            <MarkdownContent content={item.question} fontSize="sm" />
 
             {hasOptions && (
               <Flex direction="column" gap={1}>
@@ -148,13 +144,11 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
                         )}
                       </Box>
                       <Flex direction="column" minW={0} flex={1}>
-                        <Text fontSize="sm" fontWeight="medium" color={isSelected ? "fg" : "fg.emphasized"}>
-                          {option.label}
-                        </Text>
+                        <MarkdownContent content={option.label} fontSize="sm" />
                         {option.description && (
-                          <Text fontSize="xs" color="fg.subtle" lineClamp={2}>
-                            {option.description}
-                          </Text>
+                          <Box color="fg.muted">
+                            <MarkdownContent content={option.description} fontSize="xs" />
+                          </Box>
                         )}
                       </Flex>
                     </Flex>
@@ -165,7 +159,7 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
 
             {customEnabled && (
               <Input
-                size="xs"
+                size="sm"
                 placeholder="Type your own answer"
                 value={text}
                 onChange={(e) => setCustom((prev) => ({ ...prev, [current]: e.target.value }))}

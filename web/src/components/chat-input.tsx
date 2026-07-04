@@ -831,14 +831,19 @@ export function ChatInput({
               />
               <Button
                 onClick={() => fileInputRef.current?.click()}
-                variant="outline"
+                variant="subtle"
+                colorPalette="gray"
                 borderRadius="sm"
-                minW="32px"
+                minW="70px"
                 h="32px"
-                px={0}
+                px={2}
+                gap={1.5}
+                fontSize="xs"
+                fontWeight="medium"
                 disabled={disabled || !directoryValid}
               >
                 <LuPaperclip size={14} />
+                Attach files
               </Button>
               {isStreaming ? (
                 <Button

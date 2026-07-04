@@ -54,7 +54,7 @@ interface ChatPanelProps {
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
-  models?: { id: string; name: string; provider: string; available: boolean }[];
+  models?: { id: string; name: string; provider: string; available: boolean; curated: boolean }[];
   modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
   recentModels?: { id: string; name: string; provider: string }[];
   selectedModel?: string;

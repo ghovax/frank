@@ -86,7 +86,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
       return (
         <Box alignSelf="flex-start" px={1}>
           <Flex align="flex-start" gap={1.5} color="fg.muted">
-            <Box mt="2px" flexShrink={0} color="fg.subtle">
+            <Box flexShrink={0} color="fg.subtle" display="flex" alignItems="center" fontSize="sm" lineHeight="1.42857" css={{ height: "1lh" }}>
               <LuInfo size={13} />
             </Box>
             <Box minW={0}>
