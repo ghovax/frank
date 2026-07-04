@@ -1162,7 +1162,6 @@ class PermissionModeRequest(BaseModel):
 class SettingsUpdateRequest(BaseModel):
     exa_api_key: str = ""
     composio_api_key: str = ""
-    dots_ocr: _configuration.DotsOCRConfiguration = _configuration.DotsOCRConfiguration()
     # Per-provider API keys (the opencode gateway's key lives under "opencode").
     provider_keys: dict[str, str] = {}
     # Base URLs for the OpenAI-compatible providers (opencode, custom).
@@ -1371,7 +1370,6 @@ async def get_settings():
         "sandbox_enabled": _global_configuration.sandbox.enabled,
         "workspace_strategy": _global_configuration.workspace.strategy,
         "selected_model": _global_configuration.selected_model_identifier(),
-        "dots_ocr": _global_configuration.dots_ocr.model_dump(mode="json"),
         "providers": {
             identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
             for identifier, credential in _global_configuration.providers.items()
@@ -1392,7 +1390,6 @@ async def update_settings(request: SettingsUpdateRequest):
         save_api_keys,
         exa_api_key=request.exa_api_key,
         composio_api_key=request.composio_api_key,
-        dots_ocr=request.dots_ocr.model_dump(mode="json"),
         provider_keys=request.provider_keys,
         provider_base_urls=request.provider_base_urls,
         selected_model=request.selected_model,
@@ -1400,7 +1397,6 @@ async def update_settings(request: SettingsUpdateRequest):
     )
     configuration.exa.api_key = request.exa_api_key
     configuration.composio.api_key = request.composio_api_key
-    configuration.dots_ocr = request.dots_ocr
     configuration.workspace.strategy = request.workspace_strategy
     # Rebuild the providers map from the posted keys/base URLs, merging so a
     # provider the dialog did not render keeps its stored credential.

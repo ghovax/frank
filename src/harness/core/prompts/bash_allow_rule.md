@@ -1,6 +1,8 @@
 The user just approved this shell command and chose to **always allow** commands like it for the rest of this session:
 
+```bash
 {{ command }}
+```
 
 Produce the allow rule: one or more command patterns that should auto-run without prompting again. A pattern matches a command segment either exactly, or as a prefix when it ends with `*` (e.g. `cat *` matches `cat /tmp/x.html`, `git status` matches only that exact command).
 

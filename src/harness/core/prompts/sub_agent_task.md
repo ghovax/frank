@@ -5,3 +5,5 @@ Return a concise, self-contained report for the parent. Include findings, eviden
 **The delegated task is exactly as follows:**
 
 {{ prompt }}
+
+---

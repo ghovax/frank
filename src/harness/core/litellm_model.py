@@ -45,7 +45,7 @@ class ChatLiteLLMModel(BaseChatModel):
     api_base: Optional[str] = None
     temperature: float = 0.0
     reasoning_effort: Optional[str] = None
-    max_tokens: Optional[int] = None
+    maximum_tokens: Optional[int] = None
     timeout: Optional[float] = None
     default_headers: dict[str, str] = {}
 
@@ -156,8 +156,8 @@ class ChatLiteLLMModel(BaseChatModel):
             params["api_base"] = self.api_base
         if self.reasoning_effort:
             params["reasoning_effort"] = self.reasoning_effort
-        if self.max_tokens is not None:
-            params["max_tokens"] = self.max_tokens
+        if self.maximum_tokens is not None:
+            params["max_tokens"] = self.maximum_tokens  # litellm/OpenAI API param name
         if self.timeout is not None:
             params["timeout"] = self.timeout
         if self.default_headers:

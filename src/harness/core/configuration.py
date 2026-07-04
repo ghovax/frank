@@ -45,7 +45,6 @@ def save_api_keys(
     *,
     exa_api_key: str | None = None,
     composio_api_key: str | None = None,
-    dots_ocr: dict[str, object] | None = None,
     sandbox_enabled: bool | None = None,
     workspace_strategy: str | None = None,
     provider_keys: dict[str, str] | None = None,
@@ -64,9 +63,6 @@ def save_api_keys(
         data.setdefault("exa", {})["api_key"] = exa_api_key
     if composio_api_key is not None:
         data.setdefault("composio", {})["api_key"] = composio_api_key
-    if dots_ocr is not None:
-        section = data.setdefault("dots_ocr", {})
-        section.update(dots_ocr)
     if sandbox_enabled is not None:
         data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
     if workspace_strategy is not None:
@@ -135,26 +131,6 @@ class ComposioConfiguration(BaseModel):
         return os.environ.get("COMPOSIO_API_KEY") or self.api_key
 
 
-class DotsOCRConfiguration(BaseModel):
-    """Parser endpoint used by the research evidence plane for Dots/MOCR output.
-
-    The heavyweight model runtime is intentionally external to daisy. Local and
-    remote modes both point at an HTTP parser endpoint; "local" means the endpoint
-    is expected to run on the user's machine.
-    """
-    enabled: bool = False
-    mode: Literal["local", "remote"] = "local"
-    endpoint: str = ""
-    api_key: str = ""
-    model_name: str = "rednote-hilab/dots.mocr"
-    prompt_mode: str = "prompt_layout_all_en"
-    timeout_seconds: float = 900
-
-    @property
-    def effective_api_key(self) -> str:
-        return os.environ.get("DAISY_DOTS_OCR_API_KEY") or self.api_key
-
-
 class MCPServerConfiguration(BaseModel):
     enabled: bool = True
     transport: Literal["stdio", "streamable_http"] = "stdio"
@@ -220,7 +196,6 @@ class GlobalConfiguration(BaseModel):
     sandbox: SandboxConfiguration = SandboxConfiguration()
     workspace: WorkspaceConfiguration = WorkspaceConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
-    dots_ocr: DotsOCRConfiguration = DotsOCRConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "senior-researcher"
     # How deep a chain of agents delegating to other agents may go, to bound

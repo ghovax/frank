@@ -510,81 +510,6 @@ def open_preview(
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
-
-@tool
-def research_board(
-    action: str,
-    target: str,
-    workspace_id: str = "",
-    target_id: str = "",
-    payload: dict | None = None,
-    parent_event_ids: list[str] | None = None,
-    expected_revision: int | None = None,
-    idempotency_key: str = "",
-    justification: str = "",
-) -> str:
-    """Append to or inspect the research blackboard.
-
-    Args:
-        action: One of insert, annotate, exclude, supersede, prepare, publish, inspect.
-        target: One of workspace, source, preparation_run, evidence, anchor, report,
-            note, quarantine.
-        workspace_id: Durable research workspace id. Omit only for insert/workspace.
-        target_id: Target id when acting on an existing object, or a caller-supplied
-            id for insertion.
-        payload: Structured action payload.
-        parent_event_ids: Prior event ids this event builds on.
-        expected_revision: Optional optimistic concurrency guard.
-        idempotency_key: Optional key that makes retries append at most one event.
-        justification: A concise user-facing reason for the blackboard action.
-    """
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
-def research_evidence(
-    operation: str,
-    workspace_id: str,
-    query: str = "",
-    target_id: str = "",
-    filters: dict | None = None,
-    limit: int = 12,
-    report: dict | None = None,
-    justification: str = "",
-) -> str:
-    """Retrieve evidence views from a research workspace.
-
-    Args:
-        operation: One of search, source, anchor, quarantine, validate_report.
-        workspace_id: Research workspace id.
-        query: Search query for operation=search.
-        target_id: Source, anchor, or report id depending on operation.
-        filters: Optional structured filters, such as source_id or evidence_modality.
-        limit: Maximum number of records to return.
-        report: Inline report payload for validate_report when it has not been saved.
-        justification: A concise user-facing reason for retrieving evidence.
-    """
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
-def research_open(
-    target: str,
-    workspace_id: str,
-    target_id: str,
-    justification: str = "",
-) -> str:
-    """Open a research artifact in the UI.
-
-    Args:
-        target: One of anchor, source, report.
-        workspace_id: Research workspace id.
-        target_id: Anchor/source/report id to render.
-        justification: A concise user-facing reason for opening the artifact.
-    """
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
 @tool
 def read_task(task_id: str = "", justification: str = "") -> str:
     """Read another A2A task in this context — a sibling or sub-agent task — by
@@ -831,9 +756,6 @@ set_tasks.description = _load_tool_description("set_tasks")
 update_tasks.description = _load_tool_description("update_tasks")
 update_goal.description = _load_tool_description("update_goal")
 open_preview.description = _load_tool_description("open_preview")
-research_board.description = _load_tool_description("research_board")
-research_evidence.description = _load_tool_description("research_evidence")
-research_open.description = _load_tool_description("research_open")
 list_mcp_tools.description = _load_tool_description("list_mcp_tools")
 call_mcp_tool.description = _load_tool_description("call_mcp_tool")
 list_mcp_resources.description = _load_tool_description("list_mcp_resources")

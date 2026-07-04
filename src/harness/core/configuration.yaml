@@ -60,39 +60,6 @@ sandbox:
 workspace:
   strategy: "none"
 
-# Research Document Parsing
-#
-# Dots/MOCR is used by the research evidence plane to parse PDFs/images into
-# page-level layout cells, citation anchors, tables, formulas, and figure regions.
-# The heavy OCR/VLM runtime runs outside daisy. Local mode means daisy calls a
-# parser endpoint on this machine; remote mode means the endpoint is elsewhere.
-#
-# prompt_mode options from upstream dots_mocr:
-# - prompt_layout_all_en: full layout detection plus text extraction; the normal
-#   research-ingestion mode because it preserves bbox, category, tables, formulas,
-#   captions, and body text.
-# - prompt_layout_only_en: layout detection only; no text extraction.
-# - prompt_ocr: plain OCR text extraction, excluding page-header/page-footer in
-#   upstream's benchmark-oriented formatting.
-# - prompt_grounding_ocr: OCR only inside a supplied bounding box; useful for
-#   targeted follow-up, not whole-document ingestion.
-# - prompt_web_parsing: webpage screenshot layout parsing.
-# - prompt_scene_spotting: scene-text detection and recognition.
-# - prompt_image_to_svg: structured graphic/image to SVG code.
-# - prompt_general: free-form visual QA with a custom prompt.
-#
-# model_name is the model id sent to the parser/model server. The actual upstream
-# model identifier is rednote-hilab/dots.mocr. If you deliberately launch vLLM
-# with a served alias, this value must match that alias.
-dots_ocr:
-  enabled: false
-  mode: "local"
-  endpoint: ""
-  api_key: ""
-  model_name: "rednote-hilab/dots.mocr"
-  prompt_mode: "prompt_layout_all_en"
-  timeout_seconds: 900
-
 # Agent and Skill Discovery
 #
 # Directory roots are fixed in code: ~/.agents globally and .agents inside the

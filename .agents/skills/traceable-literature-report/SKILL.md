@@ -1,102 +1,48 @@
 ---
 name: traceable-literature-report
-title: Write traceable literature reports from the research blackboard
+title: Write a traceable literature report from an evidence blackboard
 enabled: true
 description: >-
-  Use when producing literature reports whose claims must be grounded in durable
-  evidence cards, citation anchors, parsed PDFs/images, database records, and a
-  quarantine appendix. The skill coordinates the append-only research blackboard
-  tools: research_board, research_evidence, and research_open.
+  Use when producing a literature report whose every material claim must be
+  traceable to exact evidence — a verbatim anchor, page, figure, or a resolved
+  citation — rather than asserted from memory. This is the write-up discipline that
+  turns an existing `evidence-blackboard` board into a defensible report: retrieve
+  evidence with SQL, write prose where each claim resolves to an anchor, and record
+  conclusions back onto the board. Load `evidence-blackboard` to build and query the
+  board; load `literature-search` to fetch any missing sources.
 ---
 
 # Traceable Literature Report
 
-This skill governs the workflow. The tools provide state, retrieval, validation, and rendering; the model writes and revises the report.
+This skill is the **write-up phase**, not the graph-building phase. Building the knowledge graph — adding sources, ingesting, resolving references, asserting claims, classifying — is the **`evidence-blackboard`** skill's loop; do that first (or alongside). Here you turn an already-populated board into a written report where **every material claim resolves to a queryable anchor or claim**, not to memory. The report is your normal chat deliverable; it is traceable because each assertion is backed by a row you can produce with SQL.
 
-## Core Model
+## Two planes
 
-There are two contexts:
+- **Chat**: your reasoning and the final written report.
+- **Blackboard** (`~/.blackboard`, append-only, driven from `uv run python`): `works`, `anchors`, `claims`/`claim_support`, `citations`, `figures`, `bibliography`, `topics`, `quarantine`, and your `notes`. You only ever append. See `evidence-blackboard` for the functions and the full table list.
 
-- **Chat context**: the normal conversation and reasoning trace.
-- **Research blackboard**: a persistent append-only workspace holding objectives, sources, preparation runs, anchors, evidence cards, quarantine records, reports, and publication/supersession events.
+## Workflow
 
-Never treat the blackboard as CRUD state. Do not delete or reset. Append events: `insert`, `annotate`, `exclude`, `supersede`, `prepare`, and `publish`.
+1. **Confirm the board is built.** Reopen it with `open_board(board=<id>)`. If sources for the question are missing, go build/extend the board with the `evidence-blackboard` loop (fetch via `literature-search`, `add_source`, `ingest`, `link_reference`, `add_claim`) before drafting.
 
-## Tool Surface
+2. **Check quarantine first.** `query("SELECT source_id, reason_code, message FROM quarantine WHERE board_id = ?", [board])`. If a relevant source was quarantined, the report needs a short appendix listing what could not be evaluated — never quietly drop it.
 
-Use only three research tools:
+3. **Retrieve evidence with SQL — repeatedly, while drafting.**
+   - Free-text: join `anchors_fts` to `anchors` and `MATCH`.
+   - By information type: filter `anchors` by `aspect` (`result`, `limitation`, `method`, `metric`, …) to gather every passage of one kind across the corpus — then narrow with an FTS `MATCH`. Also filter by `category` / `evidence_modality` / `section_hierarchy_json`; read a figure's `description` from `figures`.
+   - Facts: read `claims` and their `claim_support` edges (grouped by `stance`) to see what is supported, contested, or refuted, and across which works.
+   - Graph: trace `citations` → `works` to ground "who cites whom" and surface the most-cited works you have not yet read.
+   Evidence rows are inputs to reason over, not finished prose.
 
-- `research_board`: append blackboard events or inspect derived state.
-- `research_evidence`: retrieve evidence cards, anchors, source details, quarantine records, and report validation.
-- `research_open`: render an anchor, source, or report for visual inspection.
+4. **Write the report.** You write the markdown. Every material claim carries the `anchor_id`(s) (or `claim_id`) that support it — cite them inline, e.g. `[anchor-…]` — and each must resolve to a real, non-quarantined row; verify with a query if unsure. State contradictions and speculation plainly (lean on `claim_support` stances); no claim should be stronger than its evidence.
 
-The mutating tool is `research_board`. `research_evidence` is read-oriented. `research_open` only renders UI artifacts.
+5. **Record conclusions back onto the board.** As you settle a finding, `add_claim` it and `cite_evidence` it to its anchors, and set the claim `status` (`supported`/`contested`/`refuted`) — so the next session and other agents inherit the synthesis instead of re-deriving it. `note(...)` durable observations; `exclude`/`supersede` to retract, never delete.
 
-## Required Workflow
+6. **Let the user inspect a citation.** Query the anchor's `file_path` and `page_index`, then use the core `open_preview` tool on that PDF (e.g. `#page=N`) so the user sees the cited page.
 
-1. **Open a workspace**
-   - Call `research_board` with `action="insert", target="workspace"` unless the user named an existing `workspace_id`.
-   - Payload should include `objective`, optional `scope`, and optional `notes`.
+## Discipline
 
-2. **Insert sources**
-   - Call `research_board` with `action="insert", target="source"` for each PDF, Zotero item, DOI, literature record, web page, upload, database query, or manual source.
-   - Source payloads must use:
-     - `origin_channel`: `zotero`, `literature`, `web_page`, `database`, `upload`, or `manual`.
-     - `source_kind`: `document`, `structured_record`, or `annotation`.
-   - Include source-specific metadata in `metadata`, not in the type name.
-
-3. **Prepare sources**
-   - Call `research_board` with `action="prepare", target="source"`.
-   - Preparation is strict. A source that lacks full text/artifact or cannot be parsed is quarantined and must not support report claims.
-   - PDFs/images are prepared through the configured Dots/MOCR parser endpoint. If Dots/MOCR is disabled, unreachable, or returns unusable output, the source is quarantined.
-
-4. **Inspect quarantine**
-   - Call `research_evidence` with `operation="quarantine"` before drafting the report.
-   - Reports must include a quarantine appendix when any relevant source was excluded or could not be evaluated.
-
-5. **Retrieve evidence**
-   - Call `research_evidence` with `operation="search"` repeatedly while drafting.
-   - Use `operation="source"` for source-level inspection and `operation="anchor"` for exact citation context.
-   - Evidence cards are inputs, not final prose. Read them and reason over them.
-
-6. **Write the report**
-   - The model writes the markdown report itself.
-   - Every material claim needs one or more anchor ids in the citation mapping.
-   - Do not cite quarantined sources as support.
-   - If a claim is speculative or unclear, say so explicitly.
-
-7. **Save and validate**
-   - Save by appending a report event with `research_board`: `action="insert", target="report"`.
-   - Payload should include `title`, `markdown`, and `citations`.
-   - Validate using `research_evidence(operation="validate_report")`.
-   - Revise unsupported or unmapped claims, then append a superseding report rather than editing the old one.
-
-8. **Publish**
-   - When the report is ready, call `research_board` with `action="publish", target="report", target_id=<report_id>`.
-
-9. **Open for inspection**
-   - Use `research_open(target="anchor")` when the user wants to inspect a cited PDF/page/layout cell/figure/table/formula.
-   - Use `research_open(target="report")` to show the saved report.
-
-## Dots/MOCR Categories
-
-Preserve the original Dots/MOCR category in anchors:
-
-`Caption`, `Footnote`, `Formula`, `List-item`, `Page-footer`, `Page-header`, `Picture`, `Section-header`, `Table`, `Text`, `Title`.
-
-Map them only for coarse retrieval:
-
-- text: `Caption`, `Footnote`, `List-item`, `Page-footer`, `Page-header`, `Section-header`, `Text`, `Title`
-- image: `Picture`
-- table: `Table`
-- formula: `Formula`
-
-## Report Discipline
-
-- No uncited material claims.
-- No evidence from quarantined sources.
-- No claim should be stronger than its evidence.
-- Include contradictions and uncertainty rather than smoothing them away.
-- Keep database records citable through the same anchor system as papers.
-- Use `exclude` for off-topic or invalid sources, not deletion.
-- Use `supersede` for revised reports, anchors, or interpretations.
+- No uncited material claims; no evidence from quarantined sources.
+- Content is stored verbatim — do not paraphrase an anchor's `text`/`html` when the exact wording matters for the claim.
+- A claim's strength is its `claim_support`: report agreement and contradiction as the edges show them, do not smooth them away.
+- Figures and structured records are citable through the same anchor system as passages.

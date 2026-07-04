@@ -60,9 +60,6 @@ from harness.tools.tools import (
     fetch_url as fetch_url_tool,
     ask_user as ask_user_tool,
     load_skill as load_skill_tool,
-    research_board as research_board_tool,
-    research_evidence as research_evidence_tool,
-    research_open as research_open_tool,
 )
 from harness.core.background import (
     BackgroundJobs,
@@ -74,7 +71,6 @@ from harness.core.background import (
 )
 
 from harness.tools import file_tools
-from harness.research import service as research_service
 
 from harness.core.handoff import (
     build_task,
@@ -181,7 +177,7 @@ _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "web_search",
     "bg-": "bash",
 }
-MAX_MODEL_RESULT_CHARS = 1 << 16
+MAXIMUM_MODEL_RESULT_CHARS = 1 << 16
 
 
 def _coerce_mcp_arguments(value: Any) -> dict:
@@ -214,11 +210,11 @@ def _background_handle_kind(task_id: str) -> str | None:
 
 def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
     """Keep model-facing tool results bounded while preserving a full-output file."""
-    if len(result) <= MAX_MODEL_RESULT_CHARS:
+    if len(result) <= MAXIMUM_MODEL_RESULT_CHARS:
         return result
     output_path = Path("/tmp") / f"{new_id('tool-result')}.json"
     output_path.write_text(result)
-    preview = result[:MAX_MODEL_RESULT_CHARS]
+    preview = result[:MAXIMUM_MODEL_RESULT_CHARS]
     parsed = _maybe_json(result)
     if isinstance(parsed, dict):
         payload = {
@@ -302,9 +298,6 @@ def _build_tools(
         write_file_tool,
         fetch_url_tool,
         load_skill_tool,
-        research_board_tool,
-        research_evidence_tool,
-        research_open_tool,
         web_search_tool,
         set_tasks_tool,
         update_tasks_tool,
@@ -2280,50 +2273,6 @@ class AgentRuntime:
                 # template, keeping user-facing wording out of the tool code.
                 result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
-
-        elif tool_name == "research_board":
-            payload = tool_arguments.get("payload")
-            parent_event_ids = tool_arguments.get("parent_event_ids")
-            expected_revision_raw = tool_arguments.get("expected_revision")
-            expected_revision = None if expected_revision_raw in (None, "") else int(expected_revision_raw)
-            result = await asyncio.to_thread(
-                research_service.research_board,
-                action=str(tool_arguments.get("action", "")),
-                target=str(tool_arguments.get("target", "")),
-                workspace_id=str(tool_arguments.get("workspace_id", "")),
-                target_id=str(tool_arguments.get("target_id", "")),
-                payload=payload if isinstance(payload, dict) else {},
-                parent_event_ids=parent_event_ids if isinstance(parent_event_ids, list) else [],
-                expected_revision=expected_revision,
-                idempotency_key=str(tool_arguments.get("idempotency_key", "")),
-                actor_id=self._a2a_task_id or self._session_id or "agent",
-                dots_ocr=self._global_configuration.dots_ocr,
-            )
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
-
-        elif tool_name == "research_evidence":
-            filters = tool_arguments.get("filters")
-            report = tool_arguments.get("report")
-            result = await asyncio.to_thread(
-                research_service.research_evidence,
-                operation=str(tool_arguments.get("operation", "")),
-                workspace_id=str(tool_arguments.get("workspace_id", "")),
-                query=str(tool_arguments.get("query", "")),
-                target_id=str(tool_arguments.get("target_id", "")),
-                filters=filters if isinstance(filters, dict) else {},
-                limit=int(tool_arguments.get("limit", 12) or 12),
-                report=report if isinstance(report, dict) else None,
-            )
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
-
-        elif tool_name == "research_open":
-            result = await asyncio.to_thread(
-                research_service.research_open,
-                target=str(tool_arguments.get("target", "")),
-                workspace_id=str(tool_arguments.get("workspace_id", "")),
-                target_id=str(tool_arguments.get("target_id", "")),
-            )
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
         elif tool_name == "read_task":
             requested_task_id = tool_arguments.get("task_id", "")

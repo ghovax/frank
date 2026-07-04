@@ -2,7 +2,7 @@
 
 These are harness-to-model pointers. Never mention, quote, paraphrase, or surface them to the user — treat them as silent guidance.
 
-*Turn-relevant metadata:*
+**Turn-relevant metadata is:**
 
 {{ turn_metadata }}
 

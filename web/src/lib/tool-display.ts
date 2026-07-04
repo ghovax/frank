@@ -17,9 +17,6 @@ import {
   LuMessageCircleQuestion,
   LuSparkles,
   LuTarget,
-  LuClipboardList,
-  LuSearchCheck,
-  LuPanelRightOpen,
 } from "react-icons/lu";
 
 interface ToolDisplayInfo {
@@ -64,12 +61,6 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
     case "open_preview":
     case "render_widget":
       return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
-    case "research_board":
-      return { icon: LuClipboardList, iconColor: "cyan.fg" };
-    case "research_evidence":
-      return { icon: LuSearchCheck, iconColor: "teal.fg" };
-    case "research_open":
-      return { icon: LuPanelRightOpen, iconColor: "blue.fg" };
     case "set_tasks":
     case "update_tasks":
       return { icon: LuListChecks, iconColor: "teal.fg" };
@@ -113,12 +104,6 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return "Updating goal";
     case "open_preview":
       return args?.title ? `Previewing "${String(args.title)}"` : "Opening a preview";
-    case "research_board":
-      return "Updating research board";
-    case "research_evidence":
-      return "Reading research evidence";
-    case "research_open":
-      return "Opening research artifact";
     case "render_widget":
       return args?.title ? `Rendering "${String(args.title)}"` : "Rendering a widget";
     case "set_tasks":
