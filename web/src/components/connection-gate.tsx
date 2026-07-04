@@ -6,7 +6,7 @@
 // choice to make or the last target is unreachable. Once connected it renders the
 // app; the status pill can reopen it to switch backends.
 
-import { Box, Button, Flex, Input, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, EmptyState, Flex, Input, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LuLaptop, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
 import { toaster } from "@/components/ui/toaster";
@@ -58,7 +58,6 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
   // The target ("local" or a profile id) whose last attempt failed, so its button
   // can offer a retry. Errors themselves surface as toasts, not inline.
   const [failedTarget, setFailedTarget] = useState<string | null>(null);
-  const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
   // Whether we were already connected before this connect attempt — switching a
   // live session needs a reload so caches/streams restart cleanly against the new
@@ -175,22 +174,29 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
   }, [connectLocal, connectRemote]);
 
   const handleAddConnection = useCallback(async () => {
-    const name = newName.trim();
     const url = newUrl.trim().replace(/\/+$/, "");
-    if (!name || !url) return;
+    if (!url) return;
+    // A connection is just an address — no separate name. Derive a compact label
+    // from the host for the few places that still show one (the switcher menu),
+    // but the address is the identity the UI surfaces.
+    let derivedName = url;
+    try {
+      derivedName = new URL(url).host || url;
+    } catch {
+      derivedName = url;
+    }
     const profile: ConnectionProfile = {
       id: crypto.randomUUID(),
-      name,
+      name: derivedName,
       url,
       kind: "remote",
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
     };
     await saveConnection(profile);
-    setNewName("");
     setNewUrl("");
     await refreshConnections();
-  }, [newName, newUrl, refreshConnections]);
+  }, [newUrl, refreshConnections]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -218,25 +224,27 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       bg="bg.subtle"
     >
       <VStack gap={5} w="100%" maxW="420px" px={6}>
-        <VStack gap={1}>
-          <Text fontSize="4xl" lineHeight="1">
-            🌼
-          </Text>
-          <Text fontSize="xl" fontWeight="bold" fontFamily="var(--font-display)">
-            Daisy
-          </Text>
+        <VStack gap={1.5}>
+          <Flex align="center" gap={2.5}>
+            <Text fontSize="4xl" lineHeight="1">
+              🌼
+            </Text>
+            <Text fontSize="4xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1">
+              Daisy
+            </Text>
+          </Flex>
           <Text fontSize="sm" color="fg.muted" textAlign="center">
             Connect to a harness server to begin.
           </Text>
         </VStack>
 
         {isBusy ? (
-          <VStack gap={3} py={6}>
-            <Spinner size="lg" color="blue.solid" />
-            <Text fontSize="sm" color="fg.muted">
+          <Flex gap={3} py={6} align="center" justify="center">
+            <Spinner size="md" color="blue.solid" />
+            <Text fontSize="md" color="fg.muted">
               {statusLabel}
             </Text>
-          </VStack>
+          </Flex>
         ) : (
           <VStack gap={4} w="100%" align="stretch">
             <Button
@@ -249,15 +257,29 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
               {failedTarget === LOCAL_TARGET_ID ? "Retry this machine" : "This machine"}
             </Button>
 
-            {connections.length > 0 && (
-              <VStack gap={2} align="stretch">
-                <Flex align="center" gap={1.5} color="fg.muted">
-                  <LuServer size={15} />
-                  <Text fontSize="sm" fontWeight="bold">
-                    Saved connections
-                  </Text>
-                </Flex>
-                {connections.map((profile) => (
+            <VStack gap={2} align="stretch">
+              <Flex align="center" gap={1.5} color="fg.muted">
+                <LuServer size={15} />
+                <Text fontSize="sm" fontWeight="bold">
+                  Saved connections
+                </Text>
+              </Flex>
+              {connections.length === 0 ? (
+                <EmptyState.Root size="sm">
+                  <EmptyState.Content pt={2}>
+                    <EmptyState.Indicator>
+                      <LuServer />
+                    </EmptyState.Indicator>
+                    <VStack gap={0}>
+                      <EmptyState.Title fontSize="sm">No saved connections</EmptyState.Title>
+                      <EmptyState.Description fontSize="xs">
+                        Add a server address below to reach it later
+                      </EmptyState.Description>
+                    </VStack>
+                  </EmptyState.Content>
+                </EmptyState.Root>
+              ) : (
+                connections.map((profile) => (
                   <Flex
                     key={profile.id}
                     align="center"
@@ -273,9 +295,6 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
                     </Box>
                     <Box flex={1} minW={0}>
                       <Text fontSize="sm" fontWeight="medium" truncate>
-                        {profile.name}
-                      </Text>
-                      <Text fontSize="xs" color="fg.muted" truncate>
                         {profile.url}
                       </Text>
                     </Box>
@@ -294,14 +313,14 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
                       colorPalette="red"
                       borderRadius="sm"
                       onClick={() => handleDelete(profile.id)}
-                      aria-label={`Delete ${profile.name}`}
+                      aria-label={`Delete ${profile.url}`}
                     >
                       <LuTrash2 size={12} />
                     </Button>
                   </Flex>
-                ))}
-              </VStack>
-            )}
+                ))
+              )}
+            </VStack>
 
             <VStack
               gap={2.5}
@@ -328,13 +347,6 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
               <Input
                 size="sm"
                 bg="bg.subtle"
-                placeholder="Name (e.g. Workstation)"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-              />
-              <Input
-                size="sm"
-                bg="bg.subtle"
                 placeholder="http://localhost:8822"
                 value={newUrl}
                 onChange={(event) => setNewUrl(event.target.value)}
@@ -347,7 +359,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
                 variant="subtle"
                 borderRadius="md"
                 onClick={() => handleAddConnection()}
-                disabled={!newName.trim() || !newUrl.trim()}
+                disabled={!newUrl.trim()}
               >
                 <LuPlus size={14} />
                 Save connection

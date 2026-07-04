@@ -1439,8 +1439,14 @@ export function useChat(
         () => {
           stateRef.current.lane = null;
           // Drain queued text first (user intent), then any widget events that
-          // arrived mid-turn.
-          const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
+          // arrived mid-turn. A message still flagged `steering` here was accepted by
+          // the backend but never echoed back (`acknowledgeSteering` clears the flag
+          // when steering is honored mid-turn) — the turn ended, failed, or raced past
+          // its last drain before applying it. It was NOT applied, so treat it exactly
+          // like any other pending message and send it as a fresh turn, rather than
+          // stranding it forever as a "Steering next opening" chip. The backend
+          // discards its own copy on stream close, so this can't double-apply.
+          const pendingText = queuedMessagesRef.current;
           const pendingWidget = queuedWidgetEventsRef.current;
           if (pendingText.length > 0) {
             const next = pendingText[0];

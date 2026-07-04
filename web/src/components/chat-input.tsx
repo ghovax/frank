@@ -13,7 +13,7 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBan, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFile, LuFolder, LuGitBranch, LuGitFork, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFile, LuFolder, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { ModelSelect } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
@@ -360,7 +360,7 @@ export function ChatInput({
         variant: "solid" as const,
       };
   const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "green" }[] = [
-    { value: "none", label: "Unmanaged", icon: <LuBan size={13} /> },
+    { value: "none", label: "Unmanaged", icon: <LuHardDrive size={13} /> },
     { value: "branch", label: "Branch", icon: <LuGitBranch size={13} />, colorPalette: "purple" },
     { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "green" },
   ];
@@ -441,7 +441,7 @@ export function ChatInput({
   const selectedWorkspaceChoice =
     workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
   const workspaceAppearance = {
-    none: { icon: <LuBan size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
+    none: { icon: <LuHardDrive size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
     branch: { icon: <LuGitBranch size={13} />, color: "purple.fg", bg: "purple.subtle", borderColor: "purple.muted", colorPalette: "purple" },
     worktree: { icon: <LuGitFork size={13} />, color: "green.fg", bg: "green.subtle", borderColor: "green.muted", colorPalette: "green" },
   }[displayedWorkspaceStrategy];
@@ -1187,7 +1187,7 @@ export function ChatInput({
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
-                  Git workspace unavailable
+                  Unconfigured workspace
                 </Text>
               </Flex>
             )}

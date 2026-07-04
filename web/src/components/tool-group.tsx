@@ -157,10 +157,14 @@ export const ToolGroup = memo(function ToolGroup({
               fontSize="xs"
               fontWeight="medium"
               flexShrink={0}
-              color={active ? "fg" : "fg.muted"}
+              whiteSpace="nowrap"
+              // While active, leave the color unset so the shimmer class controls it:
+              // an inline color would override the gradient's transparent fill (inline
+              // beats class) and the shimmer would silently not render.
+              color={active ? undefined : "fg.muted"}
               className={active ? "running-title-shimmer" : undefined}
             >
-              {active ? "Working" : "Ran tools"}
+              {active ? "Working through it" : "Ran these tools"}
             </Text>
             <Flex align="center" gap={2} minW={0} flexWrap="wrap">
               {tally.order.map((name) => {
@@ -171,7 +175,7 @@ export const ToolGroup = memo(function ToolGroup({
                   <Flex
                     key={name}
                     align="center"
-                    gap={0.5}
+                    gap={1}
                     flexShrink={0}
                     title={display.label}
                     color={active ? display.iconColor : "fg.muted"}

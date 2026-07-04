@@ -562,7 +562,7 @@ class AgentConfiguration(BaseModel):
     # Empty means every available skill is offered to the agent by default.
     skills: list[str] = []
     # The model and its provider are separate fields, mirroring the global config:
-    # a human editing an agent.md sees both explicitly. ``model_identifier``
+    # a human editing an AGENT.md sees both explicitly. ``model_identifier``
     # recombines them into the ``provider/model`` form the factory expects.
     model: Optional[str] = None
     provider: Optional[str] = None
@@ -611,7 +611,7 @@ class AgentConfiguration(BaseModel):
 
         frontmatter = yaml.safe_load(frontmatter_match.group(1)) or {}
         markdown_body = frontmatter_match.group(2).strip()
-        default_identifier = path.parent.name if path.name == "agent.md" else path.stem
+        default_identifier = path.parent.name if path.name.upper() == "AGENT.MD" else path.stem
         frontmatter.setdefault("name", default_identifier)
         frontmatter.setdefault("title", frontmatter["name"])
         if "connection-type" in frontmatter:
@@ -699,7 +699,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
-        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/agent.md"))]
+        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/AGENT.md"))]
         for path in candidates:
             try:
                 configuration = AgentConfiguration.from_markdown(path)
@@ -710,7 +710,7 @@ def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_
                     for alias in configuration.aliases:
                         paths[alias] = path
             except Exception:
-                fallback = path.parent.name if path.name == "agent.md" else path.stem
+                fallback = path.parent.name if path.name.upper() == "AGENT.MD" else path.stem
                 paths[fallback] = path
     return paths
 

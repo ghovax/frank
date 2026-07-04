@@ -722,6 +722,16 @@ class AgentRuntime:
         self._steering_available.set()
         return True
 
+    def discard_pending_steering(self) -> None:
+        """Drop any steering that was accepted but never drained into the turn — it
+        arrived too late to be honored (after the loop's last drain, or while the turn
+        was ending/failing). The client re-delivers such messages as a fresh turn on
+        stream close, so they must not linger here and get double-applied when the
+        next turn drains the runtime at its first model-call boundary."""
+        while not self._steering_messages.empty():
+            self._steering_messages.get_nowait()
+        self._steering_available.clear()
+
     def _has_queued_steering(self) -> bool:
         return not self._steering_messages.empty()
 

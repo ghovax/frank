@@ -704,30 +704,15 @@ class HarnessAgentExecutor(AgentExecutor):
         if context_serialization_lock is not None:
             await context_serialization_lock.acquire()
 
-        # An autonomous wake with nothing left to deliver — a concurrent user turn
-        # already drained the result while this one waited on the lock — is a no-op:
-        # close the task without a model call rather than emit an empty turn.
-        if autonomous:
-            existing_runtime = self._runtimes.get(task.context_id)
-            has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
-            has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._agent_name)
-            if not has_live_result and not has_stored_result:
-                if context_serialization_lock is not None:
-                    context_serialization_lock.release()
-                await updater.complete()
-                return
-
         final_text = ""
         failed_message = ""
         runtime: AgentRuntime | None = None
-
-        # A top-level user turn marks its session as running so the sidebar can
-        # show a spinner. Delegated sub-agent turns run within their parent turn,
-        # which is already counted, so they are not tracked separately.
-        track_running = not delegated and self._on_turn_state is not None
-        if track_running:
-            self._on_turn_state(task.context_id, True)
-            self._active_contexts.add(task.context_id)
+        # Whether this turn has marked the context running/steerable. Set inside the
+        # try (past the autonomous no-op check) so the finally only reverts state this
+        # turn actually established. Everything after acquire() lives inside that try,
+        # so no early return or raised exception can strand the per-context lock — a
+        # leaked lock deadlocks every later turn on this session until a restart.
+        track_running = False
 
         async def emit(part: Part) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
@@ -779,6 +764,27 @@ class HarnessAgentExecutor(AgentExecutor):
         # surfaced as a clean A2A `failed` status rather than escaping and tearing
         # down the SSE stream mid-flight.
         try:
+            # An autonomous wake with nothing left to deliver — a concurrent user turn
+            # already drained the result while this one waited on the lock — is a no-op:
+            # close the task without a model call rather than emit an empty turn. The
+            # finally still runs on this early return, releasing the lock.
+            if autonomous:
+                existing_runtime = self._runtimes.get(task.context_id)
+                has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
+                has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._agent_name)
+                if not has_live_result and not has_stored_result:
+                    await updater.complete()
+                    return
+
+            # A top-level user turn marks its session as running so the sidebar can
+            # show a spinner and the turn becomes steerable. Delegated sub-agent turns
+            # run within their parent turn, which is already counted, so they are not
+            # tracked separately.
+            track_running = not delegated and self._on_turn_state is not None
+            if track_running:
+                self._on_turn_state(task.context_id, True)
+                self._active_contexts.add(task.context_id)
+
             await updater.start_work()
 
             workspace = await self._workspace_for(
@@ -999,15 +1005,30 @@ class HarnessAgentExecutor(AgentExecutor):
             self._aborts.pop(task.id, None)
             # Persist the conversation after a top-level turn so a later restart can
             # restore it. Delegated sub-agent runs have their own throwaway history
-            # and don't touch the shared context, so they are not persisted.
-            if not delegated and self._save_conversation is not None:
+            # and don't touch the shared context, so they are not persisted. Only save
+            # when there is something to save (a built runtime, or an already-cached
+            # conversation) — an autonomous no-op wake has neither, and blindly saving
+            # an empty list would clobber the persisted history.
+            if not delegated and self._save_conversation is not None and (
+                runtime is not None or task.context_id in self._conversations
+            ):
                 await asyncio.to_thread(
                     self._save_conversation,
                     task.context_id,
                     runtime.conversation if runtime is not None else self._conversations.get(task.context_id, []),
                 )
+            # Stop accepting steering for this context before draining the queue, then
+            # discard anything that arrived too late to be honored (raced in after the
+            # loop's final drain, or while the turn was ending/failing). Such messages
+            # were never applied to the conversation; the client re-sends them as a
+            # fresh turn on stream close, so leaving them queued here would double-
+            # apply them when the next turn drains the runtime at its first boundary.
             if track_running:
                 self._active_contexts.discard(task.context_id)
+            cached_runtime = self._runtimes.get(task.context_id)
+            if cached_runtime is not None:
+                cached_runtime.discard_pending_steering()
+            if track_running:
                 self._on_turn_state(task.context_id, False)
             if context_serialization_lock is not None:
                 context_serialization_lock.release()
