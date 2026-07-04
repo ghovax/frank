@@ -1334,6 +1334,7 @@ async def list_models_endpoint():
             "name": model.name,
             "provider": model.provider,
             "available": model.identifier in available_identifiers,
+            "curated": model.curated,
         }
         for model in MODELS
     ]

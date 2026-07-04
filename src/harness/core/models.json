@@ -1,25 +1,144 @@
 [
   { "id": "opencode/deepseek-v4-flash", "name": "DeepSeek v4 Flash", "provider": "opencode" },
   { "id": "opencode/mimo-v2.5", "name": "Mimo v2.5", "provider": "opencode" },
-  { "id": "anthropic/claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic" },
-  { "id": "anthropic/claude-opus-4-20250514", "name": "Claude Opus 4", "provider": "anthropic" },
-  { "id": "anthropic/claude-3-7-sonnet-latest", "name": "Claude 3.7 Sonnet", "provider": "anthropic" },
-  { "id": "openai/gpt-4o", "name": "GPT-4o", "provider": "openai" },
-  { "id": "openai/gpt-4o-mini", "name": "GPT-4o mini", "provider": "openai" },
+
+  { "id": "anthropic/claude-sonnet-5", "name": "Claude Sonnet 5", "provider": "anthropic" },
+  { "id": "anthropic/claude-fable-5", "name": "Claude Fable 5", "provider": "anthropic" },
+  { "id": "anthropic/claude-opus-4-8", "name": "Claude Opus 4.8", "provider": "anthropic" },
+  { "id": "anthropic/claude-opus-4-7", "name": "Claude Opus 4.7", "provider": "anthropic" },
+  { "id": "anthropic/claude-sonnet-4-6", "name": "Claude Sonnet 4.6", "provider": "anthropic" },
+  { "id": "anthropic/claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "provider": "anthropic" },
+
+  { "id": "openai/gpt-5.5", "name": "GPT-5.5", "provider": "openai" },
+  { "id": "openai/gpt-5.4", "name": "GPT-5.4", "provider": "openai" },
+  { "id": "openai/gpt-5.4-mini", "name": "GPT-5.4 Mini", "provider": "openai" },
+  { "id": "openai/gpt-5.3-chat-latest", "name": "GPT-5.3 Chat", "provider": "openai" },
+  { "id": "openai/gpt-5.3-codex", "name": "GPT-5.3 Codex", "provider": "openai" },
+  { "id": "openai/gpt-5-codex", "name": "GPT-5 Codex", "provider": "openai" },
   { "id": "openai/gpt-4.1", "name": "GPT-4.1", "provider": "openai" },
-  { "id": "openai/o3-mini", "name": "o3-mini", "provider": "openai" },
+  { "id": "openai/gpt-4.1-mini", "name": "GPT-4.1 Mini", "provider": "openai" },
+  { "id": "openai/gpt-4o", "name": "GPT-4o", "provider": "openai" },
+  { "id": "openai/gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai" },
+  { "id": "openai/o3", "name": "O3", "provider": "openai" },
+  { "id": "openai/o3-mini", "name": "O3 Mini", "provider": "openai" },
+  { "id": "openai/o4-mini", "name": "O4 Mini", "provider": "openai" },
+
+  { "id": "google/gemini-3.5-flash", "name": "Gemini 3.5 Flash", "provider": "google" },
+  { "id": "google/gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro", "provider": "google" },
+  { "id": "google/gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash Lite", "provider": "google" },
+  { "id": "google/gemini-3-flash-preview", "name": "Gemini 3 Flash", "provider": "google" },
   { "id": "google/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "provider": "google" },
   { "id": "google/gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "google" },
-  { "id": "google/gemini-2.0-flash", "name": "Gemini 2.0 Flash", "provider": "google" },
-  { "id": "openrouter/anthropic/claude-sonnet-4", "name": "Claude Sonnet 4 (OpenRouter)", "provider": "openrouter" },
+  { "id": "google/gemini-2.5-flash-lite", "name": "Gemini 2.5 Flash Lite", "provider": "google" },
+  { "id": "google/gemma-3-27b-it", "name": "Gemma 3 27B", "provider": "google" },
+
+  { "id": "openrouter/anthropic/claude-sonnet-5", "name": "Claude Sonnet 5 (OpenRouter)", "provider": "openrouter" },
+  { "id": "openrouter/anthropic/claude-opus-4-8", "name": "Claude Opus 4.8 (OpenRouter)", "provider": "openrouter" },
+  { "id": "openrouter/openai/gpt-5.5", "name": "GPT-5.5 (OpenRouter)", "provider": "openrouter" },
   { "id": "openrouter/openai/gpt-4o", "name": "GPT-4o (OpenRouter)", "provider": "openrouter" },
   { "id": "openrouter/google/gemini-2.5-pro", "name": "Gemini 2.5 Pro (OpenRouter)", "provider": "openrouter" },
+  { "id": "openrouter/deepseek/deepseek-r1", "name": "DeepSeek R1 (OpenRouter)", "provider": "openrouter" },
+  { "id": "openrouter/meta-llama/llama-4-maverick", "name": "Llama 4 Maverick (OpenRouter)", "provider": "openrouter" },
+
+  { "id": "xai/grok-4.3", "name": "Grok 4.3", "provider": "xai" },
   { "id": "xai/grok-4", "name": "Grok 4", "provider": "xai" },
-  { "id": "xai/grok-4-fast", "name": "Grok 4 Fast", "provider": "xai" },
-  { "id": "deepseek/deepseek-chat", "name": "DeepSeek V3 Chat", "provider": "deepseek" },
-  { "id": "deepseek/deepseek-reasoner", "name": "DeepSeek Reasoner", "provider": "deepseek" },
+  { "id": "xai/grok-4-fast-reasoning", "name": "Grok 4 Fast", "provider": "xai" },
+  { "id": "xai/grok-3", "name": "Grok 3", "provider": "xai" },
+  { "id": "xai/grok-3-fast-latest", "name": "Grok 3 Fast", "provider": "xai" },
+
+  { "id": "deepseek/deepseek-v4-pro", "name": "DeepSeek v4 Pro", "provider": "deepseek" },
+  { "id": "deepseek/deepseek-v4-flash", "name": "DeepSeek v4 Flash", "provider": "deepseek" },
+  { "id": "deepseek/deepseek-r1", "name": "DeepSeek R1", "provider": "deepseek" },
+  { "id": "deepseek/deepseek-v3.2", "name": "DeepSeek V3.2", "provider": "deepseek" },
+
   { "id": "groq/llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq)", "provider": "groq" },
+  { "id": "groq/meta-llama/llama-4-maverick-17b-128e-instruct", "name": "Llama 4 Maverick (Groq)", "provider": "groq" },
+  { "id": "groq/meta-llama/llama-4-scout-17b-16e-instruct", "name": "Llama 4 Scout (Groq)", "provider": "groq" },
   { "id": "groq/deepseek-r1", "name": "DeepSeek R1 (Groq)", "provider": "groq" },
-  { "id": "mistral/mistral-large-latest", "name": "Mistral Large", "provider": "mistral" },
-  { "id": "mistral/codestral-latest", "name": "Codestral", "provider": "mistral" }
+  { "id": "groq/qwen-3-32b", "name": "Qwen 3 32B (Groq)", "provider": "groq" },
+
+  { "id": "mistral/mistral-medium-3-5", "name": "Mistral Medium 3.5", "provider": "mistral" },
+  { "id": "mistral/mistral-large-3", "name": "Mistral Large 3", "provider": "mistral" },
+  { "id": "mistral/mistral-small-latest", "name": "Mistral Small", "provider": "mistral" },
+  { "id": "mistral/codestral-latest", "name": "Codestral", "provider": "mistral" },
+  { "id": "mistral/pixtral-large-latest", "name": "Pixtral Large", "provider": "mistral" },
+  { "id": "mistral/ministral-8b-latest", "name": "Ministral 8B", "provider": "mistral" },
+
+  { "id": "meta_llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B", "provider": "meta_llama" },
+  { "id": "meta_llama/Llama-4-Maverick-17B-128E-Instruct-FP8", "name": "Llama 4 Maverick", "provider": "meta_llama" },
+  { "id": "meta_llama/Llama-4-Scout-17B-16E-Instruct-FP8", "name": "Llama 4 Scout", "provider": "meta_llama" },
+
+  { "id": "cohere/command-a-03-2025", "name": "Command A", "provider": "cohere" },
+  { "id": "cohere/command-r-plus", "name": "Command R+", "provider": "cohere" },
+  { "id": "cohere/command-r", "name": "Command R", "provider": "cohere" },
+
+  { "id": "deepinfra/meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B (DeepInfra)", "provider": "deepinfra" },
+  { "id": "deepinfra/Qwen/QwQ-32B", "name": "QwQ 32B (DeepInfra)", "provider": "deepinfra" },
+  { "id": "deepinfra/Qwen/Qwen2.5-72B-Instruct", "name": "Qwen 2.5 72B (DeepInfra)", "provider": "deepinfra" },
+
+  { "id": "fireworks_ai/llama-v3p3-70b-instruct", "name": "Llama 3.3 70B (Fireworks)", "provider": "fireworks_ai" },
+  { "id": "fireworks_ai/firefunction-v2", "name": "FireFunction V2", "provider": "fireworks_ai" },
+  { "id": "fireworks_ai/qwen3-32b", "name": "Qwen 3 32B (Fireworks)", "provider": "fireworks_ai" },
+
+  { "id": "hyperbolic/meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B (Hyperbolic)", "provider": "hyperbolic" },
+  { "id": "hyperbolic/Qwen/QwQ-32B", "name": "QwQ 32B (Hyperbolic)", "provider": "hyperbolic" },
+
+  { "id": "perplexity/anthropic/claude-sonnet-5", "name": "Claude Sonnet 5 (Perplexity)", "provider": "perplexity" },
+  { "id": "perplexity/anthropic/claude-opus-4-8", "name": "Claude Opus 4.8 (Perplexity)", "provider": "perplexity" },
+  { "id": "perplexity/openai/gpt-5.5", "name": "GPT-5.5 (Perplexity)", "provider": "perplexity" },
+  { "id": "perplexity/anthropic/claude-haiku-4-5", "name": "Claude Haiku 4.5 (Perplexity)", "provider": "perplexity" },
+
+  { "id": "sambanova/DeepSeek-R1", "name": "DeepSeek R1 (SambaNova)", "provider": "sambanova" },
+  { "id": "sambanova/Meta-Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B (SambaNova)", "provider": "sambanova" },
+
+  { "id": "together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo", "name": "Llama 3.3 70B (Together)", "provider": "together_ai" },
+  { "id": "together_ai/deepseek-ai/DeepSeek-R1", "name": "DeepSeek R1 (Together)", "provider": "together_ai" },
+
+  { "id": "oci/meta-llama/llama-3.3-70b-instruct", "name": "Llama 3.3 70B (OCI)", "provider": "oci" },
+  { "id": "oci/deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 70B (OCI)", "provider": "oci" },
+
+  { "id": "cerebras/llama-3.3-70b", "name": "Llama 3.3 70B (Cerebras)", "provider": "cerebras" },
+  { "id": "cerebras/llama3.1-8b", "name": "Llama 3.1 8B (Cerebras)", "provider": "cerebras" },
+
+  { "id": "novita/deepseek/deepseek-r1", "name": "DeepSeek R1 (Novita)", "provider": "novita" },
+  { "id": "novita/meta-llama/llama-3.1-8b-instruct", "name": "Llama 3.1 8B (Novita)", "provider": "novita" },
+
+  { "id": "ai21/jamba-1.5-mini", "name": "Jamba 1.5 Mini", "provider": "ai21" },
+  { "id": "ai21/jamba-1.5-large", "name": "Jamba 1.5 Large", "provider": "ai21" },
+
+  { "id": "minimax/MiniMax-M2.5", "name": "MiniMax M2.5", "provider": "minimax" },
+  { "id": "minimax/MiniMax-M2.1", "name": "MiniMax M2.1", "provider": "minimax" },
+
+  { "id": "moonshot/kimi-k2-thinking", "name": "Kimi K2 Thinking", "provider": "moonshot" },
+  { "id": "moonshot/kimi-k2-turbo-preview", "name": "Kimi K2 Turbo", "provider": "moonshot" },
+
+  { "id": "github_copilot/claude-sonnet-4", "name": "Claude Sonnet 4 (GitHub)", "provider": "github_copilot" },
+  { "id": "github_copilot/claude-opus-4.5", "name": "Claude Opus 4.5 (GitHub)", "provider": "github_copilot" },
+  { "id": "github_copilot/gpt-5.5", "name": "GPT-5.5 (GitHub)", "provider": "github_copilot" },
+
+  { "id": "databricks/databricks-meta-llama-3.1-405b-instruct", "name": "Llama 3.1 405B (Databricks)", "provider": "databricks" },
+  { "id": "databricks/databricks-dbrx-instruct", "name": "DBRX Instruct", "provider": "databricks" },
+
+  { "id": "cloudflare/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "name": "DeepSeek R1 32B (Cloudflare)", "provider": "cloudflare" },
+
+  { "id": "inception/mercury-2", "name": "Mercury 2", "provider": "inception" },
+
+  { "id": "featherless_ai/featherless-ai/Qwerky-QwQ-32B", "name": "Qwerky QwQ 32B", "provider": "featherless_ai" },
+
+  { "id": "nebius/Qwen/QwQ-32B", "name": "QwQ 32B (Nebius)", "provider": "nebius" },
+  { "id": "nebius/meta-llama/Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B (Nebius)", "provider": "nebius" },
+
+  { "id": "nscale/Qwen/QwQ-32B", "name": "QwQ 32B (Nscale)", "provider": "nscale" },
+
+  { "id": "ovhcloud/Meta-Llama-3.3-70B-Instruct", "name": "Llama 3.3 70B (OVHcloud)", "provider": "ovhcloud" },
+
+  { "id": "volcengine/doubao-seed-2-0-code-preview-260215", "name": "Doubao Seed 2.0 (Volcengine)", "provider": "volcengine" },
+
+  { "id": "wandb/Qwen/Qwen3-235B-A22B-Instruct-2507", "name": "Qwen 3 235B (W&B)", "provider": "wandb" },
+
+  { "id": "friendliai/meta-llama-3.1-70b-instruct", "name": "Llama 3.1 70B (Friendli)", "provider": "friendliai" },
+
+  { "id": "maritalk/maritalk", "name": "MariTalk", "provider": "maritalk" },
+
+  { "id": "morph/morph-v3-large", "name": "Morph V3 Large", "provider": "morph" }
 ]

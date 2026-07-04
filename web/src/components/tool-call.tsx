@@ -166,7 +166,7 @@ function ToolQuestionPrompt({
                       title={option.description}
                     >
                       <Box
-                        w="14px" h="14px" flexShrink={0}
+                        w="15px" h="15px" flexShrink={0}
                         borderRadius={multiple ? "sm" : "full"}
                         border="2px solid"
                         borderColor={isSelected ? "blue.solid" : "border"}
@@ -174,9 +174,7 @@ function ToolQuestionPrompt({
                         display="flex" alignItems="center" justifyContent="center"
                       >
                         {isSelected && (
-                          <Box color="white" display="flex" alignItems="center" justifyContent="center" fontSize="10px">
-                            <LuCheck size={11} />
-                          </Box>
+                          <LuCheck size={10} color="white" strokeWidth={3} />
                         )}
                       </Box>
                       <Flex direction="column" minW={0} flex={1}>

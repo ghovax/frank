@@ -1769,7 +1769,7 @@ export function useChat(
     tokenUsage,
     queuedMessages,
     sessionId,
-    isStreaming,
+    isStreaming: isStreaming || sessionRunning,
     isHistoryLoading,
     historyError,
     hasOlderHistory,

@@ -27,7 +27,6 @@ interface ChatInputProps {
   onSend: (text: string, dataPart?: Record<string, unknown>) => void;
   onAbort: () => void;
   isStreaming: boolean;
-  tasks?: ChatTask[];
   disabled?: boolean;
   sessionId?: string | null;
   workingDirectory?: string;
@@ -70,42 +69,6 @@ interface ChatInputProps {
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
-}
-
-// A clean, symmetric progress ring (SVG arc) for the aggregate task completion.
-// Full blue arc = progress; muted track behind it. Switches to a check at 100%.
-// Sized to 13px so it reads at the exact same scale as the other control icons.
-function TaskProgressRing({ progress }: { progress: number }) {
-  const clamped = Math.max(0, Math.min(100, progress));
-  if (clamped >= 100) {
-    return (
-      <Box color="green.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
-        <LuCheck size={13} />
-      </Box>
-    );
-  }
-  const radius = 5.5;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - clamped / 100);
-  return (
-    <Box w="13px" h="13px" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
-      <svg width="13" height="13" viewBox="0 0 14 14">
-        <circle cx="7" cy="7" r={radius} fill="none" stroke="var(--chakra-colors-bg-muted)" strokeWidth="2" />
-        <circle
-          cx="7"
-          cy="7"
-          r={radius}
-          fill="none"
-          stroke="var(--chakra-colors-blue-solid)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          transform="rotate(-90 7 7)"
-        />
-      </svg>
-    </Box>
-  );
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -183,49 +146,10 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   );
 }
 
-// One icon per task status — the status is conveyed visually, not by a text label.
-function TaskStatusIcon({ status }: { status: string }) {
-  if (status === "completed") {
-    return (
-      <Box color="green.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuCheck size={13} />
-      </Box>
-    );
-  }
-  if (status === "in_progress") {
-    return (
-      <Box color="blue.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuCircle size={13} />
-      </Box>
-    );
-  }
-  if (status === "blocked") {
-    return (
-      <Box color="red.solid" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuTriangleAlert size={13} />
-      </Box>
-    );
-  }
-  if (status === "failed" || status === "cancelled" || status === "canceled" || status === "deleted") {
-    return (
-      <Box color="fg.subtle" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-        <LuX size={13} />
-      </Box>
-    );
-  }
-  // pending / unknown — a hollow dot reads as "not started".
-  return (
-    <Box color="fg.subtle" display="flex" alignItems="center" justifyContent="center" w="13px" h="13px">
-      <LuCircle size={13} />
-    </Box>
-  );
-}
-
 export function ChatInput({
   onSend,
   onAbort,
   isStreaming,
-  tasks = [],
   disabled,
   sessionId,
   workingDirectory,
@@ -270,6 +194,7 @@ export function ChatInput({
   const [dragActive, setDragActive] = useState(false);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [messageHistory, setMessageHistory] = useState<string[]>([]);
+  const draftInputRef = useRef("");
   const [configExpanded, setConfigExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [displayedThinkingLabel, setDisplayedThinkingLabel] = useState(thinkingLabel ?? "");
@@ -380,8 +305,7 @@ export function ChatInput({
           colorPalette: workspaceStrategy === "worktree" ? "green" as const : "purple" as const,
         }
       : null;
-  const completedTasks = tasks.filter((task) => task.status === "completed").length;
-  const taskProgress = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
+
   const historyAppearance = historyOpen
     ? {
         variant: "solid" as const,
@@ -602,6 +526,11 @@ export function ChatInput({
     }
     if (event.key === "ArrowUp" && messageHistory.length > 0) {
       event.preventDefault();
+      // Save the current draft when first navigating up, so it can be
+      // restored when the user navigates back down past all history items.
+      if (historyIndex === -1) {
+        draftInputRef.current = inputValue;
+      }
       const nextIndex = historyIndex === -1
         ? 0
         : Math.min(messageHistory.length - 1, historyIndex + 1);
@@ -612,7 +541,8 @@ export function ChatInput({
     if (event.key === "ArrowDown") {
       const nextIndex = historyIndex <= 0 ? -1 : historyIndex - 1;
       setHistoryIndex(nextIndex);
-      setInputValue(nextIndex === -1 ? "" : messageHistory[nextIndex]);
+      // Restore the saved draft when navigating back to the "no history" position.
+      setInputValue(nextIndex === -1 ? draftInputRef.current : messageHistory[nextIndex]);
       event.preventDefault();
       return;
     }
@@ -625,7 +555,6 @@ export function ChatInput({
           empty state when there is no activity yet. */}
       <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5 }} flexWrap="wrap" px={2} pt={2}>
         <Flex align="center" gap={{ base: 1.5 }} flexShrink={0}>
-          <ConnectionSwitcher />
           {onToggleHistory && (
             <Button
               size="xs"
@@ -690,58 +619,6 @@ export function ChatInput({
         </Flex>
 
         <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">
-          {tasks.length > 0 && (
-            <Box position="relative" className="task-hover-root" flexShrink={0}>
-              <Flex
-                align="center"
-                gap={1.5}
-                h="28px"
-                px={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor="border"
-                bg="bg"
-                fontSize="xs"
-                fontWeight="medium"
-                cursor="default"
-              >
-                <TaskProgressRing progress={taskProgress} />
-                <Text fontSize="xs" fontWeight="medium">
-                  Tasks {completedTasks}/{tasks.length}
-                </Text>
-              </Flex>
-              <Box
-                display="none"
-                className="task-hover-panel"
-                position="absolute"
-                right={0}
-                bottom="calc(100% + 6px)"
-                w="min(360px, calc(100vw - 24px))"
-                maxH="260px"
-                overflowY="auto"
-                p={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor="border"
-                bg="bg"
-                boxShadow="lg"
-                zIndex={5}
-              >
-                <Flex direction="column" gap={1.5}>
-                  {tasks.map((task) => (
-                    <Flex key={task.identifier} align="center" gap={2}>
-                      <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                        <TaskStatusIcon status={task.status} />
-                      </Box>
-                      <Text fontSize="xs" fontWeight="medium" color="fg" truncate flex={1} minW={0} title={task.description}>
-                        {task.description}
-                      </Text>
-                    </Flex>
-                  ))}
-                </Flex>
-              </Box>
-            </Box>
-          )}
           <Button
             size="xs"
             variant="ghost"
@@ -1002,9 +879,10 @@ export function ChatInput({
         </Box>
       </Box>
 
-      {/* Bottom row (below the input): permission, sandbox, and project controls. */}
+      {/* Bottom row (below the input): connection, permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
         <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
+          <ConnectionSwitcher />
           <Select.Root
             collection={permissionCollection}
             value={[permissionMode]}

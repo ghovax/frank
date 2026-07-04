@@ -606,6 +606,10 @@ class AgentRuntime:
         self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
         self._steering_available = asyncio.Event()
         self._active_tool_tasks: dict[str, asyncio.Task] = {}
+        # Results from background sub-agent tasks, keyed by spawn_step_id.
+        # Populated when a sub-agent runs in the background; can be retrieved
+        # later via read_task or the agents panel.
+        self._background_agent_results: dict[str, dict | None] = {}
 
     def _canonical_working_directory(self) -> str:
         return str(Path(self._working_directory or Path.home()).expanduser().resolve(strict=False))
@@ -2153,35 +2157,26 @@ class AgentRuntime:
                     working_directory=self._working_directory,
                     project_directory=self._project_directory,
                 )
-                final_text = ""
                 common = {"group_id": group_id, "step_id": spawn_step_id, "child_task_id": ""}
-                async for event in runner.run_stream(always_yield_text=True):
-                    if event.type == StreamEvent.Type.TEXT_CHUNK:
-                        yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=event.data.get("text", ""), **common)
-                    elif event.type == StreamEvent.Type.THINKING:
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=event.data.get("text", ""), **common)
-                    elif event.type == StreamEvent.Type.THINKING_DONE:
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING_DONE, duration_ms=event.data.get("duration_ms", 0), **common)
-                    elif event.type == StreamEvent.Type.STATUS:
-                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=event.data.get("code", ""), **common)
-                    elif event.type == StreamEvent.Type.TOOL_CALL:
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=event.data.get("name", ""), arguments=event.data.get("arguments", {}), toolCallId=event.data.get("id", ""), **common)
-                    elif event.type == StreamEvent.Type.TOOL_RESULT:
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=event.data.get("name", ""), result=event.data.get("result"), toolCallId=event.data.get("id", ""), **common)
-                    elif event.type == StreamEvent.Type.MCP_EVENT:
-                        yield StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=event.data.get("id", ""), event=event.data.get("event", {}), **common)
-                    elif event.type == StreamEvent.Type.ERROR:
-                        yield StreamEvent(
-                            StreamEvent.Type.AGENT_TOOL_RESULT,
-                            name=event.data.get("tool", "") or "unknown",
-                            result={"code": "tool_error", "message": event.data.get("message", "Unknown error")},
-                            toolCallId=event.data.get("id", ""),
-                            **common,
-                        )
-                    elif event.type == StreamEvent.Type.DONE:
-                        final_text = event.data.get("text", final_text)
-                child_task = serialize_task(build_task(spawn_step_id, sub_agent_name, TaskState.completed, final_text))
-                yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
+
+                # Run the sub-agent as a background task so the parent continues
+                # immediately. The sub-agent runs to completion silently; its
+                # result is stored and can be collected later via the agents panel
+                # or a subsequent read_task call. No intermediate events are
+                # forwarded — that would bloat the parent's context.
+                async def _run_background() -> None:
+                    final_text = ""
+                    async for event in runner.run_stream(always_yield_text=True):
+                        if event.type == StreamEvent.Type.DONE:
+                            final_text = event.data.get("text", final_text)
+                    done_task = serialize_task(build_task(spawn_step_id, sub_agent_name, TaskState.completed, final_text))
+                    # Store the result so it can be retrieved later.
+                    self._background_agent_results[spawn_step_id] = done_task
+
+                self._background_agent_results.setdefault(spawn_step_id, None)
+                asyncio.create_task(_run_background())
+                # Return immediately — parent continues its turn.
+                child_task = {"code": "running", "message": f"Sub-agent {sub_agent_name} is running in the background.", "task_id": spawn_step_id}
 
             result_payload = child_task or {"code": "empty_response", "message": "Sub-agent produced no task."}
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_payload)
@@ -2323,6 +2318,12 @@ class AgentRuntime:
                     {"task_id": requested_task_id, "kind": background_kind},
                 )
                 result = {"code": "not_a_readable_task", "task_id": requested_task_id, "message": message}
+            elif requested_task_id in self._background_agent_results:
+                bg_result = self._background_agent_results[requested_task_id]
+                if bg_result is None:
+                    result = {"code": "running", "task_id": requested_task_id, "message": "Sub-agent is still running."}
+                else:
+                    result = bg_result
             else:
                 task = await self._task_reader(requested_task_id)
                 if task is None:

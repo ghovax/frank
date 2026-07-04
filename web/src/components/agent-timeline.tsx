@@ -31,18 +31,14 @@ function buildTimelineItems(parts: AgentPart[]): TimelineItem[] {
       index += 1;
       continue;
     }
-    // tool: gather the contiguous run. A lone call renders bare (like the chat);
-    // two or more collapse into a ToolGroup.
+    // tool: gather the contiguous run and always wrap in a ToolGroup so the
+    // transition from 1→2 tools is a smooth addition, not a component swap.
     const run: ToolEvent[] = [];
     while (index < parts.length && parts[index].kind === "tool") {
       run.push(parts[index] as ToolEvent);
       index += 1;
     }
-    if (run.length === 1) {
-      items.push({ kind: "tool", tool: run[0] });
-    } else if (run.length > 1) {
-      // Key by the first tool only so the group stays mounted as tools stream in
-      // (a first+last key would remount on every new tool and replay animations).
+    if (run.length > 0) {
       const first = run[0].toolCallId || `tools-${index}`;
       items.push({ kind: "tools", id: first, tools: run });
     }

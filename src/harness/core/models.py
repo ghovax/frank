@@ -4,11 +4,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import litellm
-
 from harness.core.providers import (
-    PROVIDERS,
-    ProviderDefinition,
     get_provider_definition,
     resolve_api_key,
     resolve_base_url,
@@ -21,11 +17,17 @@ class ModelDefinition:
     technical id a user references the model by (``anthropic/claude-sonnet-4``,
     ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label. Both mirror
     the id/name pair the skills and agents use elsewhere, so the picker, the
-    configuration, and the persisted per-session override all speak the same id."""
+    configuration, and the persisted per-session override all speak the same id.
+
+    ``curated`` is ``True`` for entries hand-written in ``models.json`` (which
+    carry a human-readable name) and ``False`` for auto-discovered entries (whose
+    ``name`` field holds the raw model suffix the frontend renders in monospace).
+    """
 
     identifier: str
     name: str
     provider: str
+    curated: bool = False
 
 
 def _load_catalog() -> list[ModelDefinition]:
@@ -40,81 +42,18 @@ def _load_catalog() -> list[ModelDefinition]:
             identifier=entry["id"],
             name=entry["name"],
             provider=entry["provider"],
+            curated=True,
         )
         for entry in raw_entries
     ]
 
 
-_LITELLM_PROVIDER_KEYS = {
-    "openai": "openai",
-    "anthropic": "anthropic",
-    "google": "gemini",
-    "openrouter": "openrouter",
-    "xai": "xai",
-    "deepseek": "deepseek",
-    "groq": "groq",
-    "mistral": "mistral",
-}
-
-_NON_CHAT_MODEL_MARKERS = (
-    "audio",
-    "batch",
-    "clip",
-    "dall-e",
-    "embed",
-    "embedding",
-    "image",
-    "imagen",
-    "moderation",
-    "ocr",
-    "rerank",
-    "sora",
-    "speech",
-    "stable-image",
-    "tts",
-    "transcribe",
-    "veo",
-    "video",
-    "vision",
-    "whisper",
-)
-
-
-def _display_name(model_suffix: str) -> str:
-    return model_suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
-
-
-def _normalize_litellm_model(provider_identifier: str, model_name: str) -> ModelDefinition | None:
-    value = model_name.strip()
-    if not value:
-        return None
-    lowered = value.lower()
-    if any(marker in lowered for marker in _NON_CHAT_MODEL_MARKERS):
-        return None
-    litellm_key = _LITELLM_PROVIDER_KEYS[provider_identifier]
-    prefix = f"{litellm_key}/"
-    suffix = value[len(prefix):] if value.startswith(prefix) else value
-    if not suffix:
-        return None
-    identifier = f"{provider_identifier}/{suffix}"
-    return ModelDefinition(identifier=identifier, name=_display_name(suffix), provider=provider_identifier)
-
-
-def _litellm_catalog() -> list[ModelDefinition]:
-    models: list[ModelDefinition] = []
-    for provider_identifier, litellm_key in _LITELLM_PROVIDER_KEYS.items():
-        for model_name in sorted(litellm.models_by_provider.get(litellm_key, ())):
-            model = _normalize_litellm_model(provider_identifier, model_name)
-            if model is not None:
-                models.append(model)
-    return models
-
 
 def _merged_catalog() -> list[ModelDefinition]:
-    merged: dict[str, ModelDefinition] = {}
-    for model in _load_catalog() + _litellm_catalog():
-        merged.setdefault(model.identifier, model)
-    return list(merged.values())
+    # Only models.json — no LiteLLM auto-discovery. The curated file keeps the
+    # catalog focused on current, well-known models without old/experimental
+    # noise that LiteLLM's indiscriminate catalog pulls in.
+    return list(_load_catalog())
 
 
 MODELS: list[ModelDefinition] = _merged_catalog()

@@ -219,6 +219,7 @@ export interface ModelOption {
   name: string;
   provider: string;
   available: boolean;
+  curated: boolean;
 }
 
 export interface ProviderOption {

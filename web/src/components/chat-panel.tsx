@@ -19,6 +19,7 @@ import { NativeWebview } from "./native-webview";
 import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
+import { QuestionOverlay } from "./question-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
 import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
@@ -428,6 +429,15 @@ export function ChatPanel({
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
   hasInputRequiredRef.current = hasInputRequired;
+  // The first pending ask_user question, surfaced as an overlay above the input.
+  const pendingQuestion = useMemo(() => {
+    for (const message of messages) {
+      if (message.role === "tool_call" && message.meta?.status === "input_required" && message.meta?.question) {
+        return message.meta.question as import("@/lib/tool-event").ToolQuestion;
+      }
+    }
+    return null;
+  }, [messages]);
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
   // client-side after a change) rather than in an effect.
@@ -573,40 +583,41 @@ export function ChatPanel({
                 })}
               </AnimatePresence>
               {queuedMessages.map((message, index) => (
-                <Box
-                  key={message.id}
-                  alignSelf="flex-end"
-                  maxW="80%"
-                  px={2}
-                  py={1.5}
-                  borderRadius="sm"
-                  border="1px dashed"
-                  borderColor="border"
-                  bg="bg.subtle"
-                  opacity={0.7}
-                >
-                  <Flex align="center" gap={1.5}>
-                    <Box as="span" display="inline-flex" alignItems="center">
-                      {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
-                    </Box>
-                    <Text fontSize="xs" color="fg.subtle" fontWeight="medium">
-                      {message.steering ? "Steering next opening" : "Queued"}
-                    </Text>
-                  </Flex>
-                  <Text fontSize="sm" color="fg.muted">{message.text}</Text>
-                  <Flex justify="flex-end" pt={1}>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      colorPalette="red"
-                      borderRadius="sm"
-                      onClick={() => dequeueMessage(index)}
-                    >
-                      <LuTrash2 size={11} />
-                      Delete
-                    </Button>
-                  </Flex>
-                </Box>
+                <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
+                  <IconButton
+                    aria-label="Delete queued message"
+                    size="xs"
+                    variant="ghost"
+                    colorPalette="red"
+                    borderRadius="sm"
+                    mt="2px"
+                    flexShrink={0}
+                    onClick={() => dequeueMessage(index)}
+                  >
+                    <LuTrash2 size={11} />
+                  </IconButton>
+                  <Box
+                    px={2}
+                    py={1.5}
+                    borderRadius="sm"
+                    border="1px dashed"
+                    borderColor="border"
+                    bg="bg.subtle"
+                    opacity={0.7}
+                    flex={1}
+                    minW={0}
+                  >
+                    <Flex align="center" gap={1.5}>
+                      <Box as="span" display="inline-flex" alignItems="center">
+                        {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
+                      </Box>
+                      <Text fontSize="xs" color="fg.subtle" fontWeight="medium">
+                        {message.steering ? "Steering next opening" : "Queued"}
+                      </Text>
+                    </Flex>
+                    <Text fontSize="sm" color="fg.muted">{message.text}</Text>
+                  </Box>
+                </Flex>
               ))}
             </VStack>
           )}
@@ -632,12 +643,14 @@ export function ChatPanel({
         )}
         </Box>
 
+        {pendingQuestion && (
+          <QuestionOverlay question={pendingQuestion} onQuestion={handleQuestion} />
+        )}
         <ChatInput
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          tasks={tasks}
-          disabled={!isConnected}
+          disabled={!isConnected || !!pendingQuestion}
           sessionId={sessionId}
           workingDirectory={workingDirectory}
           recentProjects={recentProjects}

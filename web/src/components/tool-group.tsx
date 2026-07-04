@@ -120,9 +120,9 @@ export const ToolGroup = memo(function ToolGroup({
   const badge = inputRequired
     ? { label: "Input required", colorPalette: "yellow" }
     : failedCount > 0
-      ? { label: "Failed", colorPalette: "red" }
+      ? { label: `${failedCount} failed`, colorPalette: "red" }
       : runningCount > 0
-        ? { label: "Running", colorPalette: "blue" }
+        ? { label: `${runningCount} running`, colorPalette: "blue" }
         : null;
 
   return (
@@ -150,7 +150,7 @@ export const ToolGroup = memo(function ToolGroup({
           textAlign="left"
           cursor="pointer"
           _hover={{ bg: "bg.muted" }}
-          onClick={() => setManualOverride((current) => !(current ?? active))}
+          onClick={() => setManualOverride((current) => current === null ? true : !current)}
         >
           <Flex align="center" gap={2} flex={1} minW={0}>
             <Text
@@ -164,7 +164,7 @@ export const ToolGroup = memo(function ToolGroup({
               color={active ? undefined : "fg.muted"}
               className={active ? "running-title-shimmer" : undefined}
             >
-              {active ? "Working through it" : "Ran these tools"}
+              {active ? "Still working" : "Actions taken"}
             </Text>
             <Flex align="center" gap={2} minW={0} flexWrap="wrap">
               {tally.order.map((name) => {
@@ -192,11 +192,11 @@ export const ToolGroup = memo(function ToolGroup({
             </Flex>
           </Flex>
           {hasFileChanges && fileChanges.length > 0 && (
-            <Flex align="center" gap={2} flexShrink={0} overflow="visible" flexWrap="wrap">
-              {fileChanges.map((file) => {
+            <Flex align="center" gap={2} flexShrink={1} minW={0} overflow="hidden">
+              {fileChanges.slice(0, 3).map((file) => {
                 const FileIcon = iconForFilePath(file.path).icon;
                 return (
-                  <Flex key={file.path} align="center" gap={1.5} minW={0}>
+                  <Flex key={file.path} align="center" gap={1.5} minW={0} flexShrink={1}>
                     <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
                       <FileIcon size={13} />
                     </Box>
@@ -207,6 +207,11 @@ export const ToolGroup = memo(function ToolGroup({
                   </Flex>
                 );
               })}
+              {fileChanges.length > 3 && (
+                <Badge size="sm" variant="surface" colorPalette="gray" borderRadius="sm" flexShrink={0}>
+                  {fileChanges.length} files
+                </Badge>
+              )}
             </Flex>
           )}
           {badge && (
