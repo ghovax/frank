@@ -30,6 +30,7 @@ from harness.core.configuration import PromptLoader as _PromptLoader
 
 _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
+
 DEFAULT_READ_LIMIT_LINES = 2048
 MAXIMUM_LINE_LENGTH = 2048
 MAXIMUM_GREP_RESULTS = 512
@@ -37,7 +38,9 @@ MAXIMUM_GLOB_RESULTS = 1024
 MAXIMUM_FETCH_CHARS = 262_144
 MAXIMUM_TOOL_OUTPUT_CHARS = 1 << 16
 
+
 def _resolve(working_directory: str, file_path: str) -> Path:
+    """Resolve a possibly-relative path against the working directory."""
     candidate = Path(file_path)
     if not candidate.is_absolute():
         base = Path(working_directory) if working_directory else Path.cwd()
@@ -52,14 +55,17 @@ def resolve_path(working_directory: str, file_path: str) -> Path:
 
 
 def _truncate_line(line: str) -> str:
+    """Truncate a line to the maximum allowed length for tool output."""
     return line if len(line) <= MAXIMUM_LINE_LENGTH else line[:MAXIMUM_LINE_LENGTH]
 
 
 def _payload(code: str, **fields) -> str:
+    """Build a JSON tool-result payload with the given ``code`` discriminator."""
     return json.dumps({"code": code, **fields})
 
 
 def content_sha256(content: str) -> str:
+    """Return the hex SHA-256 digest of the given content."""
     return hashlib.sha256(content.encode()).hexdigest()
 
 
@@ -73,7 +79,8 @@ def read_file(
 
     ``offset`` is the 1-indexed line to start reading from and ``limit`` caps the
     number of lines returned (defaulting to 2048). Each returned line is prefixed
-    with its right-aligned line number and a tab, exactly like ``cat -n``."""
+    with its right-aligned line number and a tab, exactly like ``cat -n``.
+    """
     resolved_path = _resolve(working_directory, file_path)
     if not resolved_path.exists():
         raise FileNotFoundError(f"Path does not exist: {resolved_path}")
@@ -86,8 +93,11 @@ def read_file(
     start_line_index = max(1, offset)
     effective_limit = limit if (limit is None or limit > 0) else DEFAULT_READ_LIMIT_LINES
     end_line_index = len(file_lines) if effective_limit is None else min(len(file_lines), start_line_index - 1 + effective_limit)
-    selected_lines = file_lines[start_line_index - 1:end_line_index]
-    rendered_output = "\n".join(f"{line_number:6d}\t{_truncate_line(line)}" for line_number, line in enumerate(selected_lines, start=start_line_index))
+    selected_lines = file_lines[start_line_index - 1 : end_line_index]
+    rendered_output = "\n".join(
+        f"{line_number:6d}\t{_truncate_line(line)}"
+        for line_number, line in enumerate(selected_lines, start=start_line_index)
+    )
     is_truncated = start_line_index > 1 or end_line_index < len(file_lines)
     return _payload(
         "read_completed",
@@ -114,6 +124,7 @@ def find_files(working_directory: str, pattern: str) -> str:
 
 
 def _grep_with_ripgrep(path: Path, pattern: str, include: str | None) -> list[str]:
+    """Run ripgrep and return matching lines."""
     command = ["rg", "--line-number", "--no-heading", "--color=never", "--max-count", "20"]
     if include:
         command += ["--glob", include]
@@ -123,6 +134,7 @@ def _grep_with_ripgrep(path: Path, pattern: str, include: str | None) -> list[st
 
 
 def _glob_to_regex(pattern: str) -> str:
+    """Translate a simple glob pattern (``*`` and ``?`` only) to a regex."""
     translated = []
     for char in pattern:
         if char == "*":
@@ -135,6 +147,7 @@ def _glob_to_regex(pattern: str) -> str:
 
 
 def _grep_python(path: Path, pattern: str, include: str | None) -> list[str]:
+    """Fallback grep using a pure-Python walk (used when ripgrep is unavailable)."""
     try:
         regex = re.compile(pattern)
     except re.error as exception:
@@ -159,16 +172,26 @@ def _grep_python(path: Path, pattern: str, include: str | None) -> list[str]:
 
 
 def search_content(
-    working_directory: str, pattern: str, include: str | None = None, path: str | None = None,
+    working_directory: str,
+    pattern: str,
+    include: str | None = None,
+    path: str | None = None,
 ) -> str:
     """Search file contents by regex. Prefers ripgrep; falls back to a Python walk."""
-    base = _resolve(working_directory, path) if path else (Path(working_directory) if working_directory else Path.cwd())
+    base = (
+        _resolve(working_directory, path)
+        if path
+        else (Path(working_directory) if working_directory else Path.cwd())
+    )
     if not base.exists():
         raise FileNotFoundError(f"Search path does not exist: {base}")
     home = Path.home().resolve(strict=False)
     resolved_base = base.expanduser().resolve(strict=False)
     if resolved_base == home:
-        raise ValueError("Refusing to search the home directory. Narrow the search to a project folder or specific subdirectory.")
+        raise ValueError(
+            "Refusing to search the home directory. "
+            "Narrow the search to a project folder or specific subdirectory."
+        )
     if shutil.which("rg"):
         try:
             matches = _grep_with_ripgrep(base, pattern, include)
@@ -180,29 +203,249 @@ def search_content(
     return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
 
 
+# Coordinate replacement engine
 
 
-# Coordinate-based staging engine
+def _fuzzy_find_candidates(
+    find: str,
+    before: str,
+    maximum_candidates: int = 5,
+    threshold: float = 0.7,
+) -> list[dict]:
+    """Find near-matches of find within before using line-level indexing.
 
-_VALID_OPERATION_TYPES = frozenset({
-    "insert", "delete", "replace_range", "replace_text",
-    "columnar_insert", "columnar_delete",
-})
+    Normalizes every line (rstrip), builds a hash lookup from line content
+    to positions, then scores only windows where the first find line matches.
+    This avoids the O(m * n) character-level sliding-window of SequenceMatcher.
+    Falls back to SequenceMatcher on the first line only when the index
+    produces no candidates.
+    """
+    from collections import defaultdict
 
-# Parser registry (extensible per language)
+    find_lines = find.split("\n")
+    before_lines = before.split("\n")
+    window_size = len(find_lines)
 
-_LANGUAGE_PARSERS: dict[str, Callable[[str], tuple[bool, str | None, int | None, int | None]]] = {}
+    # Reject empty or whitespace-only find texts
+    if not find.strip() or not before_lines or window_size > len(before_lines):
+        return []
+
+    # Normalize once — rstrip covers the common trailing-whitespace mismatch
+    normalized_find = [line.rstrip() for line in find_lines]
+    normalized_before = [line.rstrip() for line in before_lines]
+
+    # Content index: normalized line content -> list of line positions
+    content_to_lines: dict[str, list[int]] = defaultdict(list)
+    for position, line in enumerate(normalized_before):
+        content_to_lines[line].append(position)
+
+    def _score_window(start: int) -> float:
+        """Average SequenceMatcher ratio across each line pair in the window.
+
+        Per-line matching catches within-line whitespace differences
+        (extra spaces, indentation shifts) that exact string comparison
+        would miss, while being fast because individual lines are short.
+        """
+        from difflib import SequenceMatcher
+
+        chunk = normalized_before[start : start + window_size]
+        total_ratio = 0.0
+        for find_line, before_line in zip(normalized_find, chunk):
+            total_ratio += SequenceMatcher(None, find_line, before_line).ratio()
+        return total_ratio / window_size
+
+    def _candidate(start: int, ratio: float) -> dict:
+        return {
+            "text": "\n".join(before_lines[start : start + window_size]),
+            "ratio": round(ratio, 4),
+            "start_line": start + 1,
+            "end_line": start + window_size,
+        }
+
+    candidates: list[dict] = []
+    first_find_line = normalized_find[0]
+
+    # Hash-lookup pass: O(N) index build, O(K) score (K = occurrences of first line)
+    if first_find_line in content_to_lines:
+        seen_starts: set[int] = set()
+        for start in content_to_lines[first_find_line]:
+            if start in seen_starts or start + window_size > len(before_lines):
+                continue
+            seen_starts.add(start)
+            ratio = _score_window(start)
+            if ratio >= threshold:
+                candidates.append(_candidate(start, ratio))
+
+    # Fallback pass when the hash-lookup pass found nothing and the first line
+    # does not match literally but is still close. For single-line finds this
+    # scans every line via SequenceMatcher; for multi-line finds it pre-filters
+    # by first-line ratio then scores the full window.
+    if not candidates:
+        from difflib import SequenceMatcher
+
+        seen_starts = set()
+        if window_size == 1:
+            for position, line in enumerate(normalized_before):
+                ratio = SequenceMatcher(None, normalized_find[0], line).ratio()
+                if ratio >= threshold:
+                    candidates.append(_candidate(position, ratio))
+                    if len(candidates) >= maximum_candidates:
+                        break
+        else:
+            for start in range(len(before_lines) - window_size + 1):
+                if start in seen_starts:
+                    continue
+                first_line_ratio = SequenceMatcher(
+                    None, normalized_find[0], normalized_before[start]
+                ).ratio()
+                if first_line_ratio < 0.7:
+                    continue
+                seen_starts.add(start)
+                ratio = _score_window(start)
+                if ratio >= threshold:
+                    candidates.append(_candidate(start, ratio))
+                    if len(candidates) >= maximum_candidates:
+                        break
+
+    candidates.sort(key=lambda x: -x["ratio"])
+    return candidates[:maximum_candidates]
+
+
+def edit_file(
+    working_directory: str,
+    file_path: str,
+    find: str,
+    replace: str,
+    *,
+    expected_sha256: str | None,
+    skip_validation: bool = False,
+    replace_all: bool = False,
+) -> str:
+    """Edit a file by replacing ``find`` with ``replace``.
+
+    ``find`` must occur verbatim in the file. Unless ``replace_all`` is set,
+    it must be unique. The edit is staged in memory, validated against a
+    language parser (AST or tree-sitter), and either committed to disk or
+    aborted with a diagnostic payload.
+
+    You must call ``read_file`` before editing: the SHA256 from that read is
+    checked in the isolation phase to reject stale edits.
+    """
+    resolved_path = _resolve(working_directory, file_path).expanduser().resolve(strict=False)
+    if not resolved_path.exists():
+        raise FileNotFoundError(
+            f"Cannot edit missing file: {resolved_path}. Use write_file to create new files."
+        )
+    if resolved_path.is_dir():
+        raise IsADirectoryError(f"Cannot edit directory: {resolved_path}")
+
+    # Isolation — read and verify staleness
+    before = resolved_path.read_text(errors="replace")
+    if expected_sha256 is None:
+        raise PermissionError(
+            f"You must read {resolved_path} with read_file before editing it."
+        )
+    if content_sha256(before) != expected_sha256:
+        raise ValueError(
+            f"{resolved_path} changed since it was last read. "
+            "Call read_file again to get fresh content and line numbers."
+        )
+
+    if find == replace:
+        raise ValueError("find and replace are identical; nothing to change.")
+
+    occurrences = before.count(find)
+    if occurrences == 0:
+        # Fallback: strip trailing whitespace from both sides and retry.
+        # This covers the common case where the model adds or omits trailing
+        # spaces, or the file has editor-added trailing whitespace.
+        normalized_find = "\n".join(line.rstrip() for line in find.split("\n"))
+        normalized_before = "\n".join(line.rstrip() for line in before.split("\n"))
+        occurrences = normalized_before.count(normalized_find)
+        if occurrences == 0:
+            # Fuzzy match: look for near-misses to help the model debug
+            near_misses = _fuzzy_find_candidates(find, before, threshold=0.7)
+            if near_misses:
+                raise ValueError(
+                    _VALIDATION_PROMPT_LOADER.load(
+                        "find_near_miss",
+                        {
+                            "resolved_path": str(resolved_path),
+                            "count": str(len(near_misses)),
+                            "candidates": json.dumps(near_misses[:3]),
+                        },
+                    )
+                )
+            raise ValueError(
+                _VALIDATION_PROMPT_LOADER.load(
+                    "find_not_found", {"resolved_path": str(resolved_path)}
+                )
+            )
+        # Normalization matched — use normalized versions for the replacement
+        find = normalized_find
+        before = normalized_before
+        if occurrences > 1 and not replace_all:
+            raise ValueError(
+                _VALIDATION_PROMPT_LOADER.load(
+                    "find_not_unique",
+                    {"resolved_path": str(resolved_path), "occurrences": str(occurrences)},
+                )
+            )
+
+    # Execute — replace text
+    after = before.replace(find, replace, -1 if replace_all else 1)
+
+    # Verify — run language parser if registered
+    if not skip_validation:
+        suffix = resolved_path.suffix.lower()
+        parser = _LANGUAGE_PARSERS.get(suffix)
+        if parser is not None:
+            passed, message, line_number, column = parser(after)
+            if not passed:
+                diagnostic = {
+                    "origin": "ast_parser",
+                    "language": suffix.lstrip("."),
+                    "line": line_number,
+                    "column": column,
+                    "message": message,
+                    "context_snapshot": _context_snapshot(after.split("\n"), line_number or 1),
+                }
+                return json.dumps(
+                    {
+                        "code": "edit_failed_validation",
+                        "path": str(resolved_path),
+                        "diagnostic": diagnostic,
+                        "suggested_action": _VALIDATION_PROMPT_LOADER.load(
+                            "validation_failure_recovery", {}
+                        ),
+                    }
+                )
+
+    # Commit — write to disk
+    resolved_path.write_text(after)
+    summary = {
+        "code": "edit_completed",
+        "path": str(resolved_path),
+        "characters": len(after),
+        "sha256": content_sha256(after),
+    }
+    return json.dumps(summary)
+
+
+_LANGUAGE_PARSERS: dict[
+    str, Callable[[str], tuple[bool, str | None, int | None, int | None]]
+] = {}
 
 
 def register_parser(suffix: str, parser_fn: Callable) -> None:
-    """Register a syntax validator for a file extension (with leading dot)."""
+    """Register a validation parser for the given file suffix."""
     _LANGUAGE_PARSERS[suffix] = parser_fn
 
 
-def _validate_python(content: str) -> tuple[bool, str | None, int | None, int | None]:
-    """Python syntax validation via stdlib ``ast.parse``.
-
-    Returns ``(passed, message, line, column)``."""
+def _validate_python(
+    content: str,
+) -> tuple[bool, str | None, int | None, int | None]:
+    """Validate Python content with the stdlib ``ast`` module."""
     try:
         ast.parse(content)
         return True, None, None, None
@@ -213,16 +456,22 @@ def _validate_python(content: str) -> tuple[bool, str | None, int | None, int | 
 register_parser(".py", _validate_python)
 
 
+def _context_snapshot(
+    lines: list[str], line_number: int, radius: int = 3
+) -> list[str]:
+    """Extract a window of lines around ``line_number`` for diagnostic context."""
+    start = max(0, line_number - 1 - radius)
+    end = min(len(lines), line_number + radius)
+    return lines[start:end]
+
+
 # Tree-sitter validators (multi-language)
 
-_TREE_SITTER_PARSERS: dict[str, Parser] = {}
+_TREE_SITTER_PARSERS: dict[str, "Parser"] = {}
 
 
-def _validate_with_tree_sitter(source_bytes: bytes, language_id: str, language_label: str) -> tuple:
-    """Lazy-initialised tree-sitter validation.
-
-    Returns ``(passed, message, line, column)`` with 1-indexed line numbers.
-    """
+def _validate_with_tree_sitter(source_bytes: bytes, language_id: str) -> tuple:
+    """Validate content using a tree-sitter parser for the given language."""
     if language_id not in _TREE_SITTER_PARSERS:
         import tree_sitter_python as _py
         import tree_sitter_javascript as _js
@@ -240,7 +489,7 @@ def _validate_with_tree_sitter(source_bytes: bytes, language_id: str, language_l
         import tree_sitter_typescript as _ts
         from tree_sitter import Language, Parser
 
-        _LANGUAGE_TABLE = {
+        _TABLE = {
             "python": Language(_py.language()),
             "javascript": Language(_js.language()),
             "json": Language(_jsn.language()),
@@ -257,413 +506,136 @@ def _validate_with_tree_sitter(source_bytes: bytes, language_id: str, language_l
             "typescript": Language(_ts.language_typescript()),
             "tsx": Language(_ts.language_tsx()),
         }
-        for lang_id, lang_obj in _LANGUAGE_TABLE.items():
-            _TREE_SITTER_PARSERS[lang_id] = Parser(lang_obj)
+        for language_id, language in _TABLE.items():
+            _TREE_SITTER_PARSERS[language_id] = Parser(language)
 
     parser = _TREE_SITTER_PARSERS.get(language_id)
     if parser is None:
-        return True, None, None, None  # unknown language — skip
-
+        return True, None, None, None
     tree = parser.parse(source_bytes)
     root = tree.root_node
     if not root.has_error:
         return True, None, None, None
-
-    # Walk the tree for the first ERROR node
     cursor = root.walk()
     while True:
         if cursor.node.type == "ERROR":
             error_row, error_column = cursor.node.start_point
-            return False, "syntax error", error_row + 1, error_column
+            error_node = cursor.node
+            error_end = min(error_node.end_byte, len(source_bytes))
+            error_text = source_bytes[error_node.start_byte : error_end].decode(
+                "utf-8", errors="replace"
+            )
+            return False, f"syntax error near {error_text!r}", error_row + 1, error_column
         if not cursor.goto_first_child():
             while not cursor.goto_next_sibling():
                 if not cursor.goto_parent():
                     return False, "syntax error", 1, 1
 
 
-def _register_tree_sitter(extensions: list[str], language_id: str, language_label: str) -> None:
-    """Register a tree-sitter validator for multiple file extensions."""
+def _register_tree_sitter(extensions: list[str], language_id: str) -> None:
+    """Register a tree-sitter-based validator for the given file extensions."""
+
     def validator(content: str) -> tuple:
-        return _validate_with_tree_sitter(bytes(content, "utf-8"), language_id, language_label)
+        return _validate_with_tree_sitter(bytes(content, "utf-8"), language_id)
+
     for ext in extensions:
         register_parser(ext, validator)
 
 
-_register_tree_sitter([".js", ".jsx", ".mjs", ".cjs"], "javascript", "JavaScript")
-_register_tree_sitter([".ts"], "typescript", "TypeScript")
-_register_tree_sitter([".tsx"], "tsx", "TypeScript (TSX)")
-_register_tree_sitter([".json"], "json", "JSON")
-_register_tree_sitter([".yaml", ".yml"], "yaml", "YAML")
-_register_tree_sitter([".toml"], "toml", "TOML")
-_register_tree_sitter([".sh", ".bash", ".zsh"], "bash", "Bash")
-_register_tree_sitter([".html", ".htm"], "html", "HTML")
-_register_tree_sitter([".css", ".scss", ".less"], "css", "CSS")
-_register_tree_sitter([".c", ".h"], "c", "C")
-_register_tree_sitter([".cpp", ".hpp", ".cc", ".cxx"], "cpp", "C++")
-_register_tree_sitter([".go"], "go", "Go")
-_register_tree_sitter([".rs"], "rust", "Rust")
+_register_tree_sitter([".js", ".jsx", ".mjs", ".cjs"], "javascript")
+_register_tree_sitter([".ts"], "typescript")
+_register_tree_sitter([".tsx"], "tsx")
+_register_tree_sitter([".json"], "json")
+_register_tree_sitter([".yaml", ".yml"], "yaml")
+_register_tree_sitter([".toml"], "toml")
+_register_tree_sitter([".sh", ".bash", ".zsh"], "bash")
+_register_tree_sitter([".html", ".htm"], "html")
+_register_tree_sitter([".css", ".scss", ".less"], "css")
+_register_tree_sitter([".c", ".h"], "c")
+_register_tree_sitter([".cpp", ".hpp", ".cc", ".cxx"], "cpp")
+_register_tree_sitter([".go"], "go")
+_register_tree_sitter([".rs"], "rust")
 
 
-
-def _context_snapshot(lines: list[str], line_number: int, radius: int = 3) -> list[str]:
-    """Extract a bounded subset of lines around ``line_number`` (1-indexed)."""
-    start = max(0, line_number - 1 - radius)
-    end = min(len(lines), line_number + radius)
-    return lines[start:end]
-
-
-# Schema validation
-
-def _validate_operation_schema(operation: dict, index: int) -> None:
-    """Validate that an operation dict has the required fields for its type.
-
-    Raises ``ValueError`` on the first problem with a clear message."""
-    operation_json = json.dumps(operation, indent=2)
-    raw_type = operation.get("type")
-    valid_types_str = json.dumps(sorted(_VALID_OPERATION_TYPES))
-
-    def _error(field: str, expected: str, actual: str) -> ValueError:
-        return ValueError(
-            _VALIDATION_PROMPT_LOADER.load("operation_validation_error", {
-                "index": str(index),
-                "type": str(raw_type),
-                "field": field,
-                "expected": expected,
-                "actual": actual,
-                "operation_json": operation_json,
-                "valid_types": valid_types_str,
-            })
-        )
-
-    if not isinstance(raw_type, str) or raw_type not in _VALID_OPERATION_TYPES:
-        raise _error("type", f"one of {valid_types_str}", repr(raw_type))
-
-    for field_name in ("start_line", "end_line", "column", "length"):
-        if field_name in operation and not isinstance(operation.get(field_name), int):
-            raise _error(field_name, "a whole number", repr(operation.get(field_name)))
-
-    start_line = operation.get("start_line")
-    if not isinstance(start_line, int) or start_line < 1:
-        raise _error("start_line", "a positive whole number (1 or greater)", repr(start_line))
-
-    if raw_type in ("delete", "replace_range", "replace_text"):
-        end_line = operation.get("end_line")
-        if not isinstance(end_line, int) or end_line < start_line:
-            raise _error("end_line", f"a whole number >= start_line ({start_line})", repr(end_line))
-
-    if raw_type in ("insert", "replace_range"):
-        text = operation.get("text")
-        if not isinstance(text, str):
-            raise _error("text", "a string", type(text).__name__)
-
-    if raw_type in ("columnar_insert", "columnar_delete"):
-        end_line = operation.get("end_line")
-        if not isinstance(end_line, int) or end_line < start_line:
-            raise _error("end_line", f"a whole number >= start_line ({start_line})", repr(end_line))
-        column = operation.get("column")
-        if not isinstance(column, int) or column < 0:
-            raise _error("column", "a whole number (0 or greater)", repr(column))
-
-    if raw_type == "columnar_insert":
-        text = operation.get("text")
-        if not isinstance(text, str):
-            raise _error("text", "a string", type(text).__name__)
-
-    if raw_type == "columnar_delete":
-        length = operation.get("length")
-        if not isinstance(length, int) or length < 0:
-            raise _error("length", "a whole number (0 or greater)", repr(length))
-
-    if raw_type == "replace_text":
-        find_value = operation.get("find")
-        if not isinstance(find_value, str):
-            raise _error("find", "a string", type(find_value).__name__)
-        replace_value = operation.get("replace")
-        if not isinstance(replace_value, str):
-            raise _error("replace", "a string", type(replace_value).__name__)
-
-
-# Operation application (pure functions on list[str])
-
-def _apply_insert(lines: list[str], operation: dict) -> list[str]:
-    """Insert new lines before ``start_line`` (1-indexed)."""
-    start_line = operation["start_line"]
-    text = operation.get("text", "")
-    new_lines = text.split("\n") if text else []
-    insert_index = min(start_line - 1, len(lines))
-    return lines[:insert_index] + new_lines + lines[insert_index:]
-
-
-def _apply_delete(lines: list[str], operation: dict) -> list[str]:
-    """Delete lines from ``start_line`` to ``end_line`` inclusive (1-indexed)."""
-    start_line = operation["start_line"]
-    end_line = operation["end_line"]
-    if start_line > len(lines):
-        raise ValueError(f"Delete start_line {start_line} exceeds file length {len(lines)}.")
-    if end_line > len(lines):
-        end_line = len(lines)
-    return lines[: start_line - 1] + lines[end_line:]
-
-
-def _apply_replace_range(lines: list[str], operation: dict) -> list[str]:
-    """Atomic delete + insert at the same position."""
-    start_line = operation["start_line"]
-    end_line = operation["end_line"]
-    text = operation.get("text", "")
-    new_lines = text.split("\n") if text else []
-    if start_line > len(lines):
-        raise ValueError(f"Replace start_line {start_line} exceeds file length {len(lines)}.")
-    effective_end = min(end_line, len(lines))
-    return lines[: start_line - 1] + new_lines + lines[effective_end:]
-
-
-def _apply_columnar_insert(lines: list[str], operation: dict) -> list[str]:
-    """Insert ``text`` at ``column`` on every line in the range (inclusive)."""
-    start_line = operation["start_line"]
-    end_line = operation["end_line"]
-    column = operation["column"]
-    text = operation.get("text", "")
-    result = list(lines)
-    for line_index in range(start_line - 1, min(end_line, len(result))):
-        line = result[line_index]
-        if column > len(line):
-            line = line + " " * (column - len(line))
-        result[line_index] = line[:column] + text + line[column:]
-    return result
-
-
-def _apply_columnar_delete(lines: list[str], operation: dict) -> list[str]:
-    """Delete ``length`` characters at ``column`` on every line in the range (inclusive)."""
-    start_line = operation["start_line"]
-    end_line = operation["end_line"]
-    column = operation["column"]
-    length = operation.get("length", 0)
-    result = list(lines)
-    for line_index in range(start_line - 1, min(end_line, len(result))):
-        line = result[line_index]
-        if column < len(line):
-            result[line_index] = line[:column] + line[column + length:]
-    return result
-
-
-def _apply_replace_text(lines: list[str], operation: dict) -> list[str]:
-    """Find and replace text within a bounded line range (inclusive)."""
-    start_line = operation["start_line"]
-    end_line = operation["end_line"]
-    find_value = operation.get("find", "")
-    replace_value = operation.get("replace", "")
-    result = list(lines)
-    for line_index in range(start_line - 1, min(end_line, len(result))):
-        result[line_index] = result[line_index].replace(find_value, replace_value)
-    return result
-
-
-# Multi-operation executor
-
-def apply_operations(lines: list[str], operations: list[dict]) -> list[str]:
-    """Apply multiple operations to a line list, sorted in descending order.
-
-    ``operations`` must already be schema-validated. The sort ensures that
-    edits near the bottom of the file execute first, so line insertions and
-    deletions do not shift the coordinates of pending operations above them.
-    Columnar operations (which do not change line count) interleave naturally
-    via the same sort."""
-    sorted_operations = sorted(operations, key=lambda op: op.get("start_line", 0), reverse=True)
-    result = list(lines)
-    for operation in sorted_operations:
-        op_type = operation["type"]
-        try:
-            if op_type == "insert":
-                result = _apply_insert(result, operation)
-            elif op_type == "delete":
-                result = _apply_delete(result, operation)
-            elif op_type == "replace_range":
-                result = _apply_replace_range(result, operation)
-            elif op_type == "columnar_insert":
-                result = _apply_columnar_insert(result, operation)
-            elif op_type == "columnar_delete":
-                result = _apply_columnar_delete(result, operation)
-            elif op_type == "replace_text":
-                result = _apply_replace_text(result, operation)
-        except ValueError as exception:
-            raise ValueError(
-                _VALIDATION_PROMPT_LOADER.load("operation_application_error", {
-                    "operation_type": op_type,
-                    "start_line": str(operation.get("start_line", "")),
-                    "error": str(exception),
-                })
-            ) from exception
-    return result
-
-
-# Full transaction lifecycle
-
-def execute_staged_edit(
-    working_directory: str,
-    file_path: str,
-    operations_raw: list[dict],
-    *,
-    expected_sha256: str | None,
-    skip_validation: bool = False,
-) -> str:
-    """Coordinate-based staging lifecycle for one file.
-
-    Reads the file from disk, checks the SHA256 staleness guard,
-    builds an in-memory line matrix, validates and applies the
-    operations (sorted bottom-to-top), runs syntax validation
-    against a registered language parser if available, and either
-    commits the result to disk or aborts with a diagnostic payload.
-    """
-    resolved_path = _resolve(working_directory, file_path).expanduser().resolve(strict=False)
-    if not resolved_path.exists():
-        raise FileNotFoundError(
-            f"Cannot edit missing file: {resolved_path}. Use write_file to create new files."
-        )
-    if resolved_path.is_dir():
-        raise IsADirectoryError(f"Cannot edit directory: {resolved_path}")
-
-    before = resolved_path.read_text(errors="replace")
+def _validate_expected_hash(
+    path: Path, content: str, expected_sha256: str | None
+) -> None:
+    """Assert that ``content`` matches the expected SHA-256 hash, raising if stale."""
     if expected_sha256 is None:
         raise PermissionError(
-            f"You must read {resolved_path} with read_file before editing it."
+            f"You must read {path} with read_file before editing it."
         )
-    if content_sha256(before) != expected_sha256:
-        raise ValueError(
-            f"{resolved_path} changed since it was last read. "
-            "Call read_file again to get fresh content and line numbers."
-        )
-
-    has_trailing_newline = before.endswith("\n")
-    lines = before.split("\n")
-    # Strip trailing empty line from final newline so the coordinate space
-    # matches what read_file shows (no phantom empty line at the end).
-    if lines and lines[-1] == "":
-        lines = lines[:-1]
-
-    if not isinstance(operations_raw, list):
-        raise ValueError("'operations' must be a list of operation dicts.")
-    for index, operation in enumerate(operations_raw):
-        _validate_operation_schema(operation, index)
-
-    mutated_lines = apply_operations(lines, operations_raw)
-    after = "\n".join(mutated_lines)
-    if has_trailing_newline:
-        after += "\n"
-
-    if not skip_validation:
-        suffix = resolved_path.suffix.lower()
-        parser = _LANGUAGE_PARSERS.get(suffix)
-        if parser is not None:
-            passed, message, line_number, column = parser(after)
-            if not passed:
-                # Validation failed — return diagnostic, disk untouched
-                diagnostic = {
-                    "origin": "ast_parser",
-                    "language": suffix.lstrip("."),
-                    "line": line_number,
-                    "column": column,
-                    "message": message,
-                    "context_snapshot": _context_snapshot(mutated_lines, line_number or 1),
-                }
-                return json.dumps({
-                    "code": "edit_failed_validation",
-                    "path": str(resolved_path),
-                    "diagnostic": diagnostic,
-                    "suggested_action": _VALIDATION_PROMPT_LOADER.load("validation_failure_recovery", {}),
-                })
-
-    # Preserve the original line-ending convention (split already normalised).
-    resolved_path.write_text(after)
-
-    summary = {
-        "code": "edit_completed",
-        "path": str(resolved_path),
-        "operations_applied": len(operations_raw),
-        "characters": len(after),
-        "sha256": content_sha256(after),
-    }
-    return json.dumps(summary)
-
-
-# Coordinate-based edit_file entry point
-
-def edit_file(
-    working_directory: str,
-    file_path: str,
-    operations: list[dict],
-    *,
-    expected_sha256: str | None,
-    skip_validation: bool = False,
-) -> str:
-    """Coordinate-based edit tool.
-
-    ``operations`` is a list of operation dicts, each with a ``type``
-    (``insert``, ``delete``, ``replace_range``, ``columnar_insert``,
-    ``columnar_delete``) and the corresponding coordinate fields.
-
-    The full staging lifecycle runs inside :func:`execute_staged_edit`:
-    isolation, transaction, verification, then commit or abort.
-    """
-    return execute_staged_edit(
-        working_directory,
-        file_path,
-        operations,
-        expected_sha256=expected_sha256,
-        skip_validation=skip_validation,
-    )
-
-
-def _validate_expected_hash(path: Path, content: str, expected_sha256: str | None) -> None:
-    if expected_sha256 is None:
-        raise PermissionError(f"You must read {path} with read_file before editing it.")
     if content_sha256(content) != expected_sha256:
-        raise ValueError(f"{path} changed since it was last read. Re-read the file before editing it.")
+        raise ValueError(
+            f"{path} changed since it was last read. "
+            "Re-read the file before editing it."
+        )
 
 
-def _edit_payload(code: str, path: Path, *, created: bool, before: str, after: str) -> str:
-    """Result for write_file. ``before``/``after`` carry the full old and
-    new file content for the UI's diff viewer; ``model_context`` is the lean summary
-    the model actually sees (the file contents are redundant in the model's context
-    — it already read the file and supplied the replacement — so they are stripped
-    from the model-facing payload to avoid bloating it)."""
+def _edit_payload(
+    code: str, path: Path, *, created: bool, before: str, after: str
+) -> str:
+    """Build the tool result for write_file.
+
+    ``before``/``after`` carry the full old and new file content for the UI's
+    diff viewer; ``model_context`` is the lean summary the model actually sees
+    (the file contents are redundant in the model's context — it already read
+    the file and supplied the replacement — so they are stripped from the
+    model-facing payload to avoid bloating it).
+    """
     summary = {
         "code": code,
         "path": str(path),
         "created": created,
         "characters": len(after),
     }
-    return json.dumps({
-        **summary,
-        "before": before,
-        "after": after,
-        "model_context": summary,
-    })
+    return json.dumps(
+        {
+            **summary,
+            "before": before,
+            "after": after,
+            "model_context": summary,
+        }
+    )
 
 
 def write_file(
-    working_directory: str, file_path: str, content: str, *, expected_sha256: str | None,
+    working_directory: str,
+    file_path: str,
+    content: str,
+    *,
+    expected_sha256: str | None,
 ) -> str:
+    """Write content to a file, overwriting it if it exists. Staleness-checked."""
     path = _resolve(working_directory, file_path)
     if path.exists() and path.is_dir():
         raise IsADirectoryError(f"Path is a directory, not a file: {path}")
     if path.exists() and expected_sha256 is None:
-        raise PermissionError(f"You must read {path} with read_file before overwriting it.")
+        raise PermissionError(
+            f"You must read {path} with read_file before overwriting it."
+        )
     before = path.read_text(errors="replace") if path.exists() and path.is_file() else ""
     if path.exists() and path.is_file() and content_sha256(before) != expected_sha256:
-        raise ValueError(f"{path} changed since it was last read. Re-read the file before overwriting it.")
+        raise ValueError(
+            f"{path} changed since it was last read. "
+            "Re-read the file before overwriting it."
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content)
-    return _edit_payload("write_completed", path, created=before == "", before=before, after=content)
+    return _edit_payload(
+        "write_completed", path, created=before == "", before=before, after=content
+    )
 
 
 async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
+    """Fetch a URL and return its content in the requested format."""
     import httpx
 
     fmt = (fmt or "markdown").lower()
     if fmt not in ("markdown", "text", "html"):
         fmt = "markdown"
     if url.startswith("http://"):
-        url = "https://" + url[len("http://"):]
+        url = "https://" + url[len("http://") :]
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc:
         raise ValueError("The URL must be a fully-formed valid https URL.")
@@ -680,7 +652,9 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
     truncated = len(content) > MAXIMUM_FETCH_CHARS
     if truncated:
         content = content[:MAXIMUM_FETCH_CHARS]
-    return _payload("fetch_completed", url=url, format=fmt, truncated=truncated, content=content)
+    return _payload(
+        "fetch_completed", url=url, format=fmt, truncated=truncated, content=content
+    )
 
 
 async def _fetch_with_cloudflare_bypass(url: str, timeout: int) -> str:
@@ -706,11 +680,15 @@ async def _fetch_with_cloudflare_bypass(url: str, timeout: int) -> str:
     return body
 
 
-def _is_cloudflare_challenge(status_code: int, headers: dict[str, str], body: str) -> bool:
-    """Heuristic: does this response look like a Cloudflare anti-bot interstitial?"""
-    # Cloudflare sets cf-mitigated: challenge on every Challenge Page response.
-    # This is the authoritative signal per Cloudflare docs:
-    # https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/
+def _is_cloudflare_challenge(
+    status_code: int, headers: dict[str, str], body: str
+) -> bool:
+    """Heuristic: does this response look like a Cloudflare anti-bot interstitial?
+
+    Cloudflare sets cf-mitigated: challenge on every Challenge Page response.
+    This is the authoritative signal per Cloudflare docs:
+    https://developers.cloudflare.com/cloudflare-challenges/challenge-types/challenge-pages/detect-response/
+    """
     return headers.get("cf-mitigated", "").lower() == "challenge"
 
 
@@ -725,6 +703,7 @@ async def _fetch_with_curl_cffi(url: str, timeout: int) -> str:
 
 
 def _strip_html(html: str) -> str:
+    """Strip HTML tags and script/style content from a string."""
     text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", "", html)
     text = re.sub(r"(?s)<[^>]+>", "", text)
     return re.sub(r"\s+\n", "\n", text).strip()

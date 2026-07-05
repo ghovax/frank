@@ -294,18 +294,31 @@ function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
+  const skipValidation = args.skip_validation === true;
+  const startLine = asString(args.start_line);
+  const endLine = asString(args.end_line);
+  const range = endLine
+    ? `lines ${startLine}–${endLine}`
+    : startLine !== "1"
+      ? `line ${startLine}`
+      : null;
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.replace_all === true && <InlineField label="Replace all">Yes</InlineField>}
-      <Field label="Old string">
-        <MonoBlock>{asString(args.old_string) || " "}</MonoBlock>
-      </Field>
-      <Field label="New string">
-        <MonoBlock>{asString(args.new_string) || " "}</MonoBlock>
-      </Field>
+      {range && <InlineField label="Range">{range}</InlineField>}
+      {skipValidation && <InlineField label="Skip validation">Yes</InlineField>}
+      {asString(args.old_text) && (
+        <Field label="Old text">
+          <MonoBlock>{asString(args.old_text)}</MonoBlock>
+        </Field>
+      )}
+      {asString(args.new_text) && (
+        <Field label="New text">
+          <MonoBlock>{asString(args.new_text)}</MonoBlock>
+        </Field>
+      )}
     </FieldList>
   );
 }
@@ -449,17 +462,54 @@ function MatchListResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  // Shared by edit_file and write_file. Path is on the call card; the
-  // internal `code` status is dropped.
+  // Shared by edit_file and write_file. Path is on the call card.
+  const code = asString(data.code);
   const characters = asString(data.characters);
+  const operationsApplied = asString(data.operations_applied);
+  const created = data.created;
+  const diagnostic = asRecord(data.diagnostic);
+  const suggestedAction = asString(data.suggested_action);
   const before = asString(data.before);
   const after = asString(data.after);
   const { colorMode } = useColorMode();
+
+  // Old-format write_file response still carries before/after for inline diff.
   const hasDiff = before !== after && (before !== "" || after !== "");
+
+  if (code === "edit_failed_validation" && diagnostic.origin) {
+    const contextLines = asArray(diagnostic.context_snapshot).map(asString);
+    return (
+      <FieldList>
+        <InlineField label="Validation">
+          <Pill colorPalette="red">Failed</Pill>
+        </InlineField>
+        <InlineField label="Origin">{asString(diagnostic.origin)}</InlineField>
+        <InlineField label="Language">{asString(diagnostic.language)}</InlineField>
+        {asString(diagnostic.line) && (
+          <InlineField label="Line">{asString(diagnostic.line)}:{asString(diagnostic.column)}</InlineField>
+        )}
+        <InlineField label="Error">{asString(diagnostic.message)}</InlineField>
+        {contextLines.length > 0 && (
+          <Field label="Context">
+            <MonoBlock maxH="120px">{contextLines.join("\n")}</MonoBlock>
+          </Field>
+        )}
+        {suggestedAction && (
+          <Field label="Recovery">
+            <Text fontSize="xs" color="fg.subtle">{suggestedAction}</Text>
+          </Field>
+        )}
+      </FieldList>
+    );
+  }
+
   return (
     <FieldList>
-      {data.created != null && (
-        <InlineField label="Created">{data.created ? "Yes" : "No"}</InlineField>
+      {created != null && (
+        <InlineField label="Created">{created ? "Yes" : "No"}</InlineField>
+      )}
+      {operationsApplied && code === "edit_completed" && (
+        <InlineField label="Operations">{operationsApplied}</InlineField>
       )}
       {characters && <InlineField label="Characters">{characters}</InlineField>}
       {hasDiff ? (

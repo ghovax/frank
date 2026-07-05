@@ -140,7 +140,7 @@ export function DiffStatBadge({
       {additions > 0 && (
         <Box
           as="span"
-          gap={0.25}
+          gap={0.5}
           color="green.fg"
           fontWeight="semibold"
           fontSize="xs"

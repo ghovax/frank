@@ -26,7 +26,7 @@ export const BashRunning: Story = {
       justification: "Finding every connect() definition before changing its signature",
       risk: "low",
     },
-    toolCallId: "call_bash_running",
+    toolCallId: "call_00_a1B2c3D4e5F6g7H8i9J0k",
     status: "running",
   },
 };
@@ -40,7 +40,7 @@ export const BashCompleted: Story = {
       justification: "Finding every connect() definition",
       risk: "low",
     },
-    toolCallId: "call_bash_done",
+    toolCallId: "call_00_kL0m9N8oP7qR6sT5uV4wX",
     status: "completed",
     result: {
       code: "bash_completed",
@@ -60,7 +60,7 @@ export const BashFailed: Story = {
       justification: "Verifying the auth fix did not regress types",
       risk: "low",
     },
-    toolCallId: "call_bash_fail",
+    toolCallId: "call_00_fF1aA2bB3cC4dD5eE6fF7g",
     status: "failed",
     result: { code: "tool_error", message: "Command exited with code 1: src/api/server.py:41: type error ..." },
   },
@@ -77,10 +77,10 @@ export const AwaitingPermission: Story = {
       justification: "Reading the hosts file to debug the DNS redirect",
       risk: "medium",
     },
-    toolCallId: "call_perm",
+    toolCallId: "call_00_gG8hH7iI6jJ5kK4lL3mM2n",
     status: "input_required",
     permission: {
-      requestId: "perm-session-1",
+      requestId: "perm-ctx_session_abc123",
       justification: "Sandbox approval required: this command reads outside the working directory (/etc/hosts).",
       risk: "medium",
     },
@@ -95,10 +95,10 @@ export const AwaitingAnswer: Story = {
     arguments: {
       justification: "The database choice changes the whole implementation, so asking before building.",
     },
-    toolCallId: "call_question",
+    toolCallId: "call_00_nN1oO2pP3qQ4rR5sS6tT7u",
     status: "input_required",
     question: {
-      requestId: "q-session-1",
+      requestId: "q-ctx_session_def456",
       questions: [
         {
           question: "Which database should the new service use?",
@@ -135,7 +135,7 @@ export const ReadFileCompleted: Story = {
       limit: 3,
       justification: "Reading the connection module before editing it",
     },
-    toolCallId: "call_read",
+    toolCallId: "call_00_uU8vV9wW0xX1yY2zZ3aA4b",
     status: "completed",
     result: {
       code: "read_completed",
@@ -158,7 +158,7 @@ export const EditFileCompleted: Story = {
       justification: "Adding a timeout parameter to connect()",
       risk: "low",
     },
-    toolCallId: "call_edit",
+    toolCallId: "call_00_bB5cC6dD7eE8fF9gG0hH1i",
     status: "completed",
     result: {
       code: "edit_completed",
@@ -179,8 +179,29 @@ export const WebSearchRunning: Story = {
       justification: "Confirming the timeout API before using it",
       result_count: 5,
     },
-    toolCallId: "call_search",
+    toolCallId: "search_00_iI2jJ3kK4lL5mM6nN7oO8p",
     status: "running",
+  },
+};
+
+export const WebSearchCompleted: Story = {
+  args: {
+    name: "web_search",
+    arguments: {
+      query: "psycopg2 connect timeout parameter",
+      justification: "Confirming the timeout API before using it",
+      result_count: 5,
+    },
+    toolCallId: "search_00_pP9qQ0rR1sS2tT3uU4vV5w",
+    status: "completed",
+    result: {
+      code: "web_search_completed",
+      query: "psycopg2 connect timeout parameter",
+      results: [
+        { title: "psycopg2.connect — Psycopg 2.9.10 documentation", url: "https://www.psycopg.org/docs/module.html" },
+        { title: "Connection arguments — Psycopg 2.9.10 documentation", url: "https://www.psycopg.org/docs/connection.html" },
+      ],
+    },
   },
 };
 
@@ -193,7 +214,7 @@ export const SpawnAgentCompleted: Story = {
       read_only: true,
       justification: "Mapping the auth flow in parallel while I implement the DB layer",
     },
-    toolCallId: "call_spawn",
+    toolCallId: "call_00_wW6xX7yY8zZ9aA0bB1cC2d",
     status: "completed",
     result: { code: "task_completed", artifact: "Auth flow: login() -> issue_session() -> set_cookie(). No token rotation found." },
     agents: [
@@ -201,5 +222,58 @@ export const SpawnAgentCompleted: Story = {
       { id: "researcher", name: "researcher", title: "Researcher" },
       { id: "builder", name: "builder", title: "Builder" },
     ],
+  },
+};
+
+export const BackgroundBash: Story = {
+  args: {
+    name: "bash",
+    arguments: {
+      command: "npm run build",
+      read_only: false,
+      risk: "medium",
+      justification: "Building the project in the background while I prepare the deployment config",
+      background: true,
+    },
+    toolCallId: "call_00_dD3eE4fF5gG6hH7iI8jJ9k",
+    status: "running",
+    result: { code: "background_task_scheduled", task_id: "bg_00_kK0lL1mM2nN3oO4pP5qQ6r" },
+  },
+};
+
+export const FindFilesCompleted: Story = {
+  args: {
+    name: "find_files",
+    arguments: {
+      pattern: "**/*.config.{ts,js}",
+      justification: "Locating all configuration files before the migration",
+    },
+    toolCallId: "call_00_rR7sS8tT9uU0vV1wW2xX3y",
+    status: "completed",
+    result: {
+      code: "find_completed",
+      pattern: "**/*.config.{ts,js}",
+      matches: ["/Users/me/proj/tsconfig.json", "/Users/me/proj/web/vite.config.ts", "/Users/me/proj/web/next.config.ts"],
+      count: 3,
+    },
+  },
+};
+
+export const SearchContentCompleted: Story = {
+  args: {
+    name: "search_content",
+    arguments: {
+      pattern: "function\\s+connect\\s*\\(",
+      include: "*.py",
+      justification: "Finding all connect() function definitions across the Python codebase",
+    },
+    toolCallId: "call_00_yY4zZ5aA6bB7cC8dD9eE0f",
+    status: "completed",
+    result: {
+      code: "search_completed",
+      pattern: "function\\s+connect\\s*\\(",
+      count: 2,
+      matches: ["src/db/client.py:14:def connect(uri):", "src/api/server.py:41:def connect(self):"],
+    },
   },
 };

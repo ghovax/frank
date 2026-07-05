@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, Flex, Text } from "@chakra-ui/react";
-import { memo } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
@@ -108,13 +108,62 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
   switch (message.role) {
     case "user": {
       const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
+      const contentRef = useRef<HTMLDivElement>(null);
+      const [expanded, setExpanded] = useState(false);
+      const [truncatable, setTruncatable] = useState(false);
+      const COLLAPSE_HEIGHT = 200;
+
+      useLayoutEffect(() => {
+        const element = contentRef.current;
+        if (!element) return;
+        setTruncatable(element.scrollHeight > COLLAPSE_HEIGHT);
+      }, [message.content]);
+
       return (
         <Flex direction="column" alignSelf="flex-end" align="flex-end" gap={1.5} maxW="80%">
           {attachments.length > 0 && <AttachmentChips attachments={attachments} />}
           {message.content.trim() && (
-            <Box bg="bg.muted" border="1px solid" borderColor="border" px={2} py={1.5} borderRadius="sm" maxW="100%">
+            <Box
+              ref={contentRef}
+              minW={0}
+              position="relative"
+              overflow="hidden"
+              maxH={expanded ? "none" : `${COLLAPSE_HEIGHT}px`}
+              bg="bg.muted"
+              border="1px solid"
+              borderColor="border"
+              px={2}
+              py={1.5}
+              borderRadius="sm"
+              maxW="100%"
+            >
               <MarkdownContent content={message.content} />
+              {!expanded && truncatable && (
+                <Box
+                  position="absolute"
+                  bottom={0}
+                  left={0}
+                  right={0}
+                  h="48px"
+                  pointerEvents="none"
+                  css={{
+                    backgroundImage: "linear-gradient(to top, var(--chakra-colors-bg-muted), transparent)",
+                  }}
+                />
+              )}
             </Box>
+          )}
+          {truncatable && (
+            <Button
+              size="xs"
+              variant="ghost"
+              colorPalette="blue"
+              borderRadius="sm"
+              fontWeight="medium"
+              onClick={() => setExpanded((current) => !current)}
+            >
+              {expanded ? "Show less" : "Show more"}
+            </Button>
           )}
         </Flex>
       );

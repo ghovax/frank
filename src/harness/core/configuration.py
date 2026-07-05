@@ -45,6 +45,7 @@ def save_api_keys(
     *,
     exa_api_key: str | None = None,
     composio_api_key: str | None = None,
+    permission_mode: str | None = None,
     sandbox_enabled: bool | None = None,
     workspace_strategy: str | None = None,
     provider_keys: dict[str, str] | None = None,
@@ -77,6 +78,8 @@ def save_api_keys(
             if provider_base_urls is not None and provider_id in provider_base_urls:
                 entry["base_url"] = provider_base_urls[provider_id]
             providers_section[provider_id] = entry
+    if permission_mode is not None:
+        data.setdefault("agent", {})["permission_mode"] = permission_mode
     if selected_model is not None:
         # The API carries the selected model as the combined ``provider/model`` id
         # (the picker's value); split it into the two separate fields the config

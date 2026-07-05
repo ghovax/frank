@@ -22,7 +22,7 @@ import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import { setPermissionMode, fetchSettings, saveSettings, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 
 const MotionFlex = motion.create(Flex);
 
@@ -164,6 +164,23 @@ export function ChatPanel({
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, selectedModel, sessionRunning);
+
+  // On mount, fetch the stored permission mode from the server settings. This
+  // overrides the "default" fallback when no session is active, so the user's
+  // last choice persists across page reloads and new sessions.
+  useEffect(() => {
+    if (initialSessionId) return;
+    let cancelled = false;
+    fetchSettings().then((settings) => {
+      if (cancelled || settings.permission_mode === permissionMode) return;
+      setPermissionModeState(settings.permission_mode);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // Only run when there is no session — once the session is set, the session's own
+  // permission_mode is authoritative.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSessionId]);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   // "Following" the bottom. Released the moment the user scrolls up and resumed
@@ -327,6 +344,8 @@ export function ChatPanel({
     const previousMode = permissionMode;
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
+    // Persist to server settings so it survives across sessions.
+    saveSettings({ permission_mode: nextMode }).catch(() => {});
     if (!sessionId) return;
     try {
       await setPermissionMode(sessionId, nextMode);

@@ -217,7 +217,7 @@ export function ChatInput({
   agents,
   selectedAgent,
   onAgentChange,
-  permissionMode,
+  permissionMode = "default",
   onPermissionModeChange,
   agentsCount = 0,
   agentsOpen = false,
@@ -317,7 +317,13 @@ export function ChatInput({
       borderColor: "red.muted",
       colorPalette: "red",
     },
-  }[permissionMode];
+  }[permissionMode] ?? {
+    icon: <LuShield size={13} />,
+    color: "fg.subtle",
+    bg: "bg",
+    borderColor: "border",
+    colorPalette: undefined,
+  };
   // Short label for the composer's permission chip — the full descriptive labels
   // ("User-configured permissions", …) stay in the dropdown, but the trigger only
   // needs a word so the bottom row doesn't sprawl and wrap.
@@ -326,7 +332,7 @@ export function ChatInput({
     auto: "Auto",
     read_only: "Read-only",
     bypass: "Bypass",
-  }[permissionMode];
+  }[permissionMode] ?? "Default";
   const sandboxAppearance = sandboxEnabled
     ? {
         label: "Sandboxed",
@@ -503,6 +509,15 @@ export function ChatInput({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Auto-resize the textarea as the user types, so the input grows with its
+  // content up to the configured maximum height.
+  useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  }, [inputValue]);
 
   useEffect(() => {
     if (thinkingLabel) {

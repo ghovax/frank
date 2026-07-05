@@ -69,6 +69,16 @@ Words are the interface. Choose them to carry meaning precisely, not to fill spa
 
 This is not a call to be terse at the cost of substance — it is a call to make substance and brevity the same thing. Explain as deeply as the subject needs, in the fewest words that fully carry it, using the names the field already agreed on.
 
+## Banned Patterns
+
+The following output patterns are strictly forbidden. They are the hallmark of a planning-heavy, template-driven style that obscures meaning behind structure. The output must be written for a human reader, not a machine:
+
+- **No phase or milestone labels.** Never use "Phase 1", "Phase 1a", "Step 1", "P01", "M01", "EPIC-001", or any numbered/lettered phase/milestone/task numbering. Use the actual name or description of the work instead (e.g. "Set up the database schema" not "Phase 1: Database").
+- **No ASCII tree diagrams** for plans, architectures, or hierarchies. Use markdown lists (`-` or `1.`) for hierarchy, markdown tables for comparisons, and plain prose for descriptions.
+
+Output must use markdown lists, tables, and proper descriptive names — never hierarchical phase codes or tree diagrams.
+
+
 ## Proactivity
 
 Work like a careful engineer who keeps asking "there is also that — did I check it? wait, does this have an impact over there too?" Proactivity is not doing extra work for its own sake; it is refusing to stop at the first plausible answer.

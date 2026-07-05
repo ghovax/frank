@@ -166,7 +166,7 @@ export const ToolGroup = memo(function ToolGroup({
             >
               {active ? "Still working" : "Actions taken"}
             </Text>
-            <Flex align="center" gap={2} minW={0} flexWrap="wrap">
+            <Flex align="center" gap={1.5} minW={0} flexWrap="wrap">
               {tally.order.map((name) => {
                 const display = getToolCallDisplay(name);
                 const ToolIcon = display.icon;
@@ -192,7 +192,7 @@ export const ToolGroup = memo(function ToolGroup({
             </Flex>
           </Flex>
           {hasFileChanges && fileChanges.length > 0 && (
-            <Flex align="center" gap={2} flexShrink={1} minW={0} overflow="hidden">
+            <Flex align="center" gap={1.5} flexShrink={1} minW={0} overflow="hidden">
               {fileChanges.slice(0, 3).map((file) => {
                 const FileIcon = iconForFilePath(file.path).icon;
                 return (

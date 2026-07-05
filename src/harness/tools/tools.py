@@ -694,25 +694,24 @@ search_content.description = _load_tool_description("search_content")
 @tool
 def edit_file(
     file_path: str,
-    operations: list[dict],
+    find: str,
+    replace_with: str,
+    replace_all: bool = False,
     skip_validation: bool = False,
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Edit a file using coordinate-based operations.
+    """Replace exact text in a file, staged and validated before commit.
 
-    Uses line numbers from read_file output to target insertions, deletions,
-    replacements, and columnar edits. Never echo existing code — only supply
-    the new content via the ``text`` field.
+    ``find`` must occur verbatim in the file. Unless ``replace_all`` is set,
+    it must be unique. Copy it character-for-character from ``read_file``.
 
     Args:
         file_path: Absolute path (or path relative to the working directory).
-        operations: List of operation dicts. Each has ``type`` (``insert``,
-            ``delete``, ``replace_range``, ``columnar_insert``,
-            ``columnar_delete``) and type-specific coordinate fields.
-            ``text`` is a plain string with literal newlines.
+        find: The exact text to find, copied verbatim from the file.
+        replace_with: The text to replace it with.
+        replace_all: Replace every occurrence instead of requiring a unique match.
         skip_validation: Skip AST/syntax validation before writing.
-            Use when intentionally generating invalid syntax.
         justification: A concise, user-facing reason for this edit.
         risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
     """

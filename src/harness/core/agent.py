@@ -2086,17 +2086,19 @@ class AgentRuntime:
             try:
                 expected_sha256 = self._read_files.get(resolved)
                 if tool_name == "edit_file":
-                    operations_raw = tool_arguments.get("operations", [])
-                    if not isinstance(operations_raw, list):
-                        raise ValueError("'operations' must be a list of operation dicts.")
+                    find = str(tool_arguments.get("find", ""))
+                    replace_with = str(tool_arguments.get("replace_with", ""))
+                    replace_all = bool(tool_arguments.get("replace_all", False))
                     skip_validation = bool(tool_arguments.get("skip_validation", False))
                     result = await asyncio.to_thread(
                         file_tools.edit_file,
                         self._working_directory,
                         file_path,
-                        operations_raw,
+                        find,
+                        replace_with,
                         expected_sha256=expected_sha256,
                         skip_validation=skip_validation,
+                        replace_all=replace_all,
                     )
                 else:
                     content = tool_arguments.get("content", "")
