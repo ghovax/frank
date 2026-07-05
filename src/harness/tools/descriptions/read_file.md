@@ -5,7 +5,7 @@
 - By default reads up to **2048 lines** starting at the beginning of the file.
 - `offset` is the **1-indexed** line number to start reading from; `limit` caps the number of lines returned. Use them for a large file that does not fit in one read; otherwise read the whole file by omitting them.
 - Use **find_files** to locate files and **search_content** to locate matching lines before reading.
-- Results come back in `cat -n` format: each line is prefixed with its right-aligned line number and a tab. When editing with **edit_file**, copy `old_string` from the content without that line-number/tab prefix.
+- Results come back in `cat -n` format: each line is prefixed with its right-aligned **1-indexed line number** and a tab. These line numbers are the coordinate reference for **edit_file** operations: reference line 10 as `start_line: 10`, a range of lines 10–30 as `start_line: 10, end_line: 30`, etc.
 - File reads include a content hash used internally to reject stale edits if the file changes before **edit_file** or **write_file** runs.
 - Any line longer than **2048 characters** is truncated to prevent overflow.
 - **Call this tool in parallel** when you have several known files or line ranges to read.

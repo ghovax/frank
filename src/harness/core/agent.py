@@ -2086,19 +2086,17 @@ class AgentRuntime:
             try:
                 expected_sha256 = self._read_files.get(resolved)
                 if tool_name == "edit_file":
-                    old_string = tool_arguments.get("old_string", "")
-                    new_string = tool_arguments.get("new_string", "")
-                    if not isinstance(old_string, str) or not isinstance(new_string, str):
-                        raise ValueError("old_string and new_string must be strings.")
-                    replace_all = bool(tool_arguments.get("replace_all", False))
+                    operations_raw = tool_arguments.get("operations", [])
+                    if not isinstance(operations_raw, list):
+                        raise ValueError("'operations' must be a list of operation dicts.")
+                    skip_validation = bool(tool_arguments.get("skip_validation", False))
                     result = await asyncio.to_thread(
                         file_tools.edit_file,
                         self._working_directory,
                         file_path,
-                        old_string,
-                        new_string,
-                        replace_all,
+                        operations_raw,
                         expected_sha256=expected_sha256,
+                        skip_validation=skip_validation,
                     )
                 else:
                     content = tool_arguments.get("content", "")
@@ -2108,15 +2106,22 @@ class AgentRuntime:
                         file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
                     )
                 result_data = _maybe_json(result)
-                if tool_name == "edit_file":
-                    if isinstance(result_data, dict) and isinstance(result_data.get("sha256"), str):
-                        self._read_files[resolved] = result_data["sha256"]
+                if isinstance(result_data, dict):
+                    result_code = result_data.get("code", "")
+                    if result_code == "edit_completed":
+                        sha256 = result_data.get("sha256")
+                        if isinstance(sha256, str):
+                            self._read_files[resolved] = sha256
+                        else:
+                            self._read_files.pop(resolved, None)
+                    elif result_code == "write_completed":
+                        content = tool_arguments.get("content", "")
+                        if isinstance(content, str):
+                            self._read_files[resolved] = file_tools.content_sha256(content)
                     else:
+                        # edit_failed_validation or other non-commit codes:
+                        # discard stale hash so model must re-read before next edit
                         self._read_files.pop(resolved, None)
-                else:
-                    # write_file: the model supplied the full content, so it knows
-                    # the current state and can edit without re-reading.
-                    self._read_files[resolved] = file_tools.content_sha256(content)
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
                 )

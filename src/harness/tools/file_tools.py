@@ -10,6 +10,7 @@ tool-call wrapper surfaces them as ERROR events to the model.
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import hashlib
 import json
@@ -17,9 +18,17 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Callable, TYPE_CHECKING
 from urllib.parse import urlparse
 
+if TYPE_CHECKING:
+    from tree_sitter import Parser
+
 from markdownify import markdownify as _markdownify
+
+from harness.core.configuration import PromptLoader as _PromptLoader
+
+_VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
 DEFAULT_READ_LIMIT_LINES = 2048
 MAXIMUM_LINE_LENGTH = 2048
@@ -173,61 +182,436 @@ def search_content(
 
 
 
-def edit_file(
+# Coordinate-based staging engine
+
+_VALID_OPERATION_TYPES = frozenset({
+    "insert", "delete", "replace_range", "replace_text",
+    "columnar_insert", "columnar_delete",
+})
+
+# Parser registry (extensible per language)
+
+_LANGUAGE_PARSERS: dict[str, Callable[[str], tuple[bool, str | None, int | None, int | None]]] = {}
+
+
+def register_parser(suffix: str, parser_fn: Callable) -> None:
+    """Register a syntax validator for a file extension (with leading dot)."""
+    _LANGUAGE_PARSERS[suffix] = parser_fn
+
+
+def _validate_python(content: str) -> tuple[bool, str | None, int | None, int | None]:
+    """Python syntax validation via stdlib ``ast.parse``.
+
+    Returns ``(passed, message, line, column)``."""
+    try:
+        ast.parse(content)
+        return True, None, None, None
+    except SyntaxError as exception:
+        return False, exception.msg, exception.lineno, exception.offset
+
+
+register_parser(".py", _validate_python)
+
+
+# Tree-sitter validators (multi-language)
+
+_TREE_SITTER_PARSERS: dict[str, Parser] = {}
+
+
+def _validate_with_tree_sitter(source_bytes: bytes, language_id: str, language_label: str) -> tuple:
+    """Lazy-initialised tree-sitter validation.
+
+    Returns ``(passed, message, line, column)`` with 1-indexed line numbers.
+    """
+    if language_id not in _TREE_SITTER_PARSERS:
+        import tree_sitter_python as _py
+        import tree_sitter_javascript as _js
+        import tree_sitter_json as _jsn
+        import tree_sitter_yaml as _yaml
+        import tree_sitter_toml as _toml
+        import tree_sitter_bash as _bash
+        import tree_sitter_html as _html
+        import tree_sitter_css as _css
+        import tree_sitter_c as _c
+        import tree_sitter_cpp as _cpp
+        import tree_sitter_go as _go
+        import tree_sitter_rust as _rust
+        import tree_sitter_markdown as _md
+        import tree_sitter_typescript as _ts
+        from tree_sitter import Language, Parser
+
+        _LANGUAGE_TABLE = {
+            "python": Language(_py.language()),
+            "javascript": Language(_js.language()),
+            "json": Language(_jsn.language()),
+            "yaml": Language(_yaml.language()),
+            "toml": Language(_toml.language()),
+            "bash": Language(_bash.language()),
+            "html": Language(_html.language()),
+            "css": Language(_css.language()),
+            "c": Language(_c.language()),
+            "cpp": Language(_cpp.language()),
+            "go": Language(_go.language()),
+            "rust": Language(_rust.language()),
+            "markdown": Language(_md.language()),
+            "typescript": Language(_ts.language_typescript()),
+            "tsx": Language(_ts.language_tsx()),
+        }
+        for lang_id, lang_obj in _LANGUAGE_TABLE.items():
+            _TREE_SITTER_PARSERS[lang_id] = Parser(lang_obj)
+
+    parser = _TREE_SITTER_PARSERS.get(language_id)
+    if parser is None:
+        return True, None, None, None  # unknown language — skip
+
+    tree = parser.parse(source_bytes)
+    root = tree.root_node
+    if not root.has_error:
+        return True, None, None, None
+
+    # Walk the tree for the first ERROR node
+    cursor = root.walk()
+    while True:
+        if cursor.node.type == "ERROR":
+            error_row, error_column = cursor.node.start_point
+            return False, "syntax error", error_row + 1, error_column
+        if not cursor.goto_first_child():
+            while not cursor.goto_next_sibling():
+                if not cursor.goto_parent():
+                    return False, "syntax error", 1, 1
+
+
+def _register_tree_sitter(extensions: list[str], language_id: str, language_label: str) -> None:
+    """Register a tree-sitter validator for multiple file extensions."""
+    def validator(content: str) -> tuple:
+        return _validate_with_tree_sitter(bytes(content, "utf-8"), language_id, language_label)
+    for ext in extensions:
+        register_parser(ext, validator)
+
+
+_register_tree_sitter([".js", ".jsx", ".mjs", ".cjs"], "javascript", "JavaScript")
+_register_tree_sitter([".ts"], "typescript", "TypeScript")
+_register_tree_sitter([".tsx"], "tsx", "TypeScript (TSX)")
+_register_tree_sitter([".json"], "json", "JSON")
+_register_tree_sitter([".yaml", ".yml"], "yaml", "YAML")
+_register_tree_sitter([".toml"], "toml", "TOML")
+_register_tree_sitter([".sh", ".bash", ".zsh"], "bash", "Bash")
+_register_tree_sitter([".html", ".htm"], "html", "HTML")
+_register_tree_sitter([".css", ".scss", ".less"], "css", "CSS")
+_register_tree_sitter([".c", ".h"], "c", "C")
+_register_tree_sitter([".cpp", ".hpp", ".cc", ".cxx"], "cpp", "C++")
+_register_tree_sitter([".go"], "go", "Go")
+_register_tree_sitter([".rs"], "rust", "Rust")
+
+
+
+def _context_snapshot(lines: list[str], line_number: int, radius: int = 3) -> list[str]:
+    """Extract a bounded subset of lines around ``line_number`` (1-indexed)."""
+    start = max(0, line_number - 1 - radius)
+    end = min(len(lines), line_number + radius)
+    return lines[start:end]
+
+
+# Schema validation
+
+def _validate_operation_schema(operation: dict, index: int) -> None:
+    """Validate that an operation dict has the required fields for its type.
+
+    Raises ``ValueError`` on the first problem with a clear message."""
+    operation_json = json.dumps(operation, indent=2)
+    raw_type = operation.get("type")
+    valid_types_str = json.dumps(sorted(_VALID_OPERATION_TYPES))
+
+    def _error(field: str, expected: str, actual: str) -> ValueError:
+        return ValueError(
+            _VALIDATION_PROMPT_LOADER.load("operation_validation_error", {
+                "index": str(index),
+                "type": str(raw_type),
+                "field": field,
+                "expected": expected,
+                "actual": actual,
+                "operation_json": operation_json,
+                "valid_types": valid_types_str,
+            })
+        )
+
+    if not isinstance(raw_type, str) or raw_type not in _VALID_OPERATION_TYPES:
+        raise _error("type", f"one of {valid_types_str}", repr(raw_type))
+
+    for field_name in ("start_line", "end_line", "column", "length"):
+        if field_name in operation and not isinstance(operation.get(field_name), int):
+            raise _error(field_name, "a whole number", repr(operation.get(field_name)))
+
+    start_line = operation.get("start_line")
+    if not isinstance(start_line, int) or start_line < 1:
+        raise _error("start_line", "a positive whole number (1 or greater)", repr(start_line))
+
+    if raw_type in ("delete", "replace_range", "replace_text"):
+        end_line = operation.get("end_line")
+        if not isinstance(end_line, int) or end_line < start_line:
+            raise _error("end_line", f"a whole number >= start_line ({start_line})", repr(end_line))
+
+    if raw_type in ("insert", "replace_range"):
+        text = operation.get("text")
+        if not isinstance(text, str):
+            raise _error("text", "a string", type(text).__name__)
+
+    if raw_type in ("columnar_insert", "columnar_delete"):
+        end_line = operation.get("end_line")
+        if not isinstance(end_line, int) or end_line < start_line:
+            raise _error("end_line", f"a whole number >= start_line ({start_line})", repr(end_line))
+        column = operation.get("column")
+        if not isinstance(column, int) or column < 0:
+            raise _error("column", "a whole number (0 or greater)", repr(column))
+
+    if raw_type == "columnar_insert":
+        text = operation.get("text")
+        if not isinstance(text, str):
+            raise _error("text", "a string", type(text).__name__)
+
+    if raw_type == "columnar_delete":
+        length = operation.get("length")
+        if not isinstance(length, int) or length < 0:
+            raise _error("length", "a whole number (0 or greater)", repr(length))
+
+    if raw_type == "replace_text":
+        find_value = operation.get("find")
+        if not isinstance(find_value, str):
+            raise _error("find", "a string", type(find_value).__name__)
+        replace_value = operation.get("replace")
+        if not isinstance(replace_value, str):
+            raise _error("replace", "a string", type(replace_value).__name__)
+
+
+# Operation application (pure functions on list[str])
+
+def _apply_insert(lines: list[str], operation: dict) -> list[str]:
+    """Insert new lines before ``start_line`` (1-indexed)."""
+    start_line = operation["start_line"]
+    text = operation.get("text", "")
+    new_lines = text.split("\n") if text else []
+    insert_index = min(start_line - 1, len(lines))
+    return lines[:insert_index] + new_lines + lines[insert_index:]
+
+
+def _apply_delete(lines: list[str], operation: dict) -> list[str]:
+    """Delete lines from ``start_line`` to ``end_line`` inclusive (1-indexed)."""
+    start_line = operation["start_line"]
+    end_line = operation["end_line"]
+    if start_line > len(lines):
+        raise ValueError(f"Delete start_line {start_line} exceeds file length {len(lines)}.")
+    if end_line > len(lines):
+        end_line = len(lines)
+    return lines[: start_line - 1] + lines[end_line:]
+
+
+def _apply_replace_range(lines: list[str], operation: dict) -> list[str]:
+    """Atomic delete + insert at the same position."""
+    start_line = operation["start_line"]
+    end_line = operation["end_line"]
+    text = operation.get("text", "")
+    new_lines = text.split("\n") if text else []
+    if start_line > len(lines):
+        raise ValueError(f"Replace start_line {start_line} exceeds file length {len(lines)}.")
+    effective_end = min(end_line, len(lines))
+    return lines[: start_line - 1] + new_lines + lines[effective_end:]
+
+
+def _apply_columnar_insert(lines: list[str], operation: dict) -> list[str]:
+    """Insert ``text`` at ``column`` on every line in the range (inclusive)."""
+    start_line = operation["start_line"]
+    end_line = operation["end_line"]
+    column = operation["column"]
+    text = operation.get("text", "")
+    result = list(lines)
+    for line_index in range(start_line - 1, min(end_line, len(result))):
+        line = result[line_index]
+        if column > len(line):
+            line = line + " " * (column - len(line))
+        result[line_index] = line[:column] + text + line[column:]
+    return result
+
+
+def _apply_columnar_delete(lines: list[str], operation: dict) -> list[str]:
+    """Delete ``length`` characters at ``column`` on every line in the range (inclusive)."""
+    start_line = operation["start_line"]
+    end_line = operation["end_line"]
+    column = operation["column"]
+    length = operation.get("length", 0)
+    result = list(lines)
+    for line_index in range(start_line - 1, min(end_line, len(result))):
+        line = result[line_index]
+        if column < len(line):
+            result[line_index] = line[:column] + line[column + length:]
+    return result
+
+
+def _apply_replace_text(lines: list[str], operation: dict) -> list[str]:
+    """Find and replace text within a bounded line range (inclusive)."""
+    start_line = operation["start_line"]
+    end_line = operation["end_line"]
+    find_value = operation.get("find", "")
+    replace_value = operation.get("replace", "")
+    result = list(lines)
+    for line_index in range(start_line - 1, min(end_line, len(result))):
+        result[line_index] = result[line_index].replace(find_value, replace_value)
+    return result
+
+
+# Multi-operation executor
+
+def apply_operations(lines: list[str], operations: list[dict]) -> list[str]:
+    """Apply multiple operations to a line list, sorted in descending order.
+
+    ``operations`` must already be schema-validated. The sort ensures that
+    edits near the bottom of the file execute first, so line insertions and
+    deletions do not shift the coordinates of pending operations above them.
+    Columnar operations (which do not change line count) interleave naturally
+    via the same sort."""
+    sorted_operations = sorted(operations, key=lambda op: op.get("start_line", 0), reverse=True)
+    result = list(lines)
+    for operation in sorted_operations:
+        op_type = operation["type"]
+        try:
+            if op_type == "insert":
+                result = _apply_insert(result, operation)
+            elif op_type == "delete":
+                result = _apply_delete(result, operation)
+            elif op_type == "replace_range":
+                result = _apply_replace_range(result, operation)
+            elif op_type == "columnar_insert":
+                result = _apply_columnar_insert(result, operation)
+            elif op_type == "columnar_delete":
+                result = _apply_columnar_delete(result, operation)
+            elif op_type == "replace_text":
+                result = _apply_replace_text(result, operation)
+        except ValueError as exception:
+            raise ValueError(
+                _VALIDATION_PROMPT_LOADER.load("operation_application_error", {
+                    "operation_type": op_type,
+                    "start_line": str(operation.get("start_line", "")),
+                    "error": str(exception),
+                })
+            ) from exception
+    return result
+
+
+# Full transaction lifecycle
+
+def execute_staged_edit(
     working_directory: str,
     file_path: str,
-    old_string: str,
-    new_string: str,
-    replace_all: bool = False,
+    operations_raw: list[dict],
     *,
     expected_sha256: str | None,
+    skip_validation: bool = False,
 ) -> str:
-    """Replace an exact substring in one existing file.
+    """Coordinate-based staging lifecycle for one file.
 
-    Mirrors the semantics of a string-replacement edit tool: ``old_string`` must
-    occur verbatim in the file and, unless ``replace_all`` is set, must be unique.
-    The file must have been read first (its hash is checked against
-    ``expected_sha256``) so stale edits are rejected."""
-    path = _resolve(working_directory, file_path).expanduser().resolve(strict=False)
-    if not path.exists():
-        raise FileNotFoundError(f"Cannot edit missing file: {path}. Use write_file to create new files.")
-    if path.is_dir():
-        raise IsADirectoryError(f"Cannot edit directory: {path}")
-    if old_string == new_string:
-        raise ValueError("old_string and new_string are identical; nothing to change.")
-
-    before = path.read_text(errors="replace")
-    _validate_expected_hash(path, before, expected_sha256)
-
-    occurrences = before.count(old_string)
-    if occurrences == 0:
-        raise ValueError(
-            f"old_string not found in {path}. Copy it character-for-character from the read_file output "
-            "(whitespace and quote style must match exactly)."
+    Reads the file from disk, checks the SHA256 staleness guard,
+    builds an in-memory line matrix, validates and applies the
+    operations (sorted bottom-to-top), runs syntax validation
+    against a registered language parser if available, and either
+    commits the result to disk or aborts with a diagnostic payload.
+    """
+    resolved_path = _resolve(working_directory, file_path).expanduser().resolve(strict=False)
+    if not resolved_path.exists():
+        raise FileNotFoundError(
+            f"Cannot edit missing file: {resolved_path}. Use write_file to create new files."
         )
-    if occurrences > 1 and not replace_all:
+    if resolved_path.is_dir():
+        raise IsADirectoryError(f"Cannot edit directory: {resolved_path}")
+
+    before = resolved_path.read_text(errors="replace")
+    if expected_sha256 is None:
+        raise PermissionError(
+            f"You must read {resolved_path} with read_file before editing it."
+        )
+    if content_sha256(before) != expected_sha256:
         raise ValueError(
-            f"old_string is not unique in {path}: {occurrences} matches. Add surrounding context to make it "
-            "unique, or set replace_all=true to replace every occurrence."
+            f"{resolved_path} changed since it was last read. "
+            "Call read_file again to get fresh content and line numbers."
         )
 
-    after = before.replace(old_string, new_string) if replace_all else before.replace(old_string, new_string, 1)
-    replacements = occurrences if replace_all else 1
-    path.write_text(after)
+    has_trailing_newline = before.endswith("\n")
+    lines = before.split("\n")
+    # Strip trailing empty line from final newline so the coordinate space
+    # matches what read_file shows (no phantom empty line at the end).
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+
+    if not isinstance(operations_raw, list):
+        raise ValueError("'operations' must be a list of operation dicts.")
+    for index, operation in enumerate(operations_raw):
+        _validate_operation_schema(operation, index)
+
+    mutated_lines = apply_operations(lines, operations_raw)
+    after = "\n".join(mutated_lines)
+    if has_trailing_newline:
+        after += "\n"
+
+    if not skip_validation:
+        suffix = resolved_path.suffix.lower()
+        parser = _LANGUAGE_PARSERS.get(suffix)
+        if parser is not None:
+            passed, message, line_number, column = parser(after)
+            if not passed:
+                # Validation failed — return diagnostic, disk untouched
+                diagnostic = {
+                    "origin": "ast_parser",
+                    "language": suffix.lstrip("."),
+                    "line": line_number,
+                    "column": column,
+                    "message": message,
+                    "context_snapshot": _context_snapshot(mutated_lines, line_number or 1),
+                }
+                return json.dumps({
+                    "code": "edit_failed_validation",
+                    "path": str(resolved_path),
+                    "diagnostic": diagnostic,
+                    "suggested_action": _VALIDATION_PROMPT_LOADER.load("validation_failure_recovery", {}),
+                })
+
+    # Preserve the original line-ending convention (split already normalised).
+    resolved_path.write_text(after)
 
     summary = {
         "code": "edit_completed",
-        "path": str(path),
+        "path": str(resolved_path),
+        "operations_applied": len(operations_raw),
         "characters": len(after),
-        "replacements": replacements,
         "sha256": content_sha256(after),
     }
-    return json.dumps({
-        **summary,
-        "before": before,
-        "after": after,
-        "model_context": summary,
-    })
+    return json.dumps(summary)
+
+
+# Coordinate-based edit_file entry point
+
+def edit_file(
+    working_directory: str,
+    file_path: str,
+    operations: list[dict],
+    *,
+    expected_sha256: str | None,
+    skip_validation: bool = False,
+) -> str:
+    """Coordinate-based edit tool.
+
+    ``operations`` is a list of operation dicts, each with a ``type``
+    (``insert``, ``delete``, ``replace_range``, ``columnar_insert``,
+    ``columnar_delete``) and the corresponding coordinate fields.
+
+    The full staging lifecycle runs inside :func:`execute_staged_edit`:
+    isolation, transaction, verification, then commit or abort.
+    """
+    return execute_staged_edit(
+        working_directory,
+        file_path,
+        operations,
+        expected_sha256=expected_sha256,
+        skip_validation=skip_validation,
+    )
+
 
 def _validate_expected_hash(path: Path, content: str, expected_sha256: str | None) -> None:
     if expected_sha256 is None:

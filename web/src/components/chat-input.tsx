@@ -16,10 +16,12 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
+import { Tooltip } from "./ui/tooltip";
 import { ModelSelect, modelSupportsAttachments } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
+import { InlineField } from "./tool-views/primitives";
 
 const MotionFlex = motion.create(Flex);
 
@@ -123,36 +125,74 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   const hasContext = tokenUsage.contextWindow > 0;
   const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
   const contextPercent = Math.min(100, Math.round(contextFraction * 100));
-  return (
-    <Flex
-      align="center"
-      gap={1.5}
-      h="28px"
-      px={2}
-      borderRadius="sm"
-      border="1px solid"
-      borderColor="border"
-      bg="bg"
-      color="fg.subtle"
-      flexShrink={0}
-    >
-      {hasContext && (
-        <>
-          <ContextFillRing fraction={contextFraction} />
-          <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-            {contextPercent}%
-          </Text>
-          <Box w="1px" h="14px" bg="border" flexShrink={0} />
-        </>
-      )}
-      <Box display="flex" alignItems="center" flexShrink={0}>
-        <LuCoins size={13} />
-      </Box>
-      <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-        {tokenUsage.contextTokens.toLocaleString()}
-        {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
+  const tooltipContent = (
+    <Box fontSize="xs" lineHeight="1.6" whiteSpace="nowrap">
+      <Text fontWeight="semibold" mb={1} color="fg">
+        Session totals
       </Text>
-    </Flex>
+      <Flex direction="column" ps={3} gap={0.5}>
+        <InlineField label="Input"><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label="Output"><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label="Total"><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
+        {tokenUsage.cacheReadTokens > 0 && (
+          <InlineField label="Cache reads"><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
+        )}
+        {tokenUsage.reasoningTokens > 0 && (
+          <InlineField label="Reasoning"><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
+        )}
+        <InlineField label="Model calls"><Text>{tokenUsage.modelCalls}</Text></InlineField>
+      </Flex>
+      <Box h="1px" bg="border" my={2} />
+      <Text fontWeight="semibold" mb={1} color="fg">
+        Context (this turn)
+      </Text>
+      <Flex direction="column" ps={3} gap={0.5}>
+        <InlineField label="Input"><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label="Output"><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
+        {hasContext && (
+          <InlineField label="Window"><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
+        )}
+      </Flex>
+    </Box>
+  );
+  return (
+    <Tooltip
+      content={tooltipContent}
+      contentProps={{ p: 3, bg: "bg", color: "fg", borderRadius: "sm", boxShadow: "lg", border: "1px solid", borderColor: "border" }}
+      openDelay={200}
+      closeDelay={60}
+      positioning={{ placement: "top" }}
+    >
+      <Flex
+        align="center"
+        gap={1.5}
+        h="28px"
+        px={2}
+        borderRadius="sm"
+        border="1px solid"
+        borderColor="border"
+        bg="bg"
+        color="fg.subtle"
+        flexShrink={0}
+      >
+        {hasContext && (
+          <>
+            <ContextFillRing fraction={contextFraction} />
+            <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+              {contextPercent}%
+            </Text>
+            <Box w="1px" h="14px" bg="border" flexShrink={0} />
+          </>
+        )}
+        <Box display="flex" alignItems="center" flexShrink={0}>
+          <LuCoins size={13} />
+        </Box>
+        <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+          {tokenUsage.contextTokens.toLocaleString()}
+          {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
+        </Text>
+      </Flex>
+    </Tooltip>
   );
 }
 
