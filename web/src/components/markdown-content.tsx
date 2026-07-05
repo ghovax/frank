@@ -126,7 +126,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       }
 
       return (
-        <Code fontFamily="var(--app-font-mono)" px={1} bg="bg.subtle">
+        <Code fontFamily="var(--app-font-mono)" fontWeight="medium" px={1} bg="bg.subtle">
           {children}
         </Code>
       );

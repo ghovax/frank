@@ -80,6 +80,7 @@ function HomeContent() {
   // chip whenever there is no per-conversation override.
   const [globalModel, setGlobalModel] = useState<string>("");
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
+  const [compactionKeepRecentTurns, setCompactionKeepRecentTurns] = useState(8);
   const [historyOpen, setHistoryOpen] = useState(true);
   const [historyWidth, setHistoryWidth] = useState(280);
 
@@ -191,6 +192,7 @@ function HomeContent() {
         .then((settings) => {
           setSandboxEnabledState(settings.sandbox_enabled ?? true);
           setWorkspaceStrategy(settings.workspace_strategy ?? "none");
+          setCompactionKeepRecentTurns(settings.compaction_keep_recent_turns ?? 8);
         })
         .catch(() => {});
     };
@@ -710,6 +712,7 @@ function HomeContent() {
           selectedModel={selectedModel}
           globalModel={globalModel}
           onModelChange={handleModelChange}
+          compactionKeepRecentTurns={compactionKeepRecentTurns}
         />
       </Box>
     </Flex>

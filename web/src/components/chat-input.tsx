@@ -72,6 +72,13 @@ interface ChatInputProps {
   // Compact the conversation now (summarize the older history). Shown once a
   // session has real context to compact.
   onCompact?: () => void;
+  // How many of the most recent user turns are kept verbatim during compaction
+  // (from the server's _COMPACTION_KEEP_RECENT_TURNS). The button is available
+  // once there are more user messages than this threshold.
+  compactionKeepRecentTurns: number;
+  // How many user messages exist in the current session. Used together with
+  // compactionKeepRecentTurns to decide whether compaction would be meaningful.
+  compactionUserCount: number;
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -189,6 +196,8 @@ export function ChatInput({
   thinkingLabel,
   tokenUsage,
   onCompact,
+  compactionKeepRecentTurns,
+  compactionUserCount,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -535,7 +544,7 @@ export function ChatInput({
       handleSubmit();
       return;
     }
-    if (event.key === "ArrowUp" && messageHistory.length > 0) {
+    if (event.key === "ArrowUp" && messageHistory.length > 0 && inputRef.current?.selectionStart === 0) {
       event.preventDefault();
       // Save the current draft when first navigating up, so it can be
       // restored when the user navigates back down past all history items.
@@ -549,7 +558,7 @@ export function ChatInput({
       setInputValue(messageHistory[nextIndex]);
       return;
     }
-    if (event.key === "ArrowDown") {
+    if (event.key === "ArrowDown" && inputRef.current?.selectionStart === inputValue.length) {
       const nextIndex = historyIndex <= 0 ? -1 : historyIndex - 1;
       setHistoryIndex(nextIndex);
       // Restore the saved draft when navigating back to the "no history" position.
@@ -695,7 +704,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                   {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>
@@ -717,7 +726,7 @@ export function ChatInput({
             )}
           </AnimatePresence>
           <ContextUsageChip tokenUsage={tokenUsage} />
-          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (
+          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && compactionUserCount > compactionKeepRecentTurns && (
             <Button
               size="xs"
               variant="outline"
@@ -730,7 +739,7 @@ export function ChatInput({
               flexShrink={0}
               disabled={isStreaming}
               onClick={onCompact}
-              title="Compact the conversation: summarize the older history to free up context, keeping the recent turns"
+              title={`Summarize the older history to free up context, keeping the most recent turns verbatim`}
             >
               <LuFoldVertical size={13} />
               Compact
@@ -968,7 +977,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                   {permissionCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>
@@ -1052,9 +1061,9 @@ export function ChatInput({
                   <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                     {workspaceCollection.items.map((item) => {
                       const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
-                      const choice = workspaceChoices.find((c) => c.value === item.value);
+                      const choice = workspaceChoices.find((choice) => choice.value === item.value);
                       return (
-                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
+                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
                           <Flex align="center" gap={1.5}>
                             {choice?.icon}
                             <Text>{item.label}</Text>

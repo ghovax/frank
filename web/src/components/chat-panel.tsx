@@ -60,6 +60,7 @@ interface ChatPanelProps {
   selectedModel?: string;
   globalModel?: string;
   onModelChange?: (model: string) => void;
+  compactionKeepRecentTurns: number;
 }
 
 type TimelineItem =
@@ -158,6 +159,7 @@ export function ChatPanel({
   selectedModel = "",
   globalModel = "",
   onModelChange,
+  compactionKeepRecentTurns,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
@@ -704,6 +706,8 @@ export function ChatPanel({
           thinkingLabel={liveStatusLabel}
           tokenUsage={tokenUsage}
           onCompact={compact}
+          compactionKeepRecentTurns={compactionKeepRecentTurns}
+          compactionUserCount={messages.filter((message) => message.role === "user").length}
         />
       </Flex>
 

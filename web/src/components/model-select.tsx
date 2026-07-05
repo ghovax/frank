@@ -283,7 +283,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
           <Dialog.Positioner>
             <Dialog.Content borderRadius="md" maxW="520px">
               <Dialog.Header>
-                <Dialog.Title fontSize="sm">Model &amp; provider</Dialog.Title>
+                <Dialog.Title fontSize="sm">Configure model and provider</Dialog.Title>
               </Dialog.Header>
               <Dialog.Body>
                 <Text fontSize="xs" color="fg.muted" mb={4}>

@@ -35,6 +35,7 @@ from harness.core.a2a_executor import (
     agent_rpc_path,
     build_agent_card,
 )
+from harness.core.agent import AgentRuntime
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
@@ -1408,6 +1409,7 @@ async def get_settings():
         "sandbox_enabled": _global_configuration.sandbox.enabled,
         "workspace_strategy": _global_configuration.workspace.strategy,
         "selected_model": _global_configuration.selected_model_identifier(),
+        "compaction_keep_recent_turns": AgentRuntime._COMPACTION_KEEP_RECENT_TURNS,
         "providers": {
             identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
             for identifier, credential in _global_configuration.providers.items()

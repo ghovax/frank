@@ -211,6 +211,7 @@ export interface Settings {
   sandbox_enabled: boolean;
   workspace_strategy: "none" | "branch" | "worktree";
   selected_model: string;
+  compaction_keep_recent_turns: number;
   providers: Record<string, ProviderCredential>;
 }
 
@@ -259,7 +260,7 @@ export interface FilesystemLease {
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
   if (!response.ok) {
-    return { exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", providers: {} };
+    return { exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", compaction_keep_recent_turns: 8, providers: {} };
   }
   return (await response.json()) as Settings;
 }
