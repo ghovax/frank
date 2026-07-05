@@ -828,7 +828,7 @@ export function ChatInput({
             borderColor={previewAppearance.borderColor}
             flexShrink={0}
             onClick={onTogglePreview}
-            disabled={!onTogglePreview || previewsCount === 0}
+            disabled={!onTogglePreview}
           >
             <LuAppWindow size={13} />
             {previewsCount > 0 ? `Preview (${previewsCount})` : "Preview"}

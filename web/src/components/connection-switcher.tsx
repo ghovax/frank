@@ -9,11 +9,13 @@
 import { Box, Button, Flex, Menu, Portal, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { LuCheck, LuChevronDown, LuLaptop, LuServer, LuSettings2 } from "react-icons/lu";
+import { useRouter } from "next/navigation";
 import { getLastTargetId, LOCAL_TARGET_ID } from "@/lib/connection";
 import { listConnections, type ConnectionProfile } from "@/lib/connection-store";
-import { CONNECT_TO_EVENT, OPEN_LAUNCHER_EVENT } from "@/components/connection-gate";
+
 
 export function ConnectionSwitcher() {
+  const router = useRouter();
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [currentTarget, setCurrentTarget] = useState<string>(LOCAL_TARGET_ID);
 
@@ -37,7 +39,7 @@ export function ConnectionSwitcher() {
 
   const switchTo = (targetId: string) => {
     if (targetId === currentTarget) return;
-    window.dispatchEvent(new CustomEvent(CONNECT_TO_EVENT, { detail: targetId }));
+    router.push("/home");
   };
 
   return (
@@ -92,7 +94,7 @@ export function ConnectionSwitcher() {
             <Menu.Separator />
             <Menu.Item
               value="__settings"
-              onClick={() => window.dispatchEvent(new Event(OPEN_LAUNCHER_EVENT))}
+              onClick={() => router.push("/home")}
             >
               <Flex align="center" gap={2}>
                 <Box color="fg.muted">

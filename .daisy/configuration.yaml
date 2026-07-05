@@ -24,13 +24,13 @@ providers:
   zai_code:
     api_key: 20cac8c7d0754e1780984ee6a894ab48.D7SXCGGb1gS0CGfW
 selected_provider: zai_code
-selected_model: glm-5.2
+selected_model: ''
 exa:
   api_key: ''
 composio:
   enabled: false
   url: https://connect.composio.dev/mcp
-  api_key: ck_7lCN7vVj1bG9CCfRZX4L
+  api_key: ''
   server_name: composio
 sandbox:
   enabled: true

@@ -9,9 +9,10 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuClock, LuFolder, LuFolderOpen, LuNavigation, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuClock, LuDownload, LuFolder, LuFolderOpen, LuHouse, LuMaximize2, LuMinimize2, LuNavigation, LuPlus, LuRotateCw, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useRouter } from "next/navigation";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { extractToolArtifacts, externalPreviewUrl, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
@@ -22,6 +23,7 @@ import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
+
 import { setPermissionMode, fetchSettings, saveSettings, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 
 const MotionFlex = motion.create(Flex);
@@ -161,6 +163,7 @@ export function ChatPanel({
   onModelChange,
   compactionKeepRecentTurns,
 }: ChatPanelProps) {
+  const router = useRouter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, selectedModel, sessionRunning);
@@ -204,14 +207,16 @@ export function ChatPanel({
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
-  const [previewPanelWidth, setPreviewPanelWidth] = useState(480);
-  // Exactly one web preview (iframe-type artifact) is live at a time; the rest are
-  // collapsed to click-to-open placeholders so their scripts/network don't pile up
-  // and drag the page. Newest preview auto-activates; clicking an older one reopens
-  // it (collapsing the current). See ToolArtifacts.
-  const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
-  const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
+  const [previewPanelWidth, setPreviewPanelWidth] = useState(560);
+  // Open preview tabs. Each tab holds a preview artifact the user has opened (or was
+  // auto-opened when the agent created it). The active tab's iframe is mounted; all
+  // others are collapsed to save resources. New previews auto-open as tabs.
+  const [previewTabs, setPreviewTabs] = useState<Array<{id: string; artifact: Record<string, unknown>; title: string; address: string}>>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
+  const [previewMaximized, setPreviewMaximized] = useState(false);
   // Whether the transcript is scrolled to (or near) the bottom. Drives the floating
   // "jump to latest" affordance so a reader who scrolled up to read history can
   // return to the live tail in one click instead of scrolling all the way down.
@@ -324,7 +329,8 @@ export function ChatPanel({
     setPermissionModeState(initialPermissionMode);
     if (sessionChanged) {
       setSeenPreviewIds(new Set());
-      setActivePreviewId(null);
+      setPreviewTabs([]);
+      setActiveTabId(null);
       // Forget prior rows so the next session's first population seeds (no entrance
       // animation on load) instead of treating everything as newly appended.
       enteredKeysRef.current = new Set();
@@ -414,29 +420,68 @@ export function ChatPanel({
     return entries;
   }, [messages]);
   const previewToolCallIds = useMemo(() => previewEntries.map((entry) => entry.toolCallId), [previewEntries]);
-  const activePreviewEntry = useMemo(() => {
-    if (previewEntries.length === 0) return null;
-    return previewEntries.find((entry) => entry.toolCallId === activePreviewId) ?? previewEntries[previewEntries.length - 1];
-  }, [previewEntries, activePreviewId]);
+  const activeTabEntry = useMemo(() => {
+    if (previewTabs.length === 0) return null;
+    return previewTabs.find((tab) => tab.id === activeTabId) ?? previewTabs[previewTabs.length - 1];
+  }, [previewTabs, activeTabId]);
 
-  // Auto-activate the newest preview the moment it appears. Runs in render (same
-  // pattern as previousActiveSteps below) so the active toolCallId is set before
-  // children render — users never see two live previews at once. `activePreviewId`
-  // holds that toolCallId; see ToolArtifacts. State (not a ref) so the render-phase
-  // update stays lint-clean and triggers a synchronous re-render before commit.
+  // Auto-open the newest preview as a tab the moment it appears. Runs in render
+  // (same pattern as previousActiveSteps below) so the tab is added before
+  // children render. State (not a ref) so the render-phase update stays lint-clean
+  // and triggers a synchronous re-render before commit.
   const newPreviewCallIds = previewToolCallIds.filter((id) => !seenPreviewIds.has(id));
   if (newPreviewCallIds.length > 0) {
     const nextSeen = new Set(seenPreviewIds);
-    for (const id of newPreviewCallIds) nextSeen.add(id);
+    const newTabs: Array<{id: string; artifact: Record<string, unknown>; title: string; address: string}> = [];
+    for (const id of newPreviewCallIds) {
+      nextSeen.add(id);
+      const entry = previewEntries.find((e) => e.toolCallId === id);
+      if (entry) {
+        newTabs.push({ id: entry.toolCallId, artifact: entry.artifact, title: entry.title, address: entry.address });
+      }
+    }
     setSeenPreviewIds(nextSeen);
-    setActivePreviewId(newPreviewCallIds[newPreviewCallIds.length - 1]);
+    setPreviewTabs((current) => [...current, ...newTabs]);
+    setActiveTabId(newPreviewCallIds[newPreviewCallIds.length - 1]);
     setPreviewPanelOpen(true);
   }
 
-  const handleActivatePreview = useCallback((toolCallId: string) => {
-    setActivePreviewId(toolCallId);
-    setPreviewPanelOpen(true);
-  }, []);
+  // Open a preview as a tab (called when the user clicks a collapsed preview in
+  // the message area). If already open, just switch to it.
+  const handleOpenTab = useCallback((toolCallId: string) => {
+    if (previewTabs.some((tab) => tab.id === toolCallId)) {
+      setActiveTabId(toolCallId);
+      return;
+    }
+    const entry = previewEntries.find((entry) => entry.toolCallId === toolCallId);
+    if (entry) {
+      setPreviewTabs((current) => [...current, { id: entry.toolCallId, artifact: entry.artifact, title: entry.title, address: entry.address }]);
+      setActiveTabId(toolCallId);
+    }
+  }, [previewTabs, previewEntries]);
+
+  // Close a specific preview tab. If it was the active tab, switch to the nearest.
+  const handleCloseTab = useCallback((toolCallId: string) => {
+    setPreviewTabs((current) => {
+      const index = current.findIndex((tab) => tab.id === toolCallId);
+      if (index === -1) return current;
+      const next = current.filter((tab) => tab.id !== toolCallId);
+      if (activeTabId === toolCallId && next.length > 0) {
+        // Switch to the tab at the same index, or the last one if index is out of range
+        const nextIndex = Math.min(index, next.length - 1);
+        setActiveTabId(next[nextIndex].id);
+      } else if (next.length === 0) {
+        setActiveTabId(null);
+      }
+      return next;
+    });
+  }, [activeTabId]);
+
+  // For backward compatibility with threaded props (activePreviewId / onActivatePreview)
+  // that flow through ChatMessageItem / ChatToolGroup but are not consumed.
+  // These will be removed once the component tree is cleaned up.
+  const activePreviewId = activeTabId;
+  const handleActivatePreview = handleOpenTab;
 
   // "Try again" on a turn-error box re-runs the turn that failed by resending the
   // most recent user message. The failed turn produced no lasting state, so a
@@ -510,11 +555,12 @@ export function ChatPanel({
 
   const handlePreviewResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
+    setPreviewMaximized(false);
     const startX = event.clientX;
     const startWidth = previewPanelWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(720, Math.max(300, startWidth + startX - moveEvent.clientX));
+      const nextWidth = Math.min(900, Math.max(340, startWidth + startX - moveEvent.clientX));
       setPreviewPanelWidth(nextWidth);
     }
 
@@ -565,8 +611,13 @@ export function ChatPanel({
               </Text>
               {/* Center-of-screen shortcuts for the actions a user reaches for from a
                   blank conversation, so they don't have to hunt the sidebar or the
-                  composer toolbar: open a folder, or jump straight to a recent project. */}
+                  composer toolbar: open a folder, switch connection, or jump straight
+                  to a recent project. */}
               <Flex gap={2} wrap="wrap" justify="center" pb={2}>
+                <Button size="sm" variant="outline" borderRadius="md" onClick={() => router.push("/home")}>
+                  <LuHouse size={14} />
+                  Home
+                </Button>
                 {onBrowseFolder && (
                   <Button size="sm" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
                     <LuFolderOpen size={14} />
@@ -683,23 +734,23 @@ export function ChatPanel({
           )}
         </Box>
         {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (
-          <IconButton
-            aria-label="Jump to latest"
-            title="Jump to latest"
+          <Button
             size="sm"
-            variant="solid"
+            variant="subtle"
             colorPalette="gray"
-            borderRadius="full"
+            borderRadius="sm"
             position="absolute"
             bottom={3}
             left="50%"
             transform="translateX(-50%)"
             zIndex={2}
             boxShadow="md"
+            px={2}
             onClick={scrollToBottom}
           >
             <LuArrowDown />
-          </IconButton>
+            Jump to latest
+          </Button>
         )}
         </Box>
 
@@ -735,7 +786,7 @@ export function ChatPanel({
             setFocusedGroupId(null);
             setAgentsPanelOpen((current) => !current);
           }}
-          previewsCount={previewEntries.length}
+          previewsCount={previewTabs.length}
           previewOpen={previewPanelOpen}
           onTogglePreview={() => setPreviewPanelOpen((current) => !current)}
           historyOpen={historyOpen}
@@ -755,13 +806,13 @@ export function ChatPanel({
       </Flex>
 
       <AnimatePresence initial={false}>
-        {previewPanelOpen && activePreviewEntry && (
+        {previewPanelOpen && (
           <MotionFlex
             key="preview-panel"
             direction="column"
-            w={{ base: "100%", md: `${previewPanelWidth}px` }}
+            w={{ base: "100%", md: previewMaximized ? "min(900px, 60vw)" : `${previewPanelWidth}px` }}
             position="relative"
-            maxW={{ base: "100%", md: "48vw" }}
+            maxW={{ base: "100%", md: previewMaximized ? "90vw" : "48vw" }}
             minW={{ base: "100%", md: "340px" }}
             h="100%"
             borderLeft="1px solid"
@@ -784,54 +835,169 @@ export function ChatPanel({
               zIndex={1}
               onPointerDown={handlePreviewResizeStart}
             />
-            <Flex align="center" gap={2} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
-              <Box color="teal.fg" display="flex" alignItems="center" flexShrink={0}>
-                <LuAppWindow size={14} />
-              </Box>
-              <Box flex={1} minW={0}>
-                <Text fontSize="xs" fontWeight="semibold" truncate>
-                  {activePreviewEntry.title}
-                </Text>
-                {activePreviewEntry.address ? (
-                  <Text
-                    fontSize="2xs"
-                    color="fg.subtle"
-                    fontFamily="var(--app-font-mono)"
-                    truncate
-                    title={activePreviewEntry.address}
-                  >
-                    {activePreviewEntry.address}
-                  </Text>
-                ) : null}
-              </Box>
-              <IconButton
-                aria-label="Close preview"
-                size="xs"
-                variant="ghost"
-                borderRadius="sm"
-                onClick={() => setPreviewPanelOpen(false)}
-              >
-                <LuX size={13} />
+            {/* Persistent top bar — matching agents panel style */}
+            <Flex align="center" gap={2} px={3} py={2} borderBottom="1px solid" borderColor="border" flexShrink={0}>
+              <Box color="fg.muted"><LuAppWindow size={15} /></Box>
+              <Text fontSize="sm" fontWeight="bold" flex={1}>Previews</Text>
+              <IconButton aria-label="Collapse preview sidebar" size="xs" variant="ghost" borderRadius="sm" onClick={() => setPreviewPanelOpen(false)}>
+                <LuX size={15} />
               </IconButton>
             </Flex>
-            {(() => {
-              // Desktop: an external website renders in the embedded native webview
-              // (real browser engine, top-level navigation — full fidelity). Local
-              // files, inline HTML, and the web build keep the proxied iframe.
-              const nativeUrl = nativePreviewAvailable() ? externalPreviewUrl(activePreviewEntry.artifact) : "";
-              if (nativeUrl) {
-                return (
-                  <Box flex={1} minH={0}>
-                    <NativeWebview key={nativeUrl} url={nativeUrl} />
-                  </Box>
-                );
-              }
-              return (
-                <Box flex={1} minH={0} overflowY="auto" p={2}>
-                  <PreviewArtifact artifact={activePreviewEntry.artifact} showHeader={false} />
-                </Box>
-              );
-            })()}
+            {previewTabs.length === 0 ? (
+              <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
+                <EmptyState.Root>
+                  <EmptyState.Content>
+                    <EmptyState.Indicator>
+                      <LuAppWindow />
+                    </EmptyState.Indicator>
+                    <VStack gap={1}>
+                      <EmptyState.Title>No previews yet</EmptyState.Title>
+                      <EmptyState.Description>
+                        Previews will appear here
+                      </EmptyState.Description>
+                    </VStack>
+                  </EmptyState.Content>
+                </EmptyState.Root>
+              </Flex>
+            ) : activeTabEntry ? (
+              <>
+                {/* Preview tab buttons — same styling as chat-input toolbar buttons */}
+                <Flex px={2} pt={2} overflowX="auto" flexShrink={0}>
+                  <Flex gap={1.5}>
+                    {previewTabs.map((tab) => {
+                      const isActive = tab.id === activeTabId;
+                      return (
+                        <Flex
+                          key={tab.id}
+                          as="button"
+                          align="center"
+                          gap={1.5}
+                          pl={2}
+                          pr={1}
+                          h="28px"
+                          fontSize="xs"
+                          fontWeight="medium"
+                          borderRadius="sm"
+                          bg={isActive ? "bg.subtle" : "bg"}
+                          border="1px solid"
+                          borderColor={isActive ? "border.emphasized" : "border"}
+                          color="fg"
+                          cursor="pointer"
+                          flexShrink={0}
+                          whiteSpace="nowrap"
+                          onClick={() => setActiveTabId(tab.id)}
+                          _hover={{ bg: isActive ? "bg.muted" : "bg.subtle" }}
+                          title={tab.address || tab.title}
+                        >
+                          <LuAppWindow size={13} />
+                          <Text truncate maxW="110px">{tab.title}</Text>
+                          <Box
+                            as="span"
+                            display="inline-flex"
+                            alignItems="center"
+                            justifyContent="center"
+                            borderRadius="sm"
+                            w="16px"
+                            h="16px"
+                            flexShrink={0}
+                            color="fg.subtle"
+                            _hover={{ bg: "bg.muted", color: "fg" }}
+                            onClick={(event: React.MouseEvent) => { event.stopPropagation(); handleCloseTab(tab.id); }}
+                            aria-label={`Close ${tab.title}`}
+                          >
+                            <LuX size={12} />
+                          </Box>
+                        </Flex>
+                      );
+                    })}
+                  </Flex>
+                </Flex>
+                {/* Active tab header with controls — title, reload, maximize, download, close */}
+                <Flex px={2} py={1.5} align="center" gap={1} borderBottom="1px solid" borderColor="border" flexShrink={0}>
+                  <Text fontSize="sm" fontWeight="medium" truncate flex={1} minW={0}>
+                    {activeTabEntry.title}
+                  </Text>
+                  <IconButton
+                    aria-label="Reload preview"
+                    title="Reload"
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    onClick={() => setPreviewReloadKey((current) => current + 1)}
+                  >
+                    <LuRotateCw size={11} />
+                  </IconButton>
+                  <IconButton
+                    aria-label={previewMaximized ? "Minimize preview" : "Maximize preview"}
+                    title={previewMaximized ? "Minimize" : "Maximize"}
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    onClick={() => setPreviewMaximized((current) => !current)}
+                  >
+                    {previewMaximized ? <LuMinimize2 size={11} /> : <LuMaximize2 size={11} />}
+                  </IconButton>
+                  <IconButton
+                    aria-label="Download artifact"
+                    title="Download"
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    onClick={() => {
+                      const address = activeTabEntry.address;
+                      if (address) {
+                        const link = document.createElement("a");
+                        link.href = address.startsWith("http") ? address : window.location.origin + "/" + address;
+                        link.download = activeTabEntry.title || "preview";
+                        link.target = "_blank";
+                        link.rel = "noopener noreferrer";
+                        link.click();
+                      }
+                    }}
+                  >
+                    <LuDownload size={11} />
+                  </IconButton>
+                  <IconButton
+                    aria-label="Close all previews"
+                    title="Close"
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    colorPalette="red"
+                    onClick={() => setPreviewTabs([])}
+                  >
+                    <LuX size={12} />
+                  </IconButton>
+                </Flex>
+                {(() => {
+                  // Desktop: an external website renders in the embedded native webview
+                  // (real browser engine, top-level navigation — full fidelity). Local
+                  // files, inline HTML, and the web build keep the proxied iframe.
+                  const activeTab = activeTabEntry;
+                  const nativeUrl = nativePreviewAvailable() ? externalPreviewUrl(activeTab.artifact) : "";
+                  if (nativeUrl) {
+                    return (
+                      <Box key={previewReloadKey} flex={1} minH={0}>
+                        <NativeWebview url={nativeUrl} />
+                      </Box>
+                    );
+                  }
+                  return (
+                    <Box key={previewReloadKey} flex={1} minH={0} display="flex" flexDirection="column">
+                      <PreviewArtifact artifact={activeTab.artifact} showHeader={false} fillContainer />
+                    </Box>
+                  );
+                })()}
+              </>
+            ) : null}
           </MotionFlex>
         )}
         {agentsPanelOpen && (
