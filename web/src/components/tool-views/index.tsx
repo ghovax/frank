@@ -294,29 +294,49 @@ function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
+  const { colorMode } = useColorMode();
   const skipValidation = args.skip_validation === true;
-  const startLine = asString(args.start_line);
-  const endLine = asString(args.end_line);
-  const range = endLine
-    ? `lines ${startLine}–${endLine}`
-    : startLine !== "1"
-      ? `line ${startLine}`
-      : null;
+  const replaceAll = args.replace_all === true;
+  const find = asString(args.find);
+  const replaceWith = asString(args.replace_with);
+  const hasInlineDiff = find && replaceWith && find !== replaceWith;
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {range && <InlineField label="Range">{range}</InlineField>}
       {skipValidation && <InlineField label="Skip validation">Yes</InlineField>}
-      {asString(args.old_text) && (
-        <Field label="Old text">
-          <MonoBlock>{asString(args.old_text)}</MonoBlock>
+      {replaceAll && <InlineField label="Replace all">Yes</InlineField>}
+      {find && (
+        <Field label="Find">
+          <MonoBlock>{find}</MonoBlock>
         </Field>
       )}
-      {asString(args.new_text) && (
-        <Field label="New text">
-          <MonoBlock>{asString(args.new_text)}</MonoBlock>
+      {replaceWith && (
+        <Field label="Replace with">
+          <MonoBlock>{replaceWith}</MonoBlock>
+        </Field>
+      )}
+      {hasInlineDiff && (
+        <Field label="Diff">
+          <Box
+            maxH="320px"
+            overflowY="auto"
+            border="1px solid"
+            borderColor="border"
+            borderRadius="sm"
+          >
+            <ReactDiffViewer
+              oldValue={find}
+              newValue={replaceWith}
+              splitView={false}
+              useDarkTheme={colorMode === "dark"}
+              hideLineNumbers={false}
+              showDiffOnly={false}
+              compareMethod={DiffMethod.LINES}
+              styles={{ contentText: { fontSize: "12px", fontFamily: "var(--app-font-mono)" } }}
+            />
+          </Box>
         </Field>
       )}
     </FieldList>
@@ -851,7 +871,7 @@ function compactMcpContent(content: unknown): unknown {
 
 // An artifact's title/label may contain markdown, so it is rendered through the
 // markdown renderer above the artifact body.
-function ArtifactFrame({ title, children }: { title: string; children: ReactNode }) {
+function ArtifactFrame({ title, showHeader = true, children }: { title: string; showHeader?: boolean; children: ReactNode }) {
   // Remounting the content (via a changing key) forces a fresh fetch of the
   // previewed page — the /preview route is served no-store, so the iframe reloads
   // the current file/URL rather than showing a stale render. Works for every
@@ -859,25 +879,27 @@ function ArtifactFrame({ title, children }: { title: string; children: ReactNode
   const [reloadKey, setReloadKey] = useState(0);
   return (
     <Box>
-      <Flex align="center" gap={1.5} mb={1.5}>
-        <Text fontSize="sm" fontWeight="semibold" color="fg.muted" flex={1} minW={0} truncate>
-          {title}
-        </Text>
-        <IconButton
-          aria-label="Reload preview"
-          title="Reload preview"
-          size="xs"
-          variant="ghost"
-          borderRadius="sm"
-          h="20px"
-          minW="20px"
-          px={1}
-          flexShrink={0}
-          onClick={() => setReloadKey((current) => current + 1)}
-        >
-          <LuRotateCw size={10} />
-        </IconButton>
-      </Flex>
+      {showHeader && (
+        <Flex align="center" gap={1.5} mb={1.5}>
+          <Text fontSize="sm" fontWeight="semibold" color="fg.muted" flex={1} minW={0} truncate>
+            {title}
+          </Text>
+          <IconButton
+            aria-label="Reload preview"
+            title="Reload preview"
+            size="xs"
+            variant="ghost"
+            borderRadius="sm"
+            h="20px"
+            minW="20px"
+            px={1}
+            flexShrink={0}
+            onClick={() => setReloadKey((current) => current + 1)}
+          >
+            <LuRotateCw size={10} />
+          </IconButton>
+        </Flex>
+      )}
       <Box key={reloadKey}>{children}</Box>
     </Box>
   );
@@ -1014,7 +1036,7 @@ function WidgetFrame({
   );
 }
 
-function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
+function RenderArtifact({ artifact, showHeader = true }: { artifact: Record<string, unknown>; showHeader?: boolean }) {
   const type = asString(artifact.type);
   const title = asString(artifact.title) || "MCP artifact";
   const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
@@ -1039,7 +1061,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const srcDoc = asString(artifact.srcdoc);
     if (!src && !srcDoc) return <ErrorView message="Iframe artifact did not include a safe source." />;
     return (
-      <ArtifactFrame title={title}>
+      <ArtifactFrame title={title} showHeader={showHeader}>
         <WidgetFrame
           src={src || undefined}
           srcDoc={srcDoc || undefined}
@@ -1058,7 +1080,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const html = asString(artifact.html) || asString(artifact.srcdoc);
     if (!html) return <ErrorView message="HTML artifact did not include content." />;
     return (
-      <ArtifactFrame title={title}>
+      <ArtifactFrame title={title} showHeader={showHeader}>
         <WidgetFrame
           srcDoc={html}
           sandbox={artifactSandbox(artifact, true)}
@@ -1074,7 +1096,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const source = safeImageSource(asString(artifact.data) || asString(artifact.src) || asString(artifact.url));
     if (!source) return <ErrorView message="Image artifact did not include a safe source." />;
     return (
-      <ArtifactFrame title={title}>
+      <ArtifactFrame title={title} showHeader={showHeader}>
         <Box
           maxW="100%"
           maxH={artifactHeight(artifact.height)}
@@ -1097,7 +1119,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const href = safeWebUrl(asString(artifact.href) || asString(artifact.url) || asString(artifact.src));
   if (!href) return <ErrorView message="Link artifact did not include a safe URL." />;
   return (
-    <ArtifactFrame title={title}>
+    <ArtifactFrame title={title} showHeader={showHeader}>
       <Link href={href} target="_blank" rel="noopener noreferrer" colorPalette="blue">
         {href}
       </Link>
@@ -1105,8 +1127,8 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   );
 }
 
-export function PreviewArtifact({ artifact }: { artifact: Record<string, unknown> }) {
-  return <RenderArtifact artifact={artifact} />;
+export function PreviewArtifact({ artifact, showHeader = true }: { artifact: Record<string, unknown>; showHeader?: boolean }) {
+  return <RenderArtifact artifact={artifact} showHeader={showHeader} />;
 }
 
 // The external http(s) URL an artifact previews, or "" when it is not an external

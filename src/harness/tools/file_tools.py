@@ -33,6 +33,67 @@ _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
 DEFAULT_READ_LIMIT_LINES = 2048
 MAXIMUM_LINE_LENGTH = 2048
+
+
+def _normalize_tool_escapes(value: str) -> str:
+    """Collapse JSON escape sequences that survived the tool-call parsing pipeline.
+
+    When a model sees previously-serialised tool call arguments in its conversation
+    history (e.g. ``\"`` rendered as ``\\\"`` inside a JSON string), it may copy the
+    escaped form literally into its own tool call.  By the time the arguments reach
+    this handler they have already been through ``json.loads`` once, which should
+    have unescaped them — but some model providers double-encode, and some models
+    re-escape when reading from history.  This normalises the common survivors so
+    the plain-text string matching works reliably.
+    """
+    value = value.replace('\\"', '"')
+    value = value.replace("\\'", "'")
+    value = value.replace('\\n', '\n')
+    value = value.replace('\\r', '\r')
+    value = value.replace('\\t', '\t')
+    value = value.replace('\\\\', '\\')
+    return value
+
+
+def _context_diff_window(before: str, after: str, context_lines: int = 4) -> tuple[str, str]:
+    """Extract a focused window around the first difference in before/after.
+
+    Returns a (before_window, after_window) pair trimmed to the changed region
+    plus ``context_lines`` lines of surrounding context, so the frontend can
+    render a meaningful diff without sending the entire file content.
+    """
+    before_lines = before.splitlines(keepends=True)
+    after_lines = after.splitlines(keepends=True)
+
+    # Find the first and last differing line index.
+    common_length = min(len(before_lines), len(after_lines))
+    first_diff = 0
+    for index in range(common_length):
+        if before_lines[index] != after_lines[index]:
+            first_diff = index
+            break
+    else:
+        # No difference in the overlapping section — the difference is purely
+        # one side being longer than the other.  Anchor at the common end.
+        first_diff = common_length
+
+    last_diff = first_diff
+    for index in range(first_diff, common_length):
+        if before_lines[index] != after_lines[index]:
+            last_diff = index
+
+    # Include added/removed lines at the end.
+    if len(before_lines) != len(after_lines):
+        last_diff = max(len(before_lines), len(after_lines)) - 1
+
+    window_start = max(0, first_diff - context_lines)
+    window_end = min(max(len(before_lines), len(after_lines)), last_diff + 1 + context_lines)
+
+    before_window = "".join(before_lines[window_start:window_end]) if window_start < len(before_lines) else ""
+    after_window = "".join(after_lines[window_start:window_end]) if window_start < len(after_lines) else ""
+    return before_window, after_window
+
+
 MAXIMUM_GREP_RESULTS = 512
 MAXIMUM_GLOB_RESULTS = 1024
 MAXIMUM_FETCH_CHARS = 262_144
@@ -339,6 +400,12 @@ def edit_file(
     if resolved_path.is_dir():
         raise IsADirectoryError(f"Cannot edit directory: {resolved_path}")
 
+    # Normalise JSON escape artifacts that may have survived the tool-call
+    # parsing pipeline — some model providers or history-round trips double-
+    # encode quotes and newlines inside string arguments.
+    find = _normalize_tool_escapes(find)
+    replace = _normalize_tool_escapes(replace)
+
     # Isolation — read and verify staleness
     before = resolved_path.read_text(errors="replace")
     if expected_sha256 is None:
@@ -423,12 +490,17 @@ def edit_file(
 
     # Commit — write to disk
     resolved_path.write_text(after)
-    summary = {
+    summary: dict[str, object] = {
         "code": "edit_completed",
         "path": str(resolved_path),
         "characters": len(after),
         "sha256": content_sha256(after),
     }
+    # Include a focused diff window (changed lines + 4 lines of context) so the
+    # frontend can render the change without sending the entire file contents.
+    diff_before, diff_after = _context_diff_window(before, after, context_lines=4)
+    summary["before"] = diff_before
+    summary["after"] = diff_after
     return json.dumps(summary)
 
 

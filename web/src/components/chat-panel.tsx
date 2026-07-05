@@ -204,6 +204,7 @@ export function ChatPanel({
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
+  const [previewPanelWidth, setPreviewPanelWidth] = useState(480);
   // Exactly one web preview (iframe-type artifact) is live at a time; the rest are
   // collapsed to click-to-open placeholders so their scripts/network don't pile up
   // and drag the page. Newest preview auto-activates; clicking an older one reopens
@@ -507,6 +508,29 @@ export function ChatPanel({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
   }, [agentsSidebarWidth]);
 
+  const handlePreviewResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = previewPanelWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(720, Math.max(300, startWidth + startX - moveEvent.clientX));
+      setPreviewPanelWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, [previewPanelWidth]);
+
   return (
     <WidgetEventProvider onEvent={handleWidgetEvent}>
     <Flex h="100%" minW={0} position="relative">
@@ -735,7 +759,8 @@ export function ChatPanel({
           <MotionFlex
             key="preview-panel"
             direction="column"
-            w={{ base: "100%", md: "480px" }}
+            w={{ base: "100%", md: `${previewPanelWidth}px` }}
+            position="relative"
             maxW={{ base: "100%", md: "48vw" }}
             minW={{ base: "100%", md: "340px" }}
             h="100%"
@@ -748,6 +773,17 @@ export function ChatPanel({
             exit={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           >
+            <Box
+              display={{ base: "none", md: "block" }}
+              position="absolute"
+              top={0}
+              bottom={0}
+              left="-4px"
+              w="8px"
+              cursor="col-resize"
+              zIndex={1}
+              onPointerDown={handlePreviewResizeStart}
+            />
             <Flex align="center" gap={2} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
               <Box color="teal.fg" display="flex" alignItems="center" flexShrink={0}>
                 <LuAppWindow size={14} />
@@ -792,7 +828,7 @@ export function ChatPanel({
               }
               return (
                 <Box flex={1} minH={0} overflowY="auto" p={2}>
-                  <PreviewArtifact artifact={activePreviewEntry.artifact} />
+                  <PreviewArtifact artifact={activePreviewEntry.artifact} showHeader={false} />
                 </Box>
               );
             })()}
