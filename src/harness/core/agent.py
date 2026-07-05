@@ -5,6 +5,7 @@ import platform
 import shlex
 import time
 import uuid
+from contextlib import suppress
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from enum import Enum
@@ -94,6 +95,23 @@ class BashPermissionDecision(BaseModel):
     action: Literal["auto_approve", "escalate"]
     justification: str
     risk: Literal["low", "medium", "high"]
+
+
+# Sentinel returned by ``_stream_next`` when an async iterator is exhausted, so a
+# stream read can be raced against an abort inside a Task without a
+# StopAsyncIteration propagating through it (which asyncio mishandles).
+_STREAM_EXHAUSTED = object()
+
+
+async def _stream_next(iterator: AsyncIterator) -> Any:
+    """Return the next item from ``iterator``, or ``_STREAM_EXHAUSTED`` when it is
+    done. Wrapped so the model stream can be driven one read at a time and each read
+    raced against the abort event — a Stop then interrupts the turn even while it is
+    parked on the network awaiting the next token."""
+    try:
+        return await iterator.__anext__()
+    except StopAsyncIteration:
+        return _STREAM_EXHAUSTED
 
 
 def build_chat_model(
@@ -1276,36 +1294,63 @@ class AgentRuntime:
             thinking_done_emitted = False
             response_chunks: list[AIMessageChunk] = []
             aborted_for_steering = False
-            async for chunk in self._bound_llm.astream(messages):
-                if self._abort_event.is_set():
-                    if self._has_queued_steering():
-                        self._abort_event.clear()
-                        aborted_for_steering = True
-                        break
-                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                    return
-                response_chunks.append(chunk)
-                if chunk.content:
-                    # First answer token: reasoning is over. Close the thinking
-                    # phase before the text streams so the indicator flips to
-                    # "Thought for Ns" exactly as the answer begins.
-                    if not thinking_done_emitted:
-                        thinking_done_emitted = True
-                        yield StreamEvent(
-                            StreamEvent.Type.THINKING_DONE,
-                            duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
-                        )
-                    if self._agent_configuration.stream_agent_progress:
-                        yield StreamEvent(
-                            StreamEvent.Type.TEXT_CHUNK,
-                            text=chunk.content,
-                        )
-                reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
-                if reasoning_content:
-                    yield StreamEvent(
-                        StreamEvent.Type.THINKING,
-                        text=reasoning_content,
+            # Drive the model stream one read at a time, racing each read against the
+            # abort event, so a Stop interrupts the turn *immediately* — even while it
+            # is parked awaiting the next token from a slow or stalled provider. Only
+            # checking the flag between chunks (the previous behaviour) let a provider
+            # that had gone quiet swallow the cancel until it happened to emit again,
+            # which is why Stop "sometimes" appeared to do nothing.
+            model_stream = self._bound_llm.astream(messages)
+            abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+            try:
+                while True:
+                    chunk_future = asyncio.ensure_future(_stream_next(model_stream))
+                    await asyncio.wait(
+                        {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
                     )
+                    if self._abort_event.is_set():
+                        # Stop won the race (or landed between chunks): drop the pending
+                        # read and stop consuming the stream (the `finally` closes it).
+                        chunk_future.cancel()
+                        with suppress(BaseException):
+                            await chunk_future
+                        if self._has_queued_steering():
+                            self._abort_event.clear()
+                            aborted_for_steering = True
+                            break
+                        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                        return
+                    chunk = chunk_future.result()
+                    if chunk is _STREAM_EXHAUSTED:
+                        break
+                    response_chunks.append(chunk)
+                    if chunk.content:
+                        # First answer token: reasoning is over. Close the thinking
+                        # phase before the text streams so the indicator flips to
+                        # "Thought for Ns" exactly as the answer begins.
+                        if not thinking_done_emitted:
+                            thinking_done_emitted = True
+                            yield StreamEvent(
+                                StreamEvent.Type.THINKING_DONE,
+                                duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                            )
+                        if self._agent_configuration.stream_agent_progress:
+                            yield StreamEvent(
+                                StreamEvent.Type.TEXT_CHUNK,
+                                text=chunk.content,
+                            )
+                    reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
+                    if reasoning_content:
+                        yield StreamEvent(
+                            StreamEvent.Type.THINKING,
+                            text=reasoning_content,
+                        )
+            finally:
+                abort_waiter.cancel()
+                # Close the underlying HTTP stream so an aborted (or exhausted) turn
+                # never leaks a provider connection.
+                with suppress(BaseException):
+                    await model_stream.aclose()
             # A tool-only turn produces no answer text, so close the phase here.
             if not thinking_done_emitted:
                 yield StreamEvent(
@@ -1673,15 +1718,29 @@ class AgentRuntime:
                     await queue.put(None)
 
         tasks = [asyncio.create_task(runner(call)) for call in tool_calls]
+        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
         try:
             while True:
                 if self._abort_event.is_set():
                     break
-                event = await queue.get()
+                # Race the next tool event against the abort so a Stop is honored even
+                # when every tool is parked (a slow network/MCP call, a thread that
+                # can't be cancelled) and nothing is arriving on the queue. The
+                # `finally` cancels the runners; the turn loop then records "(interrupted)"
+                # for any tool that never produced a result.
+                get_future = asyncio.ensure_future(queue.get())
+                await asyncio.wait(
+                    {get_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if not get_future.done():
+                    get_future.cancel()
+                    break
+                event = get_future.result()
                 if event is None:
                     break
                 yield event
         finally:
+            abort_waiter.cancel()
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
