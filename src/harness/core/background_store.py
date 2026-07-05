@@ -99,6 +99,12 @@ class BackgroundJobStore:
                     )
                     """
                 )
+                existing_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(background_jobs)").fetchall()
+                }
+                if "process_group" not in existing_columns:
+                    connection.execute("ALTER TABLE background_jobs ADD COLUMN process_group INTEGER")
                 # Indices matched to the hot queries:
                 #  - undelivered_jobs / has_undelivered_jobs (run after every turn and
                 #    on startup) filter (context_id, agent_name, status);

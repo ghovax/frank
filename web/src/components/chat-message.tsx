@@ -66,7 +66,7 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
         <Flex mt={2.5}>
           <Button
             size="xs"
-            variant="outline"
+            variant="solid"
             colorPalette="red"
             borderRadius="sm"
             fontWeight="medium"

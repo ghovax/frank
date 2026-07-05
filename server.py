@@ -660,6 +660,25 @@ def _ensure_session_schema(sync_engine) -> None:
             connection.execute(text(f"ALTER TABLE sessions ADD COLUMN {name} {definition}"))
 
 
+def _ensure_history_indexes(sync_engine) -> None:
+    with sync_engine.begin() as connection:
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at DESC)")
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_project_history_selected_at "
+                "ON project_history(selected_at DESC)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_model_history_selected_at "
+                "ON model_history(selected_at DESC)"
+            )
+        )
+
+
 class SessionTitle(BaseModel):
     """Structured schema returned by the title-generation LLM call."""
 
@@ -1039,6 +1058,7 @@ async def lifespan(application: FastAPI):
     with sqlite_write_lock():
         Base.metadata.create_all(sync_engine)
         _ensure_session_schema(sync_engine)
+        _ensure_history_indexes(sync_engine)
     _session_factory = sessionmaker(bind=sync_engine)
 
     exa_key = _global_configuration.exa.effective_api_key

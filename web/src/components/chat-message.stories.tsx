@@ -16,7 +16,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-function msg(partial: Partial<ChatMessage> & Pick<ChatMessage, "role" | "content">): ChatMessage {
+function message(partial: Partial<ChatMessage> & Pick<ChatMessage, "role" | "content">): ChatMessage {
   return { id: Math.random().toString(36).slice(2), timestamp: new Date().toISOString(), ...partial };
 }
 
@@ -29,12 +29,12 @@ const sharedProps = {
 };
 
 export const UserMessage: Story = {
-  args: { message: msg({ role: "user", content: "Add a Postgres connection check to the health endpoint." }) },
+  args: { message: message({ role: "user", content: "Add a Postgres connection check to the health endpoint." }) },
 };
 
 export const AssistantMessage: Story = {
   args: {
-    message: msg({
+    message: message({
       role: "assistant",
       content: "Added a `GET /healthz/db` endpoint that issues a `SELECT 1` against Postgres and returns 503 on failure. Verified with `curl localhost:8000/healthz/db`.",
     }),
@@ -42,12 +42,15 @@ export const AssistantMessage: Story = {
 };
 
 export const ErrorMessage: Story = {
-  args: { message: msg({ role: "error", content: "Command exited with code 1: src/api/server.py:41: type error." }) },
+  args: {
+    message: message({ role: "error", content: "Command exited with code 1: src/api/server.py:41: type error." }),
+    onRetry: fn(),
+  },
 };
 
 export const ThinkingDone: Story = {
   args: {
-    message: msg({
+    message: message({
       role: "thinking",
       content: "The health endpoint already exists at /healthz. I'll add a /healthz/db companion that checks the DB connection with SELECT 1.",
       meta: { status: "done", durationMs: 4200 },
@@ -61,10 +64,10 @@ export const ThinkingDone: Story = {
 export const Conversation = {
   render: () => (
     <VStack align="stretch" gap={2}>
-      <ChatMessageItem {...sharedProps} message={msg({ role: "user", content: "Add a Postgres connection check to the health endpoint." })} />
+      <ChatMessageItem {...sharedProps} message={message({ role: "user", content: "Add a Postgres connection check to the health endpoint." })} />
       <ChatMessageItem
         {...sharedProps}
-        message={msg({
+        message={message({
           role: "thinking",
           content: "The health endpoint already exists at /healthz. I'll add a /healthz/db companion that checks the DB connection.",
           meta: { status: "done", durationMs: 4200 },
@@ -72,7 +75,7 @@ export const Conversation = {
       />
       <ChatMessageItem
         {...sharedProps}
-        message={msg({
+        message={message({
           role: "tool_call",
           content: "grep",
           meta: {
@@ -85,7 +88,7 @@ export const Conversation = {
       />
       <ChatMessageItem
         {...sharedProps}
-        message={msg({
+        message={message({
           role: "tool_call",
           content: "bash",
           meta: {
@@ -98,7 +101,7 @@ export const Conversation = {
       />
       <ChatMessageItem
         {...sharedProps}
-        message={msg({
+        message={message({
           role: "tool_call",
           content: "ask_user",
           meta: {
@@ -123,7 +126,7 @@ export const Conversation = {
       />
       <ChatMessageItem
         {...sharedProps}
-        message={msg({
+        message={message({
           role: "assistant",
           content: "Added `GET /healthz/db` (returns 200 on `SELECT 1` success, 503 otherwise). All 4 API tests pass.",
         })}
