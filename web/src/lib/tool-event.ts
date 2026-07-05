@@ -1,6 +1,11 @@
 export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "input_required";
 
-const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal", "write_tasks", "update_tasks"]);
+// Tools that render no card of their own — their effect surfaces elsewhere (the
+// task list, the active goal). They must NOT create a tool-call row, because they
+// never emit a matching tool_result to finalize it, so a row would hang on
+// "running" until the turn's final status sweep. The names must match the backend
+// tool names exactly (agent.py `_execute_tool`): `set_tasks`, not `write_tasks`.
+const CONTROL_TOOL_NAMES: ReadonlySet<string> = new Set(["update_goal", "set_tasks", "update_tasks"]);
 
 // A human-in-the-loop approval attached to the tool call that triggered it (e.g.
 // a sandbox read outside the working directory). Lives on the same card so the

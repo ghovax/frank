@@ -1,6 +1,11 @@
 **Execute a bash command** and return its output.
 
-Fast commands (under ~2s) return output directly. Slow commands return immediately with a task identifier and output file path — the result is **auto-injected** into the conversation when it finishes. You do not block on it: if the rest of your work depends on the result, finish your turn, and the harness will start a fresh turn on its own and re-engage you the moment the command completes (even minutes later) — so a long build, test run, or scan is never lost and never holds a turn open.
+**Synchronous by default.** The command runs to completion and its real output is returned to you directly, so you always see the result of the action you took. This is what you want for almost everything — including quick git/`gh`, network, and package commands that take a few seconds.
+
+**`background=true` is opt-in, for long-running work you do not need the result of right now** — a build, a full test suite, a dev server, a broad scan. A backgrounded command returns immediately with a `task_identifier`; its result is **auto-injected** into the conversation when it finishes, and the harness starts a fresh turn to re-engage you the moment it completes (even minutes later), so a long job is never lost and never holds a turn open. If the rest of your work depends on the result, finish your turn after backgrounding and you will be woken.
+
+- **Never background a command whose output you need next**, then wait or poll for it — run it synchronously and read the result.
+- **Never background a command and then re-run the same command** because it "looked unfinished." The backgrounded one is already running; re-issuing a mutating command (a merge, a push, a deploy) double-executes it. If you backgrounded it, end your turn and wait for the injected result.
 
 **Prefer the specialized tools over shell** for the operations they cover — they are faster, cheaper, and give the model better-shaped results:
 - *File search:* use **find_files** (not `find` or `ls`)
@@ -24,6 +29,6 @@ Reach for `bash` for everything else: tests, builds, git, process and package ma
 - Do **not** repeat a search you already have the answer to.
 - Check your session context before searching — a prior result may already contain what you need.
 - Never run broad recursive searches or directory walks over the real home directory (`~` or `/Users/<name>`). Narrow to the project, a known subdirectory, or exact paths.
-- Heavy commands, long tests/builds, servers, and broad scans are expected to run as harness background tasks through this tool; do not start unmanaged detached jobs.
+- Heavy commands, long tests/builds, servers, and broad scans are the case for `background=true`; do not start unmanaged detached jobs by hand (`&`, `nohup`).
 
 Always provide a concise **justification** that states *why* this command advances the task.

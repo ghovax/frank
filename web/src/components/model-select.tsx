@@ -13,7 +13,7 @@ import {
   Text,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useState } from "react";
-import { LuBot, LuCheck, LuChevronDown, LuChevronRight, LuEye, LuEyeOff } from "react-icons/lu";
+import { LuBot, LuCheck, LuChevronDown, LuChevronRight, LuEye, LuEyeOff, LuImage, LuPaperclip } from "react-icons/lu";
 import {
   fetchSettings,
   saveSettings,
@@ -48,6 +48,40 @@ interface ModelItem {
   value: string;
   label: string;
   curated: boolean;
+}
+
+// The capability icons for a model, from its models.dev flags: an image glyph for
+// vision (image input), a paperclip for a model that takes file attachments but not
+// images. A text-only model shows nothing. Reused by the picker rows and the
+// composer's selected-model chip so capabilities read the same everywhere.
+export function ModelCapabilityBadges({ model, size = 12 }: { model?: ModelOption | null; size?: number }) {
+  if (!model) return null;
+  const badges: { key: string; icon: React.ReactNode; label: string }[] = [];
+  if (model.vision) {
+    badges.push({ key: "vision", icon: <LuImage size={size} />, label: "Vision — accepts image input" });
+  } else if (model.attachment) {
+    badges.push({ key: "attachment", icon: <LuPaperclip size={size} />, label: "Accepts file attachments" });
+  }
+  if (badges.length === 0) return null;
+  return (
+    <Flex align="center" gap={1} color="fg.subtle" flexShrink={0}>
+      {badges.map((badge) => (
+        <Box key={badge.key} as="span" display="flex" alignItems="center" title={badge.label}>
+          {badge.icon}
+        </Box>
+      ))}
+    </Flex>
+  );
+}
+
+// Whether a model can accept file attachments. Unknown models (a typed/custom id
+// not in the catalog) return true — we can't determine their capabilities, so we
+// don't block. A known model without the attachment capability returns false.
+export function modelSupportsAttachments(models: ModelOption[], modelId: string): boolean {
+  if (!modelId) return true;
+  const model = models.find((candidate) => candidate.id === modelId);
+  if (!model) return true;
+  return !!model.attachment;
 }
 
 function providerForModel(modelId: string, models: ModelOption[]): string {
@@ -150,6 +184,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : "Model";
   const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
+  const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;
   const selectedProviderLabel = providerName(selectedProvider, providers);
   const selectedProviderKey = providerKeys[selectedProvider] ?? "";
 
@@ -191,7 +226,9 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
             [selectedProvider]: selectedProviderKey.trim(),
           },
           provider_base_urls: selectedProviderIsCustom ? { custom: customBaseUrl.trim() } : {},
-          selected_model: settings.selected_model ?? "",
+          // Persist the picked model as the global default in configuration.yaml,
+          // so the choice survives a restart instead of only ever loading from it.
+          selected_model: activeSelectedModel,
           workspace_strategy: settings.workspace_strategy ?? "none",
         });
       }
@@ -236,6 +273,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
             {chipModelName}
           </Box>
         )}
+        <ModelCapabilityBadges model={chipModel} size={compact ? 11 : 13} />
         <LuChevronDown size={compact ? 13 : 15} />
       </Button>
 
@@ -245,9 +283,13 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
           <Dialog.Positioner>
             <Dialog.Content borderRadius="md" maxW="520px">
               <Dialog.Header>
-                <Dialog.Title fontSize="sm">Model</Dialog.Title>
+                <Dialog.Title fontSize="sm">Model &amp; provider</Dialog.Title>
               </Dialog.Header>
               <Dialog.Body>
+                <Text fontSize="xs" color="fg.muted" mb={4}>
+                  Choose the provider and model for this conversation, and the API key it
+                  authenticates with. The selection applies immediately.
+                </Text>
                 <Flex direction="column" gap={4}>
                   <Box>
                     <Text fontSize="xs" fontWeight="medium" mb={1}>
@@ -336,6 +378,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                                         {model.label}
                                       </Text>
                                     )}
+                                    <ModelCapabilityBadges model={models.find((candidate) => candidate.id === model.value) ?? null} />
                                     {recentIds.has(model.value) ? (
                                       <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
                                         Recent

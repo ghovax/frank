@@ -91,12 +91,29 @@ class BackgroundJobStore:
                         result_json TEXT,
                         created_at TEXT NOT NULL,
                         completed_at TEXT,
-                        delivered_at TEXT
+                        delivered_at TEXT,
+                        -- OS process-group id of a job's shell subtree, so a reaper
+                        -- can kill an orphan left by an unclean shutdown (SIGKILL /
+                        -- crash) on the next start.
+                        process_group INTEGER
                     )
                     """
                 )
+                # Indices matched to the hot queries:
+                #  - undelivered_jobs / has_undelivered_jobs (run after every turn and
+                #    on startup) filter (context_id, agent_name, status);
+                #  - running_jobs(agent) and contexts_with_undelivered filter
+                #    (agent_name, status);
+                #  - running_jobs() / orphaned_process_groups filter status alone.
+                # The first covers context_id-only prefixes too, so no separate
+                # (context_id, status) index is needed.
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_status ON background_jobs(context_id, status)"
+                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status "
+                    "ON background_jobs(context_id, agent_name, status)"
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_background_jobs_agent_status "
+                    "ON background_jobs(agent_name, status)"
                 )
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_status ON background_jobs(status)"
@@ -133,6 +150,16 @@ class BackgroundJobStore:
                     ),
                 )
 
+    def record_process_group(self, job_id: str, process_group: int) -> None:
+        """Record the OS process-group id of a job's shell subtree once it has
+        started, so :func:`reap_orphaned_processes` can kill it after a crash."""
+        with background_sqlite_write_lock():
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE background_jobs SET process_group = ? WHERE job_id = ?",
+                    (process_group, job_id),
+                )
+
     def record_finished(self, job_id: str, result: str, *, status: str = STATUS_COMPLETED) -> None:
         """Mark a job completed (or failed — both carry a result payload the model reads)."""
         with background_sqlite_write_lock():
@@ -163,6 +190,16 @@ class BackgroundJobStore:
         if agent_name is None:
             return self._rows_where("status = ?", (STATUS_RUNNING,))
         return self._rows_where("status = ? AND agent_name = ?", (STATUS_RUNNING, agent_name))
+
+    def orphaned_process_groups(self) -> list[int]:
+        """Process groups of jobs still marked running from a previous, unclean
+        shutdown — the orphans a reaper must kill on startup."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT process_group FROM background_jobs WHERE status = ? AND process_group IS NOT NULL",
+                (STATUS_RUNNING,),
+            ).fetchall()
+        return [row["process_group"] for row in rows if row["process_group"]]
 
     def undelivered_jobs(self, context_id: str, agent_name: str) -> list[dict[str, Any]]:
         """A context's jobs that carry a result the model has not yet seen — whether
@@ -211,6 +248,7 @@ class BackgroundJobStore:
             "created_at": row["created_at"],
             "completed_at": row["completed_at"],
             "delivered_at": row["delivered_at"],
+            "process_group": row["process_group"],
         }
 
 

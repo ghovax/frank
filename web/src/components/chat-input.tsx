@@ -13,10 +13,10 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
-import { ModelSelect } from "./model-select";
+import { ModelSelect, modelSupportsAttachments } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
@@ -69,6 +69,9 @@ interface ChatInputProps {
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
+  // Compact the conversation now (summarize the older history). Shown once a
+  // session has real context to compact.
+  onCompact?: () => void;
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -185,6 +188,7 @@ export function ChatInput({
   onModelChange,
   thinkingLabel,
   tokenUsage,
+  onCompact,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -345,6 +349,13 @@ export function ChatInput({
         bg: "bg",
         borderColor: "border.emphasized",
       };
+
+  // The composer's file-attach affordance is gated on the selected model's
+  // capabilities (models.dev): a text-only model cannot process attachments, so
+  // offering to attach is misleading. Falls back to the global default when there
+  // is no per-conversation override; unknown/custom models are not blocked.
+  const effectiveModelId = selectedModel || globalModel;
+  const attachmentsSupported = modelSupportsAttachments(models, effectiveModelId);
 
   const currentDirectory = (workingDirectory ?? "").trim();
   const directoryStateMatchesCurrent = directoryState.path === currentDirectory;
@@ -648,7 +659,7 @@ export function ChatInput({
             onValueChange={(details) => {
               if (details.value[0]) onAgentChange(details.value[0]);
             }}
-            size="xs"
+            size="sm"
             w="max-content"
             minW="max-content"
             maxW="none"
@@ -706,6 +717,25 @@ export function ChatInput({
             )}
           </AnimatePresence>
           <ContextUsageChip tokenUsage={tokenUsage} />
+          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (
+            <Button
+              size="xs"
+              variant="outline"
+              borderRadius="sm"
+              fontSize="xs"
+              h="28px"
+              px={2}
+              bg="bg"
+              borderColor="border"
+              flexShrink={0}
+              disabled={isStreaming}
+              onClick={onCompact}
+              title="Compact the conversation: summarize the older history to free up context, keeping the recent turns"
+            >
+              <LuFoldVertical size={13} />
+              Compact
+            </Button>
+          )}
           <Button
             size="xs"
             variant={agentsAppearance.variant}
@@ -764,6 +794,9 @@ export function ChatInput({
           onDrop={(event) => {
             event.preventDefault();
             setDragActive(false);
+            // Ignore drops when the selected model can't process attachments —
+            // matching the disabled attach button.
+            if (!attachmentsSupported) return;
             void handleFiles(event.dataTransfer.files);
           }}
           _focusWithin={{ borderColor: "border.emphasized" }}
@@ -840,7 +873,8 @@ export function ChatInput({
                 gap={1.5}
                 fontSize="xs"
                 fontWeight="medium"
-                disabled={disabled || !directoryValid}
+                disabled={disabled || !directoryValid || !attachmentsSupported}
+                title={!attachmentsSupported ? "The selected model can't process file attachments — switch to a vision or file-capable model" : undefined}
               >
                 <LuPaperclip size={14} />
                 Attach files
@@ -895,7 +929,7 @@ export function ChatInput({
               const nextMode = details.value[0] as PermissionMode | undefined;
               if (nextMode) onPermissionModeChange(nextMode);
             }}
-            size="xs"
+            size="sm"
             w="max-content"
             minW="max-content"
             maxW="none"
@@ -972,7 +1006,7 @@ export function ChatInput({
                 const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
                 if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
               }}
-              size="xs"
+              size="sm"
               w="max-content"
               minW="max-content"
               maxW="none"

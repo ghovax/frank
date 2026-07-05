@@ -408,6 +408,11 @@ function HomeContent() {
   async function handleModelChange(model: string) {
     const previous = selectedModel;
     setSelectedModel(model);
+    // Picking a model also persists it as the global default (the ModelSelect
+    // dialog writes it to configuration.yaml on Apply), so reflect that here: the
+    // fallback chip for the next new conversation should show the new default
+    // rather than the stale one until a page reload.
+    if (model) setGlobalModel(model);
     // A new chat has no session id yet; the override is applied when the session
     // is created on first send (the server seeds it from the global default, and
     // the user can re-pick). For an existing session, persist immediately.

@@ -3,7 +3,7 @@
 import { Badge, Box, Button, Flex, HStack, Input, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { LuCheck } from "react-icons/lu";
+import { LuCheck, LuSkipForward } from "react-icons/lu";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
@@ -97,6 +97,7 @@ function ToolQuestionPrompt({
   const items = question.questions;
   const [selected, setSelected] = useState<Record<number, string[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
+  const [skipped, setSkipped] = useState<Record<number, boolean>>({});
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,6 +105,7 @@ function ToolQuestionPrompt({
   }, []);
 
   function toggle(index: number, label: string, multiple: boolean) {
+    setSkipped((current) => (current[index] ? { ...current, [index]: false } : current));
     setSelected((current) => {
       const active = current[index] ?? [];
       if (!multiple) {
@@ -116,8 +118,17 @@ function ToolQuestionPrompt({
     });
   }
 
+  function toggleSkip(index: number) {
+    setSkipped((current) => ({ ...current, [index]: !current[index] }));
+    setSelected((current) => ({ ...current, [index]: [] }));
+    setCustom((current) => ({ ...current, [index]: "" }));
+  }
+
   function submit() {
+    // A skipped question resolves to an empty answer so the model sees it was
+    // deliberately left unanswered.
     const answers: QuestionAnswer[] = items.map((item, index) => {
+      if (skipped[index]) return item.multiple ? [] : "";
       const text = (custom[index] ?? "").trim();
       if (text) return text;
       const chosen = selected[index] ?? [];
@@ -134,15 +145,36 @@ function ToolQuestionPrompt({
         const hasOptions = !!item.options && item.options.length > 0;
         const active = selected[index] ?? [];
         const text = custom[index] ?? "";
+        const isSkipped = !!skipped[index];
         return (
           <Flex key={index} direction="column" gap={1.5}>
-            {item.header ? (
-              <Text fontSize="xs" fontWeight="semibold">
-                {item.header}
+            <Flex align="flex-start" justify="space-between" gap={2}>
+              <Flex direction="column" gap={0.5} minW={0} flex={1}>
+                {item.header ? (
+                  <Text fontSize="xs" fontWeight="semibold">
+                    {item.header}
+                  </Text>
+                ) : null}
+                <Text fontSize="sm">{item.question}</Text>
+              </Flex>
+              <Button
+                size="xs"
+                variant="ghost"
+                colorPalette="gray"
+                borderRadius="sm"
+                flexShrink={0}
+                onClick={() => toggleSkip(index)}
+                title="Leave this question unanswered"
+              >
+                <LuSkipForward size={12} />
+                {isSkipped ? "Skipped" : "Skip"}
+              </Button>
+            </Flex>
+            {isSkipped ? (
+              <Text fontSize="xs" color="fg.subtle">
+                Skipped — answered as blank.
               </Text>
-            ) : null}
-            <Text fontSize="sm">{item.question}</Text>
-            {hasOptions ? (
+            ) : hasOptions ? (
               <Flex direction="column" gap={1}>
                 {item.options!.map((option) => {
                   const isSelected = !text && active.includes(option.label);
@@ -192,12 +224,16 @@ function ToolQuestionPrompt({
                 })}
               </Flex>
             ) : null}
-            {customEnabled ? (
+            {!isSkipped && customEnabled ? (
               <Input
                 size="xs"
                 placeholder="Type your own answer"
                 value={text}
-                onChange={(event) => setCustom((current) => ({ ...current, [index]: event.target.value }))}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value) setSkipped((current) => (current[index] ? { ...current, [index]: false } : current));
+                  setCustom((current) => ({ ...current, [index]: value }));
+                }}
               />
             ) : null}
           </Flex>

@@ -84,6 +84,12 @@ WIDGET_EVENT_KIND = "widget_event"
 # Marks a turn the harness started on its own — not from user input — to deliver a
 # background result that landed after the previous turn ended (an autonomous wake).
 AUTONOMOUS_RESUME_METADATA_KEY = "harness/autonomousResume"
+# Marks a harness-initiated turn whose only job is to compact the conversation
+# (the user pressed the compact button). It runs no model turn — it summarizes the
+# older history and emits the compaction parts — so it is modelled like an
+# autonomous wake: an agent-role message carrying a single prose-less part.
+COMPACTION_METADATA_KEY = "harness/compaction"
+COMPACTION_KIND = "compaction_request"
 # DataPart kind that opens an autonomous wake task. A2A has no "system/harness"
 # message role — only `user` and `agent` — so a harness-initiated turn is modelled
 # honestly as an *agent* message (the agent resumed itself) carrying this single,
@@ -474,6 +480,41 @@ class HarnessAgentExecutor(AgentExecutor):
         # Holds startup-recovery wake tasks so they are not garbage-collected before
         # they finish driving their turn.
         self._startup_resume_tasks: set[asyncio.Task] = set()
+        # Holds in-flight manual-compaction turns for the same reason.
+        self._compaction_tasks: set[asyncio.Task] = set()
+
+    def compact_context(self, context_id: str) -> bool:
+        """Trigger a manual compaction of a context's conversation (the user pressed
+        the compact button). Runs as a background turn — serialized behind any
+        active turn via the per-context lock — so the endpoint returns immediately
+        while the compaction streams to the UI. Returns False when the context has
+        no live runtime to compact."""
+        if context_id not in self._runtimes:
+            return False
+        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+        if handler is None:
+            return False
+        task = asyncio.create_task(self._run_compaction_turn(context_id))
+        self._compaction_tasks.add(task)
+        task.add_done_callback(self._compaction_tasks.discard)
+        return True
+
+    async def _run_compaction_turn(self, context_id: str) -> None:
+        """Drive one manual-compaction turn via a self-sent agent-role message
+        carrying only the prose-less compaction part, so it is a real, persisted,
+        replayable task streamed to viewers like any other turn."""
+        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+        if handler is None:
+            return
+        message = Message(
+            role=Role.agent,
+            parts=[_data_part(COMPACTION_KIND)],
+            message_id=uuid.uuid4().hex,
+            context_id=context_id,
+            metadata={COMPACTION_METADATA_KEY: True},
+        )
+        async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
+            pass
 
     def abort_context(self, context_id: str) -> bool:
         runtime = self._runtimes.get(context_id)
@@ -766,6 +807,7 @@ class HarnessAgentExecutor(AgentExecutor):
         requested_model = str(metadata.get(SELECTED_MODEL_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
         autonomous = bool(metadata.get(AUTONOMOUS_RESUME_METADATA_KEY))
+        compaction = bool(metadata.get(COMPACTION_METADATA_KEY))
 
         task = context.current_task
         if task is None:
@@ -819,6 +861,27 @@ class HarnessAgentExecutor(AgentExecutor):
                 childTaskId=data.get("child_task_id", ""),
                 **fields,
             ))
+
+        async def emit_compaction(event) -> None:
+            """Map a runtime compaction event to its ``compaction`` DataPart, so both
+            the manual pass and mid-turn auto-compaction render identically (a live
+            "compacting" indicator, then the separator)."""
+            if event.type == StreamEvent.Type.COMPACTION_STARTED:
+                await emit(_data_part(
+                    "compaction", status="started",
+                    reason=event.data.get("reason", ""),
+                    messagesBefore=event.data.get("messages_before", 0),
+                    tokensBefore=event.data.get("tokens_before", 0),
+                ))
+            elif event.type == StreamEvent.Type.COMPACTION_DONE:
+                await emit(_data_part(
+                    "compaction", status="done",
+                    reason=event.data.get("reason", ""),
+                    ok=event.data.get("ok", True),
+                    messagesBefore=event.data.get("messages_before", 0),
+                    messagesAfter=event.data.get("messages_after", 0),
+                    tokensBefore=event.data.get("tokens_before", 0),
+                ))
 
         async def emit_text_buffer(_key: tuple[str, ...], text: str) -> None:
             await emit(_text_part(text))
@@ -906,6 +969,17 @@ class HarnessAgentExecutor(AgentExecutor):
             self._aborts[task.id] = runtime
             runtime.set_a2a_task_id(task.id)
             runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
+
+            # A manual compaction turn runs no model turn: it summarizes the older
+            # history in place and emits the compaction parts (the live indicator +
+            # the separator), then completes. Persisted like any turn, so the
+            # separator replays; fanned out, so viewers see it live.
+            if compaction:
+                async for compaction_event in runtime.compact(reason="manual"):
+                    await emit_compaction(compaction_event)
+                await save_runtime_conversation()
+                await updater.complete()
+                return
 
             # A render_error is injected as the model's own realization (a system
             # note), never as a user message; every other widget event is the
@@ -1087,6 +1161,9 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.STEERING:
                     await flush_stream_buffers()
                     await emit(_data_part("steering", text=data.get("text", "")))
+                elif kind in (StreamEvent.Type.COMPACTION_STARTED, StreamEvent.Type.COMPACTION_DONE):
+                    await flush_stream_buffers()
+                    await emit_compaction(event)
                 elif kind == StreamEvent.Type.DONE:
                     await flush_stream_buffers()
                     final_text = data.get("text", "") or final_text

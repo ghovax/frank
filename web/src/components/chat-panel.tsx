@@ -160,7 +160,7 @@ export function ChatPanel({
   onModelChange,
 }: ChatPanelProps) {
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
+  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, selectedModel, sessionRunning);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
@@ -416,6 +416,20 @@ export function ChatPanel({
     setPreviewPanelOpen(true);
   }, []);
 
+  // "Try again" on a turn-error box re-runs the turn that failed by resending the
+  // most recent user message. The failed turn produced no lasting state, so a
+  // plain resend is the correct retry (a rate limit or provider blip clears on its
+  // own; a rejected request goes back through the same path).
+  const handleRetry = useCallback(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const candidate = messages[index];
+      if (candidate.role === "user" && candidate.content.trim()) {
+        send(candidate.content);
+        return;
+      }
+    }
+  }, [messages, send]);
+
   // The live "Thinking" label shown beside the toolbar while the agent is
   // reasoning (no assistant text yet and no tool calls active). It stays
   // present through quick reasoning/tool/reasoning transitions, so the input
@@ -555,6 +569,7 @@ export function ChatPanel({
                       agents={agents}
                       activePreviewId={activePreviewId}
                       onActivatePreview={handleActivatePreview}
+                      onRetry={item.message.role === "error" ? handleRetry : undefined}
                     />
                   );
                   // Assistant messages stream their content in — any entrance or
@@ -644,7 +659,7 @@ export function ChatPanel({
         </Box>
 
         {pendingQuestion && (
-          <QuestionOverlay question={pendingQuestion} onQuestion={handleQuestion} />
+          <QuestionOverlay question={pendingQuestion} onQuestion={handleQuestion} onDismiss={declineQuestion} />
         )}
         <ChatInput
           onSend={handleSend}
@@ -688,6 +703,7 @@ export function ChatPanel({
           onModelChange={(model) => onModelChange?.(model)}
           thinkingLabel={liveStatusLabel}
           tokenUsage={tokenUsage}
+          onCompact={compact}
         />
       </Flex>
 

@@ -10,7 +10,16 @@ function normalizedValue(value: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
 }
 
-function useAnimatedValue(target: number, duration = 520): { displayValue: number; direction: 1 | -1 } {
+// Slot-machine cadence: the counter advances one discrete notch per interval
+// (each notch rolls the digits) rather than easing continuously from start to
+// target. Stepping in intervals reads as "changes landing in real time" — the
+// number visibly ticks up as more of the diff streams in, instead of gliding to
+// the final value all at once. Capping the tick count keeps a large jump from
+// dragging: a big delta simply takes bigger steps, not longer.
+const SLOT_TICK_INTERVAL_MS = 75;
+const SLOT_MAX_TICKS = 16;
+
+function useAnimatedValue(target: number): { displayValue: number; direction: 1 | -1 } {
   const prefersReducedMotion = useReducedMotion();
   const [display, setDisplay] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -18,44 +27,39 @@ function useAnimatedValue(target: number, duration = 520): { displayValue: numbe
 
   useEffect(() => {
     const targetValue = normalizedValue(target);
+    const startValue = displayRef.current;
+    const delta = targetValue - startValue;
+    if (delta === 0) return;
+
+    setDirection(delta > 0 ? 1 : -1);
+
     if (prefersReducedMotion) {
       displayRef.current = targetValue;
       setDisplay(targetValue);
       return;
     }
 
-    const startValue = displayRef.current;
-    const delta = targetValue - startValue;
-    if (delta === 0) {
-      setDisplay(targetValue);
-      return;
-    }
+    const distance = Math.abs(delta);
+    const ticks = Math.min(distance, SLOT_MAX_TICKS);
+    const step = Math.ceil(distance / ticks) * Math.sign(delta);
 
-    setDirection(delta > 0 ? 1 : -1);
-    const startTime = performance.now();
-    const distanceAdjustedDuration = Math.min(760, Math.max(220, duration + Math.min(Math.abs(delta), 24) * 8));
-    let animationFrame: number;
-
-    function tick(now: number) {
-      const elapsed = now - startTime;
-      const progress = Math.min(elapsed / distanceAdjustedDuration, 1);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const currentValue = Math.round(startValue + delta * eased);
-
-      displayRef.current = currentValue;
-      setDisplay(currentValue);
-
-      if (progress < 1) {
-        animationFrame = requestAnimationFrame(tick);
-      } else {
-        displayRef.current = targetValue;
-        setDisplay(targetValue);
+    const advance = () => {
+      let next = displayRef.current + step;
+      const overshot = step > 0 ? next >= targetValue : next <= targetValue;
+      if (overshot) next = targetValue;
+      displayRef.current = next;
+      setDisplay(next);
+      if (next === targetValue) {
+        window.clearInterval(interval);
       }
-    }
+    };
 
-    animationFrame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animationFrame);
-  }, [duration, prefersReducedMotion, target]);
+    // Fire the first notch immediately so the counter reacts the instant a change
+    // lands, then keep ticking on the interval until it reaches the target.
+    const interval = window.setInterval(advance, SLOT_TICK_INTERVAL_MS);
+    advance();
+    return () => window.clearInterval(interval);
+  }, [prefersReducedMotion, target]);
 
   return { displayValue: display, direction };
 }

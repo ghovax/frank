@@ -220,6 +220,12 @@ export interface ModelOption {
   provider: string;
   available: boolean;
   curated: boolean;
+  // Capabilities from models.dev (raw snake_case as the /models endpoint sends
+  // them). `attachment` gates the composer's file-attach button; `vision` (image
+  // input) and `input_modalities` annotate the picker.
+  attachment?: boolean;
+  vision?: boolean;
+  input_modalities?: string[];
 }
 
 export interface ProviderOption {
@@ -523,13 +529,16 @@ export async function resolvePermission(
 
 // Answer a pending ask_user question. `answers` is one entry per question (in
 // order); each entry is the selected label string, an array of labels for
-// multi-select, or the custom text the user typed.
+// multi-select, or the custom text the user typed. A skipped question is an empty
+// entry. When `declined` is true the user dismissed the whole prompt without
+// answering, and the turn is stopped.
 export async function resolveQuestion(
   sessionId: string,
   requestId: string,
-  answers: unknown[]
+  answers: unknown[],
+  declined = false
 ): Promise<ResolveResult> {
-  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers });
+  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers, declined });
 }
 
 export async function steerSession(sessionId: string, message: string): Promise<boolean> {
@@ -549,6 +558,18 @@ export async function steerSession(sessionId: string, message: string): Promise<
 export async function abortSession(sessionId: string): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Ask the server to compact the session's conversation now. The compaction runs
+// as a background turn that streams its progress and separator over the session
+// stream; this call only kicks it off.
+export async function compactSession(sessionId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${sessionId}/compact`, { method: "POST" });
     return response.ok;
   } catch {
     return false;

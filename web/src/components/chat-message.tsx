@@ -1,8 +1,8 @@
 "use client";
 
-import { Box, Flex } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { memo } from "react";
-import { LuInfo } from "react-icons/lu";
+import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { AttachmentChips } from "./attachment-chips";
@@ -17,6 +17,68 @@ interface ChatMessageProps {
   agents?: { id: string; name: string }[];
   activePreviewId?: string | null;
   onActivatePreview?: (id: string) => void;
+  // Re-run the turn that produced a server error (resends the last user message).
+  // Only wired for error rows.
+  onRetry?: () => void;
+}
+
+// The structured, safe error category the server hands the UI for a failed turn
+// (a rejected request, a rate limit, a provider outage). Never the raw provider
+// text — only a title + user-actionable message.
+interface FriendlyError {
+  code: string;
+  title: string;
+  message: string;
+  status?: number;
+}
+
+// A server/turn error rendered as its own distinct block — not disguised as an
+// assistant message. A bordered danger box with the alert triangle, a bold title,
+// the message below as rendered markdown, and a "Try again" action, so the user
+// reads it as a system failure with a clear next step rather than model prose.
+function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?: () => void }) {
+  const error = message.meta?.error as FriendlyError | undefined;
+  const title = error?.title?.trim() || "Something went wrong";
+  const body = error?.message?.trim() || message.content;
+  return (
+    <Box
+      w="100%"
+      maxW="640px"
+      border="1px solid"
+      borderColor="red.muted"
+      bg="red.subtle"
+      borderRadius="md"
+      px={3}
+      py={2.5}
+    >
+      <Flex align="center" gap={2} color="red.fg">
+        <Box display="flex" alignItems="center" flexShrink={0}>
+          <LuTriangleAlert size={15} />
+        </Box>
+        <Text fontSize="sm" fontWeight="bold" lineHeight="1.3">
+          {title}
+        </Text>
+      </Flex>
+      <Box mt={1.5}>
+        <MarkdownContent content={body} fontSize="sm" />
+      </Box>
+      {onRetry && (
+        <Flex mt={2.5}>
+          <Button
+            size="xs"
+            variant="outline"
+            colorPalette="red"
+            borderRadius="sm"
+            fontWeight="medium"
+            onClick={onRetry}
+          >
+            <LuRotateCw size={13} />
+            Try again
+          </Button>
+        </Flex>
+      )}
+    </Box>
+  );
 }
 
 function toolStatus(status: unknown): ToolEventStatus | undefined {
@@ -42,7 +104,7 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview }: ChatMessageProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview, onRetry }: ChatMessageProps) {
   switch (message.role) {
     case "user": {
       const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
@@ -79,22 +141,43 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     }
 
     case "error":
-      // A turn failure reads like a normal assistant note — plain, left-aligned
-      // prose — rather than an alarming red box, so it sits naturally in the
-      // conversation. A small muted marker is the only hint that it is a system
-      // message and not the model's own words.
+      // A turn failure is a system event, not the model's words — so it renders as
+      // its own dedicated error box (danger triangle, bold title, message, retry),
+      // never as assistant-style prose with a hand-aligned inline icon.
       return (
-        <Box alignSelf="flex-start" px={1}>
-          <Flex align="flex-start" gap={1.5} color="fg.muted">
-            <Box flexShrink={0} color="fg.subtle" display="flex" alignItems="center" fontSize="sm" lineHeight="1.42857" css={{ height: "1lh" }}>
-              <LuInfo size={13} />
-            </Box>
-            <Box minW={0}>
-              <MarkdownContent content={message.content} />
-            </Box>
+        <Box alignSelf="flex-start" w="100%">
+          <ErrorMessageCard message={message} onRetry={onRetry} />
+        </Box>
+      );
+
+    case "compaction": {
+      // A full-width divider marking where the earlier context was summarized away.
+      // "running" is the live "Compacting…" state; "done" is the settled separator.
+      const running = message.meta?.status === "running";
+      const before = Number(message.meta?.messagesBefore ?? 0);
+      const after = Number(message.meta?.messagesAfter ?? 0);
+      return (
+        <Box alignSelf="stretch" w="100%">
+          <Flex align="center" gap={3} py={1} color="fg.subtle">
+            <Box flex={1} h="1px" bg="border" />
+            <Flex
+              align="center"
+              gap={1.5}
+              flexShrink={0}
+              title={running || !before ? undefined : `Compacted ${before} messages down to ${after}`}
+            >
+              <Box display="flex" alignItems="center">
+                <LuFoldVertical size={12} />
+              </Box>
+              <Text fontSize="xs" fontWeight="medium" className={running ? "running-title-shimmer" : undefined}>
+                {running ? "Compacting context…" : "Context compacted"}
+              </Text>
+            </Flex>
+            <Box flex={1} h="1px" bg="border" />
           </Flex>
         </Box>
       );
+    }
 
     default:
       return null;

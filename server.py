@@ -52,6 +52,7 @@ from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.mcp_client import MCPClientManager
 from harness.core.models import MODELS, available_models, find_model, provider_and_suffix, resolve_litellm
 from harness.core.providers import PROVIDERS
+from harness.core.background import reap_orphaned_processes
 from harness.core.file_leases import FileLeaseManager
 from harness.core.session_workspaces import SessionWorkspace, SessionWorkspaceManager
 from harness.core.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
@@ -1080,6 +1081,12 @@ async def lifespan(application: FastAPI):
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
+    # Kill any process groups orphaned by a previous unclean shutdown (a SIGKILL or
+    # crash could not run the teardown handlers) so a background shell subtree — a
+    # dev server, a watcher — never survives across a restart. Runs before recovery
+    # marks those jobs abandoned.
+    await asyncio.to_thread(reap_orphaned_processes)
+
     # Recover background jobs persisted by a previous run: interrupted ones are
     # flagged for re-run and every context with a deliverable result is woken with
     # an autonomous turn so the agent picks the work back up on its own.
@@ -1150,8 +1157,12 @@ class PermissionRequest(BaseModel):
 class QuestionRequest(BaseModel):
     request_id: str
     # One entry per question, in order: a list of selected labels (plus any
-    # custom text the user typed). The runtime returns this verbatim to the tool.
+    # custom text the user typed). A skipped question is an empty entry. The
+    # runtime returns this verbatim to the tool.
     answers: list[Any]
+    # The user dismissed the whole prompt without answering. The tool reports the
+    # decline to the model and the turn stops rather than proceeding on a guess.
+    declined: bool = False
 
 
 class SteeringRequest(BaseModel):
@@ -1335,6 +1346,9 @@ async def list_models_endpoint():
             "provider": model.provider,
             "available": model.identifier in available_identifiers,
             "curated": model.curated,
+            "attachment": model.attachment,
+            "vision": model.vision,
+            "input_modalities": list(model.input_modalities),
         }
         for model in MODELS
     ]
@@ -2311,9 +2325,12 @@ async def resolve_question(context_id: str, request: QuestionRequest):
         return {"status": "unknown", "error": "No pending question with that identifier."}
     if future.done():
         return {"status": "stale", "error": "Question was already resolved."}
-    future.set_result(request.answers)
+    # A dismissal resolves to the decline sentinel the ask_user tool recognizes: it
+    # reports the decline to the model and ends the turn, instead of returning
+    # answers the user never gave.
+    future.set_result({"__declined__": True} if request.declined else request.answers)
     _broadcaster.publish({"type": "sessions_changed"})
-    return {"status": "resolved", "answers": request.answers}
+    return {"status": "resolved", "answers": request.answers, "declined": request.declined}
 
 
 @app.post("/chat/{context_id}/steer")
@@ -2343,6 +2360,17 @@ async def abort_session(context_id: str):
             future.set_result([])
     aborted = any(executor.abort_context(context_id) for executor in _executors.values())
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
+
+
+@app.post("/chat/{context_id}/compact")
+async def compact_session(context_id: str):
+    """Compact a context's conversation on demand (the user pressed compact). Runs a
+    background compaction turn that streams its progress and separator to the UI."""
+    triggered = any(executor.compact_context(context_id) for executor in _executors.values())
+    if not triggered:
+        raise HTTPException(status_code=409, detail="Session has no active context to compact.")
+    _broadcaster.publish({"type": "sessions_changed"})
+    return {"status": "compacting", "session_id": context_id}
 
 
 @app.post("/chat/{context_id}/tools/{tool_call_id}/abort")
