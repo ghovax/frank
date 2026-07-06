@@ -12,7 +12,7 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuClock, LuDownload, LuEllipsis, LuFolder, LuFolderOpen, LuHistory, LuHouse, LuMaximize2, LuMinimize2, LuMessageSquare, LuNavigation, LuNetwork, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuCheck, LuClock, LuDownload, LuEllipsis, LuFolder, LuFolderOpen, LuHistory, LuHouse, LuMaximize2, LuMinimize2, LuMessageSquare, LuNavigation, LuNetwork, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -261,6 +261,17 @@ export function ChatPanel({
   const hasInputRequiredRef = useRef(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
+  // The welcome screen's recent-project chips use a frozen snapshot of the order, so
+  // picking one doesn't reshuffle them under the cursor. It captures the first
+  // non-empty list and holds it for the life of this conversation; the panel remounts
+  // on every new conversation (keyed by chatKey upstream), which is exactly when a
+  // freshly re-sorted order is wanted.
+  const [frozenRecentProjects, setFrozenRecentProjects] = useState<{ path: string; name: string }[]>(() => recentProjects ?? []);
+  useEffect(() => {
+    if (frozenRecentProjects.length === 0 && (recentProjects?.length ?? 0) > 0) {
+      setFrozenRecentProjects(recentProjects ?? []);
+    }
+  }, [recentProjects, frozenRecentProjects.length]);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
   const [previewPanelWidth, setPreviewPanelWidth] = useState(560);
@@ -850,7 +861,7 @@ export function ChatPanel({
                   </Text>
                 </Flex>
                 <Text fontSize="sm" color="fg.muted" textAlign="center">
-                  Your open-source agentic engineering partner
+                  Your open-source agentic engineering partner—yours, forever
                 </Text>
               </Flex>
 
@@ -878,28 +889,34 @@ export function ChatPanel({
               </Flex>
 
               {/* Recent projects — a distinct, labelled group so quick-jump chips
-                  don't blend into the action buttons. */}
-              {(recentProjects ?? []).length > 0 && (
+                  don't blend into the action buttons. The order is frozen for the
+                  conversation (see frozenRecentProjects) so picking one doesn't make
+                  them jump, and the current project reads as selected rather than
+                  disabled. */}
+              {frozenRecentProjects.length > 0 && (
                 <Flex direction="column" align="center" gap={2.5} w="100%" maxW="640px">
                   <Flex align="center" gap={1.5} color="fg.muted">
                     <LuHistory size={15} />
                     <Text fontSize="sm" fontWeight="bold">Recent projects</Text>
                   </Flex>
                   <Flex gap={2} wrap="wrap" justify="center">
-                    {(recentProjects ?? []).slice(0, 6).map((project) => (
-                      <Button
-                        key={project.path}
-                        size="sm"
-                        variant="subtle"
-                        borderRadius="md"
-                        disabled={project.path === workingDirectory}
-                        onClick={() => onWorkingDirectoryChange?.(project.path)}
-                        title={project.path}
-                      >
-                        <LuFolder size={13} />
-                        {project.name}
-                      </Button>
-                    ))}
+                    {frozenRecentProjects.slice(0, 6).map((project) => {
+                      const selected = project.path === workingDirectory;
+                      return (
+                        <Button
+                          key={project.path}
+                          size="sm"
+                          variant={selected ? "solid" : "subtle"}
+                          colorPalette={selected ? "blue" : undefined}
+                          borderRadius="md"
+                          onClick={() => onWorkingDirectoryChange?.(project.path)}
+                          title={selected ? `${project.path} (current)` : project.path}
+                        >
+                          {selected ? <LuCheck size={13} /> : <LuFolder size={13} />}
+                          {project.name}
+                        </Button>
+                      );
+                    })}
                   </Flex>
                 </Flex>
               )}
