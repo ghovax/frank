@@ -852,7 +852,7 @@ export function ChatInput({
 
       {/* Bottom row (below the input): connection, permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
-        <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
+        <Flex align="center" gap={1.5} flexWrap="wrap" flexShrink={0}>
           <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
           <Select.Root
             collection={permissionCollection}
