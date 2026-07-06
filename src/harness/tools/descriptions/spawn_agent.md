@@ -10,4 +10,4 @@
 
 Do **not** delegate tiny edits, work that needs the same narrow context you already have, or final judgment. Sub-agents provide evidence; **you** decide.
 
-The `justification` is shown directly as the label for this call — make it concise and user-facing.
+The `justification` is shown directly as the label for this call — make it concise and user-facing, one flowing open-ended clause, never a `label: detail` heading.

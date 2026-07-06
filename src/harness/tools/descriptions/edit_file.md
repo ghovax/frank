@@ -6,7 +6,7 @@
 - `replace_with` (`string`): The text to replace it with.
 - `replace_all` (`boolean`): Replace every occurrence instead of requiring a unique match. Defaults to `false`.
 - `skip_validation` (`boolean`): Skip AST/syntax validation before writing. Defaults to `false`. Set to `true` when deliberately generating invalid syntax (e.g. scaffolding a broken file).
-- `justification` (`string`): Concise user-facing reason for the edit.
+- `justification` (`string`): Concise user-facing reason for the edit, as a single smooth open-ended clause rather than a `label: detail` title.
 - `risk` (`"low" | "medium" | "high"`): `low` for targeted edits, `medium` for broad changes, `high` for destructive or hard-to-reverse changes.
 
 **Usage:**
@@ -55,4 +55,4 @@ If validation fails:
 }
 ```
 
-This tool **modifies files**. Provide a concise *justification* and assess **risk**: `low` for a targeted edit, `medium` for a broad change, `high` for a destructive or hard-to-reverse change.
+This tool **modifies files**. Provide a concise *justification* (phrased as a smooth open-ended sentence, not a `label: detail` heading) and assess **risk**: `low` for a targeted edit, `medium` for a broad change, `high` for a destructive or hard-to-reverse change.

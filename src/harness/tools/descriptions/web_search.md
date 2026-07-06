@@ -6,4 +6,4 @@ The search runs in the **background**. You do **not** fetch the results yourself
 - Use this when you need **current** information: recent events, live documentation, standards, prices, schedules, or anything likely to have changed.
 - For retrieving a **specific known URL**, prefer **fetch_url** instead.
 
-Always provide a concise **justification**.
+Always provide a concise **justification** — one open-ended clause that reads as running words, never a `label: detail` heading.

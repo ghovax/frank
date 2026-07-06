@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -244,5 +244,53 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
         {content}
       </ReactMarkdown>
     </Box>
+  );
+});
+
+// A stripped-down, single-line Markdown renderer for places where a label must
+// render inline and stay on one line: tool-call headings (the justification).
+// Every block element collapses to its inline children so nothing forces a line
+// break or block margin — only code spans, emphasis, links, and inline math keep
+// their formatting. Pairs with a parent that owns the truncation/ellipsis.
+const passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+
+const inlineMarkdownComponents: Components = {
+  p: passthrough,
+  h1: passthrough, h2: passthrough, h3: passthrough, h4: passthrough, h5: passthrough, h6: passthrough,
+  ul: passthrough, ol: passthrough, li: passthrough, pre: passthrough, blockquote: passthrough,
+  hr: () => null,
+  img: () => null,
+  br: () => <> </>,
+  a({ href, children }) {
+    return (
+      <Link href={typeof href === "string" ? href : undefined} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
+        {children}
+      </Link>
+    );
+  },
+  code({ children }) {
+    return (
+      <Code fontSize="0.9em" px={1} py={0} borderRadius="sm" fontFamily="var(--app-font-mono)" whiteSpace="nowrap">
+        {children}
+      </Code>
+    );
+  },
+  strong({ children }) {
+    return <Text as="strong" fontSize="inherit" fontWeight="bold">{children}</Text>;
+  },
+  em({ children }) {
+    return <Text as="em" fontSize="inherit" fontStyle="italic">{children}</Text>;
+  },
+};
+
+export const InlineMarkdown = memo(function InlineMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+      rehypePlugins={[[rehypeKatex, { strict: false }]]}
+      components={inlineMarkdownComponents}
+    >
+      {content}
+    </ReactMarkdown>
   );
 });

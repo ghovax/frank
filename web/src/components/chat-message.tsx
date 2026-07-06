@@ -241,9 +241,10 @@ interface ChatToolGroupProps {
   activePreviewId?: string | null;
   onActivatePreview?: (id: string) => void;
   keepOpen?: boolean;
+  thinkingCount?: number;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview, keepOpen }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview, keepOpen, thinkingCount }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
   // ToolGroup renders, so the chat timeline and the agents panel stay in lockstep.
   const tools: ToolEvent[] = messages.map((message) => ({
@@ -264,6 +265,7 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermissio
       activePreviewId={activePreviewId}
       onActivatePreview={onActivatePreview}
       keepOpen={keepOpen}
+      thinkingCount={thinkingCount}
     />
   );
 });

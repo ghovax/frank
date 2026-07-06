@@ -15,4 +15,4 @@ Treat `call_mcp_tool` safety like **bash** safety:
 
 MCP tools may return renderable **artifacts** (HTML, iframes, images, links). When modifying an existing artifact, prefer `artifact_update_mode=\"replace\"` / `\"update\"` over creating a duplicate; use `artifact_target_id` to select the artifact to refresh.
 
-Always provide a concise **justification**.
+Always provide a concise **justification** — written as one smooth, open-ended clause, not a `label: detail` heading.

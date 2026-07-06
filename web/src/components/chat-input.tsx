@@ -424,11 +424,14 @@ export function ChatInput({
   const workspaceLocked = !!sessionId;
   const gitWorkspaceAvailable = directoryStateMatchesCurrent && directoryState.valid && directoryState.isGitRepository;
   const gitWorkspaceUnavailable = directoryStateMatchesCurrent && directoryState.valid && !directoryState.checking && !directoryState.isGitRepository;
-  const gitWorkspaceUnavailableLabel = directoryState.valid
-    ? "Branch and worktree sessions require the selected folder to be inside a Git repository."
-    : "Choose a valid working directory before using branch or worktree sessions.";
+  // Branch and worktree sessions only run inside a Git repo, so outside one the
+  // workspace selector can only ever read "Unmanaged". Rather than show a frozen
+  // selector beside the warning, hide it and let the warning explain why — which
+  // also keeps the composer's bottom row tighter.
+  const workspaceSelectorHidden = !workspaceLocked && gitWorkspaceUnavailable;
+  const gitWorkspaceUnavailableLabel = "Branch and worktree sessions require the selected folder to be inside a Git repository.";
   const displayedWorkspaceStrategy =
-    !workspaceLocked && gitWorkspaceUnavailable && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
+    workspaceSelectorHidden && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
   const selectedWorkspaceChoice =
     workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
   const workspaceAppearance = {
@@ -1063,75 +1066,7 @@ export function ChatInput({
             {sandboxAppearance.label}
           </Button>
           <Flex align="center" gap={1.5} flexWrap="wrap">
-            <Select.Root
-              collection={workspaceCollection}
-              value={[displayedWorkspaceStrategy]}
-              onValueChange={(details) => {
-                const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
-                if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
-              }}
-              size="sm"
-              w="max-content"
-              minW="max-content"
-              maxW="none"
-              flexShrink={0}
-            >
-              <Select.Control w="max-content" minW="max-content" maxW="none">
-                <Select.Trigger
-                  w="max-content"
-                  borderRadius="sm"
-                  fontSize="xs"
-                  gap={1.5}
-                  px={2}
-                  pe={7}
-                  bg={workspaceAppearance.bg}
-                  border="1px solid"
-                  borderColor={workspaceAppearance.borderColor}
-                  colorPalette={workspaceAppearance.colorPalette}
-                  minW="max-content"
-                  maxW="none"
-                  whiteSpace="nowrap"
-                  fontWeight="medium"
-                  disabled={workspaceLocked}
-                  title={
-                    workspaceLocked
-                      ? workspaceDetail?.title ?? "Workspace strategy for this session"
-                      : directoryState.repositoryRoot && displayedWorkspaceStrategy !== "none"
-                        ? directoryState.repositoryRoot
-                        : "Session workspace strategy"
-                  }
-                  style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
-                >
-                  <Box display="flex" alignItems="center" color={workspaceAppearance.color} flexShrink={0}>
-                    {workspaceAppearance.icon}
-                  </Box>
-                  <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
-                </Select.Trigger>
-                <Select.IndicatorGroup>
-                  <Select.Indicator />
-                </Select.IndicatorGroup>
-              </Select.Control>
-              <Portal>
-                <Select.Positioner>
-                  <Select.Content borderRadius="sm" minW="max-content" w="max-content">
-                    {workspaceCollection.items.map((item) => {
-                      const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
-                      const choice = workspaceChoices.find((choice) => choice.value === item.value);
-                      return (
-                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
-                          <Flex align="center" gap={1.5}>
-                            {choice?.icon}
-                            <Text>{item.label}</Text>
-                          </Flex>
-                          <Select.ItemIndicator />
-                        </Select.Item>
-                      );
-                    })}
-                  </Select.Content>
-                </Select.Positioner>
-              </Portal>
-            </Select.Root>
-            {!workspaceLocked && gitWorkspaceUnavailable && (
+            {workspaceSelectorHidden ? (
               <Flex
                 align="center"
                 gap={1.5}
@@ -1150,9 +1085,78 @@ export function ChatInput({
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
-                  Unconfigured workspace
+                  Unconfigured Git workspace
                 </Text>
               </Flex>
+            ) : (
+              <Select.Root
+                collection={workspaceCollection}
+                value={[displayedWorkspaceStrategy]}
+                onValueChange={(details) => {
+                  const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
+                  if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
+                }}
+                size="sm"
+                w="max-content"
+                minW="max-content"
+                maxW="none"
+                flexShrink={0}
+              >
+                <Select.Control w="max-content" minW="max-content" maxW="none">
+                  <Select.Trigger
+                    w="max-content"
+                    borderRadius="sm"
+                    fontSize="xs"
+                    gap={1.5}
+                    px={2}
+                    pe={7}
+                    bg={workspaceAppearance.bg}
+                    border="1px solid"
+                    borderColor={workspaceAppearance.borderColor}
+                    colorPalette={workspaceAppearance.colorPalette}
+                    minW="max-content"
+                    maxW="none"
+                    whiteSpace="nowrap"
+                    fontWeight="medium"
+                    disabled={workspaceLocked}
+                    title={
+                      workspaceLocked
+                        ? workspaceDetail?.title ?? "Workspace strategy for this session"
+                        : directoryState.repositoryRoot && displayedWorkspaceStrategy !== "none"
+                          ? directoryState.repositoryRoot
+                          : "Session workspace strategy"
+                    }
+                    style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
+                  >
+                    <Box display="flex" alignItems="center" color={workspaceAppearance.color} flexShrink={0}>
+                      {workspaceAppearance.icon}
+                    </Box>
+                    <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                  </Select.Trigger>
+                  <Select.IndicatorGroup>
+                    <Select.Indicator />
+                  </Select.IndicatorGroup>
+                </Select.Control>
+                <Portal>
+                  <Select.Positioner>
+                    <Select.Content borderRadius="sm" minW="max-content" w="max-content">
+                      {workspaceCollection.items.map((item) => {
+                        const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
+                        const choice = workspaceChoices.find((choice) => choice.value === item.value);
+                        return (
+                          <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
+                            <Flex align="center" gap={1.5}>
+                              {choice?.icon}
+                              <Text>{item.label}</Text>
+                            </Flex>
+                            <Select.ItemIndicator />
+                          </Select.Item>
+                        );
+                      })}
+                    </Select.Content>
+                  </Select.Positioner>
+                </Portal>
+              </Select.Root>
             )}
           </Flex>
         </Flex>
@@ -1187,15 +1191,15 @@ export function ChatInput({
                 justifyContent="space-between"
                 borderColor={directoryValid ? "border" : "red.muted"}
                 bg="bg"
-                w={{ base: "min(100%, 220px)", md: "180px" }}
-                maxW="100%"
+                w="max-content"
+                maxW={{ base: "100%", md: "220px" }}
                 minW={0}
                 disabled={folderLocked}
                 title={folderLocked
                   ? `Project folder is fixed for this session to ${currentDirectory}`
                   : currentDirectory || "Choose project"}
               >
-                <Box as="span" truncate>
+                <Box as="span" truncate minW={0}>
                   {currentProjectName}
                 </Box>
                 {!folderLocked && <LuChevronDown size={14} />}

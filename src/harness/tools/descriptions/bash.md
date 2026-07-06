@@ -31,4 +31,4 @@ Reach for `bash` for everything else: tests, builds, git, process and package ma
 - Never run broad recursive searches or directory walks over the real home directory (`~` or `/Users/<name>`). Narrow to the project, a known subdirectory, or exact paths.
 - Heavy commands, long tests/builds, servers, and broad scans are the case for `background=true`; do not start unmanaged detached jobs by hand (`&`, `nohup`).
 
-Always provide a concise **justification** that states *why* this command advances the task.
+Always provide a concise **justification** that states *why* this command advances the task — let it read as one smooth, open-ended sentence, never a `label: detail` heading.

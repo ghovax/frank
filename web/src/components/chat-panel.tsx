@@ -21,8 +21,11 @@ import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
+import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
+import { getToolCallDisplay } from "@/lib/tool-display";
+import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { setPermissionMode, fetchSettings, saveSettings, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 
@@ -67,7 +70,7 @@ interface ChatPanelProps {
 
 type TimelineItem =
   | { kind: "message"; message: ChatMessage }
-  | { kind: "tool_group"; id: string; messages: ChatMessage[] };
+  | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingCount: number };
 
 function folderDisplayName(workingDirectory?: string, projects: { path: string; name: string }[] = []): string {
   const directory = (workingDirectory ?? "").trim();
@@ -88,29 +91,40 @@ function previewArtifactAddress(artifact: Record<string, unknown>): string {
 function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   let index = 0;
+  // Reasoning phases seen since the last non-thinking, non-tool row. They belong to
+  // the tool batch they lead into (surfaced as the group's brain counter); a prose
+  // or user row that isn't a tool group discards them.
+  let pendingThinking = 0;
   while (index < messages.length) {
     const message = messages[index];
     if (message.role === "thinking") {
+      pendingThinking += 1;
       index += 1;
       continue;
     }
     if (message.role !== "tool_call") {
       items.push({ kind: "message", message });
+      pendingThinking = 0;
       index += 1;
       continue;
     }
 
     const toolMessages: ChatMessage[] = [];
+    // The leading reasoning that led into this batch counts toward it too.
+    let thinkingCount = pendingThinking;
+    pendingThinking = 0;
     // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
     // timeline, so it must not split a run of tool calls either — otherwise two
     // calls issued in successive iterations (each preceded by its own thinking)
-    // would render as separate entries instead of one group.
+    // would render as separate entries instead of one group. Each interleaved
+    // reasoning phase is tallied into the group's brain counter.
     while (index < messages.length) {
       const next = messages[index];
       if (next.role === "tool_call") {
         toolMessages.push(next);
         index += 1;
       } else if (next.role === "thinking") {
+        thinkingCount += 1;
         index += 1;
       } else {
         break;
@@ -123,6 +137,7 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
       // Key by the FIRST tool only: stays stable as more tools stream in.
       id: toolMessages[0].id,
       messages: toolMessages,
+      thinkingCount,
     });
   }
   return items;
@@ -510,11 +525,27 @@ export function ChatPanel({
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
   hasInputRequiredRef.current = hasInputRequired;
-  // The first pending ask_user question, surfaced as an overlay above the input.
-  const pendingQuestion = useMemo(() => {
+  // The first pending input-required prompt (an ask_user question or a permission
+  // approval), surfaced as an overlay above the input. Both live outside the tool
+  // card so a pending decision always grabs attention at the bottom of the chat,
+  // and resolving one reveals the next. A question takes precedence on the same
+  // card, though in practice a card carries only one.
+  const pendingPrompt = useMemo(() => {
     for (const message of messages) {
-      if (message.role === "tool_call" && message.meta?.status === "input_required" && message.meta?.question) {
-        return message.meta.question as import("@/lib/tool-event").ToolQuestion;
+      if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
+      const question = message.meta?.question as ToolQuestion | undefined;
+      if (question) return { kind: "question" as const, question };
+      const permission = message.meta?.permission as ToolPermission | undefined;
+      if (permission) {
+        const name = message.content;
+        const args = message.meta?.arguments as Record<string, unknown> | undefined;
+        const command = name === "bash" && args?.command ? String(args.command) : "";
+        return {
+          kind: "permission" as const,
+          permission,
+          title: getToolCallDisplay(name, args).label,
+          detail: command ? "```\n" + command + "\n```" : undefined,
+        };
       }
     }
     return null;
@@ -656,6 +687,7 @@ export function ChatPanel({
                       activePreviewId={activePreviewId}
                       onActivatePreview={handleActivatePreview}
                       keepOpen={isStreaming && isLastItem}
+                      thinkingCount={item.thinkingCount}
                     />
                   ) : (
                     <ChatMessageItem
@@ -754,14 +786,22 @@ export function ChatPanel({
         )}
         </Box>
 
-        {pendingQuestion && (
-          <QuestionOverlay question={pendingQuestion} onQuestion={handleQuestion} onDismiss={declineQuestion} />
+        {pendingPrompt?.kind === "question" && (
+          <QuestionOverlay question={pendingPrompt.question} onQuestion={handleQuestion} onDismiss={declineQuestion} />
+        )}
+        {pendingPrompt?.kind === "permission" && (
+          <PermissionOverlay
+            permission={pendingPrompt.permission}
+            title={pendingPrompt.title}
+            detail={pendingPrompt.detail}
+            onPermission={handlePermission}
+          />
         )}
         <ChatInput
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          disabled={!isConnected || !!pendingQuestion}
+          disabled={!isConnected || !!pendingPrompt}
           sessionId={sessionId}
           workingDirectory={workingDirectory}
           recentProjects={recentProjects}

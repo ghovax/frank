@@ -313,7 +313,7 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
             "title": "Provider credentials need attention",
             "message": "The selected provider rejected the configured credentials. Check the API key or choose another model.",
         }
-    if isinstance(error, litellm_exceptions.ServiceUnavailableError) or status_code in {502, 503, 504}:
+    if isinstance(error, (litellm_exceptions.ServiceUnavailableError, litellm_exceptions.InternalServerError)) or status_code in {500, 502, 503, 504}:
         return {
             **fields,
             "code": "provider_unavailable",
@@ -362,7 +362,7 @@ class _TextPartBuffer:
         self,
         emit: Callable[[tuple[str, ...], str], Awaitable[None]],
         *,
-        flush_interval: float = 0.016,
+        flush_interval: float = 0.041667,
         flush_size: int = 512,
     ):
         self._emit = emit

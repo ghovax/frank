@@ -34,15 +34,15 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   const item = items[current];
 
   function toggle(index: number, label: string, multiple: boolean) {
-    setSkipped((prev) => (prev[index] ? { ...prev, [index]: false } : prev));
-    setSelected((prev) => {
-      const active = prev[index] ?? [];
+    setSkipped((previous) => (previous[index] ? { ...previous, [index]: false } : previous));
+    setSelected((previous) => {
+      const active = previous[index] ?? [];
       if (!multiple) {
-        return { ...prev, [index]: active.length === 1 && active[0] === label ? [] : [label] };
+        return { ...previous, [index]: active.length === 1 && active[0] === label ? [] : [label] };
       }
       return {
-        ...prev,
-        [index]: active.includes(label) ? active.filter((v) => v !== label) : [...active, label],
+        ...previous,
+        [index]: active.includes(label) ? active.filter((value) => value !== label) : [...active, label],
       };
     });
   }
@@ -63,9 +63,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   }
 
   function skipCurrent() {
-    setSkipped((prev) => ({ ...prev, [current]: true }));
-    setSelected((prev) => ({ ...prev, [current]: [] }));
-    setCustom((prev) => ({ ...prev, [current]: "" }));
+    setSkipped((previous) => ({ ...previous, [current]: true }));
+    setSelected((previous) => ({ ...previous, [current]: [] }));
+    setCustom((previous) => ({ ...previous, [current]: "" }));
     if (current < total - 1) {
       setCurrent((c) => c + 1);
     } else {
@@ -99,14 +99,14 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
           p={3}
           borderRadius="md"
           border="1px solid"
-          borderColor="blue.solid"
+          borderColor="border.emphasized"
           bg="bg"
           boxShadow="lg"
           maxH="50vh"
           overflowY="auto"
         >
-          <Flex align="center" justify="space-between" mb={2} gap={2}>
-            <Text fontSize="xs" fontWeight="bold" color="blue.fg">
+          <Flex align="center" justify="space-between" gap={2}>
+            <Text fontSize="sm" fontWeight="bold" color="fg">
               Question {current + 1} of {total}
             </Text>
             <Flex align="center" gap={1}>
@@ -160,7 +160,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                       key={option.label}
                       as="button"
                       align="center"
-                      gap={2}
+                      gap={2.5}
                       px={2.5}
                       py={1.5}
                       borderRadius="sm"
@@ -172,12 +172,11 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                       transition="all 120ms"
                       _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
                       onClick={() => { if (!text) toggle(current, option.label, multiple); }}
-                      title={option.description}
                     >
                       <Box
                         w="16px" h="16px" flexShrink={0}
                         borderRadius={multiple ? "sm" : "full"}
-                        border="2px solid"
+                        border="1.5px solid"
                         borderColor={isSelected ? "blue.solid" : "border"}
                         bg={isSelected ? "blue.solid" : "transparent"}
                         display="flex" alignItems="center" justifyContent="center"
@@ -207,8 +206,8 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                 value={text}
                 onChange={(e) => {
                   const value = e.target.value;
-                  if (value) setSkipped((prev) => (prev[current] ? { ...prev, [current]: false } : prev));
-                  setCustom((prev) => ({ ...prev, [current]: value }));
+                  if (value) setSkipped((previous) => (previous[current] ? { ...previous, [current]: false } : previous));
+                  setCustom((previous) => ({ ...previous, [current]: value }));
                 }}
               />
             )}
@@ -221,9 +220,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
           </Flex>
 
           <Flex justify="space-between" align="center" mt={3} gap={2}>
-            <Button size="xs" variant="ghost" colorPalette="gray" borderRadius="sm" onClick={skipCurrent}>
+            <Button size="xs" variant="subtle" colorPalette="gray" borderRadius="sm" onClick={skipCurrent}>
               <LuSkipForward size={12} />
-              {current < total - 1 ? "Skip" : "Skip & submit"}
+              Skip
             </Button>
             <Button size="xs" colorPalette="green" variant="solid" onClick={submit}>
               Submit
