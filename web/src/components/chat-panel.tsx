@@ -874,7 +874,7 @@ export function ChatPanel({
                   </Text>
                 </Flex>
                 <Text fontSize="sm" color="fg.muted" textAlign="center">
-                  Your open-source agentic engineering partner—yours, forever
+                  The de-facto open-source agentic engineering partner—yours, forever
                 </Text>
               </Flex>
 

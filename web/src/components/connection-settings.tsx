@@ -213,7 +213,7 @@ export function ConnectionSettings({
             disabled={localActive}
           >
             {localActive ? <LuCheck /> : failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw /> : <LuLaptop />}
-            {localActive ? "Local (connected)" : failedTarget === LOCAL_TARGET_ID ? "Retry local" : "Local"}
+            {localActive ? "Local" : failedTarget === LOCAL_TARGET_ID ? "Retry local" : "Local"}
           </Button>
 
           <VStack gap={2} align="stretch">

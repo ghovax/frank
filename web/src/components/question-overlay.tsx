@@ -77,7 +77,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
     setSelected((previous) => ({ ...previous, [current]: [] }));
     setCustom((previous) => ({ ...previous, [current]: "" }));
     if (current < total - 1) {
-      setCurrent((c) => c + 1);
+      setCurrent((previous) => previous + 1);
     } else {
       // Last question skipped — submit with everything gathered so far.
       onQuestion(
@@ -127,28 +127,6 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
               Question {current + 1} of {total}
             </Text>
             <Flex align="center" gap={1}>
-              {total > 1 && (
-                <>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    borderRadius="sm"
-                    disabled={current === 0}
-                    onClick={() => setCurrent((c) => c - 1)}
-                  >
-                    <LuChevronLeft size={12} />
-                  </Button>
-                  <Button
-                    size="xs"
-                    variant="ghost"
-                    borderRadius="sm"
-                    disabled={current === total - 1}
-                    onClick={() => setCurrent((c) => c + 1)}
-                  >
-                    <LuChevronRight size={12} />
-                  </Button>
-                </>
-              )}
               {onDismiss && (
                 <IconButton
                   aria-label="Dismiss without answering"
@@ -221,8 +199,8 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                 size="sm"
                 placeholder="Type your own answer"
                 value={text}
-                onChange={(e) => {
-                  const value = e.target.value;
+                onChange={(event) => {
+                  const value = event.target.value;
                   if (value) setSkipped((previous) => (previous[current] ? { ...previous, [current]: false } : previous));
                   setCustom((previous) => ({ ...previous, [current]: value }));
                 }}
@@ -237,10 +215,37 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
           </Flex>
 
           <Flex justify="space-between" align="center" mt={3} gap={2}>
-            <Button size="xs" variant="subtle" colorPalette="gray" borderRadius="sm" onClick={skipCurrent}>
-              <LuSkipForward size={12} />
-              Skip
-            </Button>
+            <Flex align="center" gap={1}>
+              {total > 1 && (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  colorPalette="gray"
+                  borderRadius="sm"
+                  disabled={current === 0}
+                  onClick={() => setCurrent((previous) => previous - 1)}
+                >
+                  <LuChevronLeft size={12} />
+                  Back
+                </Button>
+              )}
+              {total > 1 && current < total - 1 && (
+                <Button
+                  size="xs"
+                  variant="subtle"
+                  colorPalette="gray"
+                  borderRadius="sm"
+                  onClick={() => setCurrent((previous) => previous + 1)}
+                >
+                  <LuChevronRight size={12} />
+                  Next
+                </Button>
+              )}
+              <Button size="xs" variant="subtle" colorPalette="red" borderRadius="sm" onClick={skipCurrent}>
+                <LuSkipForward size={12} />
+                Skip
+              </Button>
+            </Flex>
             <Button size="xs" colorPalette="green" variant="solid" onClick={submit} disabled={!allAnswered}>
               Submit
             </Button>
