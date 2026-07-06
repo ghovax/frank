@@ -35,10 +35,10 @@ Under these sit the raw layers: **sources** (artifacts you added), **anchors** (
 
 ## Engine and how to run it
 
-The blackboard is the **`blackboard` Python package** (in `scripts/blackboard/`) — self-contained, no dependency on any other skill. Run it with **`uv run python`** from `scripts/blackboard/` (installed editable, so `import blackboard` just works):
+The blackboard is the **`blackboard` Python package** (in `scripts/blackboard/`) — self-contained, no dependency on any other skill. Run it with **`uv run python`** from `scripts/` (the project root; installed editable, so `import blackboard` just works):
 
 ```bash
-cd scripts/blackboard
+cd scripts
 uv run python - <<'PY'
 import json, blackboard
 board = blackboard.open_board(objective="...")["board"]

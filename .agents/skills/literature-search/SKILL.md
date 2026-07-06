@@ -14,7 +14,7 @@ You are the driver of this skill. The engine is the **`scholar` Python package**
 
 ## Calling the functions
 
-Run the package with **`uv run python`** from the project root: the project is installed editable, so `import scholar` works with no setup and `uv run` supplies every dependency. The invocation is always the same shape — import the package, call whatever functions the task needs, and print what you want to read back:
+Run the package with **`uv run python`** from `scripts/` (the project root): the project is installed editable, so `import scholar` works with no setup and `uv run` supplies every dependency. The invocation is always the same shape — import the package, call whatever functions the task needs, and print what you want to read back:
 
 ```bash
 uv run python - <<'PY'
