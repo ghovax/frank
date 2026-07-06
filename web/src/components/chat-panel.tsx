@@ -730,14 +730,14 @@ export function ChatPanel({
                 aria-label="Background processes"
                 size="xs"
                 variant={backgroundPanelOpen || runningShellCount > 0 ? "subtle" : "ghost"}
-                colorPalette={backgroundPanelOpen || runningShellCount > 0 ? "blue" : undefined}
+                colorPalette={backgroundPanelOpen || runningShellCount > 0 ? "green" : undefined}
                 borderRadius="sm"
                 position="relative"
                 onClick={() => setBackgroundPanelOpen((current) => !current)}
               >
                 <LuTerminal size={15} />
                 {runningShellCount > 0 && (
-                  <Box position="absolute" top="2px" right="2px" w="7px" h="7px" borderRadius="full" bg="blue.solid" />
+                  <Box position="absolute" top="3px" right="6px" w="7px" h="7px" borderRadius="full" bg="green.solid" />
                 )}
               </IconButton>
             </Tooltip>

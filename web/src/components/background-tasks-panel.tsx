@@ -209,15 +209,24 @@ export function BackgroundTasksPanel({
           </Flex>
         ) : (
           <Flex direction="column" gap={2}>
-            {running.length === 0 ? (
-              <Text fontSize="xs" color="fg.muted" px={1} py={2}>
-                No commands are running right now.
-              </Text>
-            ) : (
-              running.map((task) => (
-                <RunningTaskRow key={task.toolCallId} task={task} sessionId={sessionId} />
-              ))
+            {running.length === 0 && (
+              <EmptyState.Root size="sm">
+                <EmptyState.Content>
+                  <EmptyState.Indicator>
+                    <LuTerminal />
+                  </EmptyState.Indicator>
+                  <VStack gap={0}>
+                    <EmptyState.Title fontSize="sm">No active processes</EmptyState.Title>
+                    <EmptyState.Description fontSize="xs">
+                      All shell commands have finished
+                    </EmptyState.Description>
+                  </VStack>
+                </EmptyState.Content>
+              </EmptyState.Root>
             )}
+            {running.length > 0 && running.map((task) => (
+              <RunningTaskRow key={task.toolCallId} task={task} sessionId={sessionId} />
+            ))}
 
             {completed.length > 0 && (
               <Box mt={running.length > 0 ? 2 : 0}>
