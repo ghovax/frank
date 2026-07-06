@@ -15,7 +15,7 @@ import {
   getLastTargetId,
   listConnectionTargets,
   LOCAL_TARGET_ID,
-  startLocalServer,
+  resolveReachableConnectionUrl,
   waitForConnection,
   type ConnectionTarget,
 } from "@/lib/connection";
@@ -88,8 +88,8 @@ export function ConnectionSwitcher({
     if (targetId === currentTarget) return;
     setSwitchingTarget(targetId);
     try {
-      const url = target.kind === "local" ? await startLocalServer() : target.url;
-      const ok = target.kind === "local" && isTauri()
+      const url = await resolveReachableConnectionUrl(target);
+      const ok = (target.kind === "local" || target.kind === "ssh") && isTauri()
         ? await waitForConnection(url)
         : await checkConnection(url);
       if (!ok) {
@@ -173,7 +173,7 @@ export function ConnectionSwitcher({
                 active={currentTarget === profile.id}
                 icon={<LuServer size={large ? 16 : 13} />}
                 label={profile.name}
-                sub={profile.url}
+                sub={profile.kind === "ssh" ? profile.sshHostAlias ?? profile.url : profile.url}
                 large={large}
                 busy={switchingTarget === profile.id}
                 onClick={() => void switchTo(profile)}

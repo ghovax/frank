@@ -1,11 +1,12 @@
 "use client";
 
 import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
-import { memo, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { Children, memo, useMemo, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import twemoji from "@twemoji/api";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { xcode, atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import type { Components } from "react-markdown";
@@ -23,6 +24,77 @@ interface MarkdownContentProps {
 const blockGap = "0.625rem";
 const headingGap = "0.375rem";
 const sectionGap = "1rem";
+const variationSelectorPattern = /\uFE0F/g;
+const zeroWidthJoiner = String.fromCharCode(0x200d);
+const emojiMarkerPattern = /\uE000(\d+)\uE001/g;
+
+const twemojiStyle: CSSProperties = {
+  display: "inline-block",
+  width: "1em",
+  height: "1em",
+  margin: "0 0.05em",
+  verticalAlign: "-0.125em",
+};
+
+function twemojiCodePoint(rawEmoji: string): string {
+  const normalizedEmoji = rawEmoji.includes(zeroWidthJoiner) ? rawEmoji : rawEmoji.replace(variationSelectorPattern, "");
+  return twemoji.convert.toCodePoint(normalizedEmoji);
+}
+
+function twemojiSource(rawEmoji: string): string {
+  return `${twemoji.base}svg/${twemojiCodePoint(rawEmoji)}.svg`;
+}
+
+function handleTwemojiError(event: SyntheticEvent<HTMLImageElement>) {
+  twemoji.onerror.call(event.currentTarget);
+}
+
+function renderTextWithTwemoji(text: string): ReactNode {
+  if (!twemoji.test(text)) return text;
+
+  const emojis: string[] = [];
+  const markedText = twemoji.replace(text, (rawEmoji) => {
+    if (rawEmoji === "\uFE0F") return rawEmoji;
+    const marker = `\uE000${emojis.length}\uE001`;
+    emojis.push(rawEmoji);
+    return marker;
+  });
+
+  if (emojis.length === 0) return markedText;
+
+  const nodes: ReactNode[] = [];
+  let previousIndex = 0;
+  for (const match of markedText.matchAll(emojiMarkerPattern)) {
+    const matchIndex = match.index ?? 0;
+    if (matchIndex > previousIndex) {
+      nodes.push(markedText.slice(previousIndex, matchIndex));
+    }
+    const emojiIndex = Number(match[1]);
+    const rawEmoji = emojis[emojiIndex];
+    nodes.push(
+      <img
+        key={`emoji-${matchIndex}-${emojiIndex}`}
+        className="twemoji"
+        draggable={false}
+        alt={rawEmoji}
+        src={twemojiSource(rawEmoji)}
+        decoding="async"
+        loading="lazy"
+        style={twemojiStyle}
+        onError={handleTwemojiError}
+      />
+    );
+    previousIndex = matchIndex + match[0].length;
+  }
+  if (previousIndex < markedText.length) {
+    nodes.push(markedText.slice(previousIndex));
+  }
+  return nodes;
+}
+
+function renderEmojiChildren(children: ReactNode): ReactNode {
+  return Children.map(children, (child) => typeof child === "string" ? renderTextWithTwemoji(child) : child);
+}
 
 // A single-line `$$...$$` is parsed by remark-math as *inline* math, so it lands
 // inside a paragraph without KaTeX's `katex-display` wrapper and never centers.
@@ -50,24 +122,24 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       if (isDisplayMathParagraph(node)) {
         return <Box textAlign="center" fontSize="inherit">{children}</Box>;
       }
-      return <Text fontSize="inherit">{children}</Text>;
+      return <Text fontSize="inherit">{renderEmojiChildren(children)}</Text>;
     },
     h1({ children }) {
-      return <Heading as="h1" fontSize="lg" fontWeight="bold">{children}</Heading>;
+      return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderEmojiChildren(children)}</Heading>;
     },
     h2({ children }) {
-      return <Heading as="h2" fontSize="md" fontWeight="bold">{children}</Heading>;
+      return <Heading as="h2" fontSize="md" fontWeight="bold">{renderEmojiChildren(children)}</Heading>;
     },
     h3({ children }) {
-      return <Heading as="h3" fontSize="sm" fontWeight="bold">{children}</Heading>;
+      return <Heading as="h3" fontSize="sm" fontWeight="bold">{renderEmojiChildren(children)}</Heading>;
     },
     h4({ children }) {
-      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{children}</Heading>;
+      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{renderEmojiChildren(children)}</Heading>;
     },
     a({ href, children }) {
       return (
         <Link href={href} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
-          {children}
+          {renderEmojiChildren(children)}
         </Link>
       );
     },
@@ -78,12 +150,12 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Box as="ol" pl={5} fontSize="inherit" listStyleType="decimal">{children}</Box>;
     },
     li({ children }) {
-      return <Box as="li" mb={0.5} fontSize="inherit" display="list-item" _last={{ mb: 0 }}>{children}</Box>;
+      return <Box as="li" mb={0.5} fontSize="inherit" display="list-item" _last={{ mb: 0 }}>{renderEmojiChildren(children)}</Box>;
     },
     blockquote({ children }) {
       return (
         <Box borderLeft="2px solid" borderColor="border" pl={2} color="fg.muted" fontSize="inherit">
-          {children}
+          {renderEmojiChildren(children)}
         </Box>
       );
     },
@@ -138,25 +210,25 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return (
         <Box borderRadius="md" border="1px solid" borderColor="border" w="100%" minW={0} overflow="hidden" overflowX="auto">
           <Box as="table" w="100%" fontSize="inherit" borderCollapse="collapse" style={{ tableLayout: "fixed" }}>
-            {children}
+            {renderEmojiChildren(children)}
           </Box>
         </Box>
       );
     },
     tr({ children }) {
-      return <Box as="tr" _notLast={{ borderBottom: "1px solid", borderColor: "border" }}>{children}</Box>;
+      return <Box as="tr" _notLast={{ borderBottom: "1px solid", borderColor: "border" }}>{renderEmojiChildren(children)}</Box>;
     },
     th({ children }) {
       return (
         <Box as="th" textAlign="left" px={2.5} py={1.5} fontWeight="semibold" bg="bg.emphasized" color="fg" overflowWrap="break-word" wordBreak="break-word">
-          {children}
+          {renderEmojiChildren(children)}
         </Box>
       );
     },
     td({ children }) {
       return (
         <Box as="td" px={2.5} py={1.5} verticalAlign="top" overflowWrap="break-word" wordBreak="break-word">
-          {children}
+          {renderEmojiChildren(children)}
         </Box>
       );
     },
@@ -164,38 +236,18 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Box as="hr" border="none" borderTop="1px solid" borderColor="border" opacity={0.6} />;
     },
     strong({ children }) {
-      return <Text as="strong" fontSize="inherit" fontWeight="bold">{children}</Text>;
+      return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Text>;
     },
     em({ children }) {
-      return <Text as="em" fontSize="inherit" fontStyle="italic">{children}</Text>;
+      return <Text as="em" fontSize="inherit" fontStyle="italic">{renderEmojiChildren(children)}</Text>;
+    },
+    del({ children }) {
+      return <Text as="del" fontSize="inherit">{renderEmojiChildren(children)}</Text>;
     },
   }), [syntaxTheme]);
 
-
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Replace Unicode emoji with Twitter-emojis (Twemoji) in the rendered HTML
-  // after each content change. The library finds emoji codepoints in the DOM and
-  // swaps them for <img> tags pointing at Twemoji's CDN assets.
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let cancelled = false;
-    import("@twemoji/api").then((module) => {
-      if (cancelled) return;
-      module.default.parse(container, {
-        folder: "svg",
-        ext: ".svg",
-        className: "twemoji",
-        attributes: () => ({ width: "1em", height: "1em", style: "vertical-align:-0.1em" }),
-      });
-    }).catch(() => {});
-    return () => { cancelled = true; };
-  }, [content]);
-
   return (
     <Box
-      ref={containerRef}
       minW={0}
       fontSize={fontSize}
       css={{
@@ -229,6 +281,13 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
         "& code, & pre, & kbd, & samp": {
           fontFamily: "var(--app-font-mono)",
         },
+        "& .twemoji": {
+          display: "inline-block",
+          width: "1em",
+          height: "1em",
+          margin: "0 0.05em",
+          verticalAlign: "-0.125em",
+        },
       }}
     >
       {/* Inline math uses single `$…$` (the prompt instructs the model to emit it
@@ -252,7 +311,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
 // Every block element collapses to its inline children so nothing forces a line
 // break or block margin — only code spans, emphasis, links, and inline math keep
 // their formatting. Pairs with a parent that owns the truncation/ellipsis.
-const passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+const passthrough = ({ children }: { children?: ReactNode }) => <>{renderEmojiChildren(children)}</>;
 
 const inlineMarkdownComponents: Components = {
   p: passthrough,
@@ -264,7 +323,7 @@ const inlineMarkdownComponents: Components = {
   a({ href, children }) {
     return (
       <Link href={typeof href === "string" ? href : undefined} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
-        {children}
+        {renderEmojiChildren(children)}
       </Link>
     );
   },
@@ -276,10 +335,13 @@ const inlineMarkdownComponents: Components = {
     );
   },
   strong({ children }) {
-    return <Text as="strong" fontSize="inherit" fontWeight="bold">{children}</Text>;
+    return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Text>;
   },
   em({ children }) {
-    return <Text as="em" fontSize="inherit" fontStyle="italic">{children}</Text>;
+    return <Text as="em" fontSize="inherit" fontStyle="italic">{renderEmojiChildren(children)}</Text>;
+  },
+  del({ children }) {
+    return <Text as="del" fontSize="inherit">{renderEmojiChildren(children)}</Text>;
   },
 };
 

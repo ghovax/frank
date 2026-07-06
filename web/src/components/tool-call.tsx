@@ -2,7 +2,6 @@
 
 import { Badge, Box, Flex } from "@chakra-ui/react";
 import { useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
@@ -80,27 +79,16 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
           onToggle={() => setOpen((current) => !current)}
         />
 
-        <AnimatePresence initial={false}>
-          {collapsible && bodyOpen && (
-            <motion.div
-              key="body"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              style={{ overflow: "hidden" }}
-            >
-              <ToolCardBody maxH="560px">
-                {/* gap matches FieldList's own field spacing so the call's last field
-                    (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
-                <Flex direction="column" gap={2} align="stretch">
-                  {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-                  {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}
-                </Flex>
-              </ToolCardBody>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {collapsible && bodyOpen && (
+          <ToolCardBody maxH="560px">
+            {/* gap matches FieldList's own field spacing so the call's last field
+                (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
+            <Flex direction="column" gap={2} align="stretch">
+              {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
+              {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}
+            </Flex>
+          </ToolCardBody>
+        )}
       </ToolCard>
     </Flex>
   );

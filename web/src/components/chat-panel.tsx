@@ -106,7 +106,7 @@ function previewArtifactAddress(artifact: Record<string, unknown>): string {
   return "";
 }
 
-function timelineItems(messages: ChatMessage[]): TimelineItem[] {
+function timelineItems(messages: ChatMessage[], isStreaming = false): TimelineItem[] {
   const items: TimelineItem[] = [];
   let index = 0;
   // Reasoning phases seen since the last non-thinking, non-tool row. They belong to
@@ -166,15 +166,15 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
       thinkingCount,
     });
   }
-  // A reasoning phase that is happening right now with no tool call yet (the model
-  // is thinking before it acts) surfaces as a tools-less group heading — the brain
-  // indicator the moment it starts, not only once the first tool lands. It is keyed
-  // by the same leading-thinking id the tool group will use, so when the first tool
-  // arrives the card is updated in place, not replaced. Only while it is actively
-  // running: a replayed transcript whose tail is finished thinking shows no phantom.
+  // A reasoning phase at the tail of a live turn surfaces as a tools-less group
+  // heading — the brain indicator the moment it starts, not only once the first
+  // tool lands. It is keyed by the same leading-thinking id the tool group will
+  // use, so when the first tool arrives the card is updated in place, not replaced.
+  // Keep it through the live stream even if the backend has already sent
+  // thinking_done; otherwise it flashes away in the gap before the next event.
   if (pendingThinking > 0 && pendingThinkingId) {
     const last = messages[messages.length - 1];
-    if (last && last.role === "thinking" && last.meta?.status === "running") {
+    if (last && last.role === "thinking" && (last.meta?.status === "running" || isStreaming)) {
       items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingCount: pendingThinking });
     }
   }
@@ -456,7 +456,7 @@ export function ChatPanel({
     0
    );
   const currentFolderName = folderDisplayName(workingDirectory, recentProjects);
-  const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
+  const renderedTimeline = useMemo(() => timelineItems(messages, isStreaming), [messages, isStreaming]);
   // Entrance animation is reserved for rows a *live turn* just appended at the
   // bottom — never the initial load or a background history prepend, which arrive
   // in bulk (and, for prepends, above the fold). The rule is purely positional and
@@ -731,15 +731,15 @@ export function ChatPanel({
               <IconButton
                 aria-label="Background processes"
                 size="xs"
-                variant={backgroundPanelOpen || runningShellCount > 0 ? "subtle" : "ghost"}
-                colorPalette={backgroundPanelOpen || runningShellCount > 0 ? "green" : undefined}
+                variant={backgroundPanelOpen ? "subtle" : "ghost"}
+                colorPalette={backgroundPanelOpen ? "blue" : undefined}
                 borderRadius="sm"
                 position="relative"
                 onClick={() => setBackgroundPanelOpen((current) => !current)}
               >
                 <LuTerminal size={15} />
                 {runningShellCount > 0 && (
-                  <Box position="absolute" top="3px" right="6px" w="7px" h="7px" borderRadius="full" bg="green.solid" />
+                  <Box position="absolute" top="4px" right="5px" w="6px" h="6px" borderRadius="full" bg="green.solid" boxShadow="0 0 0 1px var(--chakra-colors-bg)" />
                 )}
               </IconButton>
             </Tooltip>
@@ -761,8 +761,8 @@ export function ChatPanel({
               <IconButton
                 aria-label="Agents"
                 size="xs"
-                variant={agentsPanelOpen || activeSteps > 0 ? "subtle" : "ghost"}
-                colorPalette={agentsPanelOpen || activeSteps > 0 ? "orange" : undefined}
+                variant={agentsPanelOpen ? "subtle" : "ghost"}
+                colorPalette={agentsPanelOpen ? "blue" : undefined}
                 borderRadius="sm"
                 position="relative"
                 onClick={() => {
@@ -772,7 +772,7 @@ export function ChatPanel({
               >
                 <LuNetwork size={15} />
                 {activeSteps > 0 && (
-                  <Box position="absolute" top="-3px" right="-3px" minW="15px" h="15px" px="3px" borderRadius="full" bg="orange.solid" color="white" fontSize="9px" fontWeight="bold" lineHeight="15px" textAlign="center">
+                  <Box position="absolute" top="-2px" right="-2px" minW="13px" h="13px" px="3px" borderRadius="full" bg="bg.emphasized" color="fg.muted" border="1px solid" borderColor="border.emphasized" fontSize="8px" fontWeight="semibold" lineHeight="11px" textAlign="center">
                     {activeSteps}
                   </Box>
                 )}
@@ -782,15 +782,15 @@ export function ChatPanel({
               <IconButton
                 aria-label="Previews"
                 size="xs"
-                variant={previewPanelOpen || previewTabs.length > 0 ? "subtle" : "ghost"}
-                colorPalette={previewPanelOpen || previewTabs.length > 0 ? "teal" : undefined}
+                variant={previewPanelOpen ? "subtle" : "ghost"}
+                colorPalette={previewPanelOpen ? "blue" : undefined}
                 borderRadius="sm"
                 position="relative"
                 onClick={() => setPreviewPanelOpen((current) => !current)}
               >
                 <LuAppWindow size={15} />
                 {previewTabs.length > 0 && (
-                  <Box position="absolute" top="-3px" right="-3px" minW="15px" h="15px" px="3px" borderRadius="full" bg="teal.solid" color="white" fontSize="9px" fontWeight="bold" lineHeight="15px" textAlign="center">
+                  <Box position="absolute" top="-2px" right="-2px" minW="13px" h="13px" px="3px" borderRadius="full" bg="bg.emphasized" color="fg.muted" border="1px solid" borderColor="border.emphasized" fontSize="8px" fontWeight="semibold" lineHeight="11px" textAlign="center">
                     {previewTabs.length}
                   </Box>
                 )}
@@ -966,11 +966,12 @@ export function ChatPanel({
                       onRetry={item.message.role === "error" ? handleRetry : undefined}
                     />
                   );
-                  // Assistant messages stream their content in — any entrance or
-                  // layout animation on the wrapper looks wrong as text grows, so
-                  // they get a plain div with no motion at all.
+                  // Assistant messages stream their content in, and tool groups
+                  // update their heading in place as calls arrive. Any entrance or
+                  // layout animation on either wrapper looks like the transcript is
+                  // being pushed around, so both get a plain stable row.
                   const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
-                  if (isAssistantMessage) {
+                  if (isAssistantMessage || item.kind === "tool_group") {
                     return (
                       <div key={key} style={{ display: "flex", flexDirection: "column" }}>
                         {inner}

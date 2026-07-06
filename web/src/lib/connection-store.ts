@@ -9,7 +9,7 @@
 // own. All Tauri modules are imported dynamically and only when running under Tauri,
 // so the static export and SSR prerender never touch them.
 
-export type ConnectionKind = "local" | "remote";
+export type ConnectionKind = "local" | "remote" | "ssh";
 
 export interface ConnectionProfile {
   id: string;
@@ -18,6 +18,14 @@ export interface ConnectionProfile {
   kind: ConnectionKind;
   createdAt: string;
   lastUsedAt: string | null;
+  sshHostAlias?: string;
+  sshHostName?: string;
+  sshUser?: string;
+  sshPort?: number | null;
+  sshIdentityFile?: string;
+  sshLocalPort?: number | null;
+  sshRemotePort?: number | null;
+  sshContext?: string;
 }
 
 const DATABASE_NAME = "sqlite:daisy.db";
@@ -116,9 +124,24 @@ export async function listConnections(): Promise<ConnectionProfile[]> {
   }
   const database = await getDatabase();
   const rows = await database.select<
-    { id: string; name: string; url: string; kind: string; created_at: string; last_used_at: string | null }[]
+    {
+      id: string;
+      name: string;
+      url: string;
+      kind: string;
+      created_at: string;
+      last_used_at: string | null;
+      ssh_host_alias: string | null;
+      ssh_host_name: string | null;
+      ssh_user: string | null;
+      ssh_port: number | null;
+      ssh_identity_file: string | null;
+      ssh_local_port: number | null;
+      ssh_remote_port: number | null;
+      ssh_context: string | null;
+    }[]
   >(
-    "SELECT id, name, url, kind, created_at, last_used_at FROM connections \
+    "SELECT id, name, url, kind, created_at, last_used_at, ssh_host_alias, ssh_host_name, ssh_user, ssh_port, ssh_identity_file, ssh_local_port, ssh_remote_port, ssh_context FROM connections \
      ORDER BY COALESCE(last_used_at, created_at) DESC"
   );
   return rows.map((row) => ({
@@ -128,6 +151,14 @@ export async function listConnections(): Promise<ConnectionProfile[]> {
     kind: (row.kind as ConnectionKind) ?? "remote",
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
+    sshHostAlias: row.ssh_host_alias ?? undefined,
+    sshHostName: row.ssh_host_name ?? undefined,
+    sshUser: row.ssh_user ?? undefined,
+    sshPort: row.ssh_port,
+    sshIdentityFile: row.ssh_identity_file ?? undefined,
+    sshLocalPort: row.ssh_local_port,
+    sshRemotePort: row.ssh_remote_port,
+    sshContext: row.ssh_context ?? undefined,
   }));
 }
 
@@ -140,10 +171,25 @@ export async function saveConnection(profile: ConnectionProfile): Promise<void> 
   }
   const database = await getDatabase();
   await database.execute(
-    "INSERT INTO connections (id, name, url, kind, created_at, last_used_at) \
-     VALUES ($1, $2, $3, $4, $5, $6) \
-     ON CONFLICT(id) DO UPDATE SET name = $2, url = $3, kind = $4",
-    [profile.id, profile.name, profile.url, profile.kind, profile.createdAt, profile.lastUsedAt]
+    "INSERT INTO connections (id, name, url, kind, created_at, last_used_at, ssh_host_alias, ssh_host_name, ssh_user, ssh_port, ssh_identity_file, ssh_local_port, ssh_remote_port, ssh_context) \
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
+     ON CONFLICT(id) DO UPDATE SET name = $2, url = $3, kind = $4, ssh_host_alias = $7, ssh_host_name = $8, ssh_user = $9, ssh_port = $10, ssh_identity_file = $11, ssh_local_port = $12, ssh_remote_port = $13, ssh_context = $14",
+    [
+      profile.id,
+      profile.name,
+      profile.url,
+      profile.kind,
+      profile.createdAt,
+      profile.lastUsedAt,
+      profile.sshHostAlias ?? null,
+      profile.sshHostName ?? null,
+      profile.sshUser ?? null,
+      profile.sshPort ?? null,
+      profile.sshIdentityFile ?? null,
+      profile.sshLocalPort ?? null,
+      profile.sshRemotePort ?? null,
+      profile.sshContext ?? null,
+    ]
   );
 }
 

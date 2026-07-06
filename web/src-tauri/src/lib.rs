@@ -12,13 +12,15 @@
 // The window chrome — hidden titlebar with native macOS traffic lights overlaid on
 // the content — is declared in tauri.conf.json.
 
-use std::net::{SocketAddr, TcpStream};
+use std::collections::{BTreeSet, HashMap};
+use std::io::{BufRead, BufReader};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::WebviewBuilder;
@@ -45,6 +47,36 @@ const PREVIEW_OFFSCREEN: f64 = -32000.0;
 // killed when the app quits. `None` means either nothing is running or the server
 // on the port was started by someone else — in which case we never touch it.
 struct LocalServer(Mutex<Option<Child>>);
+
+struct SshTunnels(Mutex<HashMap<String, SshTunnel>>);
+
+struct SshTunnel {
+    url: String,
+    child: Child,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SshHost {
+    alias: String,
+    host_name: String,
+    user: String,
+    port: u16,
+    identity_files: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SshTunnelRequest {
+    profile_id: String,
+    host_alias: String,
+    host_name: Option<String>,
+    user: Option<String>,
+    port: Option<u16>,
+    identity_file: Option<String>,
+    local_port: Option<u16>,
+    remote_port: Option<u16>,
+}
 
 fn local_base_url() -> String {
     format!("http://{LOCAL_HOST}:{LOCAL_PORT}")
@@ -95,6 +127,151 @@ fn kill_local_server(state: &LocalServer) {
         }
     }
     let _ = std::fs::remove_file(pid_stamp_path());
+}
+
+fn home_ssh_config_path() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME").ok_or_else(|| "HOME is not set.".to_string())?;
+    Ok(PathBuf::from(home).join(".ssh").join("config"))
+}
+
+fn configured_ssh_aliases() -> Result<Vec<String>, String> {
+    let path = home_ssh_config_path()?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let file = std::fs::File::open(&path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let reader = BufReader::new(file);
+    let mut aliases = BTreeSet::new();
+    for line in reader.lines() {
+        let line = line.map_err(|error| format!("could not read {}: {error}", path.display()))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut parts = trimmed.split_whitespace();
+        let Some(keyword) = parts.next() else {
+            continue;
+        };
+        if !keyword.eq_ignore_ascii_case("host") {
+            continue;
+        }
+        for alias in parts {
+            if !alias.contains('*') && !alias.contains('?') && alias != "!" {
+                aliases.insert(alias.to_string());
+            }
+        }
+    }
+    Ok(aliases.into_iter().collect())
+}
+
+fn resolve_ssh_host(alias: &str) -> SshHost {
+    let mut host = SshHost {
+        alias: alias.to_string(),
+        host_name: alias.to_string(),
+        user: String::new(),
+        port: 22,
+        identity_files: Vec::new(),
+    };
+    let output = Command::new("ssh").arg("-G").arg(alias).output();
+    let Ok(output) = output else {
+        return host;
+    };
+    if !output.status.success() {
+        return host;
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Some((key, value)) = line.split_once(' ') else {
+            continue;
+        };
+        match key {
+            "hostname" => host.host_name = value.to_string(),
+            "user" => host.user = value.to_string(),
+            "port" => {
+                host.port = value.parse().unwrap_or(22);
+            }
+            "identityfile" => host.identity_files.push(value.to_string()),
+            _ => {}
+        }
+    }
+    host
+}
+
+#[tauri::command]
+fn list_ssh_hosts() -> Result<Vec<SshHost>, String> {
+    Ok(configured_ssh_aliases()?
+        .iter()
+        .map(|alias| resolve_ssh_host(alias))
+        .collect())
+}
+
+fn open_local_port(requested: Option<u16>) -> Result<u16, String> {
+    if let Some(port) = requested.filter(|port| *port > 0) {
+        return Ok(port);
+    }
+    let listener = TcpListener::bind((LOCAL_HOST, 0))
+        .map_err(|error| format!("could not allocate a local tunnel port: {error}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| format!("could not inspect local tunnel port: {error}"))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+#[tauri::command]
+fn start_ssh_tunnel(
+    state: tauri::State<'_, SshTunnels>,
+    request: SshTunnelRequest,
+) -> Result<String, String> {
+    let mut guard = state.0.lock().map_err(|error| error.to_string())?;
+    if let Some(existing) = guard.get_mut(&request.profile_id) {
+        if matches!(existing.child.try_wait(), Ok(None)) {
+            return Ok(existing.url.clone());
+        }
+    }
+    if let Some(mut stale) = guard.remove(&request.profile_id) {
+        let _ = stale.child.kill();
+        let _ = stale.child.wait();
+    }
+
+    let local_port = open_local_port(request.local_port)?;
+    let remote_port = request.remote_port.unwrap_or(8822);
+    let url = format!("http://{LOCAL_HOST}:{local_port}");
+    let mut command = Command::new("ssh");
+    command
+        .arg("-N")
+        .arg("-o")
+        .arg("ExitOnForwardFailure=yes")
+        .arg("-L")
+        .arg(format!("{LOCAL_HOST}:{local_port}:127.0.0.1:{remote_port}"));
+    if let Some(host_name) = request.host_name.as_deref().filter(|value| !value.trim().is_empty()) {
+        command.arg("-o").arg(format!("HostName={}", host_name.trim()));
+    }
+    if let Some(user) = request.user.as_deref().filter(|value| !value.trim().is_empty()) {
+        command.arg("-l").arg(user.trim());
+    }
+    if let Some(port) = request.port {
+        command.arg("-p").arg(port.to_string());
+    }
+    if let Some(identity_file) = request.identity_file.as_deref().filter(|value| !value.trim().is_empty()) {
+        command.arg("-i").arg(identity_file.trim());
+    }
+    command.arg(&request.host_alias);
+    let child = command
+        .spawn()
+        .map_err(|error| format!("failed to start SSH tunnel: {error}"))?;
+    guard.insert(request.profile_id, SshTunnel { url: url.clone(), child });
+    Ok(url)
+}
+
+fn kill_ssh_tunnels(state: &SshTunnels) {
+    if let Ok(mut guard) = state.0.lock() {
+        for (_, mut tunnel) in guard.drain() {
+            let _ = tunnel.child.kill();
+            let _ = tunnel.child.wait();
+        }
+    }
 }
 
 #[tauri::command]
@@ -345,6 +522,12 @@ pub fn run() {
             sql: include_str!("../migrations/002_map_sessions_to_connections.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add_ssh_connections",
+            sql: include_str!("../migrations/003_add_ssh_connections.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -354,9 +537,12 @@ pub fn run() {
                 .build(),
         )
         .manage(LocalServer(Mutex::new(None)))
+        .manage(SshTunnels(Mutex::new(HashMap::new())))
         .invoke_handler(tauri::generate_handler![
             start_local_server,
             stop_local_server,
+            list_ssh_hosts,
+            start_ssh_tunnel,
             update_tray_recent,
             preview_show,
             preview_set_bounds,
@@ -393,6 +579,9 @@ pub fn run() {
             tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                 if let Some(state) = app_handle.try_state::<LocalServer>() {
                     kill_local_server(&state);
+                }
+                if let Some(state) = app_handle.try_state::<SshTunnels>() {
+                    kill_ssh_tunnels(&state);
                 }
             }
             _ => {}

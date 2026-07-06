@@ -104,7 +104,7 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
     case "read_task":
       return "Reading a related task";
     case "read_file":
-      return args?.file_path ? `Reading ${shortPath(String(args.file_path))}` : "Reading file";
+      return args?.file_path ? `Reading the file ${fileName(String(args.file_path))}${readFileRange(args)}` : "Reading file";
     case "find_files":
       return args?.pattern ? `Finding files matching "${String(args.pattern)}"` : "Finding files";
     case "search_content":
@@ -145,6 +145,21 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
 function shortPath(path: string): string {
   const parts = path.split("/");
   return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : path;
+}
+
+function fileName(path: string): string {
+  return path.split("/").filter(Boolean).at(-1) ?? path;
+}
+
+function readFileRange(args: Record<string, unknown>): string {
+  const offset = Number(args.offset ?? 1);
+  const limit = args.limit == null ? 0 : Number(args.limit);
+  const defaultLimit = 2000;
+  const hasSpecificOffset = Number.isFinite(offset) && offset > 1;
+  const hasSpecificLimit = Number.isFinite(limit) && limit > 0 && limit !== defaultLimit;
+  if (!hasSpecificOffset && !hasSpecificLimit) return "";
+  if (!Number.isFinite(limit) || limit <= 0) return ` around line ${offset}`;
+  return ` around lines ${offset}–${offset + limit - 1}`;
 }
 
 export function getToolCallDisplay(

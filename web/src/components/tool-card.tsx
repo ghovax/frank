@@ -48,16 +48,23 @@ export function ToolCardHeader({
           {icon}
         </Box>
       )}
-      <Text
+      <Box
+        flex={1}
+        minW={0}
+        overflow="hidden"
+        whiteSpace="nowrap"
+        textOverflow="ellipsis"
         fontSize="xs"
         fontWeight="medium"
-        truncate
-        flex={1}
         className={shimmer ? "running-title-shimmer" : undefined}
       >
         {title}
-      </Text>
-      {badges}
+      </Box>
+      {badges && (
+        <Flex align="center" gap={1} flexShrink={0} minW={0}>
+          {badges}
+        </Flex>
+      )}
       {collapsible && (
         <Box color="fg.muted" fontSize="xs" ml="auto" flexShrink={0}>
           {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}

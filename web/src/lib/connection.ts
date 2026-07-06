@@ -4,7 +4,7 @@
 // chosen backend.
 
 import { setApiBase, getApiBase, invalidateDiscoveryCache } from "@/lib/api";
-import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind } from "@/lib/connection-store";
+import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind, type ConnectionProfile } from "@/lib/connection-store";
 
 // The conventional local harness address. The bundled server binds here, and this
 // is also the API client's built-in default.
@@ -20,6 +20,22 @@ export interface ConnectionTarget {
   name: string;
   url: string;
   kind: ConnectionKind;
+  sshHostAlias?: string;
+  sshHostName?: string;
+  sshUser?: string;
+  sshPort?: number | null;
+  sshIdentityFile?: string;
+  sshLocalPort?: number | null;
+  sshRemotePort?: number | null;
+  sshContext?: string;
+}
+
+export interface SshHost {
+  alias: string;
+  hostName: string;
+  user: string;
+  port: number;
+  identityFiles: string[];
 }
 
 export const LOCAL_CONNECTION_TARGET: ConnectionTarget = {
@@ -46,6 +62,14 @@ export async function listConnectionTargets(): Promise<ConnectionTarget[]> {
       name: profile.name,
       url: profile.url,
       kind: profile.kind,
+      sshHostAlias: profile.sshHostAlias,
+      sshHostName: profile.sshHostName,
+      sshUser: profile.sshUser,
+      sshPort: profile.sshPort,
+      sshIdentityFile: profile.sshIdentityFile,
+      sshLocalPort: profile.sshLocalPort,
+      sshRemotePort: profile.sshRemotePort,
+      sshContext: profile.sshContext,
     })),
   ];
 }
@@ -59,7 +83,20 @@ export async function resolveConnectionTarget(targetId: string | null | undefine
   const saved = await listConnections();
   const profile = saved.find((entry) => entry.id === targetId);
   return profile
-    ? { id: profile.id, name: profile.name, url: profile.url, kind: profile.kind }
+    ? {
+      id: profile.id,
+      name: profile.name,
+      url: profile.url,
+      kind: profile.kind,
+      sshHostAlias: profile.sshHostAlias,
+      sshHostName: profile.sshHostName,
+      sshUser: profile.sshUser,
+      sshPort: profile.sshPort,
+      sshIdentityFile: profile.sshIdentityFile,
+      sshLocalPort: profile.sshLocalPort,
+      sshRemotePort: profile.sshRemotePort,
+      sshContext: profile.sshContext,
+    }
     : null;
 }
 
@@ -96,6 +133,30 @@ export async function stopLocalServer(): Promise<void> {
   await invoke("stop_local_server");
 }
 
+export async function listSshHosts(): Promise<SshHost[]> {
+  if (!isTauri()) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<SshHost[]>("list_ssh_hosts");
+}
+
+export async function startSshTunnel(profile: Pick<ConnectionProfile, "id" | "sshHostAlias" | "sshHostName" | "sshUser" | "sshPort" | "sshIdentityFile" | "sshLocalPort" | "sshRemotePort">): Promise<string> {
+  if (!isTauri()) throw new Error("SSH connections are available in the desktop app.");
+  if (!profile.sshHostAlias) throw new Error("SSH host alias is required.");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("start_ssh_tunnel", {
+    request: {
+      profileId: profile.id,
+      hostAlias: profile.sshHostAlias,
+      hostName: profile.sshHostName || undefined,
+      user: profile.sshUser || undefined,
+      port: profile.sshPort || undefined,
+      identityFile: profile.sshIdentityFile || undefined,
+      localPort: profile.sshLocalPort || undefined,
+      remotePort: profile.sshRemotePort || 8822,
+    },
+  });
+}
+
 // Wait for a freshly-started server to accept requests, polling until it responds
 // or the overall budget runs out (the frozen server takes a few seconds to boot).
 export async function waitForConnection(url: string, totalMs = 20000): Promise<boolean> {
@@ -119,7 +180,22 @@ export async function activateConnection(url: string, targetId: string, profileI
 }
 
 export async function activateConnectionTarget(target: ConnectionTarget): Promise<void> {
-  await activateConnection(target.url, target.id, target.kind === "remote" ? target.id : undefined);
+  await activateConnection(target.url, target.id, target.kind === "local" ? undefined : target.id);
+}
+
+export async function resolveReachableConnectionUrl(target: ConnectionTarget): Promise<string> {
+  if (target.kind === "local") return startLocalServer();
+  if (target.kind === "ssh") return startSshTunnel({
+    id: target.id,
+    sshHostAlias: target.sshHostAlias,
+    sshHostName: target.sshHostName,
+    sshUser: target.sshUser,
+    sshPort: target.sshPort,
+    sshIdentityFile: target.sshIdentityFile,
+    sshLocalPort: target.sshLocalPort,
+    sshRemotePort: target.sshRemotePort,
+  });
+  return target.url;
 }
 
 export { getApiBase };

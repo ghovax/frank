@@ -210,7 +210,6 @@ function ReadTaskCallView({ args }: { args: Record<string, unknown> }) {
 // markdown renderer in the normal font rather than monospace.
 const PROSE_FIELD_KEYS = new Set([
   "justification",
-  "description",
   "goal",
   "prompt",
   "reason",
@@ -640,40 +639,52 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
 
 export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string; title?: string }[] }) {
   if (!args) return null;
-  switch (name) {
-    case "bash":
-      return <BashCallView args={args} />;
-    case "web_search":
-      return <WebSearchCallView args={args} />;
-    case "spawn_agent":
-      return <SpawnAgentCallView args={args} agents={agents} />;
-    case "write_tasks":
-      return <WriteTasksCallView args={args} />;
-    case "update_tasks":
-      return <UpdateTasksCallView args={args} />;
-    case "read_task":
-      return <ReadTaskCallView args={args} />;
-    case "open_preview":
-      return <WebPreviewCallView args={args} />;
-    case "read_file":
-      return <ReadFileCallView args={args} />;
-    case "edit_file":
-      return <EditFileCallView args={args} />;
-    case "write_file":
-      return <WriteFileCallView args={args} />;
-    case "search_content":
-      return <SearchContentCallView args={args} />;
-    case "find_files":
-      return <FindFilesCallView args={args} />;
-    case "fetch_url":
-      return <FetchUrlCallView args={args} />;
-    case "load_skill":
-      return <LoadSkillCallView args={args} />;
-    case "ask_user":
-      return <AskUserCallView args={args} />;
-    default:
-      return <GenericView data={args} />;
-  }
+  const justification = asString(args.justification);
+  const specificView = (() => {
+    switch (name) {
+      case "bash":
+        return <BashCallView args={args} />;
+      case "web_search":
+        return <WebSearchCallView args={args} />;
+      case "spawn_agent":
+        return <SpawnAgentCallView args={args} agents={agents} />;
+      case "write_tasks":
+        return <WriteTasksCallView args={args} />;
+      case "update_tasks":
+        return <UpdateTasksCallView args={args} />;
+      case "read_task":
+        return <ReadTaskCallView args={args} />;
+      case "open_preview":
+        return <WebPreviewCallView args={args} />;
+      case "read_file":
+        return <ReadFileCallView args={args} />;
+      case "edit_file":
+        return <EditFileCallView args={args} />;
+      case "write_file":
+        return <WriteFileCallView args={args} />;
+      case "search_content":
+        return <SearchContentCallView args={args} />;
+      case "find_files":
+        return <FindFilesCallView args={args} />;
+      case "fetch_url":
+        return <FetchUrlCallView args={args} />;
+      case "load_skill":
+        return <LoadSkillCallView args={args} />;
+      case "ask_user":
+        return <AskUserCallView args={args} />;
+      default:
+        return <GenericView data={args} />;
+    }
+  })();
+  if (!justification) return specificView;
+  return (
+    <FieldList>
+      <Field label="Justification">
+        <MarkdownContent content={justification} fontSize="xs" />
+      </Field>
+      <Box>{specificView}</Box>
+    </FieldList>
+  );
 }
 
 // Tool result (output) views

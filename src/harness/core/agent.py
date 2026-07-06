@@ -21,7 +21,7 @@ from langchain_core.messages import (
 )
 from langchain_core.messages.ai import add_ai_message_chunks
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from a2a.types import Task, TaskState
 
@@ -582,6 +582,7 @@ class AgentRuntime:
             global_configuration,
             is_sub_agent=is_sub_agent,
         )
+        self._tool_schemas = {tool.name: tool.args_schema for tool in self._tools}
         self._bound_llm = self._llm.bind_tools(
             self._tools,
             parallel_tool_calls=True,
@@ -1754,6 +1755,20 @@ class AgentRuntime:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     def _validate_tool_call(self, tool_name: str, arguments: dict) -> tuple[str, str] | None:
+        if not isinstance(arguments, dict):
+            return ("invalid_tool_arguments", f"{tool_name} arguments must be an object.")
+        schema = self._tool_schemas.get(tool_name)
+        if schema is not None:
+            fields = set(getattr(schema, "model_fields", {}).keys())
+            unknown_arguments = sorted(set(arguments) - fields)
+            if unknown_arguments:
+                accepted = ", ".join(sorted(fields))
+                rejected = ", ".join(unknown_arguments)
+                return ("invalid_tool_arguments", f"The tool {tool_name} does not accept the following argument(s) with which it was invoked: {rejected}. Accepted arguments by it are only: {accepted}.")
+            try:
+                schema.model_validate(arguments)
+            except ValidationError as exception:
+                return ("invalid_tool_arguments", str(exception))
         if tool_name in ("bash", "call_mcp_tool"):
             risk = arguments.get("risk", "low")
             if risk not in ("low", "medium", "high"):

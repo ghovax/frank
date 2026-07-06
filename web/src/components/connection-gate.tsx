@@ -19,10 +19,11 @@ import {
   getLastTargetId,
   LOCAL_DEFAULT_URL,
   LOCAL_TARGET_ID,
+  resolveReachableConnectionUrl,
   startLocalServer,
   waitForConnection,
 } from "@/lib/connection";
-import { isTauri, listConnections } from "@/lib/connection-store";
+import { isTauri, listConnections, type ConnectionProfile } from "@/lib/connection-store";
 import { ConnectionSettings } from "@/components/connection-settings";
 import { toaster } from "@/components/ui/toaster";
 
@@ -83,7 +84,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
           const profile = saved.find((entry) => entry.id === lastTarget);
           if (profile) {
             setStatusLabel(`Connecting to ${profile.name}…`);
-            const ok = await connectToRemote(profile.url, profile.name, profile.id);
+            const ok = await connectToProfile(profile);
             if (!cancelled && aliveRef.current) setPhase(ok ? "ready" : "settings");
             return;
           }
@@ -103,7 +104,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
           const profile = saved.find((entry) => entry.id === lastTarget);
           if (profile) {
             setStatusLabel(`Connecting to ${profile.name}…`);
-            const ok = await connectToRemote(profile.url, profile.name, profile.id);
+            const ok = await connectToProfile(profile);
             if (!cancelled && aliveRef.current) { if (ok) { setPhase("ready"); return; } }
           }
         }
@@ -149,24 +150,27 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function connectToRemote(url: string, name: string, id: string): Promise<boolean> {
+  async function connectToProfile(profile: ConnectionProfile): Promise<boolean> {
     try {
-      const ok = await checkConnection(url);
+      const url = await resolveReachableConnectionUrl(profile);
+      const ok = profile.kind === "ssh"
+        ? await waitForConnection(url)
+        : await checkConnection(url);
       if (!ok) {
         toaster.create({
           type: "error",
-          title: `Couldn't reach ${name}`,
+          title: `Couldn't reach ${profile.name}`,
           description: `No response from ${url}.`,
           closable: true,
         });
         return false;
       }
-      await activateConnection(url, id, id);
+      await activateConnection(url, profile.id, profile.id);
       return true;
     } catch (caught) {
       toaster.create({
         type: "error",
-        title: `Couldn't reach ${name}`,
+        title: `Couldn't reach ${profile.name}`,
         description: caught instanceof Error ? caught.message : String(caught),
         closable: true,
       });

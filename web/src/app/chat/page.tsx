@@ -13,15 +13,15 @@ import { browseWorkingDirectory, deleteSession, fetchAgents, fetchAgentCards, fe
 import { ChatPanel } from "@/components/chat-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { useTray } from "@/lib/use-tray";
-import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, startLocalServer, type ConnectionTarget } from "@/lib/connection";
-import { setSessionConnection } from "@/lib/connection-store";
+import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, resolveReachableConnectionUrl, type ConnectionTarget } from "@/lib/connection";
+import { setSessionConnection, type ConnectionKind } from "@/lib/connection-store";
 
 interface SessionEntry {
   sessionId: string;
   connectionId: string;
   connectionName: string;
   connectionUrl: string;
-  connectionKind: "local" | "remote";
+  connectionKind: ConnectionKind;
   agent: string;
   title: string;
   createdAt: string;
@@ -212,7 +212,7 @@ function ChatContent() {
 
   const sessionTargetUrl = useCallback(async (target: ConnectionTarget): Promise<string | null> => {
     const activeTarget = currentConnectionRef.current?.id === target.id;
-    const url = target.kind === "local" && activeTarget ? await startLocalServer() : target.url;
+    const url = activeTarget || target.kind === "ssh" ? await resolveReachableConnectionUrl(target) : target.url;
     const ok = await checkConnection(url, activeTarget ? 2000 : 900);
     return ok ? url : null;
   }, []);
@@ -375,7 +375,7 @@ function ChatContent() {
       .catch(() => {});
   }, [activeSession, currentConnectionId]);
   const groupedSessions = useMemo(() => {
-    const groups = new Map<string, { key: string; name: string; path: string; connectionName: string; connectionKind: "local" | "remote"; sessions: SessionEntry[] }>();
+    const groups = new Map<string, { key: string; name: string; path: string; connectionName: string; connectionKind: ConnectionKind; sessions: SessionEntry[] }>();
     for (const session of sessions) {
       const key = projectGroupKey(session);
       const existing = groups.get(key);

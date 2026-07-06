@@ -174,19 +174,20 @@ export const ToolGroup = memo(function ToolGroup({
                 no height/translate) as work streams so the row height never shifts
                 and the whole heading stays vertically centered by the parent's
                 align="center" alone — no hand-tuned heights. */}
-            <Box minW={0} flexShrink={1} overflow="hidden">
-              <AnimatePresence mode="wait" initial={false}>
+            <Box minW={0} flex={1} overflow="hidden" position="relative" minH="18px">
+              <AnimatePresence initial={false}>
                 <motion.div
                   key={headingText}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.12, ease: "easeOut" }}
-                  style={{ minWidth: 0 }}
+                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  style={{ position: "absolute", inset: 0, minWidth: 0, display: "flex", alignItems: "center" }}
                 >
                   <Text
                     fontSize="xs"
                     fontWeight="medium"
+                    lineHeight="18px"
                     whiteSpace="nowrap"
                     overflow="hidden"
                     textOverflow="ellipsis"
@@ -256,11 +257,11 @@ export const ToolGroup = memo(function ToolGroup({
             </Flex>
           </Flex>
           {hasFileChanges && fileChanges.length > 0 && (
-            <Flex align="center" gap={1.5} flexShrink={1} minW={0} overflow="hidden">
-              {fileChanges.slice(0, 3).map((file) => {
+            <Flex align="center" gap={1.5} flexShrink={0} minW={0} overflow="hidden">
+              {fileChanges.length === 1 ? fileChanges.map((file) => {
                 const FileIcon = iconForFilePath(file.path).icon;
                 return (
-                  <Flex key={file.path} align="center" gap={1.5} minW={0} flexShrink={1}>
+                  <Flex key={file.path} align="center" gap={1.5} minW={0} maxW="180px">
                     <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
                       <FileIcon size={13} />
                     </Box>
@@ -270,8 +271,7 @@ export const ToolGroup = memo(function ToolGroup({
                     <DiffStatBadge additions={file.additions} deletions={file.deletions} />
                   </Flex>
                 );
-              })}
-              {fileChanges.length > 3 && (
+              }) : (
                 <Badge size="sm" variant="surface" colorPalette="gray" borderRadius="sm" flexShrink={0}>
                   {fileChanges.length} files
                 </Badge>
@@ -289,40 +289,29 @@ export const ToolGroup = memo(function ToolGroup({
             </Box>
           )}
         </Flex>
-        <AnimatePresence initial={false}>
-          {bodyOpen && interactive && (
-            <motion.div
-              key="body"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              style={{ overflow: "hidden" }}
-            >
-              <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2} py={2} maxH="320px" overflowY="auto">
-                <Flex direction="column" gap={1.5}>
-                  {tools.map((tool, index) => (
-                    <ToolCall
-                      key={tool.toolCallId || `tool-${index}`}
-                      name={tool.name}
-                      arguments={tool.arguments}
-                      result={tool.result}
-                      toolCallId={tool.toolCallId}
-                      status={tool.status}
-                      permission={tool.permission}
-                      question={tool.question}
-                      agents={agents}
-                      onPermission={onPermission}
-                      onQuestion={onQuestion}
-                      activePreviewId={activePreviewId}
-                      onActivatePreview={onActivatePreview}
-                    />
-                  ))}
-                </Flex>
-              </Box>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {bodyOpen && interactive && (
+          <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2} py={2} maxH="320px" overflowY="auto">
+            <Flex direction="column" gap={1.5}>
+              {tools.map((tool, index) => (
+                <ToolCall
+                  key={tool.toolCallId || `tool-${index}`}
+                  name={tool.name}
+                  arguments={tool.arguments}
+                  result={tool.result}
+                  toolCallId={tool.toolCallId}
+                  status={tool.status}
+                  permission={tool.permission}
+                  question={tool.question}
+                  agents={agents}
+                  onPermission={onPermission}
+                  onQuestion={onQuestion}
+                  activePreviewId={activePreviewId}
+                  onActivatePreview={onActivatePreview}
+                />
+              ))}
+            </Flex>
+          </Box>
+        )}
       </Box>
     </Box>
   );

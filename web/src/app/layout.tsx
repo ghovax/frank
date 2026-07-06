@@ -53,6 +53,10 @@ const monoFont = localFont({
 export const metadata: Metadata = {
   title: "Daisy",
   description: "Daisy GUI",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml", sizes: "any" }],
+    shortcut: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
 };
 
 export default function RootLayout({

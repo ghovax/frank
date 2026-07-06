@@ -11,19 +11,22 @@
 // `onConnected`, letting the caller decide what happens next (render the app, or
 // switch the live session and close the dialog).
 
-import { Box, Button, Dialog, EmptyState, Flex, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, Dialog, EmptyState, Flex, Input, Portal, Spinner, Text, Textarea, VStack } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
-import { LuCheck, LuLaptop, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
+import { LuCheck, LuLaptop, LuNetwork, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
 import { toaster } from "@/components/ui/toaster";
 import {
   activateConnection,
   checkConnection,
+  listSshHosts,
   LOCAL_CONNECTION_TARGET,
   LOCAL_DEFAULT_URL,
   LOCAL_TARGET_ID,
+  resolveReachableConnectionUrl,
   startLocalServer,
   waitForConnection,
   type ConnectionTarget,
+  type SshHost,
 } from "@/lib/connection";
 import {
   deleteConnection,
@@ -54,6 +57,16 @@ export function ConnectionSettings({
   const [statusLabel, setStatusLabel] = useState("");
   const [failedTarget, setFailedTarget] = useState<string | null>(null);
   const [newUrl, setNewUrl] = useState("");
+  const [addMode, setAddMode] = useState<"url" | "ssh">("url");
+  const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
+  const [sshLoading, setSshLoading] = useState(false);
+  const [sshAlias, setSshAlias] = useState("");
+  const [sshUser, setSshUser] = useState("");
+  const [sshPort, setSshPort] = useState("");
+  const [sshIdentityFile, setSshIdentityFile] = useState("");
+  const [sshLocalPort, setSshLocalPort] = useState("");
+  const [sshRemotePort, setSshRemotePort] = useState("8822");
+  const [sshContext, setSshContext] = useState("");
 
   const refreshConnections = useCallback(async () => {
     try {
@@ -74,6 +87,25 @@ export function ConnectionSettings({
       });
     return () => { cancelled = true; };
   }, []);
+
+  const refreshSshHosts = useCallback(async () => {
+    if (!isTauri()) {
+      setSshHosts([]);
+      return;
+    }
+    setSshLoading(true);
+    try {
+      setSshHosts(await listSshHosts());
+    } catch {
+      setSshHosts([]);
+    } finally {
+      setSshLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSshHosts();
+  }, [refreshSshHosts]);
 
   const connectLocal = useCallback(async () => {
     setStatusLabel(isTauri() ? "Starting the local server…" : "Looking for a local server…");
@@ -117,7 +149,10 @@ export function ConnectionSettings({
       setConnecting(true);
       setFailedTarget(null);
       try {
-        const ok = await checkConnection(profile.url);
+        const url = await resolveReachableConnectionUrl(profile);
+        const ok = profile.kind === "ssh"
+          ? await waitForConnection(url)
+          : await checkConnection(url);
         if (!ok) {
           setFailedTarget(profile.id);
           setConnecting(false);
@@ -129,8 +164,8 @@ export function ConnectionSettings({
           });
           return;
         }
-        await activateConnection(profile.url, profile.id, profile.id);
-        onConnected({ id: profile.id, name: profile.name, url: profile.url, kind: profile.kind });
+        await activateConnection(url, profile.id, profile.id);
+        onConnected({ ...profile, url });
       } catch (caught) {
         setFailedTarget(profile.id);
         setConnecting(false);
@@ -166,6 +201,37 @@ export function ConnectionSettings({
     setNewUrl("");
     await refreshConnections();
   }, [newUrl, refreshConnections]);
+
+  const handleAddSshConnection = useCallback(async () => {
+    const alias = sshAlias.trim();
+    if (!alias) return;
+    const discovered = sshHosts.find((host) => host.alias === alias);
+    const profile: ConnectionProfile = {
+      id: crypto.randomUUID(),
+      name: alias,
+      url: `ssh://${alias}`,
+      kind: "ssh",
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+      sshHostAlias: alias,
+      sshHostName: discovered?.hostName,
+      sshUser: sshUser.trim() || discovered?.user || undefined,
+      sshPort: sshPort.trim() ? Number(sshPort.trim()) : discovered?.port ?? null,
+      sshIdentityFile: sshIdentityFile.trim() || discovered?.identityFiles[0] || undefined,
+      sshLocalPort: sshLocalPort.trim() ? Number(sshLocalPort.trim()) : null,
+      sshRemotePort: sshRemotePort.trim() ? Number(sshRemotePort.trim()) : 8822,
+      sshContext: sshContext.trim() || undefined,
+    };
+    await saveConnection(profile);
+    setSshAlias("");
+    setSshUser("");
+    setSshPort("");
+    setSshIdentityFile("");
+    setSshLocalPort("");
+    setSshRemotePort("8822");
+    setSshContext("");
+    await refreshConnections();
+  }, [sshAlias, sshHosts, sshUser, sshPort, sshIdentityFile, sshLocalPort, sshRemotePort, sshContext, refreshConnections]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -252,11 +318,14 @@ export function ConnectionSettings({
                     py={2}
                   >
                     <Box color={active ? "green.fg" : "fg.muted"}>
-                      <LuServer size={14} />
+                      {profile.kind === "ssh" ? <LuNetwork size={14} /> : <LuServer size={14} />}
                     </Box>
                     <Box flex={1} minW={0}>
                       <Text fontSize="sm" fontWeight="medium" truncate>
-                        {profile.url}
+                        {profile.name}
+                      </Text>
+                      <Text fontSize="xs" color="fg.muted" truncate>
+                        {profile.kind === "ssh" ? profile.sshHostAlias : profile.url}
                       </Text>
                     </Box>
                     {active ? (
@@ -306,33 +375,85 @@ export function ConnectionSettings({
                 Add a connection
               </Text>
             </Flex>
-            <Text fontSize="xs" color="fg.muted">
-              Point at a server you can already reach — e.g. a local SSH tunnel:
-              {" "}
-              <Text as="span" fontFamily="var(--font-mono)">
-                ssh -L 8822:localhost:8822 host
-              </Text>
-            </Text>
-            <Input
-              size="sm"
-              bg="bg.subtle"
-              placeholder="http://localhost:8822"
-              value={newUrl}
-              onChange={(event) => setNewUrl(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void handleAddConnection();
-              }}
-            />
-            <Button
-              size="sm"
-              variant="subtle"
-              borderRadius="md"
-              onClick={handleAddConnection}
-              disabled={!newUrl.trim()}
-            >
-              <LuPlus size={14} />
-              Save connection
-            </Button>
+            <Flex gap={1} bg="bg.subtle" borderRadius="sm" p={1}>
+              <Button size="xs" variant={addMode === "url" ? "solid" : "ghost"} borderRadius="sm" flex={1} onClick={() => setAddMode("url")}>
+                <LuServer size={13} />
+                Server URL
+              </Button>
+              <Button size="xs" variant={addMode === "ssh" ? "solid" : "ghost"} borderRadius="sm" flex={1} onClick={() => setAddMode("ssh")}>
+                <LuNetwork size={13} />
+                SSH host
+              </Button>
+            </Flex>
+            {addMode === "url" ? (
+              <>
+                <Text fontSize="xs" color="fg.muted">
+                  Point at a server you can already reach, such as an existing SSH tunnel.
+                </Text>
+                <Input
+                  size="sm"
+                  bg="bg.subtle"
+                  placeholder="http://localhost:8822"
+                  value={newUrl}
+                  onChange={(event) => setNewUrl(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void handleAddConnection();
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  borderRadius="md"
+                  onClick={handleAddConnection}
+                  disabled={!newUrl.trim()}
+                >
+                  <LuPlus size={14} />
+                  Save connection
+                </Button>
+              </>
+            ) : (
+              <>
+                <Text fontSize="xs" color="fg.muted">
+                  Pick a host from ~/.ssh/config or type an alias. Daisy opens a local tunnel to the remote server port.
+                </Text>
+                <Flex gap={1.5} wrap="wrap">
+                  {sshHosts.slice(0, 8).map((host) => (
+                    <Button
+                      key={host.alias}
+                      size="xs"
+                      variant={sshAlias === host.alias ? "solid" : "outline"}
+                      borderRadius="sm"
+                      onClick={() => {
+                        setSshAlias(host.alias);
+                        setSshUser(host.user);
+                        setSshPort(String(host.port || 22));
+                        setSshIdentityFile(host.identityFiles[0] ?? "");
+                      }}
+                    >
+                      {host.alias}
+                    </Button>
+                  ))}
+                  <Button size="xs" variant="ghost" borderRadius="sm" onClick={refreshSshHosts} loading={sshLoading}>
+                    <LuRotateCcw size={12} />
+                  </Button>
+                </Flex>
+                <Input size="sm" bg="bg.subtle" placeholder="Host alias" value={sshAlias} onChange={(event) => setSshAlias(event.target.value)} />
+                <Flex gap={2}>
+                  <Input size="sm" bg="bg.subtle" placeholder="User override" value={sshUser} onChange={(event) => setSshUser(event.target.value)} />
+                  <Input size="sm" bg="bg.subtle" placeholder="SSH port" value={sshPort} onChange={(event) => setSshPort(event.target.value.replace(/\D/g, ""))} maxW="110px" />
+                </Flex>
+                <Input size="sm" bg="bg.subtle" placeholder="Identity file override" value={sshIdentityFile} onChange={(event) => setSshIdentityFile(event.target.value)} />
+                <Flex gap={2}>
+                  <Input size="sm" bg="bg.subtle" placeholder="Local port auto" value={sshLocalPort} onChange={(event) => setSshLocalPort(event.target.value.replace(/\D/g, ""))} />
+                  <Input size="sm" bg="bg.subtle" placeholder="Remote port" value={sshRemotePort} onChange={(event) => setSshRemotePort(event.target.value.replace(/\D/g, ""))} />
+                </Flex>
+                <Textarea size="sm" bg="bg.subtle" rows={3} placeholder="Anything Daisy should know about this host" value={sshContext} onChange={(event) => setSshContext(event.target.value)} />
+                <Button size="sm" variant="subtle" borderRadius="md" onClick={handleAddSshConnection} disabled={!sshAlias.trim()}>
+                  <LuPlus size={14} />
+                  Save SSH connection
+                </Button>
+              </>
+            )}
           </VStack>
         </VStack>
       )}
