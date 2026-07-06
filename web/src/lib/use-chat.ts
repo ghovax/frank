@@ -6,6 +6,7 @@ import {
   abortSession,
   abortToolCall,
   steerSession,
+  compactSession,
   resolvePermission,
   resolveQuestion,
   fetchSessionTasks,
@@ -57,7 +58,7 @@ export interface MessageAttachment {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_call" | "thinking" | "error";
+  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "compaction";
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
@@ -827,6 +828,54 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         ...state.messages,
         { id: stableMessageId(state, "user", sourceId), role: "user", content: text, timestamp: new Date().toISOString() },
       ];
+      break;
+    }
+    case "compaction": {
+      // A context-compaction marker: "started" shows a live compacting indicator,
+      // "done" turns it into the separator (or, when nothing was compacted, drops
+      // it). Renders as a full-width divider — not an assistant/user bubble.
+      state.lane = null;
+      const status = String(data.status ?? "");
+      if (status === "started") {
+        state.messages = [
+          ...state.messages,
+          {
+            id: stableMessageId(state, "compaction", sourceId),
+            role: "compaction",
+            content: "",
+            timestamp: new Date().toISOString(),
+            meta: { status: "running", reason: String(data.reason ?? "") },
+          },
+        ];
+        break;
+      }
+      if (status === "done") {
+        const changed = data.ok !== false && Number(data.messagesAfter ?? 0) < Number(data.messagesBefore ?? 0);
+        const runningIndex = state.messages.findLastIndex(
+          (message) => message.role === "compaction" && message.meta?.status === "running"
+        );
+        if (!changed) {
+          // Nothing was compacted — remove the running indicator so no separator lingers.
+          if (runningIndex >= 0) state.messages = state.messages.filter((_, index) => index !== runningIndex);
+          break;
+        }
+        const meta = {
+          status: "done",
+          reason: String(data.reason ?? ""),
+          messagesBefore: Number(data.messagesBefore ?? 0),
+          messagesAfter: Number(data.messagesAfter ?? 0),
+        };
+        if (runningIndex >= 0) {
+          state.messages = state.messages.map((message, index) =>
+            index === runningIndex ? { ...message, meta } : message
+          );
+        } else {
+          state.messages = [
+            ...state.messages,
+            { id: stableMessageId(state, "compaction", sourceId), role: "compaction", content: "", timestamp: new Date().toISOString(), meta },
+          ];
+        }
+      }
       break;
     }
     case "tasks_updated": {
@@ -1676,6 +1725,29 @@ export function useChat(
     [flush, notifyResolveFailure]
   );
 
+  // The user dismissed the whole question prompt without answering. Report the
+  // decline to the model (which stops the turn cleanly server-side) and settle the
+  // card. Distinct from Stop: it does not tear the turn down, it hands the model a
+  // "declined — stop and await" result and lets the turn end on its own.
+  const declineQuestion = useCallback(
+    async (requestId: string) => {
+      const ctx = sessionIdRef.current;
+      if (!ctx) return;
+      const result = await resolveQuestion(ctx, requestId, [], true);
+      if (!result.ok) {
+        notifyResolveFailure(requestId, "answer", result.status);
+        return;
+      }
+      stateRef.current.messages = stateRef.current.messages.map((message) => {
+        const question = message.meta?.question as { requestId?: string } | undefined;
+        if (message.role !== "tool_call" || question?.requestId !== requestId) return message;
+        return { ...message, meta: { ...message.meta, status: "completed", question: { ...question, declined: true } } };
+      });
+      flush();
+    },
+    [flush, notifyResolveFailure]
+  );
+
   const abort = useCallback(() => {
     const ctx = sessionIdRef.current;
     if (!ctx) {
@@ -1697,7 +1769,10 @@ export function useChat(
         void resolvePermission(ctx, permission.requestId, "deny");
       } else if (question?.requestId) {
         settledAny = true;
-        void resolveQuestion(ctx, question.requestId, []);
+        // Stop while a question is open settles it as a decline (not empty
+        // answers): the model is told the user declined and the turn ends, which
+        // also cleanly resolves the awaiting tool even if the context teardown races.
+        void resolveQuestion(ctx, question.requestId, [], true);
       }
     }
     if (settledAny) {
@@ -1721,6 +1796,24 @@ export function useChat(
       }
     });
   }, [flush]);
+
+  // Kick off a manual context compaction. The compacting indicator and separator
+  // arrive over the stream (live for the driver, via the subscribe stream for a
+  // viewer), so there is nothing to render optimistically here.
+  const compact = useCallback(() => {
+    const ctx = sessionIdRef.current;
+    if (!ctx) return;
+    void compactSession(ctx).then((ok) => {
+      if (!ok) {
+        toaster.create({
+          type: "error",
+          title: "Couldn't compact the context",
+          description: "The server did not start compaction. Check the connection and try again.",
+          closable: true,
+        });
+      }
+    });
+  }, []);
 
   const abortTool = useCallback((toolCallId: string) => {
     const ctx = sessionIdRef.current;
@@ -1779,9 +1872,11 @@ export function useChat(
     sendWidgetEvent,
     abort,
     abortTool,
+    compact,
     reset,
     dequeueMessage,
     handlePermission,
     handleQuestion,
+    declineQuestion,
   };
 }

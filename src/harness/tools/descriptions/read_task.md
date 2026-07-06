@@ -4,4 +4,4 @@ Use this to coordinate with agents working alongside you: check whether a siblin
 
 This is **not** how you retrieve background results. A `web_search` (`search-…`) or background-bash (`bg-…`) identifier is **not** a readable task — those results are delivered to you **automatically** when ready. **Never** call `read_task` on them and **never** use it to poll.
 
-Always provide a concise **justification**.
+Always provide a concise **justification** — composed as a smooth open-ended sentence rather than a `label: detail` label.

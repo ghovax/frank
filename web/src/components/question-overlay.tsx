@@ -3,51 +3,88 @@
 // A prominent overlay that appears above the chat input when the agent asks the
 // user a question. Replaces the inline tool-card rendering so the user cannot
 // miss it. Renders one question at a time with navigation between multiple
-// questions, and blocks chat input until all questions are answered.
+// questions, and blocks chat input until all questions are answered. Each
+// question can be skipped individually, and the whole prompt can be dismissed
+// (a decline) — which tells the model the user chose not to answer and stops.
 
-import { Box, Button, Flex, Input, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState } from "react";
-import { LuCheck, LuChevronLeft, LuChevronRight } from "react-icons/lu";
+import { LuCheck, LuChevronLeft, LuChevronRight, LuSkipForward, LuX } from "react-icons/lu";
 import type { QuestionAnswer, ToolQuestion } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 
 interface QuestionOverlayProps {
   question: ToolQuestion;
   onQuestion: (requestId: string, answers: QuestionAnswer[]) => void;
+  // Dismiss the whole prompt without answering (a decline). Undefined hides the
+  // close affordance.
+  onDismiss?: (requestId: string) => void;
 }
 
-export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) {
+export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOverlayProps) {
   const items = question.questions;
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<Record<number, string[]>>({});
   const [custom, setCustom] = useState<Record<number, string>>({});
+  const [skipped, setSkipped] = useState<Record<number, boolean>>({});
   const boxRef = useRef<HTMLDivElement>(null);
 
   const total = items.length;
   const item = items[current];
 
   function toggle(index: number, label: string, multiple: boolean) {
-    setSelected((prev) => {
-      const active = prev[index] ?? [];
+    setSkipped((previous) => (previous[index] ? { ...previous, [index]: false } : previous));
+    const previouslySelected = selected[index] ?? [];
+    setSelected((previous) => {
+      const active = previous[index] ?? [];
       if (!multiple) {
-        return { ...prev, [index]: active.length === 1 && active[0] === label ? [] : [label] };
+        return { ...previous, [index]: active.length === 1 && active[0] === label ? [] : [label] };
       }
       return {
-        ...prev,
-        [index]: active.includes(label) ? active.filter((v) => v !== label) : [...active, label],
+        ...previous,
+        [index]: active.includes(label) ? active.filter((value) => value !== label) : [...active, label],
       };
     });
+    // Auto-advance for single-choice (non-multiple) questions: selecting an option
+    // moves to the next question. This is navigation convenience, not auto-submit
+    // — the user still presses Submit when all questions are ready.
+    if (!multiple && index === current && current < total - 1) {
+      const isDeselection = previouslySelected.length === 1 && previouslySelected[0] === label;
+      if (!isDeselection) {
+        setCurrent((previous) => previous + 1);
+      }
+    }
+  }
+
+  // The answer for one question: its typed custom text, else the selected
+  // label(s), else empty. A skipped question always resolves to an empty answer
+  // so the model sees it was deliberately left unanswered.
+  function answerFor(index: number): QuestionAnswer {
+    if (skipped[index]) return items[index].multiple ? [] : "";
+    const text = (custom[index] ?? "").trim();
+    if (text) return text;
+    const chosen = selected[index] ?? [];
+    return items[index].multiple ? chosen : (chosen[0] ?? "");
   }
 
   function submit() {
-    const answers: QuestionAnswer[] = items.map((question, index) => {
-      const text = (custom[index] ?? "").trim();
-      if (text) return text;
-      const chosen = selected[index] ?? [];
-      return question.multiple ? chosen : (chosen[0] ?? "");
-    });
-    onQuestion(question.requestId, answers);
+    onQuestion(question.requestId, items.map((_, index) => answerFor(index)));
+  }
+
+  function skipCurrent() {
+    setSkipped((previous) => ({ ...previous, [current]: true }));
+    setSelected((previous) => ({ ...previous, [current]: [] }));
+    setCustom((previous) => ({ ...previous, [current]: "" }));
+    if (current < total - 1) {
+      setCurrent((c) => c + 1);
+    } else {
+      // Last question skipped — submit with everything gathered so far.
+      onQuestion(
+        question.requestId,
+        items.map((_, index) => (index === current ? (items[index].multiple ? [] : "") : answerFor(index)))
+      );
+    }
   }
 
   const multiple = !!item.multiple;
@@ -55,6 +92,14 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
   const hasOptions = !!item.options && item.options.length > 0;
   const active = selected[current] ?? [];
   const text = custom[current] ?? "";
+  const isSkipped = !!skipped[current];
+  const allAnswered = items.every((_, index) => {
+    if (skipped[index]) return true;
+    const customText = (custom[index] ?? "").trim();
+    if (customText) return true;
+    const choices = selected[index] ?? [];
+    return choices.length > 0;
+  });
 
   return (
     <AnimatePresence>
@@ -71,38 +116,53 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
           p={3}
           borderRadius="md"
           border="1px solid"
-          borderColor="blue.solid"
+          borderColor="border.emphasized"
           bg="bg"
           boxShadow="lg"
           maxH="50vh"
           overflowY="auto"
         >
-          <Flex align="center" justify="space-between" mb={2}>
-            <Text fontSize="xs" fontWeight="bold" color="blue.fg">
+          <Flex align="center" justify="space-between" gap={2}>
+            <Text fontSize="sm" fontWeight="bold" color="fg">
               Question {current + 1} of {total}
             </Text>
-            {total > 1 && (
-              <Flex align="center" gap={1}>
-                <Button
+            <Flex align="center" gap={1}>
+              {total > 1 && (
+                <>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    disabled={current === 0}
+                    onClick={() => setCurrent((c) => c - 1)}
+                  >
+                    <LuChevronLeft size={12} />
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    disabled={current === total - 1}
+                    onClick={() => setCurrent((c) => c + 1)}
+                  >
+                    <LuChevronRight size={12} />
+                  </Button>
+                </>
+              )}
+              {onDismiss && (
+                <IconButton
+                  aria-label="Dismiss without answering"
+                  title="Dismiss without answering — the agent is told you declined and stops here"
                   size="xs"
                   variant="ghost"
                   borderRadius="sm"
-                  disabled={current === 0}
-                  onClick={() => setCurrent((c) => c - 1)}
+                  color="fg.subtle"
+                  onClick={() => onDismiss(question.requestId)}
                 >
-                  <LuChevronLeft size={12} />
-                </Button>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  borderRadius="sm"
-                  disabled={current === total - 1}
-                  onClick={() => setCurrent((c) => c + 1)}
-                >
-                  <LuChevronRight size={12} />
-                </Button>
-              </Flex>
-            )}
+                  <LuX size={13} />
+                </IconButton>
+              )}
+            </Flex>
           </Flex>
 
           <Flex direction="column" gap={2.5}>
@@ -111,13 +171,13 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
             {hasOptions && (
               <Flex direction="column" gap={1}>
                 {item.options!.map((option) => {
-                  const isSelected = !text && active.includes(option.label);
+                  const isSelected = !text && !isSkipped && active.includes(option.label);
                   return (
                     <Flex
                       key={option.label}
                       as="button"
                       align="center"
-                      gap={2}
+                      gap={2.5}
                       px={2.5}
                       py={1.5}
                       borderRadius="sm"
@@ -129,12 +189,11 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
                       transition="all 120ms"
                       _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
                       onClick={() => { if (!text) toggle(current, option.label, multiple); }}
-                      title={option.description}
                     >
                       <Box
                         w="16px" h="16px" flexShrink={0}
                         borderRadius={multiple ? "sm" : "full"}
-                        border="2px solid"
+                        border="1.5px solid"
                         borderColor={isSelected ? "blue.solid" : "border"}
                         bg={isSelected ? "blue.solid" : "transparent"}
                         display="flex" alignItems="center" justifyContent="center"
@@ -162,13 +221,27 @@ export function QuestionOverlay({ question, onQuestion }: QuestionOverlayProps) 
                 size="sm"
                 placeholder="Type your own answer"
                 value={text}
-                onChange={(e) => setCustom((prev) => ({ ...prev, [current]: e.target.value }))}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value) setSkipped((previous) => (previous[current] ? { ...previous, [current]: false } : previous));
+                  setCustom((previous) => ({ ...previous, [current]: value }));
+                }}
               />
+            )}
+
+            {isSkipped && (
+              <Text fontSize="xs" color="fg.subtle">
+                Skipped — this question will be answered as blank.
+              </Text>
             )}
           </Flex>
 
-          <Flex justify="flex-end" mt={3}>
-            <Button size="xs" colorPalette="green" variant="solid" onClick={submit}>
+          <Flex justify="space-between" align="center" mt={3} gap={2}>
+            <Button size="xs" variant="subtle" colorPalette="gray" borderRadius="sm" onClick={skipCurrent}>
+              <LuSkipForward size={12} />
+              Skip
+            </Button>
+            <Button size="xs" colorPalette="green" variant="solid" onClick={submit} disabled={!allAnswered}>
               Submit
             </Button>
           </Flex>

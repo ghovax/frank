@@ -294,18 +294,51 @@ function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
+  const { colorMode } = useColorMode();
+  const skipValidation = args.skip_validation === true;
+  const replaceAll = args.replace_all === true;
+  const find = asString(args.find);
+  const replaceWith = asString(args.replace_with);
+  const hasInlineDiff = find && replaceWith && find !== replaceWith;
   return (
     <FieldList>
       <InlineField label="File path">
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.replace_all === true && <InlineField label="Replace all">Yes</InlineField>}
-      <Field label="Old string">
-        <MonoBlock>{asString(args.old_string) || " "}</MonoBlock>
-      </Field>
-      <Field label="New string">
-        <MonoBlock>{asString(args.new_string) || " "}</MonoBlock>
-      </Field>
+      {skipValidation && <InlineField label="Skip validation">Yes</InlineField>}
+      {replaceAll && <InlineField label="Replace all">Yes</InlineField>}
+      {find && (
+        <Field label="Find">
+          <MonoBlock>{find}</MonoBlock>
+        </Field>
+      )}
+      {replaceWith && (
+        <Field label="Replace with">
+          <MonoBlock>{replaceWith}</MonoBlock>
+        </Field>
+      )}
+      {hasInlineDiff && (
+        <Field label="Diff">
+          <Box
+            maxH="320px"
+            overflowY="auto"
+            border="1px solid"
+            borderColor="border"
+            borderRadius="sm"
+          >
+            <ReactDiffViewer
+              oldValue={find}
+              newValue={replaceWith}
+              splitView={false}
+              useDarkTheme={colorMode === "dark"}
+              hideLineNumbers={false}
+              showDiffOnly={false}
+              compareMethod={DiffMethod.LINES}
+              styles={{ contentText: { fontSize: "12px", fontFamily: "var(--app-font-mono)" } }}
+            />
+          </Box>
+        </Field>
+      )}
     </FieldList>
   );
 }
@@ -449,17 +482,54 @@ function MatchListResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  // Shared by edit_file and write_file. Path is on the call card; the
-  // internal `code` status is dropped.
+  // Shared by edit_file and write_file. Path is on the call card.
+  const code = asString(data.code);
   const characters = asString(data.characters);
+  const operationsApplied = asString(data.operations_applied);
+  const created = data.created;
+  const diagnostic = asRecord(data.diagnostic);
+  const suggestedAction = asString(data.suggested_action);
   const before = asString(data.before);
   const after = asString(data.after);
   const { colorMode } = useColorMode();
+
+  // Old-format write_file response still carries before/after for inline diff.
   const hasDiff = before !== after && (before !== "" || after !== "");
+
+  if (code === "edit_failed_validation" && diagnostic.origin) {
+    const contextLines = asArray(diagnostic.context_snapshot).map(asString);
+    return (
+      <FieldList>
+        <InlineField label="Validation">
+          <Pill colorPalette="red">Failed</Pill>
+        </InlineField>
+        <InlineField label="Origin">{asString(diagnostic.origin)}</InlineField>
+        <InlineField label="Language">{asString(diagnostic.language)}</InlineField>
+        {asString(diagnostic.line) && (
+          <InlineField label="Line">{asString(diagnostic.line)}:{asString(diagnostic.column)}</InlineField>
+        )}
+        <InlineField label="Error">{asString(diagnostic.message)}</InlineField>
+        {contextLines.length > 0 && (
+          <Field label="Context">
+            <MonoBlock maxH="120px">{contextLines.join("\n")}</MonoBlock>
+          </Field>
+        )}
+        {suggestedAction && (
+          <Field label="Recovery">
+            <Text fontSize="xs" color="fg.subtle">{suggestedAction}</Text>
+          </Field>
+        )}
+      </FieldList>
+    );
+  }
+
   return (
     <FieldList>
-      {data.created != null && (
-        <InlineField label="Created">{data.created ? "Yes" : "No"}</InlineField>
+      {created != null && (
+        <InlineField label="Created">{created ? "Yes" : "No"}</InlineField>
+      )}
+      {operationsApplied && code === "edit_completed" && (
+        <InlineField label="Operations">{operationsApplied}</InlineField>
       )}
       {characters && <InlineField label="Characters">{characters}</InlineField>}
       {hasDiff ? (
@@ -801,34 +871,36 @@ function compactMcpContent(content: unknown): unknown {
 
 // An artifact's title/label may contain markdown, so it is rendered through the
 // markdown renderer above the artifact body.
-function ArtifactFrame({ title, children }: { title: string; children: ReactNode }) {
+function ArtifactFrame({ title, showHeader = true, fillContainer = false, children }: { title: string; showHeader?: boolean; fillContainer?: boolean; children: ReactNode }) {
   // Remounting the content (via a changing key) forces a fresh fetch of the
   // previewed page — the /preview route is served no-store, so the iframe reloads
   // the current file/URL rather than showing a stale render. Works for every
   // artifact kind (iframe, inline html, image) since each is a child subtree.
   const [reloadKey, setReloadKey] = useState(0);
   return (
-    <Box>
-      <Flex align="center" gap={1.5} mb={1.5}>
-        <Text fontSize="sm" fontWeight="semibold" color="fg.muted" flex={1} minW={0} truncate>
-          {title}
-        </Text>
-        <IconButton
-          aria-label="Reload preview"
-          title="Reload preview"
-          size="xs"
-          variant="ghost"
-          borderRadius="sm"
-          h="20px"
-          minW="20px"
-          px={1}
-          flexShrink={0}
-          onClick={() => setReloadKey((current) => current + 1)}
-        >
-          <LuRotateCw size={10} />
-        </IconButton>
-      </Flex>
-      <Box key={reloadKey}>{children}</Box>
+    <Box h={fillContainer ? "100%" : undefined} display={fillContainer ? "flex" : undefined} flexDirection={fillContainer ? "column" : undefined}>
+      {showHeader && (
+        <Flex align="center" gap={1.5} mb={1.5} flexShrink={0}>
+          <Text fontSize="sm" fontWeight="semibold" color="fg.muted" flex={1} minW={0} truncate>
+            {title}
+          </Text>
+          <IconButton
+            aria-label="Reload preview"
+            title="Reload preview"
+            size="xs"
+            variant="ghost"
+            borderRadius="sm"
+            h="20px"
+            minW="20px"
+            px={1}
+            flexShrink={0}
+            onClick={() => setReloadKey((current) => current + 1)}
+          >
+            <LuRotateCw size={10} />
+          </IconButton>
+        </Flex>
+      )}
+      <Box key={reloadKey} {...(fillContainer ? { flex: 1, minH: 0 } : {})}>{children}</Box>
     </Box>
   );
 }
@@ -854,6 +926,7 @@ function WidgetFrame({
   artifactId,
   autoHeight,
   fixedHeight,
+  fillContainer = false,
 }: {
   src?: string;
   srcDoc?: string;
@@ -862,6 +935,7 @@ function WidgetFrame({
   artifactId: string;
   autoHeight: boolean;
   fixedHeight: string;
+  fillContainer?: boolean;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const onWidgetEvent = useWidgetEvent();
@@ -920,6 +994,25 @@ function WidgetFrame({
     window.addEventListener("pointerup", onUp);
   }
 
+  if (fillContainer) {
+    return (
+      <Box position="relative" w="100%" h="100%">
+        <Box w="100%" h="100%" overflow="hidden">
+          <iframe
+            ref={frameRef}
+            src={src || undefined}
+            srcDoc={srcDoc || undefined}
+            sandbox={sandbox}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            title={title}
+            style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+          />
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box position="relative" w="100%">
       <Box
@@ -964,7 +1057,7 @@ function WidgetFrame({
   );
 }
 
-function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
+function RenderArtifact({ artifact, showHeader = true, fillContainer = false }: { artifact: Record<string, unknown>; showHeader?: boolean; fillContainer?: boolean }) {
   const type = asString(artifact.type);
   const title = asString(artifact.title) || "MCP artifact";
   const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
@@ -989,7 +1082,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const srcDoc = asString(artifact.srcdoc);
     if (!src && !srcDoc) return <ErrorView message="Iframe artifact did not include a safe source." />;
     return (
-      <ArtifactFrame title={title}>
+      <ArtifactFrame title={title} showHeader={showHeader} fillContainer={fillContainer}>
         <WidgetFrame
           src={src || undefined}
           srcDoc={srcDoc || undefined}
@@ -999,7 +1092,8 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
           autoHeight={Boolean(file) && isAutoHeight}
           // An external page can't report its height, so give it a generous default
           // frame (the user can still drag to resize) instead of the short fallback.
-          fixedHeight={!file && isAutoHeight ? "640px" : artifactHeight(artifact.height)}
+          fixedHeight={!file && isAutoHeight ? "100vh" : artifactHeight(artifact.height)}
+          fillContainer={fillContainer}
         />
       </ArtifactFrame>
     );
@@ -1008,7 +1102,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const html = asString(artifact.html) || asString(artifact.srcdoc);
     if (!html) return <ErrorView message="HTML artifact did not include content." />;
     return (
-      <ArtifactFrame title={title}>
+      <ArtifactFrame title={title} showHeader={showHeader} fillContainer={fillContainer}>
         <WidgetFrame
           srcDoc={html}
           sandbox={artifactSandbox(artifact, true)}
@@ -1016,6 +1110,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
           artifactId={artifactId}
           autoHeight={isAutoHeight}
           fixedHeight={artifactHeight(artifact.height)}
+          fillContainer={fillContainer}
         />
       </ArtifactFrame>
     );
@@ -1024,7 +1119,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
     const source = safeImageSource(asString(artifact.data) || asString(artifact.src) || asString(artifact.url));
     if (!source) return <ErrorView message="Image artifact did not include a safe source." />;
     return (
-      <ArtifactFrame title={title}>
+      <ArtifactFrame title={title} showHeader={showHeader}>
         <Box
           maxW="100%"
           maxH={artifactHeight(artifact.height)}
@@ -1047,7 +1142,7 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   const href = safeWebUrl(asString(artifact.href) || asString(artifact.url) || asString(artifact.src));
   if (!href) return <ErrorView message="Link artifact did not include a safe URL." />;
   return (
-    <ArtifactFrame title={title}>
+    <ArtifactFrame title={title} showHeader={showHeader}>
       <Link href={href} target="_blank" rel="noopener noreferrer" colorPalette="blue">
         {href}
       </Link>
@@ -1055,8 +1150,8 @@ function RenderArtifact({ artifact }: { artifact: Record<string, unknown> }) {
   );
 }
 
-export function PreviewArtifact({ artifact }: { artifact: Record<string, unknown> }) {
-  return <RenderArtifact artifact={artifact} />;
+export function PreviewArtifact({ artifact, showHeader = true, fillContainer = false }: { artifact: Record<string, unknown>; showHeader?: boolean; fillContainer?: boolean }) {
+  return <RenderArtifact artifact={artifact} showHeader={showHeader} fillContainer={fillContainer} />;
 }
 
 // The external http(s) URL an artifact previews, or "" when it is not an external
@@ -1121,30 +1216,28 @@ function CollapsedPreview({ title, onOpen }: { title: string; onOpen: () => void
 
 export function ToolArtifacts({
   artifacts,
-  activePreviewId,
-  onActivatePreview,
+  openTabIds,
+  onOpenTab,
   toolCallId,
 }: {
   artifacts: Record<string, unknown>[];
-  // The toolCallId of the single live preview call (owned by ChatPanel, which
-  // auto-activates the newest preview and lets the user click to reopen an older
-  // one). null/undefined while none has been claimed yet — a transient that
-  // resolves on the same render pass, so users never see two live previews at once.
-  activePreviewId?: string | null;
-  onActivatePreview?: (toolCallId: string) => void;
+  // The set of toolCallIds whose previews are already open as tabs in the preview
+  // panel. Previews not yet opened show as collapsed click-to-open placeholders.
+  openTabIds?: Set<string>;
+  onOpenTab?: (toolCallId: string) => void;
   toolCallId?: string;
 }) {
   if (artifacts.length === 0) return null;
-  // Identity here is just the owning tool call: one open_preview is one tool
-  // call, so "this call is the active preview" is enough to decide mount-vs-collapse.
-  const callActive = activePreviewId == null || activePreviewId === toolCallId;
+  // If this tool call's preview is already an open tab, mount it live; otherwise
+  // show a collapsed placeholder the user can click to open.
+  const callOpen = toolCallId ? openTabIds?.has(toolCallId) : false;
   return (
     <Flex direction="column" gap={1.5}>
       {artifacts.map((artifact, index) => {
         const key = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id) || String(index);
-        if (isLivePreviewArtifact(artifact) && !callActive) {
+        if (isLivePreviewArtifact(artifact) && !callOpen) {
           const title = asString(artifact.title) || "Preview";
-          return <CollapsedPreview key={key} title={title} onOpen={() => onActivatePreview?.(toolCallId ?? "")} />;
+          return <CollapsedPreview key={key} title={title} onOpen={() => onOpenTab?.(toolCallId ?? "")} />;
         }
         return <RenderArtifact key={key} artifact={artifact} />;
       })}

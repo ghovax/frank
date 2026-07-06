@@ -8,4 +8,4 @@
 - **Prefer this** over `bash` with `grep` or `rg` for content lookups.
 - Never search the real home directory (`~` or `/Users/<name>`). Pass a project path, known subdirectory, or specific file in `path`.
 
-This tool is **read-only**. Always provide a concise *justification* that states why this search advances the task.
+This tool is **read-only**. Always provide a concise *justification* that states why this search advances the task — kept to one open-ended phrase, not a `label: detail` heading.

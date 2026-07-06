@@ -146,7 +146,7 @@ export function Collapsible({
   );
 }
 
-// --- value coercion helpers (tool payloads arrive as `unknown`) ---
+// Value coercion helpers: tool payloads arrive as `unknown` and need typed accessors.
 
 export function asString(value: unknown): string {
   if (typeof value === "string") return value;

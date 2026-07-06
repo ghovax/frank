@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -126,7 +126,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       }
 
       return (
-        <Code fontFamily="var(--app-font-mono)" px={1} bg="bg.subtle">
+        <Code fontFamily="var(--app-font-mono)" fontWeight="medium" px={1} bg="bg.subtle">
           {children}
         </Code>
       );
@@ -136,11 +136,9 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     },
     table({ children }) {
       return (
-        <Box borderRadius="md" border="1px solid" borderColor="border" overflow="hidden">
-          <Box overflowX="auto">
-            <Box as="table" w="100%" fontSize="inherit" borderCollapse="collapse">
-              {children}
-            </Box>
+        <Box borderRadius="md" border="1px solid" borderColor="border" w="100%" minW={0} overflow="hidden" overflowX="auto">
+          <Box as="table" w="100%" fontSize="inherit" borderCollapse="collapse" style={{ tableLayout: "fixed" }}>
+            {children}
           </Box>
         </Box>
       );
@@ -150,14 +148,14 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     },
     th({ children }) {
       return (
-        <Box as="th" textAlign="left" px={2.5} py={1.5} fontWeight="semibold" bg="bg.emphasized" color="fg" whiteSpace="nowrap">
+        <Box as="th" textAlign="left" px={2.5} py={1.5} fontWeight="semibold" bg="bg.emphasized" color="fg" overflowWrap="break-word" wordBreak="break-word">
           {children}
         </Box>
       );
     },
     td({ children }) {
       return (
-        <Box as="td" px={2.5} py={1.5} verticalAlign="top">
+        <Box as="td" px={2.5} py={1.5} verticalAlign="top" overflowWrap="break-word" wordBreak="break-word">
           {children}
         </Box>
       );
@@ -173,8 +171,32 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     },
   }), [syntaxTheme]);
 
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Replace Unicode emoji with Twitter-emojis (Twemoji) in the rendered HTML
+  // after each content change. The library finds emoji codepoints in the DOM and
+  // swaps them for <img> tags pointing at Twemoji's CDN assets.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let cancelled = false;
+    import("@twemoji/api").then((module) => {
+      if (cancelled) return;
+      module.default.parse(container, {
+        folder: "svg",
+        ext: ".svg",
+        className: "twemoji",
+        attributes: () => ({ width: "1em", height: "1em", style: "vertical-align:-0.1em" }),
+      });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [content]);
+
   return (
     <Box
+      ref={containerRef}
+      minW={0}
       fontSize={fontSize}
       css={{
         "& > *": {
@@ -222,5 +244,53 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
         {content}
       </ReactMarkdown>
     </Box>
+  );
+});
+
+// A stripped-down, single-line Markdown renderer for places where a label must
+// render inline and stay on one line: tool-call headings (the justification).
+// Every block element collapses to its inline children so nothing forces a line
+// break or block margin — only code spans, emphasis, links, and inline math keep
+// their formatting. Pairs with a parent that owns the truncation/ellipsis.
+const passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+
+const inlineMarkdownComponents: Components = {
+  p: passthrough,
+  h1: passthrough, h2: passthrough, h3: passthrough, h4: passthrough, h5: passthrough, h6: passthrough,
+  ul: passthrough, ol: passthrough, li: passthrough, pre: passthrough, blockquote: passthrough,
+  hr: () => null,
+  img: () => null,
+  br: () => <> </>,
+  a({ href, children }) {
+    return (
+      <Link href={typeof href === "string" ? href : undefined} colorPalette="blue" fontSize="inherit" target="_blank" rel="noopener noreferrer">
+        {children}
+      </Link>
+    );
+  },
+  code({ children }) {
+    return (
+      <Code fontSize="0.9em" px={1} py={0} borderRadius="sm" fontFamily="var(--app-font-mono)" whiteSpace="nowrap">
+        {children}
+      </Code>
+    );
+  },
+  strong({ children }) {
+    return <Text as="strong" fontSize="inherit" fontWeight="bold">{children}</Text>;
+  },
+  em({ children }) {
+    return <Text as="em" fontSize="inherit" fontStyle="italic">{children}</Text>;
+  },
+};
+
+export const InlineMarkdown = memo(function InlineMarkdown({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: true }]]}
+      rehypePlugins={[[rehypeKatex, { strict: false }]]}
+      components={inlineMarkdownComponents}
+    >
+      {content}
+    </ReactMarkdown>
   );
 });

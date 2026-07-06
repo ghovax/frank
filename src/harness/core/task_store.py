@@ -171,7 +171,7 @@ class AppendOnlyTaskStore(TaskStore):
             "task_head",
             self._metadata,
             Column("id", String, primary_key=True),
-            Column("context_id", String, index=True),
+            Column("context_id", String),
             Column("kind", String),
             Column("status", Text),
             Column("task_metadata", Text),
@@ -181,7 +181,7 @@ class AppendOnlyTaskStore(TaskStore):
             "task_history",
             self._metadata,
             Column("row_id", Integer, primary_key=True, autoincrement=True),
-            Column("task_id", String, index=True),
+            Column("task_id", String),
             Column("seq", Integer),
             Column("message", Text),
             UniqueConstraint("task_id", "seq", name="uq_task_history_seq"),
@@ -192,7 +192,7 @@ class AppendOnlyTaskStore(TaskStore):
             "task_artifacts",
             self._metadata,
             Column("row_id", Integer, primary_key=True, autoincrement=True),
-            Column("task_id", String, index=True),
+            Column("task_id", String),
             Column("artifact_id", String),
             Column("artifact", Text),
             UniqueConstraint("task_id", "artifact_id", name="uq_task_artifact_id"),
@@ -207,7 +207,7 @@ class AppendOnlyTaskStore(TaskStore):
             "user_message_history",
             self._metadata,
             Column("id", Integer, primary_key=True, autoincrement=True),
-            Column("working_directory", String, index=True),
+            Column("working_directory", String),
             Column("message", Text),
             Column("created_at", DateTime, server_default=func.now()),
         )
@@ -218,6 +218,22 @@ class AppendOnlyTaskStore(TaskStore):
         try:
             async with self._engine.begin() as connection:
                 await connection.run_sync(self._metadata.create_all)
+                await connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS idx_task_head_context_id_id "
+                    "ON task_head(context_id, id)"
+                )
+                await connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS idx_task_history_task_id_row_id "
+                    "ON task_history(task_id, row_id)"
+                )
+                await connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS idx_task_artifacts_task_id_row_id "
+                    "ON task_artifacts(task_id, row_id)"
+                )
+                await connection.exec_driver_sql(
+                    "CREATE INDEX IF NOT EXISTS idx_user_message_history_working_directory_created_at "
+                    "ON user_message_history(working_directory, created_at DESC)"
+                )
         finally:
             release_sqlite_write_lock(write_lock)
         self._initialized = True

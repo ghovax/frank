@@ -2,4 +2,4 @@
 
 Pass a `server` name to inspect one server, or leave it empty to list every enabled server. Use this to **discover** resources, then read one with **read_mcp_resource**.
 
-Always provide a concise **justification**.
+Always provide a concise **justification** — a single open-ended clause, never a `label: detail` title.

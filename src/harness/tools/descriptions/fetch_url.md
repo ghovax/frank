@@ -7,4 +7,4 @@
 - The URL must be **fully-formed and valid**; HTTP is upgraded to HTTPS automatically.
 - Results are **truncated** if very large — for huge pages, fetch a more specific URL.
 
-This tool is **read-only** and does not modify any files. Always provide a concise *justification* that states why this fetch advances the task.
+This tool is **read-only** and does not modify any files. Always provide a concise *justification* that states why this fetch advances the task — phrasing it as one open-ended sentence rather than a `label: detail` title.

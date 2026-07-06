@@ -31,6 +31,13 @@ class ModelDefinition:
     name: str
     provider: str
     curated: bool = False
+    # Capabilities from the models.dev catalog, used to gate and annotate the UI.
+    # ``attachment`` is whether the model accepts file attachments at all; ``vision``
+    # is whether image input is supported; ``input_modalities`` is the raw list
+    # (``text``, ``image``, ``pdf``, ``audio``, …) for finer-grained display.
+    attachment: bool = False
+    vision: bool = False
+    input_modalities: tuple[str, ...] = ()
 
 
 # Map models.dev provider IDs to our local provider identifiers.
@@ -110,6 +117,10 @@ def _catalog() -> list[ModelDefinition]:
         for model_id, model_info in provider_info.get("models", {}).items():
             name = model_info.get("name", "") or model_id
             identifier = f"{local_id}/{model_id}"
+            modalities = model_info.get("modalities") or {}
+            input_modalities = tuple(
+                str(modality) for modality in (modalities.get("input") or []) if modality
+            )
             # Deduplicate: when multiple models.dev provider IDs map to the same
             # local provider and carry the same model, keep the first occurrence.
             models.setdefault(identifier, ModelDefinition(
@@ -117,6 +128,9 @@ def _catalog() -> list[ModelDefinition]:
                 name=name,
                 provider=local_id,
                 curated=False,
+                attachment=bool(model_info.get("attachment")),
+                vision="image" in input_modalities,
+                input_modalities=input_modalities,
             ))
     return list(models.values())
 

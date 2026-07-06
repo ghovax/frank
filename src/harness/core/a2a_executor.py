@@ -84,6 +84,12 @@ WIDGET_EVENT_KIND = "widget_event"
 # Marks a turn the harness started on its own — not from user input — to deliver a
 # background result that landed after the previous turn ended (an autonomous wake).
 AUTONOMOUS_RESUME_METADATA_KEY = "harness/autonomousResume"
+# Marks a harness-initiated turn whose only job is to compact the conversation
+# (the user pressed the compact button). It runs no model turn — it summarizes the
+# older history and emits the compaction parts — so it is modelled like an
+# autonomous wake: an agent-role message carrying a single prose-less part.
+COMPACTION_METADATA_KEY = "harness/compaction"
+COMPACTION_KIND = "compaction_request"
 # DataPart kind that opens an autonomous wake task. A2A has no "system/harness"
 # message role — only `user` and `agent` — so a harness-initiated turn is modelled
 # honestly as an *agent* message (the agent resumed itself) carrying this single,
@@ -307,7 +313,7 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
             "title": "Provider credentials need attention",
             "message": "The selected provider rejected the configured credentials. Check the API key or choose another model.",
         }
-    if isinstance(error, litellm_exceptions.ServiceUnavailableError) or status_code in {502, 503, 504}:
+    if isinstance(error, (litellm_exceptions.ServiceUnavailableError, litellm_exceptions.InternalServerError)) or status_code in {500, 502, 503, 504}:
         return {
             **fields,
             "code": "provider_unavailable",
@@ -356,7 +362,7 @@ class _TextPartBuffer:
         self,
         emit: Callable[[tuple[str, ...], str], Awaitable[None]],
         *,
-        flush_interval: float = 0.016,
+        flush_interval: float = 0.041667,
         flush_size: int = 512,
     ):
         self._emit = emit
@@ -471,9 +477,53 @@ class HarnessAgentExecutor(AgentExecutor):
         # in flight, the pump waits (event-driven) for each result and drives an
         # autonomous turn to deliver it, so the agent wakes itself up.
         self._resume_pumps: dict[str, asyncio.Task] = {}
+        # Contexts whose cached runtime a reset asked to drop but which still had
+        # background work in flight. Evicting such a runtime strands the pending
+        # result — the resume pump keys off the live runtime, and the durable store
+        # is only replayed on startup / the next user turn — so the drop is deferred
+        # until the runtime is idle (see `_maybe_evict`).
+        self._runtimes_pending_reset: set[str] = set()
         # Holds startup-recovery wake tasks so they are not garbage-collected before
         # they finish driving their turn.
         self._startup_resume_tasks: set[asyncio.Task] = set()
+        # Holds in-flight manual-compaction turns for the same reason.
+        self._compaction_tasks: set[asyncio.Task] = set()
+
+    def compact_context(self, context_id: str) -> bool:
+        """Trigger a manual compaction of a context's conversation (the user pressed
+        the compact button). Runs as a background turn — serialized behind any active
+        turn via the per-context lock — so the endpoint returns immediately while the
+        compaction streams to the UI.
+
+        A live runtime is not required: the compaction turn goes through the normal
+        turn path, which rehydrates a persisted conversation into a fresh runtime, so
+        a session reopened after a restart compacts without a warm-up message. The
+        caller is responsible for routing to the owning agent's executor. Returns
+        False only when there is no handler to drive the turn."""
+        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+        if handler is None:
+            return False
+        task = asyncio.create_task(self._run_compaction_turn(context_id))
+        self._compaction_tasks.add(task)
+        task.add_done_callback(self._compaction_tasks.discard)
+        return True
+
+    async def _run_compaction_turn(self, context_id: str) -> None:
+        """Drive one manual-compaction turn via a self-sent agent-role message
+        carrying only the prose-less compaction part, so it is a real, persisted,
+        replayable task streamed to viewers like any other turn."""
+        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+        if handler is None:
+            return
+        message = Message(
+            role=Role.agent,
+            parts=[_data_part(COMPACTION_KIND)],
+            message_id=uuid.uuid4().hex,
+            context_id=context_id,
+            metadata={COMPACTION_METADATA_KEY: True},
+        )
+        async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
+            pass
 
     def abort_context(self, context_id: str) -> bool:
         runtime = self._runtimes.get(context_id)
@@ -488,12 +538,24 @@ class HarnessAgentExecutor(AgentExecutor):
             return False
         return runtime.abort_tool(tool_call_identifier)
 
+    def send_tool_to_background(self, context_id: str, tool_call_identifier: str) -> bool:
+        runtime = self._runtimes.get(context_id)
+        if runtime is None:
+            return False
+        return runtime.send_tool_to_background(tool_call_identifier)
+
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a
-        configuration change (e.g. new API credentials) so it takes effect without
-        a restart. In-flight turns keep their own runtime reference and are
-        unaffected."""
-        self._runtimes.clear()
+        configuration change (e.g. new API credentials, an mcp.json edit) so it takes
+        effect without a restart. Eviction is deferred for any context that still has
+        background work in flight, so a reset in one session never strands another
+        session's in-flight result: the resume pump keys off the live runtime, and the
+        durable store is only replayed on startup / the next user turn, so dropping the
+        runtime mid-flight would silently hang that session. In-flight turns keep their
+        own runtime reference and are unaffected."""
+        for context_id in list(self._runtimes.keys()):
+            self._runtimes_pending_reset.add(context_id)
+            self._maybe_evict(context_id)
 
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
         runtime = self._runtimes.get(context_id)
@@ -513,8 +575,26 @@ class HarnessAgentExecutor(AgentExecutor):
     def reset_runtime(self, context_id: str) -> None:
         """Drop a single context's cached runtime so the next turn rebuilds it —
         used when the session's model override changes, so the new model takes
-        effect without a server restart."""
+        effect without a server restart. Deferred while the context still has
+        background work in flight, so evicting the runtime never strands a completed
+        result the resume pump still needs to deliver (which would hang the session)."""
+        self._runtimes_pending_reset.add(context_id)
+        self._maybe_evict(context_id)
+
+    def _maybe_evict(self, context_id: str) -> None:
+        """Apply a deferred runtime reset once the runtime is idle. A reset requested
+        while the context still had background work in flight is held back (the live
+        resume pump must keep delivering results, since the durable store is only
+        replayed on startup / the next user turn). Dropping the runtime here, only
+        after its jobs have drained, lets the next turn rebuild with the new
+        configuration without ever orphaning an undelivered result."""
+        if context_id not in self._runtimes_pending_reset:
+            return
+        runtime = self._runtimes.get(context_id)
+        if runtime is not None and runtime.background_jobs.has_pending():
+            return  # still delivering — keep the runtime (and its pump) alive
         self._runtimes.pop(context_id, None)
+        self._runtimes_pending_reset.discard(context_id)
 
     def _context_lock(self, context_id: str) -> asyncio.Lock:
         lock = self._context_locks.get(context_id)
@@ -523,12 +603,21 @@ class HarnessAgentExecutor(AgentExecutor):
             self._context_locks[context_id] = lock
         return lock
 
-    def _arm_resume_pump(self, context_id: str) -> None:
+    def _arm_resume_pump(self, context_id: str, runtime: Optional[AgentRuntime] = None) -> None:
         """Ensure a resume pump watches this context while it has background work in
-        flight. Idempotent — a live pump is left running."""
-        runtime = self._runtimes.get(context_id)
+        flight. Idempotent — a live pump is left running. ``runtime`` is the runtime
+        the just-finished turn actually used; it is passed explicitly rather than
+        re-read from ``self._runtimes`` so a concurrent reset that cleared the cache
+        entry cannot strand the pending work between the turn ending and the pump
+        arming. If that runtime still has pending jobs but its cache slot is empty
+        (a reset dropped it), restore it — marked for a deferred reset — so both the
+        pump and the autonomous delivery drain the very same ``BackgroundJobs``."""
+        runtime = runtime or self._runtimes.get(context_id)
         if runtime is None or not runtime.background_jobs.has_pending():
             return
+        if self._runtimes.get(context_id) is None:
+            self._runtimes[context_id] = runtime
+            self._runtimes_pending_reset.add(context_id)
         existing = self._resume_pumps.get(context_id)
         if existing is not None and not existing.done():
             return
@@ -553,6 +642,9 @@ class HarnessAgentExecutor(AgentExecutor):
             logger.exception("Background-resume pump failed for context %s", context_id)
         finally:
             self._resume_pumps.pop(context_id, None)
+            # The context is idle now, so any reset deferred while it had work in
+            # flight can finally take effect (rebuilding with the new configuration).
+            self._maybe_evict(context_id)
 
     async def _run_autonomous_turn(self, context_id: str) -> None:
         """Start a turn the user did not initiate, to deliver a completed background
@@ -637,6 +729,10 @@ class HarnessAgentExecutor(AgentExecutor):
         return read_task
 
     async def _runtime_for(self, context_id: str, workspace: SessionWorkspace) -> AgentRuntime:
+        # Apply any reset that was deferred while this context had background work in
+        # flight: if the runtime has since gone idle, drop it now so this turn rebuilds
+        # it with the new configuration rather than reusing the stale one.
+        self._maybe_evict(context_id)
         runtime = self._runtimes.get(context_id)
         if runtime is None:
             # Restore a persisted conversation the first time a context is seen this
@@ -766,6 +862,7 @@ class HarnessAgentExecutor(AgentExecutor):
         requested_model = str(metadata.get(SELECTED_MODEL_METADATA_KEY, ""))
         delegated = bool(metadata.get(DELEGATED_METADATA_KEY))
         autonomous = bool(metadata.get(AUTONOMOUS_RESUME_METADATA_KEY))
+        compaction = bool(metadata.get(COMPACTION_METADATA_KEY))
 
         task = context.current_task
         if task is None:
@@ -819,6 +916,27 @@ class HarnessAgentExecutor(AgentExecutor):
                 childTaskId=data.get("child_task_id", ""),
                 **fields,
             ))
+
+        async def emit_compaction(event) -> None:
+            """Map a runtime compaction event to its ``compaction`` DataPart, so both
+            the manual pass and mid-turn auto-compaction render identically (a live
+            "compacting" indicator, then the separator)."""
+            if event.type == StreamEvent.Type.COMPACTION_STARTED:
+                await emit(_data_part(
+                    "compaction", status="started",
+                    reason=event.data.get("reason", ""),
+                    messagesBefore=event.data.get("messages_before", 0),
+                    tokensBefore=event.data.get("tokens_before", 0),
+                ))
+            elif event.type == StreamEvent.Type.COMPACTION_DONE:
+                await emit(_data_part(
+                    "compaction", status="done",
+                    reason=event.data.get("reason", ""),
+                    ok=event.data.get("ok", True),
+                    messagesBefore=event.data.get("messages_before", 0),
+                    messagesAfter=event.data.get("messages_after", 0),
+                    tokensBefore=event.data.get("tokens_before", 0),
+                ))
 
         async def emit_text_buffer(_key: tuple[str, ...], text: str) -> None:
             await emit(_text_part(text))
@@ -906,6 +1024,17 @@ class HarnessAgentExecutor(AgentExecutor):
             self._aborts[task.id] = runtime
             runtime.set_a2a_task_id(task.id)
             runtime.set_delegation_depth(int(metadata.get(DEPTH_METADATA_KEY, 0)))
+
+            # A manual compaction turn runs no model turn: it summarizes the older
+            # history in place and emits the compaction parts (the live indicator +
+            # the separator), then completes. Persisted like any turn, so the
+            # separator replays; fanned out, so viewers see it live.
+            if compaction:
+                async for compaction_event in runtime.compact(reason="manual"):
+                    await emit_compaction(compaction_event)
+                await save_runtime_conversation()
+                await updater.complete()
+                return
 
             # A render_error is injected as the model's own realization (a system
             # note), never as a user message; every other widget event is the
@@ -1087,6 +1216,9 @@ class HarnessAgentExecutor(AgentExecutor):
                 elif kind == StreamEvent.Type.STEERING:
                     await flush_stream_buffers()
                     await emit(_data_part("steering", text=data.get("text", "")))
+                elif kind in (StreamEvent.Type.COMPACTION_STARTED, StreamEvent.Type.COMPACTION_DONE):
+                    await flush_stream_buffers()
+                    await emit_compaction(event)
                 elif kind == StreamEvent.Type.DONE:
                     await flush_stream_buffers()
                     final_text = data.get("text", "") or final_text
@@ -1141,9 +1273,11 @@ class HarnessAgentExecutor(AgentExecutor):
                 context_serialization_lock.release()
             # If background work is still in flight after this turn, make sure a
             # resume pump is watching so the next completion wakes the agent on its
-            # own. Delegated turns don't own the context lifecycle, so they skip it.
+            # own. Pass the runtime this turn used (not a cache lookup) so a reset
+            # that cleared the cache mid-turn cannot strand the pending work.
+            # Delegated turns don't own the context lifecycle, so they skip it.
             if not delegated:
-                self._arm_resume_pump(task.context_id)
+                self._arm_resume_pump(task.context_id, runtime)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or (context.current_task.id if context.current_task else "")

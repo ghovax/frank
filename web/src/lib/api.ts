@@ -21,6 +21,18 @@ function readStoredApiBase(): string {
 
 let API_BASE = readStoredApiBase();
 
+export interface ApiRequestOptions {
+  apiBase?: string;
+}
+
+function apiBase(options?: ApiRequestOptions): string {
+  return (options?.apiBase || API_BASE).replace(/\/+$/, "");
+}
+
+function apiUrl(path: string, options?: ApiRequestOptions): string {
+  return `${apiBase(options)}${path}`;
+}
+
 // The address the client is currently talking to.
 export function getApiBase(): string {
   return API_BASE;
@@ -57,8 +69,8 @@ function discoveryKey(path: string, workingDirectory?: string): string {
   return `${path}?working_directory=${workingDirectory ?? ""}`;
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+async function fetchJson<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+  const response = await fetch(apiUrl(path, options));
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
   return response.json();
 }
@@ -206,11 +218,13 @@ export interface ProviderCredential {
 }
 
 export interface Settings {
+  permission_mode: PermissionMode;
   exa_api_key: string;
   composio_api_key: string;
   sandbox_enabled: boolean;
   workspace_strategy: "none" | "branch" | "worktree";
   selected_model: string;
+  compaction_keep_recent_turns: number;
   providers: Record<string, ProviderCredential>;
 }
 
@@ -220,6 +234,12 @@ export interface ModelOption {
   provider: string;
   available: boolean;
   curated: boolean;
+  // Capabilities from models.dev (raw snake_case as the /models endpoint sends
+  // them). `attachment` gates the composer's file-attach button; `vision` (image
+  // input) and `input_modalities` annotate the picker.
+  attachment?: boolean;
+  vision?: boolean;
+  input_modalities?: string[];
 }
 
 export interface ProviderOption {
@@ -253,18 +273,19 @@ export interface FilesystemLease {
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
   if (!response.ok) {
-    return { exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", providers: {} };
+    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", sandbox_enabled: true, workspace_strategy: "none", selected_model: "", compaction_keep_recent_turns: 8, providers: {} };
   }
   return (await response.json()) as Settings;
 }
 
 export interface SaveSettingsPayload {
-  exa_api_key: string;
-  composio_api_key: string;
-  provider_keys: Record<string, string>;
-  provider_base_urls: Record<string, string>;
-  selected_model: string;
-  workspace_strategy: "none" | "branch" | "worktree";
+  permission_mode?: PermissionMode;
+  exa_api_key?: string;
+  composio_api_key?: string;
+  provider_keys?: Record<string, string>;
+  provider_base_urls?: Record<string, string>;
+  selected_model?: string;
+  workspace_strategy?: "none" | "branch" | "worktree";
 }
 
 export async function saveSettings(settings: SaveSettingsPayload): Promise<void> {
@@ -417,7 +438,7 @@ export async function fetchHomeDirectory(): Promise<{ path: string; name: string
   return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
 
-export async function fetchSessions(): Promise<{
+export async function fetchSessions(options?: ApiRequestOptions): Promise<{
   session_id: string;
   agent: string;
   title: string;
@@ -439,7 +460,7 @@ export async function fetchSessions(): Promise<{
   permission_mode?: PermissionMode;
   filesystem_leases?: FilesystemLease[];
 }[]> {
-  const response = await fetch(`${API_BASE}/sessions`);
+  const response = await fetch(apiUrl("/sessions", options));
   const data = await response.json();
   return data.sessions;
 }
@@ -523,13 +544,16 @@ export async function resolvePermission(
 
 // Answer a pending ask_user question. `answers` is one entry per question (in
 // order); each entry is the selected label string, an array of labels for
-// multi-select, or the custom text the user typed.
+// multi-select, or the custom text the user typed. A skipped question is an empty
+// entry. When `declined` is true the user dismissed the whole prompt without
+// answering, and the turn is stopped.
 export async function resolveQuestion(
   sessionId: string,
   requestId: string,
-  answers: unknown[]
+  answers: unknown[],
+  declined = false
 ): Promise<ResolveResult> {
-  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers });
+  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers, declined });
 }
 
 export async function steerSession(sessionId: string, message: string): Promise<boolean> {
@@ -555,9 +579,40 @@ export async function abortSession(sessionId: string): Promise<boolean> {
   }
 }
 
+// Permanently delete a session and all its tasks on the server.
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function compactSession(sessionId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${sessionId}/compact`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Detach a still-blocking foreground shell command so it keeps running in the
+// background and the agent's turn continues (the harness is notified so the model
+// learns the command was backgrounded rather than finished).
+export async function sendToolToBackground(sessionId: string, toolCallId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/background`, { method: "POST" });
     return response.ok;
   } catch {
     return false;
@@ -584,6 +639,19 @@ export async function validateWorkingDirectory(directory: string): Promise<{
 export async function browseWorkingDirectory(): Promise<{ path: string; cancelled: boolean; error?: string }> {
   const response = await fetch(`${API_BASE}/directory/browse`, { method: "POST" });
   return response.json();
+}
+
+export async function revealInFinder(path: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/directory/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function setPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {

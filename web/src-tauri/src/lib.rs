@@ -38,7 +38,8 @@ const PREVIEW_WEBVIEW: &str = "daisy-preview";
 // tearing it down and rebuilding on every open/close.
 const PREVIEW_OFFSCREEN: f64 = -32000.0;
 
-// ---- local server supervision ---------------------------------------------
+// Supervise the bundled harness server for local mode: spawn it on request, reap
+// it when the app quits, and track it via a pid stamp file for crash recovery.
 
 // Holds the spawned local-server process (if this app started one) so it can be
 // killed when the app quits. `None` means either nothing is running or the server
@@ -138,7 +139,8 @@ fn stop_local_server(state: tauri::State<'_, LocalServer>) -> Result<(), String>
     Ok(())
 }
 
-// ---- native website preview ------------------------------------------------
+// The embedded native webview used to preview external websites at full browser
+// fidelity, created on first use and positioned by the UI over the preview panel.
 
 // Only ever preview real web pages; anything else is rejected so the embedded
 // webview can never be pointed at a local or non-web scheme.
@@ -239,7 +241,7 @@ fn preview_close(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// ---- tray menu -------------------------------------------------------------
+// Build and manage the macOS tray menu with recent conversations and lifecycle commands.
 
 // One recent conversation, pushed from the UI so the tray can list them.
 #[derive(Debug, Deserialize)]
@@ -326,27 +328,24 @@ fn update_tray_recent(app: AppHandle, items: Vec<RecentItem>) -> Result<(), Stri
     Ok(())
 }
 
-// ---- app entry -------------------------------------------------------------
+// Application entry point: register Tauri plugins, migrations, commands, and the tray.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let migrations = vec![Migration {
-        version: 1,
-        description: "create_connection_store",
-        sql: "CREATE TABLE IF NOT EXISTS connections (\
-                id TEXT PRIMARY KEY, \
-                name TEXT NOT NULL, \
-                url TEXT NOT NULL, \
-                kind TEXT NOT NULL DEFAULT 'remote', \
-                created_at TEXT NOT NULL, \
-                last_used_at TEXT\
-              ); \
-              CREATE TABLE IF NOT EXISTS app_state (\
-                key TEXT PRIMARY KEY, \
-                value TEXT NOT NULL\
-              );",
-        kind: MigrationKind::Up,
-    }];
+    let migrations = vec![
+        Migration {
+            version: 1,
+            description: "create_connection_store",
+            sql: include_str!("../migrations/001_create_connection_store.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "map_sessions_to_connections",
+            sql: include_str!("../migrations/002_map_sessions_to_connections.sql"),
+            kind: MigrationKind::Up,
+        },
+    ];
 
     tauri::Builder::default()
         .plugin(

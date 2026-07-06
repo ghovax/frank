@@ -66,7 +66,7 @@ export function CollapsibleSection({
         ) : null}
       </Flex>
       {open ? (
-        <Flex direction="column" gap={1} px={1.5} pt={1.5} pb={hasMoreItems ? 1.5 : 0.5} borderTop="1px solid" borderColor="border" bg="bg" overflow="hidden">
+        <Flex direction="column" gap={0.5} px={1.5} pt={1.5} pb={hasMoreItems ? 1.5 : 0.5} borderTop="1px solid" borderColor="border" bg="bg" overflow="hidden">
           <AnimatePresence initial={false}>
             {visibleItems.map((item, index) => (
               <motion.div

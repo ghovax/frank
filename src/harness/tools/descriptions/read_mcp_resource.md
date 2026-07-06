@@ -2,4 +2,4 @@
 
 Discover the available URIs with **list_mcp_resources** first, then read one here.
 
-Always provide a concise **justification**.
+Always provide a concise **justification** — kept to one continuous open-ended phrase, not a `label: detail` heading.

@@ -4,24 +4,28 @@ import {
   Box,
   Button,
   createListCollection,
+  Dialog,
   Flex,
+  Input,
   Menu,
   Portal,
   Select,
+  Spinner,
   Text,
   Textarea,
 } from "@chakra-ui/react";
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { LuArrowUp, LuChevronDown, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuLock, LuLockOpen, LuPaperclip, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
-import { ModelSelect } from "./model-select";
+import { Tooltip } from "./ui/tooltip";
+import { ModelSelect, modelSupportsAttachments } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
-import { SettingsDialog } from "./settings-dialog";
+// SettingsDialog moved to ChatPanel top bar
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
+import { InlineField } from "./tool-views/primitives";
+import type { ConnectionTarget } from "@/lib/connection";
 
-const MotionFlex = motion.create(Flex);
 
 interface ChatInputProps {
   onSend: (text: string, dataPart?: Record<string, unknown>) => void;
@@ -29,6 +33,8 @@ interface ChatInputProps {
   isStreaming: boolean;
   disabled?: boolean;
   sessionId?: string | null;
+  currentConnectionId?: string;
+  onConnectionChange?: (target: ConnectionTarget) => void;
   workingDirectory?: string;
   recentProjects?: { path: string; name: string }[];
   onWorkingDirectoryChange?: (dir: string) => void;
@@ -46,14 +52,6 @@ interface ChatInputProps {
   onAgentChange: (agent: string) => void;
   permissionMode: PermissionMode;
   onPermissionModeChange: (mode: PermissionMode) => void;
-  agentsCount?: number;
-  agentsOpen?: boolean;
-  onShowAgents?: () => void;
-  previewsCount?: number;
-  previewOpen?: boolean;
-  onTogglePreview?: () => void;
-  historyOpen?: boolean;
-  onToggleHistory?: () => void;
   models: ModelOption[];
   modelProviders: ProviderOption[];
   recentModels?: { id: string; name: string; provider: string }[];
@@ -62,13 +60,22 @@ interface ChatInputProps {
   // override is set (selectedModel is "").
   globalModel?: string;
   onModelChange: (model: string) => void;
-  // A live "Thinking" / "Working through N tool calls" label shown as a compact
-  // chip next to the Settings button while a turn runs and no tool group is
-  // active (otherwise the status lives in the active group's header). null hides it.
-  thinkingLabel?: string | null;
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
+  // Compact the conversation now (summarize the older history). Shown once a
+  // session has real context to compact.
+  onCompact?: () => void;
+  // True while a compaction pass is running, so the Compact control reflects the
+  // in-progress state (spinner + disabled) rather than inviting another click.
+  isCompacting?: boolean;
+  // How many of the most recent user turns are kept verbatim during compaction
+  // (from the server's _COMPACTION_KEEP_RECENT_TURNS). The button is available
+  // once there are more user messages than this threshold.
+  compactionKeepRecentTurns: number;
+  // How many user messages exist in the current session. Used together with
+  // compactionKeepRecentTurns to decide whether compaction would be meaningful.
+  compactionUserCount: number;
 }
 
 // A filling circle for how full the model's context window is. The arc grows with
@@ -113,36 +120,74 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   const hasContext = tokenUsage.contextWindow > 0;
   const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
   const contextPercent = Math.min(100, Math.round(contextFraction * 100));
-  return (
-    <Flex
-      align="center"
-      gap={1.5}
-      h="28px"
-      px={2}
-      borderRadius="sm"
-      border="1px solid"
-      borderColor="border"
-      bg="bg"
-      color="fg.subtle"
-      flexShrink={0}
-    >
-      {hasContext && (
-        <>
-          <ContextFillRing fraction={contextFraction} />
-          <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-            {contextPercent}%
-          </Text>
-          <Box w="1px" h="14px" bg="border" flexShrink={0} />
-        </>
-      )}
-      <Box display="flex" alignItems="center" flexShrink={0}>
-        <LuCoins size={13} />
-      </Box>
-      <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-        {tokenUsage.contextTokens.toLocaleString()}
-        {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
+  const tooltipContent = (
+    <Box fontSize="xs" lineHeight="1.6" whiteSpace="nowrap">
+      <Text fontWeight="semibold" mb={1} color="fg">
+        Session totals
       </Text>
-    </Flex>
+      <Flex direction="column" ps={3} gap={0.5}>
+        <InlineField label="Input"><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label="Output"><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label="Total"><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
+        {tokenUsage.cacheReadTokens > 0 && (
+          <InlineField label="Cache reads"><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
+        )}
+        {tokenUsage.reasoningTokens > 0 && (
+          <InlineField label="Reasoning"><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
+        )}
+        <InlineField label="Model calls"><Text>{tokenUsage.modelCalls}</Text></InlineField>
+      </Flex>
+      <Box h="1px" bg="border" my={2} />
+      <Text fontWeight="semibold" mb={1} color="fg">
+        Context (this turn)
+      </Text>
+      <Flex direction="column" ps={3} gap={0.5}>
+        <InlineField label="Input"><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label="Output"><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
+        {hasContext && (
+          <InlineField label="Window"><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
+        )}
+      </Flex>
+    </Box>
+  );
+  return (
+    <Tooltip
+      content={tooltipContent}
+      contentProps={{ p: 3, bg: "bg", color: "fg", borderRadius: "sm", boxShadow: "lg", border: "1px solid", borderColor: "border" }}
+      openDelay={200}
+      closeDelay={60}
+      positioning={{ placement: "top" }}
+    >
+      <Flex
+        align="center"
+        gap={1.5}
+        h="28px"
+        px={2}
+        borderRadius="sm"
+        border="1px solid"
+        borderColor="border"
+        bg="bg"
+        color="fg.subtle"
+        flexShrink={0}
+      >
+        {hasContext && (
+          <>
+            <ContextFillRing fraction={contextFraction} />
+            <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+              {contextPercent}%
+            </Text>
+            <Box w="1px" h="14px" bg="border" flexShrink={0} />
+          </>
+        )}
+        <Box display="flex" alignItems="center" flexShrink={0}>
+          <LuCoins size={13} />
+        </Box>
+        <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+          {tokenUsage.contextTokens.toLocaleString()}
+          {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
+        </Text>
+      </Flex>
+    </Tooltip>
   );
 }
 
@@ -152,6 +197,8 @@ export function ChatInput({
   isStreaming,
   disabled,
   sessionId,
+  currentConnectionId,
+  onConnectionChange,
   workingDirectory,
   recentProjects = [],
   onWorkingDirectoryChange,
@@ -167,24 +214,19 @@ export function ChatInput({
   agents,
   selectedAgent,
   onAgentChange,
-  permissionMode,
+  permissionMode = "default",
   onPermissionModeChange,
-  agentsCount = 0,
-  agentsOpen = false,
-  onShowAgents,
-  previewsCount = 0,
-  previewOpen = false,
-  onTogglePreview,
-  historyOpen = false,
-  onToggleHistory,
   models,
   modelProviders,
   recentModels = [],
   selectedModel,
   globalModel = "",
   onModelChange,
-  thinkingLabel,
   tokenUsage,
+  onCompact,
+  isCompacting = false,
+  compactionKeepRecentTurns,
+  compactionUserCount,
 }: ChatInputProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -195,10 +237,9 @@ export function ChatInput({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [messageHistory, setMessageHistory] = useState<string[]>([]);
   const draftInputRef = useRef("");
-  const [configExpanded, setConfigExpanded] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [displayedThinkingLabel, setDisplayedThinkingLabel] = useState(thinkingLabel ?? "");
-  const [thinkingVisible, setThinkingVisible] = useState(!!thinkingLabel);
+  const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
+  const [pathEntryOpen, setPathEntryOpen] = useState(false);
+  const [pathDraft, setPathDraft] = useState("");
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
     valid: false,
@@ -264,7 +305,13 @@ export function ChatInput({
       borderColor: "red.muted",
       colorPalette: "red",
     },
-  }[permissionMode];
+  }[permissionMode] ?? {
+    icon: <LuShield size={13} />,
+    color: "fg.subtle",
+    bg: "bg",
+    borderColor: "border",
+    colorPalette: undefined,
+  };
   // Short label for the composer's permission chip — the full descriptive labels
   // ("User-configured permissions", …) stay in the dropdown, but the trigger only
   // needs a word so the bottom row doesn't sprawl and wrap.
@@ -273,7 +320,7 @@ export function ChatInput({
     auto: "Auto",
     read_only: "Read-only",
     bypass: "Bypass",
-  }[permissionMode];
+  }[permissionMode] ?? "Default";
   const sandboxAppearance = sandboxEnabled
     ? {
         label: "Sandboxed",
@@ -306,45 +353,12 @@ export function ChatInput({
         }
       : null;
 
-  const historyAppearance = historyOpen
-    ? {
-        variant: "solid" as const,
-        colorPalette: "blue" as const,
-        bg: undefined,
-        borderColor: undefined,
-      }
-    : {
-        variant: "outline" as const,
-        colorPalette: undefined,
-        bg: "bg",
-        borderColor: "border.emphasized",
-      };
-  const agentsAppearance = agentsOpen || agentsCount > 0
-    ? {
-        variant: "solid" as const,
-        colorPalette: "orange" as const,
-        bg: undefined,
-        borderColor: undefined,
-      }
-    : {
-        variant: "outline" as const,
-        colorPalette: undefined,
-        bg: "bg",
-        borderColor: "border.emphasized",
-      };
-  const previewAppearance = previewOpen || previewsCount > 0
-    ? {
-        variant: "solid" as const,
-        colorPalette: "teal" as const,
-        bg: undefined,
-        borderColor: undefined,
-      }
-    : {
-        variant: "outline" as const,
-        colorPalette: undefined,
-        bg: "bg",
-        borderColor: "border.emphasized",
-      };
+  // The composer's file-attach affordance is gated on the selected model's
+  // capabilities (models.dev): a text-only model cannot process attachments, so
+  // offering to attach is misleading. Falls back to the global default when there
+  // is no per-conversation override; unknown/custom models are not blocked.
+  const effectiveModelId = selectedModel || globalModel;
+  const attachmentsSupported = modelSupportsAttachments(models, effectiveModelId);
 
   const currentDirectory = (workingDirectory ?? "").trim();
   const directoryStateMatchesCurrent = directoryState.path === currentDirectory;
@@ -358,11 +372,14 @@ export function ChatInput({
   const workspaceLocked = !!sessionId;
   const gitWorkspaceAvailable = directoryStateMatchesCurrent && directoryState.valid && directoryState.isGitRepository;
   const gitWorkspaceUnavailable = directoryStateMatchesCurrent && directoryState.valid && !directoryState.checking && !directoryState.isGitRepository;
-  const gitWorkspaceUnavailableLabel = directoryState.valid
-    ? "Branch and worktree sessions require the selected folder to be inside a Git repository."
-    : "Choose a valid working directory before using branch or worktree sessions.";
+  // Branch and worktree sessions only run inside a Git repo, so outside one the
+  // workspace selector can only ever read "Unmanaged". Rather than show a frozen
+  // selector beside the warning, hide it and let the warning explain why — which
+  // also keeps the composer's bottom row tighter.
+  const workspaceSelectorHidden = !workspaceLocked && gitWorkspaceUnavailable;
+  const gitWorkspaceUnavailableLabel = "Branch and worktree sessions require the selected folder to be inside a Git repository.";
   const displayedWorkspaceStrategy =
-    !workspaceLocked && gitWorkspaceUnavailable && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
+    workspaceSelectorHidden && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
   const selectedWorkspaceChoice =
     workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
   const workspaceAppearance = {
@@ -391,6 +408,14 @@ export function ChatInput({
     }
     return items;
   }, [currentDirectory, currentProjectName, recentProjects]);
+
+  function submitPathDraft() {
+    const nextPath = pathDraft.trim();
+    if (!nextPath) return;
+    onWorkingDirectoryChange?.(nextPath);
+    setPathEntryOpen(false);
+    setPathDraft("");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -444,21 +469,14 @@ export function ChatInput({
     inputRef.current?.focus();
   }, []);
 
+  // Auto-resize the textarea as the user types, so the input grows with its
+  // content up to the configured maximum height.
   useEffect(() => {
-    if (thinkingLabel) {
-      const showTimer = window.setTimeout(() => {
-        setDisplayedThinkingLabel(thinkingLabel);
-        setThinkingVisible(true);
-      }, 0);
-      return () => window.clearTimeout(showTimer);
-    }
-    const hideTimer = window.setTimeout(() => setThinkingVisible(false), 180);
-    const clearTimer = window.setTimeout(() => setDisplayedThinkingLabel(""), 520);
-    return () => {
-      window.clearTimeout(hideTimer);
-      window.clearTimeout(clearTimer);
-    };
-  }, [thinkingLabel]);
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+  }, [inputValue]);
 
   // Fetch message history when the working directory changes.
   useEffect(() => {
@@ -524,7 +542,7 @@ export function ChatInput({
       handleSubmit();
       return;
     }
-    if (event.key === "ArrowUp" && messageHistory.length > 0) {
+    if (event.key === "ArrowUp" && messageHistory.length > 0 && inputRef.current?.selectionStart === 0) {
       event.preventDefault();
       // Save the current draft when first navigating up, so it can be
       // restored when the user navigates back down past all history items.
@@ -538,7 +556,7 @@ export function ChatInput({
       setInputValue(messageHistory[nextIndex]);
       return;
     }
-    if (event.key === "ArrowDown") {
+    if (event.key === "ArrowDown" && inputRef.current?.selectionStart === inputValue.length) {
       const nextIndex = historyIndex <= 0 ? -1 : historyIndex - 1;
       setHistoryIndex(nextIndex);
       // Restore the saved draft when navigating back to the "no history" position.
@@ -550,105 +568,19 @@ export function ChatInput({
 
   return (
     <Box borderTop="1px solid" borderColor="border" bg="bg.subtle" position="relative">
-      {/* Top row (above the input): history button on the left, Agents button
-          on the right. The Agents button is always shown; the panel renders an
-          empty state when there is no activity yet. */}
-      <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5 }} flexWrap="wrap" px={2} pt={2}>
-        <Flex align="center" gap={{ base: 1.5 }} flexShrink={0}>
-          {onToggleHistory && (
-            <Button
-              size="xs"
-              variant={historyAppearance.variant}
-              colorPalette={historyAppearance.colorPalette}
-              borderRadius="sm"
-              fontSize="xs"
-              h="28px"
-              px={2}
-              bg={historyAppearance.bg}
-              borderColor={historyAppearance.borderColor}
-              flexShrink={0}
-              onClick={onToggleHistory}
-            >
-              <LuHistory size={13} />
-              History
-            </Button>
-          )}
-          <Button
-            size="xs"
-            variant="outline"
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg="bg"
-            borderColor="border"
-            flexShrink={0}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <LuSettings size={13} />
-            Settings
-          </Button>
-          <AnimatePresence initial={false}>
-            {displayedThinkingLabel && (
-              <MotionFlex
-                key="thinking-status"
-                align="center"
-                gap={1.5}
-                h="28px"
-                px={2}
-                borderRadius="sm"
-                bg="bg"
-                border="1px solid"
-                borderColor="border"
-                flexShrink={0}
-                overflow="hidden"
-                initial={{ opacity: 0, y: 2, width: 0 }}
-                animate={{ opacity: thinkingVisible ? 1 : 0, y: thinkingVisible ? 0 : 2, width: thinkingVisible ? "auto" : 0 }}
-                exit={{ opacity: 0, y: 2, width: 0 }}
-                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              >
-                <Box color="purple.fg" display="flex" alignItems="center" flexShrink={0}>
-                  <LuBrain size={13} />
-                </Box>
-                <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer" whiteSpace="nowrap">
-                  {displayedThinkingLabel}
-                </Text>
-              </MotionFlex>
-            )}
-          </AnimatePresence>
-        </Flex>
-
-        <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">
-          <Button
-            size="xs"
-            variant="ghost"
-            borderRadius="sm"
-            flexShrink={0}
-            w="28px"
-            h="28px"
-            minW={0}
-            p={0}
-            onClick={() => setConfigExpanded((current) => !current)}
-          >
-            {configExpanded ? <LuChevronRight size={14} /> : <LuChevronLeft size={14} />}
-          </Button>
-          <AnimatePresence initial={false}>
-            {configExpanded && (
-              <motion.div
-                key="config-controls"
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                style={{ overflow: "hidden", display: "flex", alignItems: "center", gap: "6px" }}
-              >
+      {/* Controls row (above the input): the agent and model selectors are always
+          visible here — no collapsible toggle — with the context-usage chip and
+          Compact action on the right. History, Agents, Previews, and Settings now
+          live in the ChatPanel top bar. */}
+      <Flex justify="space-between" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pt={2}>
+        <Flex align="center" gap={1.5} flexWrap="wrap" minW={0}>
           <Select.Root
             collection={agentCollection}
             value={[selectedAgent]}
             onValueChange={(details) => {
               if (details.value[0]) onAgentChange(details.value[0]);
             }}
-            size="xs"
+            size="sm"
             w="max-content"
             minW="max-content"
             maxW="none"
@@ -684,7 +616,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                   {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>
@@ -702,45 +634,75 @@ export function ChatInput({
             fallbackModelId={globalModel}
             compact
           />
-              </motion.div>
-            )}
-          </AnimatePresence>
+        </Flex>
+        <Flex align="center" gap={1.5} flexShrink={0} justify="flex-end">
+          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
+            <Button
+              size="xs"
+              variant="outline"
+              borderRadius="sm"
+              fontSize="xs"
+              h="28px"
+              px={2}
+              bg="bg"
+              borderColor="border"
+              flexShrink={0}
+              disabled={isStreaming || isCompacting}
+              onClick={() => setCompactConfirmOpen(true)}
+              title={isCompacting
+                ? "Compacting the context…"
+                : "Summarize the older history to free up context, keeping the most recent turns verbatim"}
+            >
+              {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
+              {isCompacting ? "Compacting…" : "Compact"}
+            </Button>
+          )}
           <ContextUsageChip tokenUsage={tokenUsage} />
-          <Button
-            size="xs"
-            variant={agentsAppearance.variant}
-            colorPalette={agentsAppearance.colorPalette}
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg={agentsAppearance.bg}
-            borderColor={agentsAppearance.borderColor}
-            flexShrink={0}
-            onClick={onShowAgents}
-          >
-            <LuNetwork size={13} />
-            {agentsCount > 0 ? `Agents (${agentsCount})` : "Agents"}
-          </Button>
-          <Button
-            size="xs"
-            variant={previewAppearance.variant}
-            colorPalette={previewAppearance.colorPalette}
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg={previewAppearance.bg}
-            borderColor={previewAppearance.borderColor}
-            flexShrink={0}
-            onClick={onTogglePreview}
-            disabled={!onTogglePreview || previewsCount === 0}
-          >
-            <LuAppWindow size={13} />
-            {previewsCount > 0 ? `Preview (${previewsCount})` : "Preview"}
-          </Button>
         </Flex>
       </Flex>
+
+      <Dialog.Root
+        open={compactConfirmOpen}
+        onOpenChange={(event) => setCompactConfirmOpen(event.open)}
+        placement="center"
+        role="alertdialog"
+      >
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content borderRadius="md">
+              <Dialog.Header>
+                <Dialog.Title>Compact the context?</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text fontSize="sm" color="fg.muted">
+                  This summarizes the older conversation into a compact handoff, keeping the{" "}
+                  <b>most recent {compactionKeepRecentTurns} turns</b> verbatim. It frees up the
+                  context window but the summarized detail can no longer be recalled in full.
+                </Text>
+              </Dialog.Body>
+              <Dialog.Footer gap={2}>
+                <Button size="sm" variant="outline" borderRadius="sm" onClick={() => setCompactConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  colorPalette="blue"
+                  variant="solid"
+                  borderRadius="sm"
+                  onClick={() => {
+                    setCompactConfirmOpen(false);
+                    onCompact?.();
+                  }}
+                >
+                  <LuFoldVertical size={14} />
+                  Compact now
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
 
       {/* Message input */}
       <Box px={2} pt={2} pb={2}>
@@ -764,6 +726,9 @@ export function ChatInput({
           onDrop={(event) => {
             event.preventDefault();
             setDragActive(false);
+            // Ignore drops when the selected model can't process attachments —
+            // matching the disabled attach button.
+            if (!attachmentsSupported) return;
             void handleFiles(event.dataTransfer.files);
           }}
           _focusWithin={{ borderColor: "border.emphasized" }}
@@ -840,7 +805,8 @@ export function ChatInput({
                 gap={1.5}
                 fontSize="xs"
                 fontWeight="medium"
-                disabled={disabled || !directoryValid}
+                disabled={disabled || !directoryValid || !attachmentsSupported}
+                title={!attachmentsSupported ? "The selected model can't process file attachments — switch to a vision or file-capable model" : undefined}
               >
                 <LuPaperclip size={14} />
                 Attach files
@@ -887,7 +853,7 @@ export function ChatInput({
       {/* Bottom row (below the input): connection, permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
         <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
-          <ConnectionSwitcher />
+          <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
           <Select.Root
             collection={permissionCollection}
             value={[permissionMode]}
@@ -895,7 +861,7 @@ export function ChatInput({
               const nextMode = details.value[0] as PermissionMode | undefined;
               if (nextMode) onPermissionModeChange(nextMode);
             }}
-            size="xs"
+            size="sm"
             w="max-content"
             minW="max-content"
             maxW="none"
@@ -934,7 +900,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
                   {permissionCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>
@@ -965,75 +931,7 @@ export function ChatInput({
             {sandboxAppearance.label}
           </Button>
           <Flex align="center" gap={1.5} flexWrap="wrap">
-            <Select.Root
-              collection={workspaceCollection}
-              value={[displayedWorkspaceStrategy]}
-              onValueChange={(details) => {
-                const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
-                if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
-              }}
-              size="xs"
-              w="max-content"
-              minW="max-content"
-              maxW="none"
-              flexShrink={0}
-            >
-              <Select.Control w="max-content" minW="max-content" maxW="none">
-                <Select.Trigger
-                  w="max-content"
-                  borderRadius="sm"
-                  fontSize="xs"
-                  gap={1.5}
-                  px={2}
-                  pe={7}
-                  bg={workspaceAppearance.bg}
-                  border="1px solid"
-                  borderColor={workspaceAppearance.borderColor}
-                  colorPalette={workspaceAppearance.colorPalette}
-                  minW="max-content"
-                  maxW="none"
-                  whiteSpace="nowrap"
-                  fontWeight="medium"
-                  disabled={workspaceLocked}
-                  title={
-                    workspaceLocked
-                      ? workspaceDetail?.title ?? "Workspace strategy for this session"
-                      : directoryState.repositoryRoot && displayedWorkspaceStrategy !== "none"
-                        ? directoryState.repositoryRoot
-                        : "Session workspace strategy"
-                  }
-                  style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
-                >
-                  <Box display="flex" alignItems="center" color={workspaceAppearance.color} flexShrink={0}>
-                    {workspaceAppearance.icon}
-                  </Box>
-                  <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
-                </Select.Trigger>
-                <Select.IndicatorGroup>
-                  <Select.Indicator />
-                </Select.IndicatorGroup>
-              </Select.Control>
-              <Portal>
-                <Select.Positioner>
-                  <Select.Content borderRadius="sm" minW="max-content" w="max-content">
-                    {workspaceCollection.items.map((item) => {
-                      const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
-                      const choice = workspaceChoices.find((c) => c.value === item.value);
-                      return (
-                        <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
-                          <Flex align="center" gap={1.5}>
-                            {choice?.icon}
-                            <Text>{item.label}</Text>
-                          </Flex>
-                          <Select.ItemIndicator />
-                        </Select.Item>
-                      );
-                    })}
-                  </Select.Content>
-                </Select.Positioner>
-              </Portal>
-            </Select.Root>
-            {!workspaceLocked && gitWorkspaceUnavailable && (
+            {workspaceSelectorHidden ? (
               <Flex
                 align="center"
                 gap={1.5}
@@ -1052,9 +950,78 @@ export function ChatInput({
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
-                  Unconfigured workspace
+                  Unconfigured Git workspace
                 </Text>
               </Flex>
+            ) : (
+              <Select.Root
+                collection={workspaceCollection}
+                value={[displayedWorkspaceStrategy]}
+                onValueChange={(details) => {
+                  const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
+                  if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
+                }}
+                size="sm"
+                w="max-content"
+                minW="max-content"
+                maxW="none"
+                flexShrink={0}
+              >
+                <Select.Control w="max-content" minW="max-content" maxW="none">
+                  <Select.Trigger
+                    w="max-content"
+                    borderRadius="sm"
+                    fontSize="xs"
+                    gap={1.5}
+                    px={2}
+                    pe={7}
+                    bg={workspaceAppearance.bg}
+                    border="1px solid"
+                    borderColor={workspaceAppearance.borderColor}
+                    colorPalette={workspaceAppearance.colorPalette}
+                    minW="max-content"
+                    maxW="none"
+                    whiteSpace="nowrap"
+                    fontWeight="medium"
+                    disabled={workspaceLocked}
+                    title={
+                      workspaceLocked
+                        ? workspaceDetail?.title ?? "Workspace strategy for this session"
+                        : directoryState.repositoryRoot && displayedWorkspaceStrategy !== "none"
+                          ? directoryState.repositoryRoot
+                          : "Session workspace strategy"
+                    }
+                    style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
+                  >
+                    <Box display="flex" alignItems="center" color={workspaceAppearance.color} flexShrink={0}>
+                      {workspaceAppearance.icon}
+                    </Box>
+                    <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                  </Select.Trigger>
+                  <Select.IndicatorGroup>
+                    <Select.Indicator />
+                  </Select.IndicatorGroup>
+                </Select.Control>
+                <Portal>
+                  <Select.Positioner>
+                    <Select.Content borderRadius="sm" minW="max-content" w="max-content">
+                      {workspaceCollection.items.map((item) => {
+                        const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
+                        const choice = workspaceChoices.find((choice) => choice.value === item.value);
+                        return (
+                          <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
+                            <Flex align="center" gap={1.5}>
+                              {choice?.icon}
+                              <Text>{item.label}</Text>
+                            </Flex>
+                            <Select.ItemIndicator />
+                          </Select.Item>
+                        );
+                      })}
+                    </Select.Content>
+                  </Select.Positioner>
+                </Portal>
+              </Select.Root>
             )}
           </Flex>
         </Flex>
@@ -1089,15 +1056,15 @@ export function ChatInput({
                 justifyContent="space-between"
                 borderColor={directoryValid ? "border" : "red.muted"}
                 bg="bg"
-                w={{ base: "min(100%, 220px)", md: "180px" }}
-                maxW="100%"
+                w="max-content"
+                maxW={{ base: "100%", md: "220px" }}
                 minW={0}
                 disabled={folderLocked}
                 title={folderLocked
                   ? `Project folder is fixed for this session to ${currentDirectory}`
                   : currentDirectory || "Choose project"}
               >
-                <Box as="span" truncate>
+                <Box as="span" truncate minW={0}>
                   {currentProjectName}
                 </Box>
                 {!folderLocked && <LuChevronDown size={14} />}
@@ -1129,6 +1096,16 @@ export function ChatInput({
                   >
                     Open another project...
                   </Menu.Item>
+                  <Menu.Item
+                    value="enter-project-path"
+                    fontWeight="medium"
+                    onClick={() => {
+                      setPathDraft(currentDirectory);
+                      setPathEntryOpen(true);
+                    }}
+                  >
+                    Enter a path...
+                  </Menu.Item>
                 </Menu.Content>
               </Menu.Positioner>
             </Portal>
@@ -1157,9 +1134,38 @@ export function ChatInput({
             </Flex>
           )}
         </Flex>
+        {!folderLocked && pathEntryOpen && (
+          <Flex align="center" gap={1.5} flex={{ base: "1 1 100%", md: "1 1 260px" }} minW={0}>
+            <Input
+              size="xs"
+              h="28px"
+              borderRadius="sm"
+              bg="bg"
+              fontFamily="var(--font-mono)"
+              fontSize="xs"
+              placeholder="/absolute/path/on/this/server"
+              value={pathDraft}
+              onChange={(event) => setPathDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submitPathDraft();
+                if (event.key === "Escape") setPathEntryOpen(false);
+              }}
+            />
+            <Button
+              size="xs"
+              variant="solid"
+              colorPalette="blue"
+              borderRadius="sm"
+              h="28px"
+              flexShrink={0}
+              disabled={!pathDraft.trim()}
+              onClick={submitPathDraft}
+            >
+              Use
+            </Button>
+          </Flex>
+        )}
       </Flex>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </Box>
   );
 }

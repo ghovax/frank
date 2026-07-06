@@ -12,18 +12,23 @@ from exa_py import Exa
 from langchain.tools import tool
 
 from harness.identifiers import new_id
-from harness.core.background import current_background_jobs, cancel_all_background_jobs
+from harness.core.background import current_background_jobs, cancel_all_background_jobs, current_tool_call_id
+from harness.core.background_store import get_background_job_store
 
 _exa_client: Exa | None = None
 _mcp_client_manager: Any | None = None
 
-# How long a bash command may run before it is handed off to the background. Fast
-# commands (ls, cat, grep, git status, …) finish within this window and return
-# their output directly; only genuinely slow ones stay backgrounded and are
-# auto-injected when they complete. Keeping quick commands inline is what stops a
-# fast command that finishes just after the model answered from orphaning into a
-# pending job that would later trigger a redundant autonomous wake.
-_BASH_INLINE_SETTLE_SECONDS = 2.0
+# bash is synchronous by default: the model chooses whether a command backgrounds
+# (background=true), so backgrounding is never a surprise it has to reason about.
+# A synchronous command blocks and returns its real output up to this ceiling; the
+# ceiling only trips for a command that runs unexpectedly long without being
+# backgrounded, at which point it falls through to the background path as a safety
+# net rather than holding the turn open forever. Ordinary git/network/package
+# commands finish well within it and return real output — the old 2s auto-background
+# window is exactly what surprised the model into re-running mutating commands (a
+# `gh pr merge` that crossed the threshold looked unfinished and got issued twice).
+# Genuinely long work is the model's cue to pass background=true.
+_BASH_SYNC_CEILING_SECONDS = 60.0
 
 
 def set_exa_client(client: Exa | None) -> None:
@@ -61,12 +66,20 @@ async def bash(
     read_only: bool = True,
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
+    background: bool = False,
 ) -> str:
     """Execute a bash command and return its output.
 
-    Fast commands (under ~2s) return output directly.
-    Slow commands return immediately with a task identifier and output file
-    path — the result is auto-injected into the conversation when finished.
+    Synchronous by default: the command runs to completion and its real output is
+    returned directly, so you always see the result of the action you took.
+
+    Set background=True only for genuinely long-running work you do NOT need the
+    result of before your turn can continue — a build, a test suite, a dev server,
+    a broad scan. A backgrounded command returns immediately with a task
+    identifier; its result is auto-injected into the conversation when it finishes,
+    and the harness re-engages you then. Do NOT background a command whose output
+    you need next (and never background then re-run the same command — it is
+    already running).
 
     Always provide a clear justification and risk assessment for the command.
     Use read_only=True for commands that only read state (cat, head, tail, ls,
@@ -79,6 +92,8 @@ async def bash(
         risk: One of "low", "medium", "high" — assess the potential damage.
               Low for read-only commands, medium for modifications,
               high for destructive operations.
+        background: Run the command in the background instead of waiting for it.
+              Use for long-running work whose result is not needed immediately.
     """
     output_path = Path("/tmp") / f"{new_id('bash')}.log"
     process_holder: dict[str, Any] = {}
@@ -106,6 +121,14 @@ async def bash(
         )
         process_holder["process"] = process
         process_id = process.pid
+        # start_new_session=True makes this shell a session/group leader, so its
+        # pgid == pid and killpg reaps the whole subtree. Persist the group id so a
+        # crash-orphaned subtree (survived a SIGKILL of the server) is reaped on the
+        # next startup. No-op UPDATE when the job is not durably tracked (no context).
+        try:
+            get_background_job_store().record_process_group(task_identifier, os.getpgid(process_id))
+        except (ProcessLookupError, OSError):
+            pass
 
         async def write_stream(stream, handle):
             while True:
@@ -164,15 +187,24 @@ async def bash(
     jobs = current_background_jobs()
     task_identifier = jobs.spawn(
         "bash", run(), output_path=output_path, cancel_callback=cancel_process,
-        spec={"command": command, "read_only": read_only, "risk": risk},
+        spec={"command": command, "read_only": read_only, "risk": risk, "background": background},
+        # Correlate the job with its tool call from the start, so the user can
+        # background a still-blocking foreground command by that tool-call id.
+        tool_call_identifier=current_tool_call_id(),
+        # A model-backgrounded command is detached: it outlives the turn and a Stop
+        # leaves it running. A synchronous command is foreground — Stop kills it.
+        detached=background,
     )
-    # Fast commands finish inline and return their output directly; only genuinely
-    # slow ones stay backgrounded and are auto-injected when they complete. A job
-    # settled inline never becomes a pending background job, so it cannot later wake
-    # the agent with a now-redundant result.
-    settled = await jobs.settle_inline(task_identifier, _BASH_INLINE_SETTLE_SECONDS)
-    if settled is not None:
-        return settled.result
+    if not background:
+        # Block until the command finishes and hand its real output straight back,
+        # so the model always sees the outcome of the action it took — never an
+        # opaque "scheduled" placeholder it might mistake for unfinished and re-run.
+        # The ceiling only trips for a command that runs unexpectedly long without
+        # being backgrounded; it then falls through to the background path below as
+        # a safety net rather than holding the turn open indefinitely.
+        settled = await jobs.settle_inline(task_identifier, _BASH_SYNC_CEILING_SECONDS)
+        if settled is not None:
+            return settled.result
     return json.dumps({
         "code": "bash_started",
         "task_identifier": task_identifier,
@@ -250,6 +282,9 @@ async def web_search(
     current_background_jobs().spawn(
         "web_search", run(), identifier=task_identifier, output_path=output_path,
         spec={"query": query, "result_count": result_count},
+        # web_search always runs in the background — a Stop ends the turn but leaves
+        # the search running, so its result still lands and wakes the agent.
+        detached=True,
     )
     # The started acknowledgement intentionally omits any file path or other
     # fetch-looking handle: the only thing the model needs is the id to match the
@@ -662,19 +697,24 @@ search_content.description = _load_tool_description("search_content")
 @tool
 def edit_file(
     file_path: str,
-    old_string: str,
-    new_string: str,
+    find: str,
+    replace_with: str,
     replace_all: bool = False,
+    skip_validation: bool = False,
     justification: str = "",
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Replace an exact substring in one existing file.
+    """Replace exact text in a file, staged and validated before commit.
+
+    ``find`` must occur verbatim in the file. Unless ``replace_all`` is set,
+    it must be unique. Copy it character-for-character from ``read_file``.
 
     Args:
         file_path: Absolute path (or path relative to the working directory).
-        old_string: The exact text to replace, copied verbatim from the file.
-        new_string: The text to replace it with (must differ from old_string).
+        find: The exact text to find, copied verbatim from the file.
+        replace_with: The text to replace it with.
         replace_all: Replace every occurrence instead of requiring a unique match.
+        skip_validation: Skip AST/syntax validation before writing.
         justification: A concise, user-facing reason for this edit.
         risk: "low" for targeted edits, "medium" broad, "high" hard to reverse.
     """

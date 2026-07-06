@@ -28,6 +28,9 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import logging
+import os
+import signal
 import weakref
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
@@ -57,12 +60,18 @@ BACKGROUND_PRESENTATION: dict[str, dict[str, Any]] = {
         "completed_event": "background_web_search_completed",
         "include_result": False,
     },
+    "spawn_agent": {
+        "active_context_key": "pending_agents",
+        "completed_event": "background_agent_completed",
+        "include_result": True,
+    },
 }
 
 # Identifier prefix per kind, so a job id is self-describing (e.g. ``bg-…``).
 _KIND_IDENTIFIER_PREFIX: dict[str, str] = {
     "bash": "bg",
     "web_search": "search",
+    "spawn_agent": "agent",
 }
 
 
@@ -83,6 +92,14 @@ class _BackgroundJobRecord:
     cancel_callback: Callable[[], None] | None = None
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tool_call_identifier: str = ""
+    # A detached job was deliberately backgrounded by the model (bash background=true,
+    # web_search): it outlives the turn and a Stop must NOT cancel it. A non-detached
+    # job backs a foreground/synchronous call still tied to the turn — Stop kills it.
+    detached: bool = False
+    # Fires when the user manually pushes a still-blocking foreground command to the
+    # background: it releases the inline settle wait so the command keeps running
+    # detached instead of holding the turn open (see :meth:`settle_inline`).
+    detach_requested: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 @dataclass(frozen=True)
@@ -129,11 +146,14 @@ class BackgroundJobs:
         cancel_callback: Callable[[], None] | None = None,
         spec: dict[str, Any] | None = None,
         tool_call_identifier: str = "",
+        detached: bool = False,
     ) -> str:
         """Start ``coroutine`` as a background job and return its identifier.
 
         ``spec`` carries what a restart needs to re-issue an idempotent job (e.g.
-        a search query or a parse target); it is persisted, never used live."""
+        a search query or a parse target); it is persisted, never used live.
+        ``detached`` marks work the model explicitly backgrounded, which a Stop
+        must leave running (see :meth:`cancel_foreground`)."""
         if identifier is None:
             identifier = new_id(_KIND_IDENTIFIER_PREFIX.get(kind, kind))
         task = asyncio.create_task(coroutine)
@@ -144,6 +164,7 @@ class BackgroundJobs:
             output_path=output_path,
             cancel_callback=cancel_callback,
             tool_call_identifier=tool_call_identifier,
+            detached=detached,
         )
         if self._context_id:
             get_background_job_store().record_started(
@@ -253,14 +274,34 @@ class BackgroundJobs:
         record = self._jobs.get(identifier)
         if record is None:
             return None
+        # Race the job's completion against the ceiling and a manual background
+        # request. Whichever fires first wins: a finished job is drained and returned
+        # inline; a timeout or a user backgrounding leaves the job running (the latter
+        # marks it detached below) so the turn continues with a "started" placeholder.
+        task_waiter = asyncio.ensure_future(asyncio.shield(record.task))
+        detach_waiter = asyncio.ensure_future(record.detach_requested.wait())
         try:
-            await asyncio.wait_for(asyncio.shield(record.task), timeout)
-        except asyncio.TimeoutError:
+            await asyncio.wait(
+                {task_waiter, detach_waiter},
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            detach_waiter.cancel()
+            if not task_waiter.done():
+                task_waiter.cancel()
+            elif not task_waiter.cancelled():
+                # The task finished by raising; consume the exception here so it is not
+                # reported as never-retrieved. It is re-captured into an error payload
+                # when the completion is built below.
+                task_waiter.exception()
+        if record.detach_requested.is_set():
+            # Backgrounded by the user: mark it detached so a Stop leaves it running,
+            # and hand back None so bash returns the "started" placeholder.
+            record.detached = True
             return None
-        except Exception:
-            # The task finished by raising; the error is captured when the completion
-            # is built below, so treat it as settled rather than propagating.
-            pass
+        if not record.task.done():
+            return None
         record = self._jobs.pop(identifier, None)
         if record is None:
             return None
@@ -297,6 +338,38 @@ class BackgroundJobs:
                     pass
             record.task.cancel()
         self._jobs.clear()
+
+    def cancel_foreground(self) -> None:
+        """Cancel only jobs tied to the current turn (a synchronous bash still
+        running, an inline command). Detached jobs the model explicitly
+        backgrounded are left running — a Stop ends the turn, not the work the
+        user deliberately sent to the background."""
+        for identifier, record in list(self._jobs.items()):
+            if record.detached:
+                continue
+            if record.cancel_callback is not None:
+                try:
+                    record.cancel_callback()
+                except Exception:
+                    pass
+            record.task.cancel()
+            self._jobs.pop(identifier, None)
+
+    def request_background(self, tool_call_identifier: str) -> bool:
+        """Push a still-running foreground job to the background on the user's behalf.
+
+        Finds the live, not-yet-detached job started by ``tool_call_identifier`` and
+        signals it: its inline settle wait releases at once (the command keeps running
+        detached, so a Stop no longer kills it and the turn continues with a "started"
+        placeholder). Returns True when such a job was found and signalled."""
+        for record in self._jobs.values():
+            if record.tool_call_identifier != tool_call_identifier:
+                continue
+            if record.task.done() or record.detached or record.detach_requested.is_set():
+                return False
+            record.detach_requested.set()
+            return True
+        return False
 
     def _result_string(self, record: _BackgroundJobRecord) -> str:
         """The finished task's result as a string. A cancelled or failed job becomes
@@ -336,7 +409,31 @@ def cancel_all_background_jobs() -> None:
         runner.cancel_all()
 
 
-# --- Ambient binding for producers -----------------------------------------
+def reap_orphaned_processes() -> int:
+    """Kill process groups left behind by a previous, unclean shutdown.
+
+    Catchable termination (SIGTERM/SIGINT/SIGHUP/normal exit) kills every tracked
+    process group directly. A SIGKILL or a hard crash cannot run any handler, so a
+    long background shell subtree (a dev server, a watcher) can survive as an
+    orphan. Each job records its process-group id durably when it starts; on the
+    next startup this kills any group still marked running, so orphans never
+    accumulate. Returns how many groups were signalled."""
+    killed = 0
+    for process_group in get_background_job_store().orphaned_process_groups():
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+            killed += 1
+        except ProcessLookupError:
+            # Already gone — the common case (the child died with the crash).
+            continue
+        except OSError as error:
+            logging.getLogger(__name__).warning(
+                "Could not reap orphaned process group %s: %s", process_group, error
+            )
+    return killed
+
+
+# Ambient binding for background-producing tools: bind the current runner during dispatch.
 # Background-producing tools (bash, web_search, …) are module-level functions
 # with LLM-facing signatures, so they cannot take the runner as a parameter. The
 # dispatcher binds the current agent's runner for the narrow duration of the
@@ -360,3 +457,25 @@ def current_background_jobs() -> "BackgroundJobs":
     if jobs is None:
         raise RuntimeError("No background job runner is bound to the current context.")
     return jobs
+
+
+# The tool call currently executing, bound by the dispatcher alongside the job
+# runner. A background-producing tool reads it so the job it spawns is correlated
+# with its originating tool call from the very start — which is what lets a user
+# background a still-blocking foreground command by that tool-call id, before the
+# post-return bind_tool_call would otherwise set it.
+_current_tool_call_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "current_tool_call_id", default=""
+)
+
+
+def bind_tool_call_id(tool_call_identifier: str) -> contextvars.Token:
+    return _current_tool_call_id.set(tool_call_identifier)
+
+
+def unbind_tool_call_id(token: contextvars.Token) -> None:
+    _current_tool_call_id.reset(token)
+
+
+def current_tool_call_id() -> str:
+    return _current_tool_call_id.get()

@@ -2,11 +2,12 @@
 
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { LuBrain, LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import { iconForFilePath } from "@/lib/file-icons";
-import { DiffStatBadge } from "./rolling-number";
+import { DiffStatBadge, RollingNumber } from "./rolling-number";
+import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
 import { ToolCall } from "./tool-call";
 
@@ -82,6 +83,10 @@ interface ToolGroupProps {
   // the chat timeline to keep the latest group open until the assistant's text
   // response actually arrives, rather than collapsing the instant tools finish.
   keepOpen?: boolean;
+  // How many reasoning ("thinking") phases happened while this batch of work ran.
+  // Surfaced as a brain counter in the header (persisted: replay rebuilds the
+  // thinking messages this is counted from). 0 hides it.
+  thinkingCount?: number;
 }
 
 export const ToolGroup = memo(function ToolGroup({
@@ -92,6 +97,7 @@ export const ToolGroup = memo(function ToolGroup({
   activePreviewId,
   onActivatePreview,
   keepOpen = false,
+  thinkingCount = 0,
 }: ToolGroupProps) {
   const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length;
   const inputRequired = tools.some((tool) => toolStatus(tool.status) === "input_required");
@@ -114,8 +120,19 @@ export const ToolGroup = memo(function ToolGroup({
   const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
   const hasFileChanges = fileChanges.length > 0;
   // The left side is a live recap: one icon per distinct tool with its invocation
-  // count, preceded by a generic "doing something" word that shimmers while active.
+  // count, preceded by a live status line that shimmers while active.
   const tally = useMemo(() => tallyTools(tools), [tools]);
+  // The status line shows the most recent tool's own label (its justification),
+  // animated as work streams in and left in place when the batch finishes — more
+  // informative than a static "Still working" / "Actions taken".
+  const latestTool = tools[tools.length - 1];
+  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
+  // A tools-less group is a live "thinking before acting" phase — its heading is
+  // just the reasoning indicator. Otherwise it tracks the latest tool's label.
+  const thinkingOnly = tools.length === 0;
+  const headingText = latestLabel || (thinkingOnly ? "Thinking" : active ? "Working" : "Actions taken");
+  // A thinking-only heading has no body to reveal, so it is not interactive.
+  const interactive = !thinkingOnly;
 
   const badge = inputRequired
     ? { label: "Input required", colorPalette: "yellow" }
@@ -139,7 +156,7 @@ export const ToolGroup = memo(function ToolGroup({
         borderColor="border"
       >
         <Flex
-          as="button"
+          as={interactive ? "button" : "div"}
           align="center"
           gap={1.5}
           w="100%"
@@ -148,51 +165,98 @@ export const ToolGroup = memo(function ToolGroup({
           minH="8"
           color="fg"
           textAlign="left"
-          cursor="pointer"
-          _hover={{ bg: "bg.muted" }}
-          onClick={() => setManualOverride((current) => current === null ? true : !current)}
+          cursor={interactive ? "pointer" : "default"}
+          _hover={interactive ? { bg: "bg.muted" } : undefined}
+          onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
         >
           <Flex align="center" gap={2} flex={1} minW={0}>
-            <Text
-              fontSize="xs"
-              fontWeight="medium"
-              flexShrink={0}
-              whiteSpace="nowrap"
-              // While active, leave the color unset so the shimmer class controls it:
-              // an inline color would override the gradient's transparent fill (inline
-              // beats class) and the shimmer would silently not render.
-              color={active ? undefined : "fg.muted"}
-              className={active ? "running-title-shimmer" : undefined}
-            >
-              {active ? "Still working" : "Actions taken"}
-            </Text>
-            <Flex align="center" gap={2} minW={0} flexWrap="wrap">
-              {tally.order.map((name) => {
-                const display = getToolCallDisplay(name);
-                const ToolIcon = display.icon;
-                const count = tally.counts.get(name) ?? 0;
-                return (
-                  <Flex
-                    key={name}
-                    align="center"
-                    gap={1}
-                    flexShrink={0}
-                    title={display.label}
-                    color={active ? display.iconColor : "fg.muted"}
+            {/* Status line — the latest tool's label. It crossfades (opacity only,
+                no height/translate) as work streams so the row height never shifts
+                and the whole heading stays vertically centered by the parent's
+                align="center" alone — no hand-tuned heights. */}
+            <Box minW={0} flexShrink={1} overflow="hidden">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={headingText}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12, ease: "easeOut" }}
+                  style={{ minWidth: 0 }}
+                >
+                  <Text
+                    fontSize="xs"
+                    fontWeight="medium"
+                    whiteSpace="nowrap"
+                    overflow="hidden"
+                    textOverflow="ellipsis"
+                    // While active, leave the color unset so the shimmer class controls it:
+                    // an inline color would override the gradient's transparent fill (inline
+                    // beats class) and the shimmer would silently not render.
+                    color={active ? undefined : "fg.muted"}
+                    className={active ? "running-title-shimmer" : undefined}
                   >
-                    <ToolIcon size={13} />
-                    {count > 1 && (
-                      <Text fontSize="xs" fontWeight="medium" color="fg.muted">
-                        {count}
-                      </Text>
-                    )}
-                  </Flex>
-                );
-              })}
+                    {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
+                  </Text>
+                </motion.div>
+              </AnimatePresence>
+            </Box>
+            <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap">
+              <AnimatePresence initial={false}>
+                {tally.order.map((name) => {
+                  const display = getToolCallDisplay(name);
+                  const ToolIcon = display.icon;
+                  const count = tally.counts.get(name) ?? 0;
+                  return (
+                    <motion.div
+                      key={name}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
+                      style={{ display: "inline-flex", alignItems: "center" }}
+                    >
+                      <Flex
+                        align="center"
+                        gap={1}
+                        flexShrink={0}
+                        title={display.label}
+                        color={active ? display.iconColor : "fg.muted"}
+                      >
+                        <ToolIcon size={13} />
+                        {count > 1 && (
+                          <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" fontSize="xs" fontWeight="medium" color="fg.muted">
+                            <RollingNumber value={count} />
+                          </Box>
+                        )}
+                      </Flex>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+              {/* Reasoning counter — how many times the agent stopped to think
+                  while doing this batch. Same rolling-number treatment as the
+                  tool counts, in the thinking (purple) accent. */}
+              {thinkingCount > 0 && (
+                <Flex
+                  align="center"
+                  gap={1}
+                  flexShrink={0}
+                  color={active ? "purple.fg" : "fg.muted"}
+                  title={`Thought ${thinkingCount} time${thinkingCount === 1 ? "" : "s"}`}
+                >
+                  <LuBrain size={13} />
+                  {thinkingCount > 1 && (
+                    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" fontSize="xs" fontWeight="medium" color="fg.muted">
+                      <RollingNumber value={thinkingCount} />
+                    </Box>
+                  )}
+                </Flex>
+              )}
             </Flex>
           </Flex>
           {hasFileChanges && fileChanges.length > 0 && (
-            <Flex align="center" gap={2} flexShrink={1} minW={0} overflow="hidden">
+            <Flex align="center" gap={1.5} flexShrink={1} minW={0} overflow="hidden">
               {fileChanges.slice(0, 3).map((file) => {
                 const FileIcon = iconForFilePath(file.path).icon;
                 return (
@@ -219,12 +283,14 @@ export const ToolGroup = memo(function ToolGroup({
               {badge.label}
             </Badge>
           )}
-          <Box color="fg.muted" fontSize="xs" flexShrink={0}>
-            {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-          </Box>
+          {interactive && (
+            <Box color="fg.muted" fontSize="xs" flexShrink={0}>
+              {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+            </Box>
+          )}
         </Flex>
         <AnimatePresence initial={false}>
-          {bodyOpen && (
+          {bodyOpen && interactive && (
             <motion.div
               key="body"
               initial={{ opacity: 0, height: 0 }}

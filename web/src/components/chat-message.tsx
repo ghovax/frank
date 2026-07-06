@@ -1,8 +1,8 @@
 "use client";
 
-import { Box, Flex } from "@chakra-ui/react";
-import { memo } from "react";
-import { LuInfo } from "react-icons/lu";
+import { Box, Button, Flex, Spinner, Text } from "@chakra-ui/react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
+import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { AttachmentChips } from "./attachment-chips";
@@ -17,6 +17,68 @@ interface ChatMessageProps {
   agents?: { id: string; name: string }[];
   activePreviewId?: string | null;
   onActivatePreview?: (id: string) => void;
+  // Re-run the turn that produced a server error (resends the last user message).
+  // Only wired for error rows.
+  onRetry?: () => void;
+}
+
+// The structured, safe error category the server hands the UI for a failed turn
+// (a rejected request, a rate limit, a provider outage). Never the raw provider
+// text — only a title + user-actionable message.
+interface FriendlyError {
+  code: string;
+  title: string;
+  message: string;
+  status?: number;
+}
+
+// A server/turn error rendered as its own distinct block — not disguised as an
+// assistant message. A bordered danger box with the alert triangle, a bold title,
+// the message below as rendered markdown, and a "Try again" action, so the user
+// reads it as a system failure with a clear next step rather than model prose.
+function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?: () => void }) {
+  const error = message.meta?.error as FriendlyError | undefined;
+  const title = error?.title?.trim() || "Something went wrong";
+  const body = error?.message?.trim() || message.content;
+  return (
+    <Box
+      w="100%"
+      maxW="640px"
+      border="1px solid"
+      borderColor="red.muted"
+      bg="red.subtle"
+      borderRadius="md"
+      px={3}
+      py={2.5}
+    >
+      <Flex align="center" gap={2} color="red.fg">
+        <Box display="flex" alignItems="center" flexShrink={0}>
+          <LuTriangleAlert size={15} />
+        </Box>
+        <Text fontSize="sm" fontWeight="bold" lineHeight="1.3">
+          {title}
+        </Text>
+      </Flex>
+      <Box mt={1.5}>
+        <MarkdownContent content={body} fontSize="sm" />
+      </Box>
+      {onRetry && (
+        <Flex mt={2.5}>
+          <Button
+            size="xs"
+            variant="solid"
+            colorPalette="red"
+            borderRadius="sm"
+            fontWeight="medium"
+            onClick={onRetry}
+          >
+            <LuRotateCw size={13} />
+            Try again
+          </Button>
+        </Flex>
+      )}
+    </Box>
+  );
 }
 
 function toolStatus(status: unknown): ToolEventStatus | undefined {
@@ -42,17 +104,66 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview }: ChatMessageProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview, onRetry }: ChatMessageProps) {
   switch (message.role) {
     case "user": {
       const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
+      const contentRef = useRef<HTMLDivElement>(null);
+      const [expanded, setExpanded] = useState(false);
+      const [truncatable, setTruncatable] = useState(false);
+      const COLLAPSE_HEIGHT = 200;
+
+      useLayoutEffect(() => {
+        const element = contentRef.current;
+        if (!element) return;
+        setTruncatable(element.scrollHeight > COLLAPSE_HEIGHT);
+      }, [message.content]);
+
       return (
         <Flex direction="column" alignSelf="flex-end" align="flex-end" gap={1.5} maxW="80%">
           {attachments.length > 0 && <AttachmentChips attachments={attachments} />}
           {message.content.trim() && (
-            <Box bg="bg.muted" border="1px solid" borderColor="border" px={2} py={1.5} borderRadius="sm" maxW="100%">
+            <Box
+              ref={contentRef}
+              minW={0}
+              position="relative"
+              overflow="hidden"
+              maxH={expanded ? "none" : `${COLLAPSE_HEIGHT}px`}
+              bg="bg.muted"
+              border="1px solid"
+              borderColor="border"
+              px={2}
+              py={1.5}
+              borderRadius="sm"
+              maxW="100%"
+            >
               <MarkdownContent content={message.content} />
+              {!expanded && truncatable && (
+                <Box
+                  position="absolute"
+                  bottom={0}
+                  left={0}
+                  right={0}
+                  h="48px"
+                  pointerEvents="none"
+                  css={{
+                    backgroundImage: "linear-gradient(to top, var(--chakra-colors-bg-muted), transparent)",
+                  }}
+                />
+              )}
             </Box>
+          )}
+          {truncatable && (
+            <Button
+              size="xs"
+              variant="ghost"
+              colorPalette="blue"
+              borderRadius="sm"
+              fontWeight="medium"
+              onClick={() => setExpanded((current) => !current)}
+            >
+              {expanded ? "Show less" : "Show more"}
+            </Button>
           )}
         </Flex>
       );
@@ -79,22 +190,44 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     }
 
     case "error":
-      // A turn failure reads like a normal assistant note — plain, left-aligned
-      // prose — rather than an alarming red box, so it sits naturally in the
-      // conversation. A small muted marker is the only hint that it is a system
-      // message and not the model's own words.
+      // A turn failure is a system event, not the model's words — so it renders as
+      // its own dedicated error box (danger triangle, bold title, message, retry),
+      // never as assistant-style prose with a hand-aligned inline icon.
       return (
-        <Box alignSelf="flex-start" px={1}>
-          <Flex align="flex-start" gap={1.5} color="fg.muted">
-            <Box flexShrink={0} color="fg.subtle" display="flex" alignItems="center" fontSize="sm" lineHeight="1.42857" css={{ height: "1lh" }}>
-              <LuInfo size={13} />
-            </Box>
-            <Box minW={0}>
-              <MarkdownContent content={message.content} />
-            </Box>
+        <Box alignSelf="flex-start" w="100%">
+          <ErrorMessageCard message={message} onRetry={onRetry} />
+        </Box>
+      );
+
+    case "compaction": {
+      // A full-width divider marking where the earlier context was summarized away.
+      // "running" is the live "Compacting…" state; "done" is the settled separator.
+      const running = message.meta?.status === "running";
+      const before = Number(message.meta?.messagesBefore ?? 0);
+      const after = Number(message.meta?.messagesAfter ?? 0);
+      return (
+        <Box alignSelf="stretch" w="100%">
+          <Flex align="center" gap={3} py={1} color="fg.subtle">
+            <Box flex={1} h="1px" bg="border" />
+            <Flex
+              align="center"
+              gap={1.5}
+              flexShrink={0}
+              color={running ? "blue.fg" : undefined}
+              title={running || !before ? undefined : `Compacted ${before} messages down to ${after}`}
+            >
+              <Box display="flex" alignItems="center">
+                {running ? <Spinner size="xs" borderWidth="1.5px" /> : <LuFoldVertical size={12} />}
+              </Box>
+              <Text fontSize="xs" fontWeight="medium" className={running ? "running-title-shimmer" : undefined}>
+                {running ? "Compacting context…" : "Context compacted"}
+              </Text>
+            </Flex>
+            <Box flex={1} h="1px" bg="border" />
           </Flex>
         </Box>
       );
+    }
 
     default:
       return null;
@@ -109,9 +242,10 @@ interface ChatToolGroupProps {
   activePreviewId?: string | null;
   onActivatePreview?: (id: string) => void;
   keepOpen?: boolean;
+  thinkingCount?: number;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview, keepOpen }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activePreviewId, onActivatePreview, keepOpen, thinkingCount }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
   // ToolGroup renders, so the chat timeline and the agents panel stay in lockstep.
   const tools: ToolEvent[] = messages.map((message) => ({
@@ -132,6 +266,7 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermissio
       activePreviewId={activePreviewId}
       onActivatePreview={onActivatePreview}
       keepOpen={keepOpen}
+      thinkingCount={thinkingCount}
     />
   );
 });

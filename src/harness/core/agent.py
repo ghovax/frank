@@ -5,6 +5,7 @@ import platform
 import shlex
 import time
 import uuid
+from contextlib import suppress
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from enum import Enum
@@ -68,6 +69,8 @@ from harness.core.background import (
     background_include_result,
     bind_background_jobs,
     unbind_background_jobs,
+    bind_tool_call_id,
+    unbind_tool_call_id,
 )
 
 from harness.tools import file_tools
@@ -94,6 +97,23 @@ class BashPermissionDecision(BaseModel):
     action: Literal["auto_approve", "escalate"]
     justification: str
     risk: Literal["low", "medium", "high"]
+
+
+# Sentinel returned by ``_stream_next`` when an async iterator is exhausted, so a
+# stream read can be raced against an abort inside a Task without a
+# StopAsyncIteration propagating through it (which asyncio mishandles).
+_STREAM_EXHAUSTED = object()
+
+
+async def _stream_next(iterator: AsyncIterator) -> Any:
+    """Return the next item from ``iterator``, or ``_STREAM_EXHAUSTED`` when it is
+    done. Wrapped so the model stream can be driven one read at a time and each read
+    raced against the abort event — a Stop then interrupts the turn even while it is
+    parked on the network awaiting the next token."""
+    try:
+        return await iterator.__anext__()
+    except StopAsyncIteration:
+        return _STREAM_EXHAUSTED
 
 
 def build_chat_model(
@@ -151,6 +171,8 @@ class StreamEvent:
         AGENT_STATUS = "agent_status"
         AGENT_DONE = "agent_done"
         STEERING = "steering"
+        COMPACTION_STARTED = "compaction_started"
+        COMPACTION_DONE = "compaction_done"
 
     def __init__(self, event_type: Type, **data):
         self.type = event_type
@@ -268,20 +290,21 @@ def _model_visible_tool_result(content: str, metadata: dict[str, Any]) -> str:
     }, ensure_ascii=False)
 
 
-def _content_text(content: str | list) -> str:
-    """The plain-text form of a message content that may be a multimodal list.
-
-    A multimodal user turn carries a content list (text blocks interleaved with
-    ``image_url`` blocks); the event-log recorder and any string-only consumer
-    want just the prose, so the text blocks are concatenated and the media blocks
-    dropped."""
-    if isinstance(content, str):
-        return content
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            parts.append(str(block.get("text", "")))
-    return "\n".join(parts)
+def _spawned_agent_report(child_task: dict | None, agent_name: str) -> str:
+    """The sub-agent's deliverable — its result artifact(s), exactly as the A2A
+    layer already serialized them — as the JSON injected into the parent's context.
+    Only the deliverable is passed back (never the sub-agent's progress, transcript,
+    or task scaffolding), and the artifact JSON is passed through as-is rather than
+    re-extracted or re-joined by hand. Falls back to a short note when the sub-agent
+    produced no artifact."""
+    artifacts = child_task.get("artifacts") if isinstance(child_task, dict) else None
+    if artifacts:
+        return json.dumps({"code": "agent_report", "agent": agent_name, "artifacts": artifacts}, ensure_ascii=False)
+    return json.dumps(
+        {"code": "agent_no_report", "agent": agent_name,
+         "message": f"The '{agent_name}' sub-agent finished without producing a report."},
+        ensure_ascii=False,
+    )
 
 
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
@@ -502,11 +525,19 @@ class TaskManager:
 
 
 class AgentRuntime:
-    _GOAL_CONTINUATION_LIMIT = 3
+    _GOAL_CONTINUATION_LIMIT = 8
     # Sub-agents (delegation depth > 0) get a tighter iteration budget than the
     # top-level chat agent so a looping sub-agent fails fast instead of burning
     # the full budget on redundant calls.
     _SUB_AGENT_MAXIMUM_ITERATIONS = 512
+    # Context compaction. The buffer (a power of two) is the room reserved at the
+    # top of the window for running the compaction prompt and collecting its
+    # summary: auto-compaction fires once the live context plus this buffer would
+    # exceed the window, so there is always space to compact before an overflow.
+    _COMPACTION_BUFFER_TOKENS = 32768
+    # How many of the most recent turns (each starting at a user message) are kept
+    # verbatim; everything before them is summarized into one message.
+    _COMPACTION_KEEP_RECENT_TURNS = 8
 
     def __init__(
         self,
@@ -610,6 +641,17 @@ class AgentRuntime:
         # Populated when a sub-agent runs in the background; can be retrieved
         # later via read_task or the agents panel.
         self._background_agent_results: dict[str, dict | None] = {}
+        # Live activity from non-blocking spawned agents. spawn_agent returns
+        # immediately (the sub-agent runs as a background job); the sub-agent's
+        # streamed events land here and the turn loop drains them so the agents
+        # panel updates while the parent keeps working. Whatever is still queued
+        # when the parent goes idle drains on the next (wake) turn.
+        self._spawned_agent_events: "asyncio.Queue[StreamEvent]" = asyncio.Queue()
+        # The latest call's context occupancy (prompt + completion) and the model's
+        # window, tracked from usage so auto-compaction can fire before the next call
+        # would overflow. Zero until the first call reports usage.
+        self._latest_context_tokens: int = 0
+        self._context_window: int = 0
 
     def _canonical_working_directory(self) -> str:
         return str(Path(self._working_directory or Path.home()).expanduser().resolve(strict=False))
@@ -691,9 +733,12 @@ class AgentRuntime:
         self._token_usage["model_calls"] += 1
         # input_tokens for this (latest) call is the whole prompt — system, history,
         # and the new turn — so it reflects how full the context currently is. Paired
-        # with the model's context window, it drives the context-fill indicator.
+        # with the model's context window, it drives the context-fill indicator and
+        # the auto-compaction check (see _should_compact).
         model = getattr(self, "_llm", None)
         context_window = model.context_window() if model is not None else 0
+        self._latest_context_tokens = input_tokens + output_tokens
+        self._context_window = context_window
         return StreamEvent(
             StreamEvent.Type.USAGE,
             input_tokens=input_tokens,
@@ -722,8 +767,13 @@ class AgentRuntime:
         return self._read_only
 
     def abort(self) -> None:
+        # Stop tears down the live turn: signal the loop to end, kill every
+        # foreground tool still running (a synchronous bash, a search awaited
+        # inline), but leave detached background work — anything the model
+        # explicitly sent to the background — running, so a long build/scan the
+        # user chose to background is not collateral of stopping the turn.
         self._abort_event.set()
-        self._background.cancel_all()
+        self._background.cancel_foreground()
         for task in list(self._active_tool_tasks.values()):
             task.cancel()
 
@@ -733,6 +783,12 @@ class AgentRuntime:
             return False
         task.cancel()
         return True
+
+    def send_tool_to_background(self, tool_call_identifier: str) -> bool:
+        """Push a still-blocking foreground shell command to the background on the
+        user's behalf: it keeps running detached and the turn continues with a
+        "started" placeholder, exactly as if the model had backgrounded it."""
+        return self._background.request_background(tool_call_identifier)
 
     def enqueue_steering(self, message: str) -> bool:
         text = message.strip()
@@ -1015,6 +1071,99 @@ class AgentRuntime:
             self._record_event(background_completion_event(completion.kind), completion_event_data)
         return events
 
+    def _drain_spawned_agent_events(self) -> list[StreamEvent]:
+        """Every live sub-agent event queued since the last drain. Yielded by the
+        turn loop so a non-blocking spawned agent's activity streams to the panel
+        while the parent works, and any backlog flushes on the wake turn."""
+        events: list[StreamEvent] = []
+        while not self._spawned_agent_events.empty():
+            events.append(self._spawned_agent_events.get_nowait())
+        return events
+
+    def _compaction_boundary(self) -> int:
+        """Index splitting the conversation into ``[older to summarize] |
+        [recent kept verbatim]``. Cuts at a user-turn boundary (a HumanMessage) so
+        tool_call/tool_result pairing stays intact and the kept tail is a whole
+        number of recent turns. Returns 0 when there are too few turns to compact."""
+        human_indices = [
+            index for index, message in enumerate(self._conversation)
+            if isinstance(message, HumanMessage)
+        ]
+        if len(human_indices) <= self._COMPACTION_KEEP_RECENT_TURNS:
+            return 0
+        return human_indices[-self._COMPACTION_KEEP_RECENT_TURNS]
+
+    def _should_compact(self) -> bool:
+        """Whether the live context is close enough to the window that the next call
+        risks overflow — and there is something to compact."""
+        if self._context_window <= 0:
+            return False
+        if self._latest_context_tokens + self._COMPACTION_BUFFER_TOKENS < self._context_window:
+            return False
+        return self._compaction_boundary() > 0
+
+    async def _summarize_for_compaction(self, messages: list) -> str:
+        """One model call that condenses the older messages into a handoff summary.
+        The messages are handed to the model as-is (no hand-built transcript) with
+        the compaction prompt as the system instruction."""
+        instructions = self._prompt_loader.load("compaction", {})
+        request = [
+            SystemMessage(content=instructions),
+            *messages,
+            HumanMessage(content="Produce the handoff summary now."),
+        ]
+        response = await self._llm.ainvoke(request)
+        return response.text.strip() if response is not None else ""
+
+    async def compact(self, reason: str = "manual") -> AsyncIterator[StreamEvent]:
+        """Summarize everything before the most recent turns into a single message,
+        replacing the older history in place while keeping the recent turns verbatim.
+        Yields COMPACTION_STARTED / COMPACTION_DONE for the UI (progress + the
+        separator). A no-op (nothing to compact) yields nothing."""
+        boundary = self._compaction_boundary()
+        if boundary <= 0:
+            return
+        to_summarize = list(self._conversation[:boundary])
+        recent = list(self._conversation[boundary:])
+        tokens_before = self._latest_context_tokens
+        messages_before = len(self._conversation)
+        yield StreamEvent(
+            StreamEvent.Type.COMPACTION_STARTED,
+            reason=reason,
+            messages_before=messages_before,
+            tokens_before=tokens_before,
+        )
+        summary = await self._summarize_for_compaction(to_summarize)
+        if not summary:
+            # Summarization produced nothing — leave the history untouched rather
+            # than discard it, and tell the UI the pass ended without a change.
+            yield StreamEvent(
+                StreamEvent.Type.COMPACTION_DONE,
+                reason=reason, ok=False,
+                messages_before=messages_before,
+                messages_after=messages_before,
+                tokens_before=tokens_before,
+            )
+            return
+        summary_message = SystemMessage(
+            content=self._prompt_loader.load("compacted_context", {"summary": summary})
+        )
+        # Replace in place: the conversation list object is shared with the
+        # executor's per-context store, so mutating the same object keeps that
+        # binding (a reassignment would orphan the persisted reference).
+        self._conversation[:] = [summary_message, *recent]
+        # The prior occupancy no longer reflects the (now smaller) context; reset it
+        # so auto-compaction does not immediately re-fire before the next real call.
+        self._latest_context_tokens = 0
+        yield StreamEvent(
+            StreamEvent.Type.COMPACTION_DONE,
+            reason=reason, ok=True,
+            summary=summary,
+            messages_before=messages_before,
+            messages_after=len(self._conversation),
+            tokens_before=tokens_before,
+        )
+
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
         self._record_message("human", user_message)
         for tool_call_entry in tool_calls:
@@ -1067,16 +1216,14 @@ class AgentRuntime:
         # multimodal content list (a text block plus one image_url block per
         # attached image) so a vision model actually sees the pixels. LangChain's
         # HumanMessage accepts either, and the model adapter passes the content
-        # straight through to the provider. The event-log recorder only wants a
-        # string, so a flattened text form is derived for it.
-        recorded_user_message = user_message if isinstance(user_message, str) else _content_text(user_message)
-
-        # A self-realization note (e.g. a widget render error) enters the
-        # conversation as a system message so the model treats it as its own
-        # observation, not as something the user said.
-        self._conversation.append(
-            SystemMessage(content=user_message) if as_system_note else HumanMessage(content=user_message)
-        )
+        # straight through to the provider. A self-realization note (e.g. a widget
+        # render error) enters as a system message so the model treats it as its
+        # own observation, not as something the user said.
+        turn_message = SystemMessage(content=user_message) if as_system_note else HumanMessage(content=user_message)
+        self._conversation.append(turn_message)
+        # The event-log recorder only wants the prose; LangChain's own `.text`
+        # accessor yields it (dropping any media blocks) — no hand-rolled flattening.
+        recorded_user_message = turn_message.text
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -1100,6 +1247,11 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
                 return
 
+            # Flush any live activity from non-blocking spawned agents so the panel
+            # tracks them while the parent works through its own iterations.
+            for agent_event in self._drain_spawned_agent_events():
+                yield agent_event
+
             background_events = self._background_result_events()
             if background_events:
                 for background_event in background_events:
@@ -1114,6 +1266,14 @@ class AgentRuntime:
             # autonomous turn the moment the next result lands.
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
+
+            # Auto-compaction: if the last call left the context near the window,
+            # summarize the older history before making another call that could
+            # overflow. The reserved buffer guarantees room to run the compaction
+            # itself; compact() resets the occupancy so this cannot re-fire in a loop.
+            if self._should_compact():
+                async for compaction_event in self.compact(reason="auto"):
+                    yield compaction_event
 
             # Dynamic context (turn reminders, time, pwd, active goal) is injected
             # only on the first iteration of a turn — when the user just sent a
@@ -1142,36 +1302,63 @@ class AgentRuntime:
             thinking_done_emitted = False
             response_chunks: list[AIMessageChunk] = []
             aborted_for_steering = False
-            async for chunk in self._bound_llm.astream(messages):
-                if self._abort_event.is_set():
-                    if self._has_queued_steering():
-                        self._abort_event.clear()
-                        aborted_for_steering = True
-                        break
-                    yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                    return
-                response_chunks.append(chunk)
-                if chunk.content:
-                    # First answer token: reasoning is over. Close the thinking
-                    # phase before the text streams so the indicator flips to
-                    # "Thought for Ns" exactly as the answer begins.
-                    if not thinking_done_emitted:
-                        thinking_done_emitted = True
-                        yield StreamEvent(
-                            StreamEvent.Type.THINKING_DONE,
-                            duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
-                        )
-                    if self._agent_configuration.stream_agent_progress:
-                        yield StreamEvent(
-                            StreamEvent.Type.TEXT_CHUNK,
-                            text=chunk.content,
-                        )
-                reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
-                if reasoning_content:
-                    yield StreamEvent(
-                        StreamEvent.Type.THINKING,
-                        text=reasoning_content,
+            # Drive the model stream one read at a time, racing each read against the
+            # abort event, so a Stop interrupts the turn *immediately* — even while it
+            # is parked awaiting the next token from a slow or stalled provider. Only
+            # checking the flag between chunks (the previous behaviour) let a provider
+            # that had gone quiet swallow the cancel until it happened to emit again,
+            # which is why Stop "sometimes" appeared to do nothing.
+            model_stream = self._bound_llm.astream(messages)
+            abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+            try:
+                while True:
+                    chunk_future = asyncio.ensure_future(_stream_next(model_stream))
+                    await asyncio.wait(
+                        {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
                     )
+                    if self._abort_event.is_set():
+                        # Stop won the race (or landed between chunks): drop the pending
+                        # read and stop consuming the stream (the `finally` closes it).
+                        chunk_future.cancel()
+                        with suppress(BaseException):
+                            await chunk_future
+                        if self._has_queued_steering():
+                            self._abort_event.clear()
+                            aborted_for_steering = True
+                            break
+                        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                        return
+                    chunk = chunk_future.result()
+                    if chunk is _STREAM_EXHAUSTED:
+                        break
+                    response_chunks.append(chunk)
+                    if chunk.content:
+                        # First answer token: reasoning is over. Close the thinking
+                        # phase before the text streams so the indicator flips to
+                        # "Thought for Ns" exactly as the answer begins.
+                        if not thinking_done_emitted:
+                            thinking_done_emitted = True
+                            yield StreamEvent(
+                                StreamEvent.Type.THINKING_DONE,
+                                duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                            )
+                        if self._agent_configuration.stream_agent_progress:
+                            yield StreamEvent(
+                                StreamEvent.Type.TEXT_CHUNK,
+                                text=chunk.content,
+                            )
+                    reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
+                    if reasoning_content:
+                        yield StreamEvent(
+                            StreamEvent.Type.THINKING,
+                            text=reasoning_content,
+                        )
+            finally:
+                abort_waiter.cancel()
+                # Close the underlying HTTP stream so an aborted (or exhausted) turn
+                # never leaks a provider connection.
+                with suppress(BaseException):
+                    await model_stream.aclose()
             # A tool-only turn produces no answer text, so close the phase here.
             if not thinking_done_emitted:
                 yield StreamEvent(
@@ -1223,8 +1410,10 @@ class AgentRuntime:
                 # does not hold the turn open: it ends here, and the executor's resume
                 # pump wakes the agent with an autonomous turn once the next result
                 # lands. Results that already completed were drained at the top of the
-                # loop, so nothing in hand is lost by finishing now.
-                final_text = response.content or ""
+                # loop, so nothing in hand is lost by finishing now. `.text` is the
+                # library-native prose accessor — always a string, whether the model
+                # returned plain text or a content-block list.
+                final_text = response.text
                 turn_final_response = final_text
                 self._conversation.append(response)
                 steering_events = await self._drain_steering_messages()
@@ -1342,6 +1531,45 @@ class AgentRuntime:
             "mode": mode,
             "prompt": prompt,
         })
+
+    def _spawned_agent_stream_event(self, delegated: dict, group_id: str, step_id: str) -> "StreamEvent | None":
+        """Convert one relayed delegate event into the AGENT_* stream event the
+        agents panel renders. Returns ``None`` for events that carry no panel
+        update. Used by the non-blocking spawn_agent background job, which pushes
+        these onto the shared queue instead of the parent yielding them inline."""
+        common = {
+            "group_id": group_id,
+            "step_id": step_id,
+            "child_task_id": delegated.get("child_task_id", ""),
+        }
+        kind = delegated.get("type")
+        if kind == "started":
+            return StreamEvent(StreamEvent.Type.AGENT_STATUS, code="started", **common)
+        if kind == "text":
+            return StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=delegated.get("text", ""), **common)
+        if kind == "thinking":
+            return StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), **common)
+        if kind == "thinking_done":
+            return StreamEvent(StreamEvent.Type.AGENT_THINKING_DONE, duration_ms=delegated.get("durationMs", 0), **common)
+        if kind == "status":
+            return StreamEvent(StreamEvent.Type.AGENT_STATUS, code=delegated.get("code", ""), **common)
+        if kind == "tool_call":
+            return StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), toolCallId=delegated.get("toolCallId", ""), **common)
+        if kind == "tool_result":
+            return StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=delegated.get("name", ""), result=delegated.get("result"), toolCallId=delegated.get("toolCallId", ""), **common)
+        if kind == "mcp_event":
+            return StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=delegated.get("toolCallId", ""), event=delegated.get("event", {}), **common)
+        if kind == "error":
+            return StreamEvent(
+                StreamEvent.Type.AGENT_TOOL_RESULT,
+                name=delegated.get("name", "") or "unknown",
+                result={"code": "tool_error", "message": delegated.get("message", "Unknown error")},
+                toolCallId=delegated.get("toolCallId", ""),
+                **common,
+            )
+        if kind == "done":
+            return StreamEvent(StreamEvent.Type.AGENT_DONE, task=delegated.get("task"), **common)
+        return None
 
     async def _run_one_tool(
         self,
@@ -1498,15 +1726,29 @@ class AgentRuntime:
                     await queue.put(None)
 
         tasks = [asyncio.create_task(runner(call)) for call in tool_calls]
+        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
         try:
             while True:
                 if self._abort_event.is_set():
                     break
-                event = await queue.get()
+                # Race the next tool event against the abort so a Stop is honored even
+                # when every tool is parked (a slow network/MCP call, a thread that
+                # can't be cancelled) and nothing is arriving on the queue. The
+                # `finally` cancels the runners; the turn loop then records "(interrupted)"
+                # for any tool that never produced a result.
+                get_future = asyncio.ensure_future(queue.get())
+                await asyncio.wait(
+                    {get_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if not get_future.done():
+                    get_future.cancel()
+                    break
+                event = get_future.result()
                 if event is None:
                     break
                 yield event
         finally:
+            abort_waiter.cancel()
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -1818,9 +2060,11 @@ class AgentRuntime:
 
             try:
                 background_token = bind_background_jobs(self._background)
+                tool_call_token = bind_tool_call_id(tool_call_identifier)
                 try:
                     result = await bash_tool.ainvoke(tool_arguments)
                 finally:
+                    unbind_tool_call_id(tool_call_token)
                     unbind_background_jobs(background_token)
                 result_data = _maybe_json(result)
                 yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
@@ -1911,19 +2155,19 @@ class AgentRuntime:
             try:
                 expected_sha256 = self._read_files.get(resolved)
                 if tool_name == "edit_file":
-                    old_string = tool_arguments.get("old_string", "")
-                    new_string = tool_arguments.get("new_string", "")
-                    if not isinstance(old_string, str) or not isinstance(new_string, str):
-                        raise ValueError("old_string and new_string must be strings.")
+                    find = str(tool_arguments.get("find", ""))
+                    replace_with = str(tool_arguments.get("replace_with", ""))
                     replace_all = bool(tool_arguments.get("replace_all", False))
+                    skip_validation = bool(tool_arguments.get("skip_validation", False))
                     result = await asyncio.to_thread(
                         file_tools.edit_file,
                         self._working_directory,
                         file_path,
-                        old_string,
-                        new_string,
-                        replace_all,
+                        find,
+                        replace_with,
                         expected_sha256=expected_sha256,
+                        skip_validation=skip_validation,
+                        replace_all=replace_all,
                     )
                 else:
                     content = tool_arguments.get("content", "")
@@ -1933,15 +2177,22 @@ class AgentRuntime:
                         file_tools.write_file, self._working_directory, file_path, content, expected_sha256=expected_sha256,
                     )
                 result_data = _maybe_json(result)
-                if tool_name == "edit_file":
-                    if isinstance(result_data, dict) and isinstance(result_data.get("sha256"), str):
-                        self._read_files[resolved] = result_data["sha256"]
+                if isinstance(result_data, dict):
+                    result_code = result_data.get("code", "")
+                    if result_code == "edit_completed":
+                        sha256 = result_data.get("sha256")
+                        if isinstance(sha256, str):
+                            self._read_files[resolved] = sha256
+                        else:
+                            self._read_files.pop(resolved, None)
+                    elif result_code == "write_completed":
+                        content = tool_arguments.get("content", "")
+                        if isinstance(content, str):
+                            self._read_files[resolved] = file_tools.content_sha256(content)
                     else:
+                        # edit_failed_validation or other non-commit codes:
+                        # discard stale hash so model must re-read before next edit
                         self._read_files.pop(resolved, None)
-                else:
-                    # write_file: the model supplied the full content, so it knows
-                    # the current state and can edit without re-reading.
-                    self._read_files[resolved] = file_tools.content_sha256(content)
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
                 )
@@ -1988,6 +2239,24 @@ class AgentRuntime:
                 answers = await future
             finally:
                 self._pending_questions.pop(request_identifier, None)
+            # The user dismissed the whole prompt without answering (the decline
+            # sentinel from resolve_question). Report it to the model and end the
+            # turn cleanly — do not proceed on a guess. Setting the abort event lets
+            # the tool finish recording its result first, then the stream loop stops
+            # the turn; background work the user chose to keep running is untouched.
+            if isinstance(answers, dict) and answers.get("__declined__"):
+                result = json.dumps({
+                    "code": "user_declined",
+                    "message": (
+                        "The user dismissed the question without answering and chose to stop here. "
+                        "Do not re-ask or proceed on a guess; wait for further direction."
+                    ),
+                })
+                yield StreamEvent(
+                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+                )
+                self._abort_event.set()
+                return
             result = json.dumps({"code": "user_answered", "answers": answers})
             yield StreamEvent(
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
@@ -2088,12 +2357,14 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
                 return
 
-            # Spawning runs the sub-agent as a related A2A task and streams its
-            # activity live into the agents panel (grouped per turn). Its
-            # structured deliverable (the child task) returns immediately as this
-            # tool's result, so the parent can reason over it and spawn further
-            # agents — peer-to-peer, with the dependency shape emerging from the
-            # parent's reasoning rather than a declared graph.
+            # Spawning is non-blocking: the sub-agent runs as a background job (a
+            # related A2A task) and the parent continues immediately. The sub-agent's
+            # activity streams live into the agents panel via the shared event queue,
+            # and its structured deliverable (the child task) is injected into the
+            # conversation and wakes the parent when it finishes — the same
+            # inject-and-wake path as a background bash command. So the parent never
+            # blocks on a sub-agent: it can spawn several in parallel, keep working,
+            # and pick up each result as it lands.
             group_id = f"agents-{self._a2a_task_id or self._session_id}"
             yield StreamEvent(
                 StreamEvent.Type.AGENT_GROUP_STARTED,
@@ -2102,51 +2373,55 @@ class AgentRuntime:
                 steps=[{"id": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt}],
             )
             self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": sub_agent_name, "prompt": raw_sub_agent_prompt})
-            child_task = None
             if self._delegate is not None:
-                async for delegated in self._delegate(
-                    sub_agent_name,
-                    sub_agent_prompt,
-                    self._a2a_task_id,
-                    sub_agent_read_only,
-                    child_depth,
-                    self._working_directory,
-                    self._project_directory,
-                ):
-                    delegated_kind = delegated.get("type")
-                    common = {
-                        "group_id": group_id,
-                        "step_id": spawn_step_id,
-                        "child_task_id": delegated.get("child_task_id", ""),
-                    }
-                    if delegated_kind == "started":
-                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code="started", **common)
-                    elif delegated_kind == "text":
-                        yield StreamEvent(StreamEvent.Type.AGENT_TEXT_CHUNK, text=delegated.get("text", ""), **common)
-                    elif delegated_kind == "thinking":
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING, text=delegated.get("text", ""), **common)
-                    elif delegated_kind == "thinking_done":
-                        yield StreamEvent(StreamEvent.Type.AGENT_THINKING_DONE, duration_ms=delegated.get("durationMs", 0), **common)
-                    elif delegated_kind == "status":
-                        yield StreamEvent(StreamEvent.Type.AGENT_STATUS, code=delegated.get("code", ""), **common)
-                    elif delegated_kind == "tool_call":
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_CALL, name=delegated.get("name", ""), arguments=delegated.get("arguments", {}), toolCallId=delegated.get("toolCallId", ""), **common)
-                    elif delegated_kind == "tool_result":
-                        yield StreamEvent(StreamEvent.Type.AGENT_TOOL_RESULT, name=delegated.get("name", ""), result=delegated.get("result"), toolCallId=delegated.get("toolCallId", ""), **common)
-                    elif delegated_kind == "mcp_event":
-                        yield StreamEvent(StreamEvent.Type.AGENT_MCP_EVENT, toolCallId=delegated.get("toolCallId", ""), event=delegated.get("event", {}), **common)
-                    elif delegated_kind == "error":
-                        yield StreamEvent(
-                            StreamEvent.Type.AGENT_TOOL_RESULT,
-                            name=delegated.get("name", "") or "unknown",
-                            result={"code": "tool_error", "message": delegated.get("message", "Unknown error")},
-                            toolCallId=delegated.get("toolCallId", ""),
-                            **common,
-                        )
-                    elif delegated_kind == "done":
-                        child_task = delegated.get("task")
-                        yield StreamEvent(StreamEvent.Type.AGENT_DONE, task=child_task, **common)
+                async def _run_spawned_agent() -> str:
+                    child_task = None
+                    async for delegated in self._delegate(
+                        sub_agent_name,
+                        sub_agent_prompt,
+                        self._a2a_task_id,
+                        sub_agent_read_only,
+                        child_depth,
+                        self._working_directory,
+                        self._project_directory,
+                    ):
+                        # The sub-agent's streamed progress goes to the panel only,
+                        # never into the parent's model context.
+                        event = self._spawned_agent_stream_event(delegated, group_id, spawn_step_id)
+                        if event is not None:
+                            await self._spawned_agent_events.put(event)
+                        if delegated.get("type") == "done":
+                            child_task = delegated.get("task")
+                    # Inject ONLY the sub-agent's final report (its deliverable
+                    # artifact) into the parent — not the whole task object, and not
+                    # any of the intermediate progress. The parent asked for a result,
+                    # not a transcript.
+                    return _spawned_agent_report(child_task, sub_agent_name)
+
+                # Non-detached: a Stop cancels the sub-agent (it is active task work),
+                # but merely ending the turn does not — the job outlives the turn and
+                # wakes the parent when it completes.
+                spawned_task_id = self._background.spawn(
+                    "spawn_agent",
+                    _run_spawned_agent(),
+                    tool_call_identifier=tool_call_identifier,
+                    spec={"agent": sub_agent_name, "prompt": raw_sub_agent_prompt, "read_only": sub_agent_read_only},
+                )
+                yield StreamEvent(
+                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
+                    result={
+                        "code": "agent_started",
+                        "task_identifier": spawned_task_id,
+                        "agent": sub_agent_name,
+                        "message": (
+                            f"Sub-agent '{sub_agent_name}' is running in the background. "
+                            "Its result will be delivered to you automatically when it finishes — "
+                            "keep working or end your turn; do not wait on it or spawn it again."
+                        ),
+                    },
+                )
             else:
+                child_task = None
                 runner = SubAgentRunner(
                     agent_configuration=sub_configuration,
                     global_configuration=self._global_configuration,
@@ -2157,7 +2432,6 @@ class AgentRuntime:
                     working_directory=self._working_directory,
                     project_directory=self._project_directory,
                 )
-                common = {"group_id": group_id, "step_id": spawn_step_id, "child_task_id": ""}
 
                 # Run the sub-agent as a background task so the parent continues
                 # immediately. The sub-agent runs to completion silently; its
@@ -2177,9 +2451,10 @@ class AgentRuntime:
                 asyncio.create_task(_run_background())
                 # Return immediately — parent continues its turn.
                 child_task = {"code": "running", "message": f"Sub-agent {sub_agent_name} is running in the background.", "task_id": spawn_step_id}
-
-            result_payload = child_task or {"code": "empty_response", "message": "Sub-agent produced no task."}
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_payload)
+                yield StreamEvent(
+                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
+                    result=child_task or {"code": "empty_response", "message": "Sub-agent produced no task."},
+                )
 
         elif tool_name == "set_tasks":
             task_definitions = tool_arguments.get("tasks", [])

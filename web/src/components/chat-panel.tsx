@@ -3,15 +3,19 @@
 import {
   Box,
   Button,
+  Dialog,
   EmptyState,
   Flex,
   IconButton,
+  Menu,
+  Portal,
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuClock, LuFolder, LuFolderOpen, LuNavigation, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuCheck, LuClock, LuDownload, LuEllipsis, LuFolder, LuFolderOpen, LuHistory, LuHouse, LuMaximize2, LuMinimize2, LuMessageSquare, LuNavigation, LuNetwork, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useRouter } from "next/navigation";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { extractToolArtifacts, externalPreviewUrl, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
@@ -20,9 +24,18 @@ import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
+import { SettingsDialog } from "./settings-dialog";
+import { BackgroundTasksPanel } from "./background-tasks-panel";
+import { Tooltip } from "./ui/tooltip";
+import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { setPermissionMode, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import { getToolCallDisplay } from "@/lib/tool-display";
+import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
+
+import { setPermissionMode, fetchSettings, saveSettings, revealInFinder, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import type { ConnectionTarget } from "@/lib/connection";
+import { ConnectionSwitcher } from "./connection-switcher";
 
 const MotionFlex = motion.create(Flex);
 
@@ -32,7 +45,15 @@ interface ChatPanelProps {
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
+  // The session's display title (LLM-generated once the conversation has one),
+  // shown in the top bar. Absent until the session names itself.
+  sessionTitle?: string;
+  // Deletes the session by id (aborts it, drops its tasks and record, then routes
+  // the user back to a blank chat). Absent when there is no active session.
+  onDeleteSession?: (sessionId: string) => void;
   initialPermissionMode?: PermissionMode;
+  currentConnectionId?: string;
+  onConnectionChange?: (target: ConnectionTarget) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
   onSessionCreated: (sessionId: string) => void;
@@ -60,11 +81,12 @@ interface ChatPanelProps {
   selectedModel?: string;
   globalModel?: string;
   onModelChange?: (model: string) => void;
+  compactionKeepRecentTurns: number;
 }
 
 type TimelineItem =
   | { kind: "message"; message: ChatMessage }
-  | { kind: "tool_group"; id: string; messages: ChatMessage[] };
+  | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingCount: number };
 
 function folderDisplayName(workingDirectory?: string, projects: { path: string; name: string }[] = []): string {
   const directory = (workingDirectory ?? "").trim();
@@ -85,42 +107,74 @@ function previewArtifactAddress(artifact: Record<string, unknown>): string {
 function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   let index = 0;
+  // Reasoning phases seen since the last non-thinking, non-tool row. They belong to
+  // the tool batch they lead into (surfaced as the group's brain counter); a prose
+  // or user row that isn't a tool group discards them. The first such phase's id is
+  // kept too: it keys the group so the tools-less "thinking" heading and the tool
+  // group it becomes are the SAME element — the tools stream into the existing card
+  // instead of one card being swapped for another (which would flash a remount).
+  let pendingThinking = 0;
+  let pendingThinkingId: string | null = null;
   while (index < messages.length) {
     const message = messages[index];
     if (message.role === "thinking") {
+      if (pendingThinking === 0) pendingThinkingId = message.id;
+      pendingThinking += 1;
       index += 1;
       continue;
     }
     if (message.role !== "tool_call") {
       items.push({ kind: "message", message });
+      pendingThinking = 0;
+      pendingThinkingId = null;
       index += 1;
       continue;
     }
 
     const toolMessages: ChatMessage[] = [];
+    // The leading reasoning that led into this batch counts toward it too, and its
+    // id keys the group (stable from the pre-tool "thinking" heading onward).
+    let thinkingCount = pendingThinking;
+    const groupKey = pendingThinkingId;
+    pendingThinking = 0;
+    pendingThinkingId = null;
     // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
     // timeline, so it must not split a run of tool calls either — otherwise two
     // calls issued in successive iterations (each preceded by its own thinking)
-    // would render as separate entries instead of one group.
+    // would render as separate entries instead of one group. Each interleaved
+    // reasoning phase is tallied into the group's brain counter.
     while (index < messages.length) {
       const next = messages[index];
       if (next.role === "tool_call") {
         toolMessages.push(next);
         index += 1;
       } else if (next.role === "thinking") {
+        thinkingCount += 1;
         index += 1;
       } else {
         break;
       }
     }
-    // Always wrap tool calls in a ToolGroup so the transition from 1→2 tools
-    // is a smooth addition of a new child, not a full component swap.
     items.push({
       kind: "tool_group",
-      // Key by the FIRST tool only: stays stable as more tools stream in.
-      id: toolMessages[0].id,
+      // Prefer the leading thinking id so the key is stable across the
+      // thinking→tools transition; fall back to the first tool otherwise.
+      id: groupKey ?? toolMessages[0].id,
       messages: toolMessages,
+      thinkingCount,
     });
+  }
+  // A reasoning phase that is happening right now with no tool call yet (the model
+  // is thinking before it acts) surfaces as a tools-less group heading — the brain
+  // indicator the moment it starts, not only once the first tool lands. It is keyed
+  // by the same leading-thinking id the tool group will use, so when the first tool
+  // arrives the card is updated in place, not replaced. Only while it is actively
+  // running: a replayed transcript whose tail is finished thinking shows no phantom.
+  if (pendingThinking > 0 && pendingThinkingId) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === "thinking" && last.meta?.status === "running") {
+      items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingCount: pendingThinking });
+    }
   }
   return items;
 }
@@ -131,7 +185,11 @@ export function ChatPanel({
   agentCard,
   onAgentChange,
   initialSessionId,
+  sessionTitle,
+  onDeleteSession,
   initialPermissionMode = "default",
+  currentConnectionId,
+  onConnectionChange,
   onPermissionModeChange,
   sessionRunning = false,
   onSessionCreated,
@@ -158,10 +216,29 @@ export function ChatPanel({
   selectedModel = "",
   globalModel = "",
   onModelChange,
+  compactionKeepRecentTurns,
 }: ChatPanelProps) {
+  const router = useRouter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion } =
+  const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, selectedModel, sessionRunning);
+
+  // On mount, fetch the stored permission mode from the server settings. This
+  // overrides the "default" fallback when no session is active, so the user's
+  // last choice persists across page reloads and new sessions.
+  useEffect(() => {
+    if (initialSessionId) return;
+    let cancelled = false;
+    fetchSettings().then((settings) => {
+      if (cancelled || settings.permission_mode === permissionMode) return;
+      setPermissionModeState(settings.permission_mode);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  // Only run when there is no session — once the session is set, the session's own
+  // permission_mode is authoritative.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSessionId]);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollContentRef = useRef<HTMLDivElement>(null);
   // "Following" the bottom. Released the moment the user scrolls up and resumed
@@ -184,18 +261,53 @@ export function ChatPanel({
   const hasInputRequiredRef = useRef(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
+  // Stable display order for the welcome screen's recent-project chips. Re-picking a
+  // known project bumps its recency in the source list, which would reshuffle the
+  // chips under the cursor — so the order here is held steady. But when a genuinely
+  // new project appears (a folder just opened), the fresh order is adopted so it shows
+  // up and, being newest, sorts to the front and reads as selected. Removals and name
+  // changes are reflected in place without reordering.
+  const [orderedRecentProjects, setOrderedRecentProjects] = useState<{ path: string; name: string }[]>(() => recentProjects ?? []);
+  useEffect(() => {
+    const live = recentProjects ?? [];
+    setOrderedRecentProjects((current) => {
+      const knownPaths = new Set(current.map((project) => project.path));
+      const hasNewProject = live.some((project) => !knownPaths.has(project.path));
+      if (hasNewProject || current.length === 0) return live;
+      // No new project: keep the frozen order, but refresh names and drop any that were
+      // removed. Bail out with the same reference when nothing changed, to avoid a
+      // needless re-render.
+      const liveByPath = new Map(live.map((project) => [project.path, project]));
+      const next = current
+        .filter((project) => liveByPath.has(project.path))
+        .map((project) => liveByPath.get(project.path)!);
+      const unchanged =
+        next.length === current.length &&
+        next.every((project, index) => project.path === current[index].path && project.name === current[index].name);
+      return unchanged ? current : next;
+    });
+  }, [recentProjects]);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
-  // Exactly one web preview (iframe-type artifact) is live at a time; the rest are
-  // collapsed to click-to-open placeholders so their scripts/network don't pile up
-  // and drag the page. Newest preview auto-activates; clicking an older one reopens
-  // it (collapsing the current). See ToolArtifacts.
-  const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
-  const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
+  const [previewPanelWidth, setPreviewPanelWidth] = useState(560);
+  // Open preview tabs. Each tab holds a preview artifact the user has opened (or was
+  // auto-opened when the agent created it). The active tab's iframe is mounted; all
+  // others are collapsed to save resources. New previews auto-open as tabs.
+  const [previewTabs, setPreviewTabs] = useState<Array<{id: string; artifact: Record<string, unknown>; title: string; address: string}>>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [seenPreviewIds, setSeenPreviewIds] = useState<Set<string>>(() => new Set());
+  const [previewReloadKey, setPreviewReloadKey] = useState(0);
+  const [previewMaximized, setPreviewMaximized] = useState(false);
   // Whether the transcript is scrolled to (or near) the bottom. Drives the floating
   // "jump to latest" affordance so a reader who scrolled up to read history can
   // return to the live tail in one click instead of scrolling all the way down.
   const [isAtBottom, setIsAtBottom] = useState(true);
+  // Top-bar surfaces: the settings dialog, the delete-session confirmation, and the
+  // background-processes sheet all open from the persistent bar above the transcript.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false);
+  const [backgroundSidebarWidth, setBackgroundSidebarWidth] = useState(420);
 
   // Pinned == the viewport is at (or within a hair of) the bottom. That single
   // fact drives everything: pinned means follow new content, unpinned means the
@@ -304,7 +416,8 @@ export function ChatPanel({
     setPermissionModeState(initialPermissionMode);
     if (sessionChanged) {
       setSeenPreviewIds(new Set());
-      setActivePreviewId(null);
+      setPreviewTabs([]);
+      setActiveTabId(null);
       // Forget prior rows so the next session's first population seeds (no entrance
       // animation on load) instead of treating everything as newly appended.
       enteredKeysRef.current = new Set();
@@ -325,6 +438,8 @@ export function ChatPanel({
     const previousMode = permissionMode;
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
+    // Persist to server settings so it survives across sessions.
+    saveSettings({ permission_mode: nextMode }).catch(() => {});
     if (!sessionId) return;
     try {
       await setPermissionMode(sessionId, nextMode);
@@ -368,6 +483,21 @@ export function ChatPanel({
   const activeToolCount = messages.filter((message) =>
     message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
+  // Running shell commands drive the badge on the top-bar background-processes
+  // button, so a long-running bash call is visible without opening the sheet.
+  const runningShellCount = messages.filter((message) =>
+    message.role === "tool_call" && message.content === "bash" &&
+    (message.meta?.status === "running" || message.meta?.status === "input_required")
+  ).length;
+  // A compaction pass is live while its timeline marker is still "running" — drives
+  // the Compact control's in-progress state (spinner + disabled).
+  const isCompacting = messages.some(
+    (message) => message.role === "compaction" && message.meta?.status === "running"
+  );
+  // "Reveal" opens the session's runtime directory (a worktree/branch checkout when
+  // the session manages one, otherwise the plain working directory) in the OS file
+  // manager. Falls back to the working directory before a session exists.
+  const revealPath = (workspaceRuntimeDirectory || workingDirectory || "").trim();
 
   const previewEntries = useMemo(() => {
     const entries: { toolCallId: string; artifact: Record<string, unknown>; title: string; address: string }[] = [];
@@ -392,48 +522,110 @@ export function ChatPanel({
     return entries;
   }, [messages]);
   const previewToolCallIds = useMemo(() => previewEntries.map((entry) => entry.toolCallId), [previewEntries]);
-  const activePreviewEntry = useMemo(() => {
-    if (previewEntries.length === 0) return null;
-    return previewEntries.find((entry) => entry.toolCallId === activePreviewId) ?? previewEntries[previewEntries.length - 1];
-  }, [previewEntries, activePreviewId]);
+  const activeTabEntry = useMemo(() => {
+    if (previewTabs.length === 0) return null;
+    return previewTabs.find((tab) => tab.id === activeTabId) ?? previewTabs[previewTabs.length - 1];
+  }, [previewTabs, activeTabId]);
 
-  // Auto-activate the newest preview the moment it appears. Runs in render (same
-  // pattern as previousActiveSteps below) so the active toolCallId is set before
-  // children render — users never see two live previews at once. `activePreviewId`
-  // holds that toolCallId; see ToolArtifacts. State (not a ref) so the render-phase
-  // update stays lint-clean and triggers a synchronous re-render before commit.
+  // Auto-open the newest preview as a tab the moment it appears. Runs in render
+  // (same pattern as previousActiveSteps below) so the tab is added before
+  // children render. State (not a ref) so the render-phase update stays lint-clean
+  // and triggers a synchronous re-render before commit.
   const newPreviewCallIds = previewToolCallIds.filter((id) => !seenPreviewIds.has(id));
   if (newPreviewCallIds.length > 0) {
     const nextSeen = new Set(seenPreviewIds);
-    for (const id of newPreviewCallIds) nextSeen.add(id);
+    const newTabs: Array<{id: string; artifact: Record<string, unknown>; title: string; address: string}> = [];
+    for (const id of newPreviewCallIds) {
+      nextSeen.add(id);
+      const entry = previewEntries.find((e) => e.toolCallId === id);
+      if (entry) {
+        newTabs.push({ id: entry.toolCallId, artifact: entry.artifact, title: entry.title, address: entry.address });
+      }
+    }
     setSeenPreviewIds(nextSeen);
-    setActivePreviewId(newPreviewCallIds[newPreviewCallIds.length - 1]);
+    setPreviewTabs((current) => [...current, ...newTabs]);
+    setActiveTabId(newPreviewCallIds[newPreviewCallIds.length - 1]);
     setPreviewPanelOpen(true);
   }
 
-  const handleActivatePreview = useCallback((toolCallId: string) => {
-    setActivePreviewId(toolCallId);
-    setPreviewPanelOpen(true);
-  }, []);
+  // Open a preview as a tab (called when the user clicks a collapsed preview in
+  // the message area). If already open, just switch to it.
+  const handleOpenTab = useCallback((toolCallId: string) => {
+    if (previewTabs.some((tab) => tab.id === toolCallId)) {
+      setActiveTabId(toolCallId);
+      return;
+    }
+    const entry = previewEntries.find((entry) => entry.toolCallId === toolCallId);
+    if (entry) {
+      setPreviewTabs((current) => [...current, { id: entry.toolCallId, artifact: entry.artifact, title: entry.title, address: entry.address }]);
+      setActiveTabId(toolCallId);
+    }
+  }, [previewTabs, previewEntries]);
 
-  // The live "Thinking" label shown beside the toolbar while the agent is
-  // reasoning (no assistant text yet and no tool calls active). It stays
-  // present through quick reasoning/tool/reasoning transitions, so the input
-  // bar reads as one continuous active turn instead of blinking.
-  const lastMessage = messages[messages.length - 1];
-  const isAssistantStreaming = !!lastMessage && lastMessage.role === "assistant";
-  const liveStatusLabel = !isStreaming || isAssistantStreaming ? null : "Thinking";
+  // Close a specific preview tab. If it was the active tab, switch to the nearest.
+  const handleCloseTab = useCallback((toolCallId: string) => {
+    setPreviewTabs((current) => {
+      const index = current.findIndex((tab) => tab.id === toolCallId);
+      if (index === -1) return current;
+      const next = current.filter((tab) => tab.id !== toolCallId);
+      if (activeTabId === toolCallId && next.length > 0) {
+        // Switch to the tab at the same index, or the last one if index is out of range
+        const nextIndex = Math.min(index, next.length - 1);
+        setActiveTabId(next[nextIndex].id);
+      } else if (next.length === 0) {
+        setActiveTabId(null);
+      }
+      return next;
+    });
+  }, [activeTabId]);
+
+  // For backward compatibility with threaded props (activePreviewId / onActivatePreview)
+  // that flow through ChatMessageItem / ChatToolGroup but are not consumed.
+  // These will be removed once the component tree is cleaned up.
+  const activePreviewId = activeTabId;
+  const handleActivatePreview = handleOpenTab;
+
+  // "Try again" on a turn-error box re-runs the turn that failed by resending the
+  // most recent user message. The failed turn produced no lasting state, so a
+  // plain resend is the correct retry (a rate limit or provider blip clears on its
+  // own; a rejected request goes back through the same path).
+  const handleRetry = useCallback(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const candidate = messages[index];
+      if (candidate.role === "user" && candidate.content.trim()) {
+        send(candidate.content);
+        return;
+      }
+    }
+  }, [messages, send]);
+
   // A tool call awaiting the user's approval or answer pauses the turn. While it is
   // outstanding, the composer may only queue (see handleSend) and Stop auto-denies it.
   const hasInputRequired = messages.some(
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
   hasInputRequiredRef.current = hasInputRequired;
-  // The first pending ask_user question, surfaced as an overlay above the input.
-  const pendingQuestion = useMemo(() => {
+  // The first pending input-required prompt (an ask_user question or a permission
+  // approval), surfaced as an overlay above the input. Both live outside the tool
+  // card so a pending decision always grabs attention at the bottom of the chat,
+  // and resolving one reveals the next. A question takes precedence on the same
+  // card, though in practice a card carries only one.
+  const pendingPrompt = useMemo(() => {
     for (const message of messages) {
-      if (message.role === "tool_call" && message.meta?.status === "input_required" && message.meta?.question) {
-        return message.meta.question as import("@/lib/tool-event").ToolQuestion;
+      if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
+      const question = message.meta?.question as ToolQuestion | undefined;
+      if (question) return { kind: "question" as const, question };
+      const permission = message.meta?.permission as ToolPermission | undefined;
+      if (permission) {
+        const name = message.content;
+        const args = message.meta?.arguments as Record<string, unknown> | undefined;
+        const command = name === "bash" && args?.command ? String(args.command) : "";
+        return {
+          kind: "permission" as const,
+          permission,
+          title: getToolCallDisplay(name, args).label,
+          detail: command ? "```\n" + command + "\n```" : undefined,
+        };
       }
     }
     return null;
@@ -472,10 +664,180 @@ export function ChatPanel({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
   }, [agentsSidebarWidth]);
 
+  const handleBackgroundResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = backgroundSidebarWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(720, Math.max(300, startWidth + startX - moveEvent.clientX));
+      setBackgroundSidebarWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, [backgroundSidebarWidth]);
+
+  const handlePreviewResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setPreviewMaximized(false);
+    const startX = event.clientX;
+    const startWidth = previewPanelWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(900, Math.max(340, startWidth + startX - moveEvent.clientX));
+      setPreviewPanelWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, [previewPanelWidth]);
+
   return (
     <WidgetEventProvider onEvent={handleWidgetEvent}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
+        {/* Persistent top bar: session identity on the left, session tools on the
+            right. Always visible so the controls have a stable home; the title
+            fills in once the session names itself, matching the sidebar default
+            until then. */}
+        <Flex align="center" gap={2} px={3} py={2} borderBottom="1px solid" borderColor="border" flexShrink={0} minW={0}>
+          <Box color="fg.muted" flexShrink={0}><LuMessageSquare size={15} /></Box>
+          <Text fontSize="sm" fontWeight="medium" truncate minW={0} flex={1}>
+            {sessionId ? (sessionTitle || "Untitled conversation") : "New conversation"}
+          </Text>
+          <Flex align="center" gap={1.5} flexShrink={0}>
+            <Tooltip content="Background processes" openDelay={300}>
+              <IconButton
+                aria-label="Background processes"
+                size="xs"
+                variant={backgroundPanelOpen || runningShellCount > 0 ? "subtle" : "ghost"}
+                colorPalette={backgroundPanelOpen || runningShellCount > 0 ? "blue" : undefined}
+                borderRadius="sm"
+                position="relative"
+                onClick={() => setBackgroundPanelOpen((current) => !current)}
+              >
+                <LuTerminal size={15} />
+                {runningShellCount > 0 && (
+                  <Box position="absolute" top="2px" right="2px" w="7px" h="7px" borderRadius="full" bg="blue.solid" />
+                )}
+              </IconButton>
+            </Tooltip>
+            {onToggleHistory && (
+              <Tooltip content="History" openDelay={300}>
+                <IconButton
+                  aria-label="History"
+                  size="xs"
+                  variant={historyOpen ? "subtle" : "ghost"}
+                  colorPalette={historyOpen ? "blue" : undefined}
+                  borderRadius="sm"
+                  onClick={onToggleHistory}
+                >
+                  <LuHistory size={15} />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip content={activeSteps > 0 ? `Agents (${activeSteps} active)` : "Agents"} openDelay={300}>
+              <IconButton
+                aria-label="Agents"
+                size="xs"
+                variant={agentsPanelOpen || activeSteps > 0 ? "subtle" : "ghost"}
+                colorPalette={agentsPanelOpen || activeSteps > 0 ? "orange" : undefined}
+                borderRadius="sm"
+                position="relative"
+                onClick={() => {
+                  setFocusedGroupId(null);
+                  setAgentsPanelOpen((current) => !current);
+                }}
+              >
+                <LuNetwork size={15} />
+                {activeSteps > 0 && (
+                  <Box position="absolute" top="-3px" right="-3px" minW="15px" h="15px" px="3px" borderRadius="full" bg="orange.solid" color="white" fontSize="9px" fontWeight="bold" lineHeight="15px" textAlign="center">
+                    {activeSteps}
+                  </Box>
+                )}
+              </IconButton>
+            </Tooltip>
+            <Tooltip content={previewTabs.length > 0 ? `Previews (${previewTabs.length})` : "Previews"} openDelay={300}>
+              <IconButton
+                aria-label="Previews"
+                size="xs"
+                variant={previewPanelOpen || previewTabs.length > 0 ? "subtle" : "ghost"}
+                colorPalette={previewPanelOpen || previewTabs.length > 0 ? "teal" : undefined}
+                borderRadius="sm"
+                position="relative"
+                onClick={() => setPreviewPanelOpen((current) => !current)}
+              >
+                <LuAppWindow size={15} />
+                {previewTabs.length > 0 && (
+                  <Box position="absolute" top="-3px" right="-3px" minW="15px" h="15px" px="3px" borderRadius="full" bg="teal.solid" color="white" fontSize="9px" fontWeight="bold" lineHeight="15px" textAlign="center">
+                    {previewTabs.length}
+                  </Box>
+                )}
+              </IconButton>
+            </Tooltip>
+            <Tooltip content="Settings" openDelay={300}>
+              <IconButton
+                aria-label="Settings"
+                size="xs"
+                variant="ghost"
+                borderRadius="sm"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <LuSettings size={15} />
+              </IconButton>
+            </Tooltip>
+            <Menu.Root>
+              <Menu.Trigger asChild>
+                <IconButton aria-label="Session options" size="xs" variant="ghost" borderRadius="sm">
+                  <LuEllipsis size={15} />
+                </IconButton>
+              </Menu.Trigger>
+              <Portal>
+                <Menu.Positioner>
+                  <Menu.Content borderRadius="sm" minW="200px">
+                    <Menu.Item
+                      value="reveal"
+                      disabled={!revealPath}
+                      onClick={() => { if (revealPath) void revealInFinder(revealPath); }}
+                    >
+                      <LuFolderOpen size={14} />
+                      <Box flex={1}>Open this folder</Box>
+                    </Menu.Item>
+                    <Menu.Item
+                      value="delete"
+                      color="red.fg"
+                      _hover={{ bg: "red.subtle" }}
+                      disabled={!sessionId || !onDeleteSession}
+                      onClick={() => setDeleteConfirmOpen(true)}
+                    >
+                      <LuTrash2 size={14} />
+                      <Box flex={1}>Delete session</Box>
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Positioner>
+              </Portal>
+            </Menu.Root>
+          </Flex>
+        </Flex>
         <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none", scrollbarGutter: "stable" }}>
           {isHistoryLoading ? (
@@ -500,35 +862,80 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" gap={6} px={4} pt={{ base: 8, md: 16 }} pb={{ base: 8, md: 12 }}>
+            <Flex direction="column" align="center" gap={7} px={4} pt={{ base: 8, md: 14 }} pb={{ base: 8, md: 12 }}>
+              {/* Brand lockup — the Daisy wordmark and flower, matching the home
+                  screen's treatment, so the blank conversation is unmistakably Daisy,
+                  with a short tagline underneath. */}
+              <Flex direction="column" align="center" gap={2}>
+                <Flex align="center" gap={2} pb={1}>
+                  <Text fontSize="3xl" lineHeight="1">
+                    {"🌼"}
+                  </Text>
+                  <Text fontSize="3xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1">
+                    Daisy
+                  </Text>
+                </Flex>
+                <Text fontSize="sm" color="fg.muted" textAlign="center">
+                  Your open-source agentic engineering partner—yours, forever
+                </Text>
+              </Flex>
+
               <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
                 What should we build in {currentFolderName}?
               </Text>
-              {/* Center-of-screen shortcuts for the actions a user reaches for from a
-                  blank conversation, so they don't have to hunt the sidebar or the
-                  composer toolbar: open a folder, or jump straight to a recent project. */}
-              <Flex gap={2} wrap="wrap" justify="center" pb={2}>
-                {onBrowseFolder && (
-                  <Button size="sm" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
-                    <LuFolderOpen size={14} />
-                    Open a folder
+
+              {/* Primary actions — one uniform button row (Home first, then the
+                  connection switcher at the same size so it isn't an odd-sized
+                  outlier, then the folder actions). */}
+              <Flex direction="column" align="center" gap={2.5} w="100%" maxW="680px">
+                <Flex gap={2.5} wrap="wrap" justify="center">
+                  <Button size="md" variant="outline" borderRadius="md" onClick={() => router.push("/")}>
+                    <LuHouse size={16} />
+                    Home
                   </Button>
-                )}
-                {(recentProjects ?? []).slice(0, 4).map((project) => (
-                  <Button
-                    key={project.path}
-                    size="sm"
-                    variant="subtle"
-                    borderRadius="md"
-                    disabled={project.path === workingDirectory}
-                    onClick={() => onWorkingDirectoryChange?.(project.path)}
-                    title={project.path}
-                  >
-                    <LuFolder size={13} />
-                    {project.name}
-                  </Button>
-                ))}
+                  <ConnectionSwitcher size="md" currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
+                  {onBrowseFolder && (
+                    <Button size="md" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
+                      <LuFolderOpen size={16} />
+                      Open a folder
+                    </Button>
+                  )}
+                </Flex>
               </Flex>
+
+              {/* Recent projects — a distinct, labelled group so quick-jump chips
+                  don't blend into the action buttons. The order is held steady (see
+                  orderedRecentProjects) so re-picking one doesn't make them jump, while
+                  a newly opened folder still appears; the current project reads as
+                  selected rather than disabled. */}
+              {orderedRecentProjects.length > 0 && (
+                <Flex direction="column" align="center" gap={2.5} w="100%" maxW="640px">
+                  <Flex align="center" gap={1.5} color="fg.muted">
+                    <LuHistory size={15} />
+                    <Text fontSize="sm" fontWeight="bold">Recent projects</Text>
+                  </Flex>
+                  <Flex gap={2} wrap="wrap" justify="center">
+                    {orderedRecentProjects.slice(0, 6).map((project) => {
+                      const selected = project.path === workingDirectory;
+                      return (
+                        <Button
+                          key={project.path}
+                          size="sm"
+                          variant={selected ? "solid" : "subtle"}
+                          colorPalette={selected ? "blue" : undefined}
+                          borderRadius="md"
+                          onClick={() => onWorkingDirectoryChange?.(project.path)}
+                          title={selected ? `${project.path} (current)` : project.path}
+                        >
+                          {selected ? <LuCheck size={13} /> : <LuFolder size={13} />}
+                          {project.name}
+                        </Button>
+                      );
+                    })}
+                  </Flex>
+                </Flex>
+              )}
+
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
@@ -546,6 +953,7 @@ export function ChatPanel({
                       activePreviewId={activePreviewId}
                       onActivatePreview={handleActivatePreview}
                       keepOpen={isStreaming && isLastItem}
+                      thinkingCount={item.thinkingCount}
                     />
                   ) : (
                     <ChatMessageItem
@@ -555,6 +963,7 @@ export function ChatPanel({
                       agents={agents}
                       activePreviewId={activePreviewId}
                       onActivatePreview={handleActivatePreview}
+                      onRetry={item.message.role === "error" ? handleRetry : undefined}
                     />
                   );
                   // Assistant messages stream their content in — any entrance or
@@ -623,35 +1032,50 @@ export function ChatPanel({
           )}
         </Box>
         {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (
-          <IconButton
-            aria-label="Jump to latest"
-            title="Jump to latest"
+          <Button
             size="sm"
-            variant="solid"
-            colorPalette="gray"
-            borderRadius="full"
+            variant="outline"
+            borderRadius="sm"
             position="absolute"
             bottom={3}
             left="50%"
             transform="translateX(-50%)"
             zIndex={2}
-            boxShadow="md"
+            bg="bg.muted"
+            border="1px solid"
+            borderColor="border"
+            color="fg"
+            fontWeight="medium"
+            boxShadow="sm"
+            px={2}
+            _hover={{ bg: "bg.emphasized" }}
             onClick={scrollToBottom}
           >
             <LuArrowDown />
-          </IconButton>
+            Jump to latest
+          </Button>
         )}
         </Box>
 
-        {pendingQuestion && (
-          <QuestionOverlay question={pendingQuestion} onQuestion={handleQuestion} />
+        {pendingPrompt?.kind === "question" && (
+          <QuestionOverlay question={pendingPrompt.question} onQuestion={handleQuestion} onDismiss={declineQuestion} />
+        )}
+        {pendingPrompt?.kind === "permission" && (
+          <PermissionOverlay
+            permission={pendingPrompt.permission}
+            title={pendingPrompt.title}
+            detail={pendingPrompt.detail}
+            onPermission={handlePermission}
+          />
         )}
         <ChatInput
           onSend={handleSend}
           onAbort={abort}
           isStreaming={isStreaming}
-          disabled={!isConnected || !!pendingQuestion}
+          disabled={!isConnected || !!pendingPrompt}
           sessionId={sessionId}
+          currentConnectionId={currentConnectionId}
+          onConnectionChange={onConnectionChange}
           workingDirectory={workingDirectory}
           recentProjects={recentProjects}
           onWorkingDirectoryChange={onWorkingDirectoryChange}
@@ -669,35 +1093,28 @@ export function ChatPanel({
           onAgentChange={onAgentChange}
           permissionMode={permissionMode}
           onPermissionModeChange={handlePermissionModeChange}
-          agentsCount={activeSteps}
-          agentsOpen={agentsPanelOpen}
-          onShowAgents={() => {
-            setFocusedGroupId(null);
-            setAgentsPanelOpen((current) => !current);
-          }}
-          previewsCount={previewEntries.length}
-          previewOpen={previewPanelOpen}
-          onTogglePreview={() => setPreviewPanelOpen((current) => !current)}
-          historyOpen={historyOpen}
-          onToggleHistory={onToggleHistory}
           models={models}
           modelProviders={modelProviders}
           recentModels={recentModels}
           selectedModel={selectedModel}
           globalModel={globalModel}
           onModelChange={(model) => onModelChange?.(model)}
-          thinkingLabel={liveStatusLabel}
           tokenUsage={tokenUsage}
+          onCompact={compact}
+          isCompacting={isCompacting}
+          compactionKeepRecentTurns={compactionKeepRecentTurns}
+          compactionUserCount={messages.filter((message) => message.role === "user").length}
         />
       </Flex>
 
       <AnimatePresence initial={false}>
-        {previewPanelOpen && activePreviewEntry && (
+        {previewPanelOpen && (
           <MotionFlex
             key="preview-panel"
             direction="column"
-            w={{ base: "100%", md: "480px" }}
-            maxW={{ base: "100%", md: "48vw" }}
+            w={{ base: "100%", md: previewMaximized ? "min(900px, 60vw)" : `${previewPanelWidth}px` }}
+            position="relative"
+            maxW={{ base: "100%", md: previewMaximized ? "90vw" : "48vw" }}
             minW={{ base: "100%", md: "340px" }}
             h="100%"
             borderLeft="1px solid"
@@ -709,54 +1126,180 @@ export function ChatPanel({
             exit={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           >
-            <Flex align="center" gap={2} px={2.5} py={2.5} borderBottom="1px solid" borderColor="border">
-              <Box color="teal.fg" display="flex" alignItems="center" flexShrink={0}>
-                <LuAppWindow size={14} />
-              </Box>
-              <Box flex={1} minW={0}>
-                <Text fontSize="xs" fontWeight="semibold" truncate>
-                  {activePreviewEntry.title}
-                </Text>
-                {activePreviewEntry.address ? (
-                  <Text
-                    fontSize="2xs"
-                    color="fg.subtle"
-                    fontFamily="var(--app-font-mono)"
-                    truncate
-                    title={activePreviewEntry.address}
-                  >
-                    {activePreviewEntry.address}
-                  </Text>
-                ) : null}
-              </Box>
-              <IconButton
-                aria-label="Close preview"
-                size="xs"
-                variant="ghost"
-                borderRadius="sm"
-                onClick={() => setPreviewPanelOpen(false)}
-              >
-                <LuX size={13} />
+            <Box
+              display={{ base: "none", md: "block" }}
+              position="absolute"
+              top={0}
+              bottom={0}
+              left="-4px"
+              w="8px"
+              cursor="col-resize"
+              zIndex={1}
+              onPointerDown={handlePreviewResizeStart}
+            />
+            {/* Persistent top bar — matching agents panel style */}
+            <Flex align="center" gap={2} px={3} py={2} borderBottom="1px solid" borderColor="border" flexShrink={0}>
+              <Box color="fg.muted"><LuAppWindow size={15} /></Box>
+              <Text fontSize="sm" fontWeight="bold" flex={1}>Previews</Text>
+              <IconButton aria-label="Collapse preview sidebar" size="xs" variant="ghost" borderRadius="sm" onClick={() => setPreviewPanelOpen(false)}>
+                <LuX size={15} />
               </IconButton>
             </Flex>
-            {(() => {
-              // Desktop: an external website renders in the embedded native webview
-              // (real browser engine, top-level navigation — full fidelity). Local
-              // files, inline HTML, and the web build keep the proxied iframe.
-              const nativeUrl = nativePreviewAvailable() ? externalPreviewUrl(activePreviewEntry.artifact) : "";
-              if (nativeUrl) {
-                return (
-                  <Box flex={1} minH={0}>
-                    <NativeWebview key={nativeUrl} url={nativeUrl} />
-                  </Box>
-                );
-              }
-              return (
-                <Box flex={1} minH={0} overflowY="auto" p={2}>
-                  <PreviewArtifact artifact={activePreviewEntry.artifact} />
-                </Box>
-              );
-            })()}
+            {previewTabs.length === 0 ? (
+              <Flex direction="column" align="center" justify="center" minH="100%" gap={6} px={2} pt={4} pb={12}>
+                <EmptyState.Root>
+                  <EmptyState.Content>
+                    <EmptyState.Indicator>
+                      <LuAppWindow />
+                    </EmptyState.Indicator>
+                    <VStack gap={1}>
+                      <EmptyState.Title>No previews yet</EmptyState.Title>
+                      <EmptyState.Description>
+                        Previews will appear here
+                      </EmptyState.Description>
+                    </VStack>
+                  </EmptyState.Content>
+                </EmptyState.Root>
+              </Flex>
+            ) : activeTabEntry ? (
+              <>
+                {/* Preview tab buttons — same styling as chat-input toolbar buttons */}
+                <Flex px={2} pt={2} overflowX="auto" flexShrink={0}>
+                  <Flex gap={1.5}>
+                    {previewTabs.map((tab) => {
+                      const isActive = tab.id === activeTabId;
+                      return (
+                        <Flex
+                          key={tab.id}
+                          as="button"
+                          align="center"
+                          gap={1.5}
+                          pl={2}
+                          pr={1}
+                          h="28px"
+                          fontSize="xs"
+                          fontWeight="medium"
+                          borderRadius="sm"
+                          bg={isActive ? "bg.subtle" : "bg"}
+                          border="1px solid"
+                          borderColor={isActive ? "border.emphasized" : "border"}
+                          color="fg"
+                          cursor="pointer"
+                          flexShrink={0}
+                          whiteSpace="nowrap"
+                          onClick={() => setActiveTabId(tab.id)}
+                          _hover={{ bg: isActive ? "bg.muted" : "bg.subtle" }}
+                          title={tab.address || tab.title}
+                        >
+                          <LuAppWindow size={13} />
+                          <Text truncate maxW="110px">{tab.title}</Text>
+                          <Box
+                            as="span"
+                            display="inline-flex"
+                            alignItems="center"
+                            justifyContent="center"
+                            borderRadius="sm"
+                            w="16px"
+                            h="16px"
+                            flexShrink={0}
+                            color="fg.subtle"
+                            _hover={{ bg: "bg.muted", color: "fg" }}
+                            onClick={(event: React.MouseEvent) => { event.stopPropagation(); handleCloseTab(tab.id); }}
+                            aria-label={`Close ${tab.title}`}
+                          >
+                            <LuX size={12} />
+                          </Box>
+                        </Flex>
+                      );
+                    })}
+                  </Flex>
+                </Flex>
+                {/* Active tab header with controls — title, reload, maximize, download, close */}
+                <Flex px={2} py={1.5} align="center" gap={1} borderBottom="1px solid" borderColor="border" flexShrink={0}>
+                  <Text fontSize="sm" fontWeight="medium" truncate flex={1} minW={0}>
+                    {activeTabEntry.title}
+                  </Text>
+                  <IconButton
+                    aria-label="Reload preview"
+                    title="Reload"
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    onClick={() => setPreviewReloadKey((current) => current + 1)}
+                  >
+                    <LuRotateCw size={11} />
+                  </IconButton>
+                  <IconButton
+                    aria-label={previewMaximized ? "Minimize preview" : "Maximize preview"}
+                    title={previewMaximized ? "Minimize" : "Maximize"}
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    onClick={() => setPreviewMaximized((current) => !current)}
+                  >
+                    {previewMaximized ? <LuMinimize2 size={11} /> : <LuMaximize2 size={11} />}
+                  </IconButton>
+                  <IconButton
+                    aria-label="Download artifact"
+                    title="Download"
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    onClick={() => {
+                      const address = activeTabEntry.address;
+                      if (address) {
+                        const link = document.createElement("a");
+                        link.href = address.startsWith("http") ? address : window.location.origin + "/" + address;
+                        link.download = activeTabEntry.title || "preview";
+                        link.target = "_blank";
+                        link.rel = "noopener noreferrer";
+                        link.click();
+                      }
+                    }}
+                  >
+                    <LuDownload size={11} />
+                  </IconButton>
+                  <IconButton
+                    aria-label="Close all previews"
+                    title="Close"
+                    size="xs"
+                    variant="ghost"
+                    borderRadius="sm"
+                    h="22px"
+                    minW="22px"
+                    colorPalette="red"
+                    onClick={() => setPreviewTabs([])}
+                  >
+                    <LuX size={12} />
+                  </IconButton>
+                </Flex>
+                {(() => {
+                  // Desktop: an external website renders in the embedded native webview
+                  // (real browser engine, top-level navigation — full fidelity). Local
+                  // files, inline HTML, and the web build keep the proxied iframe.
+                  const activeTab = activeTabEntry;
+                  const nativeUrl = nativePreviewAvailable() ? externalPreviewUrl(activeTab.artifact) : "";
+                  if (nativeUrl) {
+                    return (
+                      <Box key={previewReloadKey} flex={1} minH={0}>
+                        <NativeWebview url={nativeUrl} />
+                      </Box>
+                    );
+                  }
+                  return (
+                    <Box key={previewReloadKey} flex={1} minH={0} display="flex" flexDirection="column">
+                      <PreviewArtifact artifact={activeTab.artifact} showHeader={false} fillContainer />
+                    </Box>
+                  );
+                })()}
+              </>
+            ) : null}
           </MotionFlex>
         )}
         {agentsPanelOpen && (
@@ -770,7 +1313,55 @@ export function ChatPanel({
             onResizeStart={handleAgentsResizeStart}
           />
         )}
+        {backgroundPanelOpen && (
+          <BackgroundTasksPanel
+            open={backgroundPanelOpen}
+            onClose={() => setBackgroundPanelOpen(false)}
+            messages={messages}
+            sessionId={sessionId}
+            width={backgroundSidebarWidth}
+            onResizeStart={handleBackgroundResizeStart}
+          />
+        )}
       </AnimatePresence>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <Dialog.Root open={deleteConfirmOpen} onOpenChange={(event) => setDeleteConfirmOpen(event.open)} placement="center" role="alertdialog">
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content borderRadius="md">
+              <Dialog.Header>
+                <Dialog.Title>Delete this session?</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text fontSize="sm" color="fg.muted">
+                  This permanently removes the conversation and its tasks. This can’t be undone.
+                </Text>
+              </Dialog.Body>
+              <Dialog.Footer gap={2}>
+                <Button size="sm" variant="outline" borderRadius="sm" onClick={() => setDeleteConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  colorPalette="red"
+                  variant="solid"
+                  borderRadius="sm"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    if (sessionId) onDeleteSession?.(sessionId);
+                  }}
+                >
+                  <LuTrash2 size={14} />
+                  Delete
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
     </Flex>
     </WidgetEventProvider>
   );
