@@ -25,6 +25,7 @@ interface PermissionOverlayProps {
 }
 
 const RISK_PALETTE: Record<string, string> = { high: "red", medium: "orange", low: "gray" };
+const RISK_LABEL: Record<string, string> = { high: "High", medium: "Medium", low: "Low" };
 
 export function PermissionOverlay({ permission, title, detail, onPermission }: PermissionOverlayProps) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -88,7 +89,7 @@ export function PermissionOverlay({ permission, title, detail, onPermission }: P
             </Flex>
             {risk && (
               <Badge size="sm" variant="subtle" colorPalette={RISK_PALETTE[risk] ?? "gray"} borderRadius="sm" flexShrink={0}>
-                {risk} risk
+                {RISK_LABEL[risk] ?? risk} risk
               </Badge>
             )}
           </Flex>

@@ -93,11 +93,16 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   let index = 0;
   // Reasoning phases seen since the last non-thinking, non-tool row. They belong to
   // the tool batch they lead into (surfaced as the group's brain counter); a prose
-  // or user row that isn't a tool group discards them.
+  // or user row that isn't a tool group discards them. The first such phase's id is
+  // kept too: it keys the group so the tools-less "thinking" heading and the tool
+  // group it becomes are the SAME element — the tools stream into the existing card
+  // instead of one card being swapped for another (which would flash a remount).
   let pendingThinking = 0;
+  let pendingThinkingId: string | null = null;
   while (index < messages.length) {
     const message = messages[index];
     if (message.role === "thinking") {
+      if (pendingThinking === 0) pendingThinkingId = message.id;
       pendingThinking += 1;
       index += 1;
       continue;
@@ -105,14 +110,18 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     if (message.role !== "tool_call") {
       items.push({ kind: "message", message });
       pendingThinking = 0;
+      pendingThinkingId = null;
       index += 1;
       continue;
     }
 
     const toolMessages: ChatMessage[] = [];
-    // The leading reasoning that led into this batch counts toward it too.
+    // The leading reasoning that led into this batch counts toward it too, and its
+    // id keys the group (stable from the pre-tool "thinking" heading onward).
     let thinkingCount = pendingThinking;
+    const groupKey = pendingThinkingId;
     pendingThinking = 0;
+    pendingThinkingId = null;
     // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
     // timeline, so it must not split a run of tool calls either — otherwise two
     // calls issued in successive iterations (each preceded by its own thinking)
@@ -130,15 +139,26 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
         break;
       }
     }
-    // Always wrap tool calls in a ToolGroup so the transition from 1→2 tools
-    // is a smooth addition of a new child, not a full component swap.
     items.push({
       kind: "tool_group",
-      // Key by the FIRST tool only: stays stable as more tools stream in.
-      id: toolMessages[0].id,
+      // Prefer the leading thinking id so the key is stable across the
+      // thinking→tools transition; fall back to the first tool otherwise.
+      id: groupKey ?? toolMessages[0].id,
       messages: toolMessages,
       thinkingCount,
     });
+  }
+  // A reasoning phase that is happening right now with no tool call yet (the model
+  // is thinking before it acts) surfaces as a tools-less group heading — the brain
+  // indicator the moment it starts, not only once the first tool lands. It is keyed
+  // by the same leading-thinking id the tool group will use, so when the first tool
+  // arrives the card is updated in place, not replaced. Only while it is actively
+  // running: a replayed transcript whose tail is finished thinking shows no phantom.
+  if (pendingThinking > 0 && pendingThinkingId) {
+    const last = messages[messages.length - 1];
+    if (last && last.role === "thinking" && last.meta?.status === "running") {
+      items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingCount: pendingThinking });
+    }
   }
   return items;
 }
@@ -512,13 +532,6 @@ export function ChatPanel({
     }
   }, [messages, send]);
 
-  // The live "Thinking" label shown beside the toolbar while the agent is
-  // reasoning (no assistant text yet and no tool calls active). It stays
-  // present through quick reasoning/tool/reasoning transitions, so the input
-  // bar reads as one continuous active turn instead of blinking.
-  const lastMessage = messages[messages.length - 1];
-  const isAssistantStreaming = !!lastMessage && lastMessage.role === "assistant";
-  const liveStatusLabel = !isStreaming || isAssistantStreaming ? null : "Thinking";
   // A tool call awaiting the user's approval or answer pauses the turn. While it is
   // outstanding, the composer may only queue (see handleSend) and Stop auto-denies it.
   const hasInputRequired = messages.some(
@@ -645,7 +658,7 @@ export function ChatPanel({
                   composer toolbar: open a folder, switch connection, or jump straight
                   to a recent project. */}
               <Flex gap={2} wrap="wrap" justify="center" pb={2}>
-                <Button size="sm" variant="outline" borderRadius="md" onClick={() => router.push("/home")}>
+                <Button size="sm" variant="outline" borderRadius="md" onClick={() => router.push("/")}>
                   <LuHouse size={14} />
                   Home
                 </Button>
@@ -768,16 +781,21 @@ export function ChatPanel({
         {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (
           <Button
             size="sm"
-            variant="subtle"
-            colorPalette="gray"
+            variant="outline"
             borderRadius="sm"
             position="absolute"
             bottom={3}
             left="50%"
             transform="translateX(-50%)"
             zIndex={2}
-            boxShadow="md"
+            bg="bg.muted"
+            border="1px solid"
+            borderColor="border"
+            color="fg"
+            fontWeight="medium"
+            boxShadow="sm"
             px={2}
+            _hover={{ bg: "bg.emphasized" }}
             onClick={scrollToBottom}
           >
             <LuArrowDown />
@@ -837,7 +855,6 @@ export function ChatPanel({
           selectedModel={selectedModel}
           globalModel={globalModel}
           onModelChange={(model) => onModelChange?.(model)}
-          thinkingLabel={liveStatusLabel}
           tokenUsage={tokenUsage}
           onCompact={compact}
           compactionKeepRecentTurns={compactionKeepRecentTurns}

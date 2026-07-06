@@ -13,7 +13,7 @@ import {
 } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuBrain, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { LuAppWindow, LuArrowUp, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
@@ -23,7 +23,6 @@ import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./tool-views/primitives";
 
-const MotionFlex = motion.create(Flex);
 
 interface ChatInputProps {
   onSend: (text: string, dataPart?: Record<string, unknown>) => void;
@@ -64,10 +63,6 @@ interface ChatInputProps {
   // override is set (selectedModel is "").
   globalModel?: string;
   onModelChange: (model: string) => void;
-  // A live "Thinking" / "Working through N tool calls" label shown as a compact
-  // chip next to the Settings button while a turn runs and no tool group is
-  // active (otherwise the status lives in the active group's header). null hides it.
-  thinkingLabel?: string | null;
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
@@ -233,7 +228,6 @@ export function ChatInput({
   selectedModel,
   globalModel = "",
   onModelChange,
-  thinkingLabel,
   tokenUsage,
   onCompact,
   compactionKeepRecentTurns,
@@ -250,8 +244,6 @@ export function ChatInput({
   const draftInputRef = useRef("");
   const [configExpanded, setConfigExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [displayedThinkingLabel, setDisplayedThinkingLabel] = useState(thinkingLabel ?? "");
-  const [thinkingVisible, setThinkingVisible] = useState(!!thinkingLabel);
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
     valid: false,
@@ -522,22 +514,6 @@ export function ChatInput({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
   }, [inputValue]);
 
-  useEffect(() => {
-    if (thinkingLabel) {
-      const showTimer = window.setTimeout(() => {
-        setDisplayedThinkingLabel(thinkingLabel);
-        setThinkingVisible(true);
-      }, 0);
-      return () => window.clearTimeout(showTimer);
-    }
-    const hideTimer = window.setTimeout(() => setThinkingVisible(false), 180);
-    const clearTimer = window.setTimeout(() => setDisplayedThinkingLabel(""), 520);
-    return () => {
-      window.clearTimeout(hideTimer);
-      window.clearTimeout(clearTimer);
-    };
-  }, [thinkingLabel]);
-
   // Fetch message history when the working directory changes.
   useEffect(() => {
     if (!workingDirectory) {
@@ -666,34 +642,6 @@ export function ChatInput({
             <LuSettings size={13} />
             Settings
           </Button>
-          <AnimatePresence initial={false}>
-            {displayedThinkingLabel && (
-              <MotionFlex
-                key="thinking-status"
-                align="center"
-                gap={1.5}
-                h="28px"
-                px={2}
-                borderRadius="sm"
-                bg="bg"
-                border="1px solid"
-                borderColor="border"
-                flexShrink={0}
-                overflow="hidden"
-                initial={{ opacity: 0, y: 2, width: 0 }}
-                animate={{ opacity: thinkingVisible ? 1 : 0, y: thinkingVisible ? 0 : 2, width: thinkingVisible ? "auto" : 0 }}
-                exit={{ opacity: 0, y: 2, width: 0 }}
-                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-              >
-                <Box color="purple.fg" display="flex" alignItems="center" flexShrink={0}>
-                  <LuBrain size={13} />
-                </Box>
-                <Text fontSize="xs" fontWeight="medium" className="running-title-shimmer" whiteSpace="nowrap">
-                  {displayedThinkingLabel}
-                </Text>
-              </MotionFlex>
-            )}
-          </AnimatePresence>
         </Flex>
 
         <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">

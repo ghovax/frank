@@ -39,7 +39,7 @@ export function ConnectionSwitcher() {
 
   const switchTo = (targetId: string) => {
     if (targetId === currentTarget) return;
-    router.push("/home");
+    router.push("/");
   };
 
   return (
@@ -94,7 +94,7 @@ export function ConnectionSwitcher() {
             <Menu.Separator />
             <Menu.Item
               value="__settings"
-              onClick={() => router.push("/home")}
+              onClick={() => router.push("/")}
             >
               <Flex align="center" gap={2}>
                 <Box color="fg.muted">

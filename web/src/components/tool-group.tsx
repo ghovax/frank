@@ -127,7 +127,12 @@ export const ToolGroup = memo(function ToolGroup({
   // informative than a static "Still working" / "Actions taken".
   const latestTool = tools[tools.length - 1];
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
-  const headingText = latestLabel || (active ? "Working" : "Actions taken");
+  // A tools-less group is a live "thinking before acting" phase — its heading is
+  // just the reasoning indicator. Otherwise it tracks the latest tool's label.
+  const thinkingOnly = tools.length === 0;
+  const headingText = latestLabel || (thinkingOnly ? "Thinking" : active ? "Working" : "Actions taken");
+  // A thinking-only heading has no body to reveal, so it is not interactive.
+  const interactive = !thinkingOnly;
 
   const badge = inputRequired
     ? { label: "Input required", colorPalette: "yellow" }
@@ -151,7 +156,7 @@ export const ToolGroup = memo(function ToolGroup({
         borderColor="border"
       >
         <Flex
-          as="button"
+          as={interactive ? "button" : "div"}
           align="center"
           gap={1.5}
           w="100%"
@@ -160,23 +165,24 @@ export const ToolGroup = memo(function ToolGroup({
           minH="8"
           color="fg"
           textAlign="left"
-          cursor="pointer"
-          _hover={{ bg: "bg.muted" }}
-          onClick={() => setManualOverride((current) => current === null ? true : !current)}
+          cursor={interactive ? "pointer" : "default"}
+          _hover={interactive ? { bg: "bg.muted" } : undefined}
+          onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
         >
           <Flex align="center" gap={2} flex={1} minW={0}>
-            {/* Animated status line — the latest tool's label slides in as work
-                streams and stays put when it finishes. Fixed single-line height so
-                the vertical slide is clipped rather than nudging the row. */}
-            <Box minW={0} flexShrink={1} overflow="hidden" h="1.15em" display="flex" alignItems="center">
+            {/* Status line — the latest tool's label. It crossfades (opacity only,
+                no height/translate) as work streams so the row height never shifts
+                and the whole heading stays vertically centered by the parent's
+                align="center" alone — no hand-tuned heights. */}
+            <Box minW={0} flexShrink={1} overflow="hidden">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
                   key={headingText}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  transition={{ duration: 0.16, ease: [0.4, 0, 0.2, 1] }}
-                  style={{ minWidth: 0, maxWidth: "100%" }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12, ease: "easeOut" }}
+                  style={{ minWidth: 0 }}
                 >
                   <Text
                     fontSize="xs"
@@ -204,12 +210,11 @@ export const ToolGroup = memo(function ToolGroup({
                   return (
                     <motion.div
                       key={name}
-                      layout
-                      initial={{ opacity: 0, scale: 0.5 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.5 }}
-                      transition={{ duration: 0.18, ease: [0.34, 1.56, 0.64, 1] }}
-                      style={{ display: "inline-flex" }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12, ease: "easeOut" }}
+                      style={{ display: "inline-flex", alignItems: "center" }}
                     >
                       <Flex
                         align="center"
@@ -278,12 +283,14 @@ export const ToolGroup = memo(function ToolGroup({
               {badge.label}
             </Badge>
           )}
-          <Box color="fg.muted" fontSize="xs" flexShrink={0}>
-            {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-          </Box>
+          {interactive && (
+            <Box color="fg.muted" fontSize="xs" flexShrink={0}>
+              {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+            </Box>
+          )}
         </Flex>
         <AnimatePresence initial={false}>
-          {bodyOpen && (
+          {bodyOpen && interactive && (
             <motion.div
               key="body"
               initial={{ opacity: 0, height: 0 }}

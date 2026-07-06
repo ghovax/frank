@@ -35,6 +35,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
 
   function toggle(index: number, label: string, multiple: boolean) {
     setSkipped((previous) => (previous[index] ? { ...previous, [index]: false } : previous));
+    const previouslySelected = selected[index] ?? [];
     setSelected((previous) => {
       const active = previous[index] ?? [];
       if (!multiple) {
@@ -45,6 +46,15 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
         [index]: active.includes(label) ? active.filter((value) => value !== label) : [...active, label],
       };
     });
+    // Auto-advance for single-choice (non-multiple) questions: selecting an option
+    // moves to the next question. This is navigation convenience, not auto-submit
+    // — the user still presses Submit when all questions are ready.
+    if (!multiple && index === current && current < total - 1) {
+      const isDeselection = previouslySelected.length === 1 && previouslySelected[0] === label;
+      if (!isDeselection) {
+        setCurrent((previous) => previous + 1);
+      }
+    }
   }
 
   // The answer for one question: its typed custom text, else the selected
@@ -83,6 +93,13 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   const active = selected[current] ?? [];
   const text = custom[current] ?? "";
   const isSkipped = !!skipped[current];
+  const allAnswered = items.every((_, index) => {
+    if (skipped[index]) return true;
+    const customText = (custom[index] ?? "").trim();
+    if (customText) return true;
+    const choices = selected[index] ?? [];
+    return choices.length > 0;
+  });
 
   return (
     <AnimatePresence>
@@ -224,7 +241,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
               <LuSkipForward size={12} />
               Skip
             </Button>
-            <Button size="xs" colorPalette="green" variant="solid" onClick={submit}>
+            <Button size="xs" colorPalette="green" variant="solid" onClick={submit} disabled={!allAnswered}>
               Submit
             </Button>
           </Flex>
