@@ -64,4 +64,4 @@ workspace:
 #
 # Directory roots are fixed in code: ~/.agents globally and .agents inside the
 # selected working directory. Only the default primary agent is configurable.
-default_agent: "senior-researcher"
+default_agent: "general-assistant"

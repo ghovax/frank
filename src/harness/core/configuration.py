@@ -27,6 +27,25 @@ def packaged_configuration_yaml() -> str:
     return PACKAGED_CONFIGURATION_PATH.read_text()
 
 
+def _bundled_dotagents_root() -> Path:
+    """The ``.agents`` directory shipped with the server itself. The bundled
+    agents under it are always available as a base layer, so every working
+    directory sees at least the shipped profiles even when it has no ``.agents``
+    of its own. Located by walking up from this file to the nearest ancestor
+    that contains ``.agents/agents`` (an editable install points back at the
+    source tree); falls back to the expected ``src/harness/core -> repo root``
+    layout when the directory is absent, so a build that ships the agents
+    elsewhere contributes nothing rather than erroring."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here, *here.parents):
+        if (candidate / ".agents" / "agents").is_dir():
+            return candidate / ".agents"
+    return here.parents[2] / ".agents"
+
+
+BUNDLED_DOTAGENTS_ROOT = _bundled_dotagents_root()
+
+
 def harness_home_directory() -> Path:
     """The ~/.daisy directory, created on first use."""
     HARNESS_HOME_DIRECTORY.mkdir(parents=True, exist_ok=True)
@@ -200,7 +219,7 @@ class GlobalConfiguration(BaseModel):
     workspace: WorkspaceConfiguration = WorkspaceConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
-    default_agent: str = "senior-researcher"
+    default_agent: str = "general-assistant"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).
     maximum_delegation_depth: int = 8
@@ -253,6 +272,9 @@ class GlobalConfiguration(BaseModel):
 
     def agent_directories(self) -> list[Path]:
         return _dedupe_paths([
+            # Bundled (server-shipped) agents are the always-present base layer;
+            # home and project agents override a bundled profile with the same id.
+            BUNDLED_DOTAGENTS_ROOT / "agents",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
             Path(self.AGENTS_ROOT_DIRECTORY) / "agents",
             Path(self.AGENTS_DIRECTORY),
@@ -309,6 +331,9 @@ class GlobalConfiguration(BaseModel):
 
     def agent_directories_for(self, working_directory: str) -> list[Path]:
         return _dedupe_paths([
+            # Bundled (server-shipped) agents are the always-present base layer;
+            # home and project agents override a bundled profile with the same id.
+            BUNDLED_DOTAGENTS_ROOT / "agents",
             Path(self.HOME_AGENTS_ROOT_DIRECTORY).expanduser() / "agents",
             self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "agents",
             self._resolve_local(working_directory, self.AGENTS_DIRECTORY),

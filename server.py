@@ -1192,6 +1192,9 @@ class AgentInfo(BaseModel):
 
 class AgentsList(BaseModel):
     agents: list[AgentInfo]
+    # The server's configured default agent id, so the UI can fall back to it
+    # (rather than an arbitrary first entry) when a folder's agents load.
+    defaultAgent: str = ""
 
 
 class DirectoryValidationRequest(BaseModel):
@@ -1271,7 +1274,13 @@ async def agents(working_directory: str = ""):
     else:
         directories = _global_configuration.agent_directories()
     agent_data = list_agents(directories)
-    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), model=agent.get("model", "")) for agent in agent_data])
+    # The bundled agents are always present, so a folder with no ``.agents`` of
+    # its own still sees the shipped profiles. The configured default agent is
+    # only offered as the selection fallback when it is actually available in
+    # this folder's resolved set.
+    available_ids = {agent["id"] for agent in agent_data}
+    default_agent = _global_configuration.default_agent if _global_configuration.default_agent in available_ids else (agent_data[0]["id"] if agent_data else "")
+    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), model=agent.get("model", "")) for agent in agent_data], defaultAgent=default_agent)
 
 
 @app.get("/agents/cards")

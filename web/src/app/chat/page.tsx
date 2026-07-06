@@ -142,12 +142,13 @@ function ChatContent() {
   }, []);
   const loadAgents = useCallback(() => {
     fetchAgents(workingDirectoryRef.current)
-      .then((agentList) => {
+      .then(({ agents: agentList, defaultAgent }) => {
         setAgents(agentList);
         // Keep the current selection if it's still available in this folder,
-        // otherwise fall back to the first agent the folder offers.
+        // otherwise fall back to the server's configured default agent (and only
+        // then to the first listed agent).
         setSelectedAgent((current) =>
-          agentList.some((agent) => agent.id === current) ? current : (agentList[0]?.id ?? "")
+          agentList.some((agent) => agent.id === current) ? current : (defaultAgent || agentList[0]?.id || "")
         );
         setIsConnected(true);
       })
