@@ -37,3 +37,5 @@ sandbox:
 workspace:
   strategy: none
 default_agent: senior-researcher
+agent:
+  permission_mode: auto

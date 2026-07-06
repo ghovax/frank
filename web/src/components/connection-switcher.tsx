@@ -9,7 +9,6 @@
 import { Box, Button, Flex, Menu, Portal, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { LuCheck, LuChevronDown, LuLaptop, LuServer, LuSettings2 } from "react-icons/lu";
-import { useRouter } from "next/navigation";
 import {
   activateConnectionTarget,
   checkConnection,
@@ -21,6 +20,7 @@ import {
   type ConnectionTarget,
 } from "@/lib/connection";
 import { isTauri } from "@/lib/connection-store";
+import { ConnectionSettingsDialog } from "@/components/connection-settings";
 import { toaster } from "@/components/ui/toaster";
 
 
@@ -35,10 +35,10 @@ export function ConnectionSwitcher({
   // sizes that match the model picker's scale so the switcher isn't a small outlier.
   size?: "xs" | "sm" | "md";
 }) {
-  const router = useRouter();
   const [targets, setTargets] = useState<ConnectionTarget[]>([]);
   const [currentTarget, setCurrentTarget] = useState<string>(LOCAL_TARGET_ID);
   const [switchingTarget, setSwitchingTarget] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [savedTargets, last] = await Promise.all([
@@ -118,6 +118,7 @@ export function ConnectionSwitcher({
   };
 
   return (
+    <>
     <Menu.Root
       size={large ? "md" : "sm"}
       onOpenChange={(event) => {
@@ -183,7 +184,7 @@ export function ConnectionSwitcher({
               value="__settings"
               color="blue.fg"
               _hover={{ bg: "blue.subtle" }}
-              onClick={() => router.push("/")}
+              onClick={() => setSettingsOpen(true)}
             >
               <Flex align="center" gap={2} color="blue.fg">
                 <LuSettings2 size={large ? 16 : 13} />
@@ -194,6 +195,19 @@ export function ConnectionSwitcher({
         </Menu.Positioner>
       </Portal>
     </Menu.Root>
+    <ConnectionSettingsDialog
+      open={settingsOpen}
+      onOpenChange={setSettingsOpen}
+      currentTargetId={currentTarget}
+      onConnected={(target) => {
+        // ConnectionSettings already health-checked and activated the backend; mirror
+        // switchTo's tail — update the pill and switch the live session, then close.
+        setCurrentTarget(target.id);
+        onConnectionChange?.(target);
+        setSettingsOpen(false);
+      }}
+    />
+    </>
   );
 }
 

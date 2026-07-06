@@ -241,7 +241,7 @@ export function BackgroundTasksPanel({
                   onClick={() => setShowCompleted((current) => !current)}
                 >
                   {showCompleted ? <LuChevronDown size={13} /> : <LuChevronRight size={13} />}
-                  Completed ({completed.length})
+                  Processes terminated ({completed.length})
                 </Button>
                 {showCompleted && (
                   <Flex direction="column" gap={2} mt={2}>

@@ -12,10 +12,9 @@ import {
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuCheck, LuClock, LuDownload, LuEllipsis, LuFolder, LuFolderOpen, LuHistory, LuHouse, LuMaximize2, LuMinimize2, LuMessageSquare, LuNavigation, LuNetwork, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuCheck, LuClock, LuDownload, LuEllipsis, LuFolder, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuNavigation, LuNetwork, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { useRouter } from "next/navigation";
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { extractToolArtifacts, externalPreviewUrl, isLivePreviewArtifact, PreviewArtifact } from "./tool-views";
@@ -218,7 +217,6 @@ export function ChatPanel({
   onModelChange,
   compactionKeepRecentTurns,
 }: ChatPanelProps) {
-  const router = useRouter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tasks, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendWidgetEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, selectedModel, sessionRunning);
@@ -867,7 +865,7 @@ export function ChatPanel({
                   screen's treatment, so the blank conversation is unmistakably Daisy,
                   with a short tagline underneath. */}
               <Flex direction="column" align="center" gap={2}>
-                <Flex align="center" gap={2} pb={1}>
+                <Flex align="center" gap={2} pb={3}>
                   <Text fontSize="3xl" lineHeight="1">
                     {"🌼"}
                   </Text>
@@ -880,19 +878,10 @@ export function ChatPanel({
                 </Text>
               </Flex>
 
-              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
-                What should we build in {currentFolderName}?
-              </Text>
-
-              {/* Primary actions — one uniform button row (Home first, then the
-                  connection switcher at the same size so it isn't an odd-sized
-                  outlier, then the folder actions). */}
+              {/* Primary actions — one uniform button row (the connection switcher,
+                  which also hosts connection settings, then the folder actions). */}
               <Flex direction="column" align="center" gap={2.5} w="100%" maxW="680px">
                 <Flex gap={2.5} wrap="wrap" justify="center">
-                  <Button size="md" variant="outline" borderRadius="md" onClick={() => router.push("/")}>
-                    <LuHouse size={16} />
-                    Home
-                  </Button>
                   <ConnectionSwitcher size="md" currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
                   {onBrowseFolder && (
                     <Button size="md" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
@@ -935,6 +924,13 @@ export function ChatPanel({
                   </Flex>
                 </Flex>
               )}
+
+              {/* The build prompt sits below the connection/folder configuration, so
+                  the top of the screen stays reserved for setup and this reads as the
+                  lead-in to the composer rather than competing with the brand lockup. */}
+              <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
+                What should we build in {currentFolderName}?
+              </Text>
 
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>

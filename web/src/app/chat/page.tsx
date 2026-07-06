@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuHouse, LuLaptop, LuPencilLine, LuPlus, LuServer, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuLaptop, LuPencilLine, LuPlus, LuServer, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -638,20 +638,6 @@ function ChatContent() {
             onPointerDown={handleHistoryResizeStart}
           />
           <Flex direction="column" gap={1.5} px={2} py={2} borderBottom="1px solid" borderColor="border">
-            <Button
-              w="100%"
-              size="xs"
-              gap={1.5}
-              variant="ghost"
-              borderRadius="sm"
-              fontSize="xs"
-              color="fg.muted"
-              onClick={() => router.push("/")}
-              title="Back to the connection screen"
-            >
-              <LuHouse size={12} />
-              Home
-            </Button>
             <Button
               w="100%"
               size="xs"
