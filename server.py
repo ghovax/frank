@@ -361,6 +361,35 @@ def _session_model_for(context_id: str) -> str:
         database_session.close()
 
 
+def _session_agent_for(context_id: str) -> str:
+    """Read a session's owning agent from its record (``""`` when unknown). Lets an
+    on-demand action reach the right executor even before that agent has a live
+    runtime this process (e.g. a session reopened after a restart)."""
+    if _session_factory is None or not context_id:
+        return ""
+    database_session = _session_factory()
+    try:
+        record = database_session.get(SessionRecord, context_id)
+        return (record.agent or "") if record is not None else ""
+    except Exception:
+        return ""
+    finally:
+        database_session.close()
+
+
+def _executor_for_context(context_id: str) -> "HarnessAgentExecutor | None":
+    """Resolve the executor that owns a context, by the agent recorded on its session.
+
+    This is the correct way to dispatch an operation that targets a session's
+    persisted state (its conversation) rather than an in-flight turn: it routes to the
+    owner authoritatively, independent of whether a runtime is currently warm. Prefer
+    it over broadcasting to every executor and relying on live-runtime membership to
+    self-select — that pattern silently no-ops whenever the runtime is cold (e.g. right
+    after a restart, before the session has taken a turn)."""
+    agent_name = _session_agent_for(context_id)
+    return _executors.get(agent_name) if agent_name else None
+
+
 def _normalize_permission_mode(mode: str) -> str:
     return mode if mode in {"default", "auto", "read_only", "bypass"} else "default"
 
@@ -1190,6 +1219,10 @@ class SteeringRequest(BaseModel):
     message: str
 
 
+class DirectoryRevealRequest(BaseModel):
+    path: str
+
+
 class PermissionModeRequest(BaseModel):
     mode: Literal["default", "auto", "read_only", "bypass"]
 
@@ -1663,6 +1696,19 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
         "repository_root": repository_root,
         "path": str(path),
     }
+
+
+@app.post("/directory/reveal")
+async def reveal_directory(request: DirectoryRevealRequest):
+    """Reveal a directory in the native file manager (macOS Finder, other OS file manager)."""
+    path = request.path.strip()
+    if not path:
+        raise HTTPException(status_code=400, detail="Path is required.")
+    try:
+        subprocess.Popen(["open", "-R", path])
+        return {"revealed": True}
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
 
 
 @app.post("/directory/browse")
@@ -2394,13 +2440,54 @@ async def abort_session(context_id: str):
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
 
 
+@app.delete("/sessions/{context_id}")
+async def delete_session(context_id: str):
+    """Permanently delete a session and all its tasks. Aborts the context first."""
+    # Abort any running turn and settle pending prompts.
+    for request_id, future in list(_pending_permissions.items()):
+        if request_id.startswith(f"perm-{context_id}-") and not future.done():
+            future.set_result("deny")
+    q_prefix = f"q-{context_id}-"
+    for request_id, future in list(_pending_questions.items()):
+        if request_id.startswith(q_prefix) and not future.done():
+            future.set_result([])
+    for executor in _executors.values():
+        executor.abort_context(context_id)
+    # Delete every task in the context from the task store.
+    if _task_store is not None:
+        task_ids = await _task_store.task_ids_for_context(context_id)
+        for task_id in task_ids:
+            await _task_store.delete(task_id)
+    # Delete the session record from the sessions table.
+    def _delete_record() -> bool:
+        assert _session_factory is not None
+        database_session = _session_factory()
+        try:
+            record = database_session.query(SessionRecord).filter(SessionRecord.id == context_id).first()
+            if record is None:
+                return False
+            database_session.delete(record)
+            database_session.commit()
+            return True
+        finally:
+            database_session.close()
+    deleted = await asyncio.to_thread(_delete_record)
+    _publish_broadcast({"type": "sessions_changed"})
+    return {"status": "deleted" if deleted else "not_found", "session_id": context_id}
+
+
 @app.post("/chat/{context_id}/compact")
 async def compact_session(context_id: str):
     """Compact a context's conversation on demand (the user pressed compact). Runs a
-    background compaction turn that streams its progress and separator to the UI."""
-    triggered = any(executor.compact_context(context_id) for executor in _executors.values())
+    background compaction turn that streams its progress and separator to the UI.
+
+    Routes to the session's owning agent resolved from its record, so a session
+    reopened after a restart compacts without first needing a fresh message to rebuild
+    its runtime — the compaction turn rehydrates it on the way through."""
+    executor = await asyncio.to_thread(_executor_for_context, context_id)
+    triggered = executor.compact_context(context_id) if executor is not None else False
     if not triggered:
-        raise HTTPException(status_code=409, detail="Session has no active context to compact.")
+        raise HTTPException(status_code=404, detail="No such session to compact.")
     _broadcaster.publish({"type": "sessions_changed"})
     return {"status": "compacting", "session_id": context_id}
 
@@ -2410,6 +2497,15 @@ async def abort_tool_call(context_id: str, tool_call_id: str):
     """Abort one foreground tool call in a running context."""
     aborted = any(executor.abort_tool(context_id, tool_call_id) for executor in _executors.values())
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id, "tool_call_id": tool_call_id}
+
+
+@app.post("/chat/{context_id}/tools/{tool_call_id}/background")
+async def send_tool_to_background(context_id: str, tool_call_id: str):
+    """Push a still-blocking foreground shell command to the background: it keeps
+    running detached and the agent's turn continues with a "started" placeholder,
+    so the model is notified exactly as if it had backgrounded the command itself."""
+    backgrounded = any(executor.send_tool_to_background(context_id, tool_call_id) for executor in _executors.values())
+    return {"status": "backgrounded" if backgrounded else "not_found", "session_id": context_id, "tool_call_id": tool_call_id}
 
 
 @app.post("/chat/{context_id}/permissions/mode")

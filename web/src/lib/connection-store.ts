@@ -29,7 +29,7 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-// ---- Tauri SQLite backend -------------------------------------------------
+// Tauri SQLite backend for persisting connection profiles and app state.
 
 type SqlDatabase = {
   select: <T>(query: string, values?: unknown[]) => Promise<T>;
@@ -47,7 +47,7 @@ async function getDatabase(): Promise<SqlDatabase> {
   return databasePromise;
 }
 
-// ---- localStorage backend (plain browser) ---------------------------------
+// Fallback localStorage backend for plain browser environments without Tauri.
 
 function readLocalConnections(): ConnectionProfile[] {
   if (typeof window === "undefined") return [];
@@ -106,7 +106,7 @@ function writeLocalSessionConnections(state: Record<string, string>): void {
   }
 }
 
-// ---- Public API -----------------------------------------------------------
+// Public API for managing connection profiles and app state.
 
 export async function listConnections(): Promise<ConnectionProfile[]> {
   if (!isTauri()) {

@@ -12,7 +12,7 @@ from exa_py import Exa
 from langchain.tools import tool
 
 from harness.identifiers import new_id
-from harness.core.background import current_background_jobs, cancel_all_background_jobs
+from harness.core.background import current_background_jobs, cancel_all_background_jobs, current_tool_call_id
 from harness.core.background_store import get_background_job_store
 
 _exa_client: Exa | None = None
@@ -188,6 +188,9 @@ async def bash(
     task_identifier = jobs.spawn(
         "bash", run(), output_path=output_path, cancel_callback=cancel_process,
         spec={"command": command, "read_only": read_only, "risk": risk, "background": background},
+        # Correlate the job with its tool call from the start, so the user can
+        # background a still-blocking foreground command by that tool-call id.
+        tool_call_identifier=current_tool_call_id(),
         # A model-backgrounded command is detached: it outlives the turn and a Stop
         # leaves it running. A synchronous command is foreground — Stop kills it.
         detached=background,

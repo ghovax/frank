@@ -69,6 +69,8 @@ from harness.core.background import (
     background_include_result,
     bind_background_jobs,
     unbind_background_jobs,
+    bind_tool_call_id,
+    unbind_tool_call_id,
 )
 
 from harness.tools import file_tools
@@ -781,6 +783,12 @@ class AgentRuntime:
             return False
         task.cancel()
         return True
+
+    def send_tool_to_background(self, tool_call_identifier: str) -> bool:
+        """Push a still-blocking foreground shell command to the background on the
+        user's behalf: it keeps running detached and the turn continues with a
+        "started" placeholder, exactly as if the model had backgrounded it."""
+        return self._background.request_background(tool_call_identifier)
 
     def enqueue_steering(self, message: str) -> bool:
         text = message.strip()
@@ -2052,9 +2060,11 @@ class AgentRuntime:
 
             try:
                 background_token = bind_background_jobs(self._background)
+                tool_call_token = bind_tool_call_id(tool_call_identifier)
                 try:
                     result = await bash_tool.ainvoke(tool_arguments)
                 finally:
+                    unbind_tool_call_id(tool_call_token)
                     unbind_background_jobs(background_token)
                 result_data = _maybe_json(result)
                 yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)

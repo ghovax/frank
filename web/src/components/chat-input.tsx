@@ -4,23 +4,24 @@ import {
   Box,
   Button,
   createListCollection,
+  Dialog,
   Flex,
   Input,
   Menu,
   Portal,
   Select,
+  Spinner,
   Text,
   Textarea,
 } from "@chakra-ui/react";
-import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuAppWindow, LuArrowUp, LuCheck, LuChevronDown, LuChevronLeft, LuChevronRight, LuCircle, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuHistory, LuLock, LuLockOpen, LuNetwork, LuPaperclip, LuScan, LuSettings, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuX, LuZap } from "react-icons/lu";
+import { LuArrowUp, LuChevronDown, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuLock, LuLockOpen, LuPaperclip, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
 import { ModelSelect, modelSupportsAttachments } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
-import { SettingsDialog } from "./settings-dialog";
+// SettingsDialog moved to ChatPanel top bar
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./tool-views/primitives";
 import type { ConnectionTarget } from "@/lib/connection";
@@ -51,14 +52,6 @@ interface ChatInputProps {
   onAgentChange: (agent: string) => void;
   permissionMode: PermissionMode;
   onPermissionModeChange: (mode: PermissionMode) => void;
-  agentsCount?: number;
-  agentsOpen?: boolean;
-  onShowAgents?: () => void;
-  previewsCount?: number;
-  previewOpen?: boolean;
-  onTogglePreview?: () => void;
-  historyOpen?: boolean;
-  onToggleHistory?: () => void;
   models: ModelOption[];
   modelProviders: ProviderOption[];
   recentModels?: { id: string; name: string; provider: string }[];
@@ -73,6 +66,9 @@ interface ChatInputProps {
   // Compact the conversation now (summarize the older history). Shown once a
   // session has real context to compact.
   onCompact?: () => void;
+  // True while a compaction pass is running, so the Compact control reflects the
+  // in-progress state (spinner + disabled) rather than inviting another click.
+  isCompacting?: boolean;
   // How many of the most recent user turns are kept verbatim during compaction
   // (from the server's _COMPACTION_KEEP_RECENT_TURNS). The button is available
   // once there are more user messages than this threshold.
@@ -220,14 +216,6 @@ export function ChatInput({
   onAgentChange,
   permissionMode = "default",
   onPermissionModeChange,
-  agentsCount = 0,
-  agentsOpen = false,
-  onShowAgents,
-  previewsCount = 0,
-  previewOpen = false,
-  onTogglePreview,
-  historyOpen = false,
-  onToggleHistory,
   models,
   modelProviders,
   recentModels = [],
@@ -236,6 +224,7 @@ export function ChatInput({
   onModelChange,
   tokenUsage,
   onCompact,
+  isCompacting = false,
   compactionKeepRecentTurns,
   compactionUserCount,
 }: ChatInputProps) {
@@ -248,8 +237,7 @@ export function ChatInput({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [messageHistory, setMessageHistory] = useState<string[]>([]);
   const draftInputRef = useRef("");
-  const [configExpanded, setConfigExpanded] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
   const [pathEntryOpen, setPathEntryOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
   const [directoryState, setDirectoryState] = useState({
@@ -364,46 +352,6 @@ export function ChatInput({
           colorPalette: workspaceStrategy === "worktree" ? "green" as const : "purple" as const,
         }
       : null;
-
-  const historyAppearance = historyOpen
-    ? {
-        variant: "solid" as const,
-        colorPalette: "blue" as const,
-        bg: undefined,
-        borderColor: undefined,
-      }
-    : {
-        variant: "outline" as const,
-        colorPalette: undefined,
-        bg: "bg",
-        borderColor: "border.emphasized",
-      };
-  const agentsAppearance = agentsOpen || agentsCount > 0
-    ? {
-        variant: "solid" as const,
-        colorPalette: "orange" as const,
-        bg: undefined,
-        borderColor: undefined,
-      }
-    : {
-        variant: "outline" as const,
-        colorPalette: undefined,
-        bg: "bg",
-        borderColor: "border.emphasized",
-      };
-  const previewAppearance = previewOpen || previewsCount > 0
-    ? {
-        variant: "solid" as const,
-        colorPalette: "teal" as const,
-        bg: undefined,
-        borderColor: undefined,
-      }
-    : {
-        variant: "outline" as const,
-        colorPalette: undefined,
-        bg: "bg",
-        borderColor: "border.emphasized",
-      };
 
   // The composer's file-attach affordance is gated on the selected model's
   // capabilities (models.dev): a text-only model cannot process attachments, so
@@ -620,70 +568,12 @@ export function ChatInput({
 
   return (
     <Box borderTop="1px solid" borderColor="border" bg="bg.subtle" position="relative">
-      {/* Top row (above the input): history button on the left, Agents button
-          on the right. The Agents button is always shown; the panel renders an
-          empty state when there is no activity yet. */}
-      <Flex justify="space-between" align="center" rowGap={1.5} gap={{ base: 1.5 }} flexWrap="wrap" px={2} pt={2}>
-        <Flex align="center" gap={{ base: 1.5 }} flexShrink={0}>
-          {onToggleHistory && (
-            <Button
-              size="xs"
-              variant={historyAppearance.variant}
-              colorPalette={historyAppearance.colorPalette}
-              borderRadius="sm"
-              fontSize="xs"
-              h="28px"
-              px={2}
-              bg={historyAppearance.bg}
-              borderColor={historyAppearance.borderColor}
-              flexShrink={0}
-              onClick={onToggleHistory}
-            >
-              <LuHistory size={13} />
-              History
-            </Button>
-          )}
-          <Button
-            size="xs"
-            variant="outline"
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg="bg"
-            borderColor="border"
-            flexShrink={0}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <LuSettings size={13} />
-            Settings
-          </Button>
-        </Flex>
-
-        <Flex align="center" gap={1.5} flexShrink={0} flexWrap="wrap" justify="flex-end">
-          <Button
-            size="xs"
-            variant="ghost"
-            borderRadius="sm"
-            flexShrink={0}
-            w="28px"
-            h="28px"
-            minW={0}
-            p={0}
-            onClick={() => setConfigExpanded((current) => !current)}
-          >
-            {configExpanded ? <LuChevronRight size={14} /> : <LuChevronLeft size={14} />}
-          </Button>
-          <AnimatePresence initial={false}>
-            {configExpanded && (
-              <motion.div
-                key="config-controls"
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: "auto" }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                style={{ overflow: "hidden", display: "flex", alignItems: "center", gap: "6px" }}
-              >
+      {/* Controls row (above the input): the agent and model selectors are always
+          visible here — no collapsible toggle — with the context-usage chip and
+          Compact action on the right. History, Agents, Previews, and Settings now
+          live in the ChatPanel top bar. */}
+      <Flex justify="space-between" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pt={2}>
+        <Flex align="center" gap={1.5} flexWrap="wrap" minW={0}>
           <Select.Root
             collection={agentCollection}
             value={[selectedAgent]}
@@ -744,11 +634,9 @@ export function ChatInput({
             fallbackModelId={globalModel}
             compact
           />
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <ContextUsageChip tokenUsage={tokenUsage} />
-          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && compactionUserCount > compactionKeepRecentTurns && (
+        </Flex>
+        <Flex align="center" gap={1.5} flexShrink={0} justify="flex-end">
+          {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
             <Button
               size="xs"
               variant="outline"
@@ -759,49 +647,62 @@ export function ChatInput({
               bg="bg"
               borderColor="border"
               flexShrink={0}
-              disabled={isStreaming}
-              onClick={onCompact}
-              title={`Summarize the older history to free up context, keeping the most recent turns verbatim`}
+              disabled={isStreaming || isCompacting}
+              onClick={() => setCompactConfirmOpen(true)}
+              title={isCompacting
+                ? "Compacting the context…"
+                : "Summarize the older history to free up context, keeping the most recent turns verbatim"}
             >
-              <LuFoldVertical size={13} />
-              Compact
+              {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
+              {isCompacting ? "Compacting…" : "Compact"}
             </Button>
           )}
-          <Button
-            size="xs"
-            variant={agentsAppearance.variant}
-            colorPalette={agentsAppearance.colorPalette}
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg={agentsAppearance.bg}
-            borderColor={agentsAppearance.borderColor}
-            flexShrink={0}
-            onClick={onShowAgents}
-          >
-            <LuNetwork size={13} />
-            {agentsCount > 0 ? `Agents (${agentsCount})` : "Agents"}
-          </Button>
-          <Button
-            size="xs"
-            variant={previewAppearance.variant}
-            colorPalette={previewAppearance.colorPalette}
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg={previewAppearance.bg}
-            borderColor={previewAppearance.borderColor}
-            flexShrink={0}
-            onClick={onTogglePreview}
-            disabled={!onTogglePreview}
-          >
-            <LuAppWindow size={13} />
-            {previewsCount > 0 ? `Preview (${previewsCount})` : "Preview"}
-          </Button>
+          <ContextUsageChip tokenUsage={tokenUsage} />
         </Flex>
       </Flex>
+
+      <Dialog.Root
+        open={compactConfirmOpen}
+        onOpenChange={(event) => setCompactConfirmOpen(event.open)}
+        placement="center"
+        role="alertdialog"
+      >
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content borderRadius="md">
+              <Dialog.Header>
+                <Dialog.Title>Compact the context?</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text fontSize="sm" color="fg.muted">
+                  This summarizes the older conversation into a compact handoff, keeping the{" "}
+                  <b>most recent {compactionKeepRecentTurns} turns</b> verbatim. It frees up the
+                  context window but the summarized detail can no longer be recalled in full.
+                </Text>
+              </Dialog.Body>
+              <Dialog.Footer gap={2}>
+                <Button size="sm" variant="outline" borderRadius="sm" onClick={() => setCompactConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  colorPalette="blue"
+                  variant="solid"
+                  borderRadius="sm"
+                  onClick={() => {
+                    setCompactConfirmOpen(false);
+                    onCompact?.();
+                  }}
+                >
+                  <LuFoldVertical size={14} />
+                  Compact now
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
 
       {/* Message input */}
       <Box px={2} pt={2} pb={2}>
@@ -1265,8 +1166,6 @@ export function ChatInput({
           </Flex>
         )}
       </Flex>
-
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </Box>
   );
 }

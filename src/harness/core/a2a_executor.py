@@ -491,12 +491,15 @@ class HarnessAgentExecutor(AgentExecutor):
 
     def compact_context(self, context_id: str) -> bool:
         """Trigger a manual compaction of a context's conversation (the user pressed
-        the compact button). Runs as a background turn — serialized behind any
-        active turn via the per-context lock — so the endpoint returns immediately
-        while the compaction streams to the UI. Returns False when the context has
-        no live runtime to compact."""
-        if context_id not in self._runtimes:
-            return False
+        the compact button). Runs as a background turn — serialized behind any active
+        turn via the per-context lock — so the endpoint returns immediately while the
+        compaction streams to the UI.
+
+        A live runtime is not required: the compaction turn goes through the normal
+        turn path, which rehydrates a persisted conversation into a fresh runtime, so
+        a session reopened after a restart compacts without a warm-up message. The
+        caller is responsible for routing to the owning agent's executor. Returns
+        False only when there is no handler to drive the turn."""
         handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
         if handler is None:
             return False
@@ -534,6 +537,12 @@ class HarnessAgentExecutor(AgentExecutor):
         if runtime is None:
             return False
         return runtime.abort_tool(tool_call_identifier)
+
+    def send_tool_to_background(self, context_id: str, tool_call_identifier: str) -> bool:
+        runtime = self._runtimes.get(context_id)
+        if runtime is None:
+            return False
+        return runtime.send_tool_to_background(tool_call_identifier)
 
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a

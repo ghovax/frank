@@ -15,7 +15,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-// --- bash across its lifecycle ---
+// Bash tool across its lifecycle: running, completed, and failed.
 
 export const BashRunning: Story = {
   args: {
@@ -66,7 +66,7 @@ export const BashFailed: Story = {
   },
 };
 
-// --- human-in-the-loop: permission approval ---
+// Human-in-the-loop: permission approval flow for a sandboxed tool call.
 
 export const AwaitingPermission: Story = {
   args: {
@@ -87,7 +87,7 @@ export const AwaitingPermission: Story = {
   },
 };
 
-// --- human-in-the-loop: ask_user question ---
+// Human-in-the-loop: ask_user question awaiting an answer from the user.
 
 export const AwaitingAnswer: Story = {
   args: {
@@ -124,7 +124,7 @@ export const AwaitingAnswer: Story = {
   },
 };
 
-// --- the new specialized tools, completed ---
+// Specialized tools (read_file, edit_file, web_search, etc.) in their completed state.
 
 export const ReadFileCompleted: Story = {
   args: {

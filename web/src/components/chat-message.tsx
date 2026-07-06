@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Spinner, Text } from "@chakra-ui/react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
@@ -213,10 +213,11 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
               align="center"
               gap={1.5}
               flexShrink={0}
+              color={running ? "blue.fg" : undefined}
               title={running || !before ? undefined : `Compacted ${before} messages down to ${after}`}
             >
               <Box display="flex" alignItems="center">
-                <LuFoldVertical size={12} />
+                {running ? <Spinner size="xs" borderWidth="1.5px" /> : <LuFoldVertical size={12} />}
               </Box>
               <Text fontSize="xs" fontWeight="medium" className={running ? "running-title-shimmer" : undefined}>
                 {running ? "Compacting context…" : "Context compacted"}

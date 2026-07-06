@@ -1808,7 +1808,7 @@ export function useChat(
         toaster.create({
           type: "error",
           title: "Couldn't compact the context",
-          description: "The server did not start compaction. It may have no active session yet — send a message first.",
+          description: "The server did not start compaction. Check the connection and try again.",
           closable: true,
         });
       }

@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, saveSettings, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type PermissionMode, type ProviderOption, type RecentProject } from "@/lib/api";
+import { browseWorkingDirectory, deleteSession, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchRecentProjects, fetchSessions, fetchSettings, recordRecentProject, saveSettings, setSandboxEnabled, setSessionModel, subscribeEvents, type AgentCard, type AgentSummary, type FilesystemLease, type ModelOption, type PermissionMode, type ProviderOption, type RecentProject } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { useTray } from "@/lib/use-tray";
@@ -98,7 +98,6 @@ function ChatContent() {
   }, []);
 
   const currentConnectionId = currentConnection?.id ?? LOCAL_TARGET_ID;
-  const currentConnectionName = currentConnection?.name ?? "This machine";
 
   const refreshConnectionTargets = useCallback(async () => {
     const targets = await listConnectionTargets();
@@ -438,6 +437,14 @@ function ChatContent() {
     params.delete("session");
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
+  }
+
+  async function handleDeleteSession(sessionId: string) {
+    const ok = await deleteSession(sessionId);
+    if (ok) {
+      refreshSessions();
+      handleNewChat();
+    }
   }
 
   function handleConnectionChange(target: ConnectionTarget) {
@@ -785,8 +792,9 @@ function ChatContent() {
           onAgentChange={handleAgentChange}
           initialSessionId={activeSessionConnectionReady ? activeSessionId : null}
           initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
+          sessionTitle={activeSession?.title}
+          onDeleteSession={activeSessionId ? handleDeleteSession : undefined}
           currentConnectionId={currentConnectionId}
-          currentConnectionName={currentConnectionName}
           onConnectionChange={handleConnectionChange}
           onPermissionModeChange={setSelectedPermissionMode}
           sessionRunning={activeSessionRunning}

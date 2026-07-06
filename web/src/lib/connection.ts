@@ -24,7 +24,7 @@ export interface ConnectionTarget {
 
 export const LOCAL_CONNECTION_TARGET: ConnectionTarget = {
   id: LOCAL_TARGET_ID,
-  name: "This machine",
+  name: "Local",
   url: LOCAL_DEFAULT_URL,
   kind: "local",
 };

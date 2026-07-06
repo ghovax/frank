@@ -3,14 +3,16 @@
 import {
   Box,
   Button,
+  Dialog,
   EmptyState,
   Flex,
   IconButton,
-  Input,
+  Menu,
+  Portal,
   Text,
   VStack,
 } from "@chakra-ui/react";
-import { LuAppWindow, LuArrowDown, LuClock, LuDownload, LuFolder, LuFolderOpen, LuHouse, LuMaximize2, LuMinimize2, LuNavigation, LuPlus, LuRotateCw, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
+import { LuAppWindow, LuArrowDown, LuClock, LuDownload, LuEllipsis, LuFolder, LuFolderOpen, LuHistory, LuHouse, LuMaximize2, LuMinimize2, LuMessageSquare, LuNavigation, LuNetwork, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -22,13 +24,16 @@ import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
+import { SettingsDialog } from "./settings-dialog";
+import { BackgroundTasksPanel } from "./background-tasks-panel";
+import { Tooltip } from "./ui/tooltip";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
-import { setPermissionMode, fetchSettings, saveSettings, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import { setPermissionMode, fetchSettings, saveSettings, revealInFinder, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSwitcher } from "./connection-switcher";
 
@@ -40,9 +45,14 @@ interface ChatPanelProps {
   agentCard?: AgentCard | null;
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
+  // The session's display title (LLM-generated once the conversation has one),
+  // shown in the top bar. Absent until the session names itself.
+  sessionTitle?: string;
+  // Deletes the session by id (aborts it, drops its tasks and record, then routes
+  // the user back to a blank chat). Absent when there is no active session.
+  onDeleteSession?: (sessionId: string) => void;
   initialPermissionMode?: PermissionMode;
   currentConnectionId?: string;
-  currentConnectionName?: string;
   onConnectionChange?: (target: ConnectionTarget) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
@@ -175,9 +185,10 @@ export function ChatPanel({
   agentCard,
   onAgentChange,
   initialSessionId,
+  sessionTitle,
+  onDeleteSession,
   initialPermissionMode = "default",
   currentConnectionId,
-  currentConnectionName = "This machine",
   onConnectionChange,
   onPermissionModeChange,
   sessionRunning = false,
@@ -253,8 +264,6 @@ export function ChatPanel({
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
   const [previewPanelWidth, setPreviewPanelWidth] = useState(560);
-  const [blankPathEntryOpen, setBlankPathEntryOpen] = useState(false);
-  const [blankPathDraft, setBlankPathDraft] = useState("");
   // Open preview tabs. Each tab holds a preview artifact the user has opened (or was
   // auto-opened when the agent created it). The active tab's iframe is mounted; all
   // others are collapsed to save resources. New previews auto-open as tabs.
@@ -267,6 +276,12 @@ export function ChatPanel({
   // "jump to latest" affordance so a reader who scrolled up to read history can
   // return to the live tail in one click instead of scrolling all the way down.
   const [isAtBottom, setIsAtBottom] = useState(true);
+  // Top-bar surfaces: the settings dialog, the delete-session confirmation, and the
+  // background-processes sheet all open from the persistent bar above the transcript.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false);
+  const [backgroundSidebarWidth, setBackgroundSidebarWidth] = useState(420);
 
   // Pinned == the viewport is at (or within a hair of) the bottom. That single
   // fact drives everything: pinned means follow new content, unpinned means the
@@ -442,14 +457,21 @@ export function ChatPanel({
   const activeToolCount = messages.filter((message) =>
     message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
-
-  function submitBlankPathDraft() {
-    const nextPath = blankPathDraft.trim();
-    if (!nextPath) return;
-    onWorkingDirectoryChange?.(nextPath);
-    setBlankPathEntryOpen(false);
-    setBlankPathDraft("");
-  }
+  // Running shell commands drive the badge on the top-bar background-processes
+  // button, so a long-running bash call is visible without opening the sheet.
+  const runningShellCount = messages.filter((message) =>
+    message.role === "tool_call" && message.content === "bash" &&
+    (message.meta?.status === "running" || message.meta?.status === "input_required")
+  ).length;
+  // A compaction pass is live while its timeline marker is still "running" — drives
+  // the Compact control's in-progress state (spinner + disabled).
+  const isCompacting = messages.some(
+    (message) => message.role === "compaction" && message.meta?.status === "running"
+  );
+  // "Reveal" opens the session's runtime directory (a worktree/branch checkout when
+  // the session manages one, otherwise the plain working directory) in the OS file
+  // manager. Falls back to the working directory before a session exists.
+  const revealPath = (workspaceRuntimeDirectory || workingDirectory || "").trim();
 
   const previewEntries = useMemo(() => {
     const entries: { toolCallId: string; artifact: Record<string, unknown>; title: string; address: string }[] = [];
@@ -616,6 +638,29 @@ export function ChatPanel({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
   }, [agentsSidebarWidth]);
 
+  const handleBackgroundResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = backgroundSidebarWidth;
+
+    function handlePointerMove(moveEvent: globalThis.PointerEvent) {
+      const nextWidth = Math.min(720, Math.max(300, startWidth + startX - moveEvent.clientX));
+      setBackgroundSidebarWidth(nextWidth);
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+  }, [backgroundSidebarWidth]);
+
   const handlePreviewResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     setPreviewMaximized(false);
@@ -644,6 +689,129 @@ export function ChatPanel({
     <WidgetEventProvider onEvent={handleWidgetEvent}>
     <Flex h="100%" minW={0} position="relative">
       <Flex direction="column" flex={1} minW={0} h="100%">
+        {/* Persistent top bar: session identity on the left, session tools on the
+            right. Always visible so the controls have a stable home; the title
+            fills in once the session names itself, matching the sidebar default
+            until then. */}
+        <Flex align="center" gap={2} px={3} py={2} borderBottom="1px solid" borderColor="border" flexShrink={0} minW={0}>
+          <Box color="fg.muted" flexShrink={0}><LuMessageSquare size={15} /></Box>
+          <Text fontSize="sm" fontWeight="medium" truncate minW={0} flex={1}>
+            {sessionId ? (sessionTitle || "Untitled conversation") : "New conversation"}
+          </Text>
+          <Flex align="center" gap={1.5} flexShrink={0}>
+            <Tooltip content="Background processes" openDelay={300}>
+              <IconButton
+                aria-label="Background processes"
+                size="xs"
+                variant={backgroundPanelOpen || runningShellCount > 0 ? "subtle" : "ghost"}
+                colorPalette={backgroundPanelOpen || runningShellCount > 0 ? "blue" : undefined}
+                borderRadius="sm"
+                position="relative"
+                onClick={() => setBackgroundPanelOpen((current) => !current)}
+              >
+                <LuTerminal size={15} />
+                {runningShellCount > 0 && (
+                  <Box position="absolute" top="2px" right="2px" w="7px" h="7px" borderRadius="full" bg="blue.solid" />
+                )}
+              </IconButton>
+            </Tooltip>
+            {onToggleHistory && (
+              <Tooltip content="History" openDelay={300}>
+                <IconButton
+                  aria-label="History"
+                  size="xs"
+                  variant={historyOpen ? "subtle" : "ghost"}
+                  colorPalette={historyOpen ? "blue" : undefined}
+                  borderRadius="sm"
+                  onClick={onToggleHistory}
+                >
+                  <LuHistory size={15} />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip content={activeSteps > 0 ? `Agents (${activeSteps} active)` : "Agents"} openDelay={300}>
+              <IconButton
+                aria-label="Agents"
+                size="xs"
+                variant={agentsPanelOpen || activeSteps > 0 ? "subtle" : "ghost"}
+                colorPalette={agentsPanelOpen || activeSteps > 0 ? "orange" : undefined}
+                borderRadius="sm"
+                position="relative"
+                onClick={() => {
+                  setFocusedGroupId(null);
+                  setAgentsPanelOpen((current) => !current);
+                }}
+              >
+                <LuNetwork size={15} />
+                {activeSteps > 0 && (
+                  <Box position="absolute" top="-3px" right="-3px" minW="15px" h="15px" px="3px" borderRadius="full" bg="orange.solid" color="white" fontSize="9px" fontWeight="bold" lineHeight="15px" textAlign="center">
+                    {activeSteps}
+                  </Box>
+                )}
+              </IconButton>
+            </Tooltip>
+            <Tooltip content={previewTabs.length > 0 ? `Previews (${previewTabs.length})` : "Previews"} openDelay={300}>
+              <IconButton
+                aria-label="Previews"
+                size="xs"
+                variant={previewPanelOpen || previewTabs.length > 0 ? "subtle" : "ghost"}
+                colorPalette={previewPanelOpen || previewTabs.length > 0 ? "teal" : undefined}
+                borderRadius="sm"
+                position="relative"
+                onClick={() => setPreviewPanelOpen((current) => !current)}
+              >
+                <LuAppWindow size={15} />
+                {previewTabs.length > 0 && (
+                  <Box position="absolute" top="-3px" right="-3px" minW="15px" h="15px" px="3px" borderRadius="full" bg="teal.solid" color="white" fontSize="9px" fontWeight="bold" lineHeight="15px" textAlign="center">
+                    {previewTabs.length}
+                  </Box>
+                )}
+              </IconButton>
+            </Tooltip>
+            <Tooltip content="Settings" openDelay={300}>
+              <IconButton
+                aria-label="Settings"
+                size="xs"
+                variant="ghost"
+                borderRadius="sm"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <LuSettings size={15} />
+              </IconButton>
+            </Tooltip>
+            <Menu.Root>
+              <Menu.Trigger asChild>
+                <IconButton aria-label="Session options" size="xs" variant="ghost" borderRadius="sm">
+                  <LuEllipsis size={15} />
+                </IconButton>
+              </Menu.Trigger>
+              <Portal>
+                <Menu.Positioner>
+                  <Menu.Content borderRadius="sm" minW="200px">
+                    <Menu.Item
+                      value="reveal"
+                      disabled={!revealPath}
+                      onClick={() => { if (revealPath) void revealInFinder(revealPath); }}
+                    >
+                      <LuFolderOpen size={14} />
+                      <Box flex={1}>Open this folder</Box>
+                    </Menu.Item>
+                    <Menu.Item
+                      value="delete"
+                      color="red.fg"
+                      _hover={{ bg: "red.subtle" }}
+                      disabled={!sessionId || !onDeleteSession}
+                      onClick={() => setDeleteConfirmOpen(true)}
+                    >
+                      <LuTrash2 size={14} />
+                      <Box flex={1}>Delete session</Box>
+                    </Menu.Item>
+                  </Menu.Content>
+                </Menu.Positioner>
+              </Portal>
+            </Menu.Root>
+          </Flex>
+        </Flex>
         <Box position="relative" flex={1} minH={0} display="flex" flexDirection="column">
         <Box ref={scrollContainerRef} flex={1} minH={0} display="flex" flexDirection="column" overflowY="auto" px={2} py={2} onScroll={handleScroll} style={{ overflowAnchor: "none", scrollbarGutter: "stable" }}>
           {isHistoryLoading ? (
@@ -668,76 +836,74 @@ export function ChatPanel({
               </EmptyState.Root>
             </Flex>
           ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" gap={6} px={4} pt={{ base: 8, md: 16 }} pb={{ base: 8, md: 12 }}>
+            <Flex direction="column" align="center" gap={7} px={4} pt={{ base: 8, md: 14 }} pb={{ base: 8, md: 12 }}>
+              {/* Brand lockup — the Daisy wordmark and flower, matching the home
+                  screen's treatment, so the blank conversation is unmistakably Daisy,
+                  with a short tagline underneath. */}
+              <Flex direction="column" align="center" gap={2}>
+                <Flex align="center" gap={2} pb={1}>
+                  <Text fontSize="3xl" lineHeight="1">
+                    {"🌼"}
+                  </Text>
+                  <Text fontSize="3xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1">
+                    Daisy
+                  </Text>
+                </Flex>
+                <Text fontSize="sm" color="fg.muted" textAlign="center">
+                  Your open-source agentic engineering partner
+                </Text>
+              </Flex>
+
               <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
                 What should we build in {currentFolderName}?
               </Text>
-              {/* Center-of-screen shortcuts for the actions a user reaches for from a
-                  blank conversation, so they don't have to hunt the sidebar or the
-                  composer toolbar: open a folder, switch connection, or jump straight
-                  to a recent project. */}
-              <Flex gap={2} wrap="wrap" justify="center" pb={2}>
-                <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
-                <Button size="sm" variant="outline" borderRadius="md" onClick={() => router.push("/")}>
-                  <LuHouse size={14} />
-                  Home
-                </Button>
-                {onBrowseFolder && (
-                  <Button size="sm" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
-                    <LuFolderOpen size={14} />
-                    Open a folder
+
+              {/* Primary actions — one uniform button row (Home first, then the
+                  connection switcher at the same size so it isn't an odd-sized
+                  outlier, then the folder actions). */}
+              <Flex direction="column" align="center" gap={2.5} w="100%" maxW="680px">
+                <Flex gap={2.5} wrap="wrap" justify="center">
+                  <Button size="md" variant="outline" borderRadius="md" onClick={() => router.push("/")}>
+                    <LuHouse size={16} />
+                    Home
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  borderRadius="md"
-                  onClick={() => {
-                    setBlankPathDraft(workingDirectory ?? "");
-                    setBlankPathEntryOpen((current) => !current);
-                  }}
-                >
-                  <LuFolder size={14} />
-                  Enter path
-                </Button>
-                {(recentProjects ?? []).slice(0, 4).map((project) => (
-                  <Button
-                    key={project.path}
-                    size="sm"
-                    variant="subtle"
-                    borderRadius="md"
-                    disabled={project.path === workingDirectory}
-                    onClick={() => onWorkingDirectoryChange?.(project.path)}
-                    title={project.path}
-                  >
-                    <LuFolder size={13} />
-                    {project.name}
-                  </Button>
-                ))}
+                  <ConnectionSwitcher size="md" currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
+                  {onBrowseFolder && (
+                    <Button size="md" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
+                      <LuFolderOpen size={16} />
+                      Open a folder
+                    </Button>
+                  )}
+                </Flex>
               </Flex>
-              {blankPathEntryOpen && (
-                <Flex gap={2} w="100%" maxW="520px">
-                  <Input
-                    size="sm"
-                    bg="bg"
-                    borderRadius="sm"
-                    fontFamily="var(--font-mono)"
-                    placeholder="/absolute/path/on/this/server"
-                    value={blankPathDraft}
-                    onChange={(event) => setBlankPathDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") submitBlankPathDraft();
-                      if (event.key === "Escape") setBlankPathEntryOpen(false);
-                    }}
-                  />
-                  <Button size="sm" colorPalette="blue" borderRadius="sm" disabled={!blankPathDraft.trim()} onClick={submitBlankPathDraft}>
-                    Use
-                  </Button>
+
+              {/* Recent projects — a distinct, labelled group so quick-jump chips
+                  don't blend into the action buttons. */}
+              {(recentProjects ?? []).length > 0 && (
+                <Flex direction="column" align="center" gap={2.5} w="100%" maxW="640px">
+                  <Flex align="center" gap={1.5} color="fg.muted">
+                    <LuHistory size={15} />
+                    <Text fontSize="sm" fontWeight="bold">Recent projects</Text>
+                  </Flex>
+                  <Flex gap={2} wrap="wrap" justify="center">
+                    {(recentProjects ?? []).slice(0, 6).map((project) => (
+                      <Button
+                        key={project.path}
+                        size="sm"
+                        variant="subtle"
+                        borderRadius="md"
+                        disabled={project.path === workingDirectory}
+                        onClick={() => onWorkingDirectoryChange?.(project.path)}
+                        title={project.path}
+                      >
+                        <LuFolder size={13} />
+                        {project.name}
+                      </Button>
+                    ))}
+                  </Flex>
                 </Flex>
               )}
-              <Text fontSize="xs" color="fg.muted" textAlign="center">
-                New messages will run on {currentConnectionName}
-              </Text>
+
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
@@ -895,17 +1061,6 @@ export function ChatPanel({
           onAgentChange={onAgentChange}
           permissionMode={permissionMode}
           onPermissionModeChange={handlePermissionModeChange}
-          agentsCount={activeSteps}
-          agentsOpen={agentsPanelOpen}
-          onShowAgents={() => {
-            setFocusedGroupId(null);
-            setAgentsPanelOpen((current) => !current);
-          }}
-          previewsCount={previewTabs.length}
-          previewOpen={previewPanelOpen}
-          onTogglePreview={() => setPreviewPanelOpen((current) => !current)}
-          historyOpen={historyOpen}
-          onToggleHistory={onToggleHistory}
           models={models}
           modelProviders={modelProviders}
           recentModels={recentModels}
@@ -914,6 +1069,7 @@ export function ChatPanel({
           onModelChange={(model) => onModelChange?.(model)}
           tokenUsage={tokenUsage}
           onCompact={compact}
+          isCompacting={isCompacting}
           compactionKeepRecentTurns={compactionKeepRecentTurns}
           compactionUserCount={messages.filter((message) => message.role === "user").length}
         />
@@ -1125,7 +1281,55 @@ export function ChatPanel({
             onResizeStart={handleAgentsResizeStart}
           />
         )}
+        {backgroundPanelOpen && (
+          <BackgroundTasksPanel
+            open={backgroundPanelOpen}
+            onClose={() => setBackgroundPanelOpen(false)}
+            messages={messages}
+            sessionId={sessionId}
+            width={backgroundSidebarWidth}
+            onResizeStart={handleBackgroundResizeStart}
+          />
+        )}
       </AnimatePresence>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      <Dialog.Root open={deleteConfirmOpen} onOpenChange={(event) => setDeleteConfirmOpen(event.open)} placement="center" role="alertdialog">
+        <Portal>
+          <Dialog.Backdrop />
+          <Dialog.Positioner>
+            <Dialog.Content borderRadius="md">
+              <Dialog.Header>
+                <Dialog.Title>Delete this session?</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body>
+                <Text fontSize="sm" color="fg.muted">
+                  This permanently removes the conversation and its tasks. This can’t be undone.
+                </Text>
+              </Dialog.Body>
+              <Dialog.Footer gap={2}>
+                <Button size="sm" variant="outline" borderRadius="sm" onClick={() => setDeleteConfirmOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  colorPalette="red"
+                  variant="solid"
+                  borderRadius="sm"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    if (sessionId) onDeleteSession?.(sessionId);
+                  }}
+                >
+                  <LuTrash2 size={14} />
+                  Delete
+                </Button>
+              </Dialog.Footer>
+            </Dialog.Content>
+          </Dialog.Positioner>
+        </Portal>
+      </Dialog.Root>
     </Flex>
     </WidgetEventProvider>
   );

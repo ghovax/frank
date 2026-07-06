@@ -1,7 +1,7 @@
 "use client";
 
 // The root launcher page. Shown when no server is connected. Lets the user pick
-// "This machine" or a saved remote, or add a new connection. On success it
+// the local server or a saved remote, or add a new connection. On success it
 // navigates to /chat so the app renders.
 
 import { Box, Button, EmptyState, Flex, Input, Spinner, Text, VStack } from "@chakra-ui/react";
@@ -193,7 +193,7 @@ export default function HomePage() {
               onClick={connectLocal}
             >
               {failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw /> : <LuLaptop />}
-              {failedTarget === LOCAL_TARGET_ID ? "Retry this machine" : "This machine"}
+              {failedTarget === LOCAL_TARGET_ID ? "Retry local" : "Local"}
             </Button>
 
             <VStack gap={2} align="stretch">

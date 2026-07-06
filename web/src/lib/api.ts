@@ -579,9 +579,16 @@ export async function abortSession(sessionId: string): Promise<boolean> {
   }
 }
 
-// Ask the server to compact the session's conversation now. The compaction runs
-// as a background turn that streams its progress and separator over the session
-// stream; this call only kicks it off.
+// Permanently delete a session and all its tasks on the server.
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function compactSession(sessionId: string): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/chat/${sessionId}/compact`, { method: "POST" });
@@ -594,6 +601,18 @@ export async function compactSession(sessionId: string): Promise<boolean> {
 export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Detach a still-blocking foreground shell command so it keeps running in the
+// background and the agent's turn continues (the harness is notified so the model
+// learns the command was backgrounded rather than finished).
+export async function sendToolToBackground(sessionId: string, toolCallId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/background`, { method: "POST" });
     return response.ok;
   } catch {
     return false;
@@ -620,6 +639,19 @@ export async function validateWorkingDirectory(directory: string): Promise<{
 export async function browseWorkingDirectory(): Promise<{ path: string; cancelled: boolean; error?: string }> {
   const response = await fetch(`${API_BASE}/directory/browse`, { method: "POST" });
   return response.json();
+}
+
+export async function revealInFinder(path: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/directory/reveal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 export async function setPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
