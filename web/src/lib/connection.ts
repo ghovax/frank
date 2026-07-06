@@ -4,7 +4,7 @@
 // chosen backend.
 
 import { setApiBase, getApiBase, invalidateDiscoveryCache } from "@/lib/api";
-import { isTauri, setAppState, getAppState, touchConnection } from "@/lib/connection-store";
+import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind } from "@/lib/connection-store";
 
 // The conventional local harness address. The bundled server binds here, and this
 // is also the API client's built-in default.
@@ -15,12 +15,52 @@ export const LOCAL_DEFAULT_URL = "http://localhost:8822";
 const LAST_TARGET_KEY = "last_target";
 export const LOCAL_TARGET_ID = "local";
 
+export interface ConnectionTarget {
+  id: string;
+  name: string;
+  url: string;
+  kind: ConnectionKind;
+}
+
+export const LOCAL_CONNECTION_TARGET: ConnectionTarget = {
+  id: LOCAL_TARGET_ID,
+  name: "This machine",
+  url: LOCAL_DEFAULT_URL,
+  kind: "local",
+};
+
 export async function getLastTargetId(): Promise<string | null> {
   return getAppState(LAST_TARGET_KEY);
 }
 
 export async function setLastTargetId(id: string): Promise<void> {
   await setAppState(LAST_TARGET_KEY, id);
+}
+
+export async function listConnectionTargets(): Promise<ConnectionTarget[]> {
+  const saved = await listConnections();
+  return [
+    { ...LOCAL_CONNECTION_TARGET, url: getApiBaseForLocalFallback() },
+    ...saved.map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      url: profile.url,
+      kind: profile.kind,
+    })),
+  ];
+}
+
+function getApiBaseForLocalFallback(): string {
+  return LOCAL_DEFAULT_URL;
+}
+
+export async function resolveConnectionTarget(targetId: string | null | undefined): Promise<ConnectionTarget | null> {
+  if (!targetId || targetId === LOCAL_TARGET_ID) return LOCAL_CONNECTION_TARGET;
+  const saved = await listConnections();
+  const profile = saved.find((entry) => entry.id === targetId);
+  return profile
+    ? { id: profile.id, name: profile.name, url: profile.url, kind: profile.kind }
+    : null;
 }
 
 // Is a harness server answering at this base URL? Hits `/home`, which every harness
@@ -76,6 +116,10 @@ export async function activateConnection(url: string, targetId: string, profileI
   if (profileId) {
     await touchConnection(profileId).catch(() => {});
   }
+}
+
+export async function activateConnectionTarget(target: ConnectionTarget): Promise<void> {
+  await activateConnection(target.url, target.id, target.kind === "remote" ? target.id : undefined);
 }
 
 export { getApiBase };

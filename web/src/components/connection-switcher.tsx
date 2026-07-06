@@ -10,36 +10,91 @@ import { Box, Button, Flex, Menu, Portal, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { LuCheck, LuChevronDown, LuLaptop, LuServer, LuSettings2 } from "react-icons/lu";
 import { useRouter } from "next/navigation";
-import { getLastTargetId, LOCAL_TARGET_ID } from "@/lib/connection";
-import { listConnections, type ConnectionProfile } from "@/lib/connection-store";
+import {
+  activateConnectionTarget,
+  checkConnection,
+  getLastTargetId,
+  listConnectionTargets,
+  LOCAL_TARGET_ID,
+  startLocalServer,
+  waitForConnection,
+  type ConnectionTarget,
+} from "@/lib/connection";
+import { isTauri } from "@/lib/connection-store";
+import { toaster } from "@/components/ui/toaster";
 
 
-export function ConnectionSwitcher() {
+export function ConnectionSwitcher({
+  currentTargetId,
+  onConnectionChange,
+}: {
+  currentTargetId?: string;
+  onConnectionChange?: (target: ConnectionTarget) => void;
+}) {
   const router = useRouter();
-  const [connections, setConnections] = useState<ConnectionProfile[]>([]);
+  const [targets, setTargets] = useState<ConnectionTarget[]>([]);
   const [currentTarget, setCurrentTarget] = useState<string>(LOCAL_TARGET_ID);
+  const [switchingTarget, setSwitchingTarget] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [saved, last] = await Promise.all([
-      listConnections().catch(() => [] as ConnectionProfile[]),
+    const [savedTargets, last] = await Promise.all([
+      listConnectionTargets().catch(() => [] as ConnectionTarget[]),
       getLastTargetId().catch(() => null),
     ]);
-    setConnections(saved);
-    setCurrentTarget(last ?? LOCAL_TARGET_ID);
-  }, []);
+    setTargets(savedTargets);
+    setCurrentTarget(currentTargetId ?? last ?? LOCAL_TARGET_ID);
+  }, [currentTargetId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    Promise.all([
+      listConnectionTargets().catch(() => [] as ConnectionTarget[]),
+      getLastTargetId().catch(() => null),
+    ]).then(([savedTargets, last]) => {
+      if (cancelled) return;
+      setTargets(savedTargets);
+      setCurrentTarget(currentTargetId ?? last ?? LOCAL_TARGET_ID);
+    });
+    return () => { cancelled = true; };
+  }, [currentTargetId]);
 
   const currentLabel =
     currentTarget === LOCAL_TARGET_ID
       ? "This machine"
-      : connections.find((entry) => entry.id === currentTarget)?.name ?? "Connected";
+      : targets.find((entry) => entry.id === currentTarget)?.name ?? "Connected";
 
-  const switchTo = (targetId: string) => {
+  const switchTo = async (target: ConnectionTarget) => {
+    const targetId = target.id;
     if (targetId === currentTarget) return;
-    router.push("/");
+    setSwitchingTarget(targetId);
+    try {
+      const url = target.kind === "local" ? await startLocalServer() : target.url;
+      const ok = target.kind === "local" && isTauri()
+        ? await waitForConnection(url)
+        : await checkConnection(url);
+      if (!ok) {
+        toaster.create({
+          type: "error",
+          title: `Couldn't reach ${target.name}`,
+          description: `No response from ${url}.`,
+          closable: true,
+        });
+        return;
+      }
+      const activated = { ...target, url };
+      await activateConnectionTarget(activated);
+      setCurrentTarget(targetId);
+      onConnectionChange?.(activated);
+    } catch (caught) {
+      toaster.create({
+        type: "error",
+        title: `Couldn't reach ${target.name}`,
+        description: caught instanceof Error ? caught.message : String(caught),
+        closable: true,
+      });
+    } finally {
+      setSwitchingTarget(null);
+    }
   };
 
   return (
@@ -78,9 +133,13 @@ export function ConnectionSwitcher() {
               active={currentTarget === LOCAL_TARGET_ID}
               icon={<LuLaptop size={13} />}
               label="This machine"
-              onClick={() => switchTo(LOCAL_TARGET_ID)}
+              busy={switchingTarget === LOCAL_TARGET_ID}
+              onClick={() => {
+                const local = targets.find((entry) => entry.id === LOCAL_TARGET_ID);
+                if (local) void switchTo(local);
+              }}
             />
-            {connections.map((profile) => (
+            {targets.filter((target) => target.id !== LOCAL_TARGET_ID).map((profile) => (
               <ConnectionMenuItem
                 key={profile.id}
                 value={profile.id}
@@ -88,7 +147,8 @@ export function ConnectionSwitcher() {
                 icon={<LuServer size={13} />}
                 label={profile.name}
                 sub={profile.url}
-                onClick={() => switchTo(profile.id)}
+                busy={switchingTarget === profile.id}
+                onClick={() => void switchTo(profile)}
               />
             ))}
             <Menu.Separator />
@@ -116,6 +176,7 @@ function ConnectionMenuItem({
   icon,
   label,
   sub,
+  busy = false,
   onClick,
 }: {
   value: string;
@@ -123,6 +184,7 @@ function ConnectionMenuItem({
   icon: React.ReactNode;
   label: string;
   sub?: string;
+  busy?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -141,10 +203,15 @@ function ConnectionMenuItem({
             </Text>
           )}
         </Box>
-        {active && (
+        {active && !busy && (
           <Box color="green.fg" flexShrink={0}>
             <LuCheck size={13} />
           </Box>
+        )}
+        {busy && (
+          <Text fontSize="2xs" color="fg.muted" flexShrink={0}>
+            Connecting
+          </Text>
         )}
       </Flex>
     </Menu.Item>

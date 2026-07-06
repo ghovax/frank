@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Button, EmptyState, Flex, Spinner, Text, VStack } from "@chakra-ui/react";
-import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuHouse, LuPencilLine, LuPlus, LuTriangleAlert } from "react-icons/lu";
+import { LuFolder, LuFolderOpen, LuGitBranch, LuGitFork, LuGripVertical, LuHouse, LuLaptop, LuPencilLine, LuPlus, LuServer, LuTriangleAlert } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -13,9 +13,15 @@ import { browseWorkingDirectory, fetchAgents, fetchAgentCards, fetchHomeDirector
 import { ChatPanel } from "@/components/chat-panel";
 import { CollapsibleSection } from "@/components/collapsible-section";
 import { useTray } from "@/lib/use-tray";
+import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, startLocalServer, type ConnectionTarget } from "@/lib/connection";
+import { setSessionConnection } from "@/lib/connection-store";
 
 interface SessionEntry {
   sessionId: string;
+  connectionId: string;
+  connectionName: string;
+  connectionUrl: string;
+  connectionKind: "local" | "remote";
   agent: string;
   title: string;
   createdAt: string;
@@ -46,7 +52,7 @@ function formatSessionTimestamp(value: string) {
 }
 
 function projectGroupKey(entry: SessionEntry): string {
-  return entry.workingDirectory || "__unknown__";
+  return `${entry.connectionId}:${entry.workingDirectory || "__unknown__"}`;
 }
 
 function projectGroupName(entry: SessionEntry): string {
@@ -61,8 +67,12 @@ function ChatContent() {
   const [agentCards, setAgentCards] = useState<AgentCard[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
+  const [currentConnection, setCurrentConnection] = useState<ConnectionTarget | null>(null);
+  const connectionTargetsRef = useRef<ConnectionTarget[]>([]);
+  const currentConnectionRef = useRef<ConnectionTarget | null>(null);
 
   const [sessions, setSessions] = useState<SessionEntry[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => searchParams.get("session"));
   const [chatKey, setChatKey] = useState(0);
   const [workingDirectory, setWorkingDirectory] = useState("");
@@ -85,6 +95,33 @@ function ChatContent() {
 
   const isCompactViewport = useCallback(() => {
     return window.matchMedia("(max-width: 767px)").matches;
+  }, []);
+
+  const currentConnectionId = currentConnection?.id ?? LOCAL_TARGET_ID;
+  const currentConnectionName = currentConnection?.name ?? "This machine";
+
+  const refreshConnectionTargets = useCallback(async () => {
+    const targets = await listConnectionTargets();
+    connectionTargetsRef.current = targets;
+    return targets;
+  }, []);
+
+  useEffect(() => {
+    currentConnectionRef.current = currentConnection;
+  }, [currentConnection]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      listConnectionTargets().catch(() => [LOCAL_CONNECTION_TARGET]),
+      getLastTargetId().catch(() => null),
+    ]).then(([targets, lastTarget]) => {
+      if (cancelled) return;
+      connectionTargetsRef.current = targets;
+      const selected = targets.find((target) => target.id === lastTarget) ?? targets[0] ?? LOCAL_CONNECTION_TARGET;
+      setCurrentConnection({ ...selected, url: getApiBase() || selected.url });
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const refreshRecentProjects = useCallback(() => {
@@ -147,29 +184,57 @@ function ChatContent() {
       .catch(() => {});
   }, [refreshRecentProjects]);
 
-  const applySessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>) => {
-    setSessions(
-      serverSessions.map((session) => ({
-        sessionId: session.session_id,
-        agent: session.agent,
-        title: session.title,
-        createdAt: session.created_at,
-        workingDirectory: session.working_directory ?? "",
-        workingDirectoryName: session.working_directory_name ?? "",
-        runtimeWorkingDirectory: session.runtime_working_directory ?? session.working_directory ?? "",
-        runtimeWorkingDirectoryName: session.runtime_working_directory_name ?? session.working_directory_name ?? "",
-        workspaceStrategy: session.workspace_strategy ?? "none",
-        workspacePath: session.workspace_path ?? "",
-        workspaceBranch: session.workspace_branch ?? "",
-        workspaceError: session.workspace_error ?? "",
-        running: session.running ?? false,
-        awaitingInput: session.awaiting_input ?? false,
-        filesystemLeases: session.filesystem_leases ?? [],
-        model: session.model ?? "",
-        permissionMode: session.permission_mode ?? "default",
-      }))
-    );
+  const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>, target: ConnectionTarget, apiBase: string): SessionEntry[] => {
+    return serverSessions.map((session) => ({
+      sessionId: session.session_id,
+      connectionId: target.id,
+      connectionName: target.name,
+      connectionUrl: apiBase,
+      connectionKind: target.kind,
+      agent: session.agent,
+      title: session.title,
+      createdAt: session.created_at,
+      workingDirectory: session.working_directory ?? "",
+      workingDirectoryName: session.working_directory_name ?? "",
+      runtimeWorkingDirectory: session.runtime_working_directory ?? session.working_directory ?? "",
+      runtimeWorkingDirectoryName: session.runtime_working_directory_name ?? session.working_directory_name ?? "",
+      workspaceStrategy: session.workspace_strategy ?? "none",
+      workspacePath: session.workspace_path ?? "",
+      workspaceBranch: session.workspace_branch ?? "",
+      workspaceError: session.workspace_error ?? "",
+      running: session.running ?? false,
+      awaitingInput: session.awaiting_input ?? false,
+      filesystemLeases: session.filesystem_leases ?? [],
+      model: session.model ?? "",
+      permissionMode: session.permission_mode ?? "default",
+    }));
   }, []);
+
+  const sessionTargetUrl = useCallback(async (target: ConnectionTarget): Promise<string | null> => {
+    const activeTarget = currentConnectionRef.current?.id === target.id;
+    const url = target.kind === "local" && activeTarget ? await startLocalServer() : target.url;
+    const ok = await checkConnection(url, activeTarget ? 2000 : 900);
+    return ok ? url : null;
+  }, []);
+
+  const loadSessions = useCallback(async (targetsOverride?: ConnectionTarget[]) => {
+    const targets = targetsOverride ?? (connectionTargetsRef.current.length > 0 ? connectionTargetsRef.current : [currentConnectionRef.current ?? LOCAL_CONNECTION_TARGET]);
+    const rows = await Promise.all(targets.map(async (target) => {
+      try {
+        const apiBase = await sessionTargetUrl(target);
+        if (!apiBase) return [] as SessionEntry[];
+        const serverSessions = await fetchSessions({ apiBase });
+        for (const session of serverSessions) {
+          void setSessionConnection(session.session_id, target.id);
+        }
+        return mapSessions(serverSessions, target, apiBase);
+      } catch {
+        return [] as SessionEntry[];
+      }
+    }));
+    setSessions(rows.flat().sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    setSessionsLoaded(true);
+  }, [mapSessions, sessionTargetUrl]);
 
   async function handleBrowseFolder() {
     try {
@@ -181,11 +246,6 @@ function ChatContent() {
   }
 
   useEffect(() => {
-    const loadSessions = () => {
-      fetchSessions()
-        .then(applySessions)
-        .catch(() => {});
-    };
     const loadSettings = () => {
       fetchSettings()
         .then((settings) => {
@@ -195,6 +255,9 @@ function ChatContent() {
         })
         .catch(() => {});
     };
+    refreshConnectionTargets()
+      .then((targets) => loadSessions(targets))
+      .catch(() => loadSessions());
     loadSettings();
     // The model catalog (provider list + curated models) drives the composer's
     // per-session model override and the settings dialog's default-model picker.
@@ -208,7 +271,6 @@ function ChatContent() {
     fetchHomeDirectory()
       .then(setHomeProject)
       .catch(() => {});
-    loadSessions();
     refreshRecentProjects();
 
     // Live reload: refresh agents when they change on disk, and the session list
@@ -218,7 +280,7 @@ function ChatContent() {
         loadAgents();
         loadAgentCards();
       }
-      if (event.type === "sessions_changed" || event.type === "filesystem_leases_changed") loadSessions();
+      if (event.type === "sessions_changed" || event.type === "filesystem_leases_changed") void loadSessions();
       if (event.type === "projects_changed") refreshRecentProjects();
       if (event.type === "settings_changed") {
         loadSettings();
@@ -227,7 +289,7 @@ function ChatContent() {
       }
     });
     return unsubscribe;
-  }, [applySessions, refreshRecentProjects, loadAgents, loadAgentCards, loadModelCatalog]);
+  }, [currentConnectionId, refreshConnectionTargets, loadSessions, refreshRecentProjects, loadAgents, loadAgentCards, loadModelCatalog]);
 
   // Reload the agents and their cards whenever the selected folder changes (and
   // on first render): the available agents, skills and MCP servers are all
@@ -292,10 +354,28 @@ function ChatContent() {
   const selectedCard =
     agentCards.find((card) => card.url.endsWith(`/agents/${selectedAgent}`)) ?? null;
   const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
+  const activeSessionConnectionReady =
+    !activeSessionId || (!sessionsLoaded && !activeSession ? false : !activeSession || activeSession.connectionId === currentConnectionId);
   const activeSessionRunning = activeSession?.running ?? false;
   const displayedWorkspaceStrategy = activeSession?.workspaceStrategy ?? workspaceStrategy;
+
+  useEffect(() => {
+    if (!activeSession || activeSession.connectionId === currentConnectionId) return;
+    const target: ConnectionTarget = {
+      id: activeSession.connectionId,
+      name: activeSession.connectionName,
+      url: activeSession.connectionUrl,
+      kind: activeSession.connectionKind,
+    };
+    activateConnectionTarget(target)
+      .then(() => {
+        setCurrentConnection(target);
+        setChatKey((current) => current + 1);
+      })
+      .catch(() => {});
+  }, [activeSession, currentConnectionId]);
   const groupedSessions = useMemo(() => {
-    const groups = new Map<string, { key: string; name: string; path: string; sessions: SessionEntry[] }>();
+    const groups = new Map<string, { key: string; name: string; path: string; connectionName: string; connectionKind: "local" | "remote"; sessions: SessionEntry[] }>();
     for (const session of sessions) {
       const key = projectGroupKey(session);
       const existing = groups.get(key);
@@ -306,6 +386,8 @@ function ChatContent() {
           key,
           name: projectGroupName(session),
           path: session.workingDirectory,
+          connectionName: session.connectionName,
+          connectionKind: session.connectionKind,
           sessions: [session],
         });
       }
@@ -314,14 +396,14 @@ function ChatContent() {
   }, [sessions]);
 
   const refreshSessions = useCallback(() => {
-    fetchSessions()
-      .then(applySessions)
+    loadSessions()
       .catch(() => {});
-  }, [applySessions]);
+  }, [loadSessions]);
 
   const handleSessionCreated = useCallback(
     (sessionId: string) => {
       setActiveSessionId(sessionId);
+      void setSessionConnection(sessionId, currentConnectionId);
       const params = new URLSearchParams(window.location.search);
       params.set("session", sessionId);
       router.replace(`?${params.toString()}`, { scroll: false });
@@ -339,7 +421,7 @@ function ChatContent() {
       refreshSessions();
       setTimeout(refreshSessions, 5000);
     },
-    [isCompactViewport, refreshRecentProjects, refreshSessions, router, selectedModel, workingDirectory]
+    [currentConnectionId, isCompactViewport, refreshRecentProjects, refreshSessions, router, selectedModel, workingDirectory]
   );
 
   const handleStreamingChange = useCallback((streaming: boolean) => {
@@ -358,6 +440,15 @@ function ChatContent() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
+  function handleConnectionChange(target: ConnectionTarget) {
+    setCurrentConnection(target);
+    setSelectedAgent("");
+    setHomeProject(null);
+    setRecentProjects([]);
+    handleNewChat();
+    void refreshConnectionTargets().then((targets) => loadSessions(targets)).catch(() => {});
+  }
+
   // "Open folder" pairs the native directory picker with a fresh session: pick a
   // directory, then start a brand-new conversation scoped to it. Starting the new
   // chat first clears the active session so the restoration effect treats the
@@ -373,7 +464,17 @@ function ChatContent() {
     }
   }
 
-  function handleResumeSession(entry: SessionEntry) {
+  async function handleResumeSession(entry: SessionEntry) {
+    if (entry.connectionId !== currentConnectionId || getApiBase() !== entry.connectionUrl) {
+      const target: ConnectionTarget = {
+        id: entry.connectionId,
+        name: entry.connectionName,
+        url: entry.connectionUrl,
+        kind: entry.connectionKind,
+      };
+      await activateConnectionTarget(target);
+      setCurrentConnection(target);
+    }
     setSelectedAgent(entry.agent);
     setSelectedModel(entry.model ?? "");
     setSelectedPermissionMode(entry.permissionMode);
@@ -402,7 +503,7 @@ function ChatContent() {
     onNewChat: handleNewChat,
     onOpenSession: (sessionId) => {
       const entry = sessions.find((candidate) => candidate.sessionId === sessionId);
-      if (entry) handleResumeSession(entry);
+      if (entry) void handleResumeSession(entry);
     },
   });
 
@@ -597,9 +698,9 @@ function ChatContent() {
                   <CollapsibleSection
                     key={group.key}
                     title={group.name}
-                    subtitle={group.path || undefined}
+                    subtitle={[group.connectionName, group.path].filter(Boolean).join(" · ") || undefined}
                     count={group.sessions.length}
-                    icon={<LuFolder size={12} />}
+                    icon={group.connectionKind === "local" ? <LuLaptop size={12} /> : <LuServer size={12} />}
                     initialVisibleCount={5}
                   >
                     {group.sessions.map((entry) => {
@@ -620,7 +721,7 @@ function ChatContent() {
                           cursor="pointer"
                           bg={entry.sessionId === activeSessionId ? "bg.emphasized" : undefined}
                           _hover={{ bg: "bg.muted" }}
-                          onClick={() => handleResumeSession(entry)}
+                          onClick={() => void handleResumeSession(entry)}
                         >
                           <Flex align="center" gap={1.5}>
                             <Text fontSize="xs" fontWeight="medium" truncate flex={1}>
@@ -682,8 +783,11 @@ function ChatContent() {
           agents={agents}
           agentCard={selectedCard}
           onAgentChange={handleAgentChange}
-          initialSessionId={activeSessionId}
+          initialSessionId={activeSessionConnectionReady ? activeSessionId : null}
           initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
+          currentConnectionId={currentConnectionId}
+          currentConnectionName={currentConnectionName}
+          onConnectionChange={handleConnectionChange}
           onPermissionModeChange={setSelectedPermissionMode}
           sessionRunning={activeSessionRunning}
           onSessionCreated={handleSessionCreated}
@@ -701,7 +805,7 @@ function ChatContent() {
           workspaceRuntimeDirectoryName={activeSession?.runtimeWorkingDirectoryName ?? ""}
           workspaceError={activeSession?.workspaceError ?? ""}
           onWorkspaceStrategyChange={handleWorkspaceStrategyChange}
-          isConnected={isConnected}
+          isConnected={isConnected && activeSessionConnectionReady}
           onStreamingChange={handleStreamingChange}
           historyOpen={historyOpen}
           onToggleHistory={() => setHistoryOpen((current) => !current)}

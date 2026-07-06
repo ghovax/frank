@@ -6,6 +6,7 @@ import {
   EmptyState,
   Flex,
   IconButton,
+  Input,
   Text,
   VStack,
 } from "@chakra-ui/react";
@@ -28,6 +29,8 @@ import { getToolCallDisplay } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { setPermissionMode, fetchSettings, saveSettings, type AgentCard, type AgentSummary, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import type { ConnectionTarget } from "@/lib/connection";
+import { ConnectionSwitcher } from "./connection-switcher";
 
 const MotionFlex = motion.create(Flex);
 
@@ -38,6 +41,9 @@ interface ChatPanelProps {
   onAgentChange: (agent: string) => void;
   initialSessionId: string | null;
   initialPermissionMode?: PermissionMode;
+  currentConnectionId?: string;
+  currentConnectionName?: string;
+  onConnectionChange?: (target: ConnectionTarget) => void;
   onPermissionModeChange?: (mode: PermissionMode) => void;
   sessionRunning?: boolean;
   onSessionCreated: (sessionId: string) => void;
@@ -170,6 +176,9 @@ export function ChatPanel({
   onAgentChange,
   initialSessionId,
   initialPermissionMode = "default",
+  currentConnectionId,
+  currentConnectionName = "This machine",
+  onConnectionChange,
   onPermissionModeChange,
   sessionRunning = false,
   onSessionCreated,
@@ -244,6 +253,8 @@ export function ChatPanel({
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
   const [previewPanelWidth, setPreviewPanelWidth] = useState(560);
+  const [blankPathEntryOpen, setBlankPathEntryOpen] = useState(false);
+  const [blankPathDraft, setBlankPathDraft] = useState("");
   // Open preview tabs. Each tab holds a preview artifact the user has opened (or was
   // auto-opened when the agent created it). The active tab's iframe is mounted; all
   // others are collapsed to save resources. New previews auto-open as tabs.
@@ -431,6 +442,14 @@ export function ChatPanel({
   const activeToolCount = messages.filter((message) =>
     message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
   ).length;
+
+  function submitBlankPathDraft() {
+    const nextPath = blankPathDraft.trim();
+    if (!nextPath) return;
+    onWorkingDirectoryChange?.(nextPath);
+    setBlankPathEntryOpen(false);
+    setBlankPathDraft("");
+  }
 
   const previewEntries = useMemo(() => {
     const entries: { toolCallId: string; artifact: Record<string, unknown>; title: string; address: string }[] = [];
@@ -658,6 +677,7 @@ export function ChatPanel({
                   composer toolbar: open a folder, switch connection, or jump straight
                   to a recent project. */}
               <Flex gap={2} wrap="wrap" justify="center" pb={2}>
+                <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
                 <Button size="sm" variant="outline" borderRadius="md" onClick={() => router.push("/")}>
                   <LuHouse size={14} />
                   Home
@@ -668,6 +688,18 @@ export function ChatPanel({
                     Open a folder
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  borderRadius="md"
+                  onClick={() => {
+                    setBlankPathDraft(workingDirectory ?? "");
+                    setBlankPathEntryOpen((current) => !current);
+                  }}
+                >
+                  <LuFolder size={14} />
+                  Enter path
+                </Button>
                 {(recentProjects ?? []).slice(0, 4).map((project) => (
                   <Button
                     key={project.path}
@@ -683,6 +715,29 @@ export function ChatPanel({
                   </Button>
                 ))}
               </Flex>
+              {blankPathEntryOpen && (
+                <Flex gap={2} w="100%" maxW="520px">
+                  <Input
+                    size="sm"
+                    bg="bg"
+                    borderRadius="sm"
+                    fontFamily="var(--font-mono)"
+                    placeholder="/absolute/path/on/this/server"
+                    value={blankPathDraft}
+                    onChange={(event) => setBlankPathDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") submitBlankPathDraft();
+                      if (event.key === "Escape") setBlankPathEntryOpen(false);
+                    }}
+                  />
+                  <Button size="sm" colorPalette="blue" borderRadius="sm" disabled={!blankPathDraft.trim()} onClick={submitBlankPathDraft}>
+                    Use
+                  </Button>
+                </Flex>
+              )}
+              <Text fontSize="xs" color="fg.muted" textAlign="center">
+                New messages will run on {currentConnectionName}
+              </Text>
               <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
             </Flex>
           ) : (
@@ -821,6 +876,8 @@ export function ChatPanel({
           isStreaming={isStreaming}
           disabled={!isConnected || !!pendingPrompt}
           sessionId={sessionId}
+          currentConnectionId={currentConnectionId}
+          onConnectionChange={onConnectionChange}
           workingDirectory={workingDirectory}
           recentProjects={recentProjects}
           onWorkingDirectoryChange={onWorkingDirectoryChange}

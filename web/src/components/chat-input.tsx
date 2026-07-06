@@ -5,6 +5,7 @@ import {
   Button,
   createListCollection,
   Flex,
+  Input,
   Menu,
   Portal,
   Select,
@@ -22,6 +23,7 @@ import { ConnectionSwitcher } from "./connection-switcher";
 import { SettingsDialog } from "./settings-dialog";
 import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./tool-views/primitives";
+import type { ConnectionTarget } from "@/lib/connection";
 
 
 interface ChatInputProps {
@@ -30,6 +32,8 @@ interface ChatInputProps {
   isStreaming: boolean;
   disabled?: boolean;
   sessionId?: string | null;
+  currentConnectionId?: string;
+  onConnectionChange?: (target: ConnectionTarget) => void;
   workingDirectory?: string;
   recentProjects?: { path: string; name: string }[];
   onWorkingDirectoryChange?: (dir: string) => void;
@@ -197,6 +201,8 @@ export function ChatInput({
   isStreaming,
   disabled,
   sessionId,
+  currentConnectionId,
+  onConnectionChange,
   workingDirectory,
   recentProjects = [],
   onWorkingDirectoryChange,
@@ -244,6 +250,8 @@ export function ChatInput({
   const draftInputRef = useRef("");
   const [configExpanded, setConfigExpanded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pathEntryOpen, setPathEntryOpen] = useState(false);
+  const [pathDraft, setPathDraft] = useState("");
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
     valid: false,
@@ -452,6 +460,14 @@ export function ChatInput({
     }
     return items;
   }, [currentDirectory, currentProjectName, recentProjects]);
+
+  function submitPathDraft() {
+    const nextPath = pathDraft.trim();
+    if (!nextPath) return;
+    onWorkingDirectoryChange?.(nextPath);
+    setPathEntryOpen(false);
+    setPathDraft("");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -936,7 +952,7 @@ export function ChatInput({
       {/* Bottom row (below the input): connection, permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
         <Flex align="center" gap={2} flexWrap="wrap" flexShrink={0}>
-          <ConnectionSwitcher />
+          <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
           <Select.Root
             collection={permissionCollection}
             value={[permissionMode]}
@@ -1179,6 +1195,16 @@ export function ChatInput({
                   >
                     Open another project...
                   </Menu.Item>
+                  <Menu.Item
+                    value="enter-project-path"
+                    fontWeight="medium"
+                    onClick={() => {
+                      setPathDraft(currentDirectory);
+                      setPathEntryOpen(true);
+                    }}
+                  >
+                    Enter a path...
+                  </Menu.Item>
                 </Menu.Content>
               </Menu.Positioner>
             </Portal>
@@ -1207,6 +1233,37 @@ export function ChatInput({
             </Flex>
           )}
         </Flex>
+        {!folderLocked && pathEntryOpen && (
+          <Flex align="center" gap={1.5} flex={{ base: "1 1 100%", md: "1 1 260px" }} minW={0}>
+            <Input
+              size="xs"
+              h="28px"
+              borderRadius="sm"
+              bg="bg"
+              fontFamily="var(--font-mono)"
+              fontSize="xs"
+              placeholder="/absolute/path/on/this/server"
+              value={pathDraft}
+              onChange={(event) => setPathDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") submitPathDraft();
+                if (event.key === "Escape") setPathEntryOpen(false);
+              }}
+            />
+            <Button
+              size="xs"
+              variant="solid"
+              colorPalette="blue"
+              borderRadius="sm"
+              h="28px"
+              flexShrink={0}
+              disabled={!pathDraft.trim()}
+              onClick={submitPathDraft}
+            >
+              Use
+            </Button>
+          </Flex>
+        )}
       </Flex>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

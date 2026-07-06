@@ -12,7 +12,6 @@ import { toaster } from "@/components/ui/toaster";
 import {
   activateConnection,
   checkConnection,
-  getLastTargetId,
   LOCAL_DEFAULT_URL,
   LOCAL_TARGET_ID,
   startLocalServer,
@@ -43,8 +42,16 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    void refreshConnections();
-  }, [refreshConnections]);
+    let cancelled = false;
+    listConnections()
+      .then((items) => {
+        if (!cancelled) setConnections(items);
+      })
+      .catch(() => {
+        if (!cancelled) setConnections([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const connectLocal = useCallback(async () => {
     setStatusLabel(isTauri() ? "Starting the local server\u2026" : "Looking for a local server\u2026");
@@ -156,7 +163,7 @@ export default function HomePage() {
       bg="bg.subtle"
     >
       <VStack gap={5} w="100%" maxW="420px" px={6}>
-        <VStack gap={1.5}>
+        <VStack gap={3}>
           <Flex align="center" gap={2.5}>
             <Text fontSize="4xl" lineHeight="1">
               {"\uD83C\uDF3C"}
@@ -166,7 +173,7 @@ export default function HomePage() {
             </Text>
           </Flex>
           <Text fontSize="sm" color="fg.muted" textAlign="center">
-            Connect to a harness server to begin.
+            Choose where the next conversation runs
           </Text>
         </VStack>
 

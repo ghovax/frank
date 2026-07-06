@@ -21,6 +21,18 @@ function readStoredApiBase(): string {
 
 let API_BASE = readStoredApiBase();
 
+export interface ApiRequestOptions {
+  apiBase?: string;
+}
+
+function apiBase(options?: ApiRequestOptions): string {
+  return (options?.apiBase || API_BASE).replace(/\/+$/, "");
+}
+
+function apiUrl(path: string, options?: ApiRequestOptions): string {
+  return `${apiBase(options)}${path}`;
+}
+
 // The address the client is currently talking to.
 export function getApiBase(): string {
   return API_BASE;
@@ -57,8 +69,8 @@ function discoveryKey(path: string, workingDirectory?: string): string {
   return `${path}?working_directory=${workingDirectory ?? ""}`;
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+async function fetchJson<T>(path: string, options?: ApiRequestOptions): Promise<T> {
+  const response = await fetch(apiUrl(path, options));
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
   return response.json();
 }
@@ -426,7 +438,7 @@ export async function fetchHomeDirectory(): Promise<{ path: string; name: string
   return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
 
-export async function fetchSessions(): Promise<{
+export async function fetchSessions(options?: ApiRequestOptions): Promise<{
   session_id: string;
   agent: string;
   title: string;
@@ -448,7 +460,7 @@ export async function fetchSessions(): Promise<{
   permission_mode?: PermissionMode;
   filesystem_leases?: FilesystemLease[];
 }[]> {
-  const response = await fetch(`${API_BASE}/sessions`);
+  const response = await fetch(apiUrl("/sessions", options));
   const data = await response.json();
   return data.sessions;
 }

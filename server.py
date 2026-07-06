@@ -1195,15 +1195,16 @@ class PermissionModeRequest(BaseModel):
 
 
 class SettingsUpdateRequest(BaseModel):
-    exa_api_key: str = ""
-    composio_api_key: str = ""
+    exa_api_key: str | None = None
+    composio_api_key: str | None = None
+    permission_mode: Literal["default", "auto", "read_only", "bypass"] | None = None
     # Per-provider API keys (the opencode gateway's key lives under "opencode").
-    provider_keys: dict[str, str] = {}
+    provider_keys: dict[str, str] | None = None
     # Base URLs for the OpenAI-compatible providers (opencode, custom).
-    provider_base_urls: dict[str, str] = {}
+    provider_base_urls: dict[str, str] | None = None
     # The selected model id (provider/model) used when a session has no override.
-    selected_model: str = ""
-    workspace_strategy: Literal["none", "branch", "worktree"] = "none"
+    selected_model: str | None = None
+    workspace_strategy: Literal["none", "branch", "worktree"] | None = None
 
 
 class SandboxUpdateRequest(BaseModel):
@@ -1403,7 +1404,12 @@ async def get_settings():
     settings dialog can pre-fill them, including per-provider keys and the selected
     model."""
     assert _global_configuration is not None
+    default_agent_configuration = load_agent_configuration(
+        _global_configuration.default_agent,
+        _global_configuration.agent_directories(),
+    )
     return {
+        "permission_mode": _normalize_permission_mode(default_agent_configuration.permission_mode),
         "exa_api_key": _global_configuration.exa.api_key,
         "composio_api_key": _global_configuration.composio.api_key,
         "sandbox_enabled": _global_configuration.sandbox.enabled,
@@ -1430,14 +1436,18 @@ async def update_settings(request: SettingsUpdateRequest):
         save_api_keys,
         exa_api_key=request.exa_api_key,
         composio_api_key=request.composio_api_key,
+        permission_mode=request.permission_mode,
         provider_keys=request.provider_keys,
         provider_base_urls=request.provider_base_urls,
         selected_model=request.selected_model,
         workspace_strategy=request.workspace_strategy,
     )
-    configuration.exa.api_key = request.exa_api_key
-    configuration.composio.api_key = request.composio_api_key
-    configuration.workspace.strategy = request.workspace_strategy
+    if request.exa_api_key is not None:
+        configuration.exa.api_key = request.exa_api_key
+    if request.composio_api_key is not None:
+        configuration.composio.api_key = request.composio_api_key
+    if request.workspace_strategy is not None:
+        configuration.workspace.strategy = request.workspace_strategy
     # Rebuild the providers map from the posted keys/base URLs, merging so a
     # provider the dialog did not render keeps its stored credential.
     merged_providers = {
@@ -1446,10 +1456,10 @@ async def update_settings(request: SettingsUpdateRequest):
         )
         for identifier, credential in configuration.providers.items()
     }
-    for provider_identifier, api_key in request.provider_keys.items():
+    for provider_identifier, api_key in (request.provider_keys or {}).items():
         existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
         merged_providers[provider_identifier] = existing.model_copy(update={"api_key": api_key})
-    for provider_identifier, base_url in request.provider_base_urls.items():
+    for provider_identifier, base_url in (request.provider_base_urls or {}).items():
         existing = merged_providers.get(provider_identifier) or _configuration.ProviderCredential()
         merged_providers[provider_identifier] = existing.model_copy(update={"base_url": base_url})
     configuration.providers = merged_providers

@@ -330,23 +330,35 @@ fn update_tray_recent(app: AppHandle, items: Vec<RecentItem>) -> Result<(), Stri
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let migrations = vec![Migration {
-        version: 1,
-        description: "create_connection_store",
-        sql: "CREATE TABLE IF NOT EXISTS connections (\
-                id TEXT PRIMARY KEY, \
-                name TEXT NOT NULL, \
-                url TEXT NOT NULL, \
-                kind TEXT NOT NULL DEFAULT 'remote', \
-                created_at TEXT NOT NULL, \
-                last_used_at TEXT\
-              ); \
-              CREATE TABLE IF NOT EXISTS app_state (\
-                key TEXT PRIMARY KEY, \
-                value TEXT NOT NULL\
-              );",
-        kind: MigrationKind::Up,
-    }];
+    let migrations = vec![
+        Migration {
+            version: 1,
+            description: "create_connection_store",
+            sql: "CREATE TABLE IF NOT EXISTS connections (\
+                    id TEXT PRIMARY KEY, \
+                    name TEXT NOT NULL, \
+                    url TEXT NOT NULL, \
+                    kind TEXT NOT NULL DEFAULT 'remote', \
+                    created_at TEXT NOT NULL, \
+                    last_used_at TEXT\
+                  ); \
+                  CREATE TABLE IF NOT EXISTS app_state (\
+                    key TEXT PRIMARY KEY, \
+                    value TEXT NOT NULL\
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "map_sessions_to_connections",
+            sql: "CREATE TABLE IF NOT EXISTS session_connections (\
+                    session_id TEXT PRIMARY KEY, \
+                    target_id TEXT NOT NULL, \
+                    recorded_at TEXT NOT NULL\
+                  );",
+            kind: MigrationKind::Up,
+        },
+    ];
 
     tauri::Builder::default()
         .plugin(

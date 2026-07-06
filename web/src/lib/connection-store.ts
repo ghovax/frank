@@ -23,6 +23,7 @@ export interface ConnectionProfile {
 const DATABASE_NAME = "sqlite:daisy.db";
 const LOCAL_STORAGE_CONNECTIONS = "daisy.connections";
 const LOCAL_STORAGE_APP_STATE = "daisy.appState";
+const LOCAL_STORAGE_SESSION_CONNECTIONS = "daisy.sessionConnections";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -81,6 +82,25 @@ function writeLocalAppState(state: Record<string, string>): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(LOCAL_STORAGE_APP_STATE, JSON.stringify(state));
+  } catch {
+    // best-effort
+  }
+}
+
+function readLocalSessionConnections(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_SESSION_CONNECTIONS);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalSessionConnections(state: Record<string, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LOCAL_STORAGE_SESSION_CONNECTIONS, JSON.stringify(state));
   } catch {
     // best-effort
   }
@@ -173,5 +193,34 @@ export async function setAppState(key: string, value: string): Promise<void> {
     "INSERT INTO app_state (key, value) VALUES ($1, $2) \
      ON CONFLICT(key) DO UPDATE SET value = $2",
     [key, value]
+  );
+}
+
+export async function getSessionConnection(sessionId: string): Promise<string | null> {
+  if (!sessionId) return null;
+  if (!isTauri()) {
+    return readLocalSessionConnections()[sessionId] ?? null;
+  }
+  const database = await getDatabase();
+  const rows = await database.select<{ target_id: string }[]>(
+    "SELECT target_id FROM session_connections WHERE session_id = $1",
+    [sessionId]
+  );
+  return rows[0]?.target_id ?? null;
+}
+
+export async function setSessionConnection(sessionId: string, targetId: string): Promise<void> {
+  if (!sessionId || !targetId) return;
+  if (!isTauri()) {
+    const state = readLocalSessionConnections();
+    state[sessionId] = targetId;
+    writeLocalSessionConnections(state);
+    return;
+  }
+  const database = await getDatabase();
+  await database.execute(
+    "INSERT INTO session_connections (session_id, target_id, recorded_at) VALUES ($1, $2, $3) \
+     ON CONFLICT(session_id) DO UPDATE SET target_id = $2, recorded_at = $3",
+    [sessionId, targetId, new Date().toISOString()]
   );
 }
