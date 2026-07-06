@@ -620,9 +620,10 @@ class AgentConfiguration(BaseModel):
         if "connection-type" in frontmatter:
             frontmatter["connection_type"] = frontmatter.pop("connection-type")
 
-        configuration_path = path.with_name("config.json")
+        # The per-agent JSON sidecar lives next to the markdown profile.
+        configuration_path = path.with_name("configuration.json")
         if configuration_path.exists():
-            frontmatter = _merge_agent_config(frontmatter, json.loads(configuration_path.read_text()))
+            frontmatter = _merge_agent_configuration(frontmatter, json.loads(configuration_path.read_text()))
 
         tools_data = frontmatter.pop("tools", {})
         tools_configuration = (
@@ -742,9 +743,17 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
     for name, path in sorted(_agent_paths(agents_directory).items()):
         try:
             config = AgentConfiguration.from_markdown(path)
-            agents.append({"id": config.identifier, "name": config.identifier, "title": config.display_name})
+            agents.append({
+                "id": config.identifier,
+                "name": config.identifier,
+                "title": config.display_name,
+                # The resolved ``provider/model`` identifier (or empty when the
+                # agent falls back to the global default), so the UI can default
+                # its model selector to each agent's configured model.
+                "model": config.model_identifier or "",
+            })
         except Exception:
-            agents.append({"id": name, "name": name, "title": name})
+            agents.append({"id": name, "name": name, "title": name, "model": ""})
     return agents
 
 
@@ -774,9 +783,11 @@ def describe_available_agents(
     return described
 
 
-def _merge_agent_config(frontmatter: dict, configuration: dict) -> dict:
+def _merge_agent_configuration(frontmatter: dict, configuration: dict) -> dict:
     merged = dict(frontmatter)
-    model_configuration = configuration.get("modelConfig", {})
+    # ``preset`` carries the model, provider, and reasoning effort; ``tools``
+    # carries the bash/spawn-agent/tool toggles.
+    model_configuration = configuration.get("preset", {})
     if "model" in model_configuration:
         merged["model"] = model_configuration["model"]
     if "provider" in model_configuration:
@@ -791,7 +802,7 @@ def _merge_agent_config(frontmatter: dict, configuration: dict) -> dict:
         merged["permission_mode"] = configuration["permission_mode"]
     if "streamAgentProgress" in configuration:
         merged["stream_agent_progress"] = configuration["streamAgentProgress"]
-    tool_configuration = configuration.get("toolConfig", {})
+    tool_configuration = configuration.get("tools", {})
     if tool_configuration:
         tools = dict(merged.get("tools", {}))
         if "enabledBuiltinTools" in tool_configuration:

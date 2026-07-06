@@ -1185,6 +1185,9 @@ class AgentInfo(BaseModel):
     id: str
     name: str
     title: str = ""
+    # The agent's resolved ``provider/model`` identifier, or empty when it falls
+    # back to the global default. The UI defaults its model selector to this.
+    model: str = ""
 
 
 class AgentsList(BaseModel):
@@ -1268,7 +1271,7 @@ async def agents(working_directory: str = ""):
     else:
         directories = _global_configuration.agent_directories()
     agent_data = list_agents(directories)
-    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"])) for agent in agent_data])
+    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), model=agent.get("model", "")) for agent in agent_data])
 
 
 @app.get("/agents/cards")

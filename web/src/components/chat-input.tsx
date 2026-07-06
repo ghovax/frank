@@ -59,6 +59,10 @@ interface ChatInputProps {
   // The globally-selected model, shown on the chip when no per-conversation
   // override is set (selectedModel is "").
   globalModel?: string;
+  // The active agent's configured model. The effective model falls back to this
+  // before the global default, so the chip and the attachment gate reflect the
+  // model the turn will actually run on.
+  agentModel?: string;
   onModelChange: (model: string) => void;
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
@@ -221,6 +225,7 @@ export function ChatInput({
   recentModels = [],
   selectedModel,
   globalModel = "",
+  agentModel = "",
   onModelChange,
   tokenUsage,
   onCompact,
@@ -355,9 +360,10 @@ export function ChatInput({
 
   // The composer's file-attach affordance is gated on the selected model's
   // capabilities (models.dev): a text-only model cannot process attachments, so
-  // offering to attach is misleading. Falls back to the global default when there
-  // is no per-conversation override; unknown/custom models are not blocked.
-  const effectiveModelId = selectedModel || globalModel;
+  // offering to attach is misleading. Falls back to the active agent's configured
+  // model, then to the global default, when there is no per-conversation override;
+  // unknown/custom models are not blocked.
+  const effectiveModelId = selectedModel || agentModel || globalModel;
   const attachmentsSupported = modelSupportsAttachments(models, effectiveModelId);
 
   const currentDirectory = (workingDirectory ?? "").trim();
@@ -631,7 +637,7 @@ export function ChatInput({
             recent={recentModels}
             value={selectedModel}
             onChange={onModelChange}
-            fallbackModelId={globalModel}
+            fallbackModelId={agentModel || globalModel}
             compact
           />
         </Flex>

@@ -1,10 +1,11 @@
 {
-  "modelConfig": {
+  "preset": {
     "model": "deepseek-v4-flash",
+    "provider": "opencode",
     "reasoningEffort": "high"
   },
   "permissionMode": "default",
-  "toolConfig": {
+  "tools": {
     "enabledBuiltinTools": [],
     "bash": {
       "enabled": true,

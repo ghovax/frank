@@ -4,7 +4,7 @@ A configurable multi-agent harness built on the A2A protocol. Each agent profile
 
 - `server.py` — FastAPI app serving all agents over A2A (JSON-RPC) plus a small REST API for the UI. Defaults to `127.0.0.1:8822`.
 - `.agents/agents/<id>/agent.md` — project-local agent profiles with frontmatter and prompt body.
-- `.agents/agents/<id>/config.json` — per-agent model, tool, and permission settings.
+- `.agents/agents/<id>/configuration.json` — per-agent model preset, tool, and permission settings.
 - `.agents/skills/<id>/SKILL.md` — project-local reusable skill instructions.
 - `.agents/mcp.json` — MCP server configuration using `mcpServers`.
 - Composio — set `composio.enabled: true` in `configuration.yaml` with the hosted MCP (`url`) and `api_key` from the Composio dashboard, and the harness exposes its tools through the normal MCP path. No separate agent; the agent discovers tools dynamically and authorizes accounts (e.g. `gmail`, `notion`) on first use.

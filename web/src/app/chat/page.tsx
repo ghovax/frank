@@ -535,11 +535,27 @@ function ChatContent() {
     }
   }
 
+  // The active agent's configured model identifier (empty when the agent falls
+  // back to the global default). The model selector defaults to this so the chip
+  // and the attachment gate reflect the model the turn will actually run on,
+  // rather than the unrelated global default.
+  const agentModel = agents.find((agent) => agent.id === selectedAgent)?.model ?? "";
+
   function handleAgentChange(agentName: string) {
     // Switching persona continues the current conversation — the new agent picks
     // up the same session (its system prompt is injected on top of the shared
     // history). Only an explicit "New conversation" starts a fresh session.
     setSelectedAgent(agentName);
+    // The selected model follows the active agent: each agent's configured model
+    // becomes the default for the turn. A user can still re-pick afterwards; that
+    // override is persisted by handleModelChange. For an existing session this is
+    // persisted immediately so a reload and the backend agree; a new chat has no
+    // session yet, so selectedModel is applied on first send.
+    const nextAgentModel = agents.find((agent) => agent.id === agentName)?.model ?? "";
+    setSelectedModel(nextAgentModel);
+    if (activeSessionId && nextAgentModel) {
+      setSessionModel(activeSessionId, nextAgentModel).catch(() => {});
+    }
   }
 
   async function handleSandboxEnabledChange(enabled: boolean) {
@@ -808,6 +824,7 @@ function ChatContent() {
           recentModels={recentModels}
           selectedModel={selectedModel}
           globalModel={globalModel}
+          agentModel={agentModel}
           onModelChange={handleModelChange}
           compactionKeepRecentTurns={compactionKeepRecentTurns}
         />

@@ -79,6 +79,9 @@ interface ChatPanelProps {
   recentModels?: { id: string; name: string; provider: string }[];
   selectedModel?: string;
   globalModel?: string;
+  // The active agent's configured model identifier, used as the default the
+  // selector falls back to when no per-session override is set.
+  agentModel?: string;
   onModelChange?: (model: string) => void;
   compactionKeepRecentTurns: number;
 }
@@ -214,6 +217,7 @@ export function ChatPanel({
   recentModels = [],
   selectedModel = "",
   globalModel = "",
+  agentModel = "",
   onModelChange,
   compactionKeepRecentTurns,
 }: ChatPanelProps) {
@@ -1094,6 +1098,7 @@ export function ChatPanel({
           recentModels={recentModels}
           selectedModel={selectedModel}
           globalModel={globalModel}
+          agentModel={agentModel}
           onModelChange={(model) => onModelChange?.(model)}
           tokenUsage={tokenUsage}
           onCompact={compact}

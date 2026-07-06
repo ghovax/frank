@@ -162,6 +162,10 @@ export interface AgentSummary {
   id: string;
   name: string;
   title?: string;
+  // The agent's resolved `provider/model` identifier (empty when it falls back
+  // to the global default), so the composer can default its model selector to
+  // the active agent's configured model.
+  model?: string;
 }
 
 // Agents are scoped to the selected folder (home globals plus that folder's own
