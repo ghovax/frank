@@ -261,17 +261,32 @@ export function ChatPanel({
   const hasInputRequiredRef = useRef(false);
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
-  // The welcome screen's recent-project chips use a frozen snapshot of the order, so
-  // picking one doesn't reshuffle them under the cursor. It captures the first
-  // non-empty list and holds it for the life of this conversation; the panel remounts
-  // on every new conversation (keyed by chatKey upstream), which is exactly when a
-  // freshly re-sorted order is wanted.
-  const [frozenRecentProjects, setFrozenRecentProjects] = useState<{ path: string; name: string }[]>(() => recentProjects ?? []);
+  // Stable display order for the welcome screen's recent-project chips. Re-picking a
+  // known project bumps its recency in the source list, which would reshuffle the
+  // chips under the cursor — so the order here is held steady. But when a genuinely
+  // new project appears (a folder just opened), the fresh order is adopted so it shows
+  // up and, being newest, sorts to the front and reads as selected. Removals and name
+  // changes are reflected in place without reordering.
+  const [orderedRecentProjects, setOrderedRecentProjects] = useState<{ path: string; name: string }[]>(() => recentProjects ?? []);
   useEffect(() => {
-    if (frozenRecentProjects.length === 0 && (recentProjects?.length ?? 0) > 0) {
-      setFrozenRecentProjects(recentProjects ?? []);
-    }
-  }, [recentProjects, frozenRecentProjects.length]);
+    const live = recentProjects ?? [];
+    setOrderedRecentProjects((current) => {
+      const knownPaths = new Set(current.map((project) => project.path));
+      const hasNewProject = live.some((project) => !knownPaths.has(project.path));
+      if (hasNewProject || current.length === 0) return live;
+      // No new project: keep the frozen order, but refresh names and drop any that were
+      // removed. Bail out with the same reference when nothing changed, to avoid a
+      // needless re-render.
+      const liveByPath = new Map(live.map((project) => [project.path, project]));
+      const next = current
+        .filter((project) => liveByPath.has(project.path))
+        .map((project) => liveByPath.get(project.path)!);
+      const unchanged =
+        next.length === current.length &&
+        next.every((project, index) => project.path === current[index].path && project.name === current[index].name);
+      return unchanged ? current : next;
+    });
+  }, [recentProjects]);
   const [agentsSidebarWidth, setAgentsSidebarWidth] = useState(420);
   const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
   const [previewPanelWidth, setPreviewPanelWidth] = useState(560);
@@ -889,18 +904,18 @@ export function ChatPanel({
               </Flex>
 
               {/* Recent projects — a distinct, labelled group so quick-jump chips
-                  don't blend into the action buttons. The order is frozen for the
-                  conversation (see frozenRecentProjects) so picking one doesn't make
-                  them jump, and the current project reads as selected rather than
-                  disabled. */}
-              {frozenRecentProjects.length > 0 && (
+                  don't blend into the action buttons. The order is held steady (see
+                  orderedRecentProjects) so re-picking one doesn't make them jump, while
+                  a newly opened folder still appears; the current project reads as
+                  selected rather than disabled. */}
+              {orderedRecentProjects.length > 0 && (
                 <Flex direction="column" align="center" gap={2.5} w="100%" maxW="640px">
                   <Flex align="center" gap={1.5} color="fg.muted">
                     <LuHistory size={15} />
                     <Text fontSize="sm" fontWeight="bold">Recent projects</Text>
                   </Flex>
                   <Flex gap={2} wrap="wrap" justify="center">
-                    {frozenRecentProjects.slice(0, 6).map((project) => {
+                    {orderedRecentProjects.slice(0, 6).map((project) => {
                       const selected = project.path === workingDirectory;
                       return (
                         <Button
