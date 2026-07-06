@@ -64,7 +64,7 @@ export function ModelCapabilityBadges({ model, size = 12 }: { model?: ModelOptio
   }
   if (badges.length === 0) return null;
   return (
-    <Flex align="center" gap={1} color="fg.subtle" flexShrink={0}>
+    <Flex align="center" pl={0.5} gap={1} color="fg.subtle" flexShrink={0}>
       {badges.map((badge) => (
         <Box key={badge.key} as="span" display="flex" alignItems="center" title={badge.label}>
           {badge.icon}

@@ -886,10 +886,10 @@ export function ChatPanel({
                   which also hosts connection settings, then the folder actions). */}
               <Flex direction="column" align="center" gap={2.5} w="100%" maxW="680px">
                 <Flex gap={2.5} wrap="wrap" justify="center">
-                  <ConnectionSwitcher size="md" currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
+                  <ConnectionSwitcher size="sm" currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
                   {onBrowseFolder && (
-                    <Button size="md" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
-                      <LuFolderOpen size={16} />
+                    <Button size="sm" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
+                      <LuFolderOpen size={14} />
                       Open a folder
                     </Button>
                   )}
