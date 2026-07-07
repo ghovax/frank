@@ -102,6 +102,7 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
             px={1.5}
             flexShrink={0}
             disabled={!sessionId || busy !== null}
+            loading={busy === "background"}
             onClick={handleBackground}
             title="Let this command keep running in the background and continue the turn"
           >
@@ -118,6 +119,7 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
           px={1.5}
           flexShrink={0}
           disabled={!sessionId || busy !== null}
+          loading={busy === "stop"}
           onClick={handleStop}
         >
           <LuSquare size={11} />
@@ -129,7 +131,6 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
 }
 
 export function BackgroundTasksPanel({
-  open,
   onClose,
   messages,
   sessionId,

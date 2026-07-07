@@ -2,7 +2,7 @@
 
 // The root route no longer hosts a launcher — connection setup now lives inside the
 // chat page (the connection gate's full-screen fallback when nothing is reachable,
-// and the "Connection settings…" dialog on the composer's connection switcher). This
+// and the Connection tab in the shared Settings dialog). This
 // route just forwards into `/chat`, where the gate takes over.
 
 import { useEffect } from "react";

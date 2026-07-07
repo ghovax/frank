@@ -3,10 +3,10 @@
 // The live connection indicator + switcher shown in the chat input toolbar. It
 // displays the current backend with a status dot, and its dropdown lists "this
 // machine" plus every saved remote so the user can switch without leaving the app.
-// It's self-contained: it reads the front-end-local store and drives the gate via
-// window events, so it needs no props.
+// It reads the front-end-local store directly, while the parent owns the shared
+// Settings dialog opened from the "Connection settings..." menu item.
 
-import { Box, Button, Flex, Menu, Portal, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Menu, Portal, Spinner, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { LuCheck, LuChevronDown, LuLaptop, LuServer, LuSettings2 } from "react-icons/lu";
 import {
@@ -20,17 +20,18 @@ import {
   type ConnectionTarget,
 } from "@/lib/connection";
 import { isTauri } from "@/lib/connection-store";
-import { ConnectionSettingsDialog } from "@/components/connection-settings";
 import { toaster } from "@/components/ui/toaster";
 
 
 export function ConnectionSwitcher({
   currentTargetId,
   onConnectionChange,
+  onOpenConnectionSettings,
   size = "xs",
 }: {
   currentTargetId?: string;
   onConnectionChange?: (target: ConnectionTarget) => void;
+  onOpenConnectionSettings: () => void;
   // "xs" is the compact composer-toolbar style; "sm"/"md" are the larger welcome-screen
   // sizes that match the model picker's scale so the switcher isn't a small outlier.
   size?: "xs" | "sm" | "md";
@@ -38,7 +39,6 @@ export function ConnectionSwitcher({
   const [targets, setTargets] = useState<ConnectionTarget[]>([]);
   const [currentTarget, setCurrentTarget] = useState<string>(LOCAL_TARGET_ID);
   const [switchingTarget, setSwitchingTarget] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [savedTargets, last] = await Promise.all([
@@ -64,7 +64,7 @@ export function ConnectionSwitcher({
 
   const currentLabel =
     currentTarget === LOCAL_TARGET_ID
-      ? "Local"
+      ? "Local server"
       : targets.find((entry) => entry.id === currentTarget)?.name ?? "Connected";
 
   // The compact "xs" toolbar variant needs explicit overrides to fit the 28px composer
@@ -134,8 +134,9 @@ export function ConnectionSwitcher({
           h={trigger.height}
           px={trigger.paddingX}
           gap={trigger.gap}
-          bg="bg"
-          borderColor="border"
+          bg={isLocal ? "green.subtle" : "bg"}
+          borderColor={isLocal ? "green.muted" : "border"}
+          _hover={{ bg: isLocal ? "green.muted" : "bg.muted" }}
           flexShrink={0}
           title="Switch connection"
         >
@@ -158,7 +159,7 @@ export function ConnectionSwitcher({
               value={LOCAL_TARGET_ID}
               active={currentTarget === LOCAL_TARGET_ID}
               icon={<LuLaptop size={large ? 16 : 13} />}
-              label="Local"
+              label="Local server"
               large={large}
               busy={switchingTarget === LOCAL_TARGET_ID}
               onClick={() => {
@@ -173,7 +174,7 @@ export function ConnectionSwitcher({
                 active={currentTarget === profile.id}
                 icon={<LuServer size={large ? 16 : 13} />}
                 label={profile.name}
-                sub={profile.kind === "ssh" ? profile.sshHostAlias ?? profile.url : profile.url}
+                subtitle={profile.kind === "ssh" ? profile.sshHostAlias ?? profile.url : profile.url}
                 large={large}
                 busy={switchingTarget === profile.id}
                 onClick={() => void switchTo(profile)}
@@ -184,7 +185,7 @@ export function ConnectionSwitcher({
               value="__settings"
               color="blue.fg"
               _hover={{ bg: "blue.subtle" }}
-              onClick={() => setSettingsOpen(true)}
+              onClick={onOpenConnectionSettings}
             >
               <Flex align="center" gap={2} color="blue.fg">
                 <LuSettings2 size={large ? 16 : 13} />
@@ -195,18 +196,6 @@ export function ConnectionSwitcher({
         </Menu.Positioner>
       </Portal>
     </Menu.Root>
-    <ConnectionSettingsDialog
-      open={settingsOpen}
-      onOpenChange={setSettingsOpen}
-      currentTargetId={currentTarget}
-      onConnected={(target) => {
-        // ConnectionSettings already health-checked and activated the backend; mirror
-        // switchTo's tail — update the pill and switch the live session, then close.
-        setCurrentTarget(target.id);
-        onConnectionChange?.(target);
-        setSettingsOpen(false);
-      }}
-    />
     </>
   );
 }
@@ -216,7 +205,7 @@ function ConnectionMenuItem({
   active,
   icon,
   label,
-  sub,
+  subtitle,
   large = false,
   busy = false,
   onClick,
@@ -225,7 +214,7 @@ function ConnectionMenuItem({
   active: boolean;
   icon: React.ReactNode;
   label: string;
-  sub?: string;
+  subtitle?: string;
   large?: boolean;
   busy?: boolean;
   onClick: () => void;
@@ -240,9 +229,9 @@ function ConnectionMenuItem({
           <Text fontSize={large ? "sm" : "xs"} fontWeight="medium" truncate>
             {label}
           </Text>
-          {sub && (
+          {subtitle && (
             <Text fontSize={large ? "xs" : "2xs"} color="fg.muted" truncate>
-              {sub}
+              {subtitle}
             </Text>
           )}
         </Box>
@@ -252,9 +241,10 @@ function ConnectionMenuItem({
           </Box>
         )}
         {busy && (
-          <Text fontSize={large ? "xs" : "2xs"} color="fg.muted" flexShrink={0}>
+          <Flex align="center" gap={1} fontSize={large ? "xs" : "2xs"} color="fg.muted" flexShrink={0}>
+            <Spinner size="xs" borderWidth="1.5px" />
             Connecting
-          </Text>
+          </Flex>
         )}
       </Flex>
     </Menu.Item>

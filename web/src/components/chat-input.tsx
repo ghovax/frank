@@ -15,7 +15,7 @@ import {
   Textarea,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { LuArrowUp, LuChevronDown, LuCoins, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuHardDrive, LuLock, LuLockOpen, LuPaperclip, LuShield, LuShieldCheck, LuShieldOff, LuSquare, LuTriangleAlert, LuUser, LuZap } from "react-icons/lu";
+import { LuArrowUp, LuBox, LuChevronDown, LuCircleSlash, LuCoins, LuEye, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuGlobe, LuHardDrive, LuPaperclip, LuSlidersHorizontal, LuSquare, LuTriangleAlert, LuUser, LuZap } from "react-icons/lu";
 import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
@@ -28,13 +28,14 @@ import type { ConnectionTarget } from "@/lib/connection";
 
 
 interface ChatInputProps {
-  onSend: (text: string, dataPart?: Record<string, unknown>) => void;
-  onAbort: () => void;
+  onSend: (text: string, dataPart?: Record<string, unknown>) => void | Promise<void>;
+  onAbort: () => void | Promise<void>;
   isStreaming: boolean;
   disabled?: boolean;
   sessionId?: string | null;
   currentConnectionId?: string;
   onConnectionChange?: (target: ConnectionTarget) => void;
+  onOpenConnectionSettings: () => void;
   workingDirectory?: string;
   recentProjects?: { path: string; name: string }[];
   onWorkingDirectoryChange?: (dir: string) => void;
@@ -203,6 +204,7 @@ export function ChatInput({
   sessionId,
   currentConnectionId,
   onConnectionChange,
+  onOpenConnectionSettings,
   workingDirectory,
   recentProjects = [],
   onWorkingDirectoryChange,
@@ -242,6 +244,8 @@ export function ChatInput({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [messageHistory, setMessageHistory] = useState<string[]>([]);
   const draftInputRef = useRef("");
+  const [sendPending, setSendPending] = useState(false);
+  const [stopPending, setStopPending] = useState(false);
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
   const [pathEntryOpen, setPathEntryOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
@@ -283,7 +287,7 @@ export function ChatInput({
   );
   const permissionAppearance = {
     default: {
-      icon: <LuShield size={13} />,
+      icon: <LuSlidersHorizontal size={13} />,
       color: "fg.subtle",
       bg: "bg",
       borderColor: "border",
@@ -297,45 +301,41 @@ export function ChatInput({
       colorPalette: "blue",
     },
     read_only: {
-      icon: <LuShieldCheck size={13} />,
+      icon: <LuEye size={13} />,
       color: "green.fg",
       bg: "green.subtle",
       borderColor: "green.muted",
       colorPalette: "green",
     },
     bypass: {
-      icon: <LuShieldOff size={13} />,
+      icon: <LuCircleSlash size={13} />,
       color: "red.fg",
       bg: "red.subtle",
       borderColor: "red.muted",
       colorPalette: "red",
     },
   }[permissionMode] ?? {
-    icon: <LuShield size={13} />,
+    icon: <LuSlidersHorizontal size={13} />,
     color: "fg.subtle",
     bg: "bg",
     borderColor: "border",
     colorPalette: undefined,
   };
-  // Short label for the composer's permission chip — the full descriptive labels
-  // ("User-configured permissions", …) stay in the dropdown, but the trigger only
-  // needs a word so the bottom row doesn't sprawl and wrap.
-  const permissionShortLabel = {
-    default: "Default",
-    auto: "Auto",
-    read_only: "Read-only",
-    bypass: "Bypass",
-  }[permissionMode] ?? "Default";
+  const permissionSelectedLabel = permissionCollection.items.find((item) => item.value === permissionMode)?.label ?? "User-configured permissions";
   const sandboxAppearance = sandboxEnabled
     ? {
         label: "Sandboxed",
-        colorPalette: "green" as const,
-        variant: "solid" as const,
+        icon: <LuBox size={13} />,
+        color: "green.fg",
+        bg: "green.subtle",
+        borderColor: "green.muted",
       }
     : {
         label: "Unsandboxed",
-        colorPalette: "red" as const,
-        variant: "solid" as const,
+        icon: <LuGlobe size={13} />,
+        color: "red.fg",
+        bg: "red.subtle",
+        borderColor: "red.muted",
       };
   const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "green" }[] = [
     { value: "none", label: "Unmanaged", icon: <LuHardDrive size={13} /> },
@@ -514,12 +514,14 @@ export function ChatInput({
     setAttachments((current) => current.filter((attachment) => attachment.upload_id !== uploadId));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const trimmed = inputValue.trim();
     if (!trimmed && attachments.length === 0) return;
     if (!directoryValid) return;
     if (!workspaceStrategyValid) return;
     if (uploadingCount > 0) return;
+    const startedAt = performance.now();
+    setSendPending(true);
     const sendText = trimmed || "Use the attached research source(s).";
     const dataPart = attachments.length > 0
       ? {
@@ -528,24 +530,38 @@ export function ChatInput({
           sources: attachments.map((attachment) => attachment.source),
         }
       : undefined;
-    // While the agent is busy this enqueues for the next turn (handled upstream).
-    onSend(sendText, dataPart);
-    setHistoryIndex(-1);
-    setInputValue("");
-    setAttachments([]);
-    // Persist to backend and prepend to local list for immediate recall.
-    if (trimmed) {
-      setMessageHistory((previous) => [trimmed, ...previous]);
-      if (workingDirectory) {
-        saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+    try {
+      // While the agent is busy this enqueues for the next turn (handled upstream).
+      await onSend(sendText, dataPart);
+      setHistoryIndex(-1);
+      setInputValue("");
+      setAttachments([]);
+      // Persist to backend and prepend to local list for immediate recall.
+      if (trimmed) {
+        setMessageHistory((previous) => [trimmed, ...previous]);
+        if (workingDirectory) {
+          saveMessageHistory(workingDirectory, trimmed).catch(() => {});
+        }
       }
+    } finally {
+      window.setTimeout(() => setSendPending(false), Math.max(0, 450 - (performance.now() - startedAt)));
+    }
+  }
+
+  async function handleAbortClick() {
+    const startedAt = performance.now();
+    setStopPending(true);
+    try {
+      await onAbort();
+    } finally {
+      window.setTimeout(() => setStopPending(false), Math.max(0, 450 - (performance.now() - startedAt)));
     }
   }
 
   function handleKeyDown(event: KeyboardEvent) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handleSubmit();
+      void handleSubmit();
       return;
     }
     if (event.key === "ArrowUp" && messageHistory.length > 0 && inputRef.current?.selectionStart === 0) {
@@ -803,8 +819,10 @@ export function ChatInput({
               <Button
                 onClick={() => fileInputRef.current?.click()}
                 variant="subtle"
-                colorPalette="gray"
                 borderRadius="sm"
+                bg="blue.subtle"
+                color="blue.fg"
+                _hover={{ bg: "blue.muted" }}
                 minW="70px"
                 h="32px"
                 px={2}
@@ -814,12 +832,12 @@ export function ChatInput({
                 disabled={disabled || !directoryValid || !attachmentsSupported}
                 title={!attachmentsSupported ? "The selected model can't process file attachments — switch to a vision or file-capable model" : undefined}
               >
-                <LuPaperclip size={14} />
+                <LuPaperclip size={13} />
                 Attach files
               </Button>
               {isStreaming ? (
                 <Button
-                  onClick={onAbort}
+                  onClick={handleAbortClick}
                   colorPalette="red"
                   variant="solid"
                   borderRadius="sm"
@@ -829,13 +847,15 @@ export function ChatInput({
                   gap={1.5}
                   fontSize="xs"
                   fontWeight="medium"
+                  loading={stopPending}
+                  disabled={stopPending}
                 >
                   <LuSquare size={14} />
                   Stop
                 </Button>
               ) : (
                 <Button
-                  onClick={handleSubmit}
+                  onClick={() => void handleSubmit()}
                   colorPalette="blue"
                   variant="solid"
                   borderRadius="sm"
@@ -845,7 +865,8 @@ export function ChatInput({
                   gap={1.5}
                   fontSize="xs"
                   fontWeight="medium"
-                  disabled={disabled || !directoryValid || !workspaceStrategyValid || uploadingCount > 0 || (!inputValue.trim() && attachments.length === 0)}
+                  loading={sendPending}
+                  disabled={sendPending || disabled || !directoryValid || !workspaceStrategyValid || uploadingCount > 0 || (!inputValue.trim() && attachments.length === 0)}
                 >
                   <LuArrowUp size={16} />
                   Send
@@ -859,7 +880,7 @@ export function ChatInput({
       {/* Bottom row (below the input): connection, permission, sandbox, and project controls. */}
       <Flex justify="flex-start" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={2} pb={2}>
         <Flex align="center" gap={1.5} flexWrap="wrap" flexShrink={0}>
-          <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
+          <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} onOpenConnectionSettings={onOpenConnectionSettings} />
           <Select.Root
             collection={permissionCollection}
             value={[permissionMode]}
@@ -891,11 +912,11 @@ export function ChatInput({
                 fontWeight="medium"
                 style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
               >
-                <Box display="flex" alignItems="center" color={permissionAppearance.color} flexShrink={0}>
+                <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" color={permissionAppearance.color} flexShrink={0}>
                   {permissionAppearance.icon}
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
-                  {permissionShortLabel}
+                  {permissionSelectedLabel}
                 </Text>
               </Select.Trigger>
               <Select.IndicatorGroup>
@@ -917,12 +938,15 @@ export function ChatInput({
           </Select.Root>
           <Button
             size="xs"
-            variant={sandboxAppearance.variant}
-            colorPalette={sandboxAppearance.colorPalette}
+            variant="outline"
             borderRadius="sm"
             fontSize="xs"
             h="28px"
             px={2}
+            bg={sandboxAppearance.bg}
+            borderColor={sandboxAppearance.borderColor}
+            color={sandboxAppearance.color}
+            _hover={{ bg: sandboxEnabled ? "green.muted" : "red.muted" }}
             fontWeight="medium"
             flexShrink={0}
             title={sandboxEnabled
@@ -931,8 +955,8 @@ export function ChatInput({
             onClick={() => onSandboxEnabledChange?.(!sandboxEnabled)}
             disabled={!onSandboxEnabledChange}
           >
-            <Box display="flex" alignItems="center">
-              {sandboxEnabled ? <LuLock size={13} /> : <LuLockOpen size={13} />}
+            <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
+              {sandboxAppearance.icon}
             </Box>
             {sandboxAppearance.label}
           </Button>
@@ -952,7 +976,7 @@ export function ChatInput({
                 maxW={{ base: "100%", md: "300px" }}
                 title={gitWorkspaceUnavailableLabel}
               >
-                <Box display="flex" alignItems="center" flexShrink={0}>
+                <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
@@ -999,7 +1023,7 @@ export function ChatInput({
                     }
                     style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
                   >
-                    <Box display="flex" alignItems="center" color={workspaceAppearance.color} flexShrink={0}>
+                    <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" color={workspaceAppearance.color} flexShrink={0}>
                       {workspaceAppearance.icon}
                     </Box>
                     <Select.ValueText maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
@@ -1041,6 +1065,9 @@ export function ChatInput({
               w="28px"
               minW={0}
               px={0}
+              bg="blue.subtle"
+              color="blue.fg"
+              _hover={{ bg: "blue.muted" }}
               flexShrink={0}
               title="Open folder"
               onClick={onBrowseFolder}

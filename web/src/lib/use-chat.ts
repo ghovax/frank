@@ -1600,7 +1600,7 @@ export function useChat(
   const send = useCallback(
     (text: string, dataPart?: Record<string, unknown>, queueOnly = false) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed) return Promise.resolve();
       if (isStreamingRef.current) {
         const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataPart };
         const ctx = sessionIdRef.current;
@@ -1610,7 +1610,7 @@ export function useChat(
         // next opening" chip would misrepresent that. It drains when the turn ends.
         if (ctx && !queueOnly) {
           setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
-          steerSession(ctx, trimmed)
+          return steerSession(ctx, trimmed)
             .then((queued) => {
               if (!queued) {
                 setQueue(queuedMessagesRef.current.map((message) =>
@@ -1623,12 +1623,12 @@ export function useChat(
                 message.id === pending.id ? { ...message, steering: false } : message
               ));
             });
-          return;
         }
         setQueue([...queuedMessagesRef.current, pending]);
-        return;
+        return Promise.resolve();
       }
       runStream({ kind: "text", text: trimmed, dataPart });
+      return Promise.resolve();
     },
     [runStream, setQueue]
   );
@@ -1752,7 +1752,7 @@ export function useChat(
     const ctx = sessionIdRef.current;
     if (!ctx) {
       abortControllerRef.current?.abort();
-      return;
+      return Promise.resolve();
     }
     // A Stop while the turn is paused on a decision auto-settles that decision:
     // deny every pending permission and cancel every pending question, so the
@@ -1785,7 +1785,7 @@ export function useChat(
     }
     // Tell the user if the stop request never reached the server — the turn may still
     // be running, and silently doing nothing would leave them stuck expecting it to end.
-    void abortSession(ctx).then((ok) => {
+    return abortSession(ctx).then((ok) => {
       if (!ok) {
         toaster.create({
           type: "error",

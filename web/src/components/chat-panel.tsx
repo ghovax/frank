@@ -23,7 +23,7 @@ import { nativePreviewAvailable } from "@/lib/native-preview";
 import { WidgetEventProvider, type WidgetEvent } from "./widget-bridge";
 import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
-import { SettingsDialog } from "./settings-dialog";
+import { SettingsDialog, type SettingsSection } from "./settings-dialog";
 import { BackgroundTasksPanel } from "./background-tasks-panel";
 import { Tooltip } from "./ui/tooltip";
 import { PermissionOverlay } from "./permission-overlay";
@@ -307,6 +307,7 @@ export function ChatPanel({
   // Top-bar surfaces: the settings dialog, the delete-session confirmation, and the
   // background-processes sheet all open from the persistent bar above the transcript.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false);
   const [backgroundSidebarWidth, setBackgroundSidebarWidth] = useState(420);
@@ -344,9 +345,15 @@ export function ChatPanel({
   const handleSend = useCallback((text: string, dataPart?: Record<string, unknown>) => {
     scrollToBottom();
     // Queue (never steer) while a decision prompt is outstanding — see hasInputRequiredRef.
-    send(text, dataPart, hasInputRequiredRef.current);
+    const result = send(text, dataPart, hasInputRequiredRef.current);
     scrollToBottom();
+    return result;
   }, [scrollToBottom, send]);
+
+  const openSettings = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }, []);
 
   // A rendered widget posted an interaction back to the agent. It travels as a
   // structured turn (a typed DataPart), so just forward it intact.
@@ -802,7 +809,7 @@ export function ChatPanel({
                 size="xs"
                 variant="ghost"
                 borderRadius="sm"
-                onClick={() => setSettingsOpen(true)}
+                onClick={() => openSettings("general")}
               >
                 <LuSettings size={15} />
               </IconButton>
@@ -878,7 +885,7 @@ export function ChatPanel({
                   </Text>
                 </Flex>
                 <Text fontSize="sm" color="fg.muted" textAlign="center">
-                  The de-facto open-source agentic engineering partner—yours, forever
+                  The open-source partner for agentic engineering—built to stay yours
                 </Text>
               </Flex>
 
@@ -886,9 +893,23 @@ export function ChatPanel({
                   which also hosts connection settings, then the folder actions). */}
               <Flex direction="column" align="center" gap={2.5} w="100%" maxW="680px">
                 <Flex gap={2.5} wrap="wrap" justify="center">
-                  <ConnectionSwitcher size="sm" currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} />
+                  <ConnectionSwitcher
+                    size="sm"
+                    currentTargetId={currentConnectionId}
+                    onConnectionChange={onConnectionChange}
+                    onOpenConnectionSettings={() => openSettings("connection")}
+                  />
                   {onBrowseFolder && (
-                    <Button size="sm" variant="outline" borderRadius="md" onClick={onBrowseFolder}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      borderRadius="md"
+                      bg="blue.subtle"
+                      borderColor="blue.muted"
+                      color="blue.fg"
+                      _hover={{ bg: "blue.muted" }}
+                      onClick={onBrowseFolder}
+                    >
                       <LuFolderOpen size={14} />
                       Open a folder
                     </Button>
@@ -1077,6 +1098,7 @@ export function ChatPanel({
           sessionId={sessionId}
           currentConnectionId={currentConnectionId}
           onConnectionChange={onConnectionChange}
+          onOpenConnectionSettings={() => openSettings("connection")}
           workingDirectory={workingDirectory}
           recentProjects={recentProjects}
           onWorkingDirectoryChange={onWorkingDirectoryChange}
@@ -1327,7 +1349,14 @@ export function ChatPanel({
         )}
       </AnimatePresence>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        section={settingsSection}
+        onSectionChange={setSettingsSection}
+        currentConnectionId={currentConnectionId}
+        onConnectionChange={onConnectionChange}
+      />
 
       <Dialog.Root open={deleteConfirmOpen} onOpenChange={(event) => setDeleteConfirmOpen(event.open)} placement="center" role="alertdialog">
         <Portal>

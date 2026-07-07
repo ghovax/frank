@@ -674,6 +674,10 @@ function ChatContent() {
               variant="outline"
               borderRadius="sm"
               fontSize="xs"
+              bg="blue.subtle"
+              borderColor="blue.muted"
+              color="blue.fg"
+              _hover={{ bg: "blue.muted" }}
               onClick={handleOpenFolder}
             >
               <LuFolderOpen size={12} />
