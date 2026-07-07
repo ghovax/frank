@@ -336,14 +336,14 @@ export function ChatInput({
   const permissionSelectedLabel = permissionCollection.items.find((item) => item.value === permissionMode)?.label ?? "Manual approvals";
   const sandboxAppearance = sandboxEnabled
     ? {
-        label: "Limit access to folder",
+        label: "Restricted access",
         icon: <LuBox size={13} />,
         color: "green.fg",
         bg: "green.subtle",
         borderColor: "green.muted",
       }
     : {
-        label: "Allow access to all filesystem",
+        label: "Global access",
         icon: <LuGlobe size={13} />,
         color: "red.fg",
         bg: "red.subtle",
