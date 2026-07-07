@@ -76,8 +76,23 @@ The following output patterns are strictly forbidden. They are the hallmark of a
 
 - **No phase or milestone labels.** Never use "Phase 1", "Phase 1a", "Step 1", "P01", "M01", "EPIC-001", or any numbered/lettered phase/milestone/task numbering. Use the actual name or description of the work instead (e.g. "Set up the database schema" not "Phase 1: Database").
 - **No ASCII tree diagrams** for plans, architectures, or hierarchies. Use markdown lists (`-` or `1.`) for hierarchy, markdown tables for comparisons, and plain prose for descriptions.
+- **No arrow-based flow diagrams** for explaining code execution, control flow, or process steps. Never use arrows (`→`, `↓`, `↑`, `←`, `->`, `=>`) to show sequence or causation. Use markdown lists, sub-lists, numbered lists, or tables instead. For example, instead of:
+  ```
+  User submits login form
+      ↓
+  Backend validates credentials against database
+      ↓
+  If valid, session token is generated and returned
+      ↓
+  Client stores token and redirects to dashboard
+  ```
+  Use:
+  - The user submits the **login form**
+  - The backend validates credentials against the `users` table
+  - If valid, a session token is generated and returned to the client
+  - The client stores the token and redirects to `/dashboard`
 
-Output must use markdown lists, tables, and proper descriptive names — never hierarchical phase codes or tree diagrams.
+Output must use markdown lists, tables, and proper descriptive names — never hierarchical phase codes, tree diagrams, or arrow-based flow diagrams.
 
 
 ## Proactivity

@@ -2003,7 +2003,7 @@ class AgentRuntime:
                     command=command,
                 )
                 return
-            elif not read_only and not session_allowed and (permission_decision == "ask" or risk in ("medium", "high")):
+            elif not session_allowed and (permission_decision == "ask" or risk in ("medium", "high")):
                 if self._auto_permissions:
                     decision = await self._classify_bash_permission(
                         command=command,
