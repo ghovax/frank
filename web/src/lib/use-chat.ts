@@ -58,7 +58,7 @@ export interface MessageAttachment {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "compaction";
+  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
@@ -1038,6 +1038,23 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         if (matched) break;
       }
       pushErrorMessage(state, friendlyErrorFromData(data), sourceId);
+      break;
+    }
+    case "warning": {
+      finishRunningThinking(state);
+      state.lane = null;
+      const title = String(data.title ?? "Warning");
+      const message = String(data.message ?? "");
+      state.messages = [
+        ...state.messages,
+        {
+          id: stableMessageId(state, "warning", sourceId),
+          role: "warning",
+          content: message ? `${title} — ${message}` : title,
+          timestamp: new Date().toISOString(),
+          meta: { warning: { code: String(data.code ?? ""), title, message } },
+        },
+      ];
       break;
     }
     case "agent_group_started":

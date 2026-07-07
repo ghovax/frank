@@ -637,6 +637,17 @@ export interface DirectoryValidation {
   git_dirty: boolean;
   git_detached: boolean;
   git_label: string;
+  git_commit_subject: string;
+  git_commit_author: string;
+  git_commit_author_email: string;
+  git_commit_author_date: string;
+  git_upstream: string;
+  git_ahead: number;
+  git_behind: number;
+  git_staged_count: number;
+  git_unstaged_count: number;
+  git_untracked_count: number;
+  git_conflicted_count: number;
   path: string;
 }
 

@@ -9,7 +9,7 @@ import subprocess
 
 import httpx
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 from urllib.parse import quote, urljoin, urlparse
@@ -1678,6 +1678,17 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
             "git_dirty": False,
             "git_detached": False,
             "git_label": "",
+            "git_commit_subject": "",
+            "git_commit_author": "",
+            "git_commit_author_email": "",
+            "git_commit_author_date": "",
+            "git_upstream": "",
+            "git_ahead": 0,
+            "git_behind": 0,
+            "git_staged_count": 0,
+            "git_unstaged_count": 0,
+            "git_untracked_count": 0,
+            "git_conflicted_count": 0,
             "path": "",
         }
     path = Path(directory).expanduser()
@@ -1690,6 +1701,17 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
     git_dirty = False
     git_detached = False
     git_label = ""
+    git_commit_subject = ""
+    git_commit_author = ""
+    git_commit_author_email = ""
+    git_commit_author_date = ""
+    git_upstream = ""
+    git_ahead = 0
+    git_behind = 0
+    git_staged_count = 0
+    git_unstaged_count = 0
+    git_untracked_count = 0
+    git_conflicted_count = 0
     if valid:
         try:
             inside = _run_git_probe(path, "rev-parse", "--is-inside-work-tree")
@@ -1704,8 +1726,39 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
                 git_head = head.stdout.strip() if head.returncode == 0 else ""
                 short_head = _run_git_probe(path, "rev-parse", "--short", "HEAD")
                 git_short_head = short_head.stdout.strip() if short_head.returncode == 0 else ""
-                status = _run_git_probe(path, "status", "--porcelain=v1")
-                git_dirty = status.returncode == 0 and bool(status.stdout.strip())
+                commit = _run_git_probe(path, "cat-file", "-p", "HEAD")
+                if commit.returncode == 0:
+                    commit_metadata = _git_commit_metadata(commit.stdout)
+                    git_commit_subject = commit_metadata["subject"]
+                    git_commit_author = commit_metadata["author"]
+                    git_commit_author_email = commit_metadata["author_email"]
+                    git_commit_author_date = commit_metadata["author_date"]
+                upstream = _run_git_probe(path, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+                git_upstream = upstream.stdout.strip() if upstream.returncode == 0 else ""
+                if git_upstream:
+                    ahead_behind = _run_git_probe(path, "rev-list", "--left-right", "--count", "HEAD...@{u}")
+                    if ahead_behind.returncode == 0:
+                        counts = ahead_behind.stdout.strip().split()
+                        if len(counts) == 2:
+                            git_ahead = int(counts[0])
+                            git_behind = int(counts[1])
+                staged = _run_git_probe(path, "diff", "--cached", "--name-only")
+                git_staged_count = len(staged.stdout.splitlines()) if staged.returncode == 0 else 0
+                unstaged = _run_git_probe(path, "diff", "--name-only")
+                git_unstaged_count = len(unstaged.stdout.splitlines()) if unstaged.returncode == 0 else 0
+                untracked = _run_git_probe(path, "ls-files", "--others", "--exclude-standard")
+                git_untracked_count = len(untracked.stdout.splitlines()) if untracked.returncode == 0 else 0
+                conflicted = _run_git_probe(path, "diff", "--name-only", "--diff-filter=U")
+                git_conflicted_count = len(conflicted.stdout.splitlines()) if conflicted.returncode == 0 else 0
+                git_dirty = any(
+                    count > 0
+                    for count in (
+                        git_staged_count,
+                        git_unstaged_count,
+                        git_untracked_count,
+                        git_conflicted_count,
+                    )
+                )
                 git_detached = bool(git_head and not git_branch)
                 git_label = git_branch or git_short_head
         except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired):
@@ -1723,8 +1776,55 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
         "git_dirty": git_dirty,
         "git_detached": git_detached,
         "git_label": git_label,
+        "git_commit_subject": git_commit_subject,
+        "git_commit_author": git_commit_author,
+        "git_commit_author_email": git_commit_author_email,
+        "git_commit_author_date": git_commit_author_date,
+        "git_upstream": git_upstream,
+        "git_ahead": git_ahead,
+        "git_behind": git_behind,
+        "git_staged_count": git_staged_count,
+        "git_unstaged_count": git_unstaged_count,
+        "git_untracked_count": git_untracked_count,
+        "git_conflicted_count": git_conflicted_count,
         "path": str(path),
     }
+
+
+def _git_commit_metadata(commit_text: str) -> dict[str, str]:
+    headers, separator, message = commit_text.partition("\n\n")
+    metadata = {
+        "subject": "",
+        "author": "",
+        "author_email": "",
+        "author_date": "",
+    }
+    for line in headers.splitlines():
+        if not line.startswith("author "):
+            continue
+        match = re.match(r"author (.+) <([^>]+)> (\d+) ([+-]\d{4})$", line)
+        if not match:
+            continue
+        metadata["author"] = match.group(1)
+        metadata["author_email"] = match.group(2)
+        timestamp = int(match.group(3))
+        timezone_text = match.group(4)
+        timezone_offset = timezone(
+            timedelta(
+                hours=int(timezone_text[1:3]),
+                minutes=int(timezone_text[3:5]),
+            ) * (1 if timezone_text[0] == "+" else -1)
+        )
+        metadata["author_date"] = datetime.fromtimestamp(timestamp, timezone_offset).isoformat()
+        break
+    if not separator:
+        return metadata
+    for line in message.splitlines():
+        subject = line.strip()
+        if subject:
+            metadata["subject"] = subject
+            return metadata
+    return metadata
 
 
 def _run_git_probe(directory: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -1750,6 +1850,17 @@ def _git_status_key(payload: dict[str, object]) -> tuple[object, ...]:
         payload.get("git_dirty"),
         payload.get("git_detached"),
         payload.get("git_label"),
+        payload.get("git_commit_subject"),
+        payload.get("git_commit_author"),
+        payload.get("git_commit_author_email"),
+        payload.get("git_commit_author_date"),
+        payload.get("git_upstream"),
+        payload.get("git_ahead"),
+        payload.get("git_behind"),
+        payload.get("git_staged_count"),
+        payload.get("git_unstaged_count"),
+        payload.get("git_untracked_count"),
+        payload.get("git_conflicted_count"),
     )
 
 

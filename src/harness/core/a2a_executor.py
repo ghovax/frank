@@ -55,6 +55,7 @@ from harness.core.configuration import (
 )
 from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
+from harness.core.models import find_model
 from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
 
@@ -159,6 +160,29 @@ def _image_attachments(structured_payloads: list[dict]) -> list[dict]:
             if str(attachment.get("mime_type", "")).startswith(_INLINE_IMAGE_MIME_PREFIX):
                 images.append(attachment)
     return images
+
+
+def _model_supports_vision(model_identifier: str) -> bool:
+    if not model_identifier:
+        return True
+    model = find_model(model_identifier)
+    if model is None:
+        return True
+    return model.vision
+
+
+def _attachment_warning_payload(image_count: int, model_identifier: str) -> dict[str, str]:
+    plural = "s" if image_count != 1 else ""
+    return {
+        "kind": "warning",
+        "code": "image_metadata_only",
+        "title": "Image attached as metadata only",
+        "message": (
+            f"{image_count} image{plural} attached, but {model_identifier or 'the selected model'} "
+            "does not advertise vision support. The file metadata and path were provided to the model, "
+            "but the image pixels were not inlined. Switch to a vision-capable model if the model needs to inspect the image directly."
+        ),
+    }
 
 
 def _image_content_block(attachment: dict) -> Optional[dict]:
@@ -1058,19 +1082,24 @@ class HarnessAgentExecutor(AgentExecutor):
             elif structured_payloads:
                 # The structured metadata (source records for the blackboard, file
                 # paths) always rides along as a text block so the model can act on
-                # the attachments with its tools. Any attached image is ALSO inlined
-                # as an image content block so a vision model actually sees it —
-                # without this the model only ever received the JSON metadata and
-                # (correctly) reported it could not perceive the picture.
+                # the attachments with its tools. Images are inlined only when the
+                # selected model advertises vision support; otherwise the model gets
+                # metadata/path access and the UI receives a non-fatal warning.
                 text_payload = json.dumps({
                     "text": user_text,
                     "data_parts": structured_payloads,
                 }, ensure_ascii=False)
-                image_blocks = [
-                    block
-                    for attachment in _image_attachments(structured_payloads)
-                    if (block := _image_content_block(attachment)) is not None
-                ]
+                image_attachments = _image_attachments(structured_payloads)
+                model_identifier = requested_model or (runtime.effective_model_identifier if runtime is not None else "")
+                image_blocks = []
+                if image_attachments and _model_supports_vision(model_identifier):
+                    image_blocks = [
+                        block
+                        for attachment in image_attachments
+                        if (block := _image_content_block(attachment)) is not None
+                    ]
+                elif image_attachments:
+                    await emit(_data_part(**_attachment_warning_payload(len(image_attachments), model_identifier)))
                 if image_blocks:
                     turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
                     turn_has_images = True

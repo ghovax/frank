@@ -84,6 +84,13 @@ export function modelSupportsAttachments(models: ModelOption[], modelId: string)
   return !!model.attachment;
 }
 
+export function modelSupportsVision(models: ModelOption[], modelId: string): boolean {
+  if (!modelId) return true;
+  const model = models.find((candidate) => candidate.id === modelId);
+  if (!model) return true;
+  return !!model.vision;
+}
+
 function providerForModel(modelId: string, models: ModelOption[]): string {
   const known = models.find((model) => model.id === modelId)?.provider;
   if (known) return known;

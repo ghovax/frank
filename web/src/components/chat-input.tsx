@@ -18,7 +18,7 @@ import { LuArrowUp, LuBox, LuChevronDown, LuCircleSlash, LuCoins, LuEye, LuFolde
 import { fetchMessageHistory, saveMessageHistory, subscribeGitStatus, uploadResearchFile, validateWorkingDirectory, type DirectoryValidation, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
-import { ModelSelect, modelSupportsAttachments } from "./model-select";
+import { ModelSelect, modelSupportsAttachments, modelSupportsVision } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 // SettingsDialog moved to ChatPanel top bar
 import type { TokenUsage } from "@/lib/use-chat";
@@ -196,6 +196,205 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   );
 }
 
+type GitDirectoryState = {
+  path: string;
+  valid: boolean;
+  isGitRepository: boolean;
+  repositoryRoot: string;
+  gitBranch: string;
+  gitHead: string;
+  gitShortHead: string;
+  gitDirty: boolean;
+  gitDetached: boolean;
+  gitLabel: string;
+  gitCommitSubject: string;
+  gitCommitAuthor: string;
+  gitCommitAuthorEmail: string;
+  gitCommitAuthorDate: string;
+  gitUpstream: string;
+  gitAhead: number;
+  gitBehind: number;
+  gitStagedCount: number;
+  gitUnstagedCount: number;
+  gitUntrackedCount: number;
+  gitConflictedCount: number;
+  checking: boolean;
+};
+
+function GitPopoverSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Box>
+      <Text fontWeight="semibold" mb={1} color="fg">
+        {title}
+      </Text>
+      <Flex direction="column" ps={3} gap={0.5}>
+        {children}
+      </Flex>
+    </Box>
+  );
+}
+
+function GitPopoverRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Flex align="flex-start" gap={2} minW={0} maxW="100%">
+      <Text fontSize="xs" fontWeight="medium" color="fg.subtle" w="118px" flexShrink={0}>
+        {label}
+      </Text>
+      <Box fontSize="xs" flex={1} minW={0} maxW="calc(100% - 126px)" whiteSpace="normal" overflow="hidden">
+        {children}
+      </Box>
+    </Flex>
+  );
+}
+
+function GitPopoverValue({ children, mono = false }: { children: ReactNode; mono?: boolean }) {
+  return (
+    <Text
+      display="block"
+      maxW="100%"
+      fontFamily={mono ? "var(--app-font-mono)" : undefined}
+      whiteSpace="normal"
+      style={{
+        overflowWrap: "anywhere",
+        wordBreak: mono ? "break-all" : "break-word",
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function formatGitDate(value: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function GitStatusChip({ directoryState }: { directoryState: GitDirectoryState }) {
+  if (!directoryState.gitLabel) return null;
+  const label = `${directoryState.gitDetached ? "Detached " : ""}${directoryState.gitLabel}${directoryState.gitDirty ? " *" : ""}`;
+  const workingTreeChanges = [
+    directoryState.gitConflictedCount > 0 ? { label: "Conflicts", value: directoryState.gitConflictedCount } : null,
+    directoryState.gitStagedCount > 0 ? { label: "Staged", value: directoryState.gitStagedCount } : null,
+    directoryState.gitUnstagedCount > 0 ? { label: "Unstaged", value: directoryState.gitUnstagedCount } : null,
+    directoryState.gitUntrackedCount > 0 ? { label: "Untracked", value: directoryState.gitUntrackedCount } : null,
+  ].filter((entry): entry is { label: string; value: number } => entry !== null);
+  const syncParts = [
+    directoryState.gitAhead > 0 ? `ahead ${directoryState.gitAhead}` : "",
+    directoryState.gitBehind > 0 ? `behind ${directoryState.gitBehind}` : "",
+  ].filter(Boolean);
+  const selectedPathIsRepositoryRoot = directoryState.path === directoryState.repositoryRoot;
+  const workingDirectoryLabel = selectedPathIsRepositoryRoot ? "Repository root" : directoryState.path;
+  const commitAuthor = directoryState.gitCommitAuthorEmail
+    ? `${directoryState.gitCommitAuthor} <${directoryState.gitCommitAuthorEmail}>`
+    : directoryState.gitCommitAuthor;
+  const commitDate = formatGitDate(directoryState.gitCommitAuthorDate);
+  const tooltipContent = (
+    <Box fontSize="xs" lineHeight="1.6" w="100%" maxW="100%" overflow="hidden">
+      <GitPopoverSection title="Current reference">
+        <GitPopoverRow label={directoryState.gitDetached ? "Detached HEAD" : "Branch"}>
+          <GitPopoverValue>{directoryState.gitLabel}</GitPopoverValue>
+        </GitPopoverRow>
+        <GitPopoverRow label="HEAD">
+          <GitPopoverValue mono>{directoryState.gitHead || "No commits"}</GitPopoverValue>
+        </GitPopoverRow>
+      </GitPopoverSection>
+      <Box h="1px" bg="border" my={2} />
+      <GitPopoverSection title="Remote tracking">
+        <GitPopoverRow label="Upstream">
+          <GitPopoverValue>{directoryState.gitUpstream || "No upstream configured"}</GitPopoverValue>
+        </GitPopoverRow>
+        <GitPopoverRow label="Sync">
+          <GitPopoverValue>{syncParts.length > 0 ? syncParts.join(", ") : directoryState.gitUpstream ? "Up to date" : "Not tracking a remote branch"}</GitPopoverValue>
+        </GitPopoverRow>
+      </GitPopoverSection>
+      <Box h="1px" bg="border" my={2} />
+      <GitPopoverSection title="Last commit">
+        <GitPopoverRow label="Subject">
+          <GitPopoverValue>{directoryState.gitCommitSubject || "No commit message available"}</GitPopoverValue>
+        </GitPopoverRow>
+        {commitAuthor && (
+          <GitPopoverRow label="Author">
+            <GitPopoverValue>{commitAuthor}</GitPopoverValue>
+          </GitPopoverRow>
+        )}
+        {commitDate && (
+          <GitPopoverRow label="Date">
+            <GitPopoverValue>{commitDate}</GitPopoverValue>
+          </GitPopoverRow>
+        )}
+      </GitPopoverSection>
+      <Box h="1px" bg="border" my={2} />
+      <GitPopoverSection title="Working tree">
+        {workingTreeChanges.length === 0 ? (
+          <GitPopoverRow label="Status"><GitPopoverValue>Clean</GitPopoverValue></GitPopoverRow>
+        ) : (
+          workingTreeChanges.map((entry) => (
+            <GitPopoverRow key={entry.label} label={entry.label}>
+              <GitPopoverValue>{entry.value}</GitPopoverValue>
+            </GitPopoverRow>
+          ))
+        )}
+      </GitPopoverSection>
+      <Box h="1px" bg="border" my={2} />
+      <GitPopoverSection title="Location">
+        <GitPopoverRow label="Repository">
+          <GitPopoverValue mono>{directoryState.repositoryRoot}</GitPopoverValue>
+        </GitPopoverRow>
+        <GitPopoverRow label="Working directory">
+          <GitPopoverValue mono={!selectedPathIsRepositoryRoot}>{workingDirectoryLabel}</GitPopoverValue>
+        </GitPopoverRow>
+      </GitPopoverSection>
+    </Box>
+  );
+  return (
+    <Tooltip
+      content={tooltipContent}
+      contentProps={{
+        p: 3,
+        bg: "bg",
+        color: "fg",
+        borderRadius: "sm",
+        boxShadow: "lg",
+        border: "1px solid",
+        borderColor: "border",
+        w: "min(640px, calc(100vw - 32px))",
+        maxW: "calc(100vw - 32px)",
+        overflow: "hidden",
+      }}
+      openDelay={200}
+      closeDelay={60}
+      positioning={{ placement: "top" }}
+    >
+      <Flex
+        align="center"
+        gap={1.5}
+        h="28px"
+        px={2}
+        borderRadius="sm"
+        border="1px solid"
+        borderColor={directoryState.gitDirty ? "orange.muted" : "green.muted"}
+        bg={directoryState.gitDirty ? "orange.subtle" : "green.subtle"}
+        color={directoryState.gitDirty ? "orange.fg" : "green.fg"}
+        flexShrink={1}
+        minW={0}
+        maxW={{ base: "100%", md: "260px" }}
+      >
+        <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
+          <LuGitBranch size={13} />
+        </Box>
+        <Text fontSize="xs" fontWeight="medium" truncate>
+          {label}
+        </Text>
+      </Flex>
+    </Tooltip>
+  );
+}
+
 export function ChatInput({
   onSend,
   onAbort,
@@ -249,7 +448,7 @@ export function ChatInput({
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
 
   const [optimisticWorkspaceStrategy, setOptimisticWorkspaceStrategy] = useState<WorkspaceStrategyValue | null>(null);
-  const [directoryState, setDirectoryState] = useState({
+  const [directoryState, setDirectoryState] = useState<GitDirectoryState>({
     path: workingDirectory ?? "",
     valid: false,
     isGitRepository: false,
@@ -260,6 +459,17 @@ export function ChatInput({
     gitDirty: false,
     gitDetached: false,
     gitLabel: "",
+    gitCommitSubject: "",
+    gitCommitAuthor: "",
+    gitCommitAuthorEmail: "",
+    gitCommitAuthorDate: "",
+    gitUpstream: "",
+    gitAhead: 0,
+    gitBehind: 0,
+    gitStagedCount: 0,
+    gitUnstagedCount: 0,
+    gitUntrackedCount: 0,
+    gitConflictedCount: 0,
     checking: !!workingDirectory,
   });
 
@@ -397,6 +607,37 @@ export function ChatInput({
   // unknown/custom models are not blocked.
   const effectiveModelId = selectedModel || agentModel || globalModel;
   const attachmentsSupported = modelSupportsAttachments(models, effectiveModelId);
+  const visionSupported = modelSupportsVision(models, effectiveModelId);
+  const sandboxTooltipContent = (
+    <Box fontSize="xs" lineHeight="1.6" w="360px" maxW="calc(100vw - 32px)">
+      <Text fontWeight="semibold" mb={1} color="fg">
+        File access
+      </Text>
+      <Flex direction="column" ps={3} gap={0.5}>
+        <InlineField label="Limit to project">
+          <Text>Commands start confined to the selected working directory. Access outside it must be approved.</Text>
+        </InlineField>
+        <InlineField label="Allow all files">
+          <Text>Commands may read and write anywhere the server process can access.</Text>
+        </InlineField>
+      </Flex>
+    </Box>
+  );
+  const attachmentTooltipContent = (
+    <Box fontSize="xs" lineHeight="1.6" w="420px" maxW="calc(100vw - 32px)">
+      <Text fontWeight="semibold" mb={1} color="fg">
+        File attachments
+      </Text>
+      <Flex direction="column" ps={3} gap={0.5}>
+        <InlineField label="Images">
+          <Text>{visionSupported ? "Native support" : "Metadata only"}</Text>
+        </InlineField>
+        <InlineField label="Current model">
+          <Text>{attachmentsSupported ? "Accepts file attachments" : "Metadata only"}</Text>
+        </InlineField>
+      </Flex>
+    </Box>
+  );
 
   const currentDirectory = (workingDirectory ?? "").trim();
   const validationDirectory = ((sessionId && workspaceRuntimeDirectory) ? workspaceRuntimeDirectory : workingDirectory ?? "").trim();
@@ -416,16 +657,6 @@ export function ChatInput({
   // Git metadata is unavailable.
   const workspaceSelectorHidden = !workspaceLocked && gitWorkspaceUnavailable;
   const gitWorkspaceUnavailableLabel = "Creating a session branch or worktree requires the selected folder to be inside a Git repository.";
-  const gitStatusLabel = directoryState.gitLabel
-    ? `${directoryState.gitDetached ? "Detached " : ""}${directoryState.gitLabel}${directoryState.gitDirty ? " *" : ""}`
-    : "";
-  const gitStatusTitle = [
-    directoryState.gitDetached ? "Detached HEAD" : directoryState.gitBranch ? "Current branch" : "Git repository",
-    directoryState.gitBranch,
-    directoryState.gitShortHead ? `Commit ${directoryState.gitShortHead}` : "",
-    directoryState.gitDirty ? "Uncommitted changes present" : "Clean working tree",
-    directoryState.repositoryRoot,
-  ].filter(Boolean).join("\n");
   const displayedWorkspaceStrategy = optimisticWorkspaceStrategy ?? workspaceStrategy;
   const workspaceAppearance = {
     none: { icon: <LuHardDrive size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
@@ -470,6 +701,17 @@ export function ChatInput({
         gitDirty: false,
         gitDetached: false,
         gitLabel: "",
+        gitCommitSubject: "",
+        gitCommitAuthor: "",
+        gitCommitAuthorEmail: "",
+        gitCommitAuthorDate: "",
+        gitUpstream: "",
+        gitAhead: 0,
+        gitBehind: 0,
+        gitStagedCount: 0,
+        gitUnstagedCount: 0,
+        gitUntrackedCount: 0,
+        gitConflictedCount: 0,
         checking,
       });
     }
@@ -486,6 +728,17 @@ export function ChatInput({
         gitDirty: result.git_dirty,
         gitDetached: result.git_detached,
         gitLabel: result.git_label,
+        gitCommitSubject: result.git_commit_subject,
+        gitCommitAuthor: result.git_commit_author,
+        gitCommitAuthorEmail: result.git_commit_author_email,
+        gitCommitAuthorDate: result.git_commit_author_date,
+        gitUpstream: result.git_upstream,
+        gitAhead: result.git_ahead,
+        gitBehind: result.git_behind,
+        gitStagedCount: result.git_staged_count,
+        gitUnstagedCount: result.git_unstaged_count,
+        gitUntrackedCount: result.git_untracked_count,
+        gitConflictedCount: result.git_conflicted_count,
         checking: false,
       });
     }
@@ -832,9 +1085,6 @@ export function ChatInput({
           onDrop={(event) => {
             event.preventDefault();
             setDragActive(false);
-            // Ignore drops when the selected model can't process attachments —
-            // matching the disabled attach button.
-            if (!attachmentsSupported) return;
             void handleFiles(event.dataTransfer.files);
           }}
           _focusWithin={{ borderColor: "border.emphasized" }}
@@ -900,24 +1150,31 @@ export function ChatInput({
                   event.target.value = "";
                 }}
               />
-              <Button
-                onClick={() => fileInputRef.current?.click()}
-                variant="subtle"
-                borderRadius="sm"
-                minW="70px"
-                h="32px"
-                px={2}
-                gap={1.5}
-                fontSize="xs"
-                fontWeight="medium"
-                disabled={disabled || !directoryValid || !attachmentsSupported}
-                title={!attachmentsSupported ? "The selected model can't process file attachments — switch to a vision or file-capable model" : undefined}
+              <Tooltip
+                content={attachmentTooltipContent}
+                contentProps={{ p: 3, bg: "bg", color: "fg", borderRadius: "sm", boxShadow: "lg", border: "1px solid", borderColor: "border" }}
+                openDelay={200}
+                closeDelay={60}
+                positioning={{ placement: "top" }}
               >
-                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                  <LuPaperclip size={14} />
-                </Box>
-                Attach files
-              </Button>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  variant="subtle"
+                  borderRadius="sm"
+                  minW="70px"
+                  h="32px"
+                  px={2}
+                  gap={1.5}
+                  fontSize="xs"
+                  fontWeight="medium"
+                  disabled={disabled || !directoryValid}
+                >
+                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                    <LuPaperclip size={14} />
+                  </Box>
+                  Attach files
+                </Button>
+              </Tooltip>
               {isStreaming ? (
                 <Button
                   onClick={handleAbortClick}
@@ -1040,55 +1297,38 @@ export function ChatInput({
               </Select.Positioner>
             </Portal>
           </Select.Root>
-          <Button
-            size="xs"
-            variant="outline"
-            borderRadius="sm"
-            fontSize="xs"
-            h="28px"
-            px={2}
-            bg={sandboxAppearance.bg}
-            borderColor={sandboxAppearance.borderColor}
-            color={sandboxAppearance.color}
-            _hover={{ bg: sandboxEnabled ? "green.muted" : "red.muted" }}
-            fontWeight="medium"
-            flexShrink={0}
-            title={sandboxEnabled
-              ? "Command filesystem access is confined to the working directory; access outside it needs approval."
-              : "Commands can reach the whole filesystem without sandbox confinement."}
-            onClick={() => onSandboxEnabledChange?.(!sandboxEnabled)}
-            disabled={!onSandboxEnabledChange}
+          <Tooltip
+            content={sandboxTooltipContent}
+            contentProps={{ p: 3, bg: "bg", color: "fg", borderRadius: "sm", boxShadow: "lg", border: "1px solid", borderColor: "border" }}
+            openDelay={200}
+            closeDelay={60}
+            positioning={{ placement: "top" }}
           >
-            <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
-              {sandboxAppearance.icon}
-            </Box>
-            {sandboxAppearance.label}
-          </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              borderRadius="sm"
+              fontSize="xs"
+              h="28px"
+              px={2}
+              gap={2}
+              bg={sandboxAppearance.bg}
+              borderColor={sandboxAppearance.borderColor}
+              color={sandboxAppearance.color}
+              _hover={{ bg: sandboxEnabled ? "green.muted" : "red.muted" }}
+              fontWeight="medium"
+              flexShrink={0}
+              onClick={() => onSandboxEnabledChange?.(!sandboxEnabled)}
+              disabled={!onSandboxEnabledChange}
+            >
+              <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
+                {sandboxAppearance.icon}
+              </Box>
+              {sandboxAppearance.label}
+            </Button>
+          </Tooltip>
           <Flex align="center" gap={1.5} flexWrap="wrap">
-            {gitStatusLabel && (
-              <Flex
-                align="center"
-                gap={1.5}
-                h="28px"
-                px={2}
-                borderRadius="sm"
-                border="1px solid"
-                borderColor={directoryState.gitDirty ? "orange.muted" : "green.muted"}
-                bg={directoryState.gitDirty ? "orange.subtle" : "green.subtle"}
-                color={directoryState.gitDirty ? "orange.fg" : "green.fg"}
-                flexShrink={1}
-                minW={0}
-                maxW={{ base: "100%", md: "260px" }}
-                title={gitStatusTitle}
-              >
-                <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
-                  <LuGitBranch size={13} />
-                </Box>
-                <Text fontSize="xs" fontWeight="medium" truncate>
-                  {gitStatusLabel}
-                </Text>
-              </Flex>
-            )}
+            <GitStatusChip directoryState={directoryState} />
             {workspaceSelectorHidden ? (
               <Flex
                 align="center"

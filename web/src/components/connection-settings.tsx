@@ -282,7 +282,7 @@ export function ConnectionSettings({
   }, [draftDirty, onDirtyChange]);
 
   return (
-    <VStack gap={5} w="100%" h={variant === "dialog" ? "100%" : undefined} minH={0} maxW={variant === "page" ? "420px" : undefined} px={variant === "page" ? 6 : 0}>
+    <VStack gap={5} w="100%" h={variant === "dialog" ? "100%" : undefined} minH={0} maxW={variant === "page" ? "680px" : undefined} px={variant === "page" ? 6 : 0}>
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>

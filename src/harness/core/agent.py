@@ -570,6 +570,7 @@ class AgentRuntime:
             agent_configuration.model_identifier
             or global_configuration.selected_model_identifier()
         )
+        self._effective_model_identifier = effective_model
 
         self._llm = build_chat_model(
             effective_model, global_configuration, agent_configuration
@@ -754,6 +755,10 @@ class AgentRuntime:
     @property
     def agent_name(self) -> str:
         return self._agent_configuration.identifier
+
+    @property
+    def effective_model_identifier(self) -> str:
+        return self._effective_model_identifier
 
     @property
     def working_directory(self) -> str:

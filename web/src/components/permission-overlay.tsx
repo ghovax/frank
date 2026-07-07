@@ -112,7 +112,7 @@ export function PermissionOverlay({ permission, title, detail, onPermission }: P
                 Always allow (2)
               </Button>
               <Button size="xs" colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
-                Allow once (3/Enter)
+                Allow once (3)
               </Button>
             </HStack>
           </Flex>
