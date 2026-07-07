@@ -624,7 +624,7 @@ export async function sendToolToBackground(sessionId: string, toolCallId: string
   }
 }
 
-export async function validateWorkingDirectory(directory: string): Promise<{
+export interface DirectoryValidation {
   valid: boolean;
   exists: boolean;
   is_directory: boolean;
@@ -638,13 +638,27 @@ export async function validateWorkingDirectory(directory: string): Promise<{
   git_detached: boolean;
   git_label: string;
   path: string;
-}> {
+}
+
+export async function validateWorkingDirectory(directory: string): Promise<DirectoryValidation> {
   const response = await fetch(`${API_BASE}/directory/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ directory }),
   });
   return response.json();
+}
+
+export function subscribeGitStatus(directory: string, onStatus: (status: DirectoryValidation) => void): () => void {
+  const source = new EventSource(`${API_BASE}/git/status/stream?directory=${encodeURIComponent(directory)}`);
+  source.onmessage = (message) => {
+    try {
+      onStatus(JSON.parse(message.data) as DirectoryValidation);
+    } catch {
+      // ignore malformed
+    }
+  };
+  return () => source.close();
 }
 
 export async function browseWorkingDirectory(): Promise<{ path: string; cancelled: boolean; error?: string }> {

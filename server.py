@@ -1739,6 +1739,52 @@ def _run_git_probe(directory: Path, *arguments: str) -> subprocess.CompletedProc
     )
 
 
+def _git_status_key(payload: dict[str, object]) -> tuple[object, ...]:
+    return (
+        payload.get("valid"),
+        payload.get("is_git_repository"),
+        payload.get("repository_root"),
+        payload.get("git_branch"),
+        payload.get("git_head"),
+        payload.get("git_short_head"),
+        payload.get("git_dirty"),
+        payload.get("git_detached"),
+        payload.get("git_label"),
+    )
+
+
+@app.get("/git/status/stream")
+async def git_status_stream(directory: str, request: Request):
+    """Stream git status changes for the selected directory."""
+    directory = directory.strip()
+
+    async def event_generator():
+        payload = await asyncio.to_thread(_validate_directory_payload, directory)
+        previous_key = _git_status_key(payload)
+        yield {"event": "message", "data": json.dumps(payload)}
+
+        repository_root = str(payload.get("repository_root") or "")
+        if not repository_root:
+            while not await request.is_disconnected():
+                await asyncio.sleep(30)
+            return
+
+        try:
+            async for _changes in awatch(repository_root, debounce=500):
+                if await request.is_disconnected():
+                    break
+                payload = await asyncio.to_thread(_validate_directory_payload, directory)
+                next_key = _git_status_key(payload)
+                if next_key == previous_key:
+                    continue
+                previous_key = next_key
+                yield {"event": "message", "data": json.dumps(payload)}
+        except asyncio.CancelledError:
+            pass
+
+    return EventSourceResponse(event_generator(), ping=15)
+
+
 @app.post("/directory/reveal")
 async def reveal_directory(request: DirectoryRevealRequest):
     """Reveal a directory in the native file manager (macOS Finder, other OS file manager)."""

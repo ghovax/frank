@@ -15,7 +15,7 @@ import {
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { LuArrowUp, LuBox, LuChevronDown, LuCircleSlash, LuCoins, LuEye, LuFolder, LuFoldVertical, LuGitBranch, LuGitFork, LuGlobe, LuHardDrive, LuPaperclip, LuSlidersHorizontal, LuSquare, LuTriangleAlert, LuUser, LuZap } from "react-icons/lu";
-import { fetchMessageHistory, saveMessageHistory, uploadResearchFile, validateWorkingDirectory, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
+import { fetchMessageHistory, saveMessageHistory, subscribeGitStatus, uploadResearchFile, validateWorkingDirectory, type DirectoryValidation, type ModelOption, type PermissionMode, type ProviderOption, type ResearchUpload } from "@/lib/api";
 import { AttachmentChip } from "./attachment-chips";
 import { Tooltip } from "./ui/tooltip";
 import { ModelSelect, modelSupportsAttachments } from "./model-select";
@@ -411,7 +411,7 @@ export function ChatInput({
   const workspaceLocked = !!sessionId;
   const gitWorkspaceAvailable = directoryStateMatchesCurrent && directoryState.valid && directoryState.isGitRepository;
   const gitWorkspaceUnavailable = directoryStateMatchesCurrent && directoryState.valid && !directoryState.checking && !directoryState.isGitRepository;
-  // Branch and worktree sessions only run inside a Git repo, so outside one the
+  // Branch and worktree sessions only run inside a Git repository, so outside one the
   // workspace selector is replaced by a warning once validation has confirmed that
   // Git metadata is unavailable.
   const workspaceSelectorHidden = !workspaceLocked && gitWorkspaceUnavailable;
@@ -456,25 +456,11 @@ export function ChatInput({
 
   useEffect(() => {
     let cancelled = false;
-    const timeout = window.setTimeout(() => {
-      if (!validationDirectory) {
-        setDirectoryState({
-          path: validationDirectory,
-          valid: false,
-          isGitRepository: false,
-          repositoryRoot: "",
-          gitBranch: "",
-          gitHead: "",
-          gitShortHead: "",
-          gitDirty: false,
-          gitDetached: false,
-          gitLabel: "",
-          checking: false,
-        });
-        return;
-      }
+    let unsubscribeGitStatus: (() => void) | null = null;
+
+    function setEmptyDirectoryState(path: string, checking: boolean) {
       setDirectoryState({
-        path: validationDirectory,
+        path,
         valid: false,
         isGitRepository: false,
         repositoryRoot: "",
@@ -484,41 +470,44 @@ export function ChatInput({
         gitDirty: false,
         gitDetached: false,
         gitLabel: "",
-        checking: true,
+        checking,
       });
+    }
+
+    function applyDirectoryValidation(result: DirectoryValidation) {
+      setDirectoryState({
+        path: validationDirectory,
+        valid: result.valid,
+        isGitRepository: result.is_git_repository,
+        repositoryRoot: result.repository_root,
+        gitBranch: result.git_branch,
+        gitHead: result.git_head,
+        gitShortHead: result.git_short_head,
+        gitDirty: result.git_dirty,
+        gitDetached: result.git_detached,
+        gitLabel: result.git_label,
+        checking: false,
+      });
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (!validationDirectory) {
+        setEmptyDirectoryState(validationDirectory, false);
+        return;
+      }
+      setEmptyDirectoryState(validationDirectory, true);
       validateWorkingDirectory(validationDirectory)
         .then((result) => {
-          if (!cancelled) {
-            setDirectoryState({
-              path: validationDirectory,
-              valid: result.valid,
-              isGitRepository: result.is_git_repository,
-              repositoryRoot: result.repository_root,
-              gitBranch: result.git_branch,
-              gitHead: result.git_head,
-              gitShortHead: result.git_short_head,
-              gitDirty: result.git_dirty,
-              gitDetached: result.git_detached,
-              gitLabel: result.git_label,
-              checking: false,
-            });
-          }
+          if (cancelled) return;
+          applyDirectoryValidation(result);
+          if (!result.is_git_repository) return;
+          unsubscribeGitStatus = subscribeGitStatus(validationDirectory, (status) => {
+            if (!cancelled) applyDirectoryValidation(status);
+          });
         })
         .catch(() => {
           if (!cancelled) {
-            setDirectoryState({
-              path: validationDirectory,
-              valid: false,
-              isGitRepository: false,
-              repositoryRoot: "",
-              gitBranch: "",
-              gitHead: "",
-              gitShortHead: "",
-              gitDirty: false,
-              gitDetached: false,
-              gitLabel: "",
-              checking: false,
-            });
+            setEmptyDirectoryState(validationDirectory, false);
           }
         });
     }, 250);
@@ -526,8 +515,9 @@ export function ChatInput({
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
+      unsubscribeGitStatus?.();
     };
-  }, [isStreaming, validationDirectory]);
+  }, [validationDirectory]);
 
   useEffect(() => {
     if (workspaceLocked || workspaceStrategy === "none" || directoryState.checking) return;
@@ -1118,7 +1108,7 @@ export function ChatInput({
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
-                  Git repo required for isolation
+                  Git repository required for versioning
                 </Text>
               </Flex>
             ) : (
