@@ -22,7 +22,7 @@ from sqlalchemy import Boolean, Column, String, Text, create_engine, event, insp
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
-from watchfiles import awatch
+from watchfiles import DefaultFilter, awatch
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
 from pydantic import BaseModel, Field, SecretStr
@@ -1753,6 +1753,91 @@ def _git_status_key(payload: dict[str, object]) -> tuple[object, ...]:
     )
 
 
+_GIT_STATUS_WATCH_FILTER = DefaultFilter(ignore_dirs=())
+
+
+def _resolve_git_path(repository_root: Path, path_text: str) -> Path | None:
+    if not path_text:
+        return None
+    path = Path(path_text)
+    if not path.is_absolute():
+        path = repository_root / path
+    return path.resolve(strict=False)
+
+
+def _git_status_watch_paths(directory: str, payload: dict[str, object]) -> list[str]:
+    repository_root_text = str(payload.get("repository_root") or "")
+    if not repository_root_text:
+        return []
+    repository_root = Path(repository_root_text).expanduser().resolve(strict=False)
+    paths: list[Path] = [repository_root]
+    for arguments in (("rev-parse", "--git-dir"), ("rev-parse", "--git-common-dir")):
+        result = _run_git_probe(Path(directory), *arguments)
+        if result.returncode != 0:
+            continue
+        path = _resolve_git_path(repository_root, result.stdout.strip())
+        if path is not None:
+            paths.append(path)
+
+    seen: set[str] = set()
+    existing_paths: list[str] = []
+    for path in paths:
+        path_text = str(path)
+        if path_text in seen or not path.exists():
+            continue
+        seen.add(path_text)
+        existing_paths.append(path_text)
+    return existing_paths
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _git_status_changes_relevant(directory: str, payload: dict[str, object], changes: set[tuple[object, str]]) -> bool:
+    repository_root_text = str(payload.get("repository_root") or "")
+    if not repository_root_text:
+        return True
+    repository_root = Path(repository_root_text).expanduser().resolve(strict=False)
+    git_paths = [
+        path
+        for path in (
+            _resolve_git_path(repository_root, _run_git_probe(Path(directory), "rev-parse", "--git-dir").stdout.strip()),
+            _resolve_git_path(repository_root, _run_git_probe(Path(directory), "rev-parse", "--git-common-dir").stdout.strip()),
+        )
+        if path is not None
+    ]
+
+    worktree_paths: list[str] = []
+    for _change, path_text in changes:
+        changed_path = Path(path_text).resolve(strict=False)
+        if any(_is_relative_to(changed_path, git_path) for git_path in git_paths):
+            return True
+        if _is_relative_to(changed_path, repository_root):
+            worktree_paths.append(str(changed_path.relative_to(repository_root)))
+
+    if not worktree_paths:
+        return False
+
+    check_ignore = subprocess.run(
+        ["git", "-C", str(Path(directory)), "check-ignore", "--stdin"],
+        input="\n".join(worktree_paths),
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        timeout=5,
+    )
+    if check_ignore.returncode == 128:
+        return True
+    ignored = set(check_ignore.stdout.splitlines())
+    return any(path not in ignored for path in worktree_paths)
+
+
 @app.get("/git/status/stream")
 async def git_status_stream(directory: str, request: Request):
     """Stream git status changes for the selected directory."""
@@ -1763,16 +1848,18 @@ async def git_status_stream(directory: str, request: Request):
         previous_key = _git_status_key(payload)
         yield {"event": "message", "data": json.dumps(payload)}
 
-        repository_root = str(payload.get("repository_root") or "")
-        if not repository_root:
+        watch_paths = _git_status_watch_paths(directory, payload)
+        if not watch_paths:
             while not await request.is_disconnected():
                 await asyncio.sleep(30)
             return
 
         try:
-            async for _changes in awatch(repository_root, debounce=500):
+            async for changes in awatch(*watch_paths, watch_filter=_GIT_STATUS_WATCH_FILTER, debounce=500):
                 if await request.is_disconnected():
                     break
+                if not await asyncio.to_thread(_git_status_changes_relevant, directory, payload, changes):
+                    continue
                 payload = await asyncio.to_thread(_validate_directory_payload, directory)
                 next_key = _git_status_key(payload)
                 if next_key == previous_key:
