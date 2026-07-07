@@ -101,9 +101,6 @@ export function PermissionOverlay({ permission, title, detail, onPermission }: P
                 <MarkdownContent content={detail} fontSize="xs" />
               </Box>
             )}
-            {permission.justification && (
-              <Text fontSize="xs" color="fg.subtle">{permission.justification}</Text>
-            )}
           </Flex>
 
           <Flex align="center" justify="space-between" gap={2}>
