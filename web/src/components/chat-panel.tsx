@@ -1064,13 +1064,9 @@ export function ChatPanel({
             transform="translateX(-50%)"
             zIndex={2}
             bg="bg.muted"
-            border="1px solid"
-            borderColor="border"
             color="fg"
             fontWeight="medium"
-            boxShadow="sm"
             px={2}
-            _hover={{ bg: "bg.emphasized" }}
             onClick={scrollToBottom}
           >
             <LuArrowDown />
