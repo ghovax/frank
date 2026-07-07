@@ -21,7 +21,8 @@
         "mount *": "ask",
         "git *": "ask",
         "mv *": "ask",
-        "kill *": "ask"
+        "kill *": "ask",
+        "gh *": "ask"
       }
     },
     "spawnAgent": {
