@@ -410,7 +410,7 @@ export function ConnectionSettings({
                 New connection
               </Text>
             </Flex>
-            <Flex gap={2}>
+            <Flex gap={2.5}>
               <Button
                 size="sm"
                 h="auto"

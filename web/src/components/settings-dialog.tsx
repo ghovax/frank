@@ -111,7 +111,7 @@ export function SettingsDialog({
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content borderRadius="md" maxW="760px" h="min(700px, calc(100vh - 48px))" display="flex" flexDirection="column">
+          <Dialog.Content borderRadius="md" maxW="900px" h="min(760px, calc(100vh - 48px))" display="flex" flexDirection="column">
             <Dialog.Header>
               <Dialog.Title fontSize="sm">Settings</Dialog.Title>
             </Dialog.Header>
@@ -125,7 +125,7 @@ export function SettingsDialog({
                 h="100%"
                 minH={0}
               >
-                <Tabs.List w="204px" borderRight="1px solid" borderColor="border" px={3} py={3} gap={1}>
+                <Tabs.List w="240px" borderRight="1px solid" borderColor="border" px={3} gap={1}>
                   <Tabs.Trigger value="general" justifyContent="flex-start" borderRadius="sm" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
                     <LuKeyRound size={14} />
                     General
@@ -136,7 +136,7 @@ export function SettingsDialog({
                   </Tabs.Trigger>
                 </Tabs.List>
                 <Box flex={1} minW={0} minH={0}>
-                  <Tabs.Content value="general" p={5} pt={4} h="100%" overflowY="auto">
+                  <Tabs.Content value="general" pr={4} h="100%" overflowY="auto">
                     <Text fontSize="xs" color="fg.muted" mb={4}>
                       Credentials are stored in{" "}
                       <Box as="span" fontFamily="var(--app-font-mono)">
@@ -166,7 +166,7 @@ export function SettingsDialog({
                       </Box>
                     </Flex>
                   </Tabs.Content>
-                  <Tabs.Content value="connection" p={5} pt={4} h="100%" overflow="hidden">
+                  <Tabs.Content value="connection" pr={4} h="100%" overflow="hidden">
                     <Box h="100%" overflowY="auto" px={2} py={1} mx={-2}>
                       <Text fontSize="xs" color="fg.muted" mb={4}>
                         Configure local, remote, and SSH-backed connections. SSH hosts are loaded from{" "}

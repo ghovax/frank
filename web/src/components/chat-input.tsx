@@ -6,7 +6,6 @@ import {
   createListCollection,
   Dialog,
   Flex,
-  Input,
   Menu,
   Portal,
   Select,
@@ -248,8 +247,7 @@ export function ChatInput({
   const [sendPending, setSendPending] = useState(false);
   const [stopPending, setStopPending] = useState(false);
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
-  const [pathEntryOpen, setPathEntryOpen] = useState(false);
-  const [pathDraft, setPathDraft] = useState("");
+
   const [optimisticWorkspaceStrategy, setOptimisticWorkspaceStrategy] = useState<WorkspaceStrategyValue | null>(null);
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
@@ -412,14 +410,6 @@ export function ChatInput({
     }
     return items;
   }, [currentDirectory, currentProjectName, recentProjects]);
-
-  function submitPathDraft() {
-    const nextPath = pathDraft.trim();
-    if (!nextPath) return;
-    onWorkingDirectoryChange?.(nextPath);
-    setPathEntryOpen(false);
-    setPathDraft("");
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -1139,16 +1129,7 @@ export function ChatInput({
                   >
                     Open another project...
                   </Menu.Item>
-                  <Menu.Item
-                    value="enter-project-path"
-                    fontWeight="medium"
-                    onClick={() => {
-                      setPathDraft(currentDirectory);
-                      setPathEntryOpen(true);
-                    }}
-                  >
-                    Enter a path...
-                  </Menu.Item>
+
                 </Menu.Content>
               </Menu.Positioner>
             </Portal>
@@ -1177,37 +1158,7 @@ export function ChatInput({
             </Flex>
           )}
         </Flex>
-        {!folderLocked && pathEntryOpen && (
-          <Flex align="center" gap={1.5} flex={{ base: "1 1 100%", md: "1 1 260px" }} minW={0}>
-            <Input
-              size="xs"
-              h="28px"
-              borderRadius="sm"
-              bg="bg"
-              fontFamily="var(--font-mono)"
-              fontSize="xs"
-              placeholder="/absolute/path/on/this/server"
-              value={pathDraft}
-              onChange={(event) => setPathDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") submitPathDraft();
-                if (event.key === "Escape") setPathEntryOpen(false);
-              }}
-            />
-            <Button
-              size="xs"
-              variant="solid"
-              colorPalette="blue"
-              borderRadius="sm"
-              h="28px"
-              flexShrink={0}
-              disabled={!pathDraft.trim()}
-              onClick={submitPathDraft}
-            >
-              Use
-            </Button>
-          </Flex>
-        )}
+
       </Flex>
     </Box>
   );
