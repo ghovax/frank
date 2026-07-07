@@ -134,16 +134,16 @@ export function ConnectionSwitcher({
           h={trigger.height}
           px={trigger.paddingX}
           gap={trigger.gap}
-          bg={isLocal ? "green.subtle" : "bg"}
-          borderColor={isLocal ? "green.muted" : "border"}
-          _hover={{ bg: isLocal ? "green.muted" : "bg.muted" }}
+          bg={isLocal ? "bg.subtle" : "bg"}
+          borderColor="border"
+          _hover={{ bg: "bg.muted" }}
           flexShrink={0}
           title="Switch connection"
         >
           {/* A real connection-kind icon (laptop for the local server, server for a
               remote), tinted green to signal a live connection — consistent across the
               compact composer toolbar and the larger welcome screen. */}
-          <Box color="green.fg" display="flex" alignItems="center" flexShrink={0}>
+          <Box color={isLocal ? "fg.muted" : "green.fg"} display="flex" alignItems="center" flexShrink={0}>
             {isLocal ? <LuLaptop size={trigger.icon} /> : <LuServer size={trigger.icon} />}
           </Box>
           <Text truncate maxW={trigger.labelMaxWidth}>

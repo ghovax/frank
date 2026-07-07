@@ -26,6 +26,7 @@ import type { ChatTask, TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./tool-views/primitives";
 import type { ConnectionTarget } from "@/lib/connection";
 
+type WorkspaceStrategyValue = "none" | "branch" | "worktree";
 
 interface ChatInputProps {
   onSend: (text: string, dataPart?: Record<string, unknown>) => void | Promise<void>;
@@ -42,12 +43,12 @@ interface ChatInputProps {
   onBrowseFolder?: () => void;
   sandboxEnabled?: boolean;
   onSandboxEnabledChange?: (enabled: boolean) => void;
-  workspaceStrategy?: "none" | "branch" | "worktree";
+  workspaceStrategy?: WorkspaceStrategyValue;
   workspaceBranch?: string;
   workspaceRuntimeDirectory?: string;
   workspaceRuntimeDirectoryName?: string;
   workspaceError?: string;
-  onWorkspaceStrategyChange?: (strategy: "none" | "branch" | "worktree") => void;
+  onWorkspaceStrategyChange?: (strategy: WorkspaceStrategyValue) => void | Promise<void>;
   agents: { id: string; name: string; title?: string }[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
@@ -249,6 +250,7 @@ export function ChatInput({
   const [compactConfirmOpen, setCompactConfirmOpen] = useState(false);
   const [pathEntryOpen, setPathEntryOpen] = useState(false);
   const [pathDraft, setPathDraft] = useState("");
+  const [optimisticWorkspaceStrategy, setOptimisticWorkspaceStrategy] = useState<WorkspaceStrategyValue | null>(null);
   const [directoryState, setDirectoryState] = useState({
     path: workingDirectory ?? "",
     valid: false,
@@ -278,7 +280,7 @@ export function ChatInput({
   const workspaceCollection = useMemo(
     () => createListCollection({
       items: [
-        { label: "Unmanaged", value: "none" },
+        { label: "No Git workspace", value: "none" },
         { label: "Branch", value: "branch" },
         { label: "Worktree", value: "worktree" },
       ],
@@ -337,10 +339,10 @@ export function ChatInput({
         bg: "red.subtle",
         borderColor: "red.muted",
       };
-  const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "green" }[] = [
-    { value: "none", label: "Unmanaged", icon: <LuHardDrive size={13} /> },
+  const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
+    { value: "none", label: "No Git workspace", icon: <LuHardDrive size={13} /> },
     { value: "branch", label: "Branch", icon: <LuGitBranch size={13} />, colorPalette: "purple" },
-    { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "green" },
+    { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "teal" },
   ];
   const workspaceDetail =
     workspaceStrategy === "branch" || workspaceStrategy === "worktree"
@@ -354,7 +356,7 @@ export function ChatInput({
             workspaceError,
           ].filter(Boolean).join("\n"),
           icon: workspaceStrategy === "worktree" ? <LuGitFork size={13} /> : <LuGitBranch size={13} />,
-          colorPalette: workspaceStrategy === "worktree" ? "green" as const : "purple" as const,
+          colorPalette: workspaceStrategy === "worktree" ? "teal" as const : "purple" as const,
         }
       : null;
 
@@ -379,21 +381,17 @@ export function ChatInput({
   const gitWorkspaceAvailable = directoryStateMatchesCurrent && directoryState.valid && directoryState.isGitRepository;
   const gitWorkspaceUnavailable = directoryStateMatchesCurrent && directoryState.valid && !directoryState.checking && !directoryState.isGitRepository;
   // Branch and worktree sessions only run inside a Git repo, so outside one the
-  // workspace selector can only ever read "Unmanaged". Rather than show a frozen
-  // selector beside the warning, hide it and let the warning explain why — which
-  // also keeps the composer's bottom row tighter.
+  // workspace selector is replaced by a warning once validation has confirmed that
+  // Git metadata is unavailable.
   const workspaceSelectorHidden = !workspaceLocked && gitWorkspaceUnavailable;
   const gitWorkspaceUnavailableLabel = "Branch and worktree sessions require the selected folder to be inside a Git repository.";
-  const displayedWorkspaceStrategy =
-    workspaceSelectorHidden && workspaceStrategy !== "none" ? "none" : workspaceStrategy;
-  const selectedWorkspaceChoice =
-    workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy) ?? workspaceChoices[0];
+  const displayedWorkspaceStrategy = optimisticWorkspaceStrategy ?? workspaceStrategy;
   const workspaceAppearance = {
     none: { icon: <LuHardDrive size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
     branch: { icon: <LuGitBranch size={13} />, color: "purple.fg", bg: "purple.subtle", borderColor: "purple.muted", colorPalette: "purple" },
-    worktree: { icon: <LuGitFork size={13} />, color: "green.fg", bg: "green.subtle", borderColor: "green.muted", colorPalette: "green" },
+    worktree: { icon: <LuGitFork size={13} />, color: "teal.fg", bg: "teal.subtle", borderColor: "teal.muted", colorPalette: "teal" },
   }[displayedWorkspaceStrategy];
-  const workspaceStrategyValid = workspaceLocked || workspaceStrategy === "none" || gitWorkspaceAvailable;
+  const workspaceStrategyValid = workspaceLocked || displayedWorkspaceStrategy === "none" || gitWorkspaceAvailable;
   // The server owns each folder's display name (derived with real path tooling),
   // so the selector only ever reads names — it never parses a path itself.
   const currentProjectName = useMemo(
@@ -555,6 +553,15 @@ export function ChatInput({
       await onAbort();
     } finally {
       window.setTimeout(() => setStopPending(false), Math.max(0, 450 - (performance.now() - startedAt)));
+    }
+  }
+
+  async function handleWorkspaceStrategySelect(nextStrategy: WorkspaceStrategyValue) {
+    setOptimisticWorkspaceStrategy(nextStrategy);
+    try {
+      await onWorkspaceStrategyChange?.(nextStrategy);
+    } finally {
+      setOptimisticWorkspaceStrategy(null);
     }
   }
 
@@ -820,9 +827,6 @@ export function ChatInput({
                 onClick={() => fileInputRef.current?.click()}
                 variant="subtle"
                 borderRadius="sm"
-                bg="blue.subtle"
-                color="blue.fg"
-                _hover={{ bg: "blue.muted" }}
                 minW="70px"
                 h="32px"
                 px={2}
@@ -832,7 +836,9 @@ export function ChatInput({
                 disabled={disabled || !directoryValid || !attachmentsSupported}
                 title={!attachmentsSupported ? "The selected model can't process file attachments — switch to a vision or file-capable model" : undefined}
               >
-                <LuPaperclip size={13} />
+                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                  <LuPaperclip size={14} />
+                </Box>
                 Attach files
               </Button>
               {isStreaming ? (
@@ -850,7 +856,9 @@ export function ChatInput({
                   loading={stopPending}
                   disabled={stopPending}
                 >
-                  <LuSquare size={14} />
+                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                    <LuSquare size={14} />
+                  </Box>
                   Stop
                 </Button>
               ) : (
@@ -868,7 +876,9 @@ export function ChatInput({
                   loading={sendPending}
                   disabled={sendPending || disabled || !directoryValid || !workspaceStrategyValid || uploadingCount > 0 || (!inputValue.trim() && attachments.length === 0)}
                 >
-                  <LuArrowUp size={16} />
+                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                    <LuArrowUp size={14} />
+                  </Box>
                   Send
                 </Button>
               )}
@@ -988,8 +998,8 @@ export function ChatInput({
                 collection={workspaceCollection}
                 value={[displayedWorkspaceStrategy]}
                 onValueChange={(details) => {
-                  const nextStrategy = details.value[0] as "none" | "branch" | "worktree" | undefined;
-                  if (nextStrategy) onWorkspaceStrategyChange?.(nextStrategy);
+                  const nextStrategy = details.value[0] as WorkspaceStrategyValue | undefined;
+                  if (nextStrategy) void handleWorkspaceStrategySelect(nextStrategy);
                 }}
                 size="sm"
                 w="max-content"

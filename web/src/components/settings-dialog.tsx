@@ -125,7 +125,7 @@ export function SettingsDialog({
                 h="100%"
                 minH={0}
               >
-                <Tabs.List w="204px" borderRight="1px solid" borderColor="border" px={3} py={3} gap={1} bg="bg.subtle">
+                <Tabs.List w="204px" borderRight="1px solid" borderColor="border" px={3} py={3} gap={1}>
                   <Tabs.Trigger value="general" justifyContent="flex-start" borderRadius="sm" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
                     <LuKeyRound size={14} />
                     General

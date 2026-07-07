@@ -38,4 +38,4 @@ workspace:
   strategy: none
 default_agent: senior-researcher
 agent:
-  permission_mode: read_only
+  permission_mode: default

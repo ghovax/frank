@@ -310,9 +310,12 @@ export function ConnectionSettings({
         <VStack gap={4} w="100%" minH={0} align="stretch">
           <Button
             w="100%"
-            colorPalette={localActive ? "green" : "blue"}
-            variant={localActive ? "subtle" : "solid"}
+            variant={localActive ? "subtle" : "outline"}
             borderRadius="md"
+            bg={localActive ? "bg.subtle" : "bg"}
+            borderColor="border"
+            color="fg"
+            _hover={{ bg: "bg.muted" }}
             onClick={connectLocal}
             disabled={localActive}
           >
@@ -407,7 +410,7 @@ export function ConnectionSettings({
                 New connection
               </Text>
             </Flex>
-            <Flex gap={3}>
+            <Flex gap={2}>
               <Button
                 size="sm"
                 h="auto"
@@ -508,7 +511,7 @@ export function ConnectionSettings({
                       </Button>
                     </Flex>
                     <Field.HelperText fontSize="2xs">
-                      Daisy resolves this with ssh -G and opens a local tunnel to the remote Daisy server.
+                      We resolve this with ssh -G and open a local tunnel to the remote server.
                     </Field.HelperText>
                   </Field.Root>
                   <Flex gap={2} align="flex-start">
@@ -531,7 +534,7 @@ export function ConnectionSettings({
                       <Input size="sm" bg="bg.subtle" placeholder="Pick an open local port" value={sshLocalPort} onChange={(event) => setSshLocalPort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                     <Field.Root>
-                      <Field.Label fontSize="xs">Daisy server port on host</Field.Label>
+                      <Field.Label fontSize="xs">Server port on host</Field.Label>
                       <Input size="sm" bg="bg.subtle" placeholder="8822" value={sshRemotePort} onChange={(event) => setSshRemotePort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                   </Flex>

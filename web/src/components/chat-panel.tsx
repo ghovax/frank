@@ -69,7 +69,7 @@ interface ChatPanelProps {
   workspaceRuntimeDirectory?: string;
   workspaceRuntimeDirectoryName?: string;
   workspaceError?: string;
-  onWorkspaceStrategyChange?: (strategy: WorkspaceStrategy) => void;
+  onWorkspaceStrategyChange?: (strategy: WorkspaceStrategy) => void | Promise<void>;
   isConnected?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
