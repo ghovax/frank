@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import platform
 import re
 import shutil
@@ -1671,32 +1672,42 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
             "is_absolute": False,
             "is_git_repository": False,
             "repository_root": "",
+            "git_branch": "",
+            "git_head": "",
+            "git_short_head": "",
+            "git_dirty": False,
+            "git_detached": False,
+            "git_label": "",
             "path": "",
         }
     path = Path(directory).expanduser()
     valid = path.is_absolute() and path.exists() and path.is_dir()
     is_git_repository = False
     repository_root = ""
+    git_branch = ""
+    git_head = ""
+    git_short_head = ""
+    git_dirty = False
+    git_detached = False
+    git_label = ""
     if valid:
         try:
-            inside = subprocess.run(
-                ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
+            inside = _run_git_probe(path, "rev-parse", "--is-inside-work-tree")
             is_git_repository = inside.returncode == 0 and inside.stdout.strip() == "true"
             if is_git_repository:
-                root = subprocess.run(
-                    ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
+                root = _run_git_probe(path, "rev-parse", "--show-toplevel")
                 if root.returncode == 0:
                     repository_root = root.stdout.strip()
+                branch = _run_git_probe(path, "symbolic-ref", "--quiet", "--short", "HEAD")
+                git_branch = branch.stdout.strip() if branch.returncode == 0 else ""
+                head = _run_git_probe(path, "rev-parse", "HEAD")
+                git_head = head.stdout.strip() if head.returncode == 0 else ""
+                short_head = _run_git_probe(path, "rev-parse", "--short", "HEAD")
+                git_short_head = short_head.stdout.strip() if short_head.returncode == 0 else ""
+                status = _run_git_probe(path, "status", "--porcelain=v1")
+                git_dirty = status.returncode == 0 and bool(status.stdout.strip())
+                git_detached = bool(git_head and not git_branch)
+                git_label = git_branch or git_short_head
         except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired):
             is_git_repository = False
     return {
@@ -1706,8 +1717,26 @@ def _validate_directory_payload(directory: str) -> dict[str, object]:
         "is_absolute": path.is_absolute(),
         "is_git_repository": is_git_repository,
         "repository_root": repository_root,
+        "git_branch": git_branch,
+        "git_head": git_head,
+        "git_short_head": git_short_head,
+        "git_dirty": git_dirty,
+        "git_detached": git_detached,
+        "git_label": git_label,
         "path": str(path),
     }
+
+
+def _run_git_probe(directory: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    return subprocess.run(
+        ["git", "-C", str(directory), *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=5,
+    )
 
 
 @app.post("/directory/reveal")

@@ -33,7 +33,7 @@ composio:
   api_key: ''
   server_name: composio
 sandbox:
-  enabled: true
+  enabled: false
 workspace:
   strategy: none
 default_agent: senior-researcher

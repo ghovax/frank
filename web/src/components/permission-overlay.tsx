@@ -34,7 +34,7 @@ export function PermissionOverlay({ permission, title, detail, onPermission }: P
     onPermission(permission.requestId, decision);
   }
 
-  // 1 deny, 2 allow always, 3 allow once — mirrors the on-screen buttons.
+  // 1 deny, 2 allow always, 3/Enter allow once — mirrors the on-screen buttons.
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === "1") {
       event.preventDefault();
@@ -42,7 +42,7 @@ export function PermissionOverlay({ permission, title, detail, onPermission }: P
     } else if (event.key === "2") {
       event.preventDefault();
       decide("allow_always");
-    } else if (event.key === "3") {
+    } else if (event.key === "3" || (event.key === "Enter" && event.target === event.currentTarget)) {
       event.preventDefault();
       decide("allow_once");
     }
@@ -112,7 +112,7 @@ export function PermissionOverlay({ permission, title, detail, onPermission }: P
                 Always allow (2)
               </Button>
               <Button size="xs" colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
-                Allow once (3)
+                Allow once (3/Enter)
               </Button>
             </HStack>
           </Flex>

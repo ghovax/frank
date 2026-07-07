@@ -724,7 +724,7 @@ function ChatContent() {
                         ? entry.workspaceBranch
                         : entry.workspaceStrategy === "branch"
                           ? entry.workspaceBranch
-                          : entry.workspaceError || "No automatic Git workspace";
+                          : entry.workspaceError || "No session isolation";
 
                       return (
                         <Box

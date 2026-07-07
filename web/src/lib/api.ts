@@ -631,6 +631,12 @@ export async function validateWorkingDirectory(directory: string): Promise<{
   is_absolute: boolean;
   is_git_repository: boolean;
   repository_root: string;
+  git_branch: string;
+  git_head: string;
+  git_short_head: string;
+  git_dirty: boolean;
+  git_detached: boolean;
+  git_label: string;
   path: string;
 }> {
   const response = await fetch(`${API_BASE}/directory/validate`, {

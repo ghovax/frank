@@ -180,7 +180,7 @@ export function ConnectionSwitcher({
                 onClick={() => void switchTo(profile)}
               />
             ))}
-            <Menu.Separator my={large ? 1.5 : 0} />
+            <Menu.Separator my={large ? 1.5 : 1} />
             <Menu.Item
               value="__settings"
               color="blue.fg"

@@ -21,7 +21,7 @@ import { Tooltip } from "./ui/tooltip";
 import { ModelSelect, modelSupportsAttachments } from "./model-select";
 import { ConnectionSwitcher } from "./connection-switcher";
 // SettingsDialog moved to ChatPanel top bar
-import type { ChatTask, TokenUsage } from "@/lib/use-chat";
+import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./tool-views/primitives";
 import type { ConnectionTarget } from "@/lib/connection";
 
@@ -254,6 +254,12 @@ export function ChatInput({
     valid: false,
     isGitRepository: false,
     repositoryRoot: "",
+    gitBranch: "",
+    gitHead: "",
+    gitShortHead: "",
+    gitDirty: false,
+    gitDetached: false,
+    gitLabel: "",
     checking: !!workingDirectory,
   });
 
@@ -267,10 +273,10 @@ export function ChatInput({
   const permissionCollection = useMemo(
     () => createListCollection({
       items: [
-        { label: "User-configured permissions", value: "default" },
-        { label: "Auto-classify permissions", value: "auto" },
-        { label: "Read-only permissions", value: "read_only" },
-        { label: "Bypass permissions", value: "bypass" },
+        { label: "Manual approvals", value: "default" },
+        { label: "Auto-classify approvals", value: "auto" },
+        { label: "Read-only commands", value: "read_only" },
+        { label: "Bypass approvals", value: "bypass" },
       ],
     }),
     []
@@ -278,9 +284,9 @@ export function ChatInput({
   const workspaceCollection = useMemo(
     () => createListCollection({
       items: [
-        { label: "No Git workspace", value: "none" },
-        { label: "Branch", value: "branch" },
-        { label: "Worktree", value: "worktree" },
+        { label: "Current checkout", value: "none" },
+        { label: "Create branch from main", value: "branch" },
+        { label: "Create worktree from main", value: "worktree" },
       ],
     }),
     []
@@ -321,26 +327,52 @@ export function ChatInput({
     borderColor: "border",
     colorPalette: undefined,
   };
-  const permissionSelectedLabel = permissionCollection.items.find((item) => item.value === permissionMode)?.label ?? "User-configured permissions";
+  const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "red" }[] = [
+    { value: "default", label: "Manual approvals", description: "Use the configured permission rules and ask when needed.", icon: <LuSlidersHorizontal size={13} /> },
+    { value: "auto", label: "Auto-classify approvals", description: "Let Daisy classify command risk before deciding.", icon: <LuZap size={13} />, colorPalette: "blue" },
+    { value: "read_only", label: "Read-only commands", description: "Allow reads, block writes unless explicitly approved.", icon: <LuEye size={13} />, colorPalette: "green" },
+    { value: "bypass", label: "Bypass approvals", description: "Run commands without approval prompts.", icon: <LuCircleSlash size={13} />, colorPalette: "red" },
+  ];
+  const permissionSelectedLabel = permissionCollection.items.find((item) => item.value === permissionMode)?.label ?? "Manual approvals";
   const sandboxAppearance = sandboxEnabled
     ? {
-        label: "Sandboxed",
+        label: "Limit access to folder",
         icon: <LuBox size={13} />,
         color: "green.fg",
         bg: "green.subtle",
         borderColor: "green.muted",
       }
     : {
-        label: "Unsandboxed",
+        label: "Allow access to all filesystem",
         icon: <LuGlobe size={13} />,
         color: "red.fg",
         bg: "red.subtle",
         borderColor: "red.muted",
       };
-  const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
-    { value: "none", label: "No Git workspace", icon: <LuHardDrive size={13} /> },
-    { value: "branch", label: "Branch", icon: <LuGitBranch size={13} />, colorPalette: "purple" },
-    { value: "worktree", label: "Worktree", icon: <LuGitFork size={13} />, colorPalette: "teal" },
+  const workspaceChoices: { value: "none" | "branch" | "worktree"; label: string; description: string; title: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
+    {
+      value: "none",
+      label: "Current checkout",
+      description: "Run in the selected folder. No branch or worktree is created",
+      title: "Run in the selected checkout without creating a session branch or worktree",
+      icon: <LuHardDrive size={13} />,
+    },
+    {
+      value: "branch",
+      label: "Create branch from main",
+      description: "Create and check out a daisy/session branch from the repo main line",
+      title: "Creates a daisy/session branch from the repository main/default branch, not from the current branch",
+      icon: <LuGitBranch size={13} />,
+      colorPalette: "purple",
+    },
+    {
+      value: "worktree",
+      label: "Create worktree from main",
+      description: "Create an isolated worktree on a daisy/session branch from the repo main line",
+      title: "Creates a separate worktree and daisy/session branch from the repository main/default branch",
+      icon: <LuGitFork size={13} />,
+      colorPalette: "teal",
+    },
   ];
   const workspaceDetail =
     workspaceStrategy === "branch" || workspaceStrategy === "worktree"
@@ -367,7 +399,8 @@ export function ChatInput({
   const attachmentsSupported = modelSupportsAttachments(models, effectiveModelId);
 
   const currentDirectory = (workingDirectory ?? "").trim();
-  const directoryStateMatchesCurrent = directoryState.path === currentDirectory;
+  const validationDirectory = ((sessionId && workspaceRuntimeDirectory) ? workspaceRuntimeDirectory : workingDirectory ?? "").trim();
+  const directoryStateMatchesCurrent = directoryState.path === validationDirectory;
   const directoryValid = !!currentDirectory && directoryStateMatchesCurrent && directoryState.valid;
   // A session is bound to the folder it was started in: once it exists, the
   // project can no longer be changed, so the selector and browse are locked.
@@ -382,7 +415,17 @@ export function ChatInput({
   // workspace selector is replaced by a warning once validation has confirmed that
   // Git metadata is unavailable.
   const workspaceSelectorHidden = !workspaceLocked && gitWorkspaceUnavailable;
-  const gitWorkspaceUnavailableLabel = "Branch and worktree sessions require the selected folder to be inside a Git repository.";
+  const gitWorkspaceUnavailableLabel = "Creating a session branch or worktree requires the selected folder to be inside a Git repository.";
+  const gitStatusLabel = directoryState.gitLabel
+    ? `${directoryState.gitDetached ? "Detached " : ""}${directoryState.gitLabel}${directoryState.gitDirty ? " *" : ""}`
+    : "";
+  const gitStatusTitle = [
+    directoryState.gitDetached ? "Detached HEAD" : directoryState.gitBranch ? "Current branch" : "Git repository",
+    directoryState.gitBranch,
+    directoryState.gitShortHead ? `Commit ${directoryState.gitShortHead}` : "",
+    directoryState.gitDirty ? "Uncommitted changes present" : "Clean working tree",
+    directoryState.repositoryRoot,
+  ].filter(Boolean).join("\n");
   const displayedWorkspaceStrategy = optimisticWorkspaceStrategy ?? workspaceStrategy;
   const workspaceAppearance = {
     none: { icon: <LuHardDrive size={13} />, color: "fg.subtle", bg: "bg", borderColor: "border", colorPalette: undefined },
@@ -414,26 +457,68 @@ export function ChatInput({
   useEffect(() => {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
-      if (!currentDirectory) {
-        setDirectoryState({ path: currentDirectory, valid: false, isGitRepository: false, repositoryRoot: "", checking: false });
+      if (!validationDirectory) {
+        setDirectoryState({
+          path: validationDirectory,
+          valid: false,
+          isGitRepository: false,
+          repositoryRoot: "",
+          gitBranch: "",
+          gitHead: "",
+          gitShortHead: "",
+          gitDirty: false,
+          gitDetached: false,
+          gitLabel: "",
+          checking: false,
+        });
         return;
       }
-      setDirectoryState({ path: currentDirectory, valid: false, isGitRepository: false, repositoryRoot: "", checking: true });
-      validateWorkingDirectory(currentDirectory)
+      setDirectoryState({
+        path: validationDirectory,
+        valid: false,
+        isGitRepository: false,
+        repositoryRoot: "",
+        gitBranch: "",
+        gitHead: "",
+        gitShortHead: "",
+        gitDirty: false,
+        gitDetached: false,
+        gitLabel: "",
+        checking: true,
+      });
+      validateWorkingDirectory(validationDirectory)
         .then((result) => {
           if (!cancelled) {
             setDirectoryState({
-              path: currentDirectory,
+              path: validationDirectory,
               valid: result.valid,
               isGitRepository: result.is_git_repository,
               repositoryRoot: result.repository_root,
+              gitBranch: result.git_branch,
+              gitHead: result.git_head,
+              gitShortHead: result.git_short_head,
+              gitDirty: result.git_dirty,
+              gitDetached: result.git_detached,
+              gitLabel: result.git_label,
               checking: false,
             });
           }
         })
         .catch(() => {
           if (!cancelled) {
-            setDirectoryState({ path: currentDirectory, valid: false, isGitRepository: false, repositoryRoot: "", checking: false });
+            setDirectoryState({
+              path: validationDirectory,
+              valid: false,
+              isGitRepository: false,
+              repositoryRoot: "",
+              gitBranch: "",
+              gitHead: "",
+              gitShortHead: "",
+              gitDirty: false,
+              gitDetached: false,
+              gitLabel: "",
+              checking: false,
+            });
           }
         });
     }, 250);
@@ -442,19 +527,19 @@ export function ChatInput({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [currentDirectory]);
+  }, [isStreaming, validationDirectory]);
 
   useEffect(() => {
     if (workspaceLocked || workspaceStrategy === "none" || directoryState.checking) return;
-    if (directoryState.path !== currentDirectory || !directoryState.valid || directoryState.isGitRepository) return;
+    if (directoryState.path !== validationDirectory || !directoryState.valid || directoryState.isGitRepository) return;
     onWorkspaceStrategyChange?.("none");
   }, [
-    currentDirectory,
     directoryState.checking,
     directoryState.isGitRepository,
     directoryState.path,
     directoryState.valid,
     onWorkspaceStrategyChange,
+    validationDirectory,
     workspaceLocked,
     workspaceStrategy,
   ]);
@@ -474,11 +559,23 @@ export function ChatInput({
 
   // Fetch message history when the working directory changes.
   useEffect(() => {
+    let cancelled = false;
     if (!workingDirectory) {
-      setMessageHistory([]);
-      return;
+      queueMicrotask(() => {
+        if (!cancelled) setMessageHistory([]);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-    fetchMessageHistory(workingDirectory).then(setMessageHistory).catch(() => {});
+    fetchMessageHistory(workingDirectory)
+      .then((history) => {
+        if (!cancelled) setMessageHistory(history);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [workingDirectory]);
 
   async function handleFiles(files: FileList | File[]) {
@@ -926,12 +1023,29 @@ export function ChatInput({
             <Portal>
               <Select.Positioner>
                 <Select.Content borderRadius="sm" minW="max-content" w="max-content">
-                  {permissionCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs">
-                      {item.label}
-                      <Select.ItemIndicator />
-                    </Select.Item>
-                  ))}
+                  {permissionCollection.items.map((item) => {
+                    const choice = permissionChoices.find((candidate) => candidate.value === item.value);
+                    return (
+                      <Select.Item item={item} key={item.value} fontWeight="medium" fontSize="xs">
+                        <Flex align="center" gap={2} minW={0}>
+                          <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" color={choice?.colorPalette ? `${choice.colorPalette}.fg` : "fg.subtle"} flexShrink={0}>
+                            {choice?.icon}
+                          </Box>
+                          <Flex direction="column" minW={0}>
+                            <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+                              {choice?.label ?? item.label}
+                            </Text>
+                            {choice?.description && (
+                              <Text fontSize="2xs" color="fg.muted" lineHeight="1.2">
+                                {choice.description}
+                              </Text>
+                            )}
+                          </Flex>
+                        </Flex>
+                        <Select.ItemIndicator />
+                      </Select.Item>
+                    );
+                  })}
                 </Select.Content>
               </Select.Positioner>
             </Portal>
@@ -950,8 +1064,8 @@ export function ChatInput({
             fontWeight="medium"
             flexShrink={0}
             title={sandboxEnabled
-              ? "Commands are confined to the working directory — access outside it needs approval"
-              : "Commands can reach the whole filesystem without confinement"}
+              ? "Command filesystem access is confined to the working directory; access outside it needs approval."
+              : "Commands can reach the whole filesystem without sandbox confinement."}
             onClick={() => onSandboxEnabledChange?.(!sandboxEnabled)}
             disabled={!onSandboxEnabledChange}
           >
@@ -961,6 +1075,30 @@ export function ChatInput({
             {sandboxAppearance.label}
           </Button>
           <Flex align="center" gap={1.5} flexWrap="wrap">
+            {gitStatusLabel && (
+              <Flex
+                align="center"
+                gap={1.5}
+                h="28px"
+                px={2}
+                borderRadius="sm"
+                border="1px solid"
+                borderColor={directoryState.gitDirty ? "orange.muted" : "green.muted"}
+                bg={directoryState.gitDirty ? "orange.subtle" : "green.subtle"}
+                color={directoryState.gitDirty ? "orange.fg" : "green.fg"}
+                flexShrink={1}
+                minW={0}
+                maxW={{ base: "100%", md: "260px" }}
+                title={gitStatusTitle}
+              >
+                <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
+                  <LuGitBranch size={13} />
+                </Box>
+                <Text fontSize="xs" fontWeight="medium" truncate>
+                  {gitStatusLabel}
+                </Text>
+              </Flex>
+            )}
             {workspaceSelectorHidden ? (
               <Flex
                 align="center"
@@ -980,7 +1118,7 @@ export function ChatInput({
                   <LuTriangleAlert size={13} />
                 </Box>
                 <Text fontSize="xs" fontWeight="medium" truncate>
-                  Unconfigured Git workspace
+                  Git repo required for isolation
                 </Text>
               </Flex>
             ) : (
@@ -1017,9 +1155,7 @@ export function ChatInput({
                     title={
                       workspaceLocked
                         ? workspaceDetail?.title ?? "Workspace strategy for this session"
-                        : directoryState.repositoryRoot && displayedWorkspaceStrategy !== "none"
-                          ? directoryState.repositoryRoot
-                          : "Session workspace strategy"
+                        : workspaceChoices.find((choice) => choice.value === displayedWorkspaceStrategy)?.title ?? "Session isolation strategy"
                     }
                     style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
                   >
@@ -1039,10 +1175,21 @@ export function ChatInput({
                         const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
                         const choice = workspaceChoices.find((choice) => choice.value === item.value);
                         return (
-                          <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
-                            <Flex align="center" gap={1.5}>
-                              {choice?.icon}
-                              <Text>{item.label}</Text>
+                          <Select.Item item={item} key={item.value} fontWeight="medium" fontSize="xs" aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
+                            <Flex align="center" gap={2} minW={0}>
+                              <Box display="flex" alignItems="center" justifyContent="center" w="13px" h="13px" flexShrink={0}>
+                                {choice?.icon}
+                              </Box>
+                              <Flex direction="column" minW={0}>
+                                <Text fontSize="xs" fontWeight="medium" whiteSpace="nowrap">
+                                  {choice?.label ?? item.label}
+                                </Text>
+                                {choice?.description && (
+                                  <Text fontSize="2xs" color="fg.muted" lineHeight="1.2">
+                                    {choice.description}
+                                  </Text>
+                                )}
+                              </Flex>
                             </Flex>
                             <Select.ItemIndicator />
                           </Select.Item>
