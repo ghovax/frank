@@ -1,7 +1,6 @@
 # Daisy 🌼 — Documentation
 
-Detailed guides for installing, configuring, understanding, and developing Daisy. For a
-high-level overview, start with the [project README](../README.md).
+Detailed guides for installing, configuring, understanding, and developing Daisy. For a high-level overview, start with the [project README](../README.md).
 
 | Guide | What's in it |
 |-------|--------------|
@@ -10,6 +9,7 @@ high-level overview, start with the [project README](../README.md).
 | [Architecture](architecture.md) | The client/server split, the harness, the desktop app |
 | [Agents & skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Tools](tools.md) | The full tool surface, including computer-use and browser control |
+| [Screenshots](screenshots.md) | How the README screenshots are staged and captured (maintainers) |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
 
 ## The shape of the project
@@ -29,6 +29,4 @@ daisy/
 └── configuration.example.yaml
 ```
 
-State the harness reads and writes at runtime lives in **`~/.daisy/`**, never in the
-repository: `configuration.yaml` (credentials, selected model, settings) and `history.db`
-(chat history). It is created on first run and is the single source of truth.
+State the harness reads and writes at runtime lives in **`~/.daisy/`**, never in the repository: `configuration.yaml` (credentials, selected model, settings) and `history.db` (chat history). It is created on first run and is the single source of truth.
