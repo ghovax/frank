@@ -573,6 +573,7 @@
     "annotationNumber": "注釈 {number}",
     "mcpArtifact": "MCP アーティファクト",
     "nothingToPreview": "プレビューするものがありません",
+    "nothingToPreviewHint": "このアーティファクトにはまだレンダリングされたプレビューがありません。",
     "linkNoSafeUrl": "リンクアーティファクトに安全なURLが含まれていません。",
     "clickToOpen": "クリックして開く",
     "artifactFallback": "アーティファクト",

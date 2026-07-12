@@ -491,7 +491,6 @@ def build_open_artifact_result(
     absolute_path: str = "",
     url: str = "",
     height: int = 0,
-    summary: str = "",
 ) -> dict[str, Any]:
     """Build the tool result for an ``open_artifact`` call. Capture (the version history)
     happens in the background; this result just opens a tab in the artifacts panel and
@@ -504,7 +503,6 @@ def build_open_artifact_result(
     except (TypeError, ValueError):
         requested_height = 0
     artifact_height = max(120, min(900, requested_height)) if requested_height > 0 else "auto"
-    summary_text = (summary or "").strip() or f'Opened the artifact "{title}".'
     artifact = {
         "type": "artifact",
         "kind": kind,  # image | html | iframe | file
@@ -513,13 +511,12 @@ def build_open_artifact_result(
         "source": source,  # the path or URL shown to the user
         "location": location_uri,
         "absolute_path": absolute_path,  # live serving for a local html artifact
+        "file": absolute_path,  # the file the renderer serves live via /artifact-page (image/html)
         "url": url,  # external iframe source
         "height": artifact_height,
-        "summary": summary_text,
     }
     model_context = {
         "code": "artifact_opened",
-        "summary": summary_text,
         # Echo the id so the model can update this same artifact tab on a later call by
         # passing the same ``artifact_id`` (each write becomes a new version underneath).
         "artifact_id": artifact_id,
@@ -533,7 +530,6 @@ def open_artifact(
     url: str,
     height: int = 0,
     artifact_id: str = "",
-    summary: str = "",
 ) -> str:
     """Open an artifact in the chat's artifacts panel — a mini-browser pointed at a URL
     or a local file — rendered outside the tool card.
@@ -583,7 +579,6 @@ def open_artifact(
         artifact_id: The id returned by a previous ``open_artifact`` call. Pass it to
             update that artifact tab in place (a new render becomes a new version); omit
             it to open a new one (a new path is also treated as new).
-        summary: One-line description of what the artifact shows.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

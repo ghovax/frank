@@ -911,13 +911,21 @@ export function ChatPanel({
     const blobSha = activeVersionEntry?.blobSha || activeGroup.latestBlob;
     const commitSha = activeVersionEntry?.commitSha || activeGroup.latestCommit;
     if (activeGroup.kind === "image") {
-      const source = blobSha && activeGroup.gitDirectory !== undefined
+      // Prefer the selected version's blob bytes (so the filmstrip can step through
+      // history); fall back to serving the file live through /artifact-page — the same
+      // reliable path HTML uses. The blob URL is empty until the first version is
+      // captured (capture is async), so without the `file` fallback a freshly-opened
+      // image would have no renderable source and show "nothing to preview".
+      const versionedSrc = blobSha && activeGroup.gitDirectory !== undefined
         ? artifactBytesUrl({ location: activeGroup.locationUri, gitDirectory: activeGroup.gitDirectory, sha: blobSha, session: sessionId })
-        : activeGroup.source;
+        : "";
       return {
         type: "image",
         title: activeGroup.title,
-        src: source,
+        src: versionedSrc,
+        file: activeGroup.absolutePath,
+        location: activeGroup.locationUri,
+        session: sessionId,
         artifact_id: activeGroup.artifactId,
         version_id: selectedVersionId || commitSha,
         version_seq: selectedVersionNumber,
@@ -1630,15 +1638,16 @@ export function ChatPanel({
                           key={tab.id}
                           icon={tab.kind === "file" ? <LuFile size={13} /> : <LuAppWindow size={13} />}
                           label={tab.title}
+                          mono
                           active={tab.id === activeTabId}
                           onSelect={() => setActiveTabId(tab.id)}
                           onClose={() => handleCloseTab(tab.id)}
                           tooltip={
                             <Box fontSize="xs" lineHeight="1.6" maxW="340px">
-                              <Text fontWeight="semibold" mb={tabSourcePath ? 1 : 0} color="fg">{tab.title}</Text>
+                              <Text fontWeight="semibold" mb={tabSourcePath ? 1 : 0} color="fg" fontFamily="var(--app-font-mono)">{tab.title}</Text>
                               {tabSourcePath ? (
                                 <InlineField label={isUrl ? t("url") : t("path")}>
-                                  <Text wordBreak="break-all">{tabSourcePath}</Text>
+                                  <Text wordBreak="break-all" fontFamily="var(--app-font-mono)">{tabSourcePath}</Text>
                                 </InlineField>
                               ) : null}
                             </Box>
@@ -2041,7 +2050,7 @@ function ArtifactHistoryList({
             colorPalette={scope === "session" ? "blue" : "gray"}
             borderRadius="0"
             px={2.5}
-            fontSize="sm"
+            fontSize="xs"
             fontWeight="medium"
             onClick={() => onScopeChange("session")}
           >
@@ -2052,7 +2061,7 @@ function ArtifactHistoryList({
             colorPalette={scope === "full" ? "blue" : "gray"}
             borderRadius="0"
             px={2.5}
-            fontSize="sm"
+            fontSize="xs"
             fontWeight="medium"
             onClick={() => onScopeChange("full")}
           >

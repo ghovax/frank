@@ -3949,9 +3949,14 @@ def _prune_session_artifacts(context_id: str) -> None:
 # --- Route modules -------------------------------------------------------------
 # Registered here, after every shared singleton and helper above is defined, so the
 # route modules can import them from this module without a half-initialized cycle.
-from harness.server.routes import agents, artifacts, chat, filesystem, mcp, projects, sessions, settings, terminals, uploads  # noqa: E402
-for _route_module in (agents, artifacts, chat, filesystem, mcp, projects, sessions, settings, terminals, uploads):
-    app.include_router(_route_module.router)
+# Register the split route modules WITHOUT binding their names into this module's
+# namespace: several of them (notably `artifacts`) collide with module-level aliases used
+# at runtime — e.g. `from harness.core import artifact_versioning as artifacts` — and a bare
+# `from .routes import artifacts` would shadow that alias, breaking artifact capture with an
+# AttributeError. Import each router module by path and include only its `router`.
+import importlib as _importlib  # noqa: E402
+for _route_name in ("agents", "artifacts", "chat", "filesystem", "mcp", "projects", "sessions", "settings", "terminals", "uploads"):
+    app.include_router(_importlib.import_module(f"harness.server.routes.{_route_name}").router)
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8822):

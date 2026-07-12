@@ -5,6 +5,7 @@ import {
   Button,
   createListCollection,
   Flex,
+  IconButton,
   Portal,
   Select,
   Spinner,
@@ -638,22 +639,17 @@ export function ChatInput({
                 closeDelay={60}
                 positioning={{ placement: "top" }}
               >
-                <Button
+                <IconButton
+                  aria-label={t("attachFiles")}
                   onClick={() => void handleAttachClick()}
                   variant="ghost"
-                  minW="70px"
                   h={8}
-                  px={2}
-                  gap={1.5}
-                  fontSize="xs"
-                  fontWeight="medium"
+                  w={8}
+                  minW={8}
                   disabled={disabled || !directoryValid}
                 >
-                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                    <LuPaperclip size={14} />
-                  </Box>
-                  {t("attachFiles")}
-                </Button>
+                  <LuPaperclip size={14} />
+                </IconButton>
               </Tooltip>
               {isStreaming ? (
                 <Button

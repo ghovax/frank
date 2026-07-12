@@ -233,7 +233,7 @@ export function SessionsSidebar({
                     <InlineField label={t("fieldStatus")}><Text>{statusLabel}</Text></InlineField>
                     {entry.agent && <InlineField label={t("fieldAgent")}><Text>{agentName}</Text></InlineField>}
                     {entry.workingDirectory && (
-                      <InlineField label={t("fieldDirectory")}><Text truncate maxW="300px">{entry.workingDirectory}</Text></InlineField>
+                      <InlineField label={t("fieldDirectory")}><Text truncate maxW="300px" fontFamily="var(--app-font-mono)">{entry.workingDirectory}</Text></InlineField>
                     )}
                     <InlineField label={t("fieldIsolation")}><Text truncate maxW="300px">{workspaceTitle}</Text></InlineField>
                     <InlineField label={t("fieldPermissions")}><Text>{formatPermissionMode(entry.permissionMode)}</Text></InlineField>
@@ -257,7 +257,11 @@ export function SessionsSidebar({
                     cursor="pointer"
                     // The open session is marked only by a soft, non-aggressive blue tint.
                     bg={isActive ? "blue.subtle" : undefined}
-                    _hover={{ bg: isActive ? "blue.muted" : "bg.subtle" }}
+                    // Hover tint: a gentle gray in light mode, and a translucent white
+                    // overlay in dark mode — the near-black `bg.*` grays are too close to the
+                    // panel to read as a hover, so an alpha lift gives clear-but-soft contrast.
+                    // (Chakra v3 has no `whiteAlpha` scale, so use a raw rgba value.)
+                    _hover={{ bg: isActive ? "blue.muted" : { base: "gray.100", _dark: "rgba(255, 255, 255, 0.09)" } }}
                     // The per-row options button is hidden until the row is hovered/focused.
                     css={{
                       "& [data-row-actions]": { opacity: 0 },

@@ -3264,7 +3264,6 @@ class AgentRuntime:
                     code="empty_artifact", message="A URL or file path is required to open an artifact.",
                 )
                 return
-            summary = str(tool_arguments.get("summary", ""))
             requested_artifact_id = str(tool_arguments.get("artifact_id", "")).strip()
             requested_height = tool_arguments.get("height", 0)
             lowered = raw_target.lower()
@@ -3280,7 +3279,7 @@ class AgentRuntime:
                 )
                 result = build_open_artifact_result(
                     artifact_id=artifact_id, kind="iframe", title=raw_target, source=raw_target,
-                    url=raw_target, height=requested_height, summary=summary,
+                    url=raw_target, height=requested_height,
                 )
                 yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
                 return
@@ -3313,7 +3312,7 @@ class AgentRuntime:
             result = build_open_artifact_result(
                 artifact_id=artifact_id, kind=kind, title=display_title, source=resolved_path,
                 location_uri=resolved_location.uri, absolute_path=resolved_path,
-                height=requested_height, summary=summary,
+                height=requested_height,
             )
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 

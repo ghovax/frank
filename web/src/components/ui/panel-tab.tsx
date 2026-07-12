@@ -27,6 +27,7 @@ export function PanelTab({
   tooltip,
   closeLabel,
   maxLabelWidth = "130px",
+  mono = false,
 }: {
   icon?: ReactNode;
   label: string;
@@ -36,6 +37,8 @@ export function PanelTab({
   tooltip?: ReactNode;
   closeLabel?: string;
   maxLabelWidth?: string;
+  // Render the label in the monospace font — for tabs that name a file/path.
+  mono?: boolean;
 }) {
   const tab = (
     <Flex
@@ -59,7 +62,7 @@ export function PanelTab({
       _hover={{ bg: active ? "bg.muted" : "bg.subtle" }}
     >
       {icon}
-      <Text truncate maxW={maxLabelWidth}>{label}</Text>
+      <Text truncate maxW={maxLabelWidth} fontFamily={mono ? "var(--app-font-mono)" : undefined}>{label}</Text>
       {onClose && (
         <Box
           as="span"

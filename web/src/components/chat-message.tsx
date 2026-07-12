@@ -216,7 +216,10 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     case "assistant":
       if (!message.content) return null;
       return (
-        <Box alignSelf="flex-start" px={1}>
+        // No horizontal inset: the assistant's prose shares the same left edge as the
+        // tool-call cards (which have none), so text and tools line up — matching the
+        // agents panel. A stray px here pushed the markdown ~4px inward of the cards.
+        <Box alignSelf="flex-start">
           <MarkdownContent content={message.content} />
         </Box>
       );

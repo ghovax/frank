@@ -573,6 +573,7 @@
     "annotationNumber": "Annotation {number}",
     "mcpArtifact": "MCP artifact",
     "nothingToPreview": "Nothing to preview",
+    "nothingToPreviewHint": "This artifact has no rendered preview yet.",
     "linkNoSafeUrl": "Link artifact did not include a safe URL.",
     "clickToOpen": "click to open",
     "artifactFallback": "Artifact",

@@ -3,7 +3,7 @@
 import { Box, Button, Flex, IconButton, Link, Text, Textarea } from "@chakra-ui/react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslations } from "next-intl";
-import { LuAppWindow, LuCheck, LuExternalLink, LuRotateCw, LuTrash2 } from "react-icons/lu";
+import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { useColorMode } from "../ui/color-mode";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
@@ -13,6 +13,7 @@ import { useArtifactEvent } from "../artifact-bridge";
 import { MarkdownContent } from "../markdown-content";
 import { Tooltip } from "../ui/tooltip";
 import { CenteredNumber } from "../ui/centered-number";
+import { PanelEmptyState } from "../ui/panel";
 import {
   asArray,
   asRecord,
@@ -339,16 +340,10 @@ function OpenArtifactCallView({ args }: { args: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
   const url = asString(args.url);
   const title = asString(args.title);
-  const summary = asString(args.summary);
   return (
     <FieldList>
       {title && <InlineField label={t("title")}>{title}</InlineField>}
-      {url && <InlineField label={t("source")}>{url}</InlineField>}
-      {summary && (
-        <Field label={t("summary")}>
-          <MarkdownContent content={summary} fontSize="xs" />
-        </Field>
-      )}
+      {url && <InlineField label={t("source")}><Mono>{url}</Mono></InlineField>}
     </FieldList>
   );
 }
@@ -1367,14 +1362,9 @@ function ImageAnnotationPanel({
       onPointerDown={(event: ReactPointerEvent) => event.stopPropagation()}
       onClick={(event: ReactMouseEvent) => event.stopPropagation()}
     >
-      <Flex align="center" gap={2} mb={2}>
-        <Box position="relative" w="27px" h="27px" borderRadius="full" bg="blue.solid" color="white" flexShrink={0}>
-          <CenteredNumber fontSize={14} weight={700}>{draft.sequence}</CenteredNumber>
-        </Box>
-        <Text fontSize="xs" fontWeight="semibold" flex={1}>
-          {t("annotation")}
-        </Text>
-      </Flex>
+      <Text fontSize="xs" fontWeight="semibold" mb={2}>
+        {t("annotation")}
+      </Text>
       <Textarea
         value={draft.comment}
         onChange={(event) => onCommentChange(event.target.value)}
@@ -1388,6 +1378,7 @@ function ImageAnnotationPanel({
         placeholder={t("annotationPlaceholder")}
         fontSize="sm"
         bg="bg.subtle"
+        minH="60px"
         autoFocus
       />
       <Flex align="center" justify="flex-end" gap={2} mt={2}>
@@ -1452,13 +1443,6 @@ function AnnotatableImage({
   const effectiveZoom = fitZoom * zoom;
   const displayWidth = naturalSize ? Math.max(1, naturalSize.width * effectiveZoom) : undefined;
   const displayHeight = naturalSize ? Math.max(1, naturalSize.height * effectiveZoom) : undefined;
-  // Annotation markers scale with the displayed image so they don't dominate a zoomed-out
-  // view (and grow as you zoom in): ~5% of the smaller on-screen dimension, clamped to a
-  // usable range. Its number tracks the diameter so the pin stays proportioned.
-  const markerSize = displayWidth && displayHeight
-    ? clamp(Math.round(Math.min(displayWidth, displayHeight) * 0.05), 16, 34)
-    : 30;
-  const markerFontSize = Math.max(11, Math.round(markerSize * 0.5));
 
   function fittedZoomForImage(imageWidth: number, imageHeight: number): number {
     const container = scrollRef.current;
@@ -1487,7 +1471,9 @@ function AnnotatableImage({
     const id = existing?.id ?? createClientIdentifier("annotation");
     return {
       id,
-      sequence: existing?.sequence ?? nextAnnotationSequence(annotations, id),
+      // Base a new annotation's number on the list WITHOUT any still-empty draft, so
+      // placing after abandoning a blank annotation reuses its number instead of skipping it.
+      sequence: existing?.sequence ?? nextAnnotationSequence(annotationsDroppingEmptyDraft(), id),
       x: Math.round(xRatio * imageWidth),
       y: Math.round(yRatio * imageHeight),
       xRatio,
@@ -1624,7 +1610,7 @@ function AnnotatableImage({
       createdAt: nextDraft.createdAt,
       updatedAt: nextDraft.updatedAt,
     };
-    annotationsControl.onChange([...annotations, saved]);
+    annotationsControl.onChange([...annotationsDroppingEmptyDraft(), saved]);
     setDraft(saved);
   }
 
@@ -1634,6 +1620,10 @@ function AnnotatableImage({
       return;
     }
     if (readOnly) return;
+    // Leaving a still-empty draft to open a different annotation drops the empty one.
+    if (annotationsControl && draft && draft.id !== annotation.id && !draft.comment.trim()) {
+      annotationsControl.onChange(annotations.filter((existing) => existing.id !== draft.id));
+    }
     setDraft({
       id: annotation.id,
       x: annotation.x,
@@ -1676,6 +1666,15 @@ function AnnotatableImage({
     if (!draft || !annotationsControl) return;
     annotationsControl.onChange(annotations.filter((annotation) => annotation.id !== draft.id));
     setDraft(null);
+  }
+
+  // An annotation with no comment is never kept. Returns the annotation list minus the
+  // current draft when it is still empty — used whenever we leave a draft (close the popover,
+  // place another, or open a different one) so a blank annotation is discarded rather than saved.
+  function annotationsDroppingEmptyDraft(): ArtifactImageAnnotation[] {
+    return draft && !draft.comment.trim()
+      ? annotations.filter((annotation) => annotation.id !== draft.id)
+      : annotations;
   }
 
   function handleWheel(event: ReactWheelEvent<HTMLDivElement>) {
@@ -1817,16 +1816,19 @@ function AnnotatableImage({
             left={`${annotation.xRatio * 100}%`}
             top={`${annotation.yRatio * 100}%`}
             transform="translate(-50%, -50%)"
-            w={`${markerSize}px`}
-            h={`${markerSize}px`}
+            w="24px"
+            h="24px"
             borderRadius="full"
             bg="blue.solid"
             color="white"
+            // Match the comment-panel badge exactly: a native <button> uses the UA button font,
+            // so force the app font here or the digit renders in a different typeface.
+            fontFamily="var(--app-font-sans)"
             boxShadow={draft?.id === annotation.id ? "0 0 0 3px var(--chakra-colors-blue-solid)" : undefined}
             cursor={readOnly ? "default" : "pointer"}
             onClick={(event: ReactMouseEvent) => openExistingAnnotation(annotation, event)}
           >
-            <CenteredNumber fontSize={markerFontSize} weight={700}>{annotation.sequence}</CenteredNumber>
+            <CenteredNumber fontSize={12} weight={700}>{annotation.sequence}</CenteredNumber>
           </Box>
           </Tooltip>
         ))}
@@ -1835,7 +1837,11 @@ function AnnotatableImage({
               draft={draft}
               onCommentChange={updateDraftComment}
               onDelete={deleteDraft}
-              onDone={() => setDraft(null)}
+              onDone={() => {
+                // An annotation with nothing typed is discarded, not saved.
+                if (draft && !draft.comment.trim()) deleteDraft();
+                else setDraft(null);
+              }}
             />
           ) : null}
         </Box>
@@ -1849,10 +1855,14 @@ function AnnotatableImage({
 // brief moment while a version's bytes are still resolving, so there's no error flash. In
 // the panel (fillContainer) it centers to fill; inline in the transcript it's a small hint.
 function ArtifactUnavailable({ fillContainer, children }: { fillContainer?: boolean; children: ReactNode }) {
+  const t = useTranslations("ToolViews");
+  // In the panel (fillContainer) this is a real empty state — icon + title + hint, styled
+  // exactly like the app's other panel empty states. Inline in the transcript it stays a
+  // one-line hint.
   if (fillContainer) {
     return (
-      <Flex flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-        {children}
+      <Flex flex={1} minH={0} align="center" justify="center">
+        <PanelEmptyState icon={<LuImageOff />} title={children} description={t("nothingToPreviewHint")} />
       </Flex>
     );
   }
@@ -1934,7 +1944,13 @@ function RenderArtifact({
   }
   if (type === "image") {
     const file = asString(artifact.file);
-    const source = file ? artifactPageUrl(file) : safeImageSource(asString(artifact.data) || asString(artifact.src) || asString(artifact.url));
+    // Prefer an explicit image source (a versioned blob-bytes URL, an http image, or a
+    // data: URI); otherwise serve the file itself through /artifact-page, which renders a
+    // freshly-opened local image (before its first version blob is captured) and remote
+    // images. This is the same serve path HTML uses, so images no longer fall through to
+    // an empty "nothing to preview" when the blob URL is not yet available.
+    const explicit = safeImageSource(asString(artifact.data) || asString(artifact.src) || asString(artifact.url));
+    const source = explicit || (file ? artifactPageUrl(file, { location: asString(artifact.location), session: asString(artifact.session) }) : "");
     if (!source) return <ArtifactUnavailable fillContainer={fillContainer}>{t("nothingToPreview")}</ArtifactUnavailable>;
     const imageIdentity = imageIdentityForArtifact({ ...artifact, type });
     return (
