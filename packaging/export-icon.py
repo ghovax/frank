@@ -15,7 +15,7 @@ ICON_COMPOSER_TOOL = Path(
     "/Applications/Icon Composer.app/Contents/Executables/ictool"
 )
 MASTER_SIZE = 2048
-LEGACY_MACOS_FOOTPRINT = 0.8275
+LEGACY_MACOS_FOOTPRINT = 1.0
 
 
 def export_composer_document(output_path: Path) -> None:
