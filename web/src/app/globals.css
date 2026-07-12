@@ -1,0 +1,146 @@
+@import "@xterm/xterm/css/xterm.css";
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+/* Native desktop titlebar. In a plain browser this is 0px so the layout is
+   unchanged; inside the Tauri app the window has a hidden/transparent titlebar
+   with native macOS traffic lights floating over the top-left, so we reserve a
+   strip of this height for dragging and keep content from hiding underneath. */
+:root {
+  --titlebar-height: 0px;
+}
+
+html[data-tauri="true"] {
+  --titlebar-height: 30px;
+}
+
+/* The draggable strip that spans the top of the window. `data-tauri-drag-region`
+   is what Tauri listens to for moving (and double-click to zoom) the window. It
+   sits above the reserved inset, so no interactive control is ever beneath it. */
+.titlebar-drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-height);
+  z-index: 1000;
+}
+
+body {
+  --app-font-sans: var(--font-sans), system-ui, sans-serif;
+  --app-font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--app-font-sans);
+  --chakra-fonts-body: var(--app-font-sans);
+  --app-font-display: var(--font-display), var(--app-font-sans);
+  --chakra-fonts-heading: var(--app-font-display);
+  --chakra-fonts-mono: var(--app-font-mono);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--app-font-mono);
+}
+
+.daisy-terminal-surface {
+  background: var(--chakra-colors-bg);
+}
+
+.daisy-terminal-surface .xterm {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  font-feature-settings: "liga" 0, "calt" 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.daisy-terminal-surface .xterm,
+.daisy-terminal-surface .xterm-screen,
+.daisy-terminal-surface .xterm-viewport {
+  background-color: var(--chakra-colors-bg) !important;
+}
+
+.daisy-terminal-surface .xterm-screen {
+  z-index: 31;
+  cursor: text;
+}
+
+.daisy-terminal-surface .xterm-viewport {
+  z-index: 30;
+  box-sizing: border-box;
+}
+
+.daisy-terminal-surface .xterm:focus,
+.daisy-terminal-surface .xterm-helper-textarea:focus {
+  outline: none;
+}
+
+.running-title-shimmer {
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    var(--chakra-colors-fg-muted) 0%,
+    var(--chakra-colors-fg-muted) 38%,
+    var(--chakra-colors-fg) 50%,
+    var(--chakra-colors-fg-muted) 62%,
+    var(--chakra-colors-fg-muted) 100%
+  );
+  background-size: 260% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: running-title-shimmer 3.2s linear infinite;
+}
+
+@keyframes running-title-shimmer {
+  from {
+    background-position: 130% 0;
+  }
+
+  to {
+    background-position: -130% 0;
+  }
+}
+
+.task-hover-root:hover .task-hover-panel,
+.task-hover-root:focus-within .task-hover-panel {
+  display: block;
+}
+
+/* A soft breathing pulse for the "still working" status dot in the sessions sidebar. */
+.status-dot-pulse {
+  animation: status-dot-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes status-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.3;
+    transform: scale(0.66);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .running-title-shimmer {
+    color: var(--chakra-colors-fg-muted);
+    background-image: none;
+    animation: none;
+  }
+
+  .status-dot-pulse {
+    animation: none;
+  }
+}

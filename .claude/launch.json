@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "nix",
+      "runtimeArgs": ["develop", "./web", "--command", "npm", "run", "--prefix", "web", "dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

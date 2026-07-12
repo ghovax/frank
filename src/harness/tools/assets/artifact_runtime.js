@@ -1,0 +1,77 @@
+// Harness artifact runtime.
+//
+// Injected as an inline <script> at the top of every opened HTML artifact
+// (see `_inject_artifact_runtime`). It talks to the host over the postMessage
+// back-channel the front end already listens on (source: "artifact"),
+// doing two jobs:
+//
+//   1. Report an uncaught error or rejected promise as a structured
+//      `render_error` event, so the model can see the failure and iterate.
+//   2. Report the document's content height as a `__artifact_resize` event, so
+//      the front end sizes the artifact automatically and the model never has to
+//      guess a height.
+//
+// It is injected inline (rather than loaded via `<script src>`) so the error
+// listeners are registered before the model's own scripts run and so an artifact
+// works without a second network fetch.
+(function () {
+  function send(event, data) {
+    try {
+      window.parent.postMessage(
+        { source: "artifact", event: event, data: data },
+        "*"
+      );
+    } catch (error) {
+      // The host frame may be gone; there is nothing to recover here.
+    }
+  }
+
+  function report(message, source) {
+    send("render_error", { message: String(message), source: source || "" });
+  }
+
+  window.addEventListener("error", function (event) {
+    report(
+      event.message || (event.error && event.error.message) || "script error",
+      event.filename || ""
+    );
+  });
+
+  window.addEventListener("unhandledrejection", function (event) {
+    report((event.reason && event.reason.message) || String(event.reason), "promise");
+  });
+
+  function measure() {
+    var body = document.body;
+    var root = document.documentElement;
+    var height = Math.max(
+      root ? root.scrollHeight : 0,
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0
+    );
+    if (height > 0) {
+      send("__artifact_resize", { height: height });
+    }
+  }
+
+  function start() {
+    measure();
+    if (window.ResizeObserver) {
+      var observer = new ResizeObserver(measure);
+      observer.observe(document.documentElement);
+      if (document.body) {
+        observer.observe(document.body);
+      }
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start);
+  } else {
+    start();
+  }
+
+  window.addEventListener("load", measure);
+  setTimeout(measure, 300);
+  setTimeout(measure, 1000);
+})();

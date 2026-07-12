@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS privacy (TCC) usage strings. Tauri v2 merges this file into the app's generated
+       Info.plist. Each string is shown in the system permission prompt, so it explains, in
+       the user's terms, why Daisy needs the access, and everything stays on-device.
+       These declarations are what let macOS prompt for the access instead of silently denying
+       it. Full Disk Access (Screen Time, Safari history) still has to be granted by hand in
+       System Settings, as macOS provides no prompt or entitlement for it — and the computer-use
+       tool's Accessibility access is likewise granted from the app's Settings › Computer control,
+       since macOS has no usage-string prompt for it either. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Daisy uses other apps on your behalf — asking them and System Events to open pages, click, type, and report what is on screen — to carry out the tasks you ask for and to see which apps are open. Every action stays contained to one app, and this stays on your Mac.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>Daisy looks at the kinds of files on your Desktop and which you have used recently, to tailor its help. It never reads their contents; this stays on your Mac.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>Daisy looks at the kinds of files in your Documents and which you have used recently, to tailor its help. It never reads their contents; this stays on your Mac.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>Daisy looks at the kinds of files in your Downloads and which you have used recently, to tailor its help. It never reads their contents; this stays on your Mac.</string>
+  <key>NSSystemAdministrationUsageDescription</key>
+  <string>Daisy reads basic system information — hardware, uptime, connected devices — to tailor its help. This stays on your Mac.</string>
+</dict>
+</plist>

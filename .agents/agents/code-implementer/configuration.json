@@ -1,0 +1,32 @@
+{
+  "preset": {
+    "model": "deepseek-v4-flash",
+    "provider": "opencode",
+    "reasoningEffort": "high"
+  },
+  "permissionMode": "default",
+  "tools": {
+    "enabledBuiltinTools": ["spawn_agent"],
+    "bash": {
+      "enabled": true,
+      "backgroundAllowed": true,
+      "permissions": {
+        "rm *": "ask",
+        "sudo *": "deny",
+        "chmod *": "ask",
+        "chown *": "ask",
+        "chattr *": "ask",
+        "dd *": "ask",
+        "mkfs *": "ask",
+        "mount *": "ask",
+        "git *": "ask",
+        "mv *": "ask",
+        "kill *": "ask",
+        "gh *": "ask"
+      }
+    },
+    "spawnAgent": {
+      "enabled": true
+    }
+  }
+}

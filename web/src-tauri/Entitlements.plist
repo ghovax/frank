@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Let the app (and the bundled server it spawns, which TCC attributes to this app as the
+       responsible parent) send Apple Events to System Events for the login-items / running-apps
+       probes under the hardened runtime. The app is intentionally NOT App-Store sandboxed — it
+       reads local metadata and launches the packaged Python server — so no app-sandbox key. -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+  <!-- The bundled server is a separate signed-or-ad-hoc binary the app launches; allow it to
+       load under the hardened runtime without library-validation blocking its own dylibs. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

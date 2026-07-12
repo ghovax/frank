@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[oc]
+*.egg-info
+build/
+dist/
+wheels/
+
+# Virtual environments
+.venv
+.env
+.direnv/
+
+# Editor
+.DS_Store
+*.pem
+*.swo
+*.swp
+
+# Node — the web/ app has its own tracked package.json/node_modules; these
+# root-anchored entries only catch Node debris if npm is ever run from the repo
+# root (which is a Python project). web/ uses its own .gitignore.
+/node_modules/
+/package.json
+/package-lock.json
+
+# Harness state lives in ~/.daisy and is never tracked. The shippable default
+# configuration is the empty template at src/harness/core/configuration.yaml;
+# the runtime .daisy/configuration.yaml holds real credentials, so it is ignored.
+/.daisy/
+
+# The frozen computer-use server helper bundle — build output of
+# packaging/build-sidecar.sh, hundreds of MB, regenerated on every desktop build.
+# Keep the empty directory so the resource path exists; ignore its contents.
+/web/src-tauri/server-bin/*
+!/web/src-tauri/server-bin/.gitkeep

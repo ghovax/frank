@@ -1,0 +1,795 @@
+{
+  "$defs": {
+    "AgentPathSegment": {
+      "additionalProperties": false,
+      "description": "One hop from an agent to a child agent it spawned. A full ``path`` is the\nchain of these from the root; the UI groups by ``group_id`` (one spawn_agent\ninvocation) and orders by ``step_id`` (one child turn within it).",
+      "properties": {
+        "group_id": {
+          "type": "string"
+        },
+        "step_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "step_id"
+      ],
+      "type": "object"
+    },
+    "AgentUsage": {
+      "additionalProperties": false,
+      "description": "Combined token spend of every agent this agent spawned this session. Kept in a\nseparate bucket from the parent's own usage \u2014 agents run in their own context and\nonly their deliverable returns to the parent, so their tokens are a distinct cost, not\npart of the parent's context fill.",
+      "properties": {
+        "input_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "model_calls": {
+          "default": 0,
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "CompactionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "compaction",
+          "default": "compaction",
+          "type": "string"
+        },
+        "messages_after": {
+          "default": 0,
+          "type": "integer"
+        },
+        "messages_before": {
+          "default": 0,
+          "type": "integer"
+        },
+        "ok": {
+          "default": true,
+          "type": "boolean"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "default": "",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "started",
+            "done"
+          ],
+          "type": "string"
+        },
+        "tokens_before": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "CumulativeUsage": {
+      "additionalProperties": false,
+      "description": "Session-lifetime running totals (monotonic), distinct from the per-call figures\non :class:`TokenUsageEvent` which describe only the latest model call.",
+      "properties": {
+        "cache_read_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "input_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "model_calls": {
+          "default": 0,
+          "type": "integer"
+        },
+        "output_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "reasoning_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "total_tokens": {
+          "default": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "DoneEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "done",
+          "default": "done",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "state": {
+          "default": "completed",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ErrorEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "turn_failed",
+          "type": "string"
+        },
+        "kind": {
+          "const": "error",
+          "default": "error",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_name": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "GroupStartedEvent": {
+      "additionalProperties": false,
+      "description": "A spawn_agent invocation begins. ``path`` already includes the new child\nsegment, so the client can create the group/step nodes lazily from any event \u2014\nthis only carries the human-facing label (which agent) up front.",
+      "properties": {
+        "agent_name": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "group_started",
+          "default": "group_started",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent_name"
+      ],
+      "type": "object"
+    },
+    "McpEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "tsType": "Record<string, unknown>"
+        },
+        "kind": {
+          "const": "mcp_event",
+          "default": "mcp_event",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "server": {
+          "default": "",
+          "type": "string"
+        },
+        "tool": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id"
+      ],
+      "type": "object"
+    },
+    "ModelToolResult": {
+      "additionalProperties": false,
+      "description": "The one-line JSON metadata header prepended to every tool result the model reads \u2014\ninline as a ToolMessage (``kind=\"tool_result\"``) or, for a background completion, as an\nappend-only system message (``kind=\"background_result\"``). The tool's raw output body\nfollows the header after a blank line, delivered **as-is**: prose stays prose (never\nre-encoded into an escaped JSON string), structured output stays JSON.",
+      "properties": {
+        "background_task_identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "default": "tool_result",
+          "enum": [
+            "tool_result",
+            "background_result"
+          ],
+          "type": "string"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "tool_call_id",
+        "status"
+      ],
+      "type": "object"
+    },
+    "PermissionRequestEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "default": "",
+          "type": "string"
+        },
+        "justification": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "permission_request",
+          "default": "permission_request",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "risk": {
+          "default": "",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "QuestionEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "question",
+          "default": "question",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "questions": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "StatusEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "status",
+          "default": "status",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "SteeringEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "steering",
+          "default": "steering",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "text": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TextEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "default": "text",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "ThinkingDoneEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "default": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "const": "thinking_done",
+          "default": "thinking_done",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ThinkingEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "thinking",
+          "default": "thinking",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "text": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TokenUsageEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "agents": {
+          "$ref": "#/$defs/AgentUsage"
+        },
+        "context_window": {
+          "default": 0,
+          "type": "integer"
+        },
+        "cumulative": {
+          "$ref": "#/$defs/CumulativeUsage"
+        },
+        "input_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "const": "token_usage",
+          "default": "token_usage",
+          "type": "string"
+        },
+        "output_tokens": {
+          "default": 0,
+          "type": "integer"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ToolCallEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "tsType": "Record<string, unknown>"
+        },
+        "kind": {
+          "const": "tool_call",
+          "default": "tool_call",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "tool_name"
+      ],
+      "type": "object"
+    },
+    "ToolMetadata": {
+      "additionalProperties": false,
+      "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
+      "properties": {
+        "background_task_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "tool_call_id"
+      ],
+      "type": "object"
+    },
+    "ToolResultEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "display": {
+          "default": null,
+          "tsType": "unknown"
+        },
+        "kind": {
+          "const": "tool_result",
+          "default": "tool_result",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/ToolMetadata"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus"
+        },
+        "tool_call_id": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_call_id",
+        "tool_name",
+        "status",
+        "metadata"
+      ],
+      "type": "object"
+    },
+    "ToolStatus": {
+      "enum": [
+        "running",
+        "ok",
+        "error"
+      ],
+      "type": "string"
+    },
+    "TurnContext": {
+      "additionalProperties": false,
+      "description": "The single structured object injected each turn, replacing the old pile of\nnewline-joined JSON blobs.",
+      "properties": {
+        "active_goal": {
+          "default": "",
+          "type": "string"
+        },
+        "background": {
+          "tsType": "Record<string, unknown>"
+        },
+        "pwd": {
+          "default": "",
+          "type": "string"
+        },
+        "reminders": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tasks": {
+          "items": {
+            "tsType": "Record<string, unknown>"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "WireEvent": {
+      "discriminator": {
+        "mapping": {
+          "compaction": "#/$defs/CompactionEvent",
+          "done": "#/$defs/DoneEvent",
+          "error": "#/$defs/ErrorEvent",
+          "group_started": "#/$defs/GroupStartedEvent",
+          "mcp_event": "#/$defs/McpEvent",
+          "permission_request": "#/$defs/PermissionRequestEvent",
+          "question": "#/$defs/QuestionEvent",
+          "status": "#/$defs/StatusEvent",
+          "steering": "#/$defs/SteeringEvent",
+          "text": "#/$defs/TextEvent",
+          "thinking": "#/$defs/ThinkingEvent",
+          "thinking_done": "#/$defs/ThinkingDoneEvent",
+          "token_usage": "#/$defs/TokenUsageEvent",
+          "tool_call": "#/$defs/ToolCallEvent",
+          "tool_result": "#/$defs/ToolResultEvent"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextEvent"
+        },
+        {
+          "$ref": "#/$defs/ThinkingEvent"
+        },
+        {
+          "$ref": "#/$defs/ThinkingDoneEvent"
+        },
+        {
+          "$ref": "#/$defs/ToolCallEvent"
+        },
+        {
+          "$ref": "#/$defs/ToolResultEvent"
+        },
+        {
+          "$ref": "#/$defs/McpEvent"
+        },
+        {
+          "$ref": "#/$defs/StatusEvent"
+        },
+        {
+          "$ref": "#/$defs/GroupStartedEvent"
+        },
+        {
+          "$ref": "#/$defs/DoneEvent"
+        },
+        {
+          "$ref": "#/$defs/CompactionEvent"
+        },
+        {
+          "$ref": "#/$defs/SteeringEvent"
+        },
+        {
+          "$ref": "#/$defs/TokenUsageEvent"
+        },
+        {
+          "$ref": "#/$defs/PermissionRequestEvent"
+        },
+        {
+          "$ref": "#/$defs/QuestionEvent"
+        },
+        {
+          "$ref": "#/$defs/ErrorEvent"
+        }
+      ]
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "title": "DaisyEvents",
+  "type": "object"
+}
