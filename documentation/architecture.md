@@ -1,0 +1,95 @@
+# Architecture
+
+Daisy is split into a **harness** (the server that runs agents) and an **app** (the
+native client). They communicate only over HTTP, which is the single most important fact
+about the system: the two can run on the same machine or on different ones, and nothing
+else changes.
+
+```mermaid
+flowchart LR
+    subgraph Client["Desktop app (Tauri + Next.js)"]
+        UI["Chat UI · settings · artifacts"]
+        Conn["Connection manager<br/>(local · URL · SSH)"]
+    end
+
+    subgraph Harness["Harness (Python · FastAPI)"]
+        API["A2A + REST API<br/>127.0.0.1:8822"]
+        Loop["Agent loop<br/>(LangChain / LangGraph)"]
+        Perm["Permission engine"]
+        Tools["Tools: shell · files · web ·<br/>computer-use · browser · MCP"]
+        Store["~/.daisy<br/>configuration.yaml · history.db"]
+    end
+
+    Model["Model provider<br/>(Anthropic · OpenAI · … via LiteLLM)"]
+
+    UI --> Conn --> API
+    API --> Loop --> Perm --> Tools
+    Loop --> Store
+    Loop <--> Model
+```
+
+## The harness
+
+A standalone FastAPI application (`server.py` is a thin launch shim; the app lives in
+`src/harness/`). It:
+
+- serves **every agent** as an independently addressable [A2A](https://github.com/google/A2A)
+  endpoint (JSON-RPC), plus a small REST API the UI uses;
+- runs the **agent loop** on LangChain / LangGraph, with model access through
+  [LiteLLM](https://litellm.ai) so any provider looks the same;
+- dispatches **tools** and runs each one through the **permission engine** before it takes
+  effect;
+- persists everything to **`~/.daisy/`** — `configuration.yaml` and `history.db`.
+
+It binds `127.0.0.1:8822` by default. It has **no built-in authentication**: it trusts
+whoever can reach the port. That is fine on `localhost`; anywhere else it is your job to
+put auth and transport security in front (see [SECURITY.md](../SECURITY.md)).
+
+## The app
+
+A [Tauri](https://tauri.app) shell around a [Next.js](https://nextjs.org) UI (static
+export; Chakra UI). It is a **client** — it holds no agent logic. Its jobs are to render
+conversations, manage settings, preview artifacts, and, crucially, **choose which harness
+to talk to**.
+
+The packaged app bundles a frozen copy of the harness (built with PyInstaller by
+`packaging/build-sidecar.sh`) and starts it automatically, so a fresh install works with
+zero setup.
+
+## Connections: local, remote, SSH
+
+The UI's connection manager resolves the API base URL, in order:
+
+1. a saved connection you selected in **Settings → Connections**, then
+2. the build-time default `NEXT_PUBLIC_DAISY_API_BASE`, then
+3. `http://localhost:8822`.
+
+That yields three ways to run:
+
+- **Local (default).** The app manages the bundled server on `127.0.0.1:8822`.
+- **Remote URL.** Run `python server.py` on another host, expose `8822` (behind your own
+  auth), and add its URL. The app is now a native front-end to a remote backend — the
+  agent's shell, files, and network all live on that host.
+- **Over SSH.** Add an SSH host; Daisy forwards a local port to the remote `8822`, so the
+  harness can live on a machine you only reach over SSH, with no exposed port.
+
+This is the design goal behind keeping the halves apart: **put the compute, the files, and
+the credentials wherever they belong, and keep the interface native and local.**
+
+## Request lifecycle (a message)
+
+1. You send a message; the app POSTs it to the harness for the selected agent.
+2. The agent loop calls the model, which may request tool calls.
+3. Each tool call is classified for risk and checked against the permission mode. If it
+   needs approval, the harness streams a permission request; the app shows the overlay and
+   sends your decision back.
+4. Approved tools run — shell in the sandbox, files on the active location, computer-use
+   and browser against the local machine, MCP against configured servers.
+5. Results stream back as structured events; the app renders tool cards, artifacts, and
+   the model's reply. Everything is persisted to `history.db`.
+
+## Where to go next
+
+- Configure providers and behavior: [configuration.md](configuration.md).
+- Author agents, skills, memory, and MCP servers: [agents-and-skills.md](agents-and-skills.md).
+- The tool surface in detail: [tools.md](tools.md).

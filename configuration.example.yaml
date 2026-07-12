@@ -1,0 +1,116 @@
+# Daisy configuration — copy this file to ~/.daisy/configuration.yaml and fill in
+# the keys you need. On first run Daisy creates ~/.daisy/configuration.yaml from a
+# built-in template, so copying this over it is optional; it exists to document the
+# full schema in one place.
+#
+# Nothing here is required to launch. Add only what you use — an unset key simply
+# disables the feature that needs it. Every credential can also be supplied through
+# the matching environment variable (noted per section), which takes precedence over
+# the file, so you never have to write a secret to disk if you would rather not.
+#
+# NEVER commit a filled-in copy of this file. ~/.daisy/ lives outside the repo and is
+# gitignored for exactly this reason.
+
+# ---------------------------------------------------------------------------
+# Model providers
+#
+# The model that runs your agents. Set the api_key for the provider(s) you use.
+# First-party providers resolve through LiteLLM's built-in endpoints; any
+# OpenAI-compatible provider can also declare a base_url. Each key falls back to the
+# provider's conventional environment variable (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY,
+# GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY,
+# MISTRAL_API_KEY).
+providers:
+  anthropic:
+    api_key: ""
+  openai:
+    api_key: ""
+  google:
+    api_key: ""
+  openrouter:
+    api_key: ""
+  xai:
+    api_key: ""
+  deepseek:
+    api_key: ""
+  groq:
+    api_key: ""
+  mistral:
+    api_key: ""
+  opencode:
+    api_key: ""
+    base_url: "https://opencode.ai/zen/go/v1"
+  # Any OpenAI-compatible endpoint: point base_url at it and set the key.
+  custom:
+    api_key: ""
+    base_url: ""
+
+# The provider/model selected in the UI. Usually set through the app rather than by
+# hand; left here so a headless deployment can pin them.
+selected_provider: ""
+selected_model: ""
+
+# ---------------------------------------------------------------------------
+# Web search and retrieval
+#
+# Exa powers the built-in web_search fallback (env: EXA_API_KEY).
+exa:
+  api_key: ""
+
+# fetch_url reads pages through a tiered engine. Jina Reader is a free-tier default;
+# Firecrawl is the higher-quality fallback (envs: JINA_API_KEY, FIRECRAWL_API_KEY).
+jina:
+  api_key: ""
+firecrawl:
+  api_key: ""
+
+# Optional outbound proxy for direct fetches (env: DAISY_FETCH_PROXY).
+web_fetch:
+  proxy_url: ""
+
+# ---------------------------------------------------------------------------
+# Hosted tool integrations
+#
+# Composio is exposed as a normal MCP server when enabled, giving agents authorized
+# access to apps like Gmail or Notion (env: COMPOSIO_API_KEY).
+composio:
+  enabled: false
+  url: "https://connect.composio.dev/mcp"
+  api_key: ""
+  server_name: "composio"
+
+# ---------------------------------------------------------------------------
+# Execution behavior
+#
+# sandbox.enabled confines bash to the active workspace unless the user grants
+# permission. workspace.strategy controls optional branch/worktree setup ("none",
+# "branch", "worktree").
+sandbox:
+  enabled: true
+workspace:
+  strategy: "none"
+
+# Default permission posture for tool calls:
+#   default    ask before risky actions
+#   auto       auto-approve low-risk actions, ask for the rest
+#   read_only  allow reads, deny writes and side effects
+#   bypass     approve everything (use with care)
+agent:
+  permission_mode: "default"
+
+# macOS computer-use tool (accessibility-driven control of native apps). Disable to
+# remove the capability entirely.
+computer_control:
+  enabled: true
+
+# Let agents build up persistent context about you across sessions.
+user_context:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Agents
+#
+# The primary agent used for new sessions. Bundled options: general-assistant,
+# senior-researcher, code-investigator, code-implementer. Add your own under
+# ~/.agents/agents/<id>/ or .agents/agents/<id>/ in a working directory.
+default_agent: "general-assistant"
