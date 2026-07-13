@@ -206,19 +206,23 @@ export const ToolGroup = memo(function ToolGroup({
           onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
         >
           <Flex align="center" gap={2} flex={1} minW={0}>
-            {/* Status line — the latest tool's label. The crossfade keeps the entering and
-                exiting labels in the SAME grid cell (both at gridArea 1/1) so they overlap
-                without reflow, while the cell sizes itself to one line of text — so the box
-                gets its height naturally from its content, no hand-tuned minH. `minmax(0,1fr)`
-                lets the single column shrink so the label truncates with an ellipsis. */}
+            {/* Status line — the latest tool's label. When the justification changes, the new
+                label blurs and fades in (the same token-in look as the streaming message, applied
+                to the whole label since it swaps as a unit — per-token spans would break this
+                single-line ellipsis), while the outgoing one fades out. The crossfade keeps the
+                entering and exiting labels in the SAME grid cell (both at gridArea 1/1) so they
+                overlap without reflow, while the cell sizes itself to one line of text — so the box
+                gets its height naturally from its content, no hand-tuned minH. `minmax(0,1fr)` lets
+                the single column shrink so the label truncates with an ellipsis. `initial={false}`
+                means the first label just appears; only a change animates. */}
             <Box minW={0} flex={1} overflow="hidden" display="grid" gridTemplateColumns="minmax(0, 1fr)">
               <AnimatePresence initial={false}>
                 <motion.div
                   key={headingText}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
+                  initial={{ opacity: 0, filter: "blur(2px)" }}
+                  animate={{ opacity: 1, filter: "blur(0px)" }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.16, ease: "easeOut" }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
                   style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
                 >
                   <Text

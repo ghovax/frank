@@ -22,6 +22,9 @@ interface ChatMessageProps {
   // Re-run the turn that produced a server error (resends the last user message).
   // Only wired for error rows.
   onRetry?: () => void;
+  // This is the last row and the turn is live, so its assistant text is still streaming
+  // in — drives the newly-arrived-token animation. Only ever true for one row.
+  streaming?: boolean;
 }
 
 // The structured, safe error category the server hands the UI for a failed turn
@@ -206,7 +209,7 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, onRetry }: ChatMessageProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
   const t = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
@@ -220,7 +223,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
         // tool-call cards (which have none), so text and tools line up — matching the
         // agents panel. A stray px here pushed the markdown ~4px inward of the cards.
         <Box alignSelf="flex-start">
-          <MarkdownContent content={message.content} />
+          <MarkdownContent content={message.content} animate={streaming} />
         </Box>
       );
 

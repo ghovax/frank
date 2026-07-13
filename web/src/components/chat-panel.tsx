@@ -1354,122 +1354,140 @@ export function ChatPanel({
                 </EmptyState.Content>
               </EmptyState.Root>
             </Flex>
-          ) : messages.length === 0 ? (
-            <Flex direction="column" align="center" gap={8} px={4} pt={{ base: 10, md: 20 }} pb={{ base: 8, md: 12 }}>
-              {/* The blank-conversation state inside a project: no brand lockup (that lives
-                  on the Projects home) — the build prompt, the project's locations (dotted
-                  by connection status), then the folder's skills. */}
-              <Flex direction="column" align="center" gap={4}>
-                <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
-                  {t("buildPrompt", { folder: currentFolderName })}
-                </Text>
-                {projectLocations.length > 0 && (
-                  <Flex direction="column" align="center" gap={2}>
-                    <Flex align="center" justify="center" gap={1.5} color="fg.muted">
-                      <LuNetwork size={15} />
-                      <Text textStyle="sectionLabel">{t("locationsAvailable")}</Text>
-                    </Flex>
-                    <Flex align="center" gap={2.5} wrap="wrap" justify="center">
-                      {projectLocations.map((location) => (
-                        <LocationChip key={location.id} location={location} />
-                      ))}
-                    </Flex>
-                  </Flex>
-                )}
-              </Flex>
-
-              <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
-            </Flex>
           ) : (
-            <VStack ref={scrollContentRef} gap={3} align="stretch" w="full" maxW="80rem" mx="auto">
-              <AnimatePresence initial={false}>
-                {renderedTimeline.map((item, itemIndex) => {
-                  const isLastItem = itemIndex === renderedTimeline.length - 1;
-                  const key = item.kind === "tool_group" ? item.id : item.message.id;
-                  const inner = item.kind === "tool_group" ? (
-                    <ChatToolGroup
-                      messages={item.messages}
-                      onPermission={handlePermission}
-                      onQuestion={handleQuestion}
-                      agents={agents}
-                      activeArtifactId={activeArtifactTabId}
-                      onActivateArtifact={handleActivateArtifact}
-                      keepOpen={isStreaming && isLastItem}
-                      thinkingCount={item.thinkingCount}
-                    />
-                  ) : (
-                    <ChatMessageItem
-                      message={enrichAnnotationVersions(item.message)}
-                      onPermission={handlePermission}
-                      onQuestion={handleQuestion}
-                      agents={agents}
-                      activeArtifactId={activeArtifactTabId}
-                      onActivateArtifact={handleActivateArtifact}
-                      onRetry={item.message.role === "error" ? handleRetry : undefined}
-                    />
-                  );
-                  // Assistant messages stream their content in, and tool groups
-                  // update their heading in place as calls arrive. Any entrance or
-                  // layout animation on either wrapper looks like the transcript is
-                  // being pushed around, so both get a plain stable row.
-                  const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
-                  if (isAssistantMessage || item.kind === "tool_group") {
-                    return (
-                      <div key={key} style={{ display: "flex", flexDirection: "column" }}>
-                        {inner}
-                      </div>
-                    );
-                  }
-                  return (
-                    <motion.div
-                      key={key}
-                      initial={animatedKeys.has(key) ? { opacity: 0, y: 6 } : false}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.18, ease: "easeOut" }}
-                      style={{ display: "flex", flexDirection: "column" }}
-                    >
-                      {inner}
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-              {queuedMessages.map((message, index) => (
-                <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
-                  <IconButton
-                    aria-label={t("deleteQueuedMessage")}
-                    variant="ghost"
-                    colorPalette="red"
-                    mt={0.5}
-                    flexShrink={0}
-                    onClick={() => dequeueMessage(index)}
-                  >
-                    <LuTrash2 size={13} />
-                  </IconButton>
-                  <Box
-                    px={2}
-                    py={1.5}
-                    borderRadius="md"
-                    border="1px dashed"
-                    borderColor="border"
-                    bg="bg.subtle"
-                    opacity={0.7}
-                    flex={1}
-                    minW={0}
-                  >
-                    <Flex align="center" gap={1.5}>
-                      <Box as="span" display="inline-flex" alignItems="center">
-                        {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
-                      </Box>
-                      <Text textStyle="fieldLabel" color="fg.subtle">
-                        {message.steering ? t("steeringNextOpening") : t("queued")}
+            // Empty welcome ↔ message timeline is a true cross-fade, so sending the first message
+            // never flashes. `mode="popLayout"` pops the exiting welcome out of flow (position it
+            // absolute) so the timeline — carrying the just-sent message — takes its place at once
+            // and fades in while the welcome fades out over it; there is no blank frame between the
+            // two (which `mode="wait"` left). `initial={false}` keeps an existing session's load
+            // un-animated: only the empty→timeline transition fades.
+            <AnimatePresence mode="popLayout" initial={false}>
+              {messages.length === 0 ? (
+                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
+                  <Flex direction="column" align="center" gap={8} px={4} pt={{ base: 10, md: 20 }} pb={{ base: 8, md: 12 }}>
+                    {/* The blank-conversation state inside a project: no brand lockup (that lives
+                        on the Projects home) — the build prompt, the project's locations (dotted
+                        by connection status), then the folder's skills. */}
+                    <Flex direction="column" align="center" gap={4}>
+                      <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
+                        {t("buildPrompt", { folder: currentFolderName })}
                       </Text>
+                      {projectLocations.length > 0 && (
+                        <Flex direction="column" align="center" gap={2}>
+                          <Flex align="center" justify="center" gap={1.5} color="fg.muted">
+                            <LuNetwork size={15} />
+                            <Text textStyle="sectionLabel">{t("locationsAvailable")}</Text>
+                          </Flex>
+                          <Flex align="center" gap={2.5} wrap="wrap" justify="center">
+                            {projectLocations.map((location) => (
+                              <LocationChip key={location.id} location={location} />
+                            ))}
+                          </Flex>
+                        </Flex>
+                      )}
                     </Flex>
-                    <Text fontSize="sm" color="fg.muted">{message.text}</Text>
-                  </Box>
-                </Flex>
-              ))}
-            </VStack>
+
+                    <AgentSkills card={agentCard ?? null} workingDirectory={workingDirectory} homeDirectory={homeDirectory} />
+                  </Flex>
+                </motion.div>
+              ) : (
+                <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
+                  <VStack ref={scrollContentRef} gap={3} align="stretch" w="full" maxW="80rem" mx="auto">
+                    <AnimatePresence initial={false}>
+                      {renderedTimeline.map((item, itemIndex) => {
+                        const isLastItem = itemIndex === renderedTimeline.length - 1;
+                        const key = item.kind === "tool_group" ? item.id : item.message.id;
+                        const inner = item.kind === "tool_group" ? (
+                          <ChatToolGroup
+                            messages={item.messages}
+                            onPermission={handlePermission}
+                            onQuestion={handleQuestion}
+                            agents={agents}
+                            activeArtifactId={activeArtifactTabId}
+                            onActivateArtifact={handleActivateArtifact}
+                            keepOpen={isStreaming && isLastItem}
+                            thinkingCount={item.thinkingCount}
+                          />
+                        ) : (
+                          <ChatMessageItem
+                            message={enrichAnnotationVersions(item.message)}
+                            onPermission={handlePermission}
+                            onQuestion={handleQuestion}
+                            agents={agents}
+                            activeArtifactId={activeArtifactTabId}
+                            onActivateArtifact={handleActivateArtifact}
+                            onRetry={item.message.role === "error" ? handleRetry : undefined}
+                            streaming={isStreaming && isLastItem}
+                          />
+                        );
+                        // The assistant message streams its content in (the markdown animates
+                        // token by token), so its wrapper stays a plain, stable row — an entrance
+                        // animation on top of the streaming text would fight it. User messages and
+                        // tool-call groups, though, are complete the moment they appear, so they get
+                        // a single gentle fade-and-rise. `animatedKeys` limits it to rows a live turn
+                        // just appended (never load or history), and `initial` only fires on mount,
+                        // so a tool group animates once — not again as its calls fill in.
+                        const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
+                        if (isAssistantMessage) {
+                          return (
+                            <div key={key} style={{ display: "flex", flexDirection: "column" }}>
+                              {inner}
+                            </div>
+                          );
+                        }
+                        return (
+                          <motion.div
+                            key={key}
+                            initial={animatedKeys.has(key) ? { opacity: 0, y: 6 } : false}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.18, ease: "easeOut" }}
+                            style={{ display: "flex", flexDirection: "column" }}
+                          >
+                            {inner}
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                    {queuedMessages.map((message, index) => (
+                      <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
+                        <IconButton
+                          aria-label={t("deleteQueuedMessage")}
+                          variant="ghost"
+                          colorPalette="red"
+                          mt={0.5}
+                          flexShrink={0}
+                          onClick={() => dequeueMessage(index)}
+                        >
+                          <LuTrash2 size={13} />
+                        </IconButton>
+                        <Box
+                          px={2}
+                          py={1.5}
+                          borderRadius="md"
+                          border="1px dashed"
+                          borderColor="border"
+                          bg="bg.subtle"
+                          opacity={0.7}
+                          flex={1}
+                          minW={0}
+                        >
+                          <Flex align="center" gap={1.5}>
+                            <Box as="span" display="inline-flex" alignItems="center">
+                              {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
+                            </Box>
+                            <Text textStyle="fieldLabel" color="fg.subtle">
+                              {message.steering ? t("steeringNextOpening") : t("queued")}
+                            </Text>
+                          </Flex>
+                          <Text fontSize="sm" color="fg.muted">{message.text}</Text>
+                        </Box>
+                      </Flex>
+                    ))}
+                  </VStack>
+                </motion.div>
+              )}
+            </AnimatePresence>
           )}
         </Box>
         {!isAtBottom && !isHistoryLoading && !historyError && messages.length > 0 && (

@@ -145,6 +145,21 @@ samp {
   }
 }
 
+/* Streaming markdown: each newly-arrived token fades in with just a whisper of blur
+   (flowtoken's SplitText applies this by name to the spans it wraps new text in). Kept
+   quick and crisp so the text reads as typing in, not softening into place. Disabled under
+   reduced motion in JS, where the animation is opted out at the source rather than here. */
+@keyframes daisy-token-in {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {
     color: var(--chakra-colors-fg-muted);

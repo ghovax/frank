@@ -11,6 +11,13 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { xcode, atomOneDark } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import type { Components } from "react-markdown";
 import type { Element } from "hast";
+import { useReducedMotion } from "motion/react";
+// flowtoken only publicly exports AnimatedMarkdown, whose fixed pipeline (remark-gfm +
+// rehype-raw, its own element map) can't host our KaTeX/GFM/twemoji/Prism/Chakra setup. Its
+// real engine is the SplitText token animator: in `diff` mode it tracks a growing string and
+// wraps only the newly-arrived text in animated spans. We use that primitive directly and drive
+// it from our own react-markdown so the streaming animation layers onto the existing renderer.
+import SplitText from "flowtoken/dist/components/SplitText";
 import { useColorModeValue } from "./ui/color-mode";
 
 interface MarkdownContentProps {
@@ -19,6 +26,9 @@ interface MarkdownContentProps {
   // elements inherit this from the wrapper so callers can match their context
   // (e.g. "xs" inside compact tool-call fields).
   fontSize?: string;
+  // Animate newly-streamed text as it arrives. Set only for the one live, streaming
+  // message; finalized messages and history render statically (see renderChildren).
+  animate?: boolean;
 }
 
 const blockGap = "0.75rem";
@@ -97,6 +107,39 @@ function renderEmojiChildren(children: ReactNode): ReactNode {
   return Children.map(children, (child) => typeof child === "string" ? renderTextWithTwemoji(child) : child);
 }
 
+// The streaming token animation, tuned for our stack: a quick, crisp fade with a whisper
+// of blur (the `daisy-token-in` keyframe in globals.css). Short enough to feel like typing,
+// not a soft settle.
+const TOKEN_ANIMATION = "daisy-token-in";
+const TOKEN_DURATION = "0.3s";
+const TOKEN_TIMING = "ease-out";
+
+// One text leaf, animated: flowtoken's SplitText in `diff` mode wraps only the text that
+// arrived since the last render, so already-shown words stay put while the new ones blur in.
+function AnimatedText({ text }: { text: string }): ReactNode {
+  return (
+    <SplitText
+      input={text}
+      sep="diff"
+      animation={TOKEN_ANIMATION}
+      animationDuration={TOKEN_DURATION}
+      animationTimingFunction={TOKEN_TIMING}
+      animationIterationCount={1}
+    />
+  );
+}
+
+// How a text-bearing element renders its children. While the message is streaming, its text
+// leaves flow through the token animation; otherwise (a finalized message, history, or reduced
+// motion) they render plainly, with twemoji. Non-string children (inline elements, KaTeX spans)
+// pass straight through — their own text animates via their own component. Twemoji is applied
+// only in the static path; during the stream, emoji render as the platform glyph and are
+// swapped for twemoji on the final, non-animated render.
+function renderChildren(children: ReactNode, animate: boolean): ReactNode {
+  if (!animate) return renderEmojiChildren(children);
+  return Children.map(children, (child) => typeof child === "string" ? <AnimatedText text={child} /> : child);
+}
+
 // A single-line `$$...$$` is parsed by remark-math as *inline* math, so it lands
 // inside a paragraph without KaTeX's `katex-display` wrapper and never centers.
 // Detect the case where a paragraph's only child is the KaTeX span and render it
@@ -145,9 +188,12 @@ function useThrottledText(text: string, intervalMs: number): string {
   return throttled;
 }
 
-export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm" }: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm", animate = false }: MarkdownContentProps) {
   const syntaxTheme = useColorModeValue(xcode, atomOneDark);
   const renderedContent = useThrottledText(content, STREAMING_RENDER_INTERVAL_MS);
+  // Reduced-motion readers opt out at the source: the text renders plainly, no token spans.
+  const reduceMotion = useReducedMotion();
+  const animating = animate && !reduceMotion;
 
   const markdownComponents = useMemo<Components>(() => ({
     img({ src, alt }) {
@@ -159,19 +205,19 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       if (isDisplayMathParagraph(node)) {
         return <Box textAlign="center" fontSize="inherit">{children}</Box>;
       }
-      return <Text fontSize="inherit" lineHeight="1.6">{renderEmojiChildren(children)}</Text>;
+      return <Text fontSize="inherit" lineHeight="1.6">{renderChildren(children, animating)}</Text>;
     },
     h1({ children }) {
-      return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderEmojiChildren(children)}</Heading>;
+      return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
     },
     h2({ children }) {
-      return <Heading as="h2" fontSize="md" fontWeight="bold">{renderEmojiChildren(children)}</Heading>;
+      return <Heading as="h2" fontSize="md" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
     },
     h3({ children }) {
-      return <Heading as="h3" fontSize="sm" fontWeight="bold">{renderEmojiChildren(children)}</Heading>;
+      return <Heading as="h3" fontSize="sm" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
     },
     h4({ children }) {
-      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{renderEmojiChildren(children)}</Heading>;
+      return <Heading as="h4" fontSize="sm" fontWeight="semibold" color="fg.muted">{renderChildren(children, animating)}</Heading>;
     },
     a({ href, children }) {
       // Editorial underline like the reference prose: offset from the baseline and
@@ -186,7 +232,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
           target="_blank"
           rel="noopener noreferrer"
         >
-          {renderEmojiChildren(children)}
+          {renderChildren(children, animating)}
         </Link>
       );
     },
@@ -197,12 +243,12 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Box as="ol" pl={6} fontSize="inherit" listStyleType="decimal">{children}</Box>;
     },
     li({ children }) {
-      return <Box as="li" mb={1} fontSize="inherit" lineHeight="1.6" display="list-item" _last={{ mb: 0 }}>{renderEmojiChildren(children)}</Box>;
+      return <Box as="li" mb={1} fontSize="inherit" lineHeight="1.6" display="list-item" _last={{ mb: 0 }}>{renderChildren(children, animating)}</Box>;
     },
     blockquote({ children }) {
       return (
         <Box borderLeftWidth="3px" borderColor="border.muted" pl={3} py={0.5} color="fg.muted" fontSize="inherit">
-          {renderEmojiChildren(children)}
+          {renderChildren(children, animating)}
         </Box>
       );
     },
@@ -273,25 +319,25 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return (
         <Box overflowX="auto" maxW="100%" my={2}>
           <Box as="table" minW="100%" fontSize="inherit" lineHeight="1.6" borderCollapse="collapse">
-            {renderEmojiChildren(children)}
+            {renderChildren(children, animating)}
           </Box>
         </Box>
       );
     },
     tr({ children }) {
-      return <Box as="tr">{renderEmojiChildren(children)}</Box>;
+      return <Box as="tr">{renderChildren(children, animating)}</Box>;
     },
     th({ children }) {
       return (
         <Box as="th" textAlign="left" pr={4} pl={0} py={2} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
-          {renderEmojiChildren(children)}
+          {renderChildren(children, animating)}
         </Box>
       );
     },
     td({ children }) {
       return (
         <Box as="td" pr={4} pl={0} py={2} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
-          {renderEmojiChildren(children)}
+          {renderChildren(children, animating)}
         </Box>
       );
     },
@@ -299,15 +345,15 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Separator borderColor="border.muted" my={1} />;
     },
     strong({ children }) {
-      return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Text>;
+      return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderChildren(children, animating)}</Text>;
     },
     em({ children }) {
-      return <Text as="em" fontSize="inherit" fontStyle="italic">{renderEmojiChildren(children)}</Text>;
+      return <Text as="em" fontSize="inherit" fontStyle="italic">{renderChildren(children, animating)}</Text>;
     },
     del({ children }) {
-      return <Text as="del" fontSize="inherit">{renderEmojiChildren(children)}</Text>;
+      return <Text as="del" fontSize="inherit">{renderChildren(children, animating)}</Text>;
     },
-  }), [syntaxTheme]);
+  }), [syntaxTheme, animating]);
 
   return (
     <Box
