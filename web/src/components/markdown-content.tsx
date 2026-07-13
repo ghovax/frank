@@ -108,9 +108,9 @@ function renderEmojiChildren(children: ReactNode): ReactNode {
 }
 
 // The streaming token animation, tuned for our stack: a quick, crisp fade with a whisper
-// of blur (the `daisy-token-in` keyframe in globals.css). Short enough to feel like typing,
+// of blur (the `token-fade-in` keyframe in globals.css). Short enough to feel like typing,
 // not a soft settle.
-const TOKEN_ANIMATION = "daisy-token-in";
+const TOKEN_ANIMATION = "token-fade-in";
 const TOKEN_DURATION = "0.3s";
 const TOKEN_TIMING = "ease-out";
 
