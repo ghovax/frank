@@ -1,5 +1,7 @@
-"""Web automation that connects to the user's *own* Chrome and drives it with Playwright over the
-Chrome DevTools Protocol.
+"""The web automation surface: the user's *own* Chrome, driven with Playwright over the Chrome
+DevTools Protocol. One of the two surfaces built on ``surface.py`` — it shares that module's
+worker, failure guard, indexed-element vocabulary, and result shapers, and adds only what is
+genuinely the web's own: the DevTools connection, the aria-snapshot parse, and Playwright acting.
 
 Why the real browser, not a copy. The point of the browser tool is to act as the user, with their
 real logins and real session. Copying a profile cannot do that anymore: Google's Device Bound
@@ -23,40 +25,28 @@ Why Playwright as the engine. The protocol transport, session juggling, frame ha
 cross-origin iframes), actionability checks before every click, scrolling (a real hover-and-wheel
 gesture routed by the browser's own scroll chaining), dialogs, downloads, file uploads, and
 keyboard layouts are exactly the commodity layer Playwright maintains against Chrome's protocol
-churn. daisy keeps only what is genuinely its own: the model-facing observation vocabulary
-(indexed elements parsed from Playwright's ref-carrying accessibility snapshot) and the
-connection policy above.
+churn. daisy keeps only the model-facing observation vocabulary (parsed from Playwright's
+ref-carrying accessibility snapshot into the shared ``Element``) and the connection policy above.
 
-Threading model. Playwright's sync API is thread-affine: every object must be used from the
-thread that created it. All public functions here therefore marshal their work onto one dedicated
-worker thread that owns the Playwright instance, the connection, and the page registry. The tool
-executor already calls these functions off the event loop, so blocking on the worker is safe.
+Threading. Playwright's sync API is thread-affine, so the ``SerialWorker`` this surface inherits is
+mandatory: the Playwright instance, the connection, and the page registry are all touched only on
+that one worker thread. The dispatch layer already calls into the surface off the event loop.
 """
 from __future__ import annotations
 
 import atexit
-import concurrent.futures
 import os
-import queue
 import re
 import tempfile
-import threading
 import time
 from collections import deque
 from itertools import count
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from harness.core.configuration import PromptLoader
+from harness.computer.surface import Element, Surface, ToolFailure, message_loader
 
-# User- and model-facing guidance prose lives in messages/*.md, loaded at runtime like every
-# other prompt in the harness, never inlined in code. Bundled by the freeze spec.
-_MESSAGE_LOADER = PromptLoader(Path(__file__).parent / "messages")
-
-
-def _message(name: str, **variables: str) -> str:
-    return _MESSAGE_LOADER.load(name, variables).strip()
-
+message = message_loader("browser")
 
 # The user-visible Chromium browsers we can connect to and drive, mapped to the support directory
 # that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
@@ -78,7 +68,7 @@ def _not_connected_payload() -> dict:
     the switch for the user; it grants full browser control, so it is their explicit choice."""
     return {
         "ok": False,
-        "error": _message("browser_not_connected", enable_url=REMOTE_DEBUGGING_URL),
+        "error": message("not_connected", enable_url=REMOTE_DEBUGGING_URL),
         "code": "browser_remote_debugging_off",
         "enable_url": REMOTE_DEBUGGING_URL,
     }
@@ -87,7 +77,7 @@ def _not_connected_payload() -> dict:
 def _stale_endpoint_payload() -> dict:
     return {
         "ok": False,
-        "error": _message("browser_endpoint_stale", enable_url=REMOTE_DEBUGGING_URL),
+        "error": message("endpoint_stale", enable_url=REMOTE_DEBUGGING_URL),
         "code": "browser_endpoint_stale",
         "enable_url": REMOTE_DEBUGGING_URL,
     }
@@ -110,14 +100,6 @@ def _devtools_websocket_url(browser: str) -> Optional[str]:
     if not port or not path:
         return None
     return f"ws://127.0.0.1:{port}{path}"
-
-
-class _ToolFailure(Exception):
-    """A structured tool result raised as control flow inside the worker; carries the payload."""
-
-    def __init__(self, payload: dict):
-        super().__init__(payload.get("error", ""))
-        self.payload = payload
 
 
 class _Session:
@@ -196,156 +178,8 @@ class _Session:
         page.on("download", on_download)
 
 
-class _Worker:
-    """The dedicated thread that owns Playwright. Public tool functions submit closures and
-    block on the result; they never touch Playwright objects themselves."""
-
-    def __init__(self) -> None:
-        self._queue: "queue.Queue[Optional[tuple]]" = queue.Queue()
-        self._thread: Optional[threading.Thread] = None
-        self._lock = threading.Lock()
-        # Worker-thread-only state:
-        self._playwright = None
-        self._session: Optional[_Session] = None
-
-    def _ensure_thread(self) -> None:
-        with self._lock:
-            if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(target=self._run, name="daisy-playwright", daemon=True)
-                self._thread.start()
-
-    def _run(self) -> None:
-        while True:
-            item = self._queue.get()
-            if item is None:
-                return
-            fn, future = item
-            try:
-                future.set_result(fn())
-            except BaseException as error:  # noqa: BLE001 (marshalled to the caller)
-                future.set_exception(error)
-
-    def submit(self, fn: Callable[[], dict], timeout: float = 120.0) -> dict:
-        self._ensure_thread()
-        future: "concurrent.futures.Future[dict]" = concurrent.futures.Future()
-        self._queue.put((fn, future))
-        return future.result(timeout=timeout)
-
-    # Everything below runs on the worker thread.
-
-    def session(self, browser: str = "chrome") -> _Session:
-        """The live session, connecting if needed. Raises _ToolFailure with the right payload
-        when the user's browser is unreachable."""
-        from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeout
-
-        if self._session is not None:
-            if self._session.browser.is_connected():
-                return self._session
-            self._session = None
-        if self._playwright is None:
-            from playwright.sync_api import sync_playwright
-
-            self._playwright = sync_playwright().start()
-        websocket_url = _devtools_websocket_url(browser)
-        if websocket_url is None:
-            raise _ToolFailure(_not_connected_payload())
-        try:
-            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=10_000)
-        except PlaywrightTimeout:
-            # The port answers but the endpoint does not: the DevToolsActivePort file outlived
-            # the debugging session (the infobar's Stop, or a toggle-off). The remedy differs
-            # from "never enabled": the switch must be cycled to mint a fresh endpoint.
-            raise _ToolFailure(_stale_endpoint_payload())
-        except PlaywrightError:
-            raise _ToolFailure(_not_connected_payload())
-        context = connected.contexts[0] if connected.contexts else connected.new_context()
-        session = _Session(connected, context)
-        for page in context.pages:
-            session.adopt(page)
-        context.on("page", session.adopt)
-        session.page = self._pick_page(session)
-        self._session = session
-        return session
-
-    @staticmethod
-    def _pick_page(session: _Session):
-        """The user's current real web page. Prefers http(s) over chrome:// and blank surfaces."""
-        pages = session.context.pages
-        if not pages:
-            return session.context.new_page()
-        return next((page for page in pages if page.url.startswith("http")), pages[-1])
-
-    def page(self, session: _Session):
-        """The active page, healing if it was closed under us."""
-        if session.page is None or session.page.is_closed():
-            session.page = self._pick_page(session)
-        return session.page
-
-    def drop_session(self) -> None:
-        self._session = None
-
-    def shutdown(self) -> None:
-        def stop() -> dict:
-            if self._session is not None and self._session.browser.is_connected():
-                # For a connected (not launched) browser this only drops our connection;
-                # the user's Chrome keeps running.
-                self._session.browser.close()
-            self._session = None
-            if self._playwright is not None:
-                self._playwright.stop()
-                self._playwright = None
-            return {}
-
-        try:
-            self.submit(stop, timeout=10.0)
-        except Exception:
-            pass
-        self._queue.put(None)
-
-
-_worker = _Worker()
-
-
-def close() -> None:
-    """Drop our connection (e.g. on server stop). The user's Chrome is left running; daisy just
-    reconnects to it next time."""
-    _worker.shutdown()
-
-
-atexit.register(close)
-
-
-def _run_tool(operation: Callable[[], dict], *, browser: str = "chrome") -> dict:
-    """Submit one tool operation to the worker and shape every failure into an honest payload.
-    Connection-level losses drop the session so the next call reconnects."""
-
-    def guarded() -> dict:
-        try:
-            return operation()
-        except _ToolFailure as failure:
-            return failure.payload
-
-    try:
-        return _worker.submit(guarded)
-    except Exception as error:  # Playwright errors, timeouts, dead browser
-        message = str(error).splitlines()[0] if str(error) else error.__class__.__name__
-
-        def drop() -> dict:
-            _worker.drop_session()
-            return {}
-
-        try:
-            _worker.submit(drop, timeout=5.0)
-        except Exception:
-            pass
-        return {
-            "ok": False,
-            "error": f"The connection to your Chrome dropped ({message}). It may have been closed; try again and daisy will reconnect.",
-        }
-
-
-# Observation: Playwright's ref-carrying accessibility snapshot, parsed into the indexed-element
-# vocabulary the model acts on.
+# Observation: Playwright's ref-carrying accessibility snapshot, parsed into the shared indexed
+# ``Element`` the model acts on.
 
 # Roles that are interactive by definition. Combined with Playwright's own [cursor=pointer]
 # hint this flags elements as `clickable`, so the model targets controls instead of prose.
@@ -371,7 +205,6 @@ _MAXIMUM_ELEMENTS = 300
 _SETTLE_MINIMUM_ELEMENTS = 3
 _SETTLE_WINDOW_SECONDS = 3.0
 
-
 # Non-interactive text rows past this many are omitted from a full overview. They are the bulk
 # of a large page's payload and rarely what an action needs; read and find reach all of them.
 _PROSE_ELEMENT_BUDGET = 80
@@ -387,16 +220,18 @@ _STRUCTURAL_ROLES = frozenset({
     "region", "navigation", "main", "complementary", "banner", "contentinfo", "form", "search",
 })
 
+# How many find matches come back at most: enough to disambiguate, small enough to stay readable.
+_FIND_LIMIT = 25
+
 
 def _parse_snapshot(
     snapshot: str, limit: int = _MAXIMUM_ELEMENTS, prose_budget: int = _PROSE_ELEMENT_BUDGET,
-) -> tuple[list[dict], dict[int, Optional[str]], bool, int]:
+) -> tuple[list[Element], bool, int]:
     """Parse the ai-mode aria snapshot (YAML-shaped, one node per line, ``[ref=...]`` markers,
-    iframe contents inlined with frame-scoped refs) into flat indexed elements. Interactive
-    elements always make the list; non-interactive text is kept up to ``prose_budget`` and
-    counted past it. Returns (elements, index-to-ref registry, truncated, omitted_text)."""
-    elements: list[dict] = []
-    registry: dict[int, Optional[str]] = {}
+    iframe contents inlined with frame-scoped refs) into shared ``Element`` objects, each carrying
+    its aria-ref as ``token``. Interactive elements always make the list; non-interactive text is
+    kept up to ``prose_budget`` and counted past it. Returns (elements, truncated, omitted_text)."""
+    elements: list[Element] = []
     truncated = False
     prose_kept = 0
     omitted_text = 0
@@ -438,19 +273,12 @@ def _parse_snapshot(
             truncated = True
             break
         index = len(elements)
-        element: dict[str, Any] = {"index": index, "role": role}
-        if name:
-            element["name"] = name[:256]
-        if value:
-            element["value"] = value[:512]
+        element = Element(index=index, role=role, name=name, value=value or None, clickable=clickable, token=reference)
         for flag in _SURFACED_FLAGS:
             if flag in attributes:
-                element[flag] = attributes[flag] if attributes[flag] else True
-        if clickable:
-            element["clickable"] = True
+                element.flags[flag] = attributes[flag] if attributes[flag] else True
         elements.append(element)
-        registry[index] = reference
-    return elements, registry, truncated, omitted_text
+    return elements, truncated, omitted_text
 
 
 def _snapshot(page, root_locator=None) -> str:
@@ -462,97 +290,37 @@ def _snapshot(page, root_locator=None) -> str:
     return target.aria_snapshot(mode="ai", timeout=10_000)
 
 
-def _read_page(session: _Session, page, *, settle: bool, root_locator=None) -> tuple[list[dict], bool, int]:
-    """Snapshot the page (or one subtree), refresh the session's registry and change-detection
-    state, and return (elements, truncated, omitted_text). ``settle`` re-reads a near-empty
-    snapshot briefly, since a JS-heavy app reports itself loaded long before it has painted
-    anything readable."""
-    snapshot = _snapshot(page, root_locator)
-    elements, registry, truncated, omitted_text = _parse_snapshot(snapshot)
-    if settle and len(elements) < _SETTLE_MINIMUM_ELEMENTS:
-        deadline = time.monotonic() + _SETTLE_WINDOW_SECONDS
-        while len(elements) < _SETTLE_MINIMUM_ELEMENTS and time.monotonic() < deadline:
-            time.sleep(0.35)
-            snapshot = _snapshot(page, root_locator)
-            elements, registry, truncated, omitted_text = _parse_snapshot(snapshot)
-    session.registry = registry
-    if root_locator is None:
-        # A drilled subtree never stands in for the whole page in change detection.
-        session.last_snapshot = snapshot
-    return elements, truncated, omitted_text
+# Icon fonts (Material Symbols, Font Awesome, and the like) render their ligatures as characters
+# in Unicode's Private Use Areas, which leak into a text extraction as meaningless glyphs. Strip
+# those, then collapse the blank lines they leave behind. The three ranges are the BMP PUA and
+# the two supplementary PUA planes.
+_PRIVATE_USE_CHARS = re.compile("[-\U000f0000-\U000ffffd\U00100000-\U0010fffd]")
+_BLANK_LINES = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
 
 
-def _finish_result(session: _Session, page, result: dict, elements: list[dict], before_url: Optional[str]) -> dict:
-    """The fields every page-reading result shares: location, change flag, empty-page hint, and
-    any dialog/download events captured since the last result."""
-    result["url"] = page.url
-    result["title"] = _safe_title(page)
-    if before_url is not None:
-        result["url_changed"] = page.url != before_url
-    if not elements:
-        result["hint"] = _message("browser_empty_page_hint")
-    while session.events:
-        result.update(session.events.popleft())
-    return result
+def _clean_page_text(text: str) -> str:
+    text = _PRIVATE_USE_CHARS.sub("", text)
+    return _BLANK_LINES.sub("\n\n", text)
 
 
-def _overview(session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True, root_locator=None) -> dict:
-    """The full page (or one drilled subtree) as indexed elements — what observe and the
-    navigation actions return."""
-    elements, truncated, omitted_text = _read_page(session, page, settle=settle, root_locator=root_locator)
-    result: dict[str, Any] = {"ok": True, "count": len(elements), "elements": elements}
-    notes = []
-    if truncated:
-        result["truncated"] = True
-        notes.append(_message("browser_overview_truncated", limit=str(_MAXIMUM_ELEMENTS)))
-    if omitted_text:
-        notes.append(_message("browser_text_omitted", count=str(omitted_text)))
-    if notes:
-        result["note"] = ", ".join(notes)
-    return _finish_result(session, page, result, elements, before_url)
+# One read window's worth of page text. Longer pages are read progressively via `offset`.
+_READ_WINDOW_CHARS = 16_384  # Powers of 2 are nice, aren't they?
 
+# Friendly lowercase key names accepted historically, mapped to Playwright's key vocabulary.
+# Playwright key names are case-sensitive by design (a bare character's case selects the typed
+# text), so this only canonicalizes the handful of named keys; anything else passes straight
+# through, including chords like "Control+A" and names like "F5".
+_KEY_ALIASES = {
+    "enter": "Enter", "escape": "Escape", "tab": "Tab", "backspace": "Backspace",
+    "delete": "Delete", "arrowdown": "ArrowDown", "arrowup": "ArrowUp",
+    "arrowleft": "ArrowLeft", "arrowright": "ArrowRight", "pagedown": "PageDown",
+    "pageup": "PageUp", "home": "Home", "end": "End", "space": "Space",
+}
 
-def _digest(session: _Session, page, *, before_url: Optional[str]) -> dict:
-    """The result an acting call returns: the page's complete actionable surface — every
-    interactive element, plus live-region announcements (alerts, status lines) — with the bulk
-    prose deferred to observe/read. Nothing the model could act on is ever hidden here; what is
-    deferred is reading material, and the note says where it lives. Indices match what observe
-    would show, and the registry covers the whole page."""
-    elements, truncated, _ = _read_page(session, page, settle=True)
-    listed = [
-        element for element in elements
-        if element.get("clickable") or element.get("role") in _LIVE_REGION_ROLES
-    ]
-    prose_deferred = len(elements) - len(listed)
-    result: dict[str, Any] = {"ok": True, "count": len(elements), "elements": listed}
-    if truncated:
-        result["truncated"] = True
-        result["note"] = _message("browser_overview_truncated", limit=str(_MAXIMUM_ELEMENTS))
-    elif prose_deferred:
-        result["note"] = _message("browser_digest_prose", count=str(prose_deferred))
-    return _finish_result(session, page, result, elements, before_url)
+_SCROLL_DIRECTIONS = frozenset({"down", "up", "left", "right", "top", "bottom"})
 
-
-def _locator(session: _Session, page, index: int):
-    """The Playwright locator for an element index from the last observe/find. Raises a clean
-    failure when the index is unknown or refers to plain text."""
-    if index not in session.registry:
-        raise _ToolFailure({"ok": False, "error": f"No element at index {index}. Observe the page first."})
-    reference = session.registry[index]
-    if not reference:
-        raise _ToolFailure({
-            "ok": False,
-            "error": f"Element {index} is plain text with no actionable node. Target a clickable element instead.",
-        })
-    return page.locator(f"aria-ref={reference}")
-
-
-def _await_quiet(page, timeout_ms: int = 8_000) -> None:
-    """Wait for the page to reach a loaded state, tolerating pages that never settle."""
-    try:
-        page.wait_for_load_state("load", timeout=timeout_ms)
-    except Exception:
-        pass
+# top/bottom are one huge fling of the same wheel gesture: a delta large enough to reach any end.
+_SCROLL_JUMP = 1_000_000
 
 
 def _safe_title(page) -> str:
@@ -572,531 +340,712 @@ def _safe_url(page) -> str:
         return ""
 
 
-def navigate(url: str, browser: str = "chrome") -> dict:
-    """Open a URL in the user's Chrome (connecting to it if needed) and return the page overview."""
-
-    def run() -> dict:
-        session = _worker.session(browser)
-        page = _worker.page(session)
-        try:
-            page.goto(url, wait_until="load", timeout=25_000)
-        except Exception:
-            # A page that never fires load (busy SPA, hanging resource) can still be usable;
-            # the settle-aware overview decides what is actually there.
-            pass
-        return _overview(session, page)
-
-    return _run_tool(run, browser=browser)
-
-
-def observe(element: Optional[int] = None) -> dict:
-    """The current page's semantic tree as indexed elements (iframes included). With
-    ``element``, just that element's subtree in full detail — the tree-shaped way to expand one
-    region of a large page (a card, a section, a results panel) without paying for the rest.
-    Indices then refer to the drilled subtree until the next observe or find."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        root_locator = _locator(session, page, element) if element is not None else None
-        result = _overview(session, page, settle=element is None, root_locator=root_locator)
-        if element is not None:
-            result["did"] = f"Expanded element {element}"
-        return result
-
-    return _run_tool(run)
-
-
-# How many find matches come back at most: enough to disambiguate, small enough to stay readable.
-_FIND_LIMIT = 25
-
-
-def find(query: str) -> dict:
-    """Search the whole page (iframes included) for elements whose name or value contains
-    ``query``, case-insensitively. Clickable matches first; every match is registered so it can
-    be acted on by index."""
-
-    def run() -> dict:
-        needle = query.strip().lower()
-        if not needle:
-            return {"ok": False, "error": "The find action needs non-empty text to look for."}
-        session = _worker.session()
-        page = _worker.page(session)
-        snapshot = _snapshot(page)
-        # Search the whole page, not just what an overview would list. A match must never
-        # hide behind the listing cap or the prose budget.
-        elements, registry, _, _ = _parse_snapshot(snapshot, limit=100_000, prose_budget=100_000)
-        session.last_snapshot = snapshot
-        matches = [
-            element for element in elements
-            if needle in element.get("name", "").lower() or needle in element.get("value", "").lower()
-        ]
-        matches.sort(key=lambda element: (0 if element.get("clickable") else 1, element["index"]))
-        truncated = len(matches) > _FIND_LIMIT
-        matches = matches[:_FIND_LIMIT]
-        new_registry: dict[int, Optional[str]] = {}
-        listed: list[dict] = []
-        for position, element in enumerate(matches):
-            new_registry[position] = registry.get(element["index"])
-            reindexed = dict(element)
-            reindexed["index"] = position
-            listed.append(reindexed)
-        session.registry = new_registry
-        result: dict[str, Any] = {
-            "ok": True,
-            "url": page.url,
-            "title": _safe_title(page),
-            "query": query,
-            "count": len(listed),
-            "elements": listed,
-        }
-        if truncated:
-            result["truncated"] = True
-            result["note"] = _message("browser_find_truncated", limit=str(_FIND_LIMIT))
-        if not listed:
-            result["note"] = _message("browser_find_no_match")
-        return result
-
-    return _run_tool(run)
-
-
-def click(index: int) -> dict:
-    """Click an element with Playwright's full actionability pipeline (visibility, stability,
-    hit-target checks), then return the resulting page with an honest ``changed`` flag."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        before_snapshot = session.last_snapshot
-        locator = _locator(session, page, index)
-        try:
-            locator.click(timeout=5_000)
-        except Exception as error:
-            raise _ToolFailure({
-                "ok": False,
-                "error": f"Could not click element {index}: {str(error).splitlines()[0]}",
-            })
-        _await_quiet(page)
-        result: dict[str, Any] = {"ok": True, "did": f"Clicked element {index}"}
-        overview = _digest(session, _worker.page(session), before_url=before_url)
-        changed = overview.get("url_changed") or session.last_snapshot != before_snapshot
-        result["changed"] = bool(changed)
-        if not changed:
-            result["note"] = _message("browser_click_no_change")
-        result.update(overview)
-        return result
-
-    return _run_tool(run)
-
-
-def type_text(index: int, text: str, submit: bool = False) -> dict:
-    """Fill a field (input, textarea, or contenteditable) with Playwright's fill: focus, clear,
-    insert, real input events. With ``submit``, press Enter and return the resulting page."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        locator = _locator(session, page, index)
-        try:
-            locator.fill(text, timeout=5_000)
-        except Exception as error:
-            raise _ToolFailure({
-                "ok": False,
-                "error": f"Could not type into element {index}: {str(error).splitlines()[0]}",
-            })
-        if not submit:
-            return {"ok": True, "did": f"Typed into element {index}"}
-        locator.press("Enter", timeout=5_000)
-        _await_quiet(page)
-        result: dict[str, Any] = {"ok": True, "did": f"Typed into element {index} and pressed Enter"}
-        result.update(_digest(session, _worker.page(session), before_url=before_url))
-        return result
-
-    return _run_tool(run)
-
-
-# Friendly lowercase key names accepted historically, mapped to Playwright's key vocabulary.
-# Playwright key names are case-sensitive by design (a bare character's case selects the typed
-# text), so this only canonicalizes the handful of named keys; anything else passes straight
-# through, including chords like "Control+A" and names like "F5".
-_KEY_ALIASES = {
-    "enter": "Enter", "escape": "Escape", "tab": "Tab", "backspace": "Backspace",
-    "delete": "Delete", "arrowdown": "ArrowDown", "arrowup": "ArrowUp",
-    "arrowleft": "ArrowLeft", "arrowright": "ArrowRight", "pagedown": "PageDown",
-    "pageup": "PageUp", "home": "Home", "end": "End", "space": "Space",
-}
-
-
-def press(key: str) -> dict:
-    """Press a key (or chord like Control+A) on the focused element and return the overview."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        resolved = _KEY_ALIASES.get(key.strip().lower(), key.strip())
-        try:
-            page.keyboard.press(resolved)
-        except Exception as error:
-            return {"ok": False, "error": f"Could not press {key!r}: {str(error).splitlines()[0]}"}
-        _await_quiet(page, timeout_ms=3_000)
-        return _digest(session, _worker.page(session), before_url=before_url)
-
-    return _run_tool(run)
-
-
-def hover(index: int) -> dict:
-    """Move the pointer over an element (revealing hover menus and tooltips) without clicking."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        locator = _locator(session, page, index)
-        try:
-            locator.hover(timeout=5_000)
-        except Exception as error:
-            raise _ToolFailure({
-                "ok": False,
-                "error": f"Could not hover element {index}: {str(error).splitlines()[0]}",
-            })
-        time.sleep(0.25)
-        return _digest(session, page, before_url=None)
-
-    return _run_tool(run)
-
-
-_SCROLL_DIRECTIONS = frozenset({"down", "up", "left", "right", "top", "bottom"})
-
-# top/bottom are one huge fling of the same wheel gesture: a delta large enough to reach any end.
-_SCROLL_JUMP = 1_000_000
-
-
-def scroll(direction: str = "down", element: Optional[int] = None) -> dict:
-    """Scroll exactly the way a person does: point the mouse at the pane (over the ``element``,
-    or the viewport centre for the page) and turn the wheel, trusted input that the browser's
-    own scroll chaining routes to the right scroller. down/up/left/right move by most of a
-    viewport; top/bottom fling to the ends. ``changed`` reports whether the page's content
-    differs afterwards. The overview reads the whole page regardless of scroll position, so
-    scrolling matters for virtualized feeds (new rows render) and app state, not for seeing more
-    of a static document."""
-    wanted = direction.strip().lower()
-    if wanted not in _SCROLL_DIRECTIONS:
-        return {"ok": False, "error": f"Unknown scroll direction {direction!r}. Use down, up, left, right, top, or bottom."}
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        before_snapshot = session.last_snapshot
-        size = page.viewport_size or {"width": 1280, "height": 720}
-        if element is not None:
-            # Aim the wheel at the element's pane. Take the element's current box and clamp the
-            # point into the viewport rather than hovering it to centre, so repeated paging keeps
-            # the wheel over the same pane even once the anchor has scrolled out of sight. If the
-            # element is not laid out yet, hover to bring it into view, then re-measure.
-            locator = _locator(session, page, element)
-            box = locator.bounding_box()
-            if box is None:
-                try:
-                    locator.hover(timeout=5_000)
-                    box = locator.bounding_box()
-                except Exception:
-                    box = None
-            if box is None:
-                raise _ToolFailure({
-                    "ok": False,
-                    "error": f"Element {element} has no on-screen position to scroll at. Observe again.",
-                })
-            point_x = min(max(box["x"] + box["width"] / 2, 1), size["width"] - 1)
-            point_y = min(max(box["y"] + box["height"] / 2, 1), size["height"] - 1)
-            page.mouse.move(point_x, point_y)
-        else:
-            page.mouse.move(size["width"] / 2, size["height"] / 2)
-        step_x = int(size["width"] * 0.875)
-        step_y = int(size["height"] * 0.875)
-        deltas = {
-            "down": (0, step_y), "up": (0, -step_y),
-            "right": (step_x, 0), "left": (-step_x, 0),
-            "top": (0, -_SCROLL_JUMP), "bottom": (0, _SCROLL_JUMP),
-        }
-        delta_x, delta_y = deltas[wanted]
-        page.mouse.wheel(delta_x, delta_y)
-        # Let the scroll land and lazily-rendered content (virtualized lists) paint.
-        time.sleep(0.4)
-        result: dict[str, Any] = {"ok": True, "did": f"Scrolled {wanted}"}
-        overview = _digest(session, page, before_url=before_url)
-        result["changed"] = bool(overview.get("url_changed")) or session.last_snapshot != before_snapshot
-        result.update(overview)
-        return result
-
-    return _run_tool(run)
-
-
-def select_option(index: int, option: str) -> dict:
-    """Choose an option in a native <select>. Playwright matches the given string against the
-    option's value or its visible label."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        locator = _locator(session, page, index)
-        try:
-            chosen = locator.select_option(option, timeout=5_000)
-        except Exception as error:
-            raise _ToolFailure({
-                "ok": False,
-                "error": f"Could not select {option!r} in element {index}: {str(error).splitlines()[0]}",
-            })
-        result: dict[str, Any] = {"ok": True, "did": f"Selected {option!r} in element {index}", "selected": chosen}
-        result.update(_digest(session, page, before_url=before_url))
-        return result
-
-    return _run_tool(run)
-
-
-def upload(index: int, paths: list[str]) -> dict:
-    """Attach local files to a file input (or a control that opens a file chooser)."""
-
-    def run() -> dict:
-        resolved = [str(Path(path).expanduser()) for path in paths]
-        missing = [path for path in resolved if not os.path.isfile(path)]
-        if missing:
-            return {"ok": False, "error": f"No such file: {', '.join(missing)}"}
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        locator = _locator(session, page, index)
-        try:
-            locator.set_input_files(resolved, timeout=5_000)
-        except Exception:
-            # Not a file input itself; it may be a button that opens the file chooser.
-            try:
-                with page.expect_file_chooser(timeout=5_000) as chooser_info:
-                    locator.click(timeout=5_000)
-                chooser_info.value.set_files(resolved)
-            except Exception as error:
-                raise _ToolFailure({
-                    "ok": False,
-                    "error": f"Could not upload to element {index}: {str(error).splitlines()[0]}",
-                })
-        result: dict[str, Any] = {"ok": True, "did": f"Attached {len(resolved)} file(s) to element {index}"}
-        result.update(_digest(session, page, before_url=before_url))
-        return result
-
-    return _run_tool(run)
-
-
-def drag(index: int, to_element: int) -> dict:
-    """Drag one element onto another (Playwright's full pointer sequence with hit checks)."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        before_url = page.url
-        source = _locator(session, page, index)
-        target = _locator(session, page, to_element)
-        try:
-            source.drag_to(target, timeout=8_000)
-        except Exception as error:
-            raise _ToolFailure({
-                "ok": False,
-                "error": f"Could not drag element {index} to {to_element}: {str(error).splitlines()[0]}",
-            })
-        result: dict[str, Any] = {"ok": True, "did": f"Dragged element {index} onto {to_element}"}
-        result.update(_digest(session, page, before_url=before_url))
-        return result
-
-    return _run_tool(run)
-
-
-# Icon fonts (Material Symbols, Font Awesome, and the like) render their ligatures as characters
-# in Unicode's Private Use Areas, which leak into a text extraction as meaningless glyphs. Strip
-# those, then collapse the blank lines they leave behind. The three ranges are the BMP PUA and
-# the two supplementary PUA planes.
-_PRIVATE_USE_CHARS = re.compile("[\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]")
-_BLANK_LINES = re.compile(r"\n[ \t]*\n(?:[ \t]*\n)+")
-
-
-def _clean_page_text(text: str) -> str:
-    text = _PRIVATE_USE_CHARS.sub("", text)
-    return _BLANK_LINES.sub("\n\n", text)
-
-
-# One read window's worth of page text. Longer pages are read progressively via `offset`.
-_READ_WINDOW_CHARS = 16_384 # Powers of 2 are nice, aren't they?
-
-
-def read(offset: int = 0, element: Optional[int] = None) -> dict:
-    """The page's visible text, one bounded window at a time. With ``element``, only that
-    element's subtree — the way to read one article or section without the page's chrome.
-    ``offset`` continues a truncated read; the result says exactly which offset reaches the
-    next window."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        if element is not None:
-            source = _locator(session, page, element).inner_text(timeout=10_000)
-        else:
-            source = page.inner_text("body", timeout=10_000)
-        text = _clean_page_text(source)
-        start = max(0, int(offset))
-        window = text[start : start + _READ_WINDOW_CHARS]
-        truncated = len(text) > start + _READ_WINDOW_CHARS
-        result: dict[str, Any] = {
-            "ok": True, "url": page.url, "title": _safe_title(page),
-            "text": window, "truncated": truncated, "total_chars": len(text),
-        }
-        if start:
-            result["offset"] = start
-        if truncated:
-            result["note"] = _message("browser_read_truncated", next_offset=str(start + _READ_WINDOW_CHARS))
-        return result
-
-    return _run_tool(run)
-
-
-def screenshot() -> dict:
-    """The visible viewport as pixels: the fallback for surfaces with no semantic tree at all
-    (a canvas map, WebGL, a custom-drawn editor). Returns a temp PNG path for the caller to ship
-    through the model-image side channel."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        handle, path = tempfile.mkstemp(prefix="daisy-web-capture-", suffix=".png")
-        os.close(handle)
-        page.screenshot(path=path, type="png", timeout=20_000)
-        return {
-            "ok": True, "image_path": path, "url": page.url, "title": _safe_title(page),
-            "did": "Captured the visible viewport",
-        }
-
-    return _run_tool(run)
-
-
-def history_back() -> dict:
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        page.go_back(wait_until="load", timeout=15_000)
-        return _overview(session, page)
-
-    return _run_tool(run)
-
-
-def history_forward() -> dict:
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        page.go_forward(wait_until="load", timeout=15_000)
-        return _overview(session, page)
-
-    return _run_tool(run)
-
-
-def reload() -> dict:
-    """Reload the current page and return its fresh overview."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = _worker.page(session)
-        page.reload(wait_until="load", timeout=25_000)
-        return _overview(session, page)
-
-    return _run_tool(run)
-
-
-def _tab_summaries(session: _Session) -> list[dict]:
-    """Every open tab with its title and url, read from the browser's cached target metadata in
-    a single Target.getTargets call. A real profile can hold dozens of tabs, many discarded to
-    save memory, and executing document.title on each would wake them one by one (slow) or throw
-    on a closed one; the metadata call touches no renderer."""
-    metadata: dict[str, dict] = {}
+def _await_quiet(page, timeout_ms: int = 8_000) -> None:
+    """Wait for the page to reach a loaded state, tolerating pages that never settle."""
     try:
-        cdp = session.browser.new_browser_cdp_session()
-        for info in cdp.send("Target.getTargets").get("targetInfos", []):
-            metadata[info.get("targetId", "")] = info
-        cdp.detach()
+        page.wait_for_load_state("load", timeout=timeout_ms)
     except Exception:
         pass
-    active = session.page
-    summaries = []
-    for page in session.context.pages:
-        info = metadata.get(session.target_id(page) or "", {})
-        summaries.append({
-            "tab": session.tab_id(page),
-            "title": info.get("title", ""),
-            "url": info.get("url") or _safe_url(page),
-            "active": page == active,
-        })
-    return summaries
 
 
-def list_tabs() -> dict:
-    """The open tabs of the user's browser, so the model can switch between them by id."""
+class WebSurface(Surface):
+    """The Chrome/Playwright implementation of the shared ``Surface``. Holds the Playwright
+    instance and the live session (worker-thread-only), and exposes the browser actions."""
 
-    def run() -> dict:
-        session = _worker.session()
-        _worker.page(session)
-        return {"ok": True, "tabs": _tab_summaries(session)}
+    live_region_roles = _LIVE_REGION_ROLES
 
-    return _run_tool(run)
+    def __init__(self) -> None:
+        super().__init__("daisy-playwright", message)
+        self._playwright = None
+        self._session: Optional[_Session] = None
 
+    # Failure and recovery.
 
-def new_tab(url: str = "", browser: str = "chrome") -> dict:
-    """Open a new tab (optionally at a URL), make it the active one, and return its overview."""
+    def on_recover(self) -> dict:
+        self._session = None
+        return {}
 
-    def run() -> dict:
-        session = _worker.session(browser)
-        page = session.context.new_page()
-        session.page = page
-        page.bring_to_front()
-        if url:
+    def recover(self, detail: str) -> dict:
+        return {"ok": False, "error": message("connection_dropped", detail=detail)}
+
+    def location_fields(self, page) -> dict:
+        return {"url": _safe_url(page), "title": _safe_title(page)}
+
+    # Connection, touched only on the worker thread.
+
+    def session(self, browser: str = "chrome") -> _Session:
+        """The live session, connecting if needed. Raises ``ToolFailure`` with the right payload
+        when the user's browser is unreachable."""
+        from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeout
+
+        if self._session is not None:
+            if self._session.browser.is_connected():
+                return self._session
+            self._session = None
+        if self._playwright is None:
+            from playwright.sync_api import sync_playwright
+
+            self._playwright = sync_playwright().start()
+        websocket_url = _devtools_websocket_url(browser)
+        if websocket_url is None:
+            raise ToolFailure(_not_connected_payload())
+        try:
+            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=10_000)
+        except PlaywrightTimeout:
+            # The port answers but the endpoint does not: the DevToolsActivePort file outlived
+            # the debugging session (the infobar's Stop, or a toggle-off). The remedy differs
+            # from "never enabled": the switch must be cycled to mint a fresh endpoint.
+            raise ToolFailure(_stale_endpoint_payload())
+        except PlaywrightError:
+            raise ToolFailure(_not_connected_payload())
+        context = connected.contexts[0] if connected.contexts else connected.new_context()
+        session = _Session(connected, context)
+        for page in context.pages:
+            session.adopt(page)
+        context.on("page", session.adopt)
+        session.page = self._pick_page(session)
+        self._session = session
+        return session
+
+    @staticmethod
+    def _pick_page(session: _Session):
+        """The user's current real web page. Prefers http(s) over chrome:// and blank surfaces."""
+        pages = session.context.pages
+        if not pages:
+            return session.context.new_page()
+        return next((page for page in pages if page.url.startswith("http")), pages[-1])
+
+    def page(self, session: _Session):
+        """The active page, healing if it was closed under us."""
+        if session.page is None or session.page.is_closed():
+            session.page = self._pick_page(session)
+        return session.page
+
+    def shutdown(self) -> None:
+        def stop() -> dict:
+            if self._session is not None and self._session.browser.is_connected():
+                # For a connected (not launched) browser this only drops our connection;
+                # the user's Chrome keeps running.
+                self._session.browser.close()
+            self._session = None
+            if self._playwright is not None:
+                self._playwright.stop()
+                self._playwright = None
+            return {}
+
+        try:
+            self.worker.submit(stop, timeout=10.0)
+        except Exception:
+            pass
+        self.worker.stop()
+
+    # Reading and shaping, touched only on the worker thread.
+
+    def _read_page(self, session: _Session, page, *, settle: bool, root_locator=None) -> tuple[list[dict], bool, int]:
+        """Snapshot the page (or one subtree), refresh the session's registry and change-detection
+        state, and return (payloads, truncated, omitted_text). ``settle`` re-reads a near-empty
+        snapshot briefly, since a JS-heavy app reports itself loaded long before it has painted
+        anything readable."""
+        snapshot = _snapshot(page, root_locator)
+        elements, truncated, omitted_text = _parse_snapshot(snapshot)
+        if settle and len(elements) < _SETTLE_MINIMUM_ELEMENTS:
+            deadline = time.monotonic() + _SETTLE_WINDOW_SECONDS
+            while len(elements) < _SETTLE_MINIMUM_ELEMENTS and time.monotonic() < deadline:
+                time.sleep(0.35)
+                snapshot = _snapshot(page, root_locator)
+                elements, truncated, omitted_text = _parse_snapshot(snapshot)
+        session.registry = {element.index: element.token for element in elements}
+        if root_locator is None:
+            # A drilled subtree never stands in for the whole page in change detection.
+            session.last_snapshot = snapshot
+        return [element.payload() for element in elements], truncated, omitted_text
+
+    @staticmethod
+    def _drain(session: _Session) -> list[dict]:
+        events: list[dict] = []
+        while session.events:
+            events.append(session.events.popleft())
+        return events
+
+    def _overview(self, session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True, root_locator=None) -> dict:
+        """The full page (or one drilled subtree) as indexed elements — what observe and the
+        navigation actions return."""
+        elements, truncated, omitted_text = self._read_page(session, page, settle=settle, root_locator=root_locator)
+        notes = []
+        if truncated:
+            notes.append(message("overview_truncated", limit=str(_MAXIMUM_ELEMENTS)))
+        if omitted_text:
+            notes.append(message("text_omitted", count=str(omitted_text)))
+        result = self.overview(
+            context=page, elements=elements, events=self._drain(session), notes=notes,
+            truncated=truncated, empty_hint=message("empty_page_hint"),
+        )
+        if before_url is not None:
+            result["url_changed"] = _safe_url(page) != before_url
+        return result
+
+    def _digest(self, session: _Session, page, *, before_url: Optional[str]) -> dict:
+        """The result an acting call returns: the page's complete actionable surface, with the
+        bulk prose deferred to observe/read."""
+        elements, truncated, _ = self._read_page(session, page, settle=True)
+        result = self.digest(
+            context=page, elements=elements, events=self._drain(session), truncated=truncated,
+            truncated_note=message("overview_truncated", limit=str(_MAXIMUM_ELEMENTS)),
+            prose_note_name="digest_prose", empty_hint=message("empty_page_hint"),
+        )
+        if before_url is not None:
+            result["url_changed"] = _safe_url(page) != before_url
+        return result
+
+    def _locator(self, session: _Session, page, index: int):
+        """The Playwright locator for an element index from the last observe/find. Raises a clean
+        failure when the index is unknown or refers to plain text."""
+        if index not in session.registry:
+            raise ToolFailure({"ok": False, "error": f"No element at index {index}. Observe the page first."})
+        reference = session.registry[index]
+        if not reference:
+            raise ToolFailure({
+                "ok": False,
+                "error": f"Element {index} is plain text with no actionable node. Target a clickable element instead.",
+            })
+        return page.locator(f"aria-ref={reference}")
+
+    def _tab_summaries(self, session: _Session) -> list[dict]:
+        """Every open tab with its title and url, read from the browser's cached target metadata in
+        a single Target.getTargets call. A real profile can hold dozens of tabs, many discarded to
+        save memory, and executing document.title on each would wake them one by one (slow) or throw
+        on a closed one; the metadata call touches no renderer."""
+        metadata: dict[str, dict] = {}
+        try:
+            cdp = session.browser.new_browser_cdp_session()
+            for info in cdp.send("Target.getTargets").get("targetInfos", []):
+                metadata[info.get("targetId", "")] = info
+            cdp.detach()
+        except Exception:
+            pass
+        active = session.page
+        summaries = []
+        for page in session.context.pages:
+            info = metadata.get(session.target_id(page) or "", {})
+            summaries.append({
+                "tab": session.tab_id(page),
+                "title": info.get("title", ""),
+                "url": info.get("url") or _safe_url(page),
+                "active": page == active,
+            })
+        return summaries
+
+    # Actions.
+
+    def navigate(self, url: str, browser: str = "chrome") -> dict:
+        """Open a URL in the user's Chrome (connecting to it if needed) and return the overview."""
+
+        def run() -> dict:
+            session = self.session(browser)
+            page = self.page(session)
             try:
                 page.goto(url, wait_until="load", timeout=25_000)
             except Exception:
+                # A page that never fires load (busy SPA, hanging resource) can still be usable;
+                # the settle-aware overview decides what is actually there.
                 pass
-        # A deliberately blank tab has nothing to settle for; don't make the caller wait.
-        result = _overview(session, page, settle=bool(url))
-        result["tab"] = session.tab_id(page)
-        return result
+            return self._overview(session, page)
 
-    return _run_tool(run, browser=browser)
+        return self.guard(run)
+
+    def observe(self, element: Optional[int] = None) -> dict:
+        """The current page's semantic tree as indexed elements (iframes included). With
+        ``element``, just that element's subtree in full detail — the tree-shaped way to expand one
+        region of a large page without paying for the rest. Indices then refer to the drilled
+        subtree until the next observe or find."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            root_locator = self._locator(session, page, element) if element is not None else None
+            result = self._overview(session, page, settle=element is None, root_locator=root_locator)
+            if element is not None:
+                result["did"] = f"Expanded element {element}"
+            return result
+
+        return self.guard(run)
+
+    def find(self, query: str) -> dict:
+        """Search the whole page (iframes included) for elements whose name or value contains
+        ``query``, case-insensitively. Clickable matches first; every match is registered so it can
+        be acted on by index."""
+
+        def run() -> dict:
+            needle = query.strip().lower()
+            if not needle:
+                return {"ok": False, "error": "The find action needs non-empty text to look for."}
+            session = self.session()
+            page = self.page(session)
+            snapshot = _snapshot(page)
+            # Search the whole page, not just what an overview would list. A match must never
+            # hide behind the listing cap or the prose budget.
+            elements, _, _ = _parse_snapshot(snapshot, limit=100_000, prose_budget=100_000)
+            session.last_snapshot = snapshot
+            matches = [
+                element for element in elements
+                if needle in element.name.lower()
+                or (isinstance(element.value, str) and needle in element.value.lower())
+            ]
+            matches.sort(key=lambda element: (0 if element.clickable else 1, element.index))
+            truncated = len(matches) > _FIND_LIMIT
+            matches = matches[:_FIND_LIMIT]
+            registry: dict[int, Optional[str]] = {}
+            listed: list[dict] = []
+            for position, element in enumerate(matches):
+                registry[position] = element.token
+                payload = element.payload()
+                payload["index"] = position
+                listed.append(payload)
+            session.registry = registry
+            result: dict[str, Any] = {
+                "ok": True, "url": page.url, "title": _safe_title(page),
+                "query": query, "count": len(listed), "elements": listed,
+            }
+            if truncated:
+                result["truncated"] = True
+                result["note"] = message("find_truncated", limit=str(_FIND_LIMIT))
+            if not listed:
+                result["note"] = message("find_no_match")
+            return result
+
+        return self.guard(run)
+
+    def click(self, index: int) -> dict:
+        """Click an element with Playwright's full actionability pipeline (visibility, stability,
+        hit-target checks), then return the resulting page with an honest ``changed`` flag."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            before_snapshot = session.last_snapshot
+            locator = self._locator(session, page, index)
+            try:
+                locator.click(timeout=5_000)
+            except Exception as error:
+                raise ToolFailure({"ok": False, "error": f"Could not click element {index}: {str(error).splitlines()[0]}"})
+            _await_quiet(page)
+            result: dict[str, Any] = {"ok": True, "did": f"Clicked element {index}"}
+            overview = self._digest(session, self.page(session), before_url=before_url)
+            changed = overview.get("url_changed") or session.last_snapshot != before_snapshot
+            result["changed"] = bool(changed)
+            if not changed:
+                result["note"] = message("click_no_change")
+            result.update(overview)
+            return result
+
+        return self.guard(run)
+
+    def type_text(self, index: int, text: str, submit: bool = False) -> dict:
+        """Fill a field (input, textarea, or contenteditable) with Playwright's fill: focus, clear,
+        insert, real input events. With ``submit``, press Enter and return the resulting page."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            locator = self._locator(session, page, index)
+            try:
+                locator.fill(text, timeout=5_000)
+            except Exception as error:
+                raise ToolFailure({"ok": False, "error": f"Could not type into element {index}: {str(error).splitlines()[0]}"})
+            if not submit:
+                return {"ok": True, "did": f"Typed into element {index}"}
+            locator.press("Enter", timeout=5_000)
+            _await_quiet(page)
+            result: dict[str, Any] = {"ok": True, "did": f"Typed into element {index} and pressed Enter"}
+            result.update(self._digest(session, self.page(session), before_url=before_url))
+            return result
+
+        return self.guard(run)
+
+    def press(self, key: str) -> dict:
+        """Press a key (or chord like Control+A) on the focused element and return the overview."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            resolved = _KEY_ALIASES.get(key.strip().lower(), key.strip())
+            try:
+                page.keyboard.press(resolved)
+            except Exception as error:
+                return {"ok": False, "error": f"Could not press {key!r}: {str(error).splitlines()[0]}"}
+            _await_quiet(page, timeout_ms=3_000)
+            return self._digest(session, self.page(session), before_url=before_url)
+
+        return self.guard(run)
+
+    def hover(self, index: int) -> dict:
+        """Move the pointer over an element (revealing hover menus and tooltips) without clicking."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            locator = self._locator(session, page, index)
+            try:
+                locator.hover(timeout=5_000)
+            except Exception as error:
+                raise ToolFailure({"ok": False, "error": f"Could not hover element {index}: {str(error).splitlines()[0]}"})
+            time.sleep(0.25)
+            return self._digest(session, page, before_url=None)
+
+        return self.guard(run)
+
+    def scroll(self, direction: str = "down", element: Optional[int] = None) -> dict:
+        """Scroll exactly the way a person does: point the mouse at the pane (over the ``element``,
+        or the viewport centre for the page) and turn the wheel, trusted input that the browser's
+        own scroll chaining routes to the right scroller. down/up/left/right move by most of a
+        viewport; top/bottom fling to the ends. ``changed`` reports whether the page's content
+        differs afterwards."""
+        wanted = direction.strip().lower()
+        if wanted not in _SCROLL_DIRECTIONS:
+            return {"ok": False, "error": f"Unknown scroll direction {direction!r}. Use down, up, left, right, top, or bottom."}
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            before_snapshot = session.last_snapshot
+            size = page.viewport_size or {"width": 1280, "height": 720}
+            if element is not None:
+                # Aim the wheel at the element's pane. Take the element's current box and clamp the
+                # point into the viewport rather than hovering it to centre, so repeated paging keeps
+                # the wheel over the same pane even once the anchor has scrolled out of sight. If the
+                # element is not laid out yet, hover to bring it into view, then re-measure.
+                locator = self._locator(session, page, element)
+                box = locator.bounding_box()
+                if box is None:
+                    try:
+                        locator.hover(timeout=5_000)
+                        box = locator.bounding_box()
+                    except Exception:
+                        box = None
+                if box is None:
+                    raise ToolFailure({"ok": False, "error": f"Element {element} has no on-screen position to scroll at. Observe again."})
+                point_x = min(max(box["x"] + box["width"] / 2, 1), size["width"] - 1)
+                point_y = min(max(box["y"] + box["height"] / 2, 1), size["height"] - 1)
+                page.mouse.move(point_x, point_y)
+            else:
+                page.mouse.move(size["width"] / 2, size["height"] / 2)
+            step_x = int(size["width"] * 0.875)
+            step_y = int(size["height"] * 0.875)
+            deltas = {
+                "down": (0, step_y), "up": (0, -step_y),
+                "right": (step_x, 0), "left": (-step_x, 0),
+                "top": (0, -_SCROLL_JUMP), "bottom": (0, _SCROLL_JUMP),
+            }
+            delta_x, delta_y = deltas[wanted]
+            page.mouse.wheel(delta_x, delta_y)
+            # Let the scroll land and lazily-rendered content (virtualized lists) paint.
+            time.sleep(0.4)
+            result: dict[str, Any] = {"ok": True, "did": f"Scrolled {wanted}"}
+            overview = self._digest(session, page, before_url=before_url)
+            result["changed"] = bool(overview.get("url_changed")) or session.last_snapshot != before_snapshot
+            result.update(overview)
+            return result
+
+        return self.guard(run)
+
+    def select_option(self, index: int, option: str) -> dict:
+        """Choose an option in a native <select>. Playwright matches the given string against the
+        option's value or its visible label."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            locator = self._locator(session, page, index)
+            try:
+                chosen = locator.select_option(option, timeout=5_000)
+            except Exception as error:
+                raise ToolFailure({"ok": False, "error": f"Could not select {option!r} in element {index}: {str(error).splitlines()[0]}"})
+            result: dict[str, Any] = {"ok": True, "did": f"Selected {option!r} in element {index}", "selected": chosen}
+            result.update(self._digest(session, page, before_url=before_url))
+            return result
+
+        return self.guard(run)
+
+    def upload(self, index: int, paths: list[str]) -> dict:
+        """Attach local files to a file input (or a control that opens a file chooser)."""
+
+        def run() -> dict:
+            resolved = [str(Path(path).expanduser()) for path in paths]
+            missing = [path for path in resolved if not os.path.isfile(path)]
+            if missing:
+                return {"ok": False, "error": f"No such file: {', '.join(missing)}"}
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            locator = self._locator(session, page, index)
+            try:
+                locator.set_input_files(resolved, timeout=5_000)
+            except Exception:
+                # Not a file input itself; it may be a button that opens the file chooser.
+                try:
+                    with page.expect_file_chooser(timeout=5_000) as chooser_info:
+                        locator.click(timeout=5_000)
+                    chooser_info.value.set_files(resolved)
+                except Exception as error:
+                    raise ToolFailure({"ok": False, "error": f"Could not upload to element {index}: {str(error).splitlines()[0]}"})
+            result: dict[str, Any] = {"ok": True, "did": f"Attached {len(resolved)} file(s) to element {index}"}
+            result.update(self._digest(session, page, before_url=before_url))
+            return result
+
+        return self.guard(run)
+
+    def drag(self, index: int, to_element: int) -> dict:
+        """Drag one element onto another (Playwright's full pointer sequence with hit checks)."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            before_url = page.url
+            source = self._locator(session, page, index)
+            target = self._locator(session, page, to_element)
+            try:
+                source.drag_to(target, timeout=8_000)
+            except Exception as error:
+                raise ToolFailure({"ok": False, "error": f"Could not drag element {index} to {to_element}: {str(error).splitlines()[0]}"})
+            result: dict[str, Any] = {"ok": True, "did": f"Dragged element {index} onto {to_element}"}
+            result.update(self._digest(session, page, before_url=before_url))
+            return result
+
+        return self.guard(run)
+
+    def read(self, offset: int = 0, element: Optional[int] = None) -> dict:
+        """The page's visible text, one bounded window at a time. With ``element``, only that
+        element's subtree. ``offset`` continues a truncated read; the result says exactly which
+        offset reaches the next window."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            if element is not None:
+                source = self._locator(session, page, element).inner_text(timeout=10_000)
+            else:
+                source = page.inner_text("body", timeout=10_000)
+            text = _clean_page_text(source)
+            start = max(0, int(offset))
+            window = text[start: start + _READ_WINDOW_CHARS]
+            truncated = len(text) > start + _READ_WINDOW_CHARS
+            result: dict[str, Any] = {
+                "ok": True, "url": page.url, "title": _safe_title(page),
+                "text": window, "truncated": truncated, "total_chars": len(text),
+            }
+            if start:
+                result["offset"] = start
+            if truncated:
+                result["note"] = message("read_truncated", next_offset=str(start + _READ_WINDOW_CHARS))
+            return result
+
+        return self.guard(run)
+
+    def screenshot(self) -> dict:
+        """The visible viewport as pixels: the fallback for surfaces with no semantic tree at all
+        (a canvas map, WebGL, a custom-drawn editor). Returns a temp PNG path for the caller to ship
+        through the model-image side channel."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            handle, path = tempfile.mkstemp(prefix="daisy-web-capture-", suffix=".png")
+            os.close(handle)
+            page.screenshot(path=path, type="png", timeout=20_000)
+            return {
+                "ok": True, "image_path": path, "url": page.url, "title": _safe_title(page),
+                "did": "Captured the visible viewport",
+            }
+
+        return self.guard(run)
+
+    def history_back(self) -> dict:
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            page.go_back(wait_until="load", timeout=15_000)
+            return self._overview(session, page)
+
+        return self.guard(run)
+
+    def history_forward(self) -> dict:
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            page.go_forward(wait_until="load", timeout=15_000)
+            return self._overview(session, page)
+
+        return self.guard(run)
+
+    def reload(self) -> dict:
+        """Reload the current page and return its fresh overview."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            page.reload(wait_until="load", timeout=25_000)
+            return self._overview(session, page)
+
+        return self.guard(run)
+
+    def list_tabs(self) -> dict:
+        """The open tabs of the user's browser, so the model can switch between them by id."""
+
+        def run() -> dict:
+            session = self.session()
+            self.page(session)
+            return {"ok": True, "tabs": self._tab_summaries(session)}
+
+        return self.guard(run)
+
+    def new_tab(self, url: str = "", browser: str = "chrome") -> dict:
+        """Open a new tab (optionally at a URL), make it the active one, and return its overview."""
+
+        def run() -> dict:
+            session = self.session(browser)
+            page = session.context.new_page()
+            session.page = page
+            page.bring_to_front()
+            if url:
+                try:
+                    page.goto(url, wait_until="load", timeout=25_000)
+                except Exception:
+                    pass
+            # A deliberately blank tab has nothing to settle for; don't make the caller wait.
+            result = self._overview(session, page, settle=bool(url))
+            result["tab"] = session.tab_id(page)
+            return result
+
+        return self.guard(run)
+
+    def switch_tab(self, tab: str) -> dict:
+        """Make a given tab (by id from the tabs action) the active one and return its overview."""
+
+        def run() -> dict:
+            session = self.session()
+            page = session.pages_by_id.get(tab)
+            if page is None or page.is_closed():
+                return {"ok": False, "error": f"No tab with id {tab!r}. List tabs to get current ids.", "tabs": self._tab_summaries(session)}
+            session.page = page
+            page.bring_to_front()
+            return self._overview(session, page)
+
+        return self.guard(run)
+
+    def close_tab(self, tab: str) -> dict:
+        """Close a tab by id. When it was the active one, fall back to whatever tab remains."""
+
+        def run() -> dict:
+            session = self.session()
+            page = session.pages_by_id.get(tab)
+            if page is None or page.is_closed():
+                return {"ok": False, "error": f"No tab with id {tab!r} (it may already be closed).", "tabs": self._tab_summaries(session)}
+            page.close()
+            session.pages_by_id.pop(tab, None)
+            session.tab_ids.pop(page, None)
+            if session.page == page:
+                session.page = None
+                self.page(session)
+            return {"ok": True, "tabs": self._tab_summaries(session)}
+
+        return self.guard(run)
+
+    # Dispatch.
+
+    #: Actions whose result carries an ``image_path`` for the model-image side channel.
+    screenshot_actions = frozenset({"screenshot"})
+
+    def preflight(self, action: str) -> Optional[dict]:
+        """The web surface gates nothing up front — an unreachable browser surfaces as a payload
+        from the operation itself."""
+        return None
+
+    def dispatch(self, action: str, arguments: dict) -> dict:
+        url = str(arguments.get("url", ""))
+        element = arguments.get("element")
+        text = str(arguments.get("text", ""))
+        key = str(arguments.get("key", ""))
+        direction = str(arguments.get("direction") or "down")
+        tab = str(arguments.get("tab", ""))
+        browser_name = str(arguments.get("browser_name") or "chrome")
+        index = int(element) if element is not None else None
+        if action == "navigate":
+            if not url:
+                return {"ok": False, "error": "The navigate action needs a url."}
+            return self.navigate(url, browser=browser_name)
+        if action == "observe":
+            return self.observe(element=index)
+        if action == "find":
+            query = str(arguments.get("query", ""))
+            if not query.strip():
+                return {"ok": False, "error": "The find action needs a query — the text to look for on the page."}
+            return self.find(query)
+        if action == "screenshot":
+            return self.screenshot()
+        if action in ("click", "type", "hover", "select", "upload", "drag"):
+            if index is None:
+                return {"ok": False, "error": f"The {action} action needs an element index from the last observe."}
+            if action == "click":
+                return self.click(index)
+            if action == "hover":
+                return self.hover(index)
+            if action == "select":
+                option = str(arguments.get("option", ""))
+                if not option:
+                    return {"ok": False, "error": "The select action needs an option — the visible label (or value) to choose."}
+                return self.select_option(index, option)
+            if action == "upload":
+                paths = arguments.get("paths") or []
+                if isinstance(paths, str):
+                    paths = [paths]
+                if not paths:
+                    return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
+                return self.upload(index, [str(path) for path in paths])
+            if action == "drag":
+                to_element = arguments.get("to_element")
+                if to_element is None:
+                    return {"ok": False, "error": "The drag action needs to_element — the index to drop onto."}
+                return self.drag(index, int(to_element))
+            return self.type_text(index, text, submit=bool(arguments.get("submit", False)))
+        if action == "press":
+            if not key:
+                return {"ok": False, "error": "The press action needs a key (e.g. Enter)."}
+            return self.press(key)
+        if action == "scroll":
+            return self.scroll(direction, element=index)
+        if action == "read":
+            return self.read(offset=int(arguments.get("offset", 0) or 0), element=index)
+        if action == "back":
+            return self.history_back()
+        if action == "forward":
+            return self.history_forward()
+        if action == "reload":
+            return self.reload()
+        if action == "tabs":
+            return self.list_tabs()
+        if action == "new_tab":
+            return self.new_tab(url, browser=browser_name)
+        if action in ("switch_tab", "close_tab"):
+            if not tab:
+                return {"ok": False, "error": f"The {action} action needs a tab id from the tabs action."}
+            if action == "switch_tab":
+                return self.switch_tab(tab)
+            return self.close_tab(tab)
+        return {"ok": False, "error": f"Unknown action {action!r}."}
 
 
-def switch_tab(tab: str) -> dict:
-    """Make a given tab (by id from the tabs action) the active one and return its overview."""
-
-    def run() -> dict:
-        session = _worker.session()
-        page = session.pages_by_id.get(tab)
-        if page is None or page.is_closed():
-            return {"ok": False, "error": f"No tab with id {tab!r}. List tabs to get current ids.", "tabs": _tab_summaries(session)}
-        session.page = page
-        page.bring_to_front()
-        return _overview(session, page)
-
-    return _run_tool(run)
+SURFACE = WebSurface()
 
 
-def close_tab(tab: str) -> dict:
-    """Close a tab by id. When it was the active one, fall back to whatever tab remains."""
+def close() -> None:
+    """Drop our connection (e.g. on server stop). The user's Chrome is left running; daisy just
+    reconnects to it next time."""
+    SURFACE.shutdown()
 
-    def run() -> dict:
-        session = _worker.session()
-        page = session.pages_by_id.get(tab)
-        if page is None or page.is_closed():
-            return {"ok": False, "error": f"No tab with id {tab!r} (it may already be closed).", "tabs": _tab_summaries(session)}
-        page.close()
-        session.pages_by_id.pop(tab, None)
-        session.tab_ids.pop(page, None)
-        if session.page == page:
-            session.page = None
-            _worker.page(session)
-        return {"ok": True, "tabs": _tab_summaries(session)}
 
-    return _run_tool(run)
+atexit.register(close)

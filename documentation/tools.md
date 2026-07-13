@@ -41,7 +41,7 @@ Agents act through tools. Every tool call is subject to the [permission engine](
 
 ## Computer-use (`computer`)
 
-Controls native macOS apps through the **accessibility tree** — it observes the on-screen UI as structured elements and acts on them (click, type, key, menu, scroll), falling back to screenshots when needed. Actions are honest about what actually happened.
+Controls native macOS apps through the **accessibility tree** — it observes the on-screen UI as structured elements and acts on them (find, click, type, press, menu, scroll), falling back to screenshots when needed. Every action re-reads the app and returns its actionable surface plus a `changed` flag, the same honest result the browser tool gives; it shares one implementation (`harness/computer/surface.py`) with the browser tool.
 
 **Enable it:** grant **Accessibility** permission to Daisy (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. Set `computer_control.enabled: true` (the default) in the config.
 

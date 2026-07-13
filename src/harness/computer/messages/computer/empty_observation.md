@@ -1,0 +1,1 @@
+No accessible elements. If this is a browser or Electron app in the background, bring it to the front with action='launch' and observe again; otherwise it draws its own UI, so use action='screenshot'.

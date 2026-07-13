@@ -114,9 +114,10 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
 // other enum in these views is mapped rather than shown raw.
 const COMPUTER_ACTION_LABEL_KEYS: Record<string, string> = {
   observe: "computerActionObserve",
+  find: "computerActionFind",
   click: "computerActionClick",
   type: "computerActionType",
-  key: "computerActionKey",
+  press: "computerActionPress",
   menu: "computerActionMenu",
   scroll: "computerActionScroll",
   screenshot: "computerActionScreenshot",
@@ -155,6 +156,9 @@ function ComputerCallView({ args }: { args: Record<string, unknown> }) {
         <ComputerActionBadge action={action} />
       </InlineField>
       {asString(args.app) && <InlineField label={t("computerApp")}>{asString(args.app)}</InlineField>}
+      {action === "find" && asString(args.query) && (
+        <InlineField label={t("browserQuery")}>{asString(args.query)}</InlineField>
+      )}
       {args.element != null && (
         <InlineField label={t("computerElement")}>
           <Mono>{asString(args.element)}</Mono>

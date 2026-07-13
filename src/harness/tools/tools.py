@@ -842,10 +842,11 @@ download_file.description = _load_tool_description("download_file")
 
 @tool
 async def computer(
-    action: Literal["observe", "click", "type", "key", "menu", "scroll", "screenshot", "run_script", "launch"],
+    action: Literal["observe", "find", "click", "type", "press", "menu", "scroll", "screenshot", "run_script", "launch"],
     app: str = "",
     element: int | None = None,
     text: str = "",
+    query: str = "",
     key: str = "",
     modifiers: list[str] | None = None,
     menu_path: list[str] | None = None,
@@ -863,13 +864,15 @@ async def computer(
     Choose the most accurate approach: run_script for a scriptable app's data, observe
     then act on the accessibility tree to drive UI, screenshot only when an app exposes
     no accessible structure. Acting never disturbs what the user is doing in another app.
+    An action re-reads the app and returns its actionable surface plus a `changed` flag.
 
     Args:
-        action: observe, click, type, key, menu, scroll, screenshot, run_script, or launch.
-        app: Target app name or bundle id (observe/key/menu/scroll/screenshot/launch/run_script).
-        element: The index of an element from the last observe (click/type).
+        action: observe, find, click, type, press, menu, scroll, screenshot, run_script, or launch.
+        app: Target app name or bundle id (observe/find/press/menu/scroll/screenshot/launch/run_script).
+        element: The index of an element from the last observe/find (click/type); observe expands that element's region.
         text: Text to enter (type), or the script source (run_script).
-        key: A named key for the key action — return, tab, escape, up, down, f1, and so on.
+        query: Text to search the app's on-screen elements for (find) — matches names and values.
+        key: A named key for the press action — return, tab, escape, up, down, f1, and so on, or a chord.
         modifiers: Modifier keys held with `key`, e.g. ["command", "shift"].
         menu_path: Menu-bar path for the menu action, e.g. ["File", "New Window"].
         direction: Scroll direction — up, down, left, or right.

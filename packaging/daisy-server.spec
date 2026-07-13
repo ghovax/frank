@@ -102,13 +102,16 @@ _mcp = _os.path.join(_repo_root, ".agents", "mcp.json")
 if _os.path.isfile(_mcp):
     datas.append((_mcp, ".agents"))
 
-# The browser tool's runtime-loaded message templates (.md) — the tool degrades to empty
-# guidance strings without them, so bundle them explicitly to be certain.
+# The automation tools' runtime-loaded message templates (.md), one folder per surface
+# (messages/browser, messages/computer) — the tools degrade to empty guidance strings without
+# them, so bundle every file, preserving its folder, to be certain.
 _messages_source = _os.path.join(_repo_root, "src", "harness", "computer", "messages")
-if _os.path.isdir(_messages_source):
-    for _message_name in _os.listdir(_messages_source):
+for _dirpath, _dirnames, _filenames in _os.walk(_messages_source):
+    for _message_name in _filenames:
         if _message_name.endswith(".md"):
-            datas.append((_os.path.join(_messages_source, _message_name), "harness/computer/messages"))
+            _relative = _os.path.relpath(_dirpath, _messages_source)
+            _destination = _os.path.join("harness", "computer", "messages", _relative)
+            datas.append((_os.path.join(_dirpath, _message_name), _destination))
 
 # Distributions whose runtime version is read via importlib.metadata.
 for distribution in [

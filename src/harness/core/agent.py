@@ -3375,155 +3375,25 @@ class AgentRuntime:
                     result = task
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
 
-        elif tool_name == "computer":
-            from harness.computer import engine as computer_engine, permissions as computer_permissions
+        elif tool_name in ("computer", "browser"):
+            # The two automation tools share one contract (surface.py): a preflight gate, an
+            # action dispatch table, and the model-image side channel for screenshots. The tool
+            # name only selects which surface — native macOS or the user's Chrome.
+            from harness.computer import engine as native_surface, web as web_surface
+            surface = native_surface.SURFACE if tool_name == "computer" else web_surface.SURFACE
             action = str(tool_arguments.get("action", ""))
-            # The AX-tree actions need the Accessibility grant; scripting/launch do not.
-            # A clear, actionable error beats a silent empty result.
-            if action in ("observe", "click", "type", "key", "menu", "scroll") and not computer_permissions.accessibility_granted():
+            blocked = surface.preflight(action)
+            if blocked is not None:
+                # A clear, actionable error (a missing permission) beats a silent empty result.
                 yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
-                    result={
-                        "ok": False,
-                        "error": "Accessibility permission is not granted for this app, so it cannot read or control other apps. Grant it in System Settings › Privacy & Security › Accessibility.",
-                        "needs_permission": "accessibility",
-                    },
+                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=blocked,
                 )
                 return
-
-            def _run_computer() -> dict:
-                app = str(tool_arguments.get("app", ""))
-                element = tool_arguments.get("element")
-                text = str(tool_arguments.get("text", ""))
-                window = str(tool_arguments.get("window", "focused") or "focused")
-                language = str(tool_arguments.get("language", "applescript") or "applescript")
-                clicks = int(tool_arguments.get("clicks", 1) or 1)
-                button = str(tool_arguments.get("button", "left") or "left")
-                key = str(tool_arguments.get("key", ""))
-                modifiers = tool_arguments.get("modifiers") or []
-                menu_path = tool_arguments.get("menu_path") or []
-                direction = str(tool_arguments.get("direction", ""))
-                arguments = tool_arguments.get("arguments") or []
-                if action == "observe":
-                    return computer_engine.observe(app, window, element=int(element) if element is not None else None)
-                if action in ("click", "type"):
-                    if element is None:
-                        return {"ok": False, "error": f"The {action} action needs an element index from the last observe."}
-                    if action == "click":
-                        return computer_engine.click(int(element), clicks=clicks, button=button)
-                    return computer_engine.set_text(int(element), text)
-                if action == "key":
-                    return computer_engine.press_key(key, modifiers, app)
-                if action == "menu":
-                    return computer_engine.open_menu(menu_path, app)
-                if action == "scroll":
-                    return computer_engine.scroll(direction or "down", target=app)
-                if action == "screenshot":
-                    return computer_engine.screenshot(app)
-                if action == "run_script":
-                    return computer_engine.run_script(text, language)
-                if action == "launch":
-                    return computer_engine.launch(app, arguments)
-                return {"ok": False, "error": f"Unknown action {action!r}."}
-
-            result = await asyncio.to_thread(_run_computer)
+            result = await asyncio.to_thread(surface.dispatch, action, tool_arguments)
             extra: dict[str, Any] = {}
-            # A screenshot's pixels ride the model_image side channel to a vision-capable
-            # model, exactly like read_file; the raw path never reaches the UI.
-            if action == "screenshot" and isinstance(result, dict) and result.get("image_path"):
-                if self._model_supports_vision():
-                    data_uri = await asyncio.to_thread(_screenshot_data_uri, result["image_path"])
-                    if data_uri:
-                        extra["model_image"] = data_uri
-                result.pop("image_path", None)
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result, **extra,
-            )
-
-        elif tool_name == "browser":
-            from harness.computer import web as browser_bridge
-            action = str(tool_arguments.get("action", ""))
-
-            def _run_browser() -> dict:
-                url = str(tool_arguments.get("url", ""))
-                element = tool_arguments.get("element")
-                text = str(tool_arguments.get("text", ""))
-                key = str(tool_arguments.get("key", ""))
-                direction = str(tool_arguments.get("direction") or "down")
-                tab = str(tool_arguments.get("tab", ""))
-                browser_name = str(tool_arguments.get("browser_name") or "chrome")
-                if action == "navigate":
-                    if not url:
-                        return {"ok": False, "error": "The navigate action needs a url."}
-                    return browser_bridge.navigate(url, browser=browser_name)
-                if action == "observe":
-                    return browser_bridge.observe(element=int(element) if element is not None else None)
-                if action == "find":
-                    query = str(tool_arguments.get("query", ""))
-                    if not query.strip():
-                        return {"ok": False, "error": "The find action needs a query — the text to look for on the page."}
-                    return browser_bridge.find(query)
-                if action == "screenshot":
-                    return browser_bridge.screenshot()
-                if action in ("click", "type", "hover", "select", "upload", "drag"):
-                    if element is None:
-                        return {"ok": False, "error": f"The {action} action needs an element index from the last observe."}
-                    if action == "click":
-                        return browser_bridge.click(int(element))
-                    if action == "hover":
-                        return browser_bridge.hover(int(element))
-                    if action == "select":
-                        option = str(tool_arguments.get("option", ""))
-                        if not option:
-                            return {"ok": False, "error": "The select action needs an option — the visible label (or value) to choose."}
-                        return browser_bridge.select_option(int(element), option)
-                    if action == "upload":
-                        paths = tool_arguments.get("paths") or []
-                        if isinstance(paths, str):
-                            paths = [paths]
-                        if not paths:
-                            return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
-                        return browser_bridge.upload(int(element), [str(path) for path in paths])
-                    if action == "drag":
-                        to_element = tool_arguments.get("to_element")
-                        if to_element is None:
-                            return {"ok": False, "error": "The drag action needs to_element — the index to drop onto."}
-                        return browser_bridge.drag(int(element), int(to_element))
-                    return browser_bridge.type_text(int(element), text, submit=bool(tool_arguments.get("submit", False)))
-                if action == "press":
-                    if not key:
-                        return {"ok": False, "error": "The press action needs a key (e.g. Enter)."}
-                    return browser_bridge.press(key)
-                if action == "scroll":
-                    return browser_bridge.scroll(direction, element=int(element) if element is not None else None)
-                if action == "read":
-                    return browser_bridge.read(
-                        offset=int(tool_arguments.get("offset", 0) or 0),
-                        element=int(element) if element is not None else None,
-                    )
-                if action == "back":
-                    return browser_bridge.history_back()
-                if action == "forward":
-                    return browser_bridge.history_forward()
-                if action == "reload":
-                    return browser_bridge.reload()
-                if action == "tabs":
-                    return browser_bridge.list_tabs()
-                if action == "new_tab":
-                    return browser_bridge.new_tab(url, browser=browser_name)
-                if action in ("switch_tab", "close_tab"):
-                    if not tab:
-                        return {"ok": False, "error": f"The {action} action needs a tab id from the tabs action."}
-                    if action == "switch_tab":
-                        return browser_bridge.switch_tab(tab)
-                    return browser_bridge.close_tab(tab)
-                return {"ok": False, "error": f"Unknown action {action!r}."}
-
-            result = await asyncio.to_thread(_run_browser)
-            extra = {}
-            # A page screenshot's pixels ride the model_image side channel to a vision-capable
-            # model, exactly like the computer tool's. The raw path never reaches the UI.
-            if action == "screenshot" and isinstance(result, dict) and result.get("image_path"):
+            # A screenshot's pixels ride the model_image side channel to a vision-capable model,
+            # exactly like read_file; the raw path never reaches the UI.
+            if action in surface.screenshot_actions and isinstance(result, dict) and result.get("image_path"):
                 if self._model_supports_vision():
                     data_uri = await asyncio.to_thread(_screenshot_data_uri, result["image_path"])
                     if data_uri:
