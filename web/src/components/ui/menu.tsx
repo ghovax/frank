@@ -46,7 +46,7 @@ export function DropdownMenu({
 // inset — so it sits evenly within the menu's padding instead of crowding the rows around
 // it. Lives here (not per call site) so every menu's divider breathes the same way.
 export function MenuSeparator() {
-  return <Menu.Separator my={1.5} />;
+  return <Menu.Separator />;
 }
 
 export function MenuOption({

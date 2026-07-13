@@ -8,7 +8,7 @@
 import { Box, EmptyState, Flex, IconButton, Text, VStack, type BoxProps, type FlexProps } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { LuX } from "react-icons/lu";
-import { scrollFade } from "@/lib/scroll-fade";
+import { useScrollEdgeFade } from "@/lib/scroll-fade";
 
 // The panel surface: a filled card that fills its tile (PanelTiles owns size + placement)
 // with the standard border + soft `panel` elevation. Extra props pass through so a panel
@@ -75,11 +75,13 @@ export function PanelHeader({
 }
 
 // The panel's scrolling content area: fills the remaining height below the header, scrolls
-// on overflow, carries the standard inset padding, and softly fades its content under the
-// header via the shared top scroll mask. Extra props pass through.
+// on overflow, and carries the standard inset padding. Content softly fades at whichever
+// edges hide more of it (under the header when scrolled down, above the panel's bottom
+// while more is below the fold). Extra props pass through.
 export function PanelBody({ children, ...rest }: BoxProps) {
+  const { containerRef, onScroll, fade } = useScrollEdgeFade();
   return (
-    <Box flex={1} minH={0} overflowY="auto" px={2} py={2} css={scrollFade} {...rest}>
+    <Box ref={containerRef} onScroll={onScroll} flex={1} minH={0} overflowY="auto" px={2} py={2} css={fade} {...rest}>
       {children}
     </Box>
   );

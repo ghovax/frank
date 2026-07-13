@@ -43,7 +43,7 @@ export function SimpleSelect({
         <Select.Positioner>
           <Select.Content maxH="320px" overflowY="auto">
             {items.map((item) => (
-              <Select.Item item={item} key={item.value} fontWeight="medium">
+              <Select.Item item={item} key={item.value}>
                 {item.label}
                 <Select.ItemIndicator />
               </Select.Item>

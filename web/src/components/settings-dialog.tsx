@@ -16,15 +16,19 @@ import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@/lib/i18n/messages";
 import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorkspaceStrategyControl, type WorkspaceStrategyValue } from "./session-controls";
+import { useScrollEdgeFade } from "@/lib/scroll-fade";
 
 export type SettingsSection = "general" | "locations" | "agents" | "connection";
 
 // The single owner of every settings tab's scroll + padding. Each tab renders through
 // this wrapper instead of setting its own spacing, so all panels stay identical and no
 // tab can drift (which is exactly how the Connection tab once ended up mis-padded).
+// It also owns the soft edge fades (shared scroll-edge hook): each edge fades only while
+// there is content beyond it, so nothing is dimmed while resting at either end.
 function SettingsTabPanel({ value, children }: { value: string; children: ReactNode }) {
+  const { containerRef, onScroll, fade } = useScrollEdgeFade();
   return (
-    <Tabs.Content value={value} h="100%" overflowY="auto" px={4} pt={0} pb={4}>
+    <Tabs.Content ref={containerRef} onScroll={onScroll} value={value} h="100%" overflowY="auto" px={4} pt={0} pb={4} css={fade}>
       {children}
     </Tabs.Content>
   );
@@ -672,7 +676,10 @@ export function SettingsDialog({
                 </Box>
               </Tabs.Root>
             </Dialog.Body>
-            <Dialog.Footer borderTop="1px solid" borderColor="border">
+            {/* No divider border: the tab panel's bottom scroll fade provides the separation.
+                The theme's footer pt=1 assumes the body carries its own bottom padding; this
+                body is px/py 0, so the footer balances itself (pb=4 comes from the theme). */}
+            <Dialog.Footer pt={3}>
               <Button variant="outline" onClick={requestClose} disabled={saving}>
                 {tc("close")}
               </Button>

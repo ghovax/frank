@@ -70,6 +70,38 @@ const config = defineConfig({
           footer: { px: "4", pt: "1", pb: "4", gap: "2" },
         },
       },
+      // One dropdown row for the whole app. Menus (size sm — the DropdownMenu wrapper) and
+      // Selects (size xs — SimpleSelect, model/agent pickers, session controls) are the same
+      // UI to the user, but their stock recipes disagree: menu-sm rows are tighter (6px side
+      // padding, 4px icon gap, regular weight, no inter-row gap) while select-xs rows are
+      // roomier (8px/8px, hand-medium at every call site, plus a 4px flex gap between rows).
+      // Both size variants are overridden here to one scale — 28px medium-weight rows, 8px
+      // side padding and icon gap, rhythm from item padding alone — so no call site needs
+      // its own py/fontWeight/fontSize on items. The slot lists mirror each recipe's anatomy
+      // order exactly: config arrays merge index-wise, so a partial or reordered list would
+      // corrupt the recipe's slot mapping.
+      menu: {
+        slots: ["arrow", "arrowTip", "content", "contextTrigger", "indicator", "item", "itemGroup", "itemGroupLabel", "itemIndicator", "itemText", "positioner", "separator", "trigger", "triggerItem", "itemCommand"],
+        variants: {
+          size: {
+            sm: {
+              item: { gap: "2", py: "1.5", px: "2", fontWeight: "medium" },
+              itemGroupLabel: { textStyle: "xs", color: "fg.muted" },
+            },
+          },
+        },
+      },
+      select: {
+        slots: ["label", "positioner", "trigger", "indicator", "clearTrigger", "item", "itemText", "itemIndicator", "itemGroup", "itemGroupLabel", "list", "content", "root", "control", "valueText", "indicatorGroup"],
+        variants: {
+          size: {
+            xs: {
+              content: { gap: "0" },
+              item: { py: "1.5", fontWeight: "medium" },
+            },
+          },
+        },
+      },
     },
   },
 })

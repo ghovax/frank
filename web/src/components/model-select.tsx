@@ -352,7 +352,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                         <Select.Positioner>
                           <Select.Content maxH="320px" overflowY="auto">
                             {providerItems.map((provider) => (
-                              <Select.Item item={provider} key={provider.value} fontWeight="medium">
+                              <Select.Item item={provider} key={provider.value}>
                                 {provider.label}
                                 <Select.ItemIndicator />
                               </Select.Item>
@@ -399,7 +399,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                             {modelItems
                               .filter((model) => model.value !== CUSTOM_MODEL)
                               .map((model) => (
-                                <Select.Item item={model} key={model.value} fontWeight="medium" color={model.available ? undefined : "fg.subtle"}>
+                                <Select.Item item={model} key={model.value} color={model.available ? undefined : "fg.subtle"}>
                                   <Flex align="center" gap={2} w="100%">
                                     {suffixForModel(model.value) !== model.label ? (
                                       <Text flex={1}>{model.label}</Text>
@@ -422,16 +422,14 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                               <>
                                 {/* Only divide from the model list when there is one. */}
                                 {modelItems.some((model) => model.value !== CUSTOM_MODEL) ? (
-                                  <Box borderTop="1px solid" borderColor="border" my={1.5} />
+                                  <Box borderTop="1px solid" borderColor="border" />
                                 ) : null}
                                 <Select.Item
                                   item={customModelItem}
                                   key={customModelItem.value}
                                   bg="blue.subtle"
                                   color="blue.fg"
-                                  fontWeight="medium"
                                   borderColor="border"
-                                  pt={1}
                                   _hover={{ bg: "blue.muted" }}
                                 >
                                   {customModelItem.label}

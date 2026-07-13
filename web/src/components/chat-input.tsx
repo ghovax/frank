@@ -741,7 +741,7 @@ export function ChatInput({
               <Select.Positioner>
                 <Select.Content minW="max-content" w="max-content">
                   {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap" fontWeight="medium" fontSize="xs">
+                    <Select.Item item={item} key={item.value} whiteSpace="nowrap">
                       {item.label}
                       <Select.ItemIndicator />
                     </Select.Item>

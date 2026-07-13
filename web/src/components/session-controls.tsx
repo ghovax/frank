@@ -21,7 +21,6 @@ function controlMetrics(layout: "chip" | "field") {
     contentFontSize: "xs",
     dropdownTitleFontSize: "xs",
     dropdownDescriptionFontSize: "2xs",
-    dropdownPaddingY: 1.5,
   };
   return layout === "field" ? { ...base, width: "100%", labelMaximumWidth: "100%" } : { ...base, width: "max-content" };
 }
@@ -146,7 +145,7 @@ export function PermissionModeControl({
             {collection.items.map((item) => {
               const choice = permissionChoices.find((candidate) => candidate.value === item.value);
               return (
-                <Select.Item item={item} key={item.value} fontWeight="medium" fontSize={metrics.dropdownTitleFontSize} py={metrics.dropdownPaddingY}>
+                <Select.Item item={item} key={item.value}>
                   <Flex align="center" gap={metrics.gap} minW={0}>
                     <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={choice?.colorPalette ? `${choice.colorPalette}.fg` : "fg.subtle"} flexShrink={0}>
                       {choice?.icon}
@@ -374,7 +373,7 @@ export function WorkspaceStrategyControl({
               const gitModeUnavailable = item.value !== "none" && !gitWorkspaceAvailable;
               const choice = workspaceChoices.find((candidate) => candidate.value === item.value);
               return (
-                <Select.Item item={item} key={item.value} fontWeight="medium" fontSize={metrics.dropdownTitleFontSize} py={metrics.dropdownPaddingY} aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
+                <Select.Item item={item} key={item.value} aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
                   <Flex align="center" gap={metrics.gap} minW={0}>
                     <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
                       {choice?.icon}

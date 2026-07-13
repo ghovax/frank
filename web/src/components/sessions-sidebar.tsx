@@ -141,7 +141,7 @@ export function SessionsSidebar({
           there's nothing to start anew from a blank chat. Its `px={2}` matches the header
           override and the body below, so the switcher, this button, and the session rows all
           share one left edge. */}
-      <Box px={2} pt={2} flexShrink={0}>
+      <Box px={2} flexShrink={0}>
         <Button
           w="full"
           variant="subtle"
@@ -182,7 +182,7 @@ export function SessionsSidebar({
             positioning={{ placement: "bottom-end" }}
           >
             <Menu.ItemGroup>
-              <Menu.ItemGroupLabel fontSize="xs" color="fg.muted">{t("sortBy")}</Menu.ItemGroupLabel>
+              <Menu.ItemGroupLabel>{t("sortBy")}</Menu.ItemGroupLabel>
               <MenuOption value="recent" selected={sessionSort === "recent"} onClick={() => onSessionSortChange("recent")}>
                 {t("newestFirst")}
               </MenuOption>

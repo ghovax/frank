@@ -64,7 +64,7 @@ export function ProjectSwitcher({
         }
       >
         <Menu.ItemGroup>
-          <Menu.ItemGroupLabel fontSize="xs" color="fg.muted">{t("projects")}</Menu.ItemGroupLabel>
+          <Menu.ItemGroupLabel>{t("projects")}</Menu.ItemGroupLabel>
           {projects.map((project) => (
             <MenuOption
               key={project.id}
@@ -73,16 +73,16 @@ export function ProjectSwitcher({
               selected={project.id === currentProjectId}
               onClick={() => onSwitchProject(project.id)}
             >
-              <Text fontWeight="medium" truncate>{project.name}</Text>
+              <Text truncate>{project.name}</Text>
             </MenuOption>
           ))}
         </Menu.ItemGroup>
         <MenuSeparator />
         <MenuOption value="__new__" icon={<LuPlus size={13} />} onClick={() => setNewOpen(true)}>
-          <Text fontWeight="medium">{t("newProject")}</Text>
+          <Text>{t("newProject")}</Text>
         </MenuOption>
         <MenuOption value="__manage__" icon={<LuSettings size={13} />} onClick={() => setManageOpen(true)}>
-          <Text fontWeight="medium">{t("manageProjects")}</Text>
+          <Text>{t("manageProjects")}</Text>
         </MenuOption>
       </DropdownMenu>
 
