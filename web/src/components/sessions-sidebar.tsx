@@ -141,7 +141,9 @@ export function SessionsSidebar({
           there's nothing to start anew from a blank chat. Its `px={2}` matches the header
           override and the body below, so the switcher, this button, and the session rows all
           share one left edge. */}
-      <Box px={2} flexShrink={0}>
+      {/* mb spaces the list (and its top scroll-fade) off the button, so content doesn't
+          dissolve right up against it when scrolled. */}
+      <Box px={2} flexShrink={0} mb={2}>
         <Button
           w="full"
           variant="subtle"

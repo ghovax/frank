@@ -422,7 +422,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                               <>
                                 {/* Only divide from the model list when there is one. */}
                                 {modelItems.some((model) => model.value !== CUSTOM_MODEL) ? (
-                                  <Box borderTop="1px solid" borderColor="border" />
+                                  <Box borderTop="1px solid" borderColor="border" my={1} />
                                 ) : null}
                                 <Select.Item
                                   item={customModelItem}
