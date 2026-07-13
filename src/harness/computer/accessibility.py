@@ -36,6 +36,7 @@ import AppKit
 import ApplicationServices as AS
 import Quartz
 from CoreFoundation import kCFBooleanTrue
+from Foundation import NSMakeRange
 
 # Attribute names. The kAX* symbols resolve to exactly these strings.
 ROLE = "AXRole"
@@ -57,6 +58,15 @@ VISIBLE_ROWS = "AXVisibleRows"
 WINDOWS = "AXWindows"
 MAIN_WINDOW = "AXMainWindow"
 FOCUSED_WINDOW = "AXFocusedWindow"
+FOCUSED_ELEMENT = "AXFocusedUIElement"
+
+# The text attributes an editable element exposes: its own contents (AXValue), the current
+# selection as a substring, and the selection as a (location, length) range. Setting the range
+# moves the caret or selects text; setting the selected text inserts at the caret or replaces the
+# selection. These are the accessible, VoiceOver-grade way to edit text without synthesizing keys.
+SELECTED_TEXT = "AXSelectedText"
+SELECTED_TEXT_RANGE = "AXSelectedTextRange"
+NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
 
 # One batched read pulls all of these in a single IPC round-trip per node. AXFrame is the
 # element's rectangle in one value; AXVisibleChildren/AXVisibleRows let the app report
@@ -92,6 +102,7 @@ POINT_TYPE = getattr(AS, "kAXValueCGPointType", getattr(AS, "kAXValueTypeCGPoint
 SIZE_TYPE = getattr(AS, "kAXValueCGSizeType", getattr(AS, "kAXValueTypeCGSize", 2))
 RECT_TYPE = getattr(AS, "kAXValueCGRectType", getattr(AS, "kAXValueTypeCGRect", 3))
 ERROR_VALUE_TYPE = getattr(AS, "kAXValueAXErrorType", getattr(AS, "kAXValueTypeAXError", 5))
+RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange", 4))
 
 # A single message to a wedged app must not block the walk forever. This is a safety
 # valve against a hung process, not an accuracy cap: a healthy element answers in well
@@ -498,3 +509,60 @@ def handle_is_live(handle: Any) -> bool:
     """Cheap liveness probe: a stale AXUIElementRef errors on any attribute read."""
     error, _ = AS.AXUIElementCopyAttributeValue(handle, ROLE, None)
     return error == 0
+
+
+def attribute_settable(element: Any, attribute: str) -> bool:
+    """Whether an attribute can be written on this element (a read-only field is not settable)."""
+    error, settable = AS.AXUIElementIsAttributeSettable(element, attribute, None)
+    return error == 0 and bool(settable)
+
+
+def text_value(element: Any) -> Optional[str]:
+    """The element's own text contents (AXValue), or None when it holds no string."""
+    value = _single(element, VALUE)
+    return value if isinstance(value, str) else None
+
+
+def selected_range(element: Any) -> Optional[tuple[int, int]]:
+    """The current selection as (location, length) in characters, or None when unavailable. A
+    zero-length range is the caret position."""
+    value = _single(element, SELECTED_TEXT_RANGE)
+    if value is None:
+        return None
+    ok, extracted = AS.AXValueGetValue(value, RANGE_TYPE, None)
+    if not ok or extracted is None:
+        return None
+    location, length = tuple(extracted)
+    return int(location), int(length)
+
+
+def set_selected_range(element: Any, location: int, length: int) -> bool:
+    """Set the selection (or, with length 0, place the caret). Returns False when the element does
+    not support a settable selection range, so the caller can fall back."""
+    if not attribute_settable(element, SELECTED_TEXT_RANGE):
+        return False
+    value = AS.AXValueCreate(RANGE_TYPE, NSMakeRange(location, length))
+    if value is None:
+        return False
+    return AS.AXUIElementSetAttributeValue(element, SELECTED_TEXT_RANGE, value) == 0
+
+
+def selected_text(element: Any) -> Optional[str]:
+    """The currently selected substring, or None when nothing is selected or unavailable."""
+    value = _single(element, SELECTED_TEXT)
+    return value if isinstance(value, str) else None
+
+
+def set_selected_text(element: Any, text: str) -> bool:
+    """Replace the current selection with ``text`` (inserting at the caret when the selection is
+    empty). Returns False when the element does not support it, so the caller can fall back."""
+    if not attribute_settable(element, SELECTED_TEXT):
+        return False
+    return AS.AXUIElementSetAttributeValue(element, SELECTED_TEXT, text) == 0
+
+
+def focused_element(pid: int) -> Optional[Any]:
+    """The app's currently focused UI element (the field the caret is in), or None."""
+    root = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetMessagingTimeout(root, MESSAGING_TIMEOUT_SECONDS)
+    return _single(root, FOCUSED_ELEMENT)

@@ -1,0 +1,1 @@
+Couldn't place a selection or caret in this element — its text isn't in a form the selection can be mapped onto (a canvas-drawn editor like Google Docs draws its own text with no real DOM nodes). Screenshot it and act by clicking at a position, or drive it with the page's own keyboard shortcuts.

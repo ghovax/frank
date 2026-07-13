@@ -44,9 +44,19 @@ from itertools import count
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from harness.computer.surface import Element, Surface, ToolFailure, message_loader
+from harness.computer.surface import (
+    Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
+)
+# The verbatim-first matcher and compact diff window from the file-edit tool: the `edit` action
+# changes a field's text exactly the way edit_file changes a file, reusing that tested logic.
+from harness.tools.file_tools import _context_diff_window as context_diff_window, _match_find_text as match_find_text
 
 message = message_loader("browser")
+
+# The DOM selection helper Playwright has no native API for (selecting an arbitrary substring or
+# placing the caret at an offset). Kept as a real .js file and loaded at runtime, like every other
+# prompt/asset in the harness, rather than inlined in Python. Bundled by the freeze spec.
+_APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js").read_text()
 
 # The user-visible Chromium browsers we can connect to and drive, mapped to the support directory
 # that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
@@ -340,6 +350,16 @@ def _safe_url(page) -> str:
         return ""
 
 
+def _as_int(value: Any) -> Optional[int]:
+    """A tool argument coerced to int, or None when it is absent or blank."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _await_quiet(page, timeout_ms: int = 8_000) -> None:
     """Wait for the page to reach a loaded state, tolerating pages that never settle."""
     try:
@@ -615,22 +635,30 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def click(self, index: int) -> dict:
-        """Click an element with Playwright's full actionability pipeline (visibility, stability,
-        hit-target checks), then return the resulting page with an honest ``changed`` flag."""
+    def click(self, index: Optional[int] = None, *, x: Optional[int] = None, y: Optional[int] = None,
+              clicks: int = 1, button: str = "left") -> dict:
+        """Click an element (Playwright's full actionability pipeline) or an x/y viewport point (the
+        canvas/no-structure fallback), with ``clicks`` for double/triple and ``button`` for a
+        context click. Returns the resulting page with an honest ``changed`` flag."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
             before_url = page.url
             before_snapshot = session.last_snapshot
-            locator = self._locator(session, page, index)
             try:
-                locator.click(timeout=5_000)
+                if index is not None:
+                    self._locator(session, page, index).click(button=button, click_count=clicks, timeout=5_000)
+                    did = f"Clicked element {index}"
+                elif x is not None and y is not None:
+                    page.mouse.click(x, y, button=button, click_count=clicks)
+                    did = f"Clicked ({x}, {y})"
+                else:
+                    return {"ok": False, "error": "The click action needs an element index or an x/y point."}
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not click element {index}: {str(error).splitlines()[0]}"})
+                raise ToolFailure({"ok": False, "error": f"Could not click: {str(error).splitlines()[0]}"})
             _await_quiet(page)
-            result: dict[str, Any] = {"ok": True, "did": f"Clicked element {index}"}
+            result: dict[str, Any] = {"ok": True, "did": did}
             overview = self._digest(session, self.page(session), before_url=before_url)
             changed = overview.get("url_changed") or session.last_snapshot != before_snapshot
             result["changed"] = bool(changed)
@@ -641,9 +669,10 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def type_text(self, index: int, text: str, submit: bool = False) -> dict:
-        """Fill a field (input, textarea, or contenteditable) with Playwright's fill: focus, clear,
-        insert, real input events. With ``submit``, press Enter and return the resulting page."""
+    def type_text(self, index: int, text: str, submit: bool = False, mode: str = "replace") -> dict:
+        """Enter text into a field. ``replace`` (default) fills it in one shot; ``insert`` inserts
+        at the caret, replacing any selection. With ``submit``, press Enter and return the resulting
+        page. To change part of a field, prefer ``edit`` over rewriting the whole thing."""
 
         def run() -> dict:
             session = self.session()
@@ -651,7 +680,11 @@ class WebSurface(Surface):
             before_url = page.url
             locator = self._locator(session, page, index)
             try:
-                locator.fill(text, timeout=5_000)
+                if mode == "insert":
+                    locator.focus(timeout=5_000)
+                    page.keyboard.insert_text(text)
+                else:
+                    locator.fill(text, timeout=5_000)
             except Exception as error:
                 raise ToolFailure({"ok": False, "error": f"Could not type into element {index}: {str(error).splitlines()[0]}"})
             if not submit:
@@ -661,6 +694,103 @@ class WebSurface(Surface):
             result: dict[str, Any] = {"ok": True, "did": f"Typed into element {index} and pressed Enter"}
             result.update(self._digest(session, self.page(session), before_url=before_url))
             return result
+
+        return self.guard(run)
+
+    def _field_text(self, locator) -> str:
+        """The editable text of a field, read with native accessors: an input/textarea's value, or
+        the element's text content for anything else. Text content (not inner text) is what the
+        selection script indexes against, so the offsets computed here line up with the DOM."""
+        try:
+            return locator.input_value(timeout=5_000)
+        except Exception:
+            return locator.text_content(timeout=5_000) or ""
+
+    def select(self, index: int, *, text: Optional[str] = None, to_text: Optional[str] = None,
+               select_all: bool = False, occurrence: int = 1) -> dict:
+        """Select text in a field, addressed by content: a substring (``text``), a range from
+        ``text`` through ``to_text``, or the whole field (``select_all``). The range is computed
+        from the field's text, then placed with the loaded selection script."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            locator = self._locator(session, page, index)
+            content = self._field_text(locator)
+            if select_all:
+                start, length = resolve_range(content, select_all=True)
+            elif to_text is not None:
+                start, length = resolve_range(content, anchor_from=text, anchor_to=to_text, occurrence=occurrence)
+            else:
+                start, length = resolve_range(content, text=text, occurrence=occurrence)
+            placed = locator.evaluate(_APPLY_SELECTION_JS, [start, start + length], timeout=5_000)
+            if placed is None:
+                return {"ok": False, "error": message("select_unsupported")}
+            return {"ok": True, "did": f"Selected {length} chars", "via": "dom"}
+
+        return self.guard(run)
+
+    def caret(self, index: int, *, before: Optional[str] = None, after: Optional[str] = None,
+              at_offset: Optional[int] = None, edge: str = "", occurrence: int = 1) -> dict:
+        """Place the insertion point in a field: ``before``/``after`` a substring, ``at_offset`` a
+        character offset, or at the ``start``/``end`` edge."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            locator = self._locator(session, page, index)
+            content = self._field_text(locator)
+            offset = resolve_caret(
+                content, before=before, after=after, at_offset=at_offset,
+                to_start=edge == "start", to_end=edge == "end", occurrence=occurrence,
+            )
+            placed = locator.evaluate(_APPLY_SELECTION_JS, [offset, offset], timeout=5_000)
+            if placed is None:
+                return {"ok": False, "error": message("select_unsupported")}
+            return {"ok": True, "did": f"Caret at {offset}", "via": "dom"}
+
+        return self.guard(run)
+
+    def edit_text(self, index: int, find: str, replace: str, *, replace_all: bool = False) -> dict:
+        """Change a field's text by replacing ``find`` with ``replace`` — the same verbatim-first,
+        must-be-unique matching as the file-edit tool — then write the result back with Playwright's
+        native ``fill`` (which works on inputs, textareas, and contenteditable). Returns a compact
+        before/after diff."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            locator = self._locator(session, page, index)
+            content = self._field_text(locator)
+            if find == replace:
+                return {"ok": False, "error": "find and replace are identical; nothing to change."}
+            matched = match_find_text(content, find, replace)
+            if matched is None:
+                return {"ok": False, "error": "The text to change is not in the field. Copy it exactly as it appears."}
+            effective, found, replacement, occurrences = matched
+            if occurrences > 1 and not replace_all:
+                return {"ok": False, "error": f"{occurrences} matches for that text; make it unique or set replace_all."}
+            after = effective.replace(found, replacement, -1 if replace_all else 1)
+            locator.fill(after, timeout=5_000)
+            before_window, after_window = context_diff_window(effective, after)
+            count = occurrences if replace_all else 1
+            return {"ok": True, "did": f"Changed {count} occurrence(s)", "before": before_window, "after": after_window}
+
+        return self.guard(run)
+
+    def clipboard_action(self, action: str, index: Optional[int] = None) -> dict:
+        """Copy, cut, or paste via the real OS clipboard, using the browser's own trusted keyboard
+        shortcut (so it interoperates with the user's clipboard and the native surface)."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            if index is not None:
+                self._locator(session, page, index).focus(timeout=5_000)
+            combo = {"copy": "c", "cut": "x", "paste": "v"}[action]
+            page.keyboard.press(f"ControlOrMeta+{combo}")
+            _await_quiet(page, timeout_ms=2_000)
+            return {"ok": True, "did": action.capitalize()}
 
         return self.guard(run)
 
@@ -681,17 +811,22 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def hover(self, index: int) -> dict:
-        """Move the pointer over an element (revealing hover menus and tooltips) without clicking."""
+    def hover(self, index: Optional[int] = None, *, x: Optional[int] = None, y: Optional[int] = None) -> dict:
+        """Move the pointer over an element or an x/y point (revealing hover menus and tooltips)
+        without clicking."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            locator = self._locator(session, page, index)
             try:
-                locator.hover(timeout=5_000)
+                if index is not None:
+                    self._locator(session, page, index).hover(timeout=5_000)
+                elif x is not None and y is not None:
+                    page.mouse.move(x, y)
+                else:
+                    return {"ok": False, "error": "The hover action needs an element index or an x/y point."}
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not hover element {index}: {str(error).splitlines()[0]}"})
+                raise ToolFailure({"ok": False, "error": f"Could not hover: {str(error).splitlines()[0]}"})
             time.sleep(0.25)
             return self._digest(session, page, before_url=None)
 
@@ -752,9 +887,9 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def select_option(self, index: int, option: str) -> dict:
-        """Choose an option in a native <select>. Playwright matches the given string against the
-        option's value or its visible label."""
+    def choose(self, index: int, option: str) -> dict:
+        """Pick an option in a native <select> dropdown. Playwright matches the given string
+        against the option's value or its visible label."""
 
         def run() -> dict:
             session = self.session()
@@ -764,8 +899,8 @@ class WebSurface(Surface):
             try:
                 chosen = locator.select_option(option, timeout=5_000)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not select {option!r} in element {index}: {str(error).splitlines()[0]}"})
-            result: dict[str, Any] = {"ok": True, "did": f"Selected {option!r} in element {index}", "selected": chosen}
+                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in element {index}: {str(error).splitlines()[0]}"})
+            result: dict[str, Any] = {"ok": True, "did": f"Chose {option!r} in element {index}", "chosen": chosen}
             result.update(self._digest(session, page, before_url=before_url))
             return result
 
@@ -799,24 +934,51 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def drag(self, index: int, to_element: int) -> dict:
-        """Drag one element onto another (Playwright's full pointer sequence with hit checks)."""
+    def drag(self, index: Optional[int] = None, to_element: Optional[int] = None, *,
+             x: Optional[int] = None, y: Optional[int] = None, to_x: Optional[int] = None,
+             to_y: Optional[int] = None) -> dict:
+        """Drag from a source element/point to a target element/point — drag and drop, or a
+        drag-to-select. Element to element uses Playwright's hit-checked sequence; a point drag
+        presses, moves, and releases the mouse."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            source = self._locator(session, page, index)
-            target = self._locator(session, page, to_element)
-            try:
-                source.drag_to(target, timeout=8_000)
-            except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not drag element {index} to {to_element}: {str(error).splitlines()[0]}"})
-            result: dict[str, Any] = {"ok": True, "did": f"Dragged element {index} onto {to_element}"}
+            if index is not None and to_element is not None:
+                source = self._locator(session, page, index)
+                target = self._locator(session, page, to_element)
+                try:
+                    source.drag_to(target, timeout=8_000)
+                except Exception as error:
+                    raise ToolFailure({"ok": False, "error": f"Could not drag element {index} to {to_element}: {str(error).splitlines()[0]}"})
+                did = f"Dragged element {index} onto {to_element}"
+            else:
+                start = self._point_of(session, page, index, x, y)
+                end = self._point_of(session, page, to_element, to_x, to_y)
+                if start is None or end is None:
+                    return {"ok": False, "error": "The drag action needs a source and target, each an element index or an x/y point."}
+                page.mouse.move(start[0], start[1])
+                page.mouse.down()
+                page.mouse.move(end[0], end[1], steps=12)
+                page.mouse.up()
+                did = f"Dragged ({round(start[0])}, {round(start[1])}) to ({round(end[0])}, {round(end[1])})"
+            result: dict[str, Any] = {"ok": True, "did": did}
             result.update(self._digest(session, page, before_url=before_url))
             return result
 
         return self.guard(run)
+
+    def _point_of(self, session: _Session, page, index: Optional[int], x: Optional[int], y: Optional[int]):
+        """A viewport point for a drag endpoint: an element's centre, or an explicit x/y, or None."""
+        if index is not None:
+            box = self._locator(session, page, index).bounding_box()
+            if box is None:
+                return None
+            return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        if x is not None and y is not None:
+            return float(x), float(y)
+        return None
 
     def read(self, offset: int = 0, element: Optional[int] = None) -> dict:
         """The page's visible text, one bounded window at a time. With ``element``, only that
@@ -974,6 +1136,15 @@ class WebSurface(Surface):
         tab = str(arguments.get("tab", ""))
         browser_name = str(arguments.get("browser_name") or "chrome")
         index = int(element) if element is not None else None
+        point_x = _as_int(arguments.get("x"))
+        point_y = _as_int(arguments.get("y"))
+        clicks = int(arguments.get("clicks", 1) or 1)
+        button = str(arguments.get("button") or "left")
+        occurrence = int(arguments.get("occurrence", 1) or 1)
+
+        def needs_element(name: str) -> dict:
+            return {"ok": False, "error": f"The {name} action needs an element index from the last observe."}
+
         if action == "navigate":
             if not url:
                 return {"ok": False, "error": "The navigate action needs a url."}
@@ -987,31 +1158,59 @@ class WebSurface(Surface):
             return self.find(query)
         if action == "screenshot":
             return self.screenshot()
-        if action in ("click", "type", "hover", "select", "upload", "drag"):
+        if action == "click":
+            return self.click(index, x=point_x, y=point_y, clicks=clicks, button=button)
+        if action == "hover":
+            return self.hover(index, x=point_x, y=point_y)
+        if action == "type":
             if index is None:
-                return {"ok": False, "error": f"The {action} action needs an element index from the last observe."}
-            if action == "click":
-                return self.click(index)
-            if action == "hover":
-                return self.hover(index)
-            if action == "select":
-                option = str(arguments.get("option", ""))
-                if not option:
-                    return {"ok": False, "error": "The select action needs an option — the visible label (or value) to choose."}
-                return self.select_option(index, option)
-            if action == "upload":
-                paths = arguments.get("paths") or []
-                if isinstance(paths, str):
-                    paths = [paths]
-                if not paths:
-                    return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
-                return self.upload(index, [str(path) for path in paths])
-            if action == "drag":
-                to_element = arguments.get("to_element")
-                if to_element is None:
-                    return {"ok": False, "error": "The drag action needs to_element — the index to drop onto."}
-                return self.drag(index, int(to_element))
-            return self.type_text(index, text, submit=bool(arguments.get("submit", False)))
+                return needs_element("type")
+            return self.type_text(index, text, submit=bool(arguments.get("submit", False)), mode=str(arguments.get("mode", "replace") or "replace"))
+        if action == "edit":
+            if index is None:
+                return needs_element("edit")
+            find = str(arguments.get("find", ""))
+            if not find:
+                return {"ok": False, "error": "The edit action needs find (the exact text to change) and replace."}
+            return self.edit_text(index, find, str(arguments.get("replace", "")), replace_all=bool(arguments.get("replace_all", False)))
+        if action == "select":
+            if index is None:
+                return needs_element("select")
+            return self.select(
+                index, text=text or None, to_text=str(arguments.get("to_text", "")) or None,
+                select_all=bool(arguments.get("select_all", False)), occurrence=occurrence,
+            )
+        if action == "caret":
+            if index is None:
+                return needs_element("caret")
+            return self.caret(
+                index, before=str(arguments.get("before", "")) or None,
+                after=str(arguments.get("after", "")) or None, at_offset=_as_int(arguments.get("at_offset")),
+                edge=str(arguments.get("edge", "")), occurrence=occurrence,
+            )
+        if action in ("copy", "cut", "paste"):
+            return self.clipboard_action(action, index)
+        if action == "choose":
+            if index is None:
+                return needs_element("choose")
+            option = str(arguments.get("option", ""))
+            if not option:
+                return {"ok": False, "error": "The choose action needs an option — the visible label (or value) to pick."}
+            return self.choose(index, option)
+        if action == "upload":
+            if index is None:
+                return needs_element("upload")
+            paths = arguments.get("paths") or []
+            if isinstance(paths, str):
+                paths = [paths]
+            if not paths:
+                return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
+            return self.upload(index, [str(path) for path in paths])
+        if action == "drag":
+            return self.drag(
+                index, _as_int(arguments.get("to_element")), x=point_x, y=point_y,
+                to_x=_as_int(arguments.get("to_x")), to_y=_as_int(arguments.get("to_y")),
+            )
         if action == "press":
             if not key:
                 return {"ok": False, "error": "The press action needs a key (e.g. Enter)."}

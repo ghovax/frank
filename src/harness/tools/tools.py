@@ -842,15 +842,34 @@ download_file.description = _load_tool_description("download_file")
 
 @tool
 async def computer(
-    action: Literal["observe", "find", "click", "type", "press", "menu", "scroll", "screenshot", "run_script", "launch"],
+    action: Literal[
+        "observe", "find", "click", "type", "edit", "select", "caret", "copy", "cut", "paste",
+        "press", "menu", "scroll", "hover", "drag", "screenshot", "run_script", "launch",
+    ],
     app: str = "",
     element: int | None = None,
     text: str = "",
     query: str = "",
+    find: str = "",
+    replace: str = "",
+    replace_all: bool = False,
+    mode: str = "replace",
+    to_text: str = "",
+    select_all: bool = False,
+    occurrence: int = 1,
+    before: str = "",
+    after: str = "",
+    at_offset: int | None = None,
+    edge: str = "",
     key: str = "",
     modifiers: list[str] | None = None,
     menu_path: list[str] | None = None,
     direction: str = "",
+    x: int | None = None,
+    y: int | None = None,
+    to_element: int | None = None,
+    to_x: int | None = None,
+    to_y: int | None = None,
     arguments: list[str] | None = None,
     language: str = "applescript",
     window: str = "focused",
@@ -864,22 +883,37 @@ async def computer(
     Choose the most accurate approach: run_script for a scriptable app's data, observe
     then act on the accessibility tree to drive UI, screenshot only when an app exposes
     no accessible structure. Acting never disturbs what the user is doing in another app.
-    An action re-reads the app and returns its actionable surface plus a `changed` flag.
+    Structural actions re-read the app and return its actionable surface plus a `changed`
+    flag; text actions (select/caret/edit/copy/cut/paste) return only what they changed.
 
     Args:
-        action: observe, find, click, type, press, menu, scroll, screenshot, run_script, or launch.
+        action: observe, find, click, type, edit, select, caret, copy, cut, paste, press, menu, scroll, hover, drag, screenshot, run_script, or launch.
         app: Target app name or bundle id (observe/find/press/menu/scroll/screenshot/launch/run_script).
-        element: The index of an element from the last observe/find (click/type); observe expands that element's region.
-        text: Text to enter (type), or the script source (run_script).
+        element: The index of an element from the last observe/find (click/type/edit/select/caret/copy/cut/paste/hover/drag; observe expands that region).
+        text: Text to enter (type), the substring to select (select), or the script source (run_script).
         query: Text to search the app's on-screen elements for (find) — matches names and values.
+        find: The exact existing text to change (edit).
+        replace: The text to change it to (edit).
+        replace_all: Change every occurrence of `find`, not just a unique one (edit).
+        mode: For type — "replace" (rewrite the whole field, default) or "insert" (at the caret, replacing any selection).
+        to_text: The end anchor for a range selection — select from `text` through `to_text` (select).
+        select_all: Select the whole field (select).
+        occurrence: Which occurrence to target when `text`/`before`/`after` appears more than once (1-based).
+        before: Place the caret just before this text (caret).
+        after: Place the caret just after this text (caret).
+        at_offset: Place the caret at this character offset (caret).
+        edge: Place the caret at the field "start" or "end" (caret).
         key: A named key for the press action — return, tab, escape, up, down, f1, and so on, or a chord.
         modifiers: Modifier keys held with `key`, e.g. ["command", "shift"].
         menu_path: Menu-bar path for the menu action, e.g. ["File", "New Window"].
         direction: Scroll direction — up, down, left, or right.
+        x, y: A screen point to click/hover/drag from when acting without an element (the pixel fallback).
+        to_element: The element to drop onto (drag).
+        to_x, to_y: The screen point to drag to (drag).
         arguments: Launch arguments for the launch action, e.g. ["--profile-directory=Profile 2"].
         language: run_script language — "applescript" (default) or "javascript".
         window: observe scope — "focused" (default), "main", or "all".
-        clicks: Number of clicks (2 for a double-click).
+        clicks: How many times to click — 1 (default), 2 for a double-click, 3 for a triple-click.
         button: "left" (default) or "right".
         justification: Why this action is needed.
         risk: Damage potential — low for reads, higher for actions that change state.
@@ -893,20 +927,37 @@ computer.description = _load_tool_description("computer")
 @tool
 async def browser(
     action: Literal[
-        "navigate", "observe", "find", "read", "click", "type", "press", "hover", "scroll",
-        "select", "upload", "drag", "screenshot", "back", "forward", "reload",
-        "tabs", "new_tab", "switch_tab", "close_tab",
+        "navigate", "observe", "find", "read", "click", "type", "edit", "select", "caret",
+        "copy", "cut", "paste", "press", "hover", "scroll", "choose", "upload", "drag",
+        "screenshot", "back", "forward", "reload", "tabs", "new_tab", "switch_tab", "close_tab",
     ],
     url: str = "",
     element: int | None = None,
     text: str = "",
     query: str = "",
+    find: str = "",
+    replace: str = "",
+    replace_all: bool = False,
+    mode: str = "replace",
     submit: bool = False,
+    to_text: str = "",
+    select_all: bool = False,
+    occurrence: int = 1,
+    before: str = "",
+    after: str = "",
+    at_offset: int | None = None,
+    edge: str = "",
     key: str = "",
     direction: str = "down",
     option: str = "",
     paths: list[str] | None = None,
+    x: int | None = None,
+    y: int | None = None,
     to_element: int | None = None,
+    to_x: int | None = None,
+    to_y: int | None = None,
+    clicks: int = 1,
+    button: str = "left",
     offset: int = 0,
     tab: str = "",
     browser_name: str = "chrome",
@@ -917,26 +968,42 @@ async def browser(
 
     Connects to the user's real, signed-in browser (their logins and sessions), reads a page's real
     semantic tree including iframes (clean roles and names, no browser chrome), and acts inside the
-    page — everything a person does in a browser: open pages, find and click elements (with full
-    actionability checks), type (optionally submitting in the same call), press keys and chords,
-    hover, scroll the right pane, pick select options, upload files, drag and drop, capture pixels
-    when there is no structure, go back/forward, reload, and manage tabs. Dialogs are answered
-    automatically and reported. It reuses the user's existing session — it never opens a separate
-    browser, copies a profile, or moves the user's cursor. Requires the user to have turned on
-    Chrome's remote-debugging switch once; if they have not, the tool says exactly how.
+    page the way a person does: open pages, find and click elements (with full actionability checks),
+    type and edit text, select and place the caret by content, copy/cut/paste through the real
+    clipboard, press keys and chords, hover, scroll the right pane, pick dropdown options, upload
+    files, drag and drop, capture pixels when there is no structure, go back/forward, reload, and
+    manage tabs. Dialogs are answered automatically and reported. It reuses the user's existing
+    session — it never opens a separate browser, copies a profile, or moves the user's cursor.
+    Requires the user to have turned on Chrome's remote-debugging switch once; if not, the tool
+    says exactly how.
 
     Args:
-        action: navigate, observe, find, read, click, type, press, hover, scroll, select, upload, drag, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
+        action: navigate, observe, find, read, click, type, edit, select, caret, copy, cut, paste, press, hover, scroll, choose, upload, drag, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
         url: The address to open (navigate, new_tab).
-        element: The index of an element from the last observe/find (click/type/hover/select/upload/drag; scroll moves that element's pane; observe expands that element's subtree; read returns only its text).
-        text: Text to enter into the element (type).
+        element: The index of an element from the last observe/find (click/type/edit/select/caret/copy/cut/paste/hover/choose/upload/drag; scroll moves that element's pane; observe expands its subtree; read returns only its text).
+        text: Text to enter into the field (type), or the substring to select (select).
         query: Text to search the page for (find) — matches element names and values anywhere on the page, iframes included.
+        find: The exact existing text to change (edit).
+        replace: The text to change it to (edit).
+        replace_all: Change every occurrence of `find`, not just a unique one (edit).
+        mode: For type — "replace" (rewrite the whole field, default) or "insert" (at the caret, replacing any selection).
         submit: With type, press Enter after entering the text and return the resulting page.
+        to_text: The end anchor for a range selection — select from `text` through `to_text` (select).
+        select_all: Select the whole field (select).
+        occurrence: Which occurrence to target when `text`/`before`/`after` appears more than once (1-based).
+        before: Place the caret just before this text (caret).
+        after: Place the caret just after this text (caret).
+        at_offset: Place the caret at this character offset (caret).
+        edge: Place the caret at the field "start" or "end" (caret).
         key: The key to press (press) — e.g. Enter, Escape, ArrowDown, PageDown, or a chord like Control+A.
         direction: Scroll direction (scroll) — down (default), up, left, right, top, or bottom.
-        option: The visible label (or value) to choose in a select element (select).
+        option: The visible label (or value) to pick in a <select> dropdown (choose).
         paths: Local file path(s) to attach (upload).
-        to_element: The index of the element to drop onto (drag).
+        x, y: A viewport point to click/hover/drag from when acting without an element (the canvas fallback).
+        to_element: The element to drop onto (drag).
+        to_x, to_y: The viewport point to drag to (drag).
+        clicks: How many times to click — 1 (default), 2 for a double-click, 3 for a triple-click.
+        button: "left" (default) or "right".
         offset: Character offset to continue a truncated read from (read) — the previous result names the exact value.
         tab: The tab id from the tabs action (switch_tab, close_tab).
         browser_name: Which browser to connect to — "chrome" (default), "edge", or "brave".

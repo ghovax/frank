@@ -1,0 +1,1 @@
+This field does not expose an accessible caret or selection, so text can't be placed or selected by content here. It is likely a custom or canvas-drawn editor (e.g. a web canvas); screenshot it and act by clicking at a position, or drive it with the app's own keyboard shortcuts.

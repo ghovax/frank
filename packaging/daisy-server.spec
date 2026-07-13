@@ -102,16 +102,17 @@ _mcp = _os.path.join(_repo_root, ".agents", "mcp.json")
 if _os.path.isfile(_mcp):
     datas.append((_mcp, ".agents"))
 
-# The automation tools' runtime-loaded message templates (.md), one folder per surface
-# (messages/browser, messages/computer) — the tools degrade to empty guidance strings without
-# them, so bundle every file, preserving its folder, to be certain.
-_messages_source = _os.path.join(_repo_root, "src", "harness", "computer", "messages")
-for _dirpath, _dirnames, _filenames in _os.walk(_messages_source):
-    for _message_name in _filenames:
-        if _message_name.endswith(".md"):
-            _relative = _os.path.relpath(_dirpath, _messages_source)
-            _destination = _os.path.join("harness", "computer", "messages", _relative)
-            datas.append((_os.path.join(_dirpath, _message_name), _destination))
+# The automation tools' runtime-loaded assets: the message templates (.md), one folder per
+# surface (messages/browser, messages/computer), and the browser selection script (scripts/*.js).
+# The tools degrade without them, so bundle every file, preserving its folder, to be certain.
+for _asset_subdir in ("messages", "scripts"):
+    _asset_source = _os.path.join(_repo_root, "src", "harness", "computer", _asset_subdir)
+    for _dirpath, _dirnames, _filenames in _os.walk(_asset_source):
+        for _asset_name in _filenames:
+            if _asset_name.endswith((".md", ".js")):
+                _relative = _os.path.relpath(_dirpath, _asset_source)
+                _destination = _os.path.join("harness", "computer", _asset_subdir, _relative)
+                datas.append((_os.path.join(_dirpath, _asset_name), _destination))
 
 # Distributions whose runtime version is read via importlib.metadata.
 for distribution in [

@@ -7,7 +7,8 @@ Acting calls return the page's **complete actionable surface**: every interactiv
 - **`navigate`** opens a URL in the user's browser, waits for its content to actually render, and returns the full overview of the new page.
 - **`find`** searches the *whole* page (iframes included, past every cap and budget) for elements whose name or value contains `query`, clickable matches first, each registered with an `index` you can act on immediately. Prefer it whenever you can name what you're after. **Match on the role too**: to press a button, pick the `button`/`link` match, not the plain text that merely mentions the same words.
 - **`observe`** gives the full lay of the land — elements in page order with `index`, `role`, `name`, `value`, and state flags (`checked`, `disabled`, `expanded`, `selected`). With an `element` index, it expands just that element's subtree in full detail — the tree-shaped way to inspect one card, section, or panel of a large page without paying for the rest (indices then refer to the subtree until the next observe or find). Very large pages are capped and marked `truncated`, and text-only elements past a budget are omitted with a note; `find` and `read` reach everything regardless. A `count: 0` result carries a `hint` — follow it instead of re-observing in a loop.
-- **Acting by `index`**: `click`, `type`, `hover`, `select` (a dropdown option by its label), `upload` (attach local files), or `drag` (onto `to_element`). The result lists every interactive element of the resulting page — keep acting directly from it; `observe`/`read` only when you need the text too. `changed: false` with a `note` means nothing happened: adapt rather than clicking again. `type` with `submit: true` presses Enter after filling, when filling and submitting belong together.
+- **Acting by `index`**: `click`, `type`, `hover`, `choose` (a dropdown option by its label), `upload` (attach local files), or `drag` (onto `to_element`, or between points). `click` takes `clicks` (2/3 for double/triple) and `button` (`right` for a context menu), and can act at an `x`/`y` viewport point when there is no element (a canvas). These structural actions list every interactive element of the resulting page — keep acting directly from it; `observe`/`read` only when you need the text too. `changed: false` with a `note` means nothing happened: adapt rather than clicking again. `type` with `submit: true` presses Enter after filling, when filling and submitting belong together.
+- **Editing text by content**: inside a field you work at the level of the text. `select` picks a range to format or overtype — a substring (`text`), a `text`→`to_text` span, or `select_all`; `caret` places the insertion point (`before`/`after` a phrase, `at_offset` a character offset, or the `start`/`end` edge); `edit` replaces exact `find` text with `replace` (verbatim, must be unique unless `replace_all`) and returns a small before/after diff — the precise way to change a few words; `type` with `mode: "insert"` inserts at the caret. `copy`/`cut`/`paste` use the real OS clipboard, so text moves between pages, tabs, and the `computer` tool. These text actions return only what they changed and keep the indices stable, so chain several on one field. A canvas-drawn editor (e.g. Google Docs) draws its own text with no real DOM, so a selection can't be mapped onto it; the action says so — screenshot it and click at a position instead.
 - **`scroll`** is a real wheel gesture, exactly like a person: the pointer moves over the target and the wheel turns. With an `element` index, the pointer sits on that element, so the pane *it lives in* scrolls — how you load more of a virtualized list, sidebar, or feed (any element inside the pane works as the target). Without one, the wheel lands at the viewport centre — fine for ordinary pages, but on an app-shell layout (results list beside a map or canvas) the centre may be the map, so target the pane via an `element` instead. `top`/`bottom` fling to the ends. The result carries `changed` (did the page's *content* change — a feed rendering more items, app state updating) and `url_changed`. The overview always covers the whole page regardless of scroll position, so scrolling a static article reveals nothing new — `read` and `find` already see all of it; scroll is for content that loads as you go.
 - **`read`** returns visible text one window at a time — the cheapest way to take in an article or long document. With an `element` index it reads only that element's subtree (the article without the page chrome). A truncated result names the exact `offset` that continues it, so long pages are read progressively, never lost.
 - **`press`** sends a key or chord to the focused element — `Enter`, `Escape`, `ArrowDown`, `PageDown`, or combinations like `Control+A`. **`back`**/**`forward`**/**`reload`** work as expected.
@@ -37,17 +38,30 @@ This tool *does things* on the real web — checking mail, using an account, fil
 
 | Parameter | Type | Used by | What it is for |
 |---|---|---|---|
-| `action` | enum | every call | `navigate`, `observe`, `find`, `read`, `click`, `type`, `press`, `hover`, `scroll`, `select`, `upload`, `drag`, `screenshot`, `back`, `forward`, `reload`, `tabs`, `new_tab`, `switch_tab`, or `close_tab`. |
+| `action` | enum | every call | `navigate`, `observe`, `find`, `read`, `click`, `type`, `edit`, `select`, `caret`, `copy`, `cut`, `paste`, `press`, `hover`, `scroll`, `choose`, `upload`, `drag`, `screenshot`, `back`, `forward`, `reload`, `tabs`, `new_tab`, `switch_tab`, or `close_tab`. |
 | `url` | string | navigate, new_tab | The address to open. |
-| `element` | integer | click, type, hover, scroll, select, upload, drag, observe, read | The `index` of an element from the last `observe`/`find`. On `scroll`: an element inside the pane to page through. On `observe`: the subtree to expand. On `read`: the element whose text to read. |
-| `text` | string | type | The text to enter into the element. |
+| `element` | integer | click, type, edit, select, caret, copy, cut, paste, hover, scroll, choose, upload, drag, observe, read | The `index` of an element from the last `observe`/`find` — the control, the field to edit, the pane to scroll, the subtree to expand, or the element to read. |
+| `text` | string | type, select | The text to enter (type), or the substring to select (select). |
 | `query` | string | find | The text to search the page for — matched against element names and values, case-insensitively, iframes included. |
+| `find` / `replace` | string | edit | The exact existing text to change, and what to change it to. |
+| `replace_all` | bool | edit | Change every occurrence of `find` rather than requiring it to be unique. |
+| `mode` | string | type | `replace` (rewrite the whole field, default) or `insert` (at the caret, replacing any selection). |
 | `submit` | boolean | type | Press Enter after typing and return the resulting page. |
+| `to_text` | string | select | The end anchor for a range — select from `text` through `to_text`. |
+| `select_all` | bool | select | Select the whole field. |
+| `occurrence` | integer | select, caret | Which occurrence to target when the text repeats (1-based, default `1`). |
+| `before` / `after` | string | caret | Place the caret just before / just after this text. |
+| `at_offset` | integer | caret | Place the caret at this character offset. |
+| `edge` | string | caret | Place the caret at the field `start` or `end`. |
 | `key` | string | press | The key or chord to press — e.g. `Enter`, `Escape`, `ArrowDown`, `PageDown`, `Control+A`. |
 | `direction` | string | scroll | `down` (default), `up`, `left`, `right`, `top`, or `bottom`. |
-| `option` | string | select | The visible label (or value) of the option to choose. |
+| `option` | string | choose | The visible label (or value) of the dropdown option to pick. |
 | `paths` | string[] | upload | Local file path(s) to attach. |
+| `x` / `y` | integer | click, hover, drag | A viewport point to act at when there is no element (the canvas fallback). |
 | `to_element` | integer | drag | The `index` of the element to drop onto. |
+| `to_x` / `to_y` | integer | drag | The viewport point to drag to. |
+| `clicks` | integer | click | How many times to click — `1` (default), `2` double, `3` triple. |
+| `button` | string | click | `left` (default) or `right` for a context-menu click. |
 | `offset` | integer | read | Character offset to continue a truncated read from; the previous result names the exact value. |
 | `tab` | string | switch_tab, close_tab | The `tab` id from the `tabs` action. |
 | `browser_name` | string | navigate, new_tab | Which browser to connect to — `chrome` (default), `edge`, or `brave`. |
@@ -58,7 +72,7 @@ This tool *does things* on the real web — checking mail, using an account, fil
 
 - **Reaching for the `computer` tool to read a web page.** Reading a browser through the macOS accessibility tree drags in the whole window chrome and duplicated markup; this tool reads the page's own structure, cleanly. Web goes here; native apps go to `computer`.
 - **Scanning the overview for something you can name.** `find` searches the whole page in one call — iframes and beyond-the-cap content included — and hands back actionable indices.
-- **Trusting a stale `index`.** Indices refer to the last `observe`/`find`; after the page changes, get fresh ones before acting.
+- **Trusting a stale `index`.** Indices refer to the last `observe`/`find`, and a structural action (click, type-replace, scroll, choose, drag…) returns a fresh set. Text actions (`select`, `caret`, `edit`, `copy`/`cut`/`paste`) keep them stable so you can chain edits on one field; otherwise get fresh indices after the page changes.
 - **Clicking the text instead of the control.** `find` can match plain text that merely describes the button next to it — act on the match whose role is `button`/`link`/`menuitem` (flagged `clickable`), not the prose.
 - **Ignoring the scroll report.** `changed: false` means the page's content is exactly what you already see — the end of a feed, a static page (where `find`/`read` already reach everything), or a wheel that landed on something unscrollable. Repeating the same scroll is never the answer; target a pane by passing an `element` inside it, or switch to `find`/`read`. And a scroll that flips `url_changed` to `true` changed app state (a map pan, an SPA route), not just the view.
 - **Re-observing an empty page in a loop.** `count: 0` comes with a `hint` — the page is either still rendering (observe once more, briefly) or canvas-drawn (use `screenshot` or `read`).

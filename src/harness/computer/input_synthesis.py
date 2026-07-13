@@ -68,6 +68,37 @@ def click(pid: int, point_x: float, point_y: float, *, clicks: int = 1, button: 
         time.sleep(0.01)
 
 
+def move(pid: int, point_x: float, point_y: float) -> None:
+    """Move the pointer over one app's window (revealing hover states and tooltips) without
+    pressing anything. Contained: posted to the pid, so the user's real cursor never moves."""
+    event = Quartz.CGEventCreateMouseEvent(None, Quartz.kCGEventMouseMoved, (point_x, point_y), Quartz.kCGMouseButtonLeft)
+    Quartz.CGEventPostToPid(pid, event)
+
+
+def drag(pid: int, start_x: float, start_y: float, end_x: float, end_y: float, *, button: str = "left") -> None:
+    """Press at the start point, drag to the end point, and release — the gesture behind drag and
+    drop and drag-to-select. Interpolated into several moves so the target sees a real drag, not a
+    teleport. Contained: every event is posted to the app's own queue."""
+    button_code = {
+        "left": Quartz.kCGMouseButtonLeft, "right": Quartz.kCGMouseButtonRight,
+    }.get(button, Quartz.kCGMouseButtonLeft)
+    down_type = Quartz.kCGEventLeftMouseDown if button != "right" else Quartz.kCGEventRightMouseDown
+    drag_type = Quartz.kCGEventLeftMouseDragged if button != "right" else Quartz.kCGEventRightMouseDragged
+    up_type = Quartz.kCGEventLeftMouseUp if button != "right" else Quartz.kCGEventRightMouseUp
+
+    def post(event_type: int, point_x: float, point_y: float) -> None:
+        Quartz.CGEventPostToPid(pid, Quartz.CGEventCreateMouseEvent(None, event_type, (point_x, point_y), button_code))
+
+    post(down_type, start_x, start_y)
+    time.sleep(0.01)
+    steps = 12
+    for step in range(1, steps + 1):
+        fraction = step / steps
+        post(drag_type, start_x + (end_x - start_x) * fraction, start_y + (end_y - start_y) * fraction)
+        time.sleep(0.01)
+    post(up_type, end_x, end_y)
+
+
 def type_text(pid: int, text: str) -> None:
     """Type an arbitrary Unicode string into the target app, script-independent. Posts to
     the pid, so the user's own keyboard focus is undisturbed.

@@ -63,6 +63,75 @@ def bounded(text: str, limit: int) -> tuple[str, bool]:
     return text, False
 
 
+def find_occurrence(content: str, needle: str, occurrence: int = 1) -> int:
+    """The character index where the given (1-based) ``occurrence`` of ``needle`` starts in
+    ``content``, or -1 when there are fewer than that many. Case-sensitive, since editing targets
+    exact text."""
+    start = -1
+    for _ in range(max(1, occurrence)):
+        start = content.find(needle, start + 1)
+        if start == -1:
+            return -1
+    return start
+
+
+def _anchor_offset(content: str, anchor: Any, *, past: bool, occurrence: int) -> int:
+    """Resolve one endpoint. An int anchor is a character offset (clamped); a string anchor is the
+    given ``occurrence`` of that text, at its start or, with ``past``, just after it."""
+    if isinstance(anchor, int):
+        return max(0, min(anchor, len(content)))
+    index = find_occurrence(content, anchor, occurrence)
+    if index < 0:
+        raise ToolFailure({"ok": False, "error": f"The text {anchor!r} is not in the field, so there is nothing to point at."})
+    return index + (len(anchor) if past else 0)
+
+
+def resolve_range(
+    content: str, *, text: Optional[str] = None, anchor_from: Any = None,
+    anchor_to: Any = None, select_all: bool = False, occurrence: int = 1,
+) -> tuple[int, int]:
+    """Turn a selection request into a (start, length) range within ``content``. Addressed by a
+    substring (``text``, its ``occurrence``), by a ``from``/``to`` pair (each a substring or an
+    offset), or by ``all``. Raises ``ToolFailure`` when the request names text that is not present
+    or specifies nothing selectable."""
+    if select_all:
+        return 0, len(content)
+    if text is not None:
+        if not text:
+            raise ToolFailure({"ok": False, "error": "select needs non-empty text to look for."})
+        index = find_occurrence(content, text, occurrence)
+        if index < 0:
+            raise ToolFailure({"ok": False, "error": f"The text {text!r} is not in the field, so there is nothing to select."})
+        return index, len(text)
+    if anchor_from is not None and anchor_to is not None:
+        start = _anchor_offset(content, anchor_from, past=False, occurrence=occurrence)
+        end = _anchor_offset(content, anchor_to, past=True, occurrence=occurrence)
+        if end < start:
+            start, end = end, start
+        return start, end - start
+    raise ToolFailure({"ok": False, "error": "select needs one of: text, a from/to pair, or all."})
+
+
+def resolve_caret(
+    content: str, *, before: Optional[str] = None, after: Optional[str] = None,
+    at_offset: Optional[int] = None, to_start: bool = False, to_end: bool = False, occurrence: int = 1,
+) -> int:
+    """Turn a caret request into a single character offset within ``content``: the ``start`` or
+    ``end`` of the field, an explicit ``at_offset``, or just ``before``/``after`` an occurrence of a
+    substring. Raises ``ToolFailure`` when a named substring is absent."""
+    if to_start:
+        return 0
+    if to_end:
+        return len(content)
+    if at_offset is not None:
+        return max(0, min(int(at_offset), len(content)))
+    if before is not None:
+        return _anchor_offset(content, before, past=False, occurrence=occurrence)
+    if after is not None:
+        return _anchor_offset(content, after, past=True, occurrence=occurrence)
+    raise ToolFailure({"ok": False, "error": "caret needs one of: before, after, at_offset, start, or end."})
+
+
 @dataclass
 class Element:
     """One indexed element, in the single vocabulary the model acts on across both surfaces.
