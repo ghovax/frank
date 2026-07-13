@@ -1,9 +1,10 @@
 "use client";
 
-import { Badge, Box, Flex, Text } from "@chakra-ui/react";
+import { Badge, Box, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useTranslations } from "next-intl";
+import { InlineField } from "./tool-views/primitives";
 
 export function ToolCard({ children }: { children: ReactNode }) {
   return (
@@ -37,11 +38,11 @@ export function ToolCardHeader({
       align="center"
       gap={1.5}
       px={2.5}
-      // Fixed height (36px) — not minH: badges are taller than the title text, so a minimum
+      // Fixed height — not minH: badges are taller than the title text, so a minimum
       // would let a badged row grow past a bare one. A fixed height centers whatever is inside
       // and keeps every row identical. No py — the fixed height + align="center" own it. Keep in
       // sync with the ToolGroup heading in tool-group.tsx.
-      h={9}
+      h={8}
       bg={headerBg}
       cursor={collapsible ? "pointer" : undefined}
       onClick={collapsible ? onToggle : undefined}
@@ -58,8 +59,7 @@ export function ToolCardHeader({
         overflow="hidden"
         whiteSpace="nowrap"
         textOverflow="ellipsis"
-        fontSize="xs"
-        fontWeight="medium"
+        textStyle="fieldLabel"
         className={shimmer ? "running-title-shimmer" : undefined}
       >
         {title}
@@ -177,6 +177,9 @@ export function ToolRiskBadges({ arguments: toolArguments }: { arguments?: Recor
   return <>{badges}</>;
 }
 
+// A label + value on one baseline row. Thin alias over the shared InlineField so
+// tool-card meta and tool-view fields render identically (one component, one label
+// column width).
 export function ToolMetaRow({
   label,
   children,
@@ -187,13 +190,8 @@ export function ToolMetaRow({
   mt?: number;
 }) {
   return (
-    <Flex align="baseline" gap={2} mt={mt}>
-      <Text textStyle="fieldLabel" color="fg.subtle" minW="70px" flexShrink={0}>
-        {label}
-      </Text>
-      <Box fontSize="xs" color="fg.muted" flex={1} minW={0}>
-        {children}
-      </Box>
-    </Flex>
+    <InlineField label={label} mt={mt}>
+      {children}
+    </InlineField>
   );
 }

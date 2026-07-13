@@ -6,10 +6,11 @@
 // It reads the front-end-local store directly, while the parent owns the shared
 // Settings dialog opened from the "Connection settings..." menu item.
 
-import { Box, Button, Flex, Menu, Portal, Spinner, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuCheck, LuChevronDown, LuLaptop, LuServer, LuSettings2 } from "react-icons/lu";
+import { LuChevronDown, LuLaptop, LuServer, LuSettings2 } from "react-icons/lu";
+import { DropdownMenu, MenuOption, MenuSeparator } from "@/components/ui/menu";
 import {
   activateConnectionTarget,
   checkConnection,
@@ -32,13 +33,13 @@ function statusAppearance(status: ConnectionStatus): { color: string; bg: string
   return { color: "yellow.fg", bg: "yellow.solid" };
 }
 
-function StatusField({ label, value, large, mono = false }: { label: string; value: string; large: boolean; mono?: boolean }) {
+function StatusField({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <Flex align="baseline" gap={2}>
-      <Text fontSize={large ? "xs" : "2xs"} color="fg.subtle" minW={11} flexShrink={0}>
+      <Text fontSize="2xs" color="fg.subtle" minW={11} flexShrink={0}>
         {label}
       </Text>
-      <Text fontSize={large ? "xs" : "2xs"} fontFamily={mono ? "var(--app-font-mono)" : undefined} color="fg.muted" truncate>
+      <Text fontSize="2xs" fontFamily={mono ? "var(--app-font-mono)" : undefined} color="fg.muted" truncate>
         {value}
       </Text>
     </Flex>
@@ -49,14 +50,10 @@ export function ConnectionSwitcher({
   currentTargetId,
   onConnectionChange,
   onOpenConnectionSettings,
-  size = "xs",
 }: {
   currentTargetId?: string;
   onConnectionChange?: (target: ConnectionTarget) => void;
   onOpenConnectionSettings: () => void;
-  // "xs" is the compact composer-toolbar style; "sm"/"md" are the larger welcome-screen
-  // sizes that match the model picker's scale so the switcher isn't a small outlier.
-  size?: "xs" | "sm" | "md";
 }) {
   const t = useTranslations("ConnectionSwitcher");
   const [targets, setTargets] = useState<ConnectionTarget[]>([]);
@@ -112,21 +109,9 @@ export function ConnectionSwitcher({
   const activeKind = currentTargetRecord?.kind ?? (currentTarget === LOCAL_TARGET_ID ? "local" : "remote");
   const activeUrl = getApiBase();
 
-  // The compact "xs" toolbar variant needs explicit overrides to fit the 28px composer
-  // row. The larger welcome-screen variants ("sm"/"md") inherit Chakra's native size
-  // metrics, so their height and icon-to-text gap match the sibling action buttons and
-  // the model picker. All sizes lead with a connection-kind icon scaled to fit.
-  const trigger =
-    size === "md"
-      ? { size: "md" as const, height: undefined, borderRadius: "md" as const, fontSize: undefined, paddingX: undefined, gap: undefined, icon: 17, chevron: 16, labelMaxWidth: "240px" }
-      : size === "sm"
-        ? { size: "sm" as const, height: undefined, borderRadius: "md" as const, fontSize: undefined, paddingX: undefined, gap: undefined, icon: 15, chevron: 14, labelMaxWidth: "200px" }
-        : { size: "xs" as const, height: "28px", borderRadius: "md" as const, fontSize: "xs", paddingX: 2, gap: 1.5, icon: 13, chevron: 12, labelMaxWidth: "130px" };
   const isLocal = currentTarget === LOCAL_TARGET_ID;
-  // The larger welcome-screen variants also open a larger, more comfortable menu
-  // (bigger items and font) so the dropdown matches the model picker's scale rather
-  // than reading as a cramped toolbar popover.
-  const large = size !== "xs";
+  const remoteTargets = targets.filter((target) => target.id !== LOCAL_TARGET_ID);
+  const localTarget = targets.find((entry) => entry.id === LOCAL_TARGET_ID);
 
   const switchTo = async (target: ConnectionTarget) => {
     const targetId = target.id;
@@ -163,22 +148,15 @@ export function ConnectionSwitcher({
   };
 
   return (
-    <>
-    <Menu.Root
-      size={large ? "md" : "sm"}
+    <DropdownMenu
       onOpenChange={(event) => {
         if (event.open) void load();
       }}
-    >
-      <Menu.Trigger asChild>
+      trigger={
         <Button
-          size={trigger.size}
           variant="outline"
-          borderRadius={trigger.borderRadius}
-          fontSize={trigger.fontSize}
-          h={trigger.height}
-          px={trigger.paddingX}
-          gap={trigger.gap}
+          px={2}
+          gap={1.5}
           bg={isLocal ? "bg.subtle" : "bg"}
           borderColor="border"
           _hover={{ bg: "bg.muted" }}
@@ -186,8 +164,7 @@ export function ConnectionSwitcher({
           title={t("switchConnection")}
         >
           <Box
-            w={large ? "9px" : "7px"}
-            h={large ? "9px" : "7px"}
+            boxSize="2"
             borderRadius="full"
             bg={activeStatusAppearance.bg}
             boxShadow="0 0 0 2px var(--chakra-colors-bg)"
@@ -195,126 +172,65 @@ export function ConnectionSwitcher({
             title={`${activeStatusLabel}: ${activeUrl}`}
           />
           {/* A real connection-kind icon (laptop for the local server, server for a
-              remote), tinted green to signal a live connection — consistent across the
-              compact composer toolbar and the larger welcome screen. */}
+              remote), tinted green to signal a live connection. */}
           <Box color={isLocal ? "fg.muted" : activeStatusAppearance.color} display="flex" alignItems="center" flexShrink={0}>
-            {isLocal ? <LuLaptop size={trigger.icon} /> : <LuServer size={trigger.icon} />}
+            {isLocal ? <LuLaptop size={13} /> : <LuServer size={13} />}
           </Box>
-          <Text truncate maxW={trigger.labelMaxWidth}>
+          <Text truncate maxW="130px">
             {currentLabel}
           </Text>
-          <LuChevronDown size={trigger.chevron} />
+          <LuChevronDown size={12} />
         </Button>
-      </Menu.Trigger>
-      <Portal>
-        <Menu.Positioner>
-          <Menu.Content minW={large ? 75 : 55}>
-            <Box px={2} pt={2.5} pb={2}>
-              <Flex align="center" gap={2}>
-                <Box w={2} h={2} borderRadius="full" bg={activeStatusAppearance.bg} flexShrink={0} />
-                <Text fontSize={large ? "sm" : "xs"} fontWeight="semibold">
-                  {activeStatusLabel}
-                </Text>
-              </Flex>
-              <Flex direction="column" gap={0.5} mt={1.5}>
-                <StatusField label={t("type")} value={activeKind === "ssh" ? t("sshTunnel") : activeKind === "local" ? t("localServer") : t("remoteServer")} large={large} />
-                <StatusField label={t("url")} value={activeUrl} large={large} mono />
-              </Flex>
-            </Box>
-            <Menu.Separator my={large ? 1.5 : 1} />
-            <ConnectionMenuItem
-              value={LOCAL_TARGET_ID}
-              active={currentTarget === LOCAL_TARGET_ID}
-              icon={<LuLaptop size={large ? 16 : 13} />}
-              label={t("localServer")}
-              large={large}
-              busy={switchingTarget === LOCAL_TARGET_ID}
-              onClick={() => {
-                const local = targets.find((entry) => entry.id === LOCAL_TARGET_ID);
-                if (local) void switchTo(local);
-              }}
-            />
-            {targets.filter((target) => target.id !== LOCAL_TARGET_ID).map((profile) => (
-              <ConnectionMenuItem
-                key={profile.id}
-                value={profile.id}
-                active={currentTarget === profile.id}
-                icon={<LuServer size={large ? 16 : 13} />}
-                label={profile.name}
-                subtitle={profile.kind === "ssh" ? profile.sshHostAlias ?? profile.url : profile.url}
-                large={large}
-                busy={switchingTarget === profile.id}
-                onClick={() => void switchTo(profile)}
-              />
-            ))}
-            <Menu.Separator my={large ? 1.5 : 1} />
-            <Menu.Item
-              value="__settings"
-              color="blue.fg"
-              _hover={{ bg: "blue.subtle" }}
-              onClick={onOpenConnectionSettings}
-            >
-              <Flex align="center" gap={2} color="blue.fg">
-                <LuSettings2 size={large ? 16 : 13} />
-                <Text fontSize={large ? "sm" : "xs"} fontWeight="medium">{t("openConnectionSettings")}</Text>
-              </Flex>
-            </Menu.Item>
-          </Menu.Content>
-        </Menu.Positioner>
-      </Portal>
-    </Menu.Root>
-    </>
-  );
-}
-
-function ConnectionMenuItem({
-  value,
-  active,
-  icon,
-  label,
-  subtitle,
-  large = false,
-  busy = false,
-  onClick,
-}: {
-  value: string;
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  subtitle?: string;
-  large?: boolean;
-  busy?: boolean;
-  onClick: () => void;
-}) {
-  const t = useTranslations("ConnectionSwitcher");
-  return (
-    <Menu.Item value={value} onClick={onClick}>
-      <Flex align="center" gap={2} flex={1} minW={0}>
-        <Box color="fg.muted" flexShrink={0}>
-          {icon}
-        </Box>
-        <Box flex={1} minW={0}>
-          <Text fontSize={large ? "sm" : "xs"} fontWeight="medium" truncate>
-            {label}
+      }
+    >
+      <Box px={2} pt={2.5} pb={2}>
+        <Flex align="center" gap={2}>
+          <Box boxSize="2" borderRadius="full" bg={activeStatusAppearance.bg} flexShrink={0} />
+          <Text fontSize="xs" fontWeight="semibold">
+            {activeStatusLabel}
           </Text>
-          {subtitle && (
-            <Text fontSize={large ? "xs" : "2xs"} color="fg.muted" truncate>
-              {subtitle}
-            </Text>
-          )}
-        </Box>
-        {active && !busy && (
-          <Box color="green.fg" flexShrink={0}>
-            <LuCheck size={large ? 16 : 13} />
-          </Box>
-        )}
-        {busy && (
-          <Flex align="center" gap={1} fontSize={large ? "xs" : "2xs"} color="fg.muted" flexShrink={0}>
-            <Spinner size="xs" borderWidth="1px" />
-            {t("connecting")}
-          </Flex>
-        )}
-      </Flex>
-    </Menu.Item>
+        </Flex>
+        <Flex direction="column" gap={1} mt={1.5}>
+          <StatusField label={t("type")} value={activeKind === "ssh" ? t("sshTunnel") : activeKind === "local" ? t("localServer") : t("remoteServer")} />
+          <StatusField label={t("url")} value={activeUrl} mono />
+        </Flex>
+      </Box>
+      <MenuSeparator />
+      <MenuOption
+        value={LOCAL_TARGET_ID}
+        icon={<Box color="fg.muted" flexShrink={0}><LuLaptop size={13} /></Box>}
+        selected={currentTarget === LOCAL_TARGET_ID}
+        busy={switchingTarget === LOCAL_TARGET_ID}
+        busyLabel={t("connecting")}
+        onClick={() => {
+          if (localTarget) void switchTo(localTarget);
+        }}
+      >
+        <Text fontWeight="medium" truncate>{t("localServer")}</Text>
+      </MenuOption>
+      {remoteTargets.map((profile) => (
+        <MenuOption
+          key={profile.id}
+          value={profile.id}
+          icon={<Box color="fg.muted" flexShrink={0}><LuServer size={13} /></Box>}
+          selected={currentTarget === profile.id}
+          subtitle={profile.kind === "ssh" ? profile.sshHostAlias ?? profile.url : profile.url}
+          busy={switchingTarget === profile.id}
+          busyLabel={t("connecting")}
+          onClick={() => void switchTo(profile)}
+        >
+          <Text fontWeight="medium" truncate>{profile.name}</Text>
+        </MenuOption>
+      ))}
+      <MenuSeparator />
+      <MenuOption
+        value="__settings"
+        accent
+        icon={<LuSettings2 size={13} />}
+        onClick={onOpenConnectionSettings}
+      >
+        <Text fontWeight="medium">{t("openConnectionSettings")}</Text>
+      </MenuOption>
+    </DropdownMenu>
   );
 }

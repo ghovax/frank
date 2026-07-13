@@ -8,40 +8,21 @@ import type { PermissionMode } from "@/lib/api";
 
 export type WorkspaceStrategyValue = "none" | "branch" | "worktree";
 
-function controlMetrics(size: "xs" | "sm", layout: "chip" | "field") {
-  const base = size === "sm"
-    ? {
-        size: "sm" as const,
-        height: "36px",
-        borderRadius: "md" as const,
-        fontSize: "sm",
-        paddingX: 3,
-        paddingEnd: 8,
-        icon: 14,
-        gap: 2,
-        labelMaximumWidth: "260px",
-        contentFontSize: "sm",
-        dropdownTitleFontSize: "sm",
-        dropdownDescriptionFontSize: "xs",
-        dropdownIcon: 14,
-        dropdownPaddingY: 2,
-      }
-    : {
-        size: "xs" as const,
-        height: "32px",
-        borderRadius: "md" as const,
-        fontSize: "xs",
-        paddingX: 2,
-        paddingEnd: 7,
-        icon: 13,
-        gap: 1.5,
-        labelMaximumWidth: "none",
-        contentFontSize: "xs",
-        dropdownTitleFontSize: "xs",
-        dropdownDescriptionFontSize: "2xs",
-        dropdownIcon: 13,
-        dropdownPaddingY: 1.5,
-      };
+// One house control size (xs / 32px, owned by the theme recipe). `layout` only decides
+// whether the control hugs its content (a chip) or fills its field column.
+function controlMetrics(layout: "chip" | "field") {
+  const base = {
+    borderRadius: "md" as const,
+    fontSize: "xs",
+    paddingX: 2,
+    paddingEnd: 7,
+    gap: 1.5,
+    labelMaximumWidth: "none",
+    contentFontSize: "xs",
+    dropdownTitleFontSize: "xs",
+    dropdownDescriptionFontSize: "2xs",
+    dropdownPaddingY: 1.5,
+  };
   return layout === "field" ? { ...base, width: "100%", labelMaximumWidth: "100%" } : { ...base, width: "max-content" };
 }
 
@@ -95,7 +76,6 @@ function workspaceAppearance(workspaceStrategy: WorkspaceStrategyValue) {
 export function PermissionModeControl({
   value,
   onChange,
-  size = "xs",
   layout = "chip",
 }: {
   value: PermissionMode;
@@ -111,7 +91,7 @@ export function PermissionModeControl({
     { value: "bypass", label: t("permissionBypassLabel"), description: t("permissionBypassDescription"), icon: <LuCircleSlash size={13} />, colorPalette: "red" },
   ];
   const permissionItems = permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
-  const metrics = controlMetrics(size, layout);
+  const metrics = controlMetrics(layout);
   const collection = createListCollection({ items: permissionItems });
   const selectedAppearance = permissionAppearance(value);
   const selectedLabel = permissionItems.find((item) => item.value === value)?.label ?? t("permissionDefaultLabel");
@@ -124,7 +104,7 @@ export function PermissionModeControl({
         const nextMode = details.value[0] as PermissionMode | undefined;
         if (nextMode) onChange(nextMode);
       }}
-      size={metrics.size}
+      size="xs"
       w={metrics.width}
       minW={layout === "field" ? 0 : "max-content"}
       maxW="none"
@@ -148,9 +128,8 @@ export function PermissionModeControl({
           whiteSpace="nowrap"
           fontWeight="medium"
           lineHeight="1"
-          style={{ height: metrics.height, minHeight: metrics.height }}
         >
-          <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.icon}px`} h={`${metrics.icon}px`} color={selectedAppearance.color} flexShrink={0}>
+          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
           <Text fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
@@ -169,7 +148,7 @@ export function PermissionModeControl({
               return (
                 <Select.Item item={item} key={item.value} fontWeight="medium" fontSize={metrics.dropdownTitleFontSize} py={metrics.dropdownPaddingY}>
                   <Flex align="center" gap={metrics.gap} minW={0}>
-                    <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.dropdownIcon}px`} h={`${metrics.dropdownIcon}px`} color={choice?.colorPalette ? `${choice.colorPalette}.fg` : "fg.subtle"} flexShrink={0}>
+                    <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={choice?.colorPalette ? `${choice.colorPalette}.fg` : "fg.subtle"} flexShrink={0}>
                       {choice?.icon}
                     </Box>
                     <Flex direction="column" minW={0}>
@@ -194,42 +173,36 @@ export function PermissionModeControl({
   );
 }
 
-export function SandboxToggleControl({
+// One shared appearance shape for the toggle-style controls (sandbox, compaction,
+// user-context, computer-control). Each control only computes its two-state appearance;
+// the button chrome and metrics live here so all four stay pixel-identical.
+interface ToggleAppearance {
+  label: string;
+  icon: ReactNode;
+  color: string;
+  background: string;
+  borderColor: string;
+  hover: string;
+}
+
+function ToggleControl({
+  appearance,
   enabled,
   onChange,
-  size = "xs",
-  layout = "chip",
+  layout,
 }: {
+  appearance: ToggleAppearance;
   enabled: boolean;
   onChange?: (enabled: boolean) => void;
-  size?: "xs" | "sm";
-  layout?: "chip" | "field";
+  layout: "chip" | "field";
 }) {
-  const t = useTranslations("SessionControls");
-  const metrics = controlMetrics(size, layout);
-  const appearance = enabled
-    ? {
-        label: t("sandboxRestricted"),
-        icon: <LuBox size={13} />,
-        color: "green.fg",
-        background: "green.subtle",
-        borderColor: "green.muted",
-      }
-    : {
-        label: t("sandboxGlobal"),
-        icon: <LuGlobe size={13} />,
-        color: "red.fg",
-        background: "red.subtle",
-        borderColor: "red.muted",
-      };
-
+  const metrics = controlMetrics(layout);
   return (
     <Button
-      size={metrics.size}
       variant="outline"
       borderRadius={metrics.borderRadius}
       fontSize={metrics.fontSize}
-      h={metrics.height}
+      h={8}
       px={metrics.paddingX}
       gap={metrics.gap}
       w={metrics.width}
@@ -238,13 +211,13 @@ export function SandboxToggleControl({
       bg={appearance.background}
       borderColor={appearance.borderColor}
       color={appearance.color}
-      _hover={{ bg: enabled ? "green.muted" : "red.muted" }}
+      _hover={{ bg: appearance.hover }}
       fontWeight="medium"
       flexShrink={0}
       onClick={() => onChange?.(!enabled)}
       disabled={!onChange}
     >
-      <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.icon}px`} h={`${metrics.icon}px`} flexShrink={0}>
+      <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
         {appearance.icon}
       </Box>
       <Text as="span" fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
@@ -252,12 +225,28 @@ export function SandboxToggleControl({
       </Text>
     </Button>
   );
+}
+
+export function SandboxToggleControl({
+  enabled,
+  onChange,
+  layout = "chip",
+}: {
+  enabled: boolean;
+  onChange?: (enabled: boolean) => void;
+  size?: "xs" | "sm";
+  layout?: "chip" | "field";
+}) {
+  const t = useTranslations("SessionControls");
+  const appearance: ToggleAppearance = enabled
+    ? { label: t("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
+    : { label: t("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" };
+  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
 export function CompactionToggleControl({
   enabled,
   onChange,
-  size = "xs",
   layout = "chip",
 }: {
   enabled: boolean;
@@ -266,46 +255,15 @@ export function CompactionToggleControl({
   layout?: "chip" | "field";
 }) {
   const t = useTranslations("SessionControls");
-  const metrics = controlMetrics(size, layout);
-  const appearance = enabled
+  const appearance: ToggleAppearance = enabled
     ? { label: t("compactionAutomatic"), icon: <LuZap size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
     : { label: t("compactionManual"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-
-  return (
-    <Button
-      size={metrics.size}
-      variant="outline"
-      borderRadius={metrics.borderRadius}
-      fontSize={metrics.fontSize}
-      h={metrics.height}
-      px={metrics.paddingX}
-      gap={metrics.gap}
-      w={metrics.width}
-      justifyContent="flex-start"
-      alignItems="center"
-      bg={appearance.background}
-      borderColor={appearance.borderColor}
-      color={appearance.color}
-      _hover={{ bg: appearance.hover }}
-      fontWeight="medium"
-      flexShrink={0}
-      onClick={() => onChange?.(!enabled)}
-      disabled={!onChange}
-    >
-      <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.icon}px`} h={`${metrics.icon}px`} flexShrink={0}>
-        {appearance.icon}
-      </Box>
-      <Text as="span" fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
-        {appearance.label}
-      </Text>
-    </Button>
-  );
+  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
 export function UserContextToggleControl({
   enabled,
   onChange,
-  size = "xs",
   layout = "chip",
 }: {
   enabled: boolean;
@@ -314,47 +272,15 @@ export function UserContextToggleControl({
   layout?: "chip" | "field";
 }) {
   const t = useTranslations("SessionControls");
-  const metrics = controlMetrics(size, layout);
-  const appearance = enabled
+  const appearance: ToggleAppearance = enabled
     ? { label: t("userContextOn"), icon: <LuUserSearch size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
     : { label: t("userContextOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-
-  return (
-    <Button
-      size={metrics.size}
-      variant="outline"
-      borderRadius={metrics.borderRadius}
-      fontSize={metrics.fontSize}
-      h={metrics.height}
-      px={metrics.paddingX}
-      gap={metrics.gap}
-      w={metrics.width}
-      justifyContent="flex-start"
-      alignItems="center"
-      bg={appearance.background}
-      borderColor={appearance.borderColor}
-      color={appearance.color}
-      _hover={{ bg: appearance.hover }}
-      fontWeight="medium"
-      flexShrink={0}
-      onClick={() => onChange?.(!enabled)}
-      disabled={!onChange}
-    >
-      <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.icon}px`} h={`${metrics.icon}px`} flexShrink={0}>
-        {appearance.icon}
-      </Box>
-      <Text as="span" fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
-        {appearance.label}
-      </Text>
-    </Button>
-  );
+  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
-
 
 export function ComputerControlToggleControl({
   enabled,
   onChange,
-  size = "xs",
   layout = "chip",
 }: {
   enabled: boolean;
@@ -363,47 +289,15 @@ export function ComputerControlToggleControl({
   layout?: "chip" | "field";
 }) {
   const t = useTranslations("SessionControls");
-  const metrics = controlMetrics(size, layout);
-  const appearance = enabled
+  const appearance: ToggleAppearance = enabled
     ? { label: t("computerControlOn"), icon: <LuMousePointerClick size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
     : { label: t("computerControlOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
-
-  return (
-    <Button
-      size={metrics.size}
-      variant="outline"
-      borderRadius={metrics.borderRadius}
-      fontSize={metrics.fontSize}
-      h={metrics.height}
-      px={metrics.paddingX}
-      gap={metrics.gap}
-      w={metrics.width}
-      justifyContent="flex-start"
-      alignItems="center"
-      bg={appearance.background}
-      borderColor={appearance.borderColor}
-      color={appearance.color}
-      _hover={{ bg: appearance.hover }}
-      fontWeight="medium"
-      flexShrink={0}
-      onClick={() => onChange?.(!enabled)}
-      disabled={!onChange}
-    >
-      <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.icon}px`} h={`${metrics.icon}px`} flexShrink={0}>
-        {appearance.icon}
-      </Box>
-      <Text as="span" fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
-        {appearance.label}
-      </Text>
-    </Button>
-  );
+  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
-
 
 export function WorkspaceStrategyControl({
   value,
   onChange,
-  size = "xs",
   layout = "chip",
   disabled = false,
   gitWorkspaceAvailable = true,
@@ -424,7 +318,7 @@ export function WorkspaceStrategyControl({
     { value: "worktree", label: t("workspaceWorktreeLabel"), description: t("workspaceWorktreeDescription"), title: t("workspaceWorktreeTitle"), icon: <LuGitFork size={13} />, colorPalette: "teal" },
   ];
   const workspaceItems = workspaceChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
-  const metrics = controlMetrics(size, layout);
+  const metrics = controlMetrics(layout);
   const collection = createListCollection({ items: workspaceItems });
   const selectedAppearance = workspaceAppearance(value);
   const selectedChoice = workspaceChoices.find((choice) => choice.value === value);
@@ -437,7 +331,7 @@ export function WorkspaceStrategyControl({
         const nextStrategy = details.value[0] as WorkspaceStrategyValue | undefined;
         if (nextStrategy) void onChange(nextStrategy);
       }}
-      size={metrics.size}
+      size="xs"
       w={metrics.width}
       minW={layout === "field" ? 0 : "max-content"}
       maxW="none"
@@ -463,9 +357,8 @@ export function WorkspaceStrategyControl({
           disabled={disabled}
           title={title ?? selectedChoice?.title ?? t("workspaceStrategyFallbackTitle")}
           lineHeight="1"
-          style={{ height: metrics.height, minHeight: metrics.height }}
         >
-          <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.icon}px`} h={`${metrics.icon}px`} color={selectedAppearance.color} flexShrink={0}>
+          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
           <Select.ValueText fontSize={metrics.contentFontSize} lineHeight="1" maxW={metrics.labelMaximumWidth} overflow={metrics.labelMaximumWidth === "none" ? "visible" : "hidden"} textOverflow={metrics.labelMaximumWidth === "none" ? "clip" : "ellipsis"} whiteSpace="nowrap" />
@@ -483,7 +376,7 @@ export function WorkspaceStrategyControl({
               return (
                 <Select.Item item={item} key={item.value} fontWeight="medium" fontSize={metrics.dropdownTitleFontSize} py={metrics.dropdownPaddingY} aria-disabled={gitModeUnavailable || undefined} data-disabled={gitModeUnavailable ? "" : undefined} opacity={gitModeUnavailable ? 0.4 : undefined} pointerEvents={gitModeUnavailable ? "none" : undefined}>
                   <Flex align="center" gap={metrics.gap} minW={0}>
-                    <Box display="flex" alignItems="center" justifyContent="center" w={`${metrics.dropdownIcon}px`} h={`${metrics.dropdownIcon}px`} flexShrink={0}>
+                    <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
                       {choice?.icon}
                     </Box>
                     <Flex direction="column" minW={0}>

@@ -48,8 +48,7 @@ export function PanelTab({
       pl={2.5}
       pr={onClose ? 1.5 : 2.5}
       h={PANEL_TAB_HEIGHT}
-      fontSize="xs"
-      fontWeight="medium"
+      textStyle="fieldLabel"
       borderRadius="md"
       bg={active ? "bg.subtle" : "bg"}
       border="1px solid"
@@ -70,8 +69,7 @@ export function PanelTab({
           alignItems="center"
           justifyContent="center"
           borderRadius="sm"
-          w={4.5}
-          h={4.5}
+          boxSize={4.5}
           flexShrink={0}
           color="fg.subtle"
           _hover={{ bg: "bg.muted", color: "fg" }}

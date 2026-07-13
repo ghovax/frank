@@ -8,6 +8,7 @@ import {
   IconButton,
   Portal,
   Select,
+  Separator,
   Spinner,
   Text,
   Textarea,
@@ -27,6 +28,12 @@ import { ModelSelect, modelSupportsVision } from "./model-select";
 // SettingsDialog moved to ChatPanel top bar
 import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./tool-views/primitives";
+
+// The composer textarea grows with its content up to this height (px), then scrolls.
+// Shared by the maxH cap and the auto-resize effect so they can never drift apart.
+const COMPOSER_MAX_HEIGHT = 180;
+// Shared min-width so Send and Stop occupy the same footprint (no reflow when toggling).
+const SEND_BUTTON_MIN_WIDTH = "70px";
 
 interface ChatInputProps {
   onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void>;
@@ -120,7 +127,7 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
       <Text fontWeight="semibold" mb={1} color="fg">
         {t("sessionTotals")}
       </Text>
-      <Flex direction="column" ps={3} gap={0.5}>
+      <Flex direction="column" ps={2} gap={1}>
         <InlineField label={t("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={t("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={t("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
@@ -134,11 +141,11 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
       </Flex>
       {tokenUsage.agentTotalTokens > 0 && (
         <>
-          <Box h="1px" bg="border" my={2} />
+          <Separator my={2} />
           <Text fontWeight="semibold" mb={1} color="fg">
             {t("agents")}
           </Text>
-          <Flex direction="column" ps={3} gap={0.5}>
+          <Flex direction="column" ps={2} gap={1}>
             <InlineField label={t("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
             <InlineField label={t("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
             <InlineField label={t("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
@@ -146,11 +153,11 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
           </Flex>
         </>
       )}
-      <Box h="1px" bg="border" my={2} />
+      <Separator my={2} />
       <Text fontWeight="semibold" mb={1} color="fg">
         {t("usageThisTurn")}
       </Text>
-      <Flex direction="column" ps={3} gap={0.5}>
+      <Flex direction="column" ps={2} gap={1}>
         <InlineField label={t("input")}><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
         <InlineField label={t("output")}><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
         {hasContext && (
@@ -170,7 +177,7 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
       <Flex
         align="center"
         gap={1.5}
-        h={7}
+        h={8}
         px={2}
         borderRadius="md"
         border="1px solid"
@@ -185,7 +192,7 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
             <Text textStyle="fieldLabel" whiteSpace="nowrap">
               {contextPercent}%
             </Text>
-            <Box w="1px" h={3.5} bg="border" flexShrink={0} />
+            <Separator orientation="vertical" h={3.5} flexShrink={0} />
           </>
         )}
         <Box display="flex" alignItems="center" flexShrink={0}>
@@ -262,7 +269,7 @@ export function ChatInput({
       <Text fontWeight="semibold" mb={1} color="fg">
         {t("fileAttachments")}
       </Text>
-      <Flex direction="column" ps={3} gap={0.5}>
+      <Flex direction="column" ps={2} gap={1}>
         <InlineField label={t("images")}>
           <Text>{visionSupported ? t("imagesSupported") : t("imagesUnsupported")}</Text>
         </InlineField>
@@ -310,7 +317,7 @@ export function ChatInput({
     const textarea = inputRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
   }, [inputValue]);
 
   // Fetch message history when the working directory changes.
@@ -557,7 +564,7 @@ export function ChatInput({
             <ArtifactAnnotationChips records={artifactAnnotationRecords} />
             {uploadingCount > 0 ? (
               <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="md" bg="bg.subtle">
-                <Box color="blue.fg"><LuPaperclip size={13} /></Box>
+                <Box color="blue.fg"><LuPaperclip size={14} /></Box>
                 <Text fontSize="xs" color="fg.subtle">{t("uploading", { count: uploadingCount })}</Text>
               </Flex>
             ) : null}
@@ -611,12 +618,12 @@ export function ChatInput({
               disabled={disabled}
               fontSize="sm"
               lineHeight="1.5"
-              minH={8}
-              maxH="180px"
+              minH={16}
+              maxH={`${COMPOSER_MAX_HEIGHT}px`}
               border="none"
               outline="none"
               px={1}
-              py="6px"
+              py={1.5}
               resize="none"
               _focus={{ boxShadow: "none", borderColor: "transparent" }}
               _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
@@ -643,9 +650,7 @@ export function ChatInput({
                   aria-label={t("attachFiles")}
                   onClick={() => void handleAttachClick()}
                   variant="ghost"
-                  h={8}
-                  w={8}
-                  minW={8}
+                  boxSize="8"
                   disabled={disabled || !directoryValid}
                 >
                   <LuPaperclip size={14} />
@@ -656,12 +661,10 @@ export function ChatInput({
                   onClick={handleAbortClick}
                   colorPalette="red"
                   variant="solid"
-                  minW="70px"
+                  minW={SEND_BUTTON_MIN_WIDTH}
                   h={8}
                   px={2}
                   gap={1.5}
-                  fontSize="xs"
-                  fontWeight="medium"
                   loading={stopPending}
                   loadingText={t("stopping")}
                   disabled={stopPending}
@@ -676,12 +679,10 @@ export function ChatInput({
                   onClick={() => void handleSubmit()}
                   colorPalette="blue"
                   variant="solid"
-                  minW="70px"
+                  minW={SEND_BUTTON_MIN_WIDTH}
                   h={8}
                   px={2}
                   gap={1.5}
-                  fontSize="xs"
-                  fontWeight="medium"
                   loading={sendPending}
                   loadingText={t("sending")}
                   disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
@@ -707,7 +708,7 @@ export function ChatInput({
             onValueChange={(details) => {
               if (details.value[0]) onAgentChange(details.value[0]);
             }}
-            size="sm"
+            size="xs"
             w="max-content"
             minW="max-content"
             maxW="none"
@@ -716,7 +717,6 @@ export function ChatInput({
             <Select.Control w="max-content" minW="max-content" maxW="none">
               <Select.Trigger
                 w="max-content"
-                fontSize="xs"
                 gap={1.5}
                 px={2}
                 pe={7}
@@ -727,7 +727,6 @@ export function ChatInput({
                 maxW="none"
                 whiteSpace="nowrap"
                 fontWeight="medium"
-                style={{ height: "28px", minHeight: "28px", lineHeight: "28px" }}
               >
                 <Box display="flex" alignItems="center" color="fg.muted" flexShrink={0}>
                   <LuUser size={13} />
@@ -765,8 +764,7 @@ export function ChatInput({
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
             <Button
               variant="outline"
-              fontSize="xs"
-              h={7}
+              h={8}
               px={2}
               bg="bg"
               borderColor="border"

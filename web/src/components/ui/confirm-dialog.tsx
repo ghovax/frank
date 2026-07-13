@@ -45,7 +45,7 @@ export function ConfirmDialog({
         <Dialog.Positioner>
           <Dialog.Content maxW={maxW}>
             <Dialog.Header>
-              <Dialog.Title fontSize="md">{title}</Dialog.Title>
+              <Dialog.Title textStyle="panelTitle">{title}</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
               <Text fontSize="xs" color="fg.muted">

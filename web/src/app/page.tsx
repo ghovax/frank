@@ -669,11 +669,6 @@ function ProjectWorkspace() {
             w={{ base: "100%", md: `${historyWidth}px` }}
             maxW={{ base: "100%", md: "46vw" }}
             minW={{ base: "100%", md: "220px" }}
-            bg="bg.panel"
-            borderRadius="md"
-            borderWidth="1px"
-            borderColor="border.muted"
-            boxShadow="panel"
             ml={{ md: 2 }}
             mb={{ md: 2 }}
             h={{ base: "100dvh", md: "auto" }}

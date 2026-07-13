@@ -42,23 +42,32 @@ export function PanelHeader({
   onClose,
   closeLabel = "Collapse panel",
   children,
+  ...rest
 }: {
   icon?: ReactNode;
-  title: ReactNode;
+  // Optional: a panel whose whole strip is a custom control (e.g. the sessions sidebar's
+  // project switcher) passes no title and supplies the control as `children` instead.
+  title?: ReactNode;
   onClose?: () => void;
   closeLabel?: string;
   children?: ReactNode;
-}) {
+} & FlexProps) {
   return (
-    <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0}>
+    // Default strip padding: pr={2} matches the body's content edge; pl={3} insets a plain
+    // title slightly more. A panel whose whole strip is a full-width control (the sessions
+    // sidebar) overrides `pl={2}` so its button lines up with the body rows below it — `...rest`
+    // lets that win.
+    <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0} {...rest}>
       {icon ? <Box color="fg.muted">{icon}</Box> : null}
-      <Text fontSize="sm" fontWeight="semibold" flex={1} minW={0} truncate>
-        {title}
-      </Text>
+      {title ? (
+        <Text textStyle="panelTitle" flex={1} minW={0} truncate>
+          {title}
+        </Text>
+      ) : null}
       {children}
       {onClose ? (
         <IconButton aria-label={closeLabel} variant="ghost" onClick={onClose}>
-          <LuX size={15} />
+          <LuX size={14} />
         </IconButton>
       ) : null}
     </Flex>

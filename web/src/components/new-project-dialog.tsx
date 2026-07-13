@@ -57,24 +57,24 @@ export function NewProjectDialog({
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content maxW="min(560px, 94vw)">
-            <Dialog.Header py={3} px={4}>
-              <Dialog.Title fontSize="sm">{t("newProject")}</Dialog.Title>
+            <Dialog.Header>
+              <Dialog.Title textStyle="panelTitle">{t("newProject")}</Dialog.Title>
             </Dialog.Header>
-            <Dialog.Body px={4} pb={2} display="flex" flexDirection="column" gap={4}>
+            <Dialog.Body display="flex" flexDirection="column" gap={4}>
               <Flex direction="column" gap={1.5}>
-                <Text fontSize="sm" fontWeight="medium" color="fg">{t("nameLabel")}</Text>
+                <Text textStyle="fieldLabel">{t("nameLabel")}</Text>
                 <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("namePlaceholder")} autoFocus />
               </Flex>
               <Flex direction="column" gap={1.5}>
-                <Text fontSize="sm" fontWeight="medium" color="fg">{t("descriptionLabel")}</Text>
-                <Textarea minH="60px" value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t("descriptionPlaceholder")} />
+                <Text textStyle="fieldLabel">{t("descriptionLabel")}</Text>
+                <Textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t("descriptionPlaceholder")} />
               </Flex>
               <Box borderTop="1px solid" borderColor="border" pt={3}>
                 <Text textStyle="panelTitle" mb={2}>{t("locations")}</Text>
                 <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} />
               </Box>
             </Dialog.Body>
-            <Dialog.Footer py={3} px={4} gap={2}>
+            <Dialog.Footer>
               <Button variant="outline" onClick={() => onOpenChange(false)}>{tc("cancel")}</Button>
               <Button colorPalette="blue" disabled={!canCreate || saving} loading={saving} onClick={handleCreate}>
                 {t("createProject")}

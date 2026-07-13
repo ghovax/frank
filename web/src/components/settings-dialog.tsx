@@ -449,7 +449,7 @@ export function SettingsDialog({
         <Dialog.Positioner>
           <Dialog.Content maxW="900px" h="min(760px, calc(100vh - 48px))" display="flex" flexDirection="column" overflow="hidden">
             <Dialog.Header>
-              <Dialog.Title fontSize="sm">{t("title")}</Dialog.Title>
+              <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body px={0} py={0} flex={1} minH={0}>
               <Tabs.Root
@@ -457,12 +457,11 @@ export function SettingsDialog({
                 onValueChange={(details) => onSectionChange(details.value as SettingsSection)}
                 orientation="vertical"
                 variant="subtle"
-                size="sm"
                 display="flex"
                 h="100%"
                 minH={0}
               >
-                <Tabs.List w={48} border="none" px={2} gap={0.5}>
+                <Tabs.List w={48} border="none" px={2} gap={1}>
                   <Tabs.Trigger value="general" justifyContent="flex-start" borderRadius="md" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
                     <LuKeyRound size={14} />
                     {t("tabGeneral")}
@@ -484,26 +483,26 @@ export function SettingsDialog({
                 </Tabs.List>
                 <Box flex={1} minW={0} minH={0}>
                   <SettingsTabPanel value="general">
-                    <Flex direction="column" gap={5}>
+                    <Flex direction="column" gap={4}>
                       <SettingsGroup title={t("runtime")}>
                         <Flex gap={3} wrap="wrap" align="flex-start">
                           <SettingField label={t("approvalMode")}>
-                            <PermissionModeControl value={permissionMode} onChange={setPermissionMode} size="xs" />
+                            <PermissionModeControl value={permissionMode} onChange={setPermissionMode} />
                           </SettingField>
                           <SettingField label={t("filesystemProtection")}>
-                            <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} size="xs" />
+                            <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} />
                           </SettingField>
                           <SettingField label={t("gitWorkspace")}>
-                            <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} size="xs" />
+                            <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} />
                           </SettingField>
                           <SettingField label={t("compaction")}>
-                            <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} size="xs" />
+                            <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} />
                           </SettingField>
                           <SettingField label={t("userContext")} hint={t("userContextHint")}>
-                            <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} size="xs" />
+                            <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} />
                           </SettingField>
                           <SettingField label={t("computerControl")} hint={t("computerControlHint")}>
-                            <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} size="xs" />
+                            <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} />
                           </SettingField>
                         </Flex>
                         {((userContextEnabled && fullDiskAccess === false) || accessibilityGranted === false) && (
@@ -514,7 +513,7 @@ export function SettingsDialog({
                                 <Alert.Content flex={1} minW={0}>
                                   <Alert.Description fontSize="xs">{t("fullDiskAccessBody")}</Alert.Description>
                                 </Alert.Content>
-                                <Button size="xs" colorPalette="orange" variant="solid" flexShrink={0} onClick={() => void openFullDiskAccessSettings()}>
+                                <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => void openFullDiskAccessSettings()}>
                                   {t("grantFullDiskAccess")}
                                 </Button>
                               </Alert.Root>
@@ -525,7 +524,7 @@ export function SettingsDialog({
                                 <Alert.Content flex={1} minW={0}>
                                   <Alert.Description fontSize="xs">{t("computerControlBody")}</Alert.Description>
                                 </Alert.Content>
-                                <Button size="xs" colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
+                                <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
                                   try { localStorage.setItem("daisy:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
                                   setAwaitingGrantReturn(true);
                                   void openAccessibilitySettings();
@@ -615,7 +614,7 @@ export function SettingsDialog({
                     </SettingsTabPanel>
                   )}
                   <SettingsTabPanel value="agents">
-                    <Flex direction="column" gap={5}>
+                    <Flex direction="column" gap={4}>
                       <SettingsGroup title={t("agent")}>
                         <SettingField label={t("profile")}>
                           <Box maxW="420px">
@@ -654,7 +653,6 @@ export function SettingsDialog({
                         {t("currentConnection")}
                       </Text>
                       <ConnectionSwitcher
-                        size="xs"
                         currentTargetId={currentConnectionId}
                         onConnectionChange={onConnectionChange}
                         onOpenConnectionSettings={() => undefined}
@@ -674,7 +672,7 @@ export function SettingsDialog({
                 </Box>
               </Tabs.Root>
             </Dialog.Body>
-            <Dialog.Footer borderTop="1px solid" borderColor="border" pt={4} pb={4}>
+            <Dialog.Footer borderTop="1px solid" borderColor="border">
               <Button variant="outline" onClick={requestClose} disabled={saving}>
                 {tc("close")}
               </Button>
@@ -743,7 +741,7 @@ function LanguageSetting() {
 function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Flex direction="column" gap={3} minW={0}>
-      <Text fontSize="sm" fontWeight="bold" color="fg">
+      <Text textStyle="panelTitle" color="fg">
         {title}
       </Text>
       <Flex direction="column" gap={3} minW={0}>
@@ -851,7 +849,7 @@ function AgentPermissionsEditor({
   }
 
   return (
-    <Flex direction="column" gap={5}>
+    <Flex direction="column" gap={4}>
       <SettingsGroup title={t("defaults")}>
         <Flex gap={3} wrap="wrap" align="flex-start">
           <SettingField label={t("configuredModel")}>
@@ -869,7 +867,6 @@ function AgentPermissionsEditor({
             <PermissionModeControl
               value={configuration.permission_mode}
               onChange={(permissionModeValue) => updateConfiguration({ permission_mode: permissionModeValue })}
-              size="xs"
             />
           </SettingField>
         </Flex>

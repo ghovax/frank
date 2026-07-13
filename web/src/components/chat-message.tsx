@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, Spinner, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Separator, Spinner, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
@@ -41,7 +41,7 @@ interface FriendlyWarning {
 }
 
 // A server/turn error rendered as its own distinct block — not disguised as an
-// assistant message. A bordered danger box with the alert triangle, a bold title,
+// assistant message. A bordered danger box with the alert triangle, a semibold title,
 // the message below as rendered markdown, and a "Try again" action, so the user
 // reads it as a system failure with a clear next step rather than model prose.
 function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?: () => void }) {
@@ -64,7 +64,7 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
         <Box display="flex" alignItems="center" flexShrink={0}>
           <LuTriangleAlert size={15} />
         </Box>
-        <Text fontSize="sm" fontWeight="bold" lineHeight="1.3">
+        <Text textStyle="panelTitle" lineHeight="1.3">
           {title}
         </Text>
       </Flex>
@@ -108,7 +108,7 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
         <Box display="flex" alignItems="center" flexShrink={0}>
           <LuTriangleAlert size={15} />
         </Box>
-        <Text fontSize="sm" fontWeight="bold" lineHeight="1.3">
+        <Text textStyle="panelTitle" lineHeight="1.3">
           {title}
         </Text>
       </Flex>
@@ -238,7 +238,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
 
     case "error":
       // A turn failure is a system event, not the model's words — so it renders as
-      // its own dedicated error box (danger triangle, bold title, message, retry),
+      // its own dedicated error box (danger triangle, semibold title, message, retry),
       // never as assistant-style prose with a hand-aligned inline icon.
       return (
         <Box alignSelf="flex-start" w="100%">
@@ -262,7 +262,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
       return (
         <Box alignSelf="stretch" w="100%">
           <Flex align="center" gap={3} py={1} color="fg.subtle">
-            <Box flex={1} h="1px" bg="border" />
+            <Separator flex={1} />
             <Flex
               align="center"
               gap={1.5}
@@ -277,7 +277,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
                 {running ? t("compactingContext") : t("contextCompacted")}
               </Text>
             </Flex>
-            <Box flex={1} h="1px" bg="border" />
+            <Separator flex={1} />
           </Flex>
         </Box>
       );

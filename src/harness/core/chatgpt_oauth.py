@@ -310,7 +310,7 @@ class ChatGPTLoginFlow:
         flow = self
 
         class CallbackHandler(BaseHTTPRequestHandler):
-            def log_message(self, *_args: object) -> None:
+            def log_message(self, format: str, *args: object) -> None:  # noqa: A002 (stdlib signature)
                 pass  # keep the loopback server off the harness logs
 
             def do_GET(self) -> None:

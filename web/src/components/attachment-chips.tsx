@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Dialog, Flex, Image, Link, Portal, Text } from "@chakra-ui/react";
+import { Box, Dialog, Flex, IconButton, Image, Link, Portal, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 import { LuExternalLink, LuMousePointerClick, LuX } from "react-icons/lu";
@@ -56,7 +56,7 @@ export function VersionBadge({ number, active = false, size = "sm" }: { number: 
   // never looks cramped: minW keeps the round shape, px lets it widen, borderRadius="full"
   // rounds either shape. Centering is content-flow (align/justify + cap-height trim) instead
   // of an absolute layer, so the box actually tracks the glyph width.
-  const dimension = size === "md" ? "23px" : "19px";
+  const dimension = size === "md" ? 6 : 5;
   return (
     <Box
       as="span"
@@ -66,19 +66,31 @@ export function VersionBadge({ number, active = false, size = "sm" }: { number: 
       flexShrink={0}
       h={dimension}
       minW={dimension}
-      px="5px"
+      px={1.5}
       borderRadius="full"
       bg={active ? "blue.solid" : "bg.muted"}
       color={active ? "white" : "fg.muted"}
       border="1px solid"
       borderColor={active ? "blue.solid" : "border"}
-      fontSize={size === "md" ? "13px" : "11px"}
-      fontWeight={600}
+      fontSize={size === "md" ? "xs" : "2xs"}
+      fontWeight="semibold"
       lineHeight="1"
       style={{ fontVariantNumeric: "tabular-nums", textBox: "trim-both cap alphabetic" }}
     >
       {number}
     </Box>
+  );
+}
+
+// The pointer-affordance pill shown in an image lightbox header — either the current
+// annotation count or the "click to annotate" hint. One shared unit so all three
+// call sites (both lightboxes) read identically.
+function AnnotationStatusPill({ children }: { children: ReactNode }) {
+  return (
+    <Flex align="center" gap={1.5} px={2} py={1} borderRadius="full" color="fg.muted" fontSize="sm" fontWeight="medium" flexShrink={0} pointerEvents="none">
+      <LuMousePointerClick size={13} />
+      {children}
+    </Flex>
   );
 }
 
@@ -124,29 +136,25 @@ function MediaChipCard({
       <Flex flex={1} minH={0} w="100%" overflow="hidden" bg="bg.subtle" borderBottom="1px solid" borderColor="border" align="center" justify="center">
         {thumbnail}
       </Flex>
-      <Flex flexShrink={0} w="100%" px={2.5} py={2} minW={0} align="center" gap={1} fontSize="xs" fontWeight="medium" color="fg" title={filename}>
+      <Flex flexShrink={0} w="100%" px={2.5} py={2} minW={0} align="center" gap={1} textStyle="fieldLabel" color="fg" title={filename}>
         <Flex minW={0} flex={1}>
           <Text as="span" truncate>{head}</Text>
           <Text as="span" flexShrink={0}>{tail}</Text>
         </Flex>
         {badge}
         {onRemove && (
-          <Box
-            as="button"
+          <IconButton
             aria-label={t("removeAttachment")}
+            variant="ghost"
+            boxSize="4.5"
+            minW="4.5"
             flexShrink={0}
-            w={4}
-            h={4}
-            borderRadius="sm"
-            display="flex"
-            alignItems="center"
-            justifyContent="center"
             color="fg.muted"
             _hover={{ color: "fg", bg: "bg.muted" }}
             onClick={(event) => { event.stopPropagation(); onRemove(); }}
           >
             <LuX size={12} />
-          </Box>
+          </IconButton>
         )}
       </Flex>
     </Flex>
@@ -217,41 +225,13 @@ function AttachmentLightbox({
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content maxW="min(1100px, 92vw)" maxH="90vh" overflow="hidden">
-            <Dialog.Header py={2} px={2} display="flex" alignItems="center" gap={2} position="relative">
-              <Dialog.Title fontSize="sm" truncate>{attachment.filename}</Dialog.Title>
+            <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
+              <Dialog.Title textStyle="panelTitle" truncate>{attachment.filename}</Dialog.Title>
               {image && !onAnnotationsChange && annotationCount > 0 ? (
-                <Flex
-                  align="center"
-                  gap={1.5}
-                  px={2}
-                  py={1}
-                  borderRadius="full"
-                  color="fg.muted"
-                  fontSize="sm"
-                  fontWeight="medium"
-                  flexShrink={0}
-                  pointerEvents="none"
-                >
-                  <LuMousePointerClick size={13} />
-                  {t("annotationStatus", { count: annotationCount })}
-                </Flex>
+                <AnnotationStatusPill>{t("annotationStatus", { count: annotationCount })}</AnnotationStatusPill>
               ) : null}
               {image && onAnnotationsChange ? (
-                <Flex
-                  align="center"
-                  gap={1.5}
-                  px={2}
-                  py={1}
-                  borderRadius="full"
-                  color="fg.muted"
-                  fontSize="sm"
-                  fontWeight="medium"
-                  flexShrink={0}
-                  pointerEvents="none"
-                >
-                  <LuMousePointerClick size={13} />
-                  {t("clickToAnnotate")}
-                </Flex>
+                <AnnotationStatusPill>{t("clickToAnnotate")}</AnnotationStatusPill>
               ) : null}
               <Flex align="center" gap={2} ml="auto">
                 <Link href={url} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={t("openInNewTab")}>
@@ -295,12 +275,9 @@ function ArtifactAnnotationLightbox({ record, onClose }: { record: ArtifactAnnot
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content maxW="min(1100px, 92vw)" maxH="90vh" overflow="hidden">
-            <Dialog.Header py={2} px={2} display="flex" alignItems="center" gap={2} position="relative">
-              <Dialog.Title fontSize="sm" truncate>{annotationRecordLabel(record)}</Dialog.Title>
-              <Flex align="center" gap={1.5} px={2} py={1} borderRadius="full" color="fg.muted" fontSize="sm" fontWeight="medium" flexShrink={0} pointerEvents="none">
-                <LuMousePointerClick size={13} />
-                {t("annotationStatus", { count: record.annotations.length })}
-              </Flex>
+            <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
+              <Dialog.Title textStyle="panelTitle" truncate>{annotationRecordLabel(record)}</Dialog.Title>
+              <AnnotationStatusPill>{t("annotationStatus", { count: record.annotations.length })}</AnnotationStatusPill>
               <Flex align="center" gap={2} ml="auto">
                 {link ? (
                   <Link href={link} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={t("openInNewTab")}>
@@ -340,8 +317,8 @@ function ArtifactAnnotationChip({ record }: { record: ArtifactAnnotationRecord }
   // image in the composer/transcript reads exactly like a version there.
   const tooltip = (
     <Box whiteSpace="nowrap">
-      <Text fontWeight="semibold" mb={1} color="fg" maxW="280px" truncate>{annotationRecordLabel(record)}</Text>
-      <Flex direction="column" gap={0.5}>
+      <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{annotationRecordLabel(record)}</Text>
+      <Flex direction="column" gap={1}>
         {versionNumber > 0 && <InlineField label={t("fieldVersion")}><Text>{versionNumber}</Text></InlineField>}
         <InlineField label={t("fieldAnnotations")}><Text>{record.annotations.length}</Text></InlineField>
       </Flex>
@@ -431,7 +408,7 @@ export function AttachmentChip({
   const tooltip = (
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{attachment.filename}</Text>
-      <Flex direction="column" gap={0.5}>
+      <Flex direction="column" gap={1}>
         {attachment.mimeType && <InlineField label={t("fieldType")}><Text>{attachment.mimeType}</Text></InlineField>}
         {attachment.size > 0 && <InlineField label={t("fieldSize")}><Text>{formatFileSize(attachment.size)}</Text></InlineField>}
         {annotationCount > 0 && <InlineField label={t("fieldAnnotations")}><Text>{annotationCount}</Text></InlineField>}

@@ -94,7 +94,7 @@ export function PermissionOverlay({ permission, title, detail, command, argument
               <Box color="yellow.fg" flexShrink={0}>
                 <LuShieldAlert size={14} />
               </Box>
-              <Text fontSize="sm" fontWeight="bold" color="fg">
+              <Text textStyle="panelTitle" color="fg">
                 {t("approvalNeeded")}
               </Text>
             </Flex>

@@ -125,7 +125,7 @@ export function ChatGPTAuthControl({
         </Button>
       )}
       {signedIn ? (
-        <Alert.Root status="success" size="sm" borderRadius="md" mt={2} alignItems="center">
+        <Alert.Root status="success" size="sm" borderRadius="md" mt={3} alignItems="center">
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Description fontSize="xs" truncate>
@@ -134,7 +134,7 @@ export function ChatGPTAuthControl({
           </Alert.Content>
         </Alert.Root>
       ) : (
-        <Alert.Root status="info" size="sm" borderRadius="md" mt={2} alignItems="center">
+        <Alert.Root status="info" size="sm" borderRadius="md" mt={3} alignItems="center">
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Description fontSize="xs">
@@ -143,11 +143,6 @@ export function ChatGPTAuthControl({
           </Alert.Content>
         </Alert.Root>
       )}
-      {error ? (
-        <Text fontSize="xs" color="red.fg" mt={1.5}>
-          {error}
-        </Text>
-      ) : null}
     </Box>
   );
 }

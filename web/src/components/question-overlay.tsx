@@ -125,7 +125,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
           overflowY="auto"
         >
           <Flex align="center" justify="space-between" gap={2}>
-            <Text fontSize="sm" fontWeight="bold" color="fg">
+            <Text textStyle="panelTitle" color="fg">
               {t("questionProgress", { current: current + 1, total })}
             </Text>
             <Flex align="center" gap={1}>
@@ -198,7 +198,6 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
               <Input
                 placeholder={t("customPlaceholder")}
                 value={text}
-                fontSize="sm"
                 onChange={(event) => {
                   const value = event.target.value;
                   if (value) setSkipped((previous) => (previous[current] ? { ...previous, [current]: false } : previous));

@@ -34,8 +34,7 @@ export function SegmentedToggle<T extends string>({
             borderRadius="0"
             px={2}
             gap={1}
-            fontSize="xs"
-            fontWeight="medium"
+            textStyle="fieldLabel"
             onClick={() => onChange(option.value)}
           >
             {option.icon}

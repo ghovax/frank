@@ -44,7 +44,6 @@ export function ProjectSwitcher({
   return (
     <>
       <DropdownMenu
-        minW="220px"
         positioning={{ placement: "bottom-start" }}
         trigger={
           <Button

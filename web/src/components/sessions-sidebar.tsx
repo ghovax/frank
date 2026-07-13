@@ -14,7 +14,7 @@ import { ProjectSwitcher } from "@/components/project-switcher";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { Tooltip } from "@/components/ui/tooltip";
-import { PanelBody } from "@/components/ui/panel";
+import { PanelBody, PanelCard, PanelHeader } from "@/components/ui/panel";
 import { InlineField } from "@/components/tool-views/primitives";
 import { revealInFinder, type AgentSummary, type FilesystemLease, type PermissionMode } from "@/lib/api";
 import type { ConnectionKind } from "@/lib/connection-store";
@@ -125,18 +125,22 @@ export function SessionsSidebar({
   };
 
   return (
-    <Flex direction="column" flex={1} minH={0} minW={0}>
+    <PanelCard flex={1}>
       {/* The project switcher anchors the sidebar: the current project's name with a
           chevron, opening a dropdown to switch, create, or manage projects — in place,
-          with no landing page to bounce through. Same px as the "New conversation" button
-          below so the trigger's content lines up with it. */}
-      <Box px={2} py={2} flexShrink={0}>
-        <ProjectSwitcher currentProjectId={currentProjectId} onSwitchProject={onSwitchProject} />
-      </Box>
+          with no landing page to bounce through. It fills the shared panel top strip so
+          the sidebar's header lines up with every other panel's header. */}
+      <PanelHeader pl={2}>
+        <Box flex={1} minW={0}>
+          <ProjectSwitcher currentProjectId={currentProjectId} onSwitchProject={onSwitchProject} />
+        </Box>
+      </PanelHeader>
 
       {/* Prominent labeled action, mirroring the reference sidebar's "New session" row.
           Disabled when we're already in a fresh, un-started conversation (no active session):
-          there's nothing to start anew from a blank chat. */}
+          there's nothing to start anew from a blank chat. Its `px={2}` matches the header
+          override and the body below, so the switcher, this button, and the session rows all
+          share one left edge. */}
       <Box px={2} pt={2} flexShrink={0}>
         <Button
           w="full"
@@ -161,11 +165,9 @@ export function SessionsSidebar({
                 aria-label={t("sortSessions")}
                 variant="ghost"
                 color="fg.muted"
-                fontSize="xs"
-                fontWeight="medium"
+                textStyle="fieldLabel"
                 gap={1}
                 px={1.5}
-                h={6}
                 // The menu returns focus to this trigger on close, which fires a stray
                 // focus-visible ring even after a pointer selection. Swap the ring for a
                 // subtle background so keyboard focus still reads without the harsh outline.
@@ -205,7 +207,7 @@ export function SessionsSidebar({
             </EmptyState.Content>
           </EmptyState.Root>
         ) : (
-          <VStack gap={0.5} align="stretch">
+          <VStack gap={1} align="stretch">
             {sessions.map((entry) => {
               const sessionMeta = formatSessionTimestamp(entry.createdAt);
               const activeLease = entry.filesystemLeases[0];
@@ -228,7 +230,7 @@ export function SessionsSidebar({
                   <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>
                     {entry.title || t("untitledConversation")}
                   </Text>
-                  <Flex direction="column" ps={2} gap={0.5}>
+                  <Flex direction="column" ps={2} gap={1}>
                     <InlineField label={t("fieldCreated")}><Text>{sessionMeta}</Text></InlineField>
                     <InlineField label={t("fieldStatus")}><Text>{statusLabel}</Text></InlineField>
                     {entry.agent && <InlineField label={t("fieldAgent")}><Text>{agentName}</Text></InlineField>}
@@ -275,11 +277,10 @@ export function SessionsSidebar({
                           blue once it's finished since you last looked (red/amber for an error
                           or an awaiting-approval prompt). A fixed-width slot keeps the titles
                           aligned whether or not there is a dot. */}
-                      <Box w="15px" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
+                      <Box boxSize="2" flexShrink={0} display="flex" alignItems="center" justifyContent="center">
                         {indicator ? (
                           <Box
-                            w="7px"
-                            h="7px"
+                            boxSize="2"
                             borderRadius="full"
                             bg={INDICATOR_COLOR[indicator]}
                             className={indicator === "working" ? "status-dot-pulse" : undefined}
@@ -297,9 +298,7 @@ export function SessionsSidebar({
                               // Plain (no background box) in every state — including hover and
                               // while the menu is open — so the ⋯ reads as a bare glyph, not a chip.
                               variant="plain"
-                              minH={4.5}
-                              h={4.5}
-                              minW={4.5}
+                              boxSize={4.5}
                               color="fg.subtle"
                               _hover={{ bg: "transparent", color: "fg" }}
                               _active={{ bg: "transparent" }}
@@ -309,7 +308,7 @@ export function SessionsSidebar({
                               css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
                               onClick={(event) => event.stopPropagation()}
                             >
-                              <LuEllipsis size={14} />
+                              <LuEllipsis size={12} />
                             </IconButton>
                           }
                           minW="180px"
@@ -348,6 +347,6 @@ export function SessionsSidebar({
       >
         {t("deleteBody", { title: pendingDelete?.title || t("untitledConversation") })}
       </ConfirmDialog>
-    </Flex>
+    </PanelCard>
   );
 }

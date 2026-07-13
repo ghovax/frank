@@ -284,7 +284,7 @@ export function ConnectionSettings({
   }, [draftDirty, onDirtyChange]);
 
   return (
-    <VStack gap={5} w="100%" minH={0} maxW={variant === "page" ? "680px" : undefined} px={variant === "page" ? 6 : 0} pb={variant === "dialog" ? 6 : 0}>
+    <VStack gap={4} w="100%" minH={0} maxW={variant === "page" ? "680px" : undefined} px={variant === "page" ? 6 : 0} pb={variant === "dialog" ? 6 : 0}>
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>
@@ -327,7 +327,7 @@ export function ConnectionSettings({
           <VStack gap={2} align="stretch">
             <Flex align="center" gap={1.5} color="fg.muted">
               <LuServer size={15} />
-              <Text fontSize="sm" fontWeight="bold">
+              <Text textStyle="panelTitle">
                 {t("savedConnections")}
               </Text>
             </Flex>
@@ -403,7 +403,7 @@ export function ConnectionSettings({
           <VStack gap={3} align="stretch">
             <Flex align="center" gap={1.5} color="fg.muted">
               <LuPlus size={15} />
-              <Text fontSize="sm" fontWeight="bold">
+              <Text textStyle="panelTitle">
                 {t("newRemoteConnection")}
               </Text>
             </Flex>
@@ -443,7 +443,7 @@ export function ConnectionSettings({
               {addMode === "url" ? (
                 <VStack align="stretch" gap={3}>
                   <Field.Root>
-                    <Field.Label fontSize="xs">{t("serverUrl")}</Field.Label>
+                    <Field.Label textStyle="fieldLabel">{t("serverUrl")}</Field.Label>
                     <Input
                       bg="bg.subtle"
                       placeholder="http://localhost:8822"
@@ -453,7 +453,7 @@ export function ConnectionSettings({
                         if (event.key === "Enter") void handleAddConnection();
                       }}
                     />
-                    <Field.HelperText fontSize="2xs">
+                    <Field.HelperText fontSize="xs">
                       {t("serverUrlHelper")}
                     </Field.HelperText>
                   </Field.Root>
@@ -472,14 +472,14 @@ export function ConnectionSettings({
               ) : (
                 <VStack align="stretch" gap={3}>
                   <Field.Root>
-                    <Field.Label fontSize="xs">{t("hostAlias")}</Field.Label>
+                    <Field.Label textStyle="fieldLabel">{t("hostAlias")}</Field.Label>
                     {sshHosts.length > 0 && (
                       <Flex gap={1.5} wrap="wrap" mb={2}>
                         {sshHosts.slice(0, 8).map((host) => (
                           <Button
                             key={host.alias}
                             variant={sshAlias === host.alias ? "solid" : "outline"}
-                            borderRadius="sm"
+                            borderRadius="md"
                             onClick={() => {
                               setSshAlias(host.alias);
                               setSshUser(host.user);
@@ -499,36 +499,36 @@ export function ConnectionSettings({
                         {t("reloadHosts")}
                       </Button>
                     </Flex>
-                    <Field.HelperText fontSize="2xs">
+                    <Field.HelperText fontSize="xs">
                       {t("hostAliasHelper")}
                     </Field.HelperText>
                   </Field.Root>
                   <Flex gap={2} align="flex-start">
                     <Field.Root>
-                      <Field.Label fontSize="xs">{t("userOverride")}</Field.Label>
+                      <Field.Label textStyle="fieldLabel">{t("userOverride")}</Field.Label>
                       <Input bg="bg.subtle" placeholder={t("userOverridePlaceholder")} value={sshUser} onChange={(event) => setSshUser(event.target.value)} />
                     </Field.Root>
                     <Field.Root maxW="132px">
-                      <Field.Label fontSize="xs">{t("sshPort")}</Field.Label>
+                      <Field.Label textStyle="fieldLabel">{t("sshPort")}</Field.Label>
                       <Input bg="bg.subtle" placeholder="22" value={sshPort} onChange={(event) => setSshPort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                   </Flex>
                   <Field.Root>
-                    <Field.Label fontSize="xs">{t("identityFileOverride")}</Field.Label>
+                    <Field.Label textStyle="fieldLabel">{t("identityFileOverride")}</Field.Label>
                     <Input bg="bg.subtle" placeholder={t("identityFilePlaceholder")} value={sshIdentityFile} onChange={(event) => setSshIdentityFile(event.target.value)} />
                   </Field.Root>
                   <Flex gap={2} align="flex-start">
                     <Field.Root>
-                      <Field.Label fontSize="xs">{t("localTunnelPort")}</Field.Label>
+                      <Field.Label textStyle="fieldLabel">{t("localTunnelPort")}</Field.Label>
                       <Input bg="bg.subtle" placeholder={t("localTunnelPortPlaceholder")} value={sshLocalPort} onChange={(event) => setSshLocalPort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                     <Field.Root>
-                      <Field.Label fontSize="xs">{t("serverPortOnHost")}</Field.Label>
+                      <Field.Label textStyle="fieldLabel">{t("serverPortOnHost")}</Field.Label>
                       <Input bg="bg.subtle" placeholder="8822" value={sshRemotePort} onChange={(event) => setSshRemotePort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                   </Flex>
                   <Field.Root>
-                    <Field.Label fontSize="xs">{t("hostNotes")}</Field.Label>
+                    <Field.Label textStyle="fieldLabel">{t("hostNotes")}</Field.Label>
                     <Textarea bg="bg.subtle" rows={3} placeholder={t("hostNotesPlaceholder")} value={sshContext} onChange={(event) => setSshContext(event.target.value)} />
                   </Field.Root>
                   <Flex justify="flex-end">

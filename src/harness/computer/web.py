@@ -363,7 +363,7 @@ _SNAPSHOT_LINE = re.compile(r"^(\s*)-\s+(?P<head>[^\s\[\":]+)(?P<rest>.*)$")
 _SNAPSHOT_NAME = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _SNAPSHOT_ATTRS = re.compile(r"\[([a-zA-Z-]+)(?:=([^\]]*))?\]")
 
-_MAX_ELEMENTS = 300
+_MAXIMUM_ELEMENTS = 300
 
 # A page overview with fewer readable elements than this right after a load is treated as
 # "still rendering" and re-read briefly: a JS-heavy app reports itself loaded long before its
@@ -372,13 +372,34 @@ _SETTLE_MINIMUM_ELEMENTS = 3
 _SETTLE_WINDOW_SECONDS = 3.0
 
 
-def _parse_snapshot(snapshot: str, limit: int = _MAX_ELEMENTS) -> tuple[list[dict], dict[int, Optional[str]], bool]:
+# Non-interactive text rows past this many are omitted from a full overview. They are the bulk
+# of a large page's payload and rarely what an action needs; read and find reach all of them.
+_PROSE_ELEMENT_BUDGET = 80
+
+# Live-region roles: what a page announces after an action (a validation error, a status
+# line). Always included in acting results, so the announcement is visible without a read.
+_LIVE_REGION_ROLES = frozenset({"alert", "status"})
+
+# Landmark container roles: the page's skeleton and the natural drill targets. There are only a
+# handful per page, and omitting one (budgeting it out as if it were prose) would hide a whole
+# branch the model might want to expand — so they are always kept in an overview, never budgeted.
+_STRUCTURAL_ROLES = frozenset({
+    "region", "navigation", "main", "complementary", "banner", "contentinfo", "form", "search",
+})
+
+
+def _parse_snapshot(
+    snapshot: str, limit: int = _MAXIMUM_ELEMENTS, prose_budget: int = _PROSE_ELEMENT_BUDGET,
+) -> tuple[list[dict], dict[int, Optional[str]], bool, int]:
     """Parse the ai-mode aria snapshot (YAML-shaped, one node per line, ``[ref=...]`` markers,
-    iframe contents inlined with frame-scoped refs) into flat indexed elements. Returns
-    (elements, index-to-ref registry, truncated)."""
+    iframe contents inlined with frame-scoped refs) into flat indexed elements. Interactive
+    elements always make the list; non-interactive text is kept up to ``prose_budget`` and
+    counted past it. Returns (elements, index-to-ref registry, truncated, omitted_text)."""
     elements: list[dict] = []
     registry: dict[int, Optional[str]] = {}
     truncated = False
+    prose_kept = 0
+    omitted_text = 0
     for line in snapshot.splitlines():
         match = _SNAPSHOT_LINE.match(line)
         if match is None:
@@ -406,6 +427,13 @@ def _parse_snapshot(snapshot: str, limit: int = _MAX_ELEMENTS) -> tuple[list[dic
         # content. Including them would bloat every listing with anonymous wrappers.
         if not (name or value or clickable):
             continue
+        # Interactive elements, live-region announcements, and landmark containers always make
+        # the listing; only plain text competes for the prose budget.
+        if not clickable and role not in _LIVE_REGION_ROLES and role not in _STRUCTURAL_ROLES:
+            if prose_kept >= prose_budget:
+                omitted_text += 1
+                continue
+            prose_kept += 1
         if len(elements) >= limit:
             truncated = True
             break
@@ -422,37 +450,43 @@ def _parse_snapshot(snapshot: str, limit: int = _MAX_ELEMENTS) -> tuple[list[dic
             element["clickable"] = True
         elements.append(element)
         registry[index] = reference
-    return elements, registry, truncated
+    return elements, registry, truncated, omitted_text
 
 
-def _snapshot(page) -> str:
-    return page.locator("body").aria_snapshot(mode="ai", timeout=10_000)
+def _snapshot(page, root_locator=None) -> str:
+    """The ref-carrying accessibility snapshot: the whole page, or one element's subtree when a
+    ``root_locator`` is given (refs are page-scoped either way, so subtree elements act
+    normally). This is the tree-shaped progressive discovery the DOM affords: skim the page,
+    then expand just the branch that matters."""
+    target = root_locator if root_locator is not None else page.locator("body")
+    return target.aria_snapshot(mode="ai", timeout=10_000)
 
 
-def _overview(session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True) -> dict:
-    """The current page as indexed elements: the shared read every action's result is built on.
-    ``settle`` re-reads a near-empty snapshot briefly (a JS app finishing its first paint);
-    ``before_url`` adds an explicit ``url_changed`` flag so an action that silently moved the
-    page (an SPA route change, a map viewport rewrite) is impossible to miss."""
-    snapshot = _snapshot(page)
-    elements, registry, truncated = _parse_snapshot(snapshot)
+def _read_page(session: _Session, page, *, settle: bool, root_locator=None) -> tuple[list[dict], bool, int]:
+    """Snapshot the page (or one subtree), refresh the session's registry and change-detection
+    state, and return (elements, truncated, omitted_text). ``settle`` re-reads a near-empty
+    snapshot briefly, since a JS-heavy app reports itself loaded long before it has painted
+    anything readable."""
+    snapshot = _snapshot(page, root_locator)
+    elements, registry, truncated, omitted_text = _parse_snapshot(snapshot)
     if settle and len(elements) < _SETTLE_MINIMUM_ELEMENTS:
         deadline = time.monotonic() + _SETTLE_WINDOW_SECONDS
         while len(elements) < _SETTLE_MINIMUM_ELEMENTS and time.monotonic() < deadline:
             time.sleep(0.35)
-            snapshot = _snapshot(page)
-            elements, registry, truncated = _parse_snapshot(snapshot)
+            snapshot = _snapshot(page, root_locator)
+            elements, registry, truncated, omitted_text = _parse_snapshot(snapshot)
     session.registry = registry
-    session.last_snapshot = snapshot
-    result: dict[str, Any] = {
-        "ok": True,
-        "url": page.url,
-        "title": _safe_title(page),
-        "count": len(elements),
-        "elements": elements,
-    }
-    if truncated:
-        result["truncated"] = True
+    if root_locator is None:
+        # A drilled subtree never stands in for the whole page in change detection.
+        session.last_snapshot = snapshot
+    return elements, truncated, omitted_text
+
+
+def _finish_result(session: _Session, page, result: dict, elements: list[dict], before_url: Optional[str]) -> dict:
+    """The fields every page-reading result shares: location, change flag, empty-page hint, and
+    any dialog/download events captured since the last result."""
+    result["url"] = page.url
+    result["title"] = _safe_title(page)
     if before_url is not None:
         result["url_changed"] = page.url != before_url
     if not elements:
@@ -460,6 +494,43 @@ def _overview(session: _Session, page, *, before_url: Optional[str] = None, sett
     while session.events:
         result.update(session.events.popleft())
     return result
+
+
+def _overview(session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True, root_locator=None) -> dict:
+    """The full page (or one drilled subtree) as indexed elements — what observe and the
+    navigation actions return."""
+    elements, truncated, omitted_text = _read_page(session, page, settle=settle, root_locator=root_locator)
+    result: dict[str, Any] = {"ok": True, "count": len(elements), "elements": elements}
+    notes = []
+    if truncated:
+        result["truncated"] = True
+        notes.append(_message("browser_overview_truncated", limit=str(_MAXIMUM_ELEMENTS)))
+    if omitted_text:
+        notes.append(_message("browser_text_omitted", count=str(omitted_text)))
+    if notes:
+        result["note"] = ", ".join(notes)
+    return _finish_result(session, page, result, elements, before_url)
+
+
+def _digest(session: _Session, page, *, before_url: Optional[str]) -> dict:
+    """The result an acting call returns: the page's complete actionable surface — every
+    interactive element, plus live-region announcements (alerts, status lines) — with the bulk
+    prose deferred to observe/read. Nothing the model could act on is ever hidden here; what is
+    deferred is reading material, and the note says where it lives. Indices match what observe
+    would show, and the registry covers the whole page."""
+    elements, truncated, _ = _read_page(session, page, settle=True)
+    listed = [
+        element for element in elements
+        if element.get("clickable") or element.get("role") in _LIVE_REGION_ROLES
+    ]
+    prose_deferred = len(elements) - len(listed)
+    result: dict[str, Any] = {"ok": True, "count": len(elements), "elements": listed}
+    if truncated:
+        result["truncated"] = True
+        result["note"] = _message("browser_overview_truncated", limit=str(_MAXIMUM_ELEMENTS))
+    elif prose_deferred:
+        result["note"] = _message("browser_digest_prose", count=str(prose_deferred))
+    return _finish_result(session, page, result, elements, before_url)
 
 
 def _locator(session: _Session, page, index: int):
@@ -518,12 +589,20 @@ def navigate(url: str, browser: str = "chrome") -> dict:
     return _run_tool(run, browser=browser)
 
 
-def observe() -> dict:
-    """The current page's semantic tree as indexed elements (iframes included)."""
+def observe(element: Optional[int] = None) -> dict:
+    """The current page's semantic tree as indexed elements (iframes included). With
+    ``element``, just that element's subtree in full detail — the tree-shaped way to expand one
+    region of a large page (a card, a section, a results panel) without paying for the rest.
+    Indices then refer to the drilled subtree until the next observe or find."""
 
     def run() -> dict:
         session = _worker.session()
-        return _overview(session, _worker.page(session))
+        page = _worker.page(session)
+        root_locator = _locator(session, page, element) if element is not None else None
+        result = _overview(session, page, settle=element is None, root_locator=root_locator)
+        if element is not None:
+            result["did"] = f"Expanded element {element}"
+        return result
 
     return _run_tool(run)
 
@@ -545,8 +624,8 @@ def find(query: str) -> dict:
         page = _worker.page(session)
         snapshot = _snapshot(page)
         # Search the whole page, not just what an overview would list. A match must never
-        # hide behind the listing cap.
-        elements, registry, _ = _parse_snapshot(snapshot, limit=100_000)
+        # hide behind the listing cap or the prose budget.
+        elements, registry, _, _ = _parse_snapshot(snapshot, limit=100_000, prose_budget=100_000)
         session.last_snapshot = snapshot
         matches = [
             element for element in elements
@@ -573,6 +652,7 @@ def find(query: str) -> dict:
         }
         if truncated:
             result["truncated"] = True
+            result["note"] = _message("browser_find_truncated", limit=str(_FIND_LIMIT))
         if not listed:
             result["note"] = _message("browser_find_no_match")
         return result
@@ -599,7 +679,7 @@ def click(index: int) -> dict:
             })
         _await_quiet(page)
         result: dict[str, Any] = {"ok": True, "did": f"Clicked element {index}"}
-        overview = _overview(session, _worker.page(session), before_url=before_url)
+        overview = _digest(session, _worker.page(session), before_url=before_url)
         changed = overview.get("url_changed") or session.last_snapshot != before_snapshot
         result["changed"] = bool(changed)
         if not changed:
@@ -631,7 +711,7 @@ def type_text(index: int, text: str, submit: bool = False) -> dict:
         locator.press("Enter", timeout=5_000)
         _await_quiet(page)
         result: dict[str, Any] = {"ok": True, "did": f"Typed into element {index} and pressed Enter"}
-        result.update(_overview(session, _worker.page(session), before_url=before_url))
+        result.update(_digest(session, _worker.page(session), before_url=before_url))
         return result
 
     return _run_tool(run)
@@ -662,7 +742,7 @@ def press(key: str) -> dict:
         except Exception as error:
             return {"ok": False, "error": f"Could not press {key!r}: {str(error).splitlines()[0]}"}
         _await_quiet(page, timeout_ms=3_000)
-        return _overview(session, _worker.page(session), before_url=before_url)
+        return _digest(session, _worker.page(session), before_url=before_url)
 
     return _run_tool(run)
 
@@ -682,7 +762,7 @@ def hover(index: int) -> dict:
                 "error": f"Could not hover element {index}: {str(error).splitlines()[0]}",
             })
         time.sleep(0.25)
-        return _overview(session, page)
+        return _digest(session, page, before_url=None)
 
     return _run_tool(run)
 
@@ -746,7 +826,7 @@ def scroll(direction: str = "down", element: Optional[int] = None) -> dict:
         # Let the scroll land and lazily-rendered content (virtualized lists) paint.
         time.sleep(0.4)
         result: dict[str, Any] = {"ok": True, "did": f"Scrolled {wanted}"}
-        overview = _overview(session, page, before_url=before_url)
+        overview = _digest(session, page, before_url=before_url)
         result["changed"] = bool(overview.get("url_changed")) or session.last_snapshot != before_snapshot
         result.update(overview)
         return result
@@ -761,6 +841,7 @@ def select_option(index: int, option: str) -> dict:
     def run() -> dict:
         session = _worker.session()
         page = _worker.page(session)
+        before_url = page.url
         locator = _locator(session, page, index)
         try:
             chosen = locator.select_option(option, timeout=5_000)
@@ -770,7 +851,7 @@ def select_option(index: int, option: str) -> dict:
                 "error": f"Could not select {option!r} in element {index}: {str(error).splitlines()[0]}",
             })
         result: dict[str, Any] = {"ok": True, "did": f"Selected {option!r} in element {index}", "selected": chosen}
-        result.update(_overview(session, page))
+        result.update(_digest(session, page, before_url=before_url))
         return result
 
     return _run_tool(run)
@@ -786,6 +867,7 @@ def upload(index: int, paths: list[str]) -> dict:
             return {"ok": False, "error": f"No such file: {', '.join(missing)}"}
         session = _worker.session()
         page = _worker.page(session)
+        before_url = page.url
         locator = _locator(session, page, index)
         try:
             locator.set_input_files(resolved, timeout=5_000)
@@ -801,7 +883,7 @@ def upload(index: int, paths: list[str]) -> dict:
                     "error": f"Could not upload to element {index}: {str(error).splitlines()[0]}",
                 })
         result: dict[str, Any] = {"ok": True, "did": f"Attached {len(resolved)} file(s) to element {index}"}
-        result.update(_overview(session, page))
+        result.update(_digest(session, page, before_url=before_url))
         return result
 
     return _run_tool(run)
@@ -813,6 +895,7 @@ def drag(index: int, to_element: int) -> dict:
     def run() -> dict:
         session = _worker.session()
         page = _worker.page(session)
+        before_url = page.url
         source = _locator(session, page, index)
         target = _locator(session, page, to_element)
         try:
@@ -823,7 +906,7 @@ def drag(index: int, to_element: int) -> dict:
                 "error": f"Could not drag element {index} to {to_element}: {str(error).splitlines()[0]}",
             })
         result: dict[str, Any] = {"ok": True, "did": f"Dragged element {index} onto {to_element}"}
-        result.update(_overview(session, page))
+        result.update(_digest(session, page, before_url=before_url))
         return result
 
     return _run_tool(run)
@@ -842,18 +925,36 @@ def _clean_page_text(text: str) -> str:
     return _BLANK_LINES.sub("\n\n", text)
 
 
-def read() -> dict:
-    """The current page's visible text, bounded, for a quick read without the element tree."""
+# One read window's worth of page text. Longer pages are read progressively via `offset`.
+_READ_WINDOW_CHARS = 16_384 # Powers of 2 are nice, aren't they?
+
+
+def read(offset: int = 0, element: Optional[int] = None) -> dict:
+    """The page's visible text, one bounded window at a time. With ``element``, only that
+    element's subtree — the way to read one article or section without the page's chrome.
+    ``offset`` continues a truncated read; the result says exactly which offset reaches the
+    next window."""
 
     def run() -> dict:
         session = _worker.session()
         page = _worker.page(session)
-        text = _clean_page_text(page.inner_text("body", timeout=10_000))
-        truncated = len(text) > 32_768 # Powers of 2 are nice, aren't they?
-        return {
+        if element is not None:
+            source = _locator(session, page, element).inner_text(timeout=10_000)
+        else:
+            source = page.inner_text("body", timeout=10_000)
+        text = _clean_page_text(source)
+        start = max(0, int(offset))
+        window = text[start : start + _READ_WINDOW_CHARS]
+        truncated = len(text) > start + _READ_WINDOW_CHARS
+        result: dict[str, Any] = {
             "ok": True, "url": page.url, "title": _safe_title(page),
-            "text": text[:32_768], "truncated": truncated,
+            "text": window, "truncated": truncated, "total_chars": len(text),
         }
+        if start:
+            result["offset"] = start
+        if truncated:
+            result["note"] = _message("browser_read_truncated", next_offset=str(start + _READ_WINDOW_CHARS))
+        return result
 
     return _run_tool(run)
 

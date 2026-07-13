@@ -4,7 +4,7 @@ import { Box, Flex, Spinner, Text } from "@chakra-ui/react";
 import { useEffect, useRef, useState } from "react";
 import { LuTriangleAlert } from "react-icons/lu";
 import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentProxy } from "pdfjs-dist";
+import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 
 // Render PDFs with PDF.js (to a <canvas>) rather than relying on the browser's
 // built-in PDF plugin in an <iframe> — that path is inconsistent across browsers
@@ -43,24 +43,27 @@ async function openDocument(url: string): Promise<PDFDocumentProxy> {
   return pdfjsLib.getDocument({ data: new Uint8Array(bytes.slice(0)) }).promise;
 }
 
-// Render one page into a canvas, fitted to `cssWidth` and sharp on HiDPI screens.
-async function renderPageToCanvas(
+// Render one page into a canvas, fitted to `cssWidth` and sharp on HiDPI screens. Returns the
+// pdf.js RenderTask so the caller can cancel it: a resize re-fires this, and two overlapping
+// renders on the same canvas corrupt it (the tell-tale symptom is a page drawn upside down),
+// so the previous task must be cancelled before the next begins.
+function renderPageToCanvas(
   page: Awaited<ReturnType<PDFDocumentProxy["getPage"]>>,
   canvas: HTMLCanvasElement,
   cssWidth: number,
-): Promise<void> {
+): RenderTask | null {
   const baseViewport = page.getViewport({ scale: 1 });
   const scale = cssWidth / baseViewport.width;
   const viewport = page.getViewport({ scale });
   const outputScale = window.devicePixelRatio || 1;
   const context = canvas.getContext("2d");
-  if (!context) return;
+  if (!context) return null;
   canvas.width = Math.floor(viewport.width * outputScale);
   canvas.height = Math.floor(viewport.height * outputScale);
   canvas.style.width = `${Math.floor(viewport.width)}px`;
   canvas.style.height = `${Math.floor(viewport.height)}px`;
   const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
-  await page.render({ canvasContext: context, viewport, transform }).promise;
+  return page.render({ canvasContext: context, viewport, transform });
 }
 
 function PdfStatus({ kind }: { kind: "loading" | "error" }) {
@@ -97,7 +100,7 @@ export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number
       document = await openDocument(url);
       const page = await document.getPage(1);
       if (cancelled || !canvasRef.current) return;
-      await renderPageToCanvas(page, canvasRef.current, width);
+      await renderPageToCanvas(page, canvasRef.current, width)?.promise;
       if (!cancelled) setRenderState({ url, status: "ready" });
     })().catch(() => {
       if (!cancelled) setRenderState({ url, status: "error" });
@@ -156,15 +159,20 @@ function PdfPageView({
   useEffect(() => {
     if (!visible) return;
     let cancelled = false;
+    let renderTask: RenderTask | null = null;
     (async () => {
       const page = await document.getPage(pageNumber);
       if (cancelled || !canvasRef.current) return;
       const baseViewport = page.getViewport({ scale: 1 });
       setAspect(baseViewport.height / baseViewport.width);
-      await renderPageToCanvas(page, canvasRef.current, width);
+      renderTask = renderPageToCanvas(page, canvasRef.current, width);
+      await renderTask?.promise;
     })().catch(() => {});
+    // Cancel an in-flight render before the next width re-runs this, so two renders never
+    // touch the same canvas at once (which is what flips the page upside down on resize).
     return () => {
       cancelled = true;
+      renderTask?.cancel();
     };
   }, [visible, document, pageNumber, width]);
 
@@ -216,15 +224,25 @@ export function PdfDocumentView({ url }: { url: string }) {
   useEffect(() => {
     const element = containerRef.current;
     if (!element) return;
-    const measure = () => {
+    let frame = 0;
+    const apply = () => {
       // Leave a little breathing room; cap so pages stay readable on wide screens.
       const available = element.clientWidth - 24;
       setPageWidth(Math.max(240, Math.min(900, available)));
     };
-    measure();
+    // Coalesce the burst of resize callbacks to one width update per frame, so a drag-resize
+    // re-fits smoothly instead of thrashing the page renders.
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(apply);
+    };
+    apply();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [document]);
 
   return (

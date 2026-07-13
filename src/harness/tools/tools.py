@@ -451,12 +451,16 @@ _ARTIFACT_IMAGE_SUFFIXES = {".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", "
 
 def artifact_kind_for(path: str) -> str:
     """The render kind of a local artifact by extension: ``image`` (versioned bytes),
-    ``html`` (served live so it can self-size/interact), or a generic ``file``."""
+    ``html`` (served live so it can self-size/interact), ``iframe`` (a PDF, which the browser
+    renders in place), or a generic ``file`` — which has no visual preview. Only the first three
+    are things worth opening in the panel; ``file`` means "show this in the conversation instead."""
     suffix = Path(path).suffix.lower()
     if suffix in _ARTIFACT_IMAGE_SUFFIXES:
         return "image"
     if suffix in (".html", ".htm", ".xhtml"):
         return "html"
+    if suffix == ".pdf":
+        return "iframe"
     return "file"
 
 
@@ -531,13 +535,19 @@ def open_artifact(
     height: int = 0,
     artifact_id: str = "",
 ) -> str:
-    """Open an artifact in the chat's artifacts panel — a mini-browser pointed at a URL
-    or a local file — rendered outside the tool card.
+    """Open an artifact in the chat's side panel — a sandboxed iframe (or image view)
+    pointed at a URL or a local file — rendered outside the tool card. This is where
+    "show it on the side" / "as an artifact" content goes.
 
-    This is the general-purpose visual tool. Rather than passing markup inline, you
-    point it at something that already exists: an ``http(s)`` URL, or a path to a
-    file you have written (``url="/abs/path/chart.html"``, or a path relative to the
-    working directory). To show a visualization, **write a complete HTML document to
+    It is a **preview surface** for things that render — web pages, HTML, images, SVGs,
+    PDFs — not a file viewer. A code or text file has no visual form; show it in the
+    conversation instead of opening an empty panel. Previewing a page here is for
+    viewing; to interact with a live site (sign in, click through) use the ``browser``
+    tool, which drives the user's real Chrome.
+
+    Rather than passing markup inline, you point it at something that already exists: an
+    ``http(s)`` URL, or a path to a file you have written (``url="/abs/path/chart.html"``,
+    or a path relative to the working directory). To show a visualization, **write a complete HTML document to
     a file first** (with ``bash``: a heredoc, or an editor) and open that file — then
     you can refine it by editing the file and re-opening, which is far faster and
     cheaper than re-emitting a whole document each time. Reach for an existing web
@@ -894,6 +904,7 @@ async def browser(
     option: str = "",
     paths: list[str] | None = None,
     to_element: int | None = None,
+    offset: int = 0,
     tab: str = "",
     browser_name: str = "chrome",
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
@@ -914,7 +925,7 @@ async def browser(
     Args:
         action: navigate, observe, find, read, click, type, press, hover, scroll, select, upload, drag, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
         url: The address to open (navigate, new_tab).
-        element: The index of an element from the last observe/find (click/type/hover/select/upload/drag; scroll moves that element's pane).
+        element: The index of an element from the last observe/find (click/type/hover/select/upload/drag; scroll moves that element's pane; observe expands that element's subtree; read returns only its text).
         text: Text to enter into the element (type).
         query: Text to search the page for (find) — matches element names and values anywhere on the page, iframes included.
         submit: With type, press Enter after entering the text and return the resulting page.
@@ -923,6 +934,7 @@ async def browser(
         option: The visible label (or value) to choose in a select element (select).
         paths: Local file path(s) to attach (upload).
         to_element: The index of the element to drop onto (drag).
+        offset: Character offset to continue a truncated read from (read) — the previous result names the exact value.
         tab: The tab id from the tabs action (switch_tab, close_tab).
         browser_name: Which browser to connect to — "chrome" (default), "edge", or "brave".
         justification: Why this action is needed.

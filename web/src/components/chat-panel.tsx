@@ -8,6 +8,7 @@ import {
   Flex,
   IconButton,
   Menu,
+  Separator,
   Text,
   VStack,
 } from "@chakra-ui/react";
@@ -1246,7 +1247,7 @@ export function ChatPanel({
             right. Always visible so the controls have a stable home; the title
             fills in once the session names itself, matching the sidebar default
             until then. */}
-        <Flex align="center" gap={1.5} px={3} py={2} flexShrink={0} minW={0}>
+        <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0} minW={0}>
           {onToggleHistory ? (
             <Tooltip content={historyOpen ? t("hideConversations") : t("showConversations")} openDelay={300}>
               <IconButton
@@ -1266,7 +1267,7 @@ export function ChatPanel({
             {sessionId ? (sessionTitle || t("untitledConversation")) : t("newConversation")}
           </Text>
           <GitStatusBar status={directoryStatus} />
-          <Flex align="center" gap={0.5} flexShrink={0}>
+          <Flex align="center" gap={1} flexShrink={0}>
             <ToolbarAction
               label={t("terminalAndBackground")}
               icon={<LuTerminal size={14} />}
@@ -1366,7 +1367,7 @@ export function ChatPanel({
                   <Flex direction="column" align="center" gap={2}>
                     <Flex align="center" justify="center" gap={1.5} color="fg.muted">
                       <LuNetwork size={15} />
-                      <Text fontSize="sm" fontWeight="bold">{t("locationsAvailable")}</Text>
+                      <Text textStyle="sectionLabel">{t("locationsAvailable")}</Text>
                     </Flex>
                     <Flex align="center" gap={2.5} wrap="wrap" justify="center">
                       {projectLocations.map((location) => (
@@ -1439,11 +1440,11 @@ export function ChatPanel({
                     aria-label={t("deleteQueuedMessage")}
                     variant="ghost"
                     colorPalette="red"
-                    mt="2px"
+                    mt={0.5}
                     flexShrink={0}
                     onClick={() => dequeueMessage(index)}
                   >
-                    <LuTrash2 size={11} />
+                    <LuTrash2 size={13} />
                   </IconButton>
                   <Box
                     px={2}
@@ -1638,13 +1639,12 @@ export function ChatPanel({
                           key={tab.id}
                           icon={tab.kind === "file" ? <LuFile size={13} /> : <LuAppWindow size={13} />}
                           label={tab.title}
-                          mono
                           active={tab.id === activeTabId}
                           onSelect={() => setActiveTabId(tab.id)}
                           onClose={() => handleCloseTab(tab.id)}
                           tooltip={
                             <Box fontSize="xs" lineHeight="1.6" maxW="340px">
-                              <Text fontWeight="semibold" mb={tabSourcePath ? 1 : 0} color="fg" fontFamily="var(--app-font-mono)">{tab.title}</Text>
+                              <Text fontWeight="semibold" mb={tabSourcePath ? 1 : 0} color="fg">{tab.title}</Text>
                               {tabSourcePath ? (
                                 <InlineField label={isUrl ? t("url") : t("path")}>
                                   <Text wordBreak="break-all" fontFamily="var(--app-font-mono)">{tabSourcePath}</Text>
@@ -1659,15 +1659,15 @@ export function ChatPanel({
                   </Flex>
                 </Flex>
                 {/* Active tab header with controls — title, reload, maximize, restore,
-                    download, close. A fixed height keeps the bar from shifting vertically
-                    when switching between an image (which shows the annotation pill) and a web
-                    page (which does not) — the pill is taller, so a content-sized row would jump. */}
-                <Flex px={2} h={10} align="center" gap={1} borderBottom="1px solid" borderColor={activeImageIdentity ? "transparent" : "border"} flexShrink={0}>
+                    download, close. The 32px icon-button controls are the tallest element in
+                    the row, so it keeps a constant height whether or not the (shorter) image
+                    annotation pill is present — the bar never jumps switching image ⇄ web page. */}
+                <Flex pl={3} pr={2} py={2} align="center" gap={1} flexShrink={0}>
                   <Flex align="center" gap={1.5} flex={1} minW={0}>
-                    <Text fontSize="sm" fontWeight="medium" truncate>
+                    <Text textStyle="panelTitle" truncate>
                       {activeGroup.title}
                     </Text>
-                    {activeVersions.length > 1 ? <VersionBadge number={selectedVersionNumber} active size="md" /> : null}
+                    {activeVersions.length > 1 ? <VersionBadge number={selectedVersionNumber} active size="sm" /> : null}
                   </Flex>
                   {activeImageIdentity ? (
                     <Flex
@@ -1694,40 +1694,36 @@ export function ChatPanel({
                     aria-label={t("reloadArtifact")}
                     title={t("reload")}
                     variant="ghost"
-                    h="22px"
-                    minW="22px"
+                    boxSize="8"
                     onClick={() => setArtifactReloadKey((current) => current + 1)}
                   >
-                    <LuRotateCw size={11} />
+                    <LuRotateCw size={14} />
                   </IconButton>
                   <IconButton
                     aria-label={artifactMaximized ? t("minimizeArtifact") : t("maximizeArtifact")}
                     title={artifactMaximized ? t("minimize") : t("maximize")}
                     variant="ghost"
-                    h="22px"
-                    minW="22px"
+                    boxSize="8"
                     onClick={() => setArtifactMaximized((current) => !current)}
                   >
-                    {artifactMaximized ? <LuMinimize2 size={11} /> : <LuMaximize2 size={11} />}
+                    {artifactMaximized ? <LuMinimize2 size={14} /> : <LuMaximize2 size={14} />}
                   </IconButton>
                   {activeVersionEntry && activeGroup.relativePath ? (
                     <IconButton
                       aria-label={t("restoreThisVersion")}
                       title={isViewingLatestVersion ? t("restoreLatestVersion") : t("restoreVersionToWorkingTree")}
                       variant="ghost"
-                      h="22px"
-                      minW="22px"
+                      boxSize="8"
                       onClick={() => handleRestore(activeGroup, activeVersionEntry.commitSha)}
                     >
-                      <LuRotateCcw size={11} />
+                      <LuRotateCcw size={14} />
                     </IconButton>
                   ) : null}
                   <IconButton
                     aria-label={t("downloadThisVersion")}
                     title={t("download")}
                     variant="ghost"
-                    h="22px"
-                    minW="22px"
+                    boxSize="8"
                     disabled={!(activeVersionEntry?.blobSha || activeGroup.latestBlob) || !sessionId}
                     onClick={() => {
                       const blobSha = activeVersionEntry?.blobSha || activeGroup.latestBlob;
@@ -1744,23 +1740,23 @@ export function ChatPanel({
                       link.click();
                     }}
                   >
-                    <LuDownload size={11} />
+                    <LuDownload size={14} />
                   </IconButton>
                   <IconButton
                     aria-label={t("closeAllArtifacts")}
                     title={t("close")}
                     variant="ghost"
-                    h="22px"
-                    minW="22px"
+                    boxSize="8"
                     colorPalette="red"
                     onClick={() => {
                       setOpenArtifactIds([]);
                       setActiveTabId(null);
                     }}
                   >
-                    <LuX size={12} />
+                    <LuX size={14} />
                   </IconButton>
                 </Flex>
+                <Separator borderColor={activeImageIdentity ? "transparent" : "border"} />
                 {/* Version timeline — a node per version, oldest → newest, with prev/next
                     stepping. Only shown when there's more than one version. Newest is
                     editable; older nodes are read-only history. */}
@@ -1769,8 +1765,7 @@ export function ChatPanel({
                     <IconButton
                       aria-label={t("previousVersion")}
                       variant="ghost"
-                      h="22px"
-                      minW="22px"
+                      boxSize="8"
                       disabled={selectedVersionNumber <= 1}
                       onClick={() => stepVersion(-1)}
                     >
@@ -1781,7 +1776,7 @@ export function ChatPanel({
                     <Box
                       flex={1}
                       position="relative"
-                      minH="30px"
+                      minH={8}
                       display="flex"
                       alignItems="center"
                       px={2}
@@ -1811,7 +1806,7 @@ export function ChatPanel({
                               <Text fontWeight="semibold" mb={1} color="fg">
                                 {t("versionNumber", { number: versionIndex + 1 })}
                               </Text>
-                              <Flex direction="column" gap={0.5}>
+                              <Flex direction="column" gap={1}>
                                 <InlineField label={t("created")}>
                                   <Text>
                                     {version.createdAt && !Number.isNaN(new Date(version.createdAt).getTime())
@@ -1844,16 +1839,16 @@ export function ChatPanel({
                                 display="inline-flex"
                                 alignItems="center"
                                 justifyContent="center"
-                                h={isSelected ? "27px" : "23px"}
-                                minW={isSelected ? "27px" : "23px"}
+                                h={isSelected ? 7 : 6}
+                                minW={isSelected ? 7 : 6}
                                 px={1.5}
                                 borderRadius="full"
                                 bg={isSelected ? "blue.solid" : "bg"}
                                 color={isSelected ? "white" : "fg.muted"}
                                 border="2px solid"
                                 borderColor={isSelected ? "blue.solid" : "border.emphasized"}
-                                fontSize={isSelected ? "13px" : "11px"}
-                                fontWeight={600}
+                                fontSize={isSelected ? "xs" : "2xs"}
+                                fontWeight="semibold"
                                 lineHeight="1"
                                 transition="min-width 0.12s, height 0.12s, border-color 0.12s"
                                 _hover={{ borderColor: "blue.solid" }}
@@ -1869,8 +1864,7 @@ export function ChatPanel({
                     <IconButton
                       aria-label={t("nextVersion")}
                       variant="ghost"
-                      h="22px"
-                      minW="22px"
+                      boxSize="8"
                       disabled={selectedVersionNumber >= activeVersions.length}
                       onClick={() => stepVersion(1)}
                     >
@@ -2044,45 +2038,21 @@ function ArtifactHistoryList({
       {/* Sub-header aligned with the top bar (same px/py, same segmented control) so the
           scope switch reads as a peer of the Artifacts ⇄ History toggle above it. */}
       <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0}>
-        <Flex align="right" bg="bg.muted" borderRadius="md" overflow="hidden" flexShrink={0}>
-          <Button
-            variant={scope === "session" ? "subtle" : "ghost"}
-            colorPalette={scope === "session" ? "blue" : "gray"}
-            borderRadius="0"
-            px={2.5}
-            fontSize="xs"
-            fontWeight="medium"
-            onClick={() => onScopeChange("session")}
-          >
-            {t("thisSession")}
-          </Button>
-          <Button
-            variant={scope === "full" ? "subtle" : "ghost"}
-            colorPalette={scope === "full" ? "blue" : "gray"}
-            borderRadius="0"
-            px={2.5}
-            fontSize="xs"
-            fontWeight="medium"
-            onClick={() => onScopeChange("full")}
-          >
-            {t("allSessions")}
-          </Button>
-        </Flex>
+        <SegmentedToggle<ArtifactScope>
+          value={scope}
+          onChange={onScopeChange}
+          options={[
+            { value: "session", label: t("thisSession") },
+            { value: "full", label: t("allSessions") },
+          ]}
+        />
       </Flex>
       {sortedEntries.length === 0 ? (
-        <Flex direction="column" align="center" justify="center" flex={1} gap={6} px={2} pb={12}>
-          <EmptyState.Root size="sm">
-            <EmptyState.Content>
-              <EmptyState.Indicator>
-                <LuHistory />
-              </EmptyState.Indicator>
-              <VStack gap={1}>
-                <EmptyState.Title fontSize="sm">{t("noChangedFilesTitle")}</EmptyState.Title>
-                <EmptyState.Description fontSize="xs">{t("noChangedFilesDescription")}</EmptyState.Description>
-              </VStack>
-            </EmptyState.Content>
-          </EmptyState.Root>
-        </Flex>
+        <PanelEmptyState
+          icon={<LuHistory />}
+          title={t("noChangedFilesTitle")}
+          description={t("noChangedFilesDescription")}
+        />
       ) : (
         <PanelBody>
           <VStack gap={2} align="stretch">
@@ -2113,7 +2083,7 @@ function ArtifactHistoryList({
                   <Box color="fg.muted" flexShrink={0} display="flex">
                     <LuFile size={14} />
                   </Box>
-                  <Flex direction="column" gap={0.5} flex={1} minW={0}>
+                  <Flex direction="column" gap={1} flex={1} minW={0}>
                     <Text textStyle="fieldLabel" truncate title={entry.relativePath}>{fileName}</Text>
                     {directory ? <Text fontSize="xs" color="fg.subtle" truncate>{directory}</Text> : null}
                   </Flex>

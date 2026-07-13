@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Dialog, Flex, Heading, IconButton, Portal, Text } from "@chakra-ui/react";
+import { Box, Button, Dialog, Flex, IconButton, Portal, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowLeft, LuPlus, LuSettings, LuTrash2 } from "react-icons/lu";
@@ -57,24 +57,24 @@ export function ManageProjectsDialog({
           <Dialog.Backdrop />
           <Dialog.Positioner>
             <Dialog.Content maxW="min(680px, 94vw)">
-              <Dialog.Header py={3} px={4}>
+              <Dialog.Header>
                 <Flex align="center" gap={2} w="full">
                   {editing && (
-                    <IconButton aria-label={tc("back")} size="xs" variant="ghost" onClick={() => setEditingId(null)}>
+                    <IconButton aria-label={tc("back")} variant="ghost" onClick={() => setEditingId(null)}>
                       <LuArrowLeft size={14} />
                     </IconButton>
                   )}
-                  <Dialog.Title fontSize="sm" flex={1} truncate>
+                  <Dialog.Title textStyle="panelTitle" flex={1} truncate>
                     {editing ? editing.name : t("manageProjects")}
                   </Dialog.Title>
                   {!editing && (
-                    <Button size="xs" colorPalette="blue" onClick={() => setNewOpen(true)}>
+                    <Button colorPalette="blue" onClick={() => setNewOpen(true)}>
                       <LuPlus size={13} /> {t("newProject")}
                     </Button>
                   )}
                 </Flex>
               </Dialog.Header>
-              <Dialog.Body px={4} pb={4} maxH="70vh" overflowY="auto">
+              <Dialog.Body maxH="70vh" overflowY="auto">
                 {editing ? (
                   <ProjectLocationsPanel projectId={editing.id} />
                 ) : (
@@ -98,7 +98,7 @@ export function ManageProjectsDialog({
                         onClick={() => { onSwitchProject(project.id); onOpenChange(false); }}
                       >
                         <Box flex={1} minW={0}>
-                          <Heading size="sm" truncate>{project.name}</Heading>
+                          <Text fontSize="sm" fontWeight="medium" truncate>{project.name}</Text>
                           {project.description && <Text fontSize="xs" color="fg.muted" truncate mt={0.5}>{project.description}</Text>}
                         </Box>
                         {(project.locations ?? []).length > 0 && (
@@ -114,12 +114,11 @@ export function ManageProjectsDialog({
                         <Text fontSize="xs" color="fg.subtle" flexShrink={0} whiteSpace="nowrap">
                           {t("sessionCount", { count: project.session_count })}
                         </Text>
-                        <IconButton aria-label={t("projectSettings")} size="xs" variant="ghost" flexShrink={0} onClick={(event) => { event.stopPropagation(); setEditingId(project.id); }}>
+                        <IconButton aria-label={t("projectSettings")} variant="ghost" flexShrink={0} onClick={(event) => { event.stopPropagation(); setEditingId(project.id); }}>
                           <LuSettings size={13} />
                         </IconButton>
                         <IconButton
                           aria-label={t("deleteProject")}
-                          size="xs"
                           variant="ghost"
                           colorPalette="red"
                           flexShrink={0}
@@ -147,8 +146,8 @@ export function ManageProjectsDialog({
           <Dialog.Backdrop />
           <Dialog.Positioner>
             <Dialog.Content maxW="min(440px, 92vw)">
-              <Dialog.Header py={3} px={4}><Dialog.Title fontSize="sm">{t("deleteProject")}</Dialog.Title></Dialog.Header>
-              <Dialog.Body px={4} pb={2}>
+              <Dialog.Header><Dialog.Title textStyle="panelTitle">{t("deleteProject")}</Dialog.Title></Dialog.Header>
+              <Dialog.Body>
                 <Text fontSize="sm" color="fg.muted">
                   {t.rich("deleteConfirm", {
                     name: deleteTarget?.name ?? "",
@@ -157,7 +156,7 @@ export function ManageProjectsDialog({
                   })}
                 </Text>
               </Dialog.Body>
-              <Dialog.Footer py={3} px={4} gap={2}>
+              <Dialog.Footer>
                 <Button variant="outline" onClick={() => setDeleteTarget(null)}>{tc("cancel")}</Button>
                 <Button colorPalette="red" onClick={confirmDelete}>{tc("delete")}</Button>
               </Dialog.Footer>

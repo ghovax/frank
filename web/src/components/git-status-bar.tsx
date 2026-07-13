@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Text } from "@chakra-ui/react";
+import { Box, Flex, Separator, Text } from "@chakra-ui/react";
 import { useFormatter, useTranslations } from "next-intl";
 import { LuArrowDown, LuArrowUp, LuGitBranch } from "react-icons/lu";
 import { Tooltip } from "./ui/tooltip";
@@ -32,7 +32,7 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
   const detail = (
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg">{branchLabel}</Text>
-      <Flex direction="column" ps={2} gap={0.5}>
+      <Flex direction="column" ps={2} gap={1}>
         {status.gitCommitSubject && <InlineField label={t("commit")}><Text truncate maxW="260px">{status.gitCommitSubject}</Text></InlineField>}
         {status.gitCommitAuthor && <InlineField label={t("author")}><Text>{status.gitCommitAuthor}</Text></InlineField>}
         {status.gitCommitAuthorDate && <InlineField label={t("date")}><Text>{formatCommitDate(status.gitCommitAuthorDate)}</Text></InlineField>}
@@ -40,8 +40,8 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
       </Flex>
       {changedCount > 0 && (
         <>
-          <Box h="1px" bg="border" my={2} />
-          <Flex direction="column" ps={2} gap={0.5}>
+          <Separator my={2} />
+          <Flex direction="column" ps={2} gap={1}>
             {status.gitStagedCount > 0 && <InlineField label={t("staged")}><Text>{status.gitStagedCount}</Text></InlineField>}
             {status.gitUnstagedCount > 0 && <InlineField label={t("unstaged")}><Text>{status.gitUnstagedCount}</Text></InlineField>}
             {status.gitUntrackedCount > 0 && <InlineField label={t("untracked")}><Text>{status.gitUntrackedCount}</Text></InlineField>}
@@ -60,25 +60,25 @@ export function GitStatusBar({ status }: { status: DirectoryStatus }) {
       closeDelay={60}
       positioning={{ placement: "bottom" }}
     >
-      <Flex align="center" gap={2} flexShrink={0} h={6} px={2} borderRadius="sm" color="fg.muted">
+      <Flex align="center" gap={2} flexShrink={0} h={8} px={2} borderRadius="md" color="fg.muted">
         <Flex align="center" gap={1} flexShrink={0} maxW="200px">
           <LuGitBranch size={13} />
           <Text textStyle="fieldLabel" truncate>{branchLabel}</Text>
         </Flex>
         {status.gitDirty && (
           <Flex align="center" gap={1} flexShrink={0} title={t("uncommittedChanges")}>
-            <Box w="7px" h="7px" borderRadius="full" bg="orange.solid" />
-            {changedCount > 0 && <Text fontSize="xs" color="orange.fg">{changedCount}</Text>}
+            <Box boxSize="2" borderRadius="full" bg="orange.solid" />
+            {changedCount > 0 && <Text textStyle="fieldLabel" color="orange.fg">{changedCount}</Text>}
           </Flex>
         )}
         {status.gitAhead > 0 && (
-          <Flex align="center" gap={0.5} flexShrink={0} color="green.fg" title={t("aheadOfUpstream", { count: status.gitAhead })}>
-            <LuArrowUp size={12} /><Text fontSize="xs">{status.gitAhead}</Text>
+          <Flex align="center" gap={1} flexShrink={0} color="green.fg" title={t("aheadOfUpstream", { count: status.gitAhead })}>
+            <LuArrowUp size={12} /><Text textStyle="fieldLabel">{status.gitAhead}</Text>
           </Flex>
         )}
         {status.gitBehind > 0 && (
-          <Flex align="center" gap={0.5} flexShrink={0} color="blue.fg" title={t("behindUpstream", { count: status.gitBehind })}>
-            <LuArrowDown size={12} /><Text fontSize="xs">{status.gitBehind}</Text>
+          <Flex align="center" gap={1} flexShrink={0} color="blue.fg" title={t("behindUpstream", { count: status.gitBehind })}>
+            <LuArrowDown size={12} /><Text textStyle="fieldLabel">{status.gitBehind}</Text>
           </Flex>
         )}
       </Flex>

@@ -2411,10 +2411,15 @@ class AgentRuntime:
                 # file, cancellation — drives it unchanged. All permission analysis
                 # (static read-only classification, allow rules, prompts) runs on
                 # the raw remote command, never on the ssh wrapper.
+                from harness.locations.executor import SshExecutor
+
                 assert resolved_location is not None
+                executor = resolved_location.executor
+                # A remote policy always resolves to the ssh-backed executor.
+                assert isinstance(executor, SshExecutor)
                 tool_arguments = dict(tool_arguments)
                 tool_arguments["command"] = shlex.join(
-                    resolved_location.executor.ssh_argv(raw_command, resolved_location.base_directory)
+                    executor.ssh_argv(raw_command, resolved_location.base_directory)
                 )
             else:
                 directory = policy.working_directory
@@ -3302,6 +3307,18 @@ class AgentRuntime:
                 )
                 return
             kind = artifact_kind_for(resolved_path)
+            if kind == "file":
+                # A code or text file has no visual form, so opening it as an artifact would just
+                # show an empty panel. The artifacts panel is a preview surface; keep it for
+                # things that render.
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                    code="artifact_not_previewable",
+                    message=self._prompt_loader.load(
+                        "artifact_not_previewable", {"file_name": Path(resolved_path).name},
+                    ).strip(),
+                )
+                return
             display_title = Path(resolved_path).name or resolved_path
             artifact_id = requested_artifact_id or self._artifact_surface_id(f"{resolved_location.uri}:{resolved_path}")
             self._capture_written_artifacts(
@@ -3440,7 +3457,7 @@ class AgentRuntime:
                         return {"ok": False, "error": "The navigate action needs a url."}
                     return browser_bridge.navigate(url, browser=browser_name)
                 if action == "observe":
-                    return browser_bridge.observe()
+                    return browser_bridge.observe(element=int(element) if element is not None else None)
                 if action == "find":
                     query = str(tool_arguments.get("query", ""))
                     if not query.strip():
@@ -3480,7 +3497,10 @@ class AgentRuntime:
                 if action == "scroll":
                     return browser_bridge.scroll(direction, element=int(element) if element is not None else None)
                 if action == "read":
-                    return browser_bridge.read()
+                    return browser_bridge.read(
+                        offset=int(tool_arguments.get("offset", 0) or 0),
+                        element=int(element) if element is not None else None,
+                    )
                 if action == "back":
                     return browser_bridge.history_back()
                 if action == "forward":

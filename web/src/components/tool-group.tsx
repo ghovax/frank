@@ -37,6 +37,17 @@ function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, 
   return { order, counts };
 }
 
+// The small tally count beside a tool/reasoning/status icon in the group heading.
+// One shared chip so every count reads with the same size and weight (fieldLabel),
+// tinted by its icon's accent.
+function CountChip({ value, color }: { value: number; color: string }) {
+  return (
+    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" textStyle="fieldLabel" color={color}>
+      <RollingNumber value={value} />
+    </Box>
+  );
+}
+
 interface FileChange {
   path: string;
   additions: number;
@@ -156,14 +167,14 @@ export const ToolGroup = memo(function ToolGroup({
       count: failedCount, title: t("failedCount", { count: failedCount }),
     },
     runningCount > 0 && {
-      key: "running", Icon: LuLoaderCircle, color: "blue.fg",
+      key: "running", Icon: LuLoaderCircle, color: "blue.fg", spin: true,
       count: runningCount, title: t("runningCount", { count: runningCount }),
     },
     backgroundCount > 0 && {
       key: "background", Icon: LuMoon, color: "purple.fg",
       count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }),
     },
-  ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; count: number; title: string } => Boolean(chip));
+  ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; count: number; title: string; spin?: boolean } => Boolean(chip));
 
   return (
     <Box alignSelf="flex-start" w="100%">
@@ -184,10 +195,10 @@ export const ToolGroup = memo(function ToolGroup({
           gap={1.5}
           w="100%"
           px={2.5}
-          // Same fixed geometry as ToolCardHeader (h=9 / px=2.5 / gap=1.5) so a group heading, a
+          // Same fixed geometry as ToolCardHeader (h=8 / px=2.5 / gap=1.5) so a group heading, a
           // thinking-only heading, and a single tool card are pixel-identical — no reflow when a
           // heading gains its first tool or sits beside a card, and badges never grow it.
-          h={9}
+          h={8}
           color="fg"
           textAlign="left"
           cursor={interactive ? "pointer" : "default"}
@@ -195,11 +206,12 @@ export const ToolGroup = memo(function ToolGroup({
           onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
         >
           <Flex align="center" gap={2} flex={1} minW={0}>
-            {/* Status line — the latest tool's label. It crossfades (opacity only,
-                no height/translate) as work streams so the row height never shifts
-                and the whole heading stays vertically centered by the parent's
-                align="center" alone — no hand-tuned heights. */}
-            <Box minW={0} flex={1} overflow="hidden" position="relative" minH={4.5}>
+            {/* Status line — the latest tool's label. The crossfade keeps the entering and
+                exiting labels in the SAME grid cell (both at gridArea 1/1) so they overlap
+                without reflow, while the cell sizes itself to one line of text — so the box
+                gets its height naturally from its content, no hand-tuned minH. `minmax(0,1fr)`
+                lets the single column shrink so the label truncates with an ellipsis. */}
+            <Box minW={0} flex={1} overflow="hidden" display="grid" gridTemplateColumns="minmax(0, 1fr)">
               <AnimatePresence initial={false}>
                 <motion.div
                   key={headingText}
@@ -207,11 +219,10 @@ export const ToolGroup = memo(function ToolGroup({
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.16, ease: "easeOut" }}
-                  style={{ position: "absolute", inset: 0, minWidth: 0, display: "flex", alignItems: "center" }}
+                  style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
                 >
                   <Text
                     textStyle="fieldLabel"
-                    lineHeight="18px"
                     whiteSpace="nowrap"
                     overflow="hidden"
                     textOverflow="ellipsis"
@@ -249,11 +260,7 @@ export const ToolGroup = memo(function ToolGroup({
                         color={active ? display.iconColor : "fg.muted"}
                       >
                         <ToolIcon size={13} />
-                        {count > 1 && (
-                          <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" fontSize="xs" fontWeight="medium" color="fg.muted">
-                            <RollingNumber value={count} />
-                          </Box>
-                        )}
+                        {count > 1 && <CountChip value={count} color="fg.muted" />}
                       </Flex>
                     </motion.div>
                   );
@@ -271,11 +278,7 @@ export const ToolGroup = memo(function ToolGroup({
                   title={t("thoughtCount", { count: thinkingCount })}
                 >
                   <LuBrain size={13} />
-                  {thinkingCount > 1 && (
-                    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" fontSize="xs" fontWeight="medium" color="fg.muted">
-                      <RollingNumber value={thinkingCount} />
-                    </Box>
-                  )}
+                  {thinkingCount > 1 && <CountChip value={thinkingCount} color="fg.muted" />}
                 </Flex>
               )}
             </Flex>
@@ -296,7 +299,7 @@ export const ToolGroup = memo(function ToolGroup({
                   </Flex>
                 );
               }) : (
-                <Badge size="sm" variant="surface" colorPalette="gray" borderRadius="sm" flexShrink={0}>
+                <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
                   {t("filesCount", { count: fileChanges.length })}
                 </Badge>
               )}
@@ -304,7 +307,7 @@ export const ToolGroup = memo(function ToolGroup({
           )}
           <ToolLocationBadge arguments={groupLocation} />
           <AnimatePresence initial={false}>
-            {statusChips.map(({ key, Icon: ChipIcon, color, count, title }) => (
+            {statusChips.map(({ key, Icon: ChipIcon, color, count, title, spin }) => (
               <motion.div
                 key={key}
                 initial={{ opacity: 0 }}
@@ -314,12 +317,8 @@ export const ToolGroup = memo(function ToolGroup({
                 style={{ display: "inline-flex", alignItems: "center" }}
               >
                 <Flex align="center" gap={1} flexShrink={0} title={title} color={color}>
-                  <ChipIcon size={13} />
-                  {count > 1 && (
-                    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" fontSize="xs" fontWeight="medium" color={color}>
-                      <RollingNumber value={count} />
-                    </Box>
-                  )}
+                  <ChipIcon size={13} className={spin ? "tool-status-spin" : undefined} />
+                  {count > 1 && <CountChip value={count} color={color} />}
                 </Flex>
               </motion.div>
             ))}
@@ -331,7 +330,7 @@ export const ToolGroup = memo(function ToolGroup({
           )}
         </Flex>
         {bodyOpen && interactive && (
-          <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2.5} py={2.5} maxH={80} overflowY="auto">
+          <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2.5} py={2} maxH={80} overflowY="auto">
             <Flex direction="column" gap={2}>
               {tools.map((tool, index) => (
                 <ToolCall

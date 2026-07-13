@@ -1,6 +1,8 @@
-**Open an artifact** in the side artifacts panel — a sandboxed iframe (or image view) pointed at a URL or a local file.
+**Open an artifact** in the side artifacts panel — a sandboxed iframe (or image view) pointed at a URL or a local file. This panel sits beside the chat, so when the user asks to see something **"on the side"**, "in the panel", or "as an artifact", that means opening it here.
 
-Use this for any sort of visual output, interactive artifacts, images, plots, generated HTML, diagrams, charts, maps, or pages the user should inspect while keeping the chat transcript readable.
+Use this for anything with a visual form the user should inspect while keeping the chat readable: generated HTML, plots, diagrams, charts, maps, images, SVGs, PDFs, or a web page to preview. It is a **preview surface**, not a file viewer — it only shows things that render. A code or text file (`.py`, `.json`, `.txt`, and the like) has no visual form, so don't open it here; read it and share the relevant parts in the conversation instead.
+
+Previewing a page here is for **viewing**. To actually *interact* with a live site — sign in, click through, use a logged-in account — use the `browser` tool, which drives the user's real Chrome.
 
 The artifact is labelled automatically — the file name for a local file, the URL for a web page — so there is no title to pass.
 

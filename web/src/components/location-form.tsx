@@ -48,8 +48,6 @@ export function locationConflict(
   return null;
 }
 
-const fieldLabelProps = { fontSize: "xs", fontWeight: "medium", color: "fg" } as const;
-
 // The reusable location editor — used in the New Project wizard and in project settings.
 // `hosts` come from ~/.ssh/config (remote only). `showPermission` reveals the permission
 // mode control (shown when editing an existing location, hidden in the create wizard so
@@ -170,7 +168,7 @@ export function LocationForm({
 
       {value.kind === "remote" && (
         <Flex direction="column" gap={1}>
-          <Text {...fieldLabelProps}>{t("host")}</Text>
+          <Text textStyle="fieldLabel">{t("host")}</Text>
           {hosts.length === 0 ? (
             <Text fontSize="2xs" color="orange.fg">{t("noHosts")}</Text>
           ) : (
@@ -180,7 +178,7 @@ export function LocationForm({
       )}
 
       <Flex direction="column" gap={1}>
-        <Text {...fieldLabelProps}>{t("baseDirectory")}</Text>
+        <Text textStyle="fieldLabel">{t("baseDirectory")}</Text>
         <Flex gap={2}>
           <Input
             flex={1}
@@ -198,7 +196,7 @@ export function LocationForm({
 
       {showPermission && (
         <Flex direction="column" gap={1}>
-          <Text {...fieldLabelProps}>{t("permissionMode")}</Text>
+          <Text textStyle="fieldLabel">{t("permissionMode")}</Text>
           <SimpleSelect items={permissionModeItems} value={value.permission_mode ?? "default"} onValueChange={(next) => set({ permission_mode: next })} />
         </Flex>
       )}

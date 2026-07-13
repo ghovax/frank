@@ -23,6 +23,7 @@ import {
   Field,
   FieldList,
   InlineField,
+  Mono,
   MonoBlock,
   Pill,
 } from "./primitives";
@@ -156,12 +157,12 @@ function ComputerCallView({ args }: { args: Record<string, unknown> }) {
       {asString(args.app) && <InlineField label={t("computerApp")}>{asString(args.app)}</InlineField>}
       {args.element != null && (
         <InlineField label={t("computerElement")}>
-          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{asString(args.element)}</Text>
+          <Mono>{asString(args.element)}</Mono>
         </InlineField>
       )}
       {keyCombo && (
         <InlineField label={t("computerKey")}>
-          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{keyCombo}</Text>
+          <Mono>{keyCombo}</Mono>
         </InlineField>
       )}
       {menuPath && <InlineField label={t("computerMenuPath")}>{menuPath}</InlineField>}
@@ -229,12 +230,12 @@ function BrowserCallView({ args }: { args: Record<string, unknown> }) {
       {asString(args.url) && <InlineField label={t("url")}>{asString(args.url)}</InlineField>}
       {args.element != null && (
         <InlineField label={t("computerElement")}>
-          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{asString(args.element)}</Text>
+          <Mono>{asString(args.element)}</Mono>
         </InlineField>
       )}
       {asString(args.tab) && (
         <InlineField label={t("browserTab")}>
-          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{asString(args.tab)}</Text>
+          <Mono>{asString(args.tab)}</Mono>
         </InlineField>
       )}
       {action === "find" && asString(args.query) && (
@@ -248,12 +249,12 @@ function BrowserCallView({ args }: { args: Record<string, unknown> }) {
       )}
       {action === "drag" && args.to_element != null && (
         <InlineField label={t("computerElement")}>
-          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{`${asString(args.element)} → ${asString(args.to_element)}`}</Text>
+          <Mono>{`${asString(args.element)} → ${asString(args.to_element)}`}</Mono>
         </InlineField>
       )}
       {action === "press" && asString(args.key) && (
         <InlineField label={t("browserKey")}>
-          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{asString(args.key)}</Text>
+          <Mono>{asString(args.key)}</Mono>
         </InlineField>
       )}
       {action === "scroll" && asString(args.direction) && (
@@ -442,16 +443,6 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   answers: "answers",
 };
 
-// Monospace inline span for identifiers/paths/patterns/URLs — the scalar values
-// that should read as code rather than prose.
-function Mono({ children }: { children: ReactNode }) {
-  return (
-    <Text as="span" fontFamily="var(--app-font-mono)" fontSize="xs" wordBreak="break-all">
-      {children}
-    </Text>
-  );
-}
-
 function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
   return (
@@ -465,9 +456,41 @@ function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+// One shared inline-diff surface: a single scroll container (one maxH token + the
+// `diff-scroll` hook) wrapping the diff viewer with one shared style object, so
+// the edit-call preview and the file-edit result render identically. The font size
+// resolves to the `xs` token via its CSS var rather than a raw pixel literal.
+const DIFF_VIEWER_STYLES = {
+  contentText: { fontSize: "var(--chakra-font-sizes-xs)", fontFamily: "var(--app-font-mono)" },
+};
+
+function DiffView({ oldValue, newValue }: { oldValue: string; newValue: string }) {
+  const { colorMode } = useColorMode();
+  return (
+    <Box
+      maxH={80}
+      overflowY="auto"
+      border="1px solid"
+      borderColor="border"
+      borderRadius="md"
+      className="diff-scroll"
+    >
+      <ReactDiffViewer
+        oldValue={oldValue}
+        newValue={newValue}
+        splitView={false}
+        useDarkTheme={colorMode === "dark"}
+        hideLineNumbers={false}
+        showDiffOnly={false}
+        compareMethod={DiffMethod.LINES}
+        styles={DIFF_VIEWER_STYLES}
+      />
+    </Box>
+  );
+}
+
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
-  const { colorMode } = useColorMode();
   const skipValidation = args.skip_validation === true;
   const replaceAll = args.replace_all === true;
   const find = asString(args.find);
@@ -492,24 +515,7 @@ function EditFileCallView({ args }: { args: Record<string, unknown> }) {
       )}
       {hasInlineDiff && (
         <Field label={t("diff")}>
-          <Box
-            maxH={80}
-            overflowY="auto"
-            border="1px solid"
-            borderColor="border"
-            borderRadius="md"
-          >
-            <ReactDiffViewer
-              oldValue={find}
-              newValue={replaceWith}
-              splitView={false}
-              useDarkTheme={colorMode === "dark"}
-              hideLineNumbers={false}
-              showDiffOnly={false}
-              compareMethod={DiffMethod.LINES}
-              styles={{ contentText: { fontSize: "12px", fontFamily: "var(--app-font-mono)" } }}
-            />
-          </Box>
+          <DiffView oldValue={find} newValue={replaceWith} />
         </Field>
       )}
     </FieldList>
@@ -672,7 +678,6 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
   const message = asString(data.message);
   const before = asString(data.before);
   const after = asString(data.after);
-  const { colorMode } = useColorMode();
 
   // Old-format write_file response still carries before/after for inline diff.
   const hasDiff = before !== after && (before !== "" || after !== "");
@@ -711,7 +716,7 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField label={t("error")}>{asString(diagnostic.message)}</InlineField>
         {contextLines.length > 0 && (
           <Field label={t("context")}>
-            <MonoBlock maxH="120px">{contextLines.join("\n")}</MonoBlock>
+            <MonoBlock maxH={32}>{contextLines.join("\n")}</MonoBlock>
           </Field>
         )}
         {message && (
@@ -732,28 +737,7 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField label={t("operations")}>{operationsApplied}</InlineField>
       )}
       {characters && <InlineField label={t("characters")}>{characters}</InlineField>}
-      {hasDiff ? (
-        <Box
-          mt={1}
-          maxH="520px"
-          overflowY="auto"
-          border="1px solid"
-          borderColor="border"
-          borderRadius="md"
-          className="diff-scroll"
-        >
-          <ReactDiffViewer
-            oldValue={before}
-            newValue={after}
-            splitView={false}
-            useDarkTheme={colorMode === "dark"}
-            hideLineNumbers={false}
-            showDiffOnly={false}
-            compareMethod={DiffMethod.LINES}
-            styles={{ contentText: { fontSize: "12px", fontFamily: "var(--app-font-mono)" } }}
-          />
-        </Box>
-      ) : null}
+      {hasDiff ? <DiffView oldValue={before} newValue={after} /> : null}
     </FieldList>
   );
 }
@@ -834,7 +818,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
             <MarkdownContent content={asString(value)} fontSize="xs" />
           ) : (
             // Scalar identifiers/data (names, ids, flags) render in monospace.
-            <Text fontSize="xs" fontFamily="var(--app-font-mono)" whiteSpace="pre-wrap">{asString(value)}</Text>
+            <Mono whiteSpace="pre-wrap">{asString(value)}</Mono>
           )}
         </InlineField>
       ))}
@@ -936,14 +920,14 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
   return (
     <Card>
       {url ? (
-        <Link href={url} target="_blank" rel="noopener noreferrer" colorPalette="blue" fontSize="xs" fontWeight="medium">
+        <Link href={url} target="_blank" rel="noopener noreferrer" colorPalette="blue" textStyle="fieldLabel">
           {title}
         </Link>
       ) : (
         <Text textStyle="fieldLabel">{title}</Text>
       )}
       {url && (
-        <Text fontSize="xs" color="fg.subtle" fontFamily="var(--app-font-mono)" truncate>{url}</Text>
+        <Mono color="fg.subtle" truncate>{url}</Mono>
       )}
       {date && (
         <Text fontSize="2xs" color="fg.subtle">{date}</Text>
@@ -985,11 +969,22 @@ function AgentTaskResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+// One shared in-chat alert surface — a tinted, bordered box with unified padding.
+// The palette drives the background/border tint (red for errors, yellow for the
+// fixable permission/debugging prompts); callers supply the body.
+function AlertBox({ colorPalette, children }: { colorPalette: string; children: ReactNode }) {
+  return (
+    <Box bg={`${colorPalette}.subtle`} border="1px solid" borderColor={`${colorPalette}.muted`} borderRadius="md" px={2.5} py={2}>
+      {children}
+    </Box>
+  );
+}
+
 function ErrorView({ message }: { message: string }) {
   return (
-    <Box bg="red.subtle" border="1px solid" borderColor="red.muted" borderRadius="md" px={2} py={1.5}>
+    <AlertBox colorPalette="red">
       <Text fontSize="xs" color="red.fg">{message}</Text>
-    </Box>
+    </AlertBox>
   );
 }
 
@@ -999,8 +994,8 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
   const t = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
   return (
-    <Box bg="yellow.subtle" border="1px solid" borderColor="yellow.muted" borderRadius="md" px={2.5} py={2}>
-      <Text fontSize="xs" color="fg" fontWeight="medium">{t("browserEnableTitle")}</Text>
+    <AlertBox colorPalette="yellow">
+      <Text textStyle="fieldLabel">{t("browserEnableTitle")}</Text>
       <Text fontSize="xs" color="fg.muted" mt={0.5}>{t("browserEnableBody")}</Text>
       <Flex align="center" gap={2} mt={2}>
         <Button
@@ -1012,10 +1007,10 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
           <LuExternalLink size={12} />
           {t("browserEnableButton")}
         </Button>
-        <Text fontSize="2xs" fontFamily="var(--app-font-mono)" color="fg.subtle">{address}</Text>
+        <Mono fontSize="2xs" color="fg.subtle">{address}</Mono>
       </Flex>
       {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{t("browserEnableOpened")}</Text>}
-    </Box>
+    </AlertBox>
   );
 }
 
@@ -1027,8 +1022,8 @@ function PermissionGrantAlert({ kind }: { kind: string }) {
   const [opened, setOpened] = useState(false);
   const isScreenRecording = kind === "screen_recording";
   return (
-    <Box bg="yellow.subtle" border="1px solid" borderColor="yellow.muted" borderRadius="md" px={2.5} py={2}>
-      <Text fontSize="xs" color="fg" fontWeight="medium">
+    <AlertBox colorPalette="yellow">
+      <Text textStyle="fieldLabel">
         {isScreenRecording ? t("permissionScreenRecordingTitle") : t("permissionAccessibilityTitle")}
       </Text>
       <Text fontSize="xs" color="fg.muted" mt={0.5}>
@@ -1049,7 +1044,7 @@ function PermissionGrantAlert({ kind }: { kind: string }) {
         </Button>
       </Flex>
       {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{t("permissionOpened")}</Text>}
-    </Box>
+    </AlertBox>
   );
 }
 
@@ -1191,13 +1186,11 @@ function ArtifactFrame({ title, showHeader = true, fillContainer = false, childr
             aria-label={t("reloadArtifact")}
             title={t("reloadArtifact")}
             variant="ghost"
-            h={5}
-            minW={5}
-            px={1}
+            boxSize="8"
             flexShrink={0}
             onClick={() => setReloadKey((current) => current + 1)}
           >
-            <LuRotateCw size={10} />
+            <LuRotateCw size={14} />
           </IconButton>
         </Flex>
       )}
@@ -1435,7 +1428,7 @@ function ImageAnnotationPanel({
         placeholder={t("annotationPlaceholder")}
         fontSize="sm"
         bg="bg.subtle"
-        minH="60px"
+        minH={16}
         autoFocus
       />
       <Flex align="center" justify="flex-end" gap={2} mt={2}>
@@ -1873,8 +1866,7 @@ function AnnotatableImage({
             left={`${annotation.xRatio * 100}%`}
             top={`${annotation.yRatio * 100}%`}
             transform="translate(-50%, -50%)"
-            w="24px"
-            h="24px"
+            boxSize={6}
             borderRadius="full"
             bg="blue.solid"
             color="white"
@@ -1885,7 +1877,7 @@ function AnnotatableImage({
             cursor={readOnly ? "default" : "pointer"}
             onClick={(event: ReactMouseEvent) => openExistingAnnotation(annotation, event)}
           >
-            <CenteredNumber fontSize={12} weight={700}>{annotation.sequence}</CenteredNumber>
+            <CenteredNumber fontSize={12} weight={600}>{annotation.sequence}</CenteredNumber>
           </Box>
           </Tooltip>
         ))}

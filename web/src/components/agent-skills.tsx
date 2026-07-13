@@ -109,8 +109,8 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
       {hasSkills && (
         <>
           <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuListChecks size={15} />
-            <Text fontSize="sm" fontWeight="bold">{t("skillsAvailable")}</Text>
+            <LuListChecks size={14} />
+            <Text textStyle="panelTitle">{t("skillsAvailable")}</Text>
           </Flex>
           <Box mb={2} color="fg.muted">
             <Text fontSize="xs">{t("skillsDescription")}</Text>
@@ -129,10 +129,10 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
       )}
 
       {hasTools && (
-        <Box mt={hasSkills ? 5 : 0}>
+        <Box mt={hasSkills ? 6 : 0}>
           <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuWrench size={15} />
-            <Text fontSize="sm" fontWeight="bold">{t("toolsAvailable")}</Text>
+            <LuWrench size={14} />
+            <Text textStyle="panelTitle">{t("toolsAvailable")}</Text>
           </Flex>
           <Box mb={2} color="fg.muted">
             <Text fontSize="xs">{t("toolsDescription")}</Text>
@@ -220,7 +220,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
           {skill.examples && skill.examples.length > 0 && (
             <Box mt={2}>
               <ToolMetaRow label={t("examples")}>
-                <Flex direction="column" gap={0.5}>
+                <Flex direction="column" gap={1}>
                   {skill.examples.map((example, index) => (
                     <Text key={index} fontSize="xs" color="fg.muted">“{example}”</Text>
                   ))}

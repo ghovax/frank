@@ -58,7 +58,7 @@ export function CollapsibleSection({
             {icon}
           </Box>
         ) : null}
-        <Text fontSize="xs" fontWeight="semibold" truncate flex={1} minW={0}>
+        <Text textStyle="sectionLabel" truncate flex={1} minW={0}>
           {title}
         </Text>
         {typeof count === "number" ? (
@@ -68,7 +68,7 @@ export function CollapsibleSection({
         ) : null}
       </Flex>
       {open ? (
-        <Flex direction="column" gap={0.5} px={1.5} pt={1.5} pb={hasMoreItems ? 1.5 : 0.5} borderTop="1px solid" borderColor="border" bg="bg" overflow="hidden">
+        <Flex direction="column" gap={1} px={1.5} pt={1.5} pb={hasMoreItems ? 1.5 : 0.5} borderTop="1px solid" borderColor="border" bg="bg" overflow="hidden">
           <AnimatePresence initial={false}>
             {visibleItems.map((item, index) => (
               <motion.div
@@ -86,8 +86,7 @@ export function CollapsibleSection({
           {hasMoreItems ? (
             <Button
               variant="ghost"
-              fontSize="xs"
-              h="26px"
+              h={8}
               onClick={() => setShowAll((current) => !current)}
             >
               {showAll ? t("showLess") : t("showMore", { count: hiddenCount })}

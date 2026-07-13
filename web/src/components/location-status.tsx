@@ -15,8 +15,8 @@ export function locationStatusColor(location: Pick<Location, "kind" | "host_know
 }
 
 // Just the status dot — for compact inline listings (e.g. the Projects home row).
-export function LocationStatusDot({ location, size = "9px" }: { location: Location; size?: string }) {
-  return <Box w={size} h={size} borderRadius="full" flexShrink={0} bg={locationStatusColor(location)} />;
+export function LocationStatusDot({ location }: { location: Location }) {
+  return <Box boxSize="2" borderRadius="full" flexShrink={0} bg={locationStatusColor(location)} />;
 }
 
 // A full location chip: status dot + name, with the location's address (URI) revealed in a
@@ -48,7 +48,7 @@ export function LocationChip({ location }: { location: Location }) {
       positioning={{ placement: "top" }}
     >
       <Flex align="center" gap={1.5} px={2} py={1} borderRadius="sm" borderWidth="1px" borderColor="border" bg="bg">
-        <Box w={2} h={2} borderRadius="full" flexShrink={0} bg={color} />
+        <Box boxSize="2" borderRadius="full" flexShrink={0} bg={color} />
         <Text textStyle="fieldLabel">{location.name}</Text>
       </Flex>
     </Tooltip>

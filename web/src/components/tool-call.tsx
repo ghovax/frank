@@ -7,6 +7,7 @@ import { getToolCallDisplay } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
 import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
+import { Pill } from "./tool-views/primitives";
 import { ToolCard, ToolCardBody, ToolCardHeader, ToolRiskBadges, ToolStatusBadge } from "./tool-card";
 
 // The location a filesystem/shell tool ran against, as a compact badge — but only when it
@@ -102,7 +103,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
         <ToolCardHeader
           icon={
             <Box color={iconColor}>
-              <Icon size={12} />
+              <Icon size={13} />
             </Box>
           }
           title={<ToolCallLabel name={name} args={toolArguments} />}
@@ -113,7 +114,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
               <ToolLocationBadge arguments={toolArguments} />
               <ToolRiskBadges arguments={toolArguments} />
               {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
-              {background ? <Badge size="sm" variant="subtle" colorPalette="purple" borderRadius="sm" flexShrink={0}>{t("background")}</Badge> : null}
+              {background ? <Pill colorPalette="purple">{t("background")}</Pill> : null}
             </>
           }
           open={bodyOpen}

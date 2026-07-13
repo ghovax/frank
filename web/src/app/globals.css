@@ -133,6 +133,18 @@ samp {
   }
 }
 
+/* The rotating loader for a running tool-group status chip. */
+.tool-status-spin {
+  animation: tool-status-spin 0.9s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes tool-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {
     color: var(--chakra-colors-fg-muted);
@@ -141,6 +153,10 @@ samp {
   }
 
   .status-dot-pulse {
+    animation: none;
+  }
+
+  .tool-status-spin {
     animation: none;
   }
 }

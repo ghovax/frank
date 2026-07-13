@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Code, Heading, Link, Text } from "@chakra-ui/react";
+import { Box, Code, Heading, Link, Separator, Text } from "@chakra-ui/react";
 import { Children, memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -253,7 +253,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
           fontFamily="var(--app-font-mono)"
           px={1.5}
           py={0}
-          borderRadius="md"
+          borderRadius="sm"
           borderWidth="1px"
           borderColor="border.muted"
           bg="bg.subtle"
@@ -296,7 +296,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       );
     },
     hr() {
-      return <Box as="hr" border="none" borderTop="1px solid" borderColor="border.muted" my={1} />;
+      return <Separator borderColor="border.muted" my={1} />;
     },
     strong({ children }) {
       return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Text>;
@@ -392,7 +392,18 @@ const inlineMarkdownComponents: Components = {
   },
   code({ children }) {
     return (
-      <Code fontSize="0.9em" px={1} py={0} borderRadius="sm" fontFamily="var(--app-font-mono)" whiteSpace="nowrap">
+      <Code
+        fontFamily="var(--app-font-mono)"
+        fontSize="0.9em"
+        px={1.5}
+        py={0}
+        borderRadius="sm"
+        borderWidth="1px"
+        borderColor="border.muted"
+        bg="bg.subtle"
+        color="fg"
+        whiteSpace="nowrap"
+      >
         {children}
       </Code>
     );

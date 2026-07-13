@@ -277,10 +277,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   return (
     <>
       <Button
-        size="xs"
         variant="outline"
-        fontSize="xs"
-        h={compact ? "28px" : undefined}
         px={2}
         bg="bg"
         borderColor="border"
@@ -353,7 +350,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                       </Select.Control>
                       <Portal>
                         <Select.Positioner>
-                          <Select.Content>
+                          <Select.Content maxH="320px" overflowY="auto">
                             {providerItems.map((provider) => (
                               <Select.Item item={provider} key={provider.value} fontWeight="medium">
                                 {provider.label}
@@ -398,7 +395,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                       </Select.Control>
                       <Portal>
                         <Select.Positioner>
-                          <Select.Content maxH="300px" overflowY="auto">
+                          <Select.Content maxH="320px" overflowY="auto">
                             {modelItems
                               .filter((model) => model.value !== CUSTOM_MODEL)
                               .map((model) => (
@@ -553,7 +550,6 @@ function SecretField({
         <IconButton
           aria-label={visible ? t("hide") : t("show")}
           variant="ghost"
-          borderRadius="sm"
           flexShrink={0}
           onClick={() => setVisible((current) => !current)}
         >

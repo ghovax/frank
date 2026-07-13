@@ -149,7 +149,6 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
         {task.canBackground && !task.backgrounded && (
           <Button
             variant="ghost"
-            h={6}
             px={1.5}
             flexShrink={0}
             disabled={!sessionId || busy !== null}
@@ -158,14 +157,13 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
             onClick={handleBackground}
             title={t("sendToBackgroundHint")}
           >
-            <LuMoveDownRight size={11} />
+            <LuMoveDownRight size={12} />
             {t("sendToBackground")}
           </Button>
         )}
         <Button
           variant="ghost"
           colorPalette="red"
-          h={6}
           px={1.5}
           flexShrink={0}
           disabled={!sessionId || busy !== null}
@@ -173,7 +171,7 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
           loadingText={t("stopping")}
           onClick={handleStop}
         >
-          <LuSquare size={11} />
+          <LuSquare size={12} />
           {t("stop")}
         </Button>
       </Flex>
@@ -309,7 +307,7 @@ export function BackgroundTasksPanel({
         <Flex position="absolute" inset={0} direction="column" visibility={activeView === "terminal" ? "visible" : "hidden"}>
           {/* Terminal tabs — the shared PanelTab (identical to the Artifacts panel's tabs),
               plus a "＋" to spawn a new terminal and the location switcher, all at one height. */}
-          <Flex px={2} pt={2} pb={2} overflowX="auto" flexShrink={0}>
+          <Flex px={2} py={2} overflowX="auto" flexShrink={0}>
             <Flex gap={1.5} align="center">
               {terminals.map((key, index) => {
                 const terminalLocation = locationForTerminal(key);
@@ -317,7 +315,7 @@ export function BackgroundTasksPanel({
                   <Box fontSize="xs" lineHeight="1.6" maxW="300px">
                     <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">{t("terminalNumber", { number: index + 1 })}</Text>
                     {terminalLocation ? (
-                      <Flex direction="column" gap={0.5}>
+                      <Flex direction="column" gap={1}>
                         <InlineField label={t("environment")}><Text>{terminalLocation.name}</Text></InlineField>
                         <InlineField label={t("type")}><Text>{terminalLocation.kind === "remote" ? t("remoteSsh") : t("local")}</Text></InlineField>
                         <Text color="fg.muted" wordBreak="break-all" mt={0.5}>{terminalLocation.base_directory}</Text>
@@ -348,7 +346,7 @@ export function BackgroundTasksPanel({
                   }
                   minW="200px"
                 >
-                  <Text px={2} py={1} fontSize="2xs" color="fg.muted" fontWeight="medium">{t("newTerminalIn")}</Text>
+                  <Text px={2} py={1} textStyle="sectionLabel">{t("newTerminalIn")}</Text>
                   {locations.map((location) => (
                     <Menu.Item key={location.id} value={location.id} onClick={() => addTerminal(location.id)}>
                       {location.kind === "remote" ? <LuServer size={14} /> : <LuFolder size={14} />}
@@ -426,7 +424,7 @@ export function BackgroundTasksPanel({
                       <LuClock size={14} />
                     </Box>
                     <Box minW={0}>
-                      <Text fontSize="sm" fontWeight="bold">{t("processesTerminated")}</Text>
+                      <Text textStyle="panelTitle">{t("processesTerminated")}</Text>
                       <Text fontSize="xs" color="fg.subtle">
                         {showAllCompleted ? t("showingAll", { count: completed.length }) : t("showingLatest", { shown: Math.min(5, completed.length), total: completed.length })}
                       </Text>

@@ -140,10 +140,9 @@ export function DiffStatBadge({
       {additions > 0 && (
         <Box
           as="span"
-          gap={0.5}
+          gap={1}
           color="green.fg"
-          fontWeight="semibold"
-          fontSize="xs"
+          textStyle="fieldLabel"
           display="inline-flex"
           alignItems="center"
         >
@@ -154,10 +153,9 @@ export function DiffStatBadge({
       {deletions > 0 && (
         <Box
           as="span"
-          gap={0.5}
+          gap={1}
           color="red.fg"
-          fontWeight="semibold"
-          fontSize="xs"
+          textStyle="fieldLabel"
           display="inline-flex"
           alignItems="center"
         >

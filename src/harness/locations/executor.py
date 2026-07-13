@@ -351,7 +351,8 @@ class SshExecutor(LocationExecutor):
         return completed.returncode == 0
 
     def home_directory(self) -> str:
-        if self._home_directory is None:
+        home = self._home_directory
+        if home is None:
             completed = self._ssh('printf %s "$HOME"', timeout=DEFAULT_CONNECT_TIMEOUT)
             home = completed.stdout.decode("utf-8", errors="replace").strip()
             if completed.returncode != 0 or not home:
@@ -360,7 +361,7 @@ class SshExecutor(LocationExecutor):
                     or f"could not resolve $HOME on {self.alias}"
                 )
             self._home_directory = home
-        return self._home_directory
+        return home
 
     def resolve(self, base_directory: str, file_path: str) -> str:
         path = file_path.strip()
