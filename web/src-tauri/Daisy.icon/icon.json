@@ -6,10 +6,10 @@
     {
       "layers" : [
         {
-          "image-name" : "blossom.png",
+          "image-name" : "blossom-mono.png",
           "name" : "blossom",
           "position" : {
-            "scale" : 0.265,
+            "scale" : 0.245,
             "translation-in-points" : [
               0,
               0

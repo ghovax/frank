@@ -5,19 +5,19 @@ Daisy is split into a **harness** (the server that runs agents) and an **app** (
 ```mermaid
 flowchart LR
     subgraph Client["Desktop app (Tauri + Next.js)"]
-        UI["Chat UI · settings · artifacts"]
-        Conn["Connection manager<br/>(local · URL · SSH)"]
+        UI["Chat UI, settings, artifacts"]
+        Conn["Connection manager<br/>(local, URL, SSH)"]
     end
 
-    subgraph Harness["Harness (Python · FastAPI)"]
+    subgraph Harness["Harness (Python, FastAPI)"]
         API["A2A + REST API<br/>127.0.0.1:8822"]
         Loop["Agent loop<br/>(LangChain / LangGraph)"]
         Perm["Permission engine"]
-        Tools["Tools: shell · files · web ·<br/>computer-use · browser · MCP"]
-        Store["~/.daisy<br/>configuration.yaml · history.db"]
+        Tools["Tools: shell, files, web,<br/>computer-use, browser, MCP"]
+        Store["~/.daisy<br/>configuration.yaml, history.db"]
     end
 
-    Model["Model provider<br/>(Anthropic · OpenAI · … via LiteLLM)"]
+    Model["Model provider<br/>(Anthropic, OpenAI, … via LiteLLM)"]
 
     UI --> Conn --> API
     API --> Loop --> Perm --> Tools

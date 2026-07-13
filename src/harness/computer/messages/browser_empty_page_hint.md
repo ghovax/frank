@@ -1,0 +1,1 @@
+No readable elements. The page may still be rendering (observe again shortly), or it may draw to a canvas with no semantic tree — use the screenshot action to see its pixels, or read for whatever text exists.

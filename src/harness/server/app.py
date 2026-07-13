@@ -2577,6 +2577,19 @@ def _open_accessibility_settings() -> None:
         permissions.open_accessibility_settings()
 
 
+def _request_screen_recording() -> None:
+    """Surface the system Screen Recording prompt if not yet granted."""
+    with suppress(Exception):
+        from harness.computer import permissions
+        permissions.request_screen_recording()
+
+
+def _open_screen_recording_settings() -> None:
+    with suppress(Exception):
+        from harness.computer import permissions
+        permissions.open_screen_recording_settings()
+
+
 def _update_project(project_id: str, request: ProjectUpdateRequest) -> dict[str, Any] | None:
     assert _session_factory is not None
     with sqlite_write_lock():

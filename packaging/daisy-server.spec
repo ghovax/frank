@@ -102,13 +102,13 @@ _mcp = _os.path.join(_repo_root, ".agents", "mcp.json")
 if _os.path.isfile(_mcp):
     datas.append((_mcp, ".agents"))
 
-# The browser tool's in-page action scripts (.js) are package data collect_all should pick up,
-# but the tool breaks at runtime without them, so bundle them explicitly to be certain.
-_scripts_source = _os.path.join(_repo_root, "src", "harness", "computer", "scripts")
-if _os.path.isdir(_scripts_source):
-    for _script_name in _os.listdir(_scripts_source):
-        if _script_name.endswith(".js"):
-            datas.append((_os.path.join(_scripts_source, _script_name), "harness/computer/scripts"))
+# The browser tool's runtime-loaded message templates (.md) — the tool degrades to empty
+# guidance strings without them, so bundle them explicitly to be certain.
+_messages_source = _os.path.join(_repo_root, "src", "harness", "computer", "messages")
+if _os.path.isdir(_messages_source):
+    for _message_name in _os.listdir(_messages_source):
+        if _message_name.endswith(".md"):
+            datas.append((_os.path.join(_messages_source, _message_name), "harness/computer/messages"))
 
 # Distributions whose runtime version is read via importlib.metadata.
 for distribution in [

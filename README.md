@@ -6,12 +6,9 @@
 
 Daisy pairs a native macOS app with an open agent runtime. Agents can run shell commands, read and write files, search and fetch the web, control your Mac, and drive your browser — with a permission system in front of every action and your choice of model behind it.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri · Next.js · LangChain](https://img.shields.io/badge/built%20with-Tauri%20·%20Next.js%20·%20LangChain-6E56CF)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/screenshots/hero-dark.png">
-  <img alt="Daisy — an agent working through a task with live tool calls" src="documentation/assets/screenshots/hero-light.png" width="820">
-</picture>
+<img alt="Daisy — an agent working through a task with live tool calls" src="documentation/assets/screenshots/hero.png" width="820">
 
 </div>
 
@@ -39,33 +36,21 @@ Because the two halves talk over HTTP, **the server does not have to run on your
 <table>
   <tr>
     <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/screenshots/providers-dark.png">
-        <img alt="Model providers and settings" src="documentation/assets/screenshots/providers-light.png">
-      </picture>
+      <img alt="Model providers and settings" src="documentation/assets/screenshots/providers.png">
       <p align="center"><b>Bring your own model</b><br/>Any provider or a ChatGPT subscription.</p>
     </td>
     <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/screenshots/computer-use-dark.png">
-        <img alt="Computer-use and browser control" src="documentation/assets/screenshots/computer-use-light.png">
-      </picture>
+      <img alt="Computer-use and browser control" src="documentation/assets/screenshots/computer-use.png">
       <p align="center"><b>Controls your Mac</b><br/>Native apps and your own browser.</p>
     </td>
   </tr>
   <tr>
     <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/screenshots/artifacts-dark.png">
-        <img alt="Artifacts and projects" src="documentation/assets/screenshots/artifacts-light.png">
-      </picture>
+      <img alt="Artifacts and projects" src="documentation/assets/screenshots/artifacts.png">
       <p align="center"><b>Artifacts &amp; projects</b><br/>Rendered output, organized workspaces.</p>
     </td>
     <td width="50%">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="documentation/assets/screenshots/permissions-dark.png">
-        <img alt="Permission approval for a tool call" src="documentation/assets/screenshots/permissions-light.png">
-      </picture>
+      <img alt="Permission approval for a tool call" src="documentation/assets/screenshots/permissions.png">
       <p align="center"><b>Permissions in front</b><br/>Approve, always-allow, or deny.</p>
     </td>
   </tr>
@@ -133,7 +118,7 @@ Detailed guides live in [`documentation/`](documentation/):
 
 ## Built with
 
-[Tauri](https://tauri.app) · [Next.js](https://nextjs.org) · [Chakra UI](https://chakra-ui.com) · [LangChain](https://www.langchain.com) / [LangGraph](https://langchain-ai.github.io/langgraph/) · [LiteLLM](https://litellm.ai) · [FastAPI](https://fastapi.tiangolo.com) · [Model Context Protocol](https://modelcontextprotocol.io) · [A2A](https://github.com/google/A2A)
+[Tauri](https://tauri.app), [Next.js](https://nextjs.org), [Chakra UI](https://chakra-ui.com), [LangChain](https://www.langchain.com) / [LangGraph](https://langchain-ai.github.io/langgraph/), [LiteLLM](https://litellm.ai), [FastAPI](https://fastapi.tiangolo.com), [Model Context Protocol](https://modelcontextprotocol.io), and [A2A](https://github.com/google/A2A)
 
 ## Contributing
 

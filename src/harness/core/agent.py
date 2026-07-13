@@ -3440,15 +3440,39 @@ class AgentRuntime:
                         return {"ok": False, "error": "The navigate action needs a url."}
                     return browser_bridge.navigate(url, browser=browser_name)
                 if action == "observe":
-                    return browser_bridge.observe(element=int(element) if element is not None else None)
-                if action in ("click", "type", "hover"):
+                    return browser_bridge.observe()
+                if action == "find":
+                    query = str(tool_arguments.get("query", ""))
+                    if not query.strip():
+                        return {"ok": False, "error": "The find action needs a query — the text to look for on the page."}
+                    return browser_bridge.find(query)
+                if action == "screenshot":
+                    return browser_bridge.screenshot()
+                if action in ("click", "type", "hover", "select", "upload", "drag"):
                     if element is None:
                         return {"ok": False, "error": f"The {action} action needs an element index from the last observe."}
                     if action == "click":
                         return browser_bridge.click(int(element))
                     if action == "hover":
                         return browser_bridge.hover(int(element))
-                    return browser_bridge.type_text(int(element), text)
+                    if action == "select":
+                        option = str(tool_arguments.get("option", ""))
+                        if not option:
+                            return {"ok": False, "error": "The select action needs an option — the visible label (or value) to choose."}
+                        return browser_bridge.select_option(int(element), option)
+                    if action == "upload":
+                        paths = tool_arguments.get("paths") or []
+                        if isinstance(paths, str):
+                            paths = [paths]
+                        if not paths:
+                            return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
+                        return browser_bridge.upload(int(element), [str(path) for path in paths])
+                    if action == "drag":
+                        to_element = tool_arguments.get("to_element")
+                        if to_element is None:
+                            return {"ok": False, "error": "The drag action needs to_element — the index to drop onto."}
+                        return browser_bridge.drag(int(element), int(to_element))
+                    return browser_bridge.type_text(int(element), text, submit=bool(tool_arguments.get("submit", False)))
                 if action == "press":
                     if not key:
                         return {"ok": False, "error": "The press action needs a key (e.g. Enter)."}
@@ -3476,8 +3500,17 @@ class AgentRuntime:
                 return {"ok": False, "error": f"Unknown action {action!r}."}
 
             result = await asyncio.to_thread(_run_browser)
+            extra = {}
+            # A page screenshot's pixels ride the model_image side channel to a vision-capable
+            # model, exactly like the computer tool's. The raw path never reaches the UI.
+            if action == "screenshot" and isinstance(result, dict) and result.get("image_path"):
+                if self._model_supports_vision():
+                    data_uri = await asyncio.to_thread(_screenshot_data_uri, result["image_path"])
+                    if data_uri:
+                        extra["model_image"] = data_uri
+                result.pop("image_path", None)
             yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result,
+                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result, **extra,
             )
 
         else:

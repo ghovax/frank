@@ -582,6 +582,11 @@ export async function openAccessibilitySettings(): Promise<void> {
   await fetch(`${API_BASE}/system/accessibility/open`, { method: "POST" }).catch(() => {});
 }
 
+// Trigger the system Screen Recording prompt and open its pane so the user can grant Daisy.
+export async function openScreenRecordingSettings(): Promise<void> {
+  await fetch(`${API_BASE}/system/screen-recording/open`, { method: "POST" }).catch(() => {});
+}
+
 // Quit and relaunch the desktop app (Tauri command). macOS only reflects a new Accessibility
 // grant to the bundled server on a fresh launch, so the grant flow offers a one-click restart.
 export async function restartApp(): Promise<void> {

@@ -2,7 +2,7 @@
 
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { LuBrain, LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { LuBrain, LuChevronDown, LuChevronRight, LuCircleAlert, LuCircleX, LuLoaderCircle, LuMoon } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/tool-display";
@@ -10,7 +10,7 @@ import { iconForFilePath } from "@/lib/file-icons";
 import { DiffStatBadge, RollingNumber } from "./rolling-number";
 import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
+import { ToolCall, ToolLocationBadge, collapsedHeadingLocation, isBackgroundResult } from "./tool-call";
 
 // Shared, grouped/collapsible stack of contiguous tool calls — the single source
 // of truth for how a run of tool calls reads, used by both the chat timeline and
@@ -101,10 +101,14 @@ export const ToolGroup = memo(function ToolGroup({
   thinkingCount = 0,
 }: ToolGroupProps) {
   const t = useTranslations("ToolGroup");
-  const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length;
-  const inputRequired = tools.some((tool) => toolStatus(tool.status) === "input_required");
+  const backgroundCount = tools.filter(
+    (tool) => toolStatus(tool.status) === "running" && isBackgroundResult(tool.result),
+  ).length;
+  const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length - backgroundCount;
+  const inputRequiredCount = tools.filter((tool) => toolStatus(tool.status) === "input_required").length;
+  const inputRequired = inputRequiredCount > 0;
   const failedCount = tools.filter((tool) => toolStatus(tool.status) === "failed").length;
-  const active = runningCount > 0 || inputRequired || keepOpen;
+  const active = runningCount > 0 || backgroundCount > 0 || inputRequired || keepOpen;
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const bodyOpen = manualOverride ?? false;
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -139,13 +143,27 @@ export const ToolGroup = memo(function ToolGroup({
   // A thinking-only heading has no body to reveal, so it is not interactive.
   const interactive = !thinkingOnly;
 
-  const badge = inputRequired
-    ? { label: t("inputRequired"), colorPalette: "yellow" }
-    : failedCount > 0
-      ? { label: t("failedCount", { count: failedCount }), colorPalette: "red" }
-      : runningCount > 0
-        ? { label: t("runningCount", { count: runningCount }), colorPalette: "blue" }
-        : null;
+  // Status chips: one colored icon (+ count) per state, in the same visual grammar as the
+  // tool tally beside them, readable at a glance with no prose badge to parse. Completed
+  // calls carry no chip; the settled card speaks for itself.
+  const statusChips = [
+    inputRequiredCount > 0 && {
+      key: "input", Icon: LuCircleAlert, color: "yellow.fg",
+      count: inputRequiredCount, title: t("inputRequired"),
+    },
+    failedCount > 0 && {
+      key: "failed", Icon: LuCircleX, color: "red.fg",
+      count: failedCount, title: t("failedCount", { count: failedCount }),
+    },
+    runningCount > 0 && {
+      key: "running", Icon: LuLoaderCircle, color: "blue.fg",
+      count: runningCount, title: t("runningCount", { count: runningCount }),
+    },
+    backgroundCount > 0 && {
+      key: "background", Icon: LuMoon, color: "purple.fg",
+      count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }),
+    },
+  ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; count: number; title: string } => Boolean(chip));
 
   return (
     <Box alignSelf="flex-start" w="100%">
@@ -285,11 +303,27 @@ export const ToolGroup = memo(function ToolGroup({
             </Flex>
           )}
           <ToolLocationBadge arguments={groupLocation} />
-          {badge && (
-            <Badge size="sm" variant="subtle" colorPalette={badge.colorPalette} borderRadius="sm" flexShrink={0}>
-              {badge.label}
-            </Badge>
-          )}
+          <AnimatePresence initial={false}>
+            {statusChips.map(({ key, Icon: ChipIcon, color, count, title }) => (
+              <motion.div
+                key={key}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12, ease: "easeOut" }}
+                style={{ display: "inline-flex", alignItems: "center" }}
+              >
+                <Flex align="center" gap={1} flexShrink={0} title={title} color={color}>
+                  <ChipIcon size={13} />
+                  {count > 1 && (
+                    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" fontSize="xs" fontWeight="medium" color={color}>
+                      <RollingNumber value={count} />
+                    </Box>
+                  )}
+                </Flex>
+              </motion.div>
+            ))}
+          </AnimatePresence>
           {interactive && (
             <Box color="fg.muted" fontSize="xs" flexShrink={0}>
               {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}

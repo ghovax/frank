@@ -7,7 +7,7 @@ import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import { useColorMode } from "../ui/color-mode";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
-import { artifactPageUrl, artifactProxyUrl, openBrowserRemoteDebugging } from "@/lib/api";
+import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging, openScreenRecordingSettings } from "@/lib/api";
 import { imageIdentityForArtifact, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import { useArtifactEvent } from "../artifact-bridge";
 import { MarkdownContent } from "../markdown-content";
@@ -190,6 +190,11 @@ function ComputerCallView({ args }: { args: Record<string, unknown> }) {
 const BROWSER_ACTION_LABEL_KEYS: Record<string, string> = {
   navigate: "browserActionNavigate",
   observe: "browserActionObserve",
+  find: "browserActionFind",
+  screenshot: "browserActionScreenshot",
+  select: "browserActionSelect",
+  upload: "browserActionUpload",
+  drag: "browserActionDrag",
   click: "browserActionClick",
   type: "browserActionType",
   read: "browserActionRead",
@@ -230,6 +235,20 @@ function BrowserCallView({ args }: { args: Record<string, unknown> }) {
       {asString(args.tab) && (
         <InlineField label={t("browserTab")}>
           <Text fontSize="xs" fontFamily="var(--app-font-mono)">{asString(args.tab)}</Text>
+        </InlineField>
+      )}
+      {action === "find" && asString(args.query) && (
+        <InlineField label={t("browserQuery")}>{asString(args.query)}</InlineField>
+      )}
+      {action === "select" && asString(args.option) && (
+        <InlineField label={t("browserOption")}>{asString(args.option)}</InlineField>
+      )}
+      {action === "upload" && Array.isArray(args.paths) && args.paths.length > 0 && (
+        <InlineField label={t("browserPaths")}>{asArray(args.paths).map(asString).join(", ")}</InlineField>
+      )}
+      {action === "drag" && args.to_element != null && (
+        <InlineField label={t("computerElement")}>
+          <Text fontSize="xs" fontFamily="var(--app-font-mono)">{`${asString(args.element)} → ${asString(args.to_element)}`}</Text>
         </InlineField>
       )}
       {action === "press" && asString(args.key) && (
@@ -863,8 +882,12 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <ComputerCallView args={args} />;
       case "browser":
         return <BrowserCallView args={args} />;
-      default:
-        return <GenericView data={args} />;
+      default: {
+        // The wrapper below already renders `justification` for every tool. Strip it here,
+        // or tools without a dedicated view (MCP calls) would show it twice.
+        const { justification: _justification, ...rest } = args;
+        return <GenericView data={rest} />;
+      }
     }
   })();
   if (!justification) return specificView;
@@ -992,6 +1015,40 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
         <Text fontSize="2xs" fontFamily="var(--app-font-mono)" color="fg.subtle">{address}</Text>
       </Flex>
       {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{t("browserEnableOpened")}</Text>}
+    </Box>
+  );
+}
+
+// Shown when a tool needs a macOS privacy grant (Accessibility, Screen Recording): the same
+// in-chat alert language as the remote-debugging one, with a brief message and a one-click
+// button that surfaces the system prompt and opens the right System Settings pane.
+function PermissionGrantAlert({ kind }: { kind: string }) {
+  const t = useTranslations("ToolViews");
+  const [opened, setOpened] = useState(false);
+  const isScreenRecording = kind === "screen_recording";
+  return (
+    <Box bg="yellow.subtle" border="1px solid" borderColor="yellow.muted" borderRadius="md" px={2.5} py={2}>
+      <Text fontSize="xs" color="fg" fontWeight="medium">
+        {isScreenRecording ? t("permissionScreenRecordingTitle") : t("permissionAccessibilityTitle")}
+      </Text>
+      <Text fontSize="xs" color="fg.muted" mt={0.5}>
+        {isScreenRecording ? t("permissionScreenRecordingBody") : t("permissionAccessibilityBody")}
+      </Text>
+      <Flex align="center" gap={2} mt={2}>
+        <Button
+          size="xs"
+          colorPalette="yellow"
+          variant="solid"
+          onClick={async () => {
+            await (isScreenRecording ? openScreenRecordingSettings() : openAccessibilitySettings());
+            setOpened(true);
+          }}
+        >
+          <LuExternalLink size={12} />
+          {t("permissionGrantButton")}
+        </Button>
+      </Flex>
+      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{t("permissionOpened")}</Text>}
     </Box>
   );
 }
@@ -2128,6 +2185,10 @@ function McpResultView({ data }: { data: Record<string, unknown> }) {
 function ComputerResultView({ data }: { data: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
   if (data.ok === false) {
+    // A missing macOS privacy grant is not a failure to report but a thing to fix, so
+    // render the grant flow instead of a red error box.
+    const neededPermission = asString(data.needs_permission);
+    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
     return <ErrorView message={asString(data.error) || t("failed")} />;
   }
   const elements = asArray(data.elements);
@@ -2180,8 +2241,14 @@ function ComputerResultView({ data }: { data: Record<string, unknown> }) {
 
 // The browser tool's result: an error, a tab listing, a page read, a page overview
 // (title / url / element list as JSON, like the computer tool), or an action confirmation.
-function BrowserResultView({ data }: { data: Record<string, unknown> }) {
+// The URL row is suppressed when it merely echoes the call's own `url` argument (the call
+// card already shows it); it appears only when the browser ended up somewhere else.
+function BrowserResultView({ data, args }: { data: Record<string, unknown>; args?: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
+  const normalizeUrl = (value: string) => value.replace(/\/+$/, "");
+  const requestedUrl = normalizeUrl(asString(args?.url));
+  const resultUrl = asString(data.url);
+  const showUrl = Boolean(resultUrl) && (normalizeUrl(resultUrl) !== requestedUrl || data.url_changed === true);
   if (data.ok === false) {
     if (asString(data.code) === "browser_remote_debugging_off") {
       return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
@@ -2207,7 +2274,7 @@ function BrowserResultView({ data }: { data: Record<string, unknown> }) {
     return (
       <FieldList>
         {asString(data.title) && <InlineField label={t("title")}>{asString(data.title)}</InlineField>}
-        {asString(data.url) && <InlineField label={t("url")}>{asString(data.url)}</InlineField>}
+        {showUrl && <InlineField label={t("url")}>{resultUrl}</InlineField>}
         <Field label={t("browserPageText")}>
           <MonoBlock>{asString(data.text)}</MonoBlock>
         </Field>
@@ -2216,11 +2283,23 @@ function BrowserResultView({ data }: { data: Record<string, unknown> }) {
   }
   const elements = asArray(data.elements);
   if (data.count != null || elements.length > 0) {
+    const advisory = asString(data.note) || asString(data.hint);
     return (
       <FieldList>
+        {asString(data.did) && <InlineField label={t("computerResult")}>{asString(data.did)}</InlineField>}
         {asString(data.title) && <InlineField label={t("title")}>{asString(data.title)}</InlineField>}
-        {asString(data.url) && <InlineField label={t("url")}>{asString(data.url)}</InlineField>}
+        {showUrl && (
+          <InlineField label={t("url")}>
+            {resultUrl}{data.url_changed === true ? ` · ${t("browserUrlChanged")}` : ""}
+          </InlineField>
+        )}
         {data.count != null && <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>}
+        {data.dialog != null && (
+          <InlineField label={t("browserDialog")}>
+            {`${asString(asRecord(data.dialog).type)}: ${asString(asRecord(data.dialog).message)}`}
+          </InlineField>
+        )}
+        {advisory && <EmptyHint>{advisory}</EmptyHint>}
         {elements.length > 0 && (
           <Field label={t("computerElements")}>
             <MonoBlock>{JSON.stringify(elements, null, 2)}</MonoBlock>
@@ -2242,7 +2321,7 @@ function BrowserResultView({ data }: { data: Record<string, unknown> }) {
   return null;
 }
 
-export function ToolResultView({ name, content }: { name: string; content: string }) {
+export function ToolResultView({ name, content, args }: { name: string; content: string; args?: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
   const parsed = tryParse(content);
 
@@ -2284,7 +2363,7 @@ export function ToolResultView({ name, content }: { name: string; content: strin
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;
     if (name === "computer") return <ComputerResultView data={data} />;
-    if (name === "browser") return <BrowserResultView data={data} />;
+    if (name === "browser") return <BrowserResultView data={data} args={args} />;
     return <GenericView data={data} />;
   }
 

@@ -66,7 +66,9 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-function isBackgroundResult(result: unknown): boolean {
+// A running call whose (interim) result says the work moved to the background. Exported so
+// the group header can count backgrounded calls separately from foreground-running ones.
+export function isBackgroundResult(result: unknown): boolean {
   const code = String(asRecord(result).code ?? "");
   return code.endsWith("_started") || code === "background_task_scheduled";
 }
@@ -127,7 +129,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
                 (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
             <Flex direction="column" gap={2} align="stretch">
               {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-              {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} />}
+              {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} />}
             </Flex>
           </ToolCardBody>
         )}

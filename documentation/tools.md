@@ -49,12 +49,14 @@ Because the permission is matched to the app's code identity, the packaged build
 
 ## Browser (`browser`)
 
-Drives **your own Chrome** — the real browser with your real logins and sessions — rather than a throwaway automated profile. It connects over the Chrome DevTools Protocol and can navigate, read the page, click, type, press keys, hover, scroll, manage tabs, and go back/forward.
+Drives **your own Chrome** — the real browser with your real logins and sessions — rather than a throwaway automated profile. Daisy connects over the Chrome DevTools Protocol (through Playwright) and reads the page's real semantic structure, iframes included, so the agent acts on clean roles and names instead of pixels.
 
-**Enable it:** turn on Chrome's remote-debugging toggle once. Open `chrome://inspect`, enable it under the remote-debugging option (Daisy provides a one-click prompt that opens the page). No copied profiles, no separate login — Daisy attaches to the Chrome you already use.
+It does what a person does in a browser: open pages, search the page for an element and act on it, click, type (optionally submitting), press keys and shortcuts, hover, scroll the right pane, choose dropdown options, upload files, drag and drop, capture a screenshot when a page has no structure to read, go back/forward, reload, and manage tabs. Clicks run through Playwright's actionability checks (the element must be visible, stable, and actually the thing under the pointer), and JavaScript dialogs are answered automatically and reported. Every action that changes the page returns the resulting page, and flags when the URL changed underneath it.
+
+**Enable it:** turn on Chrome's remote-debugging toggle once. Open `chrome://inspect`, enable it under the remote-debugging option (Daisy provides a one-click prompt that opens the page). No copied profiles, no separate login — Daisy attaches to the Chrome you already use, and only ever connects: it never launches, quits, or copies your browser.
 
 > [!NOTE]
-> Typing uses paste-style insertion and does **not** press Enter — the agent presses Enter as a separate step, so it never submits a form by accident.
+> Typing fills the field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
 
 ## Where the definitions live
 

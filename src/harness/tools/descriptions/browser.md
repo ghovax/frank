@@ -1,19 +1,29 @@
-**Read and drive the web in the user's own Chrome.** This connects to the user's real, running browser over the DevTools protocol and drives it directly — their profile, their logins, their live session. It reuses the user they are already signed in as (their Gmail, their accounts), never opens a separate browser or copies anything, and never moves the user's cursor. It reads a page's real semantic structure (clean roles and names straight from the DOM, with none of the tab strip, toolbar, or duplicated markup you get from reading a browser through the accessibility tree) and acts inside the page itself. Use this for anything on the web; use the `computer` tool for native macOS apps.
+**Read and drive the web in the user's own Chrome.** This connects to the user's real, running browser — their profile, their logins, their live session — through Playwright over the DevTools protocol. It reuses the user they are already signed in as (their Gmail, their accounts), never opens a separate browser or copies anything, and never moves the user's cursor. It reads a page's real semantic structure — including the contents of iframes, even cross-origin ones — and acts inside the page with full actionability checks (an element is verified visible, stable, and actually hit by the pointer before a click lands). Use this for anything on the web; use the `computer` tool for native macOS apps.
 
-## How to work: navigate, then read and act
+## The actions
 
-Everything a person does in a browser is here — navigate, read, click, type, press keys, hover, scroll, go back/forward, reload, and manage tabs.
+Every acting call already returns the resulting page, so a follow-up observe is rarely needed. Modern sites are JS apps that render late and rewrite the URL as state changes; the tool absorbs both (it waits for content and reports `url_changed`), so trust its feedback rather than re-checking.
 
-1. **`navigate`** to a URL. This opens the page in the user's browser and returns its overview right away.
-2. **`observe`** to read the current page again after it changes — it returns the page's elements shallow-first, each with an `index`, a semantic `role` (`link`, `button`, `textbox`, `heading`, …), its `name`, and its `value`. Deep or large containers (a long list, an inbox grid) come back as **regions** carrying a `children` count; pass that region's index as `element` to `observe` to drill in and expand just that region. Re-observe after navigating or acting, since indices change.
-3. **Act** by an element's `index`: `click` it, `type` into it (the text is pasted in one shot, firing the page's real input events), or `hover` it to reveal a menu or tooltip. The role tells you what an element is for — a `link` or `button` is clickable, a `textbox`/`searchbox`/`combobox` is editable, a `heading` is just a label. A `click` result reports `changed`: `true` means the page moved (or the element toggled in place), `false` with a `note` means nothing happened — adapt (a different, `clickable` target, or navigate directly by URL) rather than clicking again.
-4. **`press`** a key on the focused element — most often `Enter` to submit a search or form after you `type`, but also `Escape`, `Tab`, the arrows, `PageDown`, and so on. Click or type into a field first so it holds focus.
-5. **`scroll`** the page — `down` (default) or `up` by most of a viewport, `top`/`bottom` to the ends, or pass an `element` index to bring that element into view.
-6. **`read`** returns the page's visible text in one block when you just need to read, not navigate. **`back`**/**`forward`** move through history; **`reload`** refreshes the page.
+- **`navigate`** opens a URL in the user's browser, waits for its content to actually render, and returns its overview.
+- **`find`** searches the *whole* page (iframes included) for elements whose name or value contains `query`, clickable matches first, each registered with an `index` you can act on immediately. Prefer it whenever you can name what you're after. **Match on the role too**: to press a button, pick the `button`/`link` match, not the plain text that merely mentions the same words.
+- **`observe`** gives the lay of the land when you don't have a specific target — elements come back in page order with `index`, `role`, `name`, `value`, and state flags (`checked`, `disabled`, `expanded`, `selected`). Very large pages are capped and marked `truncated`; `find` reaches anything beyond the cap. Indices change when the page does, so get fresh ones after a change. A `count: 0` result carries a `hint` — follow it instead of re-observing in a loop.
+- **Acting by `index`**: `click`, `type`, `hover`, `select` (a dropdown option by its label), `upload` (attach local files), or `drag` (onto `to_element`). A `click` that changes the page returns the *resulting* page in the same call. `changed: false` with a `note` means nothing happened: adapt rather than clicking again. `type` with `submit: true` presses Enter after filling, when filling and submitting belong together.
+- **`scroll`** is a real wheel gesture, exactly like a person: the pointer moves over the target and the wheel turns. With an `element` index, the pointer sits on that element, so the pane *it lives in* scrolls — how you load more of a virtualized list, sidebar, or feed (any element inside the pane works as the target). Without one, the wheel lands at the viewport centre — fine for ordinary pages, but on an app-shell layout (results list beside a map or canvas) the centre may be the map, so target the pane via an `element` instead. `top`/`bottom` fling to the ends. The result carries `changed` (did the page's *content* change — a feed rendering more items, app state updating) and `url_changed`. The overview always covers the whole page regardless of scroll position, so scrolling a static article reveals nothing new — `read` and `find` already see all of it; scroll is for content that loads as you go.
+- **`read`** returns the page's visible text in one block — the cheapest way to take in an article or long document.
+- **`press`** sends a key or chord to the focused element — `Enter`, `Escape`, `ArrowDown`, `PageDown`, or combinations like `Control+A`. **`back`**/**`forward`**/**`reload`** work as expected.
+- **`screenshot`** captures the visible viewport as pixels — the fallback for surfaces with no semantic tree at all (a canvas map, WebGL, a drawing app). Reach for it when `observe` comes back empty with a hint, not before: structured reads are faster and more accurate.
+
+## Dialogs and downloads are handled for you
+
+A JavaScript dialog (`alert`, `confirm`, `prompt`) would freeze the page, so it is answered immediately — alerts acknowledged, questions declined — and reported in the next result as `dialog: {type, message, accepted}`. If a declined `confirm` blocked what you wanted, say so to the user rather than retrying in a loop. A file download triggered by an action is saved and reported as `download: {path}`.
+
+## Watch `url_changed`
+
+Every acting result (`click`, `scroll`, `press`, `type` with submit) carries the current `url` and a `url_changed` flag. Single-page apps encode state — the selected item, the map viewport, the active filter — in the URL, so `url_changed: true` after an action you thought was local means the app state moved (for example, a map pan silently refreshed "results in this area"). Notice it and re-orient instead of carrying on with stale assumptions.
 
 ## Tabs
 
-The browser can hold several tabs at once. **`tabs`** lists them, each with a `tab` id, its `title` and `url`, and which one is `active`. **`new_tab`** opens a fresh tab (optionally at a `url`) and makes it active — prefer this when starting new work, so the user's current tab is left alone. **`switch_tab`** makes a given `tab` active; **`close_tab`** closes it. All page actions (`observe`, `click`, `read`, …) act on the active tab, so switch first when you mean to work in another one.
+The browser can hold several tabs at once. **`tabs`** lists them, each with a `tab` id, its `title` and `url`, and which one is `active`. **`new_tab`** opens a fresh tab (optionally at a `url`) and makes it active — prefer this when starting new work, so the user's current tab is left alone. **`switch_tab`** makes a given `tab` active; **`close_tab`** closes it. All page actions act on the active tab, so switch first when you mean to work in another one.
 
 ## Logins are already there
 
@@ -23,12 +33,17 @@ Because this drives the user's own browser, whatever they are signed into is ava
 
 | Parameter | Type | Used by | What it is for |
 |---|---|---|---|
-| `action` | enum | every call | `navigate`, `observe`, `read`, `click`, `type`, `press`, `hover`, `scroll`, `back`, `forward`, `reload`, `tabs`, `new_tab`, `switch_tab`, or `close_tab`. |
+| `action` | enum | every call | `navigate`, `observe`, `find`, `read`, `click`, `type`, `press`, `hover`, `scroll`, `select`, `upload`, `drag`, `screenshot`, `back`, `forward`, `reload`, `tabs`, `new_tab`, `switch_tab`, or `close_tab`. |
 | `url` | string | navigate, new_tab | The address to open. |
-| `element` | integer | click, type, hover, observe, scroll | The `index` of an element from the last `observe` (on `observe`, a region to drill into; on `scroll`, the element to bring into view). |
+| `element` | integer | click, type, hover, scroll, select, upload, drag | The `index` of an element from the last `observe`/`find` (on `scroll`, an element inside the pane to page through). |
 | `text` | string | type | The text to enter into the element. |
-| `key` | string | press | The key to press — e.g. `Enter`, `Escape`, `Tab`, `ArrowDown`, `PageDown`. |
-| `direction` | string | scroll | `down` (default), `up`, `top`, or `bottom`. |
+| `query` | string | find | The text to search the page for — matched against element names and values, case-insensitively, iframes included. |
+| `submit` | boolean | type | Press Enter after typing and return the resulting page. |
+| `key` | string | press | The key or chord to press — e.g. `Enter`, `Escape`, `ArrowDown`, `PageDown`, `Control+A`. |
+| `direction` | string | scroll | `down` (default), `up`, `left`, `right`, `top`, or `bottom`. |
+| `option` | string | select | The visible label (or value) of the option to choose. |
+| `paths` | string[] | upload | Local file path(s) to attach. |
+| `to_element` | integer | drag | The `index` of the element to drop onto. |
 | `tab` | string | switch_tab, close_tab | The `tab` id from the `tabs` action. |
 | `browser_name` | string | navigate, new_tab | Which browser to connect to — `chrome` (default), `edge`, or `brave`. |
 | `justification` | string | every call | One plain sentence on why this step is needed. |
@@ -36,9 +51,11 @@ Because this drives the user's own browser, whatever they are signed into is ava
 
 ## Avoid
 
-- **Reaching for the `computer` tool to read a web page.** Reading a browser through the macOS accessibility tree drags in the whole window chrome and duplicated markup; this tool reads the page's own DOM, cleanly. Web goes here; native apps go to `computer`.
-- **Trusting a stale `index`.** Indices refer to the last `observe`; after you navigate or act, `observe` again before using an index.
-- **Clicking a non-interactive element.** Let the `role` guide you — a `heading` or `StaticText` is a label, not a control; click `link`/`button`/`menuitem` and edit `textbox`/`searchbox`.
-- **Expecting `type` to submit.** It only fills the field. To run a search or submit a form, `press` `Enter` afterward (or click the submit button) — and click/type the field first so it holds focus for the key.
+- **Reaching for the `computer` tool to read a web page.** Reading a browser through the macOS accessibility tree drags in the whole window chrome and duplicated markup; this tool reads the page's own structure, cleanly. Web goes here; native apps go to `computer`.
+- **Scanning the overview for something you can name.** `find` searches the whole page in one call — iframes and beyond-the-cap content included — and hands back actionable indices.
+- **Trusting a stale `index`.** Indices refer to the last `observe`/`find`; after the page changes, get fresh ones before acting.
+- **Clicking the text instead of the control.** `find` can match plain text that merely describes the button next to it — act on the match whose role is `button`/`link`/`menuitem` (flagged `clickable`), not the prose.
+- **Ignoring the scroll report.** `changed: false` means the page's content is exactly what you already see — the end of a feed, a static page (where `find`/`read` already reach everything), or a wheel that landed on something unscrollable. Repeating the same scroll is never the answer; target a pane by passing an `element` inside it, or switch to `find`/`read`. And a scroll that flips `url_changed` to `true` changed app state (a map pan, an SPA route), not just the view.
+- **Re-observing an empty page in a loop.** `count: 0` comes with a `hint` — the page is either still rendering (observe once more, briefly) or canvas-drawn (use `screenshot` or `read`).
 - **Hijacking the user's tab for new work.** When a task starts fresh, prefer `new_tab` so you don't navigate away from the page the user was on.
-- **Giving up if it says remote debugging is off.** The error explains the one-time switch the user turns on (chrome://inspect); relay it plainly and stop, rather than retrying.
+- **Giving up if it says remote debugging is off or stale.** The error explains the one-time switch the user turns on (chrome://inspect) — or, when the endpoint has gone stale, that the switch needs toggling off and on. Relay it plainly and stop, rather than retrying.

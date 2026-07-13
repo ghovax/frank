@@ -880,35 +880,49 @@ computer.description = _load_tool_description("computer")
 @tool
 async def browser(
     action: Literal[
-        "navigate", "observe", "read", "click", "type", "press", "hover", "scroll",
-        "back", "forward", "reload", "tabs", "new_tab", "switch_tab", "close_tab",
+        "navigate", "observe", "find", "read", "click", "type", "press", "hover", "scroll",
+        "select", "upload", "drag", "screenshot", "back", "forward", "reload",
+        "tabs", "new_tab", "switch_tab", "close_tab",
     ],
     url: str = "",
     element: int | None = None,
     text: str = "",
+    query: str = "",
+    submit: bool = False,
     key: str = "",
     direction: str = "down",
+    option: str = "",
+    paths: list[str] | None = None,
+    to_element: int | None = None,
     tab: str = "",
     browser_name: str = "chrome",
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Read and drive the web in the user's own Chrome, over the DevTools protocol.
+    """Read and drive the web in the user's own Chrome, through Playwright over the DevTools protocol.
 
     Connects to the user's real, signed-in browser (their logins and sessions), reads a page's real
-    semantic tree (clean roles and names, no browser chrome), and acts inside the page — everything
-    a person does in a browser: open pages, click, type, press keys (Enter to submit), hover, scroll,
-    go back/forward, reload, and manage tabs. It reuses the user's existing session — it never opens
-    a separate browser, copies a profile, or moves the user's cursor. Requires the user to have
-    turned on Chrome's remote-debugging switch once; if they have not, the tool says exactly how.
+    semantic tree including iframes (clean roles and names, no browser chrome), and acts inside the
+    page — everything a person does in a browser: open pages, find and click elements (with full
+    actionability checks), type (optionally submitting in the same call), press keys and chords,
+    hover, scroll the right pane, pick select options, upload files, drag and drop, capture pixels
+    when there is no structure, go back/forward, reload, and manage tabs. Dialogs are answered
+    automatically and reported. It reuses the user's existing session — it never opens a separate
+    browser, copies a profile, or moves the user's cursor. Requires the user to have turned on
+    Chrome's remote-debugging switch once; if they have not, the tool says exactly how.
 
     Args:
-        action: navigate, observe, read, click, type, press, hover, scroll, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
+        action: navigate, observe, find, read, click, type, press, hover, scroll, select, upload, drag, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
         url: The address to open (navigate, new_tab).
-        element: The index of an element from the last observe (click/type/hover, observe/scroll drill).
+        element: The index of an element from the last observe/find (click/type/hover/select/upload/drag; scroll moves that element's pane).
         text: Text to enter into the element (type).
-        key: The key to press (press) — e.g. Enter, Escape, Tab, ArrowDown, PageDown.
-        direction: Scroll direction (scroll) — down (default), up, top, or bottom.
+        query: Text to search the page for (find) — matches element names and values anywhere on the page, iframes included.
+        submit: With type, press Enter after entering the text and return the resulting page.
+        key: The key to press (press) — e.g. Enter, Escape, ArrowDown, PageDown, or a chord like Control+A.
+        direction: Scroll direction (scroll) — down (default), up, left, right, top, or bottom.
+        option: The visible label (or value) to choose in a select element (select).
+        paths: Local file path(s) to attach (upload).
+        to_element: The index of the element to drop onto (drag).
         tab: The tab id from the tabs action (switch_tab, close_tab).
         browser_name: Which browser to connect to — "chrome" (default), "edge", or "brave".
         justification: Why this action is needed.
