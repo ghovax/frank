@@ -40,9 +40,8 @@ export function ToolCardHeader({
       px={2.5}
       // Fixed height — not minH: badges are taller than the title text, so a minimum
       // would let a badged row grow past a bare one. A fixed height centers whatever is inside
-      // and keeps every row identical. No py — the fixed height + align="center" own it. Keep in
-      // sync with the ToolGroup heading in tool-group.tsx.
-      h={8}
+      // and keeps every row identical. No py — the fixed height + align="center" own it.
+      h={7}
       bg={headerBg}
       cursor={collapsible ? "pointer" : undefined}
       onClick={collapsible ? onToggle : undefined}
@@ -88,13 +87,12 @@ export function ToolCardBody({
   return (
     <Box
       px={2.5}
-      py={2}
+      py={1.5}
       borderTop="1px solid"
       borderColor="border"
       // Recess the expanded body below the card shell (bg.subtle) so its content
-      // — especially nested tool cards in the agents view — reads as raised
-      // against it and gains contrast. Horizontal padding matches the header so the
-      // body content lines up under the title.
+      // reads as raised against it and gains contrast. Horizontal padding matches
+      // the header so the body content lines up under the title.
       bg="bg"
       maxH={maxH}
       overflowY={maxH ? "auto" : undefined}

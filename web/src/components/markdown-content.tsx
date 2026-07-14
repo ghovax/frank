@@ -31,9 +31,12 @@ interface MarkdownContentProps {
   animate?: boolean;
 }
 
-const blockGap = "0.75rem";
+// Vertical rhythm of the prose. Kept compact — the transcript is a working
+// document, not an article — while sectionGap still gives headings room to
+// mark a boundary.
+const blockGap = "0.625rem";
 const headingGap = "0.375rem";
-const sectionGap = "1rem";
+const sectionGap = "0.875rem";
 const variationSelectorPattern = /\uFE0F/g;
 const zeroWidthJoiner = String.fromCharCode(0x200d);
 const emojiMarkerPattern = /\uE000(\d+)\uE001/g;
@@ -205,7 +208,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       if (isDisplayMathParagraph(node)) {
         return <Box textAlign="center" fontSize="inherit">{children}</Box>;
       }
-      return <Text fontSize="inherit" lineHeight="1.6">{renderChildren(children, animating)}</Text>;
+      return <Text fontSize="inherit" lineHeight="1.55">{renderChildren(children, animating)}</Text>;
     },
     h1({ children }) {
       return <Heading as="h1" fontSize="lg" fontWeight="bold">{renderChildren(children, animating)}</Heading>;
@@ -243,7 +246,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Box as="ol" pl={6} fontSize="inherit" listStyleType="decimal">{children}</Box>;
     },
     li({ children }) {
-      return <Box as="li" mb={1} fontSize="inherit" lineHeight="1.6" display="list-item" _last={{ mb: 0 }}>{renderChildren(children, animating)}</Box>;
+      return <Box as="li" mb={0.5} fontSize="inherit" lineHeight="1.55" display="list-item" _last={{ mb: 0 }}>{renderChildren(children, animating)}</Box>;
     },
     blockquote({ children }) {
       return (
@@ -265,7 +268,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
             borderWidth="1px"
             borderColor="border.muted"
             fontSize="xs"
-            my={2}
+            my={1.5}
             maxW="100%"
             maxH="420px"
             bg="bg.subtle"
@@ -276,8 +279,8 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
               PreTag="div"
               customStyle={{
                 margin: 0,
-                padding: "0.75rem 0.875rem",
-                lineHeight: 1.6,
+                padding: "0.5rem 0.625rem",
+                lineHeight: 1.5,
                 borderRadius: "var(--chakra-radii-none)",
                 fontFamily: "var(--app-font-mono)",
                 fontSize: "inherit",
@@ -318,7 +321,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     table({ children }) {
       return (
         <Box overflowX="auto" maxW="100%" my={2}>
-          <Box as="table" minW="100%" fontSize="inherit" lineHeight="1.6" borderCollapse="collapse">
+          <Box as="table" minW="100%" fontSize="inherit" lineHeight="1.55" borderCollapse="collapse">
             {renderChildren(children, animating)}
           </Box>
         </Box>
@@ -329,14 +332,14 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     },
     th({ children }) {
       return (
-        <Box as="th" textAlign="left" pr={4} pl={0} py={2} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
+        <Box as="th" textAlign="left" pr={3} pl={0} py={1.5} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
           {renderChildren(children, animating)}
         </Box>
       );
     },
     td({ children }) {
       return (
-        <Box as="td" pr={4} pl={0} py={2} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
+        <Box as="td" pr={3} pl={0} py={1.5} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
           {renderChildren(children, animating)}
         </Box>
       );

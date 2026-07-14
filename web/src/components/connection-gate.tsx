@@ -13,6 +13,7 @@
 
 import { Flex, Spinner, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   activateConnection,
@@ -44,6 +45,10 @@ export function reloadIntoConnection(): void {
 
 export function ConnectionGate({ children }: { children: React.ReactNode }) {
   const t = useTranslations("ConnectionGate");
+  // The design gallery (/gallery) is a backend-less fixture sheet of the app's
+  // building blocks, used for visual audits — the one route that must render
+  // without a server, so it bypasses the gate entirely.
+  const pathname = usePathname();
   const [statusLabel, setStatusLabel] = useState(t("connecting"));
   // "connecting" while the auto-connect loop runs, "settings" when it can't reach a
   // backend (show the picker), "ready" once connected (render the app).
@@ -113,8 +118,10 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     }
   }, [t]);
 
-  // Auto-connect on every route — no route works without a backend.
+  // Auto-connect on every route — no route works without a backend (except the
+  // gallery, which skips the loop so it never spawns a server or toasts failures).
   useEffect(() => {
+    if (pathname?.startsWith("/gallery")) return;
     let cancelled = false;
 
     (async () => {
@@ -171,9 +178,9 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     })();
 
     return () => { cancelled = true; };
-  }, [connectToLocal, connectToProfile, t]);
+  }, [connectToLocal, connectToProfile, t, pathname]);
 
-  if (phase === "ready") {
+  if (pathname?.startsWith("/gallery") || phase === "ready") {
     return <>{children}</>;
   }
 

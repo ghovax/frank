@@ -60,8 +60,8 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
       borderColor="red.muted"
       bg="red.subtle"
       borderRadius="md"
-      px={3}
-      py={2.5}
+      px={2.5}
+      py={2}
     >
       <Flex align="center" gap={2} color="red.fg">
         <Box display="flex" alignItems="center" flexShrink={0}>
@@ -104,8 +104,8 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
       borderColor="orange.muted"
       bg="orange.subtle"
       borderRadius="md"
-      px={3}
-      py={2.5}
+      px={2.5}
+      py={2}
     >
       <Flex align="center" gap={2} color="orange.fg">
         <Box display="flex" alignItems="center" flexShrink={0}>
@@ -174,8 +174,8 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
           bg="bg.muted"
           border="1px solid"
           borderColor="border"
-          px={3}
-          py={2}
+          px={2.5}
+          py={1.5}
           borderRadius="md"
           maxW="100%"
         >
@@ -220,8 +220,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
       if (!message.content) return null;
       return (
         // No horizontal inset: the assistant's prose shares the same left edge as the
-        // tool-call cards (which have none), so text and tools line up — matching the
-        // agents panel. A stray px here pushed the markdown ~4px inward of the cards.
+        // tool-activity lines (which have none), so text and tools line up — matching
+        // the agents panel. A stray px here pushed the markdown ~4px inward of them.
         <Box alignSelf="flex-start">
           <MarkdownContent content={message.content} animate={streaming} />
         </Box>

@@ -2,13 +2,14 @@
 
 import { Badge, Box, Flex } from "@chakra-ui/react";
 import { useState } from "react";
+import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
 import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { Pill } from "./tool-views/primitives";
-import { ToolCard, ToolCardBody, ToolCardHeader, ToolRiskBadges, ToolStatusBadge } from "./tool-card";
+import { ToolRiskBadges, ToolStatusBadge } from "./tool-card";
 
 // The location a filesystem/shell tool ran against, as a compact badge — but only when it
 // is *remote*. Local runs (`file://…`) get no badge: the absence of a badge already reads as
@@ -74,67 +75,102 @@ export function isBackgroundResult(result: unknown): boolean {
   return code.endsWith("_started") || code === "background_task_scheduled";
 }
 
+// A tool call is a line of activity, not a card: icon + label at the same type
+// scale as the surrounding markdown, with its badges hugging the text. Expanding
+// hangs the structured detail off a hairline left rule — the same visual grammar
+// as a blockquote — so a run of calls reads as an annotated ledger inside the
+// prose rather than a stack of boxes interrupting it.
 export function ToolCall({ name, arguments: toolArguments, result, status, agents = [] }: ToolCallProps) {
   const t = useTranslations("ToolCall");
   const [open, setOpen] = useState(false);
   const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
-  // Renderable artifacts (e.g. a map) render outside the card and stay visible;
-  // the textual result stays inside the collapsible body. When the result is an
+  // Renderable artifacts (e.g. a map) render outside the line and stay visible;
+  // the textual result stays inside the collapsible detail. When the result is an
   // artifact, there is no separate text to show inside.
   const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
   const showResultInside = resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent);
-  // The task list is the model's own internal bookkeeping. Its card shows only the
+  // The task list is the model's own internal bookkeeping. Its line shows only the
   // icon + justification (e.g. "Updating task list") and a status — never an
-  // expandable body exposing the raw task entries.
+  // expandable detail exposing the raw task entries.
   const isInternalPlanning = name === "set_tasks" || name === "update_tasks";
   const collapsible = !isInternalPlanning && (hasArguments || showResultInside);
-  // A pending approval/question no longer forces the card open — it is surfaced in
+  // A pending approval/question no longer forces the detail open — it is surfaced in
   // an overlay above the composer (see PermissionOverlay / QuestionOverlay). The
-  // card only reflects the "input required" status in its badge and header tint.
-  const bodyOpen = open;
+  // line only reflects the "input required" status in its badge and tint.
   const background = status === "running" && isBackgroundResult(result);
 
   const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments);
 
   return (
-    <Flex direction="column" gap={1.5} align="stretch">
-      <ToolCard>
-        <ToolCardHeader
-          icon={
-            <Box color={iconColor}>
-              <Icon size={13} />
-            </Box>
-          }
-          title={<ToolCallLabel name={name} args={toolArguments} />}
-          badges={
-            <>
-              {name === "computer" && <ComputerActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
-              {name === "browser" && <BrowserActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
-              <ToolLocationBadge arguments={toolArguments} />
-              <ToolRiskBadges arguments={toolArguments} />
-              {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
-              {background ? <Pill colorPalette="purple">{t("background")}</Pill> : null}
-            </>
-          }
-          open={bodyOpen}
-          collapsible={collapsible}
-          shimmer={status === "running"}
-          headerBg={status === "input_required" ? "yellow.subtle" : undefined}
-          onToggle={() => setOpen((current) => !current)}
-        />
-
-        {collapsible && bodyOpen && (
-          <ToolCardBody maxH="560px">
-            {/* gap matches FieldList's own field spacing so the call's last field
-                (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
-            <Flex direction="column" gap={2} align="stretch">
-              {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-              {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} />}
-            </Flex>
-          </ToolCardBody>
+    <Box minW={0}>
+      {/* w=fit-content: the line is only as wide as its text, so the click target and
+          hover tint never extend into the blank space to the right of a short label.
+          The base color sets the settled (muted) tone; every piece without its own
+          color — the label, the chevron — inherits it, so the hover brighten is one rule. */}
+      <Flex
+        align="center"
+        gap={1.5}
+        h={6}
+        w="fit-content"
+        maxW="100%"
+        minW={0}
+        cursor={collapsible ? "pointer" : undefined}
+        onClick={collapsible ? () => setOpen((current) => !current) : undefined}
+        userSelect="none"
+        color={status === "input_required" ? "yellow.fg" : open ? "fg" : "fg.muted"}
+        _hover={collapsible ? { color: "fg" } : undefined}
+      >
+        <Box color={iconColor} display="flex" alignItems="center" flexShrink={0}>
+          <Icon size={13} />
+        </Box>
+        <Box
+          minW={0}
+          overflow="hidden"
+          whiteSpace="nowrap"
+          textOverflow="ellipsis"
+          textStyle="fieldLabel"
+          className={status === "running" ? "running-title-shimmer" : undefined}
+        >
+          <ToolCallLabel name={name} args={toolArguments} />
+        </Box>
+        <Flex align="center" gap={1.5} flexShrink={0}>
+          {name === "computer" && <ComputerActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
+          {name === "browser" && <BrowserActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
+          <ToolLocationBadge arguments={toolArguments} />
+          <ToolRiskBadges arguments={toolArguments} />
+          {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
+          {background ? <Pill colorPalette="purple">{t("background")}</Pill> : null}
+        </Flex>
+        {collapsible && (
+          <Box display="flex" alignItems="center" flexShrink={0} opacity={0.7}>
+            {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+          </Box>
         )}
-      </ToolCard>
-    </Flex>
+      </Flex>
+
+      {collapsible && open && (
+        // ml centers the 2px rule under the 13px icon above it; pl indents the detail
+        // clear of the rule so it reads as a quoted aside within the transcript.
+        <Box
+          ml="5px"
+          mt={0.5}
+          mb={1}
+          pl={3}
+          borderLeft="2px solid"
+          borderColor="border.muted"
+          maxH="480px"
+          overflowY="auto"
+          overflowX="auto"
+        >
+          {/* gap matches FieldList's own field spacing so the call's last field
+              (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
+          <Flex direction="column" gap={2} align="stretch">
+            {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
+            {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} />}
+          </Flex>
+        </Box>
+      )}
+    </Box>
   );
 }

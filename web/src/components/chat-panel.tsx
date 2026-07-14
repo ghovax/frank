@@ -1392,7 +1392,10 @@ export function ChatPanel({
                 </motion.div>
               ) : (
                 <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
-                  <VStack ref={scrollContentRef} gap={3} align="stretch" w="full" maxW="80rem" mx="auto">
+                  {/* gap 2.5 (10px): tight enough that a tool-activity line and the prose
+                      around it read as one document, while user bubbles — carrying their own
+                      fill — still mark the turn boundaries. */}
+                  <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
                     <AnimatePresence initial={false}>
                       {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
