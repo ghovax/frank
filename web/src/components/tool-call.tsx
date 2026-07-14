@@ -5,6 +5,7 @@ import { useState } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/tool-display";
+import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
 import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
@@ -99,6 +100,10 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
   // an overlay above the composer (see PermissionOverlay / QuestionOverlay). The
   // line only reflects the "input required" status in its badge and tint.
   const background = status === "running" && isBackgroundResult(result);
+  // Soft top/bottom edge fades on the expanded detail: whichever edge has more content
+  // scrolled out of view dissolves, so a bounded, scrollable detail reads as continuous
+  // rather than hard-cut at its maxH.
+  const { containerRef, onScroll, fade } = useScrollEdgeFade();
 
   const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments);
 
@@ -159,6 +164,8 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
         // ml centers the 2px rule under the 13px icon above it; pl indents the detail
         // clear of the rule so it reads as a quoted aside within the transcript.
         <Box
+          ref={containerRef}
+          onScroll={onScroll}
           className="reveal-enter"
           ml="5px"
           mt={0.5}
@@ -169,6 +176,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
           maxH="480px"
           overflowY="auto"
           overflowX="auto"
+          css={fade}
         >
           {/* gap matches FieldList's own field spacing so the call's last field
               (e.g. Risk) and the result's first (e.g. PID) read as one list. */}

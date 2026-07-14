@@ -622,7 +622,15 @@
     "waitingForBrowser": "Waiting for browser…",
     "signedIn": "Signed in",
     "signedInAs": "Signed in as {email}",
-    "planNotice": "Uses your ChatGPT plan through the Codex sign-in. Unofficial and may change."
+    "planNotice": "Uses your ChatGPT plan through the Codex sign-in. Unofficial and may change.",
+    "usageTitle": "Usage limits",
+    "usagePending": "Usage appears after your next message.",
+    "usageUsedPercent": "{percent}% used",
+    "usageResetsIn": "resets in {duration}",
+    "usageWeekly": "Weekly",
+    "usageDaysShort": "{count}d",
+    "usageHoursShort": "{count}h",
+    "usageMinutesShort": "{count}m"
   },
   "LocationForm": {
     "local": "Local",

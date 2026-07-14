@@ -4,6 +4,7 @@ import { Badge, Box, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useTranslations } from "next-intl";
+import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { InlineField } from "./tool-views/primitives";
 
 // Two looks share these primitives:
@@ -130,10 +131,15 @@ export function ToolCardBody({
   maxH?: string;
   variant?: ToolCardVariant;
 }) {
+  // Fade whichever edge has content scrolled past the bounded height, so a scrollable
+  // body reads as continuous instead of hard-cut. Inert when there is no maxH/overflow.
+  const { containerRef, onScroll, fade } = useScrollEdgeFade();
   if (variant === "row") {
     // The transcript body: content hangs off a hairline left rule, indented under the icon.
     return (
       <Box
+        ref={containerRef}
+        onScroll={onScroll}
         className="reveal-enter"
         ml="5px"
         mt={0.5}
@@ -144,6 +150,7 @@ export function ToolCardBody({
         maxH={maxH}
         overflowY={maxH ? "auto" : undefined}
         overflowX={maxH ? "auto" : undefined}
+        css={fade}
       >
         {children}
       </Box>
@@ -151,6 +158,8 @@ export function ToolCardBody({
   }
   return (
     <Box
+      ref={containerRef}
+      onScroll={onScroll}
       px={2.5}
       py={1.5}
       borderTop="1px solid"
@@ -162,6 +171,7 @@ export function ToolCardBody({
       maxH={maxH}
       overflowY={maxH ? "auto" : undefined}
       overflowX={maxH ? "auto" : undefined}
+      css={fade}
     >
       {children}
     </Box>

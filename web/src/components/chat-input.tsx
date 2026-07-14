@@ -16,7 +16,8 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuPaperclip, LuSquare, LuUser } from "react-icons/lu";
-import { fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { fetchChatGPTAuthStatus, fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
 import { PermissionModeControl } from "./session-controls";
 import { activeConnectionIsLocal } from "@/lib/connection";
 import { isTauri } from "@/lib/connection-store";
@@ -118,10 +119,45 @@ function ContextFillRing({ fraction }: { fraction: number }) {
   );
 }
 
+// The ChatGPT/Codex plan usage for the token view, but only when the active model is
+// on the chatgpt provider. Refreshed on each turn's falling edge (streaming
+// true -> false): the server re-snapshots the plan limits from that turn's response
+// headers, so the meters are current right after each send/receive.
+function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): ChatGPTUsage | null {
+  const isChatGPT = !!agentModel && agentModel.startsWith("chatgpt/");
+  const [usage, setUsage] = useState<ChatGPTUsage | null>(null);
+
+  // Fetch whenever the model is on the chatgpt provider and no turn is streaming.
+  // That single condition covers both mount and the falling edge of each turn
+  // (streaming true -> false) — which is exactly when the server has re-snapshotted
+  // the plan limits from that turn's response headers.
+  useEffect(() => {
+    if (!isChatGPT || isStreaming) return;
+    let cancelled = false;
+    fetchChatGPTAuthStatus()
+      .then((status) => {
+        if (!cancelled) setUsage(status?.usage ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isChatGPT, isStreaming]);
+
+  return isChatGPT ? usage : null;
+}
+
 // The context-usage chip: a fill ring + percent, then the current context size
 // against the model's window. It reflects the latest exchange actually occupying
-// the window (not the cumulative session sum, which lives in the tooltip).
-function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
+// the window (not the cumulative session sum, which lives in the tooltip). On the
+// chatgpt provider the tooltip also carries the account's plan usage (5h + weekly).
+function ContextUsageChip({
+  tokenUsage,
+  chatgptUsage,
+}: {
+  tokenUsage?: TokenUsage | null;
+  chatgptUsage?: ChatGPTUsage | null;
+}) {
   const t = useTranslations("ChatInput");
   if (!tokenUsage || tokenUsage.contextTokens <= 0) return null;
   const hasContext = tokenUsage.contextWindow > 0;
@@ -169,6 +205,14 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
           <InlineField label={t("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
         )}
       </Flex>
+      {chatgptUsage && (
+        <>
+          <Separator my={2} />
+          <Box w="210px" whiteSpace="normal">
+            <ChatGPTUsageMeters usage={chatgptUsage} />
+          </Box>
+        </>
+      )}
     </Box>
   );
   return (
@@ -240,6 +284,7 @@ export function ChatInput({
   artifactAnnotationRecords = [],
 }: ChatInputProps) {
   const t = useTranslations("ChatInput");
+  const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -807,7 +852,7 @@ export function ChatInput({
               {isCompacting ? t("compacting") : t("compact")}
             </Button>
           )}
-          <ContextUsageChip tokenUsage={tokenUsage} />
+          <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} />
         </Flex>
       </Flex>
 

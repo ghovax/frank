@@ -25,7 +25,9 @@ from harness.server.app import (
     available_models,
     clear_subscription_models_cache,
     clear_tokens,
+    clear_usage_snapshot,
     fetch_subscription_models,
+    get_usage_snapshot,
     load_agent_configuration,
     load_tokens,
 )
@@ -147,9 +149,15 @@ async def recent_models():
 async def chatgpt_auth_status():
     """Whether a ChatGPT subscription is signed in, and for which account — so the
     settings dialog and the model picker can show sign-in state and unlock the
-    ``chatgpt`` provider's models."""
+    ``chatgpt`` provider's models. Also carries the latest rate-limit snapshot (the
+    5h + weekly usage windows) captured from turns, or ``None`` until the first turn
+    runs after sign-in."""
     tokens = await asyncio.to_thread(load_tokens)
-    return {"signed_in": tokens is not None, "email": tokens.email if tokens else ""}
+    return {
+        "signed_in": tokens is not None,
+        "email": tokens.email if tokens else "",
+        "usage": get_usage_snapshot() if tokens is not None else None,
+    }
 
 
 @router.post("/auth/chatgpt/start")
@@ -177,6 +185,7 @@ async def chatgpt_auth_start():
         try:
             await flow.wait()
             clear_subscription_models_cache()
+            clear_usage_snapshot()
             _reset_all_runtimes()
             _publish_broadcast({"type": "settings_changed"})
         except Exception:  # noqa: BLE001 — timeout/denial just leaves us signed out
@@ -198,6 +207,7 @@ async def chatgpt_auth_signout():
         _app._chatgpt_login_flow = None
     await asyncio.to_thread(clear_tokens)
     clear_subscription_models_cache()
+    clear_usage_snapshot()
     _reset_all_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"ok": True}

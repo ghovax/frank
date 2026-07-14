@@ -128,18 +128,6 @@ samp {
   }
 }
 
-/* The rotating loader for a running tool-group status chip. */
-.tool-status-spin {
-  animation: tool-status-spin 0.9s linear infinite;
-  transform-origin: center;
-}
-
-@keyframes tool-status-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* One shared entrance for content that replaces or unfolds in place — an expanded
    tool-detail rail, a mermaid diagram taking over its code block, a side panel
    joining the tile grid. A short fade with a 2px settle: enough that the change
@@ -235,10 +223,6 @@ samp {
   }
 
   .status-dot-pulse {
-    animation: none;
-  }
-
-  .tool-status-spin {
     animation: none;
   }
 

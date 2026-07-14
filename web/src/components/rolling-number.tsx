@@ -82,7 +82,6 @@ const Digit = memo(function Digit({ digit }: { digit: number }) {
       overflow="hidden"
       lineHeight="1em"
       fontVariantNumeric="tabular-nums"
-      verticalAlign="-0.12em"
     >
       <MotionSpan
         animate={{ y: `${-safeDigit}em` }}

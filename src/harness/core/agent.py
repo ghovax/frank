@@ -151,17 +151,14 @@ def build_chat_model(
     global_configuration: "GlobalConfiguration",
     agent_configuration: "AgentConfiguration",
 ) -> BaseChatModel:
-    """Build the chat model for a provider-qualified model id.
+    """Build the chat model for a provider-qualified (``provider/model``) id.
 
     Almost every provider flows through one ``ChatLiteLLMModel`` (LiteLLM owns each
-    provider's auth, base URL, request format, and reasoning normalization). A
-    bare model id with no provider prefix defaults to the OpenCode gateway and is
-    qualified as ``opencode/<model>``. The one exception is the experimental
-    ``chatgpt`` subscription provider, which is not a LiteLLM route at all: it uses
-    its own ``ChatCodexModel``, reading its OAuth token from the shared token store
-    (no api_key/api_base) and calling Codex's Responses endpoint directly."""
-    if "/" not in model_identifier:
-        model_identifier = f"opencode/{model_identifier}"
+    provider's auth, base URL, request format, and reasoning normalization). The one
+    exception is the experimental ``chatgpt`` subscription provider, which is not a
+    LiteLLM route at all: it uses its own ``ChatCodexModel``, reading its OAuth token
+    from the shared token store (no api_key/api_base) and calling Codex's Responses
+    endpoint directly."""
     provider_identifier, model_suffix = model_identifier.split("/", 1)
     if provider_identifier == "chatgpt":
         catalog_entry = find_model(model_identifier)
@@ -197,8 +194,6 @@ def model_is_authorized(
     is selectable on demand. Auxiliary calls (session titling, ...) consult this
     before building a model instead of re-deriving the check per call site — which
     is how titling used to silently exclude the OAuth-only chatgpt provider."""
-    if "/" not in model_identifier:
-        model_identifier = f"opencode/{model_identifier}"
     provider_identifier = model_identifier.split("/", 1)[0]
     if provider_identifier == "chatgpt":
         return is_signed_in()

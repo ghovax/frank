@@ -363,6 +363,7 @@ class ChatCodexModel(BaseChatModel):
                 if response.status_code >= 400:
                     body = (await response.aread()).decode("utf-8", "replace")
                     raise self._http_error(response.status_code, body)
+                _capture_usage_headers(response.headers)
                 async for line in response.aiter_lines():
                     chunk = self._line_to_chunk(line, state)
                     if chunk is not None:
@@ -416,6 +417,7 @@ class ChatCodexModel(BaseChatModel):
             with client.stream("POST", RESPONSES_URL, json=payload, headers=headers) as response:
                 if response.status_code >= 400:
                     raise self._http_error(response.status_code, response.read().decode("utf-8", "replace"))
+                _capture_usage_headers(response.headers)
                 for line in response.iter_lines():
                     chunk = self._line_to_chunk(line, state)
                     if chunk is not None:
@@ -483,3 +485,80 @@ def clear_subscription_models_cache() -> None:
     or sign-out immediately rather than waiting out the TTL."""
     global _models_cache
     _models_cache = None
+
+
+# Live per-account usage limits. Every /responses reply carries the account's rate
+# limit state in ``x-codex-*`` headers (the short rolling window and the weekly
+# window ChatGPT surfaces), so we snapshot the latest as turns run and expose it to
+# the UI. There is no cheaper source — the /models GET does not carry these headers
+# — so the snapshot is only as fresh as the last turn, and stays None until the
+# first turn after sign-in.
+
+_usage_snapshot: Optional[dict[str, Any]] = None
+
+
+def _header_float(value: Optional[str]) -> Optional[float]:
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _header_int(value: Optional[str]) -> Optional[int]:
+    parsed = _header_float(value)
+    return int(parsed) if parsed is not None else None
+
+
+def _header_bool(value: Optional[str]) -> bool:
+    return (value or "").strip().lower() in ("true", "1", "yes")
+
+
+def _capture_usage_headers(headers: httpx.Headers) -> None:
+    """Snapshot the account's rate-limit state from a /responses reply's ``x-codex-*``
+    headers. A no-op when they are absent (some error paths omit them), so it never
+    clobbers a good snapshot with an empty one."""
+    global _usage_snapshot
+    if "x-codex-primary-window-minutes" not in headers and "x-codex-plan-type" not in headers:
+        return
+    now = int(time.time())
+    windows: list[dict[str, Any]] = []
+    for key in ("primary", "secondary"):
+        window_minutes = _header_int(headers.get(f"x-codex-{key}-window-minutes")) or 0
+        if window_minutes <= 0:
+            continue  # this window is not active for the account right now
+        resets_at = _header_int(headers.get(f"x-codex-{key}-reset-at"))
+        if resets_at is None:
+            after = _header_int(headers.get(f"x-codex-{key}-reset-after-seconds"))
+            resets_at = now + after if after is not None else None
+        windows.append({
+            # The label is derived on the client from window_minutes, localized —
+            # the 5h/weekly mapping is not pinned to primary/secondary, and the core
+            # stays presentation- and locale-agnostic.
+            "key": key,
+            "used_percent": _header_float(headers.get(f"x-codex-{key}-used-percent")) or 0.0,
+            "window_minutes": window_minutes,
+            "resets_at": resets_at,
+        })
+    _usage_snapshot = {
+        "plan_type": headers.get("x-codex-plan-type", ""),
+        "active_limit": headers.get("x-codex-active-limit", ""),
+        "captured_at": now,
+        "credits": {
+            "has_credits": _header_bool(headers.get("x-codex-credits-has-credits")),
+            "balance": _header_float(headers.get("x-codex-credits-balance")),
+            "unlimited": _header_bool(headers.get("x-codex-credits-unlimited")),
+        },
+        "windows": windows,
+    }
+
+
+def get_usage_snapshot() -> Optional[dict[str, Any]]:
+    """The most recent rate-limit snapshot captured from a turn, or None when no
+    turn has run since sign-in (the headers only ride on /responses replies)."""
+    return _usage_snapshot
+
+
+def clear_usage_snapshot() -> None:
+    """Drop the snapshot on sign-out/sign-in so stale limits don't linger."""
+    global _usage_snapshot
+    _usage_snapshot = None

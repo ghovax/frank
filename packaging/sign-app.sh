@@ -31,11 +31,16 @@ if [ -d "$pristine" ] && [ -d "$HELPER" ]; then
   ditto "$pristine" "$HELPER"
 fi
 
-# Sign the whole app inside-out, including the nested helper bundle and every Mach-O it loads.
-# Each bundle takes its identifier from its own Info.plist (both com.ghovax.daisy), so no
-# per-binary identifier override is needed. No hardened runtime, so the helper's PyInstaller
-# dylibs still load.
-codesign --force --deep --sign "$IDENTITY" "$APP"
+# Sign inside-out: the nested helper first, then the outer app. `--deep` on the app alone does
+# NOT descend into a bundle nested under Contents/Resources/ (it only follows Frameworks/ and the
+# standard nested-code locations), so signing just the app leaves the helper — the very process
+# TCC tracks for Accessibility — ad-hoc, which is exactly the fresh-hash-every-build problem this
+# script exists to prevent. So sign the helper explicitly (`--deep`, to catch its own PyInstaller
+# dylibs), then re-seal the app so its signature covers the helper's new hash. Each bundle takes
+# its identifier from its own Info.plist (both com.ghovax.daisy); no hardened runtime, so the
+# helper's dylibs still load.
+codesign --force --deep --sign "$IDENTITY" "$HELPER"
+codesign --force --sign "$IDENTITY" "$APP"
 
 echo "signed $APP"
 codesign -dv "$HELPER" 2>&1 | grep -iE "Identifier=|Authority=" | sed 's/^/  helper: /'

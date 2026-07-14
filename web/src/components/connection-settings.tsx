@@ -10,7 +10,7 @@
 // `onConnected`, letting the caller decide what happens next (render the app, or
 // switch the live session and close the dialog).
 
-import { Box, Button, EmptyState, Field, Flex, Input, Spinner, Text, Textarea, VStack } from "@chakra-ui/react";
+import { Box, Button, EmptyState, Field, Flex, Input, Text, Textarea, VStack } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuCheck, LuLaptop, LuNetwork, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
@@ -56,8 +56,12 @@ export function ConnectionSettings({
 }) {
   const t = useTranslations("ConnectionSettings");
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
-  const [connecting, setConnecting] = useState(false);
-  const [statusLabel, setStatusLabel] = useState("");
+  // Which target is mid-connect (its id), or null. Deriving `connecting` from this — instead
+  // of a separate flag that swapped the entire picker out for a spinner — keeps the picker
+  // mounted while just the clicked button shows its own loading state, so a failed attempt no
+  // longer flashes the whole screen out and back in.
+  const [connectingTarget, setConnectingTarget] = useState<string | null>(null);
+  const connecting = connectingTarget !== null;
   const [failedTarget, setFailedTarget] = useState<string | null>(null);
   const [savingConnection, setSavingConnection] = useState(false);
   const [savingSshConnection, setSavingSshConnection] = useState(false);
@@ -116,8 +120,7 @@ export function ConnectionSettings({
   }, [refreshSshHosts]);
 
   const connectLocal = useCallback(async () => {
-    setStatusLabel(isTauri() ? t("startingLocalServer") : t("lookingForLocalServer"));
-    setConnecting(true);
+    setConnectingTarget(LOCAL_TARGET_ID);
     setFailedTarget(null);
     try {
       const url = await startLocalServer();
@@ -126,7 +129,7 @@ export function ConnectionSettings({
         : await checkConnection(url, 2000);
       if (!ok) {
         setFailedTarget(LOCAL_TARGET_ID);
-        setConnecting(false);
+        setConnectingTarget(null);
         toaster.create({
           type: "error",
           title: t("couldNotConnect"),
@@ -141,7 +144,7 @@ export function ConnectionSettings({
       onConnected({ ...LOCAL_CONNECTION_TARGET, url });
     } catch (caught) {
       setFailedTarget(LOCAL_TARGET_ID);
-      setConnecting(false);
+      setConnectingTarget(null);
       toaster.create({
         type: "error",
         title: t("couldNotConnect"),
@@ -153,8 +156,7 @@ export function ConnectionSettings({
 
   const connectRemote = useCallback(
     async (profile: ConnectionProfile) => {
-      setStatusLabel(t("connectingTo", { name: profile.name }));
-      setConnecting(true);
+      setConnectingTarget(profile.id);
       setFailedTarget(null);
       try {
         const url = await resolveReachableConnectionUrl(profile);
@@ -163,7 +165,7 @@ export function ConnectionSettings({
           : await checkConnection(url);
         if (!ok) {
           setFailedTarget(profile.id);
-          setConnecting(false);
+          setConnectingTarget(null);
           toaster.create({
             type: "error",
             title: t("couldNotReach", { name: profile.name }),
@@ -176,7 +178,7 @@ export function ConnectionSettings({
         onConnected({ ...profile, url });
       } catch (caught) {
         setFailedTarget(profile.id);
-        setConnecting(false);
+        setConnectingTarget(null);
         toaster.create({
           type: "error",
           title: t("couldNotReach", { name: profile.name }),
@@ -301,15 +303,7 @@ export function ConnectionSettings({
         </VStack>
       )}
 
-      {connecting ? (
-        <Flex gap={3} py={6} align="center" justify="center">
-          <Spinner size="md" color="blue.solid" />
-          <Text fontSize="md" color="fg.muted">
-            {statusLabel}
-          </Text>
-        </Flex>
-      ) : (
-        <VStack gap={4} w="100%" minH={0} align="stretch">
+      <VStack gap={4} w="100%" minH={0} align="stretch">
           <Button
             w="100%"
             variant={localActive ? "subtle" : "outline"}
@@ -318,7 +312,9 @@ export function ConnectionSettings({
             color="fg"
             _hover={{ bg: "bg.muted" }}
             onClick={connectLocal}
-            disabled={localActive}
+            disabled={localActive || connecting}
+            loading={connectingTarget === LOCAL_TARGET_ID}
+            loadingText={isTauri() ? t("startingLocalServer") : t("lookingForLocalServer")}
           >
             {localActive ? <LuCheck /> : failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw /> : <LuLaptop />}
             {localActive ? t("connectedToLocalServer") : failedTarget === LOCAL_TARGET_ID ? t("retryLocalServer") : t("connectLocalServer")}
@@ -379,6 +375,9 @@ export function ConnectionSettings({
                       <Button
                         variant="outline"
                         onClick={() => connectRemote(profile)}
+                        disabled={connecting}
+                        loading={connectingTarget === profile.id}
+                        loadingText={t("connectingTo", { name: profile.name })}
                       >
                         {failedTarget === profile.id ? <LuRotateCcw size={12} /> : <LuPlug size={12} />}
                         {failedTarget === profile.id ? t("retry") : t("connect")}
@@ -542,7 +541,6 @@ export function ConnectionSettings({
             </Box>
           </VStack>
         </VStack>
-      )}
     </VStack>
   );
 }

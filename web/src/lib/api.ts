@@ -693,14 +693,36 @@ export async function fetchRecentModels(): Promise<RecentModel[]> {
 // ChatGPT-subscription sign-in state for the `chatgpt` provider.
 // This is an OAuth session, not a stored key — the token lives server-side and
 // this only reports whether one is present and for which account.
+// One rate-limit window the ChatGPT/Codex backend enforces (a rolling 5h window
+// and a weekly window). `window_minutes` is the source of truth for labeling —
+// the 5h/weekly split isn't pinned to a fixed slot across accounts.
+export interface ChatGPTUsageWindow {
+  key: string;
+  used_percent: number;
+  window_minutes: number;
+  resets_at: number | null;
+}
+
+// The account's usage snapshot, captured from `x-codex-*` headers on the last turn.
+// Absent (null) until the first turn runs after sign-in — the headers only ride on
+// the responses call, so there is no cheaper source to poll.
+export interface ChatGPTUsage {
+  plan_type: string;
+  active_limit: string;
+  captured_at: number;
+  credits: { has_credits: boolean; balance: number | null; unlimited: boolean };
+  windows: ChatGPTUsageWindow[];
+}
+
 export interface ChatGPTAuthStatus {
   signed_in: boolean;
   email: string;
+  usage?: ChatGPTUsage | null;
 }
 
 export async function fetchChatGPTAuthStatus(): Promise<ChatGPTAuthStatus> {
   const response = await fetch(`${API_BASE}/auth/chatgpt`);
-  if (!response.ok) return { signed_in: false, email: "" };
+  if (!response.ok) return { signed_in: false, email: "", usage: null };
   return response.json();
 }
 

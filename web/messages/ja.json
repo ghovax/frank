@@ -622,7 +622,15 @@
     "waitingForBrowser": "ブラウザを待機中…",
     "signedIn": "サインイン済み",
     "signedInAs": "{email} としてサインイン済み",
-    "planNotice": "Codex のサインインを通じて ChatGPT プランを利用します。非公式であり、変更される可能性があります。"
+    "planNotice": "Codex のサインインを通じて ChatGPT プランを利用します。非公式であり、変更される可能性があります。",
+    "usageTitle": "使用量の上限",
+    "usagePending": "次のメッセージの後に使用量が表示されます。",
+    "usageUsedPercent": "{percent}% 使用",
+    "usageResetsIn": "{duration}後にリセット",
+    "usageWeekly": "週間",
+    "usageDaysShort": "{count}日",
+    "usageHoursShort": "{count}時間",
+    "usageMinutesShort": "{count}分"
   },
   "LocationForm": {
     "local": "ローカル",

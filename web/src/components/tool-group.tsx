@@ -1,11 +1,12 @@
 "use client";
 
-import { Badge, Box, Flex, Text } from "@chakra-ui/react";
+import { Badge, Box, Flex, Spinner, Text } from "@chakra-ui/react";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuBrain, LuChevronDown, LuChevronRight, LuCircleAlert, LuCircleX, LuLoaderCircle, LuMoon } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/tool-display";
+import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { iconForFilePath } from "@/lib/file-icons";
 import { DiffStatBadge, RollingNumber } from "./rolling-number";
 import { ToolCallLabel } from "./tool-label";
@@ -130,14 +131,16 @@ export const ToolGroup = memo(function ToolGroup({
   const active = runningCount > 0 || backgroundCount > 0 || inputRequired || keepOpen;
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const bodyOpen = manualOverride ?? false;
-  const bodyRef = useRef<HTMLDivElement>(null);
+  // The unfolded batch is a bounded scroll region: fade whichever edge has content
+  // scrolled out of view, and keep the existing auto-scroll on the same element.
+  const { containerRef: bodyRef, onScroll, fade } = useScrollEdgeFade();
 
   // Auto-scroll the body to the bottom when new tool calls arrive.
   useEffect(() => {
     if (bodyOpen && bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [tools.length, bodyOpen]);
+  }, [tools.length, bodyOpen, bodyRef]);
 
   // Extract file changes from tool arguments for the heading: when the group includes
   // file operations (edit_file, write_file) it shows the changed file with its
@@ -317,7 +320,9 @@ export const ToolGroup = memo(function ToolGroup({
                 title={title}
                 count={count}
                 colorPalette={palette}
-                icon={<ChipIcon size={13} className={spin ? "tool-status-spin" : undefined} />}
+                icon={spin
+                  ? <Spinner size="xs" borderWidth="1.5px" color={`${palette}.fg`} />
+                  : <ChipIcon size={13} />}
               />
             </motion.div>
           ))}
@@ -337,6 +342,7 @@ export const ToolGroup = memo(function ToolGroup({
         // owning the viewport; the auto-scroll effect follows new calls streaming in.
         <Box
           ref={bodyRef}
+          onScroll={onScroll}
           className="reveal-enter"
           ml="5px"
           mt={0.5}
@@ -346,6 +352,7 @@ export const ToolGroup = memo(function ToolGroup({
           borderColor="border.muted"
           maxH={80}
           overflowY="auto"
+          css={fade}
         >
           <Flex direction="column" gap={1}>
             {tools.map((tool, index) => (
