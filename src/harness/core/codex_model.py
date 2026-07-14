@@ -50,10 +50,13 @@ from harness.core.chatgpt_oauth import (
 
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 # The account's live, plan-specific model catalog. Same host/auth as the responses
-# endpoint; `client_version` gates models by their `minimal_client_version`, so we
-# send a high value to see everything the plan offers.
+# endpoint; `client_version` gates each model by its `minimal_client_version`, hiding
+# any model whose floor is above what we claim. This is a *floor to clear*, not a
+# cosmetic string: newer models raise their floor over time (gpt-5.4 needs 0.98,
+# gpt-5.5 needs 0.124, the gpt-5.6-* family needs 0.144), so this must track a
+# current Codex CLI version or the newer models silently vanish from the catalog.
 MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
-CLIENT_VERSION = "0.99.0"
+CLIENT_VERSION = "0.144.4"
 # Identifies the client to the endpoint. opencode sends its own name here rather
 # than the real Codex CLI's — the proof that no exact impersonation is required.
 ORIGINATOR = "daisy"
@@ -71,8 +74,10 @@ class ChatCodexModel(BaseChatModel):
     Auth is not passed in: the access token and account id are read (and refreshed)
     from the shared token store on every call, so a single sign-in serves every
     agent and a background refresh is transparent to callers. ``context_length`` is
-    supplied by the factory from the models.dev catalog (this endpoint has no
-    model-info map of its own)."""
+    the cold-start fallback the factory reads from the models.dev catalog, but the
+    Codex endpoint enforces a *smaller* budget than models.dev's direct-API metadata
+    advertises (e.g. models.dev lists ~1M for gpt-5.5/5.6 while Codex serves 272k),
+    so :meth:`context_window` prefers the live per-account value when it is known."""
 
     model: str
     reasoning_effort: Optional[str] = None
@@ -87,6 +92,11 @@ class ChatCodexModel(BaseChatModel):
         return "codex"
 
     def context_window(self) -> int:
+        # The live subscription catalog is authoritative for the real Codex budget;
+        # fall back to the models.dev-derived value only until that cache is warm.
+        live = cached_subscription_models().get(self.model)
+        if live and live.get("context"):
+            return int(live["context"])
         return self.context_length
 
     @property
@@ -362,7 +372,9 @@ class ChatCodexModel(BaseChatModel):
     def _aggregate_to_result(aggregate: Optional[ChatGenerationChunk]) -> ChatResult:
         if aggregate is None:
             return ChatResult(generations=[])
-        chunk_message = aggregate.message
+        # The stream only ever yields AIMessageChunk, so narrow from the base type
+        # for the tool_calls/usage_metadata accessors below.
+        chunk_message = cast(AIMessageChunk, aggregate.message)
         message = AIMessage(
             content=chunk_message.content,
             # AIMessageChunk.tool_calls parses the streamed tool_call_chunks for us.
@@ -457,6 +469,13 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
             result = {}
         _models_cache = (time.monotonic(), result)
         return result
+
+
+def cached_subscription_models() -> dict[str, dict[str, Any]]:
+    """The last live catalog fetched, without a network round-trip (``{}`` if never
+    fetched). For sync callers that only want the freshest *known* value — the UI
+    polls ``/models`` constantly, so this is warm in practice."""
+    return _models_cache[1] if _models_cache is not None else {}
 
 
 def clear_subscription_models_cache() -> None:
