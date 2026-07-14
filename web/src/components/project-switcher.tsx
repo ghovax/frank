@@ -1,29 +1,27 @@
 "use client";
 
-import { Button, Menu, Text } from "@chakra-ui/react";
+import { Box, Button, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuChevronDown, LuFolderOpen, LuPlus, LuSettings } from "react-icons/lu";
+import { LuFolderOpen } from "react-icons/lu";
 import { listProjects, listSshHosts, subscribeEvents, type Project, type SshHost } from "@/lib/api";
-import { DropdownMenu, MenuOption, MenuSeparator } from "@/components/ui/menu";
-import { NewProjectDialog } from "./new-project-dialog";
 import { ManageProjectsDialog } from "./manage-projects-dialog";
 
-// The compact project switcher that anchors the sessions sidebar: the current project's name
-// with a chevron, opening a dropdown of every project (switch on click), plus "New project…"
-// and "Manage projects…". Replaces the old landing grid — picking/managing projects now
-// happens here, in place, without leaving the chat.
+// The project anchor at the top of the sessions sidebar: the current project's name with its
+// description beneath it. Clicking it opens the Manage Projects dialog directly — switching,
+// creating, and editing projects all happen there, so there is no intermediate dropdown.
 export function ProjectSwitcher({
   currentProjectId,
   onSwitchProject,
+  onOpenProjectSettings,
 }: {
   currentProjectId: string;
   onSwitchProject: (projectId: string) => void;
+  onOpenProjectSettings: (projectId: string) => void;
 }) {
   const t = useTranslations("ProjectSwitcher");
   const [projects, setProjects] = useState<Project[]>([]);
   const [hosts, setHosts] = useState<SshHost[]>([]);
-  const [newOpen, setNewOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
 
   const refresh = useCallback(() => {
@@ -43,57 +41,33 @@ export function ProjectSwitcher({
 
   return (
     <>
-      <DropdownMenu
-        positioning={{ placement: "bottom-start" }}
-        trigger={
-          <Button
-            variant="ghost"
-            w="full"
-            minW={0}
-            justifyContent="flex-start"
-            gap={2}
-            fontWeight="medium"
-            _focusVisible={{ outline: "none", boxShadow: "none", bg: "bg.subtle" }}
-          >
-            <LuFolderOpen size={14} />
-            <Text flex={1} minW={0} truncate textAlign="left" fontSize="sm">
-              {current?.name ?? t("selectProject")}
-            </Text>
-            <LuChevronDown size={13} />
-          </Button>
-        }
+      <Button
+        variant="ghost"
+        w="full"
+        minW={0}
+        h="auto"
+        minH={9}
+        py={1}
+        justifyContent="flex-start"
+        gap={2}
+        onClick={() => setManageOpen(true)}
+        _focusVisible={{ outline: "none", boxShadow: "none", bg: "bg.subtle" }}
       >
-        <Menu.ItemGroup>
-          <Menu.ItemGroupLabel>{t("projects")}</Menu.ItemGroupLabel>
-          {projects.map((project) => (
-            <MenuOption
-              key={project.id}
-              value={project.id}
-              icon={<LuFolderOpen size={13} />}
-              selected={project.id === currentProjectId}
-              onClick={() => onSwitchProject(project.id)}
-            >
-              <Text truncate>{project.name}</Text>
-            </MenuOption>
-          ))}
-        </Menu.ItemGroup>
-        <MenuSeparator />
-        <MenuOption value="__new__" icon={<LuPlus size={13} />} onClick={() => setNewOpen(true)}>
-          <Text>{t("newProject")}</Text>
-        </MenuOption>
-        <MenuOption value="__manage__" icon={<LuSettings size={13} />} onClick={() => setManageOpen(true)}>
-          <Text>{t("manageProjects")}</Text>
-        </MenuOption>
-      </DropdownMenu>
+        <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
+          <LuFolderOpen size={14} />
+        </Box>
+        <Box flex={1} minW={0} textAlign="left">
+          <Text truncate fontSize="sm" fontWeight="medium" lineHeight="1.3">
+            {current?.name ?? t("selectProject")}
+          </Text>
+          {current?.description ? (
+            <Text truncate fontSize="xs" fontWeight="normal" color="fg.muted" lineHeight="1.3">
+              {current.description}
+            </Text>
+          ) : null}
+        </Box>
+      </Button>
 
-      {newOpen && (
-        <NewProjectDialog
-          hosts={hosts}
-          open
-          onOpenChange={setNewOpen}
-          onCreated={(project) => { setNewOpen(false); refresh(); onSwitchProject(project.id); }}
-        />
-      )}
       <ManageProjectsDialog
         open={manageOpen}
         onOpenChange={setManageOpen}
@@ -101,6 +75,7 @@ export function ProjectSwitcher({
         hosts={hosts}
         currentProjectId={currentProjectId}
         onSwitchProject={onSwitchProject}
+        onOpenProjectSettings={onOpenProjectSettings}
         onProjectsChanged={refresh}
       />
     </>

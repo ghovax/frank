@@ -509,28 +509,16 @@ function DiffView({ oldValue, newValue }: { oldValue: string; newValue: string }
 
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
-  const skipValidation = args.skip_validation === true;
-  const replaceAll = args.replace_all === true;
+  // An edit reads as its path and the change itself — nothing else. The find/replace
+  // strings are the two sides of the diff, so they show only as the rendered diff.
   const find = asString(args.find);
   const replaceWith = asString(args.replace_with);
-  const hasInlineDiff = find && replaceWith && find !== replaceWith;
+  const hasInlineDiff = find !== replaceWith && (find !== "" || replaceWith !== "");
   return (
     <FieldList>
       <InlineField label={t("filePath")}>
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {skipValidation && <InlineField label={t("skipValidation")}>{t("yes")}</InlineField>}
-      {replaceAll && <InlineField label={t("replaceAll")}>{t("yes")}</InlineField>}
-      {find && (
-        <Field label={t("find")}>
-          <MonoBlock>{find}</MonoBlock>
-        </Field>
-      )}
-      {replaceWith && (
-        <Field label={t("replaceWith")}>
-          <MonoBlock>{replaceWith}</MonoBlock>
-        </Field>
-      )}
       {hasInlineDiff && (
         <Field label={t("diff")}>
           <DiffView oldValue={find} newValue={replaceWith} />
@@ -647,23 +635,16 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
 
 function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
-  // The call already shows the file path, so the result only surfaces the line
-  // range and the content (no duplicated Path field).
-  const content = asString(data.content);
+  // The call already shows the file path; the result only confirms how much was read
+  // (the line range) — the file body itself is the model's to read, not the transcript's.
   const range = [asString(data.start_line), asString(data.end_line)].filter(Boolean).join("–");
   const total = asString(data.total_lines);
+  if (!range) return null;
   return (
     <FieldList>
-      {range && (
-        <InlineField label={t("lines")}>
-          {total ? t("linesOfTotal", { range, total }) : range}
-        </InlineField>
-      )}
-      {content && (
-        <Field label={t("content")}>
-          <MonoBlock>{content}</MonoBlock>
-        </Field>
-      )}
+      <InlineField label={t("lines")}>
+        {total ? t("linesOfTotal", { range, total }) : range}
+      </InlineField>
     </FieldList>
   );
 }
@@ -689,9 +670,6 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
   // Shared by edit_file and write_file. Path is on the call card.
   const code = asString(data.code);
-  const characters = asString(data.characters);
-  const operationsApplied = asString(data.operations_applied);
-  const created = data.created;
   const diagnostic = asRecord(data.diagnostic);
   const message = asString(data.message);
   const before = asString(data.before);
@@ -746,16 +724,13 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
     );
   }
 
+  // A successful edit reads as its diff and nothing more — the path is on the call card,
+  // and byte/operation counts are bookkeeping the transcript doesn't need. A write with
+  // no before/after (a brand-new file) has nothing to add beyond the call's own preview.
+  if (!hasDiff) return null;
   return (
     <FieldList>
-      {created != null && (
-        <InlineField label={t("created")}>{created ? t("yes") : t("no")}</InlineField>
-      )}
-      {operationsApplied && code === "edit_completed" && (
-        <InlineField label={t("operations")}>{operationsApplied}</InlineField>
-      )}
-      {characters && <InlineField label={t("characters")}>{characters}</InlineField>}
-      {hasDiff ? <DiffView oldValue={before} newValue={after} /> : null}
+      <DiffView oldValue={before} newValue={after} />
     </FieldList>
   );
 }
@@ -845,9 +820,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
 }
 
 export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string; title?: string }[] }) {
-  const t = useTranslations("ToolViews");
   if (!args) return null;
-  const justification = asString(args.justification);
   const specificView = (() => {
     switch (name) {
       case "bash":
@@ -885,23 +858,15 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       case "browser":
         return <BrowserCallView args={args} />;
       default: {
-        // The wrapper below already renders `justification` for every tool. Strip it here,
-        // or tools without a dedicated view (MCP calls) would show it twice.
+        // The justification is already the collapsed heading (the tool-call title);
+        // strip it so the expanded body never repeats it. MCP calls fall here too.
         const rest = { ...args };
         delete rest.justification;
         return <GenericView data={rest} />;
       }
     }
   })();
-  if (!justification) return specificView;
-  return (
-    <FieldList>
-      <Field label={t("justification")}>
-        <MarkdownContent content={justification} fontSize="xs" />
-      </Field>
-      <Box>{specificView}</Box>
-    </FieldList>
-  );
+  return specificView;
 }
 
 // Tool result (output) views
@@ -2202,38 +2167,19 @@ function ComputerResultView({ data }: { data: Record<string, unknown> }) {
     if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
     return <ErrorView message={asString(data.error) || t("failed")} />;
   }
-  const elements = asArray(data.elements);
   const did = asString(data.did);
 
-  // Observe snapshot.
-  if (data.count != null || elements.length > 0) {
+  // Observe snapshot: a summary of what was seen — which window, how many elements, how
+  // long it took. The element tree itself and any model-directed guidance are the model's
+  // to read from the conversation; the transcript stays a glanceable receipt.
+  if (data.count != null) {
     const durationMs = Number(data.duration_ms);
-    const hint = asString(data.hint);
-    const changes = asRecord(data.changes_since_last_observe);
-    const changeGroups: [string, unknown[]][] = [
-      [t("computerAppeared"), asArray(changes.appeared)],
-      [t("computerDisappeared"), asArray(changes.disappeared)],
-      [t("computerChanged"), asArray(changes.changed)],
-    ];
     return (
       <FieldList>
         {asString(data.window) && <InlineField label={t("computerWindow")}>{asString(data.window)}</InlineField>}
-        {data.count != null && <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>}
+        <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>
         {Number.isFinite(durationMs) && (
           <InlineField label={t("computerDuration")}>{t("computerMs", { value: Math.round(durationMs) })}</InlineField>
-        )}
-        {hint && <EmptyHint>{hint}</EmptyHint>}
-        {changeGroups.map(([label, items]) =>
-          items.length > 0 ? (
-            <Field key={label} label={label}>
-              <MonoBlock>{JSON.stringify(items, null, 2)}</MonoBlock>
-            </Field>
-          ) : null
-        )}
-        {elements.length > 0 && (
-          <Field label={t("computerElements")}>
-            <MonoBlock>{JSON.stringify(elements, null, 2)}</MonoBlock>
-          </Field>
         )}
       </FieldList>
     );
@@ -2292,9 +2238,9 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
       </FieldList>
     );
   }
-  const elements = asArray(data.elements);
-  if (data.count != null || elements.length > 0) {
-    const advisory = asString(data.note) || asString(data.hint);
+  // Page overview: what the browser landed on and how much is there. The element tree
+  // and any model-directed guidance travel in the conversation, not the transcript.
+  if (data.count != null) {
     return (
       <FieldList>
         {asString(data.did) && <InlineField label={t("computerResult")}>{asString(data.did)}</InlineField>}
@@ -2304,28 +2250,20 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
             {resultUrl}{data.url_changed === true ? ` · ${t("browserUrlChanged")}` : ""}
           </InlineField>
         )}
-        {data.count != null && <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>}
+        <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>
         {data.dialog != null && (
           <InlineField label={t("browserDialog")}>
             {`${asString(asRecord(data.dialog).type)}: ${asString(asRecord(data.dialog).message)}`}
           </InlineField>
-        )}
-        {advisory && <EmptyHint>{advisory}</EmptyHint>}
-        {elements.length > 0 && (
-          <Field label={t("computerElements")}>
-            <MonoBlock>{JSON.stringify(elements, null, 2)}</MonoBlock>
-          </Field>
         )}
       </FieldList>
     );
   }
   const did = asString(data.did);
   if (did) {
-    const note = asString(data.note);
     return (
       <FieldList>
         <InlineField label={t("computerResult")}>{did}</InlineField>
-        {note && <EmptyHint>{note}</EmptyHint>}
       </FieldList>
     );
   }

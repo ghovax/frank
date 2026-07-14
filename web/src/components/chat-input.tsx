@@ -596,6 +596,10 @@ export function ChatInput({
           }}
           _focusWithin={{ borderColor: "border.emphasized" }}
         >
+          {/* One row: the textarea grows with its content (see the auto-resize effect above)
+              while the action controls — attach, then send/stop — sit at its trailing edge and
+              stay pinned to the bottom (align="flex-end") as it grows. The textarea's own corner
+              radius is zeroed so a text selection that scrolls isn't clipped round at the edges. */}
           <Flex align="flex-end" gap={2} px={2} py={2}>
             <Textarea
               ref={inputRef}
@@ -616,19 +620,27 @@ export function ChatInput({
               onChange={(event) => setInputValue(event.target.value)}
               onKeyDown={handleKeyDown}
               disabled={disabled}
+              flex={1}
+              minW={0}
               fontSize="sm"
               lineHeight="1.5"
-              minH={16}
+              rows={1}
+              // One comfortable row at rest (matching the button height), growing from there;
+              // the auto-resize effect drives the real height inline above this floor.
+              minH={8}
+              h="auto"
               maxH={`${COMPOSER_MAX_HEIGHT}px`}
-              border="none"
-              outline="none"
               px={1}
               py={1.5}
+              border="none"
+              borderRadius="none"
+              outline="none"
+              bg="transparent"
               resize="none"
               _focus={{ boxShadow: "none", borderColor: "transparent" }}
               _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />
-            <Flex gap={2} flexShrink={0}>
+            <Flex align="center" gap={1} flexShrink={0}>
               <input
                 ref={fileInputRef}
                 type="file"

@@ -3,17 +3,16 @@
 import { Box, Button, Dialog, Flex, IconButton, Portal, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuArrowLeft, LuPlus, LuSettings, LuTrash2 } from "react-icons/lu";
+import { LuPlus, LuSettings, LuTrash2 } from "react-icons/lu";
 import { deleteProject, type Project, type SshHost } from "@/lib/api";
 import { LocationStatusDot } from "./location-status";
-import { ProjectLocationsPanel } from "./project-locations";
 import { NewProjectDialog } from "./new-project-dialog";
 import { toaster } from "./ui/toaster";
 
-// The project manager: create, delete, and edit each project's locations — the operations
-// that used to live on the (now-removed) Projects landing grid, folded into a modal opened
-// from the sidebar switcher. Switching *which* project is active happens in the switcher's
-// dropdown; this dialog is purely for managing the set.
+// The project manager: switch, create, delete, and open each project's settings — the
+// operations that used to live on the (now-removed) Projects landing grid, folded into a
+// modal opened from the sidebar's project button. A project's own settings (locations and
+// the rest) live in the real Settings dialog, which the gear opens for that project.
 export function ManageProjectsDialog({
   open,
   onOpenChange,
@@ -21,6 +20,7 @@ export function ManageProjectsDialog({
   hosts,
   currentProjectId,
   onSwitchProject,
+  onOpenProjectSettings,
   onProjectsChanged,
 }: {
   open: boolean;
@@ -29,14 +29,13 @@ export function ManageProjectsDialog({
   hosts: SshHost[];
   currentProjectId: string;
   onSwitchProject: (projectId: string) => void;
+  onOpenProjectSettings: (projectId: string) => void;
   onProjectsChanged: () => void;
 }) {
   const t = useTranslations("ProjectsHome");
   const tc = useTranslations("Common");
   const [newOpen, setNewOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
-  const editing = editingId ? projects.find((project) => project.id === editingId) ?? null : null;
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -52,32 +51,22 @@ export function ManageProjectsDialog({
 
   return (
     <>
-      <Dialog.Root open={open} onOpenChange={(event) => { if (!event.open) { onOpenChange(false); setEditingId(null); } }} placement="center">
+      <Dialog.Root open={open} onOpenChange={(event) => { if (!event.open) onOpenChange(false); }} placement="center">
         <Portal>
           <Dialog.Backdrop />
           <Dialog.Positioner>
             <Dialog.Content maxW="min(680px, 94vw)">
               <Dialog.Header>
                 <Flex align="center" gap={2} w="full">
-                  {editing && (
-                    <IconButton aria-label={tc("back")} variant="ghost" onClick={() => setEditingId(null)}>
-                      <LuArrowLeft size={14} />
-                    </IconButton>
-                  )}
                   <Dialog.Title textStyle="panelTitle" flex={1} truncate>
-                    {editing ? editing.name : t("manageProjects")}
+                    {t("manageProjects")}
                   </Dialog.Title>
-                  {!editing && (
-                    <Button colorPalette="blue" onClick={() => setNewOpen(true)}>
-                      <LuPlus size={13} /> {t("newProject")}
-                    </Button>
-                  )}
+                  <Button colorPalette="blue" onClick={() => setNewOpen(true)}>
+                    <LuPlus size={13} /> {t("newProject")}
+                  </Button>
                 </Flex>
               </Dialog.Header>
               <Dialog.Body maxH="70vh" overflowY="auto">
-                {editing ? (
-                  <ProjectLocationsPanel projectId={editing.id} />
-                ) : (
                   <Flex direction="column" gap={2}>
                     {projects.map((project) => (
                       <Flex
@@ -114,7 +103,7 @@ export function ManageProjectsDialog({
                         <Text fontSize="xs" color="fg.subtle" flexShrink={0} whiteSpace="nowrap">
                           {t("sessionCount", { count: project.session_count })}
                         </Text>
-                        <IconButton aria-label={t("projectSettings")} variant="ghost" flexShrink={0} onClick={(event) => { event.stopPropagation(); setEditingId(project.id); }}>
+                        <IconButton aria-label={t("projectSettings")} variant="ghost" flexShrink={0} onClick={(event) => { event.stopPropagation(); onOpenChange(false); onOpenProjectSettings(project.id); }}>
                           <LuSettings size={13} />
                         </IconButton>
                         <IconButton
@@ -130,7 +119,6 @@ export function ManageProjectsDialog({
                       </Flex>
                     ))}
                   </Flex>
-                )}
               </Dialog.Body>
             </Dialog.Content>
           </Dialog.Positioner>

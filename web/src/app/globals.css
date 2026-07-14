@@ -176,6 +176,42 @@ samp {
   }
 }
 
+/* Sessions sidebar — a session title that scrolls its overflow on hover/focus (a
+   marquee), with a soft gradient mask at the clipped edge so the hidden text dissolves
+   rather than cutting. The row measures its own overflow in JS and sets
+   `--marquee-overflow` / `--marquee-duration` on the title element; at idle a right-edge
+   fade hints there is more, and hover reveals both edges while the text travels left. */
+.sidebar-title {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar-title[data-overflow="true"] {
+  -webkit-mask-image: linear-gradient(to right, #000 82%, transparent 98%);
+  mask-image: linear-gradient(to right, #000 82%, transparent 98%);
+}
+
+.sidebar-title-inner {
+  display: inline-block;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.sidebar-row:hover .sidebar-title[data-overflow="true"],
+.sidebar-row:focus-within .sidebar-title[data-overflow="true"] {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 44px), transparent calc(100% - 24px));
+  mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 44px), transparent calc(100% - 24px));
+}
+
+.sidebar-row:hover .sidebar-title-inner,
+.sidebar-row:focus-within .sidebar-title-inner {
+  transform: translateX(calc(-1 * var(--marquee-overflow, 0px)));
+  transition: transform var(--marquee-duration, 0s) linear;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .running-title-shimmer {
     color: var(--chakra-colors-fg-muted);
@@ -193,5 +229,10 @@ samp {
 
   .tool-status-spin {
     animation: none;
+  }
+
+  .sidebar-title-inner {
+    transform: none !important;
+    transition: none !important;
   }
 }

@@ -302,11 +302,35 @@ def _data_part(kind: str, **fields) -> Part:
     return Part(root=DataPart(data={PART_KIND: kind, **fields}))
 
 
+# Fields in a tool result that are guidance addressed to the model, or bulk payload it
+# reads from the conversation — never something the transcript should render. They are
+# stripped from `display` so the wire (live and on replay) carries only what the UI shows.
+_MODEL_ONLY_RESULT_KEYS = frozenset({"hint", "note"})
+
+# Per-tool heavy payloads the UI summarizes (a count, a range) rather than dumping: the
+# model still reads them from the conversation; the client never needs the raw blob.
+_HEAVY_RESULT_KEYS: dict[str, frozenset[str]] = {
+    "computer": frozenset({"elements", "changes_since_last_observe"}),
+    "browser": frozenset({"elements"}),
+    "read_file": frozenset({"content"}),
+}
+
+
+def _project_display(tool_name: str, result: object) -> object:
+    """Trim a tool result down to the UI-facing view. The model reads the untrimmed
+    result from the conversation; only this projection reaches the client, so
+    model-directed guidance and bulk payloads never leak into the transcript."""
+    if not isinstance(result, dict):
+        return result
+    drop = _MODEL_ONLY_RESULT_KEYS | _HEAVY_RESULT_KEYS.get(tool_name, frozenset())
+    return {key: value for key, value in result.items() if key not in drop}
+
+
 def _tool_result_part(tool_name: str, tool_call_id: str, result: object) -> Part:
     """The unified ``tool_result`` wire event for a root-agent tool. Lifecycle is the
-    explicit ``status``; ``display`` is the payload the UI renders (the model-facing
-    view travels only in the conversation). ``metadata`` here is the minimal display
-    correlation — full timing rides the model envelope."""
+    explicit ``status``; ``display`` is the projected payload the UI renders (the
+    model-facing view travels only in the conversation). ``metadata`` here is the minimal
+    display correlation — full timing rides the model envelope."""
     record = result if isinstance(result, dict) else {}
     return _data_part(
         "tool_result",
@@ -314,7 +338,7 @@ def _tool_result_part(tool_name: str, tool_call_id: str, result: object) -> Part
         tool_call_id=tool_call_id,
         status=tool_status_from_result(result).value,
         code=record.get("code"),
-        display=result,
+        display=_project_display(tool_name, result),
         metadata={"tool_name": tool_name, "tool_call_id": tool_call_id},
     )
 

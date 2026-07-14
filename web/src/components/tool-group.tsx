@@ -196,11 +196,13 @@ export const ToolGroup = memo(function ToolGroup({
         _hover={interactive ? { color: "fg" } : undefined}
         onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
       >
-        {/* Leading slot: the disclosure caret (this line unfolds into its calls), or
-            the reasoning glyph for a thinking-only phase that has nothing to unfold. */}
-        <Box display="flex" alignItems="center" flexShrink={0} color={thinkingOnly ? "purple.fg" : "inherit"} opacity={thinkingOnly ? 1 : 0.7}>
-          {thinkingOnly ? <LuBrain size={13} /> : bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-        </Box>
+        {/* Leading slot: the reasoning glyph for a thinking-only phase that has nothing
+            to unfold. A real tool group's disclosure caret lives at the trailing edge. */}
+        {thinkingOnly && (
+          <Box display="flex" alignItems="center" flexShrink={0} color="purple.fg">
+            <LuBrain size={13} />
+          </Box>
+        )}
         {/* Status line — the latest tool's label. When the justification changes, the new
             label blurs and fades in (the same token-in look as the streaming message, applied
             to the whole label since it swaps as a unit — per-token spans would break this
@@ -228,6 +230,7 @@ export const ToolGroup = memo(function ToolGroup({
             >
               <Text
                 textStyle="fieldLabel"
+                fontSize="sm"
                 whiteSpace="nowrap"
                 overflow="hidden"
                 textOverflow="ellipsis"
@@ -311,6 +314,14 @@ export const ToolGroup = memo(function ToolGroup({
             </motion.div>
           ))}
         </AnimatePresence>
+        {/* Trailing disclosure caret: this line unfolds into its individual calls.
+            Kept at the right edge of the content so it reads as the affordance that
+            closes the sentence, matching a single ToolCall line. */}
+        {interactive && (
+          <Box display="flex" alignItems="center" flexShrink={0} opacity={0.7}>
+            {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+          </Box>
+        )}
       </Flex>
       {bodyOpen && interactive && (
         // The unfolded batch: call lines stacked against a hairline rule, indented so

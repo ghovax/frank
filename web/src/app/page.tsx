@@ -478,6 +478,24 @@ function ProjectWorkspace() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
+  // Open a project's real Settings dialog on a given section (used by the Manage Projects
+  // gear). Selects the project and forces a fresh ChatPanel via `chatKey`, so its mount-time
+  // `initialSettingsSection` (fed by `?settings=`) opens Settings on that section — reusing the
+  // same query-param path the Projects cog already uses, rather than a second settings channel.
+  function openProjectSettings(nextProjectId: string, section: string = "locations") {
+    writeLastProject(nextProjectId);
+    setActiveSessionId(null);
+    setChatKey((current) => current + 1);
+    setWorkingDirectory("");
+    setRestoredContext(null);
+    const params = new URLSearchParams(window.location.search);
+    params.set("project", nextProjectId);
+    params.delete("session");
+    params.set("settings", section);
+    router.replace(`?${params.toString()}`, { scroll: false });
+    if (isCompactViewport()) setHistoryOpen(false);
+  }
+
   async function handleDeleteSession(sessionId: string) {
     const ok = await deleteSession(sessionId);
     if (ok) {
@@ -716,12 +734,14 @@ function ProjectWorkspace() {
             sessions={projectSessions}
             sessionsLoaded={sessionsLoaded}
             activeSessionId={activeSessionId}
-            agents={agents}
             sessionSort={sessionSort}
             onSessionSortChange={setSessionSort}
             unseenCompletions={unseenCompletions}
             currentProjectId={projectId}
+            connectionName={currentConnection?.name}
+            connectionKind={currentConnection?.kind}
             onSwitchProject={handleSwitchProject}
+            onOpenProjectSettings={openProjectSettings}
             onNewChat={handleNewChat}
             onResume={(entry) => void handleResumeSession(entry)}
             onDeleteSession={(entry) => void handleDeleteSession(entry.sessionId)}
