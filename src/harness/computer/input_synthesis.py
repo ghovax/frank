@@ -22,6 +22,11 @@ import time
 
 import Quartz
 
+# The few-millisecond pacing an OS needs for a synthesized click, keystroke, or drag step to
+# register as a real gesture lives in the central tuning policy (fixed, not window-scaled), read
+# through the one tuning surface like every other tunable.
+from harness.core.tuning import Limit, active_tuning
+
 # ABI-stable virtual key codes for the named, non-printing physical keys. These map to a
 # fixed physical key regardless of the user's keyboard layout, so they are safe to name
 # (unlike character keys, whose position moves between layouts).
@@ -65,7 +70,7 @@ def click(pid: int, point_x: float, point_y: float, *, clicks: int = 1, button: 
         Quartz.CGEventSetIntegerValueField(up, Quartz.kCGMouseEventClickState, click_index + 1)
         Quartz.CGEventPostToPid(pid, down)
         Quartz.CGEventPostToPid(pid, up)
-        time.sleep(0.01)
+        time.sleep(active_tuning().duration(Limit.CLICK_INTERVAL_SECONDS))
 
 
 def move(pid: int, point_x: float, point_y: float) -> None:
@@ -89,13 +94,15 @@ def drag(pid: int, start_x: float, start_y: float, end_x: float, end_y: float, *
     def post(event_type: int, point_x: float, point_y: float) -> None:
         Quartz.CGEventPostToPid(pid, Quartz.CGEventCreateMouseEvent(None, event_type, (point_x, point_y), button_code))
 
+    tuning = active_tuning()
+    step_interval = tuning.duration(Limit.DRAG_STEP_INTERVAL_SECONDS)
     post(down_type, start_x, start_y)
-    time.sleep(0.01)
-    steps = 12
+    time.sleep(step_interval)
+    steps = tuning.amount(Limit.DRAG_STEPS)
     for step in range(1, steps + 1):
         fraction = step / steps
         post(drag_type, start_x + (end_x - start_x) * fraction, start_y + (end_y - start_y) * fraction)
-        time.sleep(0.01)
+        time.sleep(step_interval)
     post(up_type, end_x, end_y)
 
 
@@ -108,8 +115,11 @@ def type_text(pid: int, text: str) -> None:
     one Python char) must be measured in UTF-16 or the string is truncated. Chunking is by
     whole Python characters, which never splits a code point, and each chunk's length is
     its true UTF-16 unit count."""
-    for chunk_start in range(0, len(text), 20):
-        chunk = text[chunk_start:chunk_start + 20]
+    tuning = active_tuning()
+    chunk_size = tuning.amount(Limit.TYPE_CHUNK_SIZE)
+    chunk_interval = tuning.duration(Limit.TYPE_CHUNK_INTERVAL_SECONDS)
+    for chunk_start in range(0, len(text), chunk_size):
+        chunk = text[chunk_start:chunk_start + chunk_size]
         utf16_length = len(chunk.encode("utf-16-le")) // 2
         down = Quartz.CGEventCreateKeyboardEvent(None, 0, True)
         Quartz.CGEventKeyboardSetUnicodeString(down, utf16_length, chunk)
@@ -117,7 +127,7 @@ def type_text(pid: int, text: str) -> None:
         up = Quartz.CGEventCreateKeyboardEvent(None, 0, False)
         Quartz.CGEventKeyboardSetUnicodeString(up, utf16_length, chunk)
         Quartz.CGEventPostToPid(pid, up)
-        time.sleep(0.005)
+        time.sleep(chunk_interval)
 
 
 def press_key(pid: int, key: str, modifiers: list[str]) -> bool:

@@ -16,6 +16,8 @@ from contextlib import suppress
 
 import ApplicationServices as AS
 
+from harness.core.tuning import Limit, active_tuning
+
 with suppress(Exception):  # Quartz screen-capture preflight lives in the Quartz umbrella
     import Quartz
 
@@ -59,4 +61,4 @@ def open_screen_recording_settings() -> None:
 
 def _open(url: str) -> None:
     with suppress(OSError, subprocess.SubprocessError):
-        subprocess.run(["open", url], check=False, timeout=5)
+        subprocess.run(["open", url], check=False, timeout=active_tuning().duration(Limit.OPEN_URL_SECONDS))

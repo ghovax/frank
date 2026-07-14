@@ -121,6 +121,7 @@ def save_api_keys(
     compaction: dict | None = None,
     user_context_enabled: bool | None = None,
     computer_control_enabled: bool | None = None,
+    tuning: dict | None = None,
     provider_keys: dict[str, str] | None = None,
     provider_base_urls: dict[str, str] | None = None,
 ) -> None:
@@ -148,6 +149,8 @@ def save_api_keys(
         data.setdefault("workspace", {})["strategy"] = workspace_strategy
     if compaction is not None:
         data.setdefault("compaction", {}).update(compaction)
+    if tuning is not None:
+        data.setdefault("tuning", {}).update(tuning)
     if user_context_enabled is not None:
         data.setdefault("user_context", {})["enabled"] = user_context_enabled
     if computer_control_enabled is not None:
@@ -242,6 +245,28 @@ class CompactionConfiguration(BaseModel):
     reflector_observation_fraction: float = 0.3
     # Recent user turns always kept verbatim (never folded into observations).
     keep_recent_turns: int = 6
+
+
+class TuningConfiguration(BaseModel):
+    """How large, how many, and how patient the tools are — the single home for what used to be
+    dozens of scattered magic numbers. Size and count caps are token budgets: the concrete limit a
+    tool applies is derived from the *live* model context window (see ``harness.core.tuning``), so a
+    small model gets tight caps and a large one gets room. These two fractions scale the whole
+    output/listing family from calibrated defaults; timeouts scale only with ``timeout_scale``;
+    settlement is polling, not a fixed sleep, bounded by the interval and ceiling."""
+
+    # Share of the context window one tool's textual output may fill (read windows, command
+    # output, fetched pages, evaluate results). Higher enlarges every text cap proportionally.
+    output_fraction: float = 0.25
+    # Share of the window a structured listing may fill (page elements, find matches, grep/glob
+    # results, file lines). Higher lengthens every listing proportionally.
+    listing_fraction: float = 0.15
+    # How often to re-check whether a surface has settled after an action, in seconds.
+    settle_interval_seconds: float = 0.05
+    # The longest to wait for a surface to settle before proceeding anyway, in seconds.
+    settle_ceiling_seconds: float = 1.5
+    # Multiplier on every action, navigation, and IO timeout.
+    timeout_scale: float = 1.0
 
 
 class UserContextConfiguration(BaseModel):
@@ -358,6 +383,7 @@ class GlobalConfiguration(BaseModel):
     compaction: CompactionConfiguration = CompactionConfiguration()
     user_context: UserContextConfiguration = UserContextConfiguration()
     computer_control: ComputerControlConfiguration = ComputerControlConfiguration()
+    tuning: TuningConfiguration = TuningConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     default_agent: str = "general-assistant"

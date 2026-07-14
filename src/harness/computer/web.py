@@ -39,7 +39,6 @@ import json
 import os
 import re
 import tempfile
-import time
 from collections import deque
 from itertools import count
 from pathlib import Path
@@ -48,6 +47,10 @@ from typing import Any, Callable, Optional
 from harness.computer.surface import (
     Element, ElementRegistry, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
 )
+# Every size, count, and timing limit comes from the central tuning policy: the caps scale with the
+# live model context window, the timeouts with the timeout knob, and settlement is a poll (settle)
+# rather than a fixed sleep.
+from harness.core.tuning import Limit, active_tuning, clip_to_tokens, settle
 # The verbatim-first matcher and compact diff window from the file-edit tool: the `edit` action
 # changes a field's text exactly the way edit_file changes a file, reusing that tested logic.
 from harness.tools.file_tools import _context_diff_window as context_diff_window, _match_find_text as match_find_text
@@ -237,17 +240,11 @@ _SNAPSHOT_LINE = re.compile(r"^(\s*)-\s+(?P<head>[^\s\[\":]+)(?P<rest>.*)$")
 _SNAPSHOT_NAME = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _SNAPSHOT_ATTRS = re.compile(r"\[([a-zA-Z-]+)(?:=([^\]]*))?\]")
 
-_MAXIMUM_ELEMENTS = 300
-
-# A page overview with fewer readable elements than this right after a load is treated as
-# "still rendering" and re-read briefly: a JS-heavy app reports itself loaded long before its
-# framework has painted anything the accessibility tree can see.
-_SETTLE_MINIMUM_ELEMENTS = 3
-_SETTLE_WINDOW_SECONDS = 3.0
-
-# Non-interactive text rows past this many are omitted from a full overview. They are the bulk
-# of a large page's payload and rarely what an action needs; read and find reach all of them.
-_PROSE_ELEMENT_BUDGET = 80
+# The overview element cap and the non-interactive prose budget are token budgets: they scale with
+# the live model context window and the ``listing_fraction`` knob (see ``harness.core.tuning``), so
+# they are resolved per call from ``active_tuning()`` rather than fixed here. A page reporting
+# itself loaded before its framework has painted anything is handled by settlement polling (the
+# snapshot is re-read until its element count stops changing), not a fixed "still rendering" floor.
 
 # Live-region roles: what a page announces after an action (a validation error, a status
 # line). Always included in acting results, so the announcement is visible without a read.
@@ -266,10 +263,6 @@ _STRUCTURAL_ROLES = frozenset({
 # Cart"/"Save" button belongs to. This is what tells twenty identical buttons apart.
 _LABEL_ROLES = _STRUCTURAL_ROLES | frozenset({"heading", "link"})
 
-# How many find matches come back at most: enough to disambiguate, small enough to stay readable.
-_FIND_LIMIT = 25
-
-
 def _relevance(element: Element, words: list[str]) -> tuple:
     """How well an element answers the model's stated ``goal``: how many of the goal's words appear
     in its role/name/context/value, with a clickable element winning ties. Used to rank which
@@ -284,7 +277,7 @@ def _relevance(element: Element, words: list[str]) -> tuple:
 
 
 def _parse_snapshot(
-    snapshot: str, limit: int = _MAXIMUM_ELEMENTS, prose_budget: int = _PROSE_ELEMENT_BUDGET,
+    snapshot: str, limit: Optional[int] = None, prose_budget: Optional[int] = None,
     goal: str = "",
 ) -> tuple[list[Element], bool, int]:
     """Parse the ai-mode aria snapshot (YAML-shaped, one node per line, ``[ref=...]`` markers,
@@ -294,7 +287,13 @@ def _parse_snapshot(
     and counted past it. When the collected set exceeds ``limit``, a stated ``goal`` ranks which
     elements survive (relevance-first, re-sorted back into document order) so the cap never starves
     the relevant controls in favour of whatever came first in the DOM; without a goal the cap keeps
-    document order. Returns (elements, truncated, omitted_text)."""
+    document order. Returns (elements, truncated, omitted_text). ``limit`` and ``prose_budget``
+    default to the window-scaled caps from the active tuning policy; find passes explicit large
+    sentinels so a match can never hide behind them."""
+    if limit is None:
+        limit = active_tuning().amount(Limit.ELEMENT_CAP)
+    if prose_budget is None:
+        prose_budget = active_tuning().amount(Limit.PROSE_BUDGET)
     elements: list[Element] = []
     prose_kept = 0
     omitted_text = 0
@@ -368,7 +367,7 @@ def _snapshot(page, root_locator=None) -> str:
     normally). This is the tree-shaped progressive discovery the DOM affords: skim the page,
     then expand just the branch that matters."""
     target = root_locator if root_locator is not None else page.locator("body")
-    return target.aria_snapshot(mode="ai", timeout=10_000)
+    return target.aria_snapshot(mode="ai", timeout=active_tuning().amount(Limit.SNAPSHOT_TIMEOUT_MS))
 
 
 # Icon fonts (Material Symbols, Font Awesome, and the like) render their ligatures as characters
@@ -384,13 +383,10 @@ def _clean_page_text(text: str) -> str:
     return _BLANK_LINES.sub("\n\n", text)
 
 
-# One read window's worth of page text. Longer pages are read progressively via `offset`.
-_READ_WINDOW_CHARS = 16_384  # Powers of 2 are nice, aren't they?
-
-# Bounds on the two structured-extraction actions: how much JSON an `evaluate` returns before it is
-# clipped, and how many recent requests the `network` reader hands back.
-_EVALUATE_RESULT_CHARS = 16_384
-_NETWORK_LIMIT = 50
+# The read window, the evaluate-result clip, and the network-log length are all token budgets,
+# resolved per call from ``active_tuning()`` (read_window_tokens / evaluate_tokens / network_limit)
+# so they scale with the live model context window. The two text clips are enforced with the real
+# tokenizer via clip_to_tokens; longer pages are read progressively via `offset`.
 
 # Friendly lowercase key names accepted historically, mapped to Playwright's key vocabulary.
 # Playwright key names are case-sensitive by design (a bare character's case selects the typed
@@ -407,6 +403,18 @@ _SCROLL_DIRECTIONS = frozenset({"down", "up", "left", "right", "top", "bottom"})
 
 # top/bottom are one huge fling of the same wheel gesture: a delta large enough to reach any end.
 _SCROLL_JUMP = 1_000_000
+
+
+def _element_signature(page) -> int:
+    """A cheap, comparable signature of what is currently on the page — the number of readable
+    elements in a fresh snapshot. Fed to ``settle`` so an action that reveals content (a hover
+    menu, a scrolled-in row) is waited out until the count stops changing, instead of a blind
+    fixed sleep. Returns -1 on a transient snapshot failure so a hiccup reads as 'still moving'."""
+    try:
+        elements, _, _ = _parse_snapshot(_snapshot(page))
+        return len(elements)
+    except Exception:
+        return -1
 
 
 def _safe_title(page) -> str:
@@ -445,23 +453,21 @@ def _as_ref(value: Any) -> Optional[str]:
     return str(value).strip()
 
 
-def _await_quiet(page, timeout_ms: int = 3_000) -> None:
-    """Let the page settle after an action without ever blocking on one stalled resource. The DOM
-    being parsed (``domcontentloaded``) is the hard signal; network quiet is then waited for only
-    up to a short ceiling and its timeout is swallowed — so a single hung ad tracker costs the
-    ceiling, not the tens of seconds the ``load`` event used to wait for it. The settle-aware read
-    that follows decides what is actually on the page."""
+def _await_quiet(page) -> None:
+    """Let the page's DOM parse after an action without ever blocking on one stalled resource.
+    ``domcontentloaded`` is the hard, cheap signal that the new document exists; it is bounded by
+    the settlement ceiling and its timeout is swallowed. Playwright's own ``networkidle`` wait is
+    deliberately not used here — Playwright marks it discouraged, and a single hung ad tracker
+    would cost the whole ceiling for no signal. What is actually on the page is decided by the
+    settlement poll in the read that follows (the snapshot is re-read until it stops changing)."""
+    ceiling_ms = max(1, int(active_tuning().settle_ceiling() * 1000))
     try:
-        page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
-    except Exception:
-        pass
-    try:
-        page.wait_for_load_state("networkidle", timeout=timeout_ms)
+        page.wait_for_load_state("domcontentloaded", timeout=ceiling_ms)
     except Exception:
         pass
 
 
-def _await_expectation(page, expect: str, timeout_ms: int = 8_000) -> Optional[bool]:
+def _await_expectation(page, expect: str, timeout_ms: Optional[int] = None) -> Optional[bool]:
     """When the model states what an action should produce, wait for it instead of a fixed pause:
     ``expect`` is text that should appear on the page. Returns whether it showed up in time, or
     ``None`` when no expectation was given. This is the explicit override for the cases the smart
@@ -469,6 +475,8 @@ def _await_expectation(page, expect: str, timeout_ms: int = 8_000) -> Optional[b
     wanted = expect.strip()
     if not wanted:
         return None
+    if timeout_ms is None:
+        timeout_ms = active_tuning().amount(Limit.EXPECTATION_TIMEOUT_MS)
     try:
         page.get_by_text(wanted, exact=False).first.wait_for(state="visible", timeout=timeout_ms)
         return True
@@ -539,7 +547,7 @@ class WebSurface(Surface):
         if websocket_url is None:
             raise ToolFailure(_not_connected_payload())
         try:
-            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=10_000)
+            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=active_tuning().amount(Limit.CONNECT_TIMEOUT_MS))
         except PlaywrightTimeout:
             # The port answers but the endpoint does not: the DevToolsActivePort file outlived
             # the debugging session (the infobar's Stop, or a toggle-off). The remedy differs
@@ -548,6 +556,12 @@ class WebSurface(Surface):
         except PlaywrightError:
             raise ToolFailure(_not_connected_payload())
         context = connected.contexts[0] if connected.contexts else connected.new_context()
+        # Set the action and navigation ceilings once on the context (Playwright's intended
+        # mechanism) instead of repeating a timeout on every call. Individual operations that
+        # genuinely warrant a different ceiling (a snapshot, a drag, a screenshot, a text read)
+        # still pass their own; everything else inherits these.
+        context.set_default_timeout(active_tuning().amount(Limit.ACTION_TIMEOUT_MS))
+        context.set_default_navigation_timeout(active_tuning().amount(Limit.NAVIGATION_TIMEOUT_MS))
         session = _Session(connected, context)
         for page in context.pages:
             session.adopt(page)
@@ -590,19 +604,26 @@ class WebSurface(Surface):
 
     # Reading and shaping, touched only on the worker thread.
 
-    def _read_page(self, session: _Session, page, *, settle: bool, root_locator=None, goal: str = "") -> tuple[list[dict], bool, int]:
+    def _read_page(self, session: _Session, page, *, settle_page: bool, root_locator=None, goal: str = "") -> tuple[list[dict], bool, int]:
         """Snapshot the page (or one subtree), bind every element a stable ref in the session's
-        durable registry, and return (payloads, truncated, omitted_text). ``settle`` re-reads a
-        near-empty snapshot briefly, since a JS-heavy app reports itself loaded long before it has
-        painted anything readable; ``goal`` ranks which elements survive the cap."""
-        snapshot = _snapshot(page, root_locator)
-        elements, truncated, omitted_text = _parse_snapshot(snapshot, goal=goal)
-        if settle and len(elements) < _SETTLE_MINIMUM_ELEMENTS:
-            deadline = time.monotonic() + _SETTLE_WINDOW_SECONDS
-            while len(elements) < _SETTLE_MINIMUM_ELEMENTS and time.monotonic() < deadline:
-                time.sleep(0.35)
-                snapshot = _snapshot(page, root_locator)
-                elements, truncated, omitted_text = _parse_snapshot(snapshot, goal=goal)
+        durable registry, and return (payloads, truncated, omitted_text). When ``settle_page`` is
+        set, the snapshot is polled until its element count stops changing (a JS-heavy app reports
+        itself loaded long before its framework has painted anything the accessibility tree can
+        see, so a single read catches an empty shell); ``goal`` ranks which elements survive the
+        cap. A page that never quiesces costs the settlement ceiling, not forever."""
+        latest: dict = {}
+
+        def probe() -> int:
+            snapshot = _snapshot(page, root_locator)
+            elements, truncated, omitted_text = _parse_snapshot(snapshot, goal=goal)
+            latest["value"] = (elements, truncated, omitted_text)
+            return len(elements)
+
+        if settle_page:
+            settle(probe)
+        else:
+            probe()
+        elements, truncated, omitted_text = latest["value"]
         session.registry.bind(elements)
         payloads = [element.payload() for element in elements]
         if root_locator is None:
@@ -617,13 +638,13 @@ class WebSurface(Surface):
             events.append(session.events.popleft())
         return events
 
-    def _overview(self, session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True, root_locator=None, goal: str = "") -> dict:
+    def _overview(self, session: _Session, page, *, before_url: Optional[str] = None, settle_page: bool = True, root_locator=None, goal: str = "") -> dict:
         """The full page (or one drilled subtree) as ref-addressed elements — what observe and the
         navigation actions return."""
-        elements, truncated, omitted_text = self._read_page(session, page, settle=settle, root_locator=root_locator, goal=goal)
+        elements, truncated, omitted_text = self._read_page(session, page, settle_page=settle_page, root_locator=root_locator, goal=goal)
         notes = []
         if truncated:
-            notes.append(message("overview_truncated", limit=str(_MAXIMUM_ELEMENTS)))
+            notes.append(message("overview_truncated", limit=str(active_tuning().amount(Limit.ELEMENT_CAP))))
         if omitted_text:
             notes.append(message("text_omitted", count=str(omitted_text)))
         result = self.overview(
@@ -637,12 +658,12 @@ class WebSurface(Surface):
     def _digest(self, session: _Session, page, *, previous: list[dict], before_url: Optional[str]) -> dict:
         """The diff-first result an acting call returns: what changed on the page against ``previous``
         (the surface as it stood before the action), the full surface only on a wholesale change."""
-        current, truncated, _ = self._read_page(session, page, settle=True)
+        current, truncated, _ = self._read_page(session, page, settle_page=True)
         url_changed = None if before_url is None else _safe_url(page) != before_url
         return self.digest(
             context=page, current=current, previous=previous, url_changed=url_changed,
             events=self._drain(session), truncated=truncated,
-            truncated_note=message("overview_truncated", limit=str(_MAXIMUM_ELEMENTS)),
+            truncated_note=message("overview_truncated", limit=str(active_tuning().amount(Limit.ELEMENT_CAP))),
             prose_note_name="digest_prose", empty_hint=message("empty_page_hint"),
             no_change_note=message("click_no_change"),
         )
@@ -716,7 +737,7 @@ class WebSurface(Surface):
             session = self.session(browser)
             page = self.page(session)
             try:
-                page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+                page.goto(url, wait_until="domcontentloaded")
             except Exception:
                 # A page that never even parses the DOM in time (busy SPA, hanging resource) can
                 # still be usable; the settle-aware overview decides what is actually there.
@@ -739,7 +760,7 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             root_locator = self._locator(session, page, element) if element is not None else None
-            result = self._overview(session, page, settle=element is None, root_locator=root_locator, goal=goal)
+            result = self._overview(session, page, settle_page=element is None, root_locator=root_locator, goal=goal)
             if element is not None:
                 result["did"] = f"Expanded element {element}"
             return result
@@ -769,8 +790,9 @@ class WebSurface(Surface):
                 or needle in element.context.lower()
             ]
             matches.sort(key=lambda element: 0 if element.clickable else 1)
-            truncated = len(matches) > _FIND_LIMIT
-            matches = matches[:_FIND_LIMIT]
+            find_limit = active_tuning().amount(Limit.FIND_LIMIT)
+            truncated = len(matches) > find_limit
+            matches = matches[:find_limit]
             # Bind the matches into the same durable registry an observe uses: an element seen by
             # both keeps one stable ref, and the map is only added to, never wiped.
             session.registry.bind(matches)
@@ -781,7 +803,7 @@ class WebSurface(Surface):
             }
             if truncated:
                 result["truncated"] = True
-                result["note"] = message("find_truncated", limit=str(_FIND_LIMIT))
+                result["note"] = message("find_truncated", limit=str(find_limit))
             if not listed:
                 result["note"] = message("find_no_match")
             return result
@@ -803,7 +825,7 @@ class WebSurface(Surface):
             session.pending_dialog = dialog or None
             try:
                 if ref is not None:
-                    self._locator(session, page, ref).click(button=button, click_count=clicks, timeout=5_000)
+                    self._locator(session, page, ref).click(button=button, click_count=clicks)
                     did = f"Clicked {ref}"
                 elif x is not None and y is not None:
                     page.mouse.click(x, y, button=button, click_count=clicks)
@@ -836,10 +858,10 @@ class WebSurface(Surface):
             locator = self._locator(session, page, ref)
             try:
                 if mode == "insert":
-                    locator.focus(timeout=5_000)
+                    locator.focus()
                     page.keyboard.insert_text(text)
                 else:
-                    locator.fill(text, timeout=5_000)
+                    locator.fill(text)
             except Exception as error:
                 raise ToolFailure({"ok": False, "error": f"Could not type into {ref}: {_actionability_error(error)}"})
             landed = self._field_text(locator)
@@ -849,7 +871,7 @@ class WebSurface(Surface):
                     result["note"] = message("type_clamped")
                 return result
             session.pending_dialog = None
-            locator.press("Enter", timeout=5_000)
+            locator.press("Enter")
             _await_quiet(page)
             met = _await_expectation(page, expect)
             result = self._digest(session, self.page(session), previous=before_elements, before_url=before_url)
@@ -866,9 +888,9 @@ class WebSurface(Surface):
         the element's text content for anything else. Text content (not inner text) is what the
         selection script indexes against, so the offsets computed here line up with the DOM."""
         try:
-            return locator.input_value(timeout=5_000)
+            return locator.input_value()
         except Exception:
-            return locator.text_content(timeout=5_000) or ""
+            return locator.text_content() or ""
 
     def select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
                select_all: bool = False, occurrence: int = 1) -> dict:
@@ -887,7 +909,7 @@ class WebSurface(Surface):
                 start, length = resolve_range(content, anchor_from=text, anchor_to=to_text, occurrence=occurrence)
             else:
                 start, length = resolve_range(content, text=text, occurrence=occurrence)
-            placed = locator.evaluate(_APPLY_SELECTION_JS, [start, start + length], timeout=5_000)
+            placed = locator.evaluate(_APPLY_SELECTION_JS, [start, start + length])
             if placed is None:
                 return {"ok": False, "error": message("select_unsupported")}
             return {"ok": True, "did": f"Selected {length} chars", "via": "dom"}
@@ -908,7 +930,7 @@ class WebSurface(Surface):
                 content, before=before, after=after, at_offset=at_offset,
                 to_start=edge == "start", to_end=edge == "end", occurrence=occurrence,
             )
-            placed = locator.evaluate(_APPLY_SELECTION_JS, [offset, offset], timeout=5_000)
+            placed = locator.evaluate(_APPLY_SELECTION_JS, [offset, offset])
             if placed is None:
                 return {"ok": False, "error": message("select_unsupported")}
             return {"ok": True, "did": f"Caret at {offset}", "via": "dom"}
@@ -935,7 +957,7 @@ class WebSurface(Surface):
             if occurrences > 1 and not replace_all:
                 return {"ok": False, "error": f"{occurrences} matches for that text; make it unique or set replace_all."}
             after = effective.replace(found, replacement, -1 if replace_all else 1)
-            locator.fill(after, timeout=5_000)
+            locator.fill(after)
             before_window, after_window = context_diff_window(effective, after)
             count = occurrences if replace_all else 1
             return {"ok": True, "did": f"Changed {count} occurrence(s)", "before": before_window, "after": after_window}
@@ -950,10 +972,10 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             if ref is not None:
-                self._locator(session, page, ref).focus(timeout=5_000)
+                self._locator(session, page, ref).focus()
             combo = {"copy": "c", "cut": "x", "paste": "v"}[action]
             page.keyboard.press(f"ControlOrMeta+{combo}")
-            _await_quiet(page, timeout_ms=2_000)
+            _await_quiet(page)
             return {"ok": True, "did": action.capitalize()}
 
         return self.guard(run)
@@ -971,7 +993,7 @@ class WebSurface(Surface):
                 page.keyboard.press(resolved)
             except Exception as error:
                 return {"ok": False, "error": f"Could not press {key!r}: {_actionability_error(error)}"}
-            _await_quiet(page, timeout_ms=3_000)
+            _await_quiet(page)
             met = _await_expectation(page, expect)
             result = self._digest(session, self.page(session), previous=before_elements, before_url=before_url)
             if met is not None:
@@ -990,14 +1012,15 @@ class WebSurface(Surface):
             before_elements = session.last_elements
             try:
                 if ref is not None:
-                    self._locator(session, page, ref).hover(timeout=5_000)
+                    self._locator(session, page, ref).hover()
                 elif x is not None and y is not None:
                     page.mouse.move(x, y)
                 else:
                     return {"ok": False, "error": "The hover action needs an element ref or an x/y point."}
             except Exception as error:
                 raise ToolFailure({"ok": False, "error": f"Could not hover: {_actionability_error(error)}"})
-            time.sleep(0.25)
+            # Let a hover menu or tooltip appear, waiting only until the page stops changing.
+            settle(lambda: _element_signature(page))
             return self._digest(session, page, previous=before_elements, before_url=None)
 
         return self.guard(run)
@@ -1026,7 +1049,7 @@ class WebSurface(Surface):
                 box = locator.bounding_box()
                 if box is None:
                     try:
-                        locator.hover(timeout=5_000)
+                        locator.hover()
                         box = locator.bounding_box()
                     except Exception:
                         box = None
@@ -1046,8 +1069,9 @@ class WebSurface(Surface):
             }
             delta_x, delta_y = deltas[wanted]
             page.mouse.wheel(delta_x, delta_y)
-            # Let the scroll land and lazily-rendered content (virtualized lists) paint.
-            time.sleep(0.4)
+            # Let the scroll land and lazily-rendered content (virtualized lists) paint, waiting
+            # only until the page stops changing rather than a blind fixed pause.
+            settle(lambda: _element_signature(page))
             result = self._digest(session, page, previous=before_elements, before_url=before_url)
             result["did"] = f"Scrolled {wanted}"
             return result
@@ -1065,7 +1089,7 @@ class WebSurface(Surface):
             before_elements = session.last_elements
             locator = self._locator(session, page, ref)
             try:
-                chosen = locator.select_option(option, timeout=5_000)
+                chosen = locator.select_option(option)
             except Exception as error:
                 raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in {ref}: {_actionability_error(error)}"})
             result = self._digest(session, page, previous=before_elements, before_url=before_url)
@@ -1089,12 +1113,12 @@ class WebSurface(Surface):
             before_elements = session.last_elements
             locator = self._locator(session, page, ref)
             try:
-                locator.set_input_files(resolved, timeout=5_000)
+                locator.set_input_files(resolved)
             except Exception:
                 # Not a file input itself; it may be a button that opens the file chooser.
                 try:
-                    with page.expect_file_chooser(timeout=5_000) as chooser_info:
-                        locator.click(timeout=5_000)
+                    with page.expect_file_chooser() as chooser_info:
+                        locator.click()
                     chooser_info.value.set_files(resolved)
                 except Exception as error:
                     raise ToolFailure({"ok": False, "error": f"Could not upload to {ref}: {_actionability_error(error)}"})
@@ -1120,7 +1144,7 @@ class WebSurface(Surface):
                 source = self._locator(session, page, ref)
                 target = self._locator(session, page, to_element)
                 try:
-                    source.drag_to(target, timeout=8_000)
+                    source.drag_to(target, timeout=active_tuning().amount(Limit.DRAG_TIMEOUT_MS))
                 except Exception as error:
                     raise ToolFailure({"ok": False, "error": f"Could not drag {ref} to {to_element}: {_actionability_error(error)}"})
                 did = f"Dragged {ref} onto {to_element}"
@@ -1160,13 +1184,15 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             if ref is not None:
-                source = self._locator(session, page, ref).inner_text(timeout=10_000)
+                source = self._locator(session, page, ref).inner_text(timeout=active_tuning().amount(Limit.READ_TEXT_TIMEOUT_MS))
             else:
-                source = page.inner_text("body", timeout=10_000)
+                source = page.inner_text("body", timeout=active_tuning().amount(Limit.READ_TEXT_TIMEOUT_MS))
             text = _clean_page_text(source)
             start = max(0, int(offset))
-            window = text[start: start + _READ_WINDOW_CHARS]
-            truncated = len(text) > start + _READ_WINDOW_CHARS
+            # Size each window by a token budget (measured with the real tokenizer) rather than a
+            # fixed character count, so a page of dense markup is paged as fairly as plain prose.
+            window, truncated = clip_to_tokens(text[start:], active_tuning().amount(Limit.READ_WINDOW_TOKENS))
+            next_offset = start + len(window)
             result: dict[str, Any] = {
                 "ok": True, "url": page.url, "title": _safe_title(page),
                 "text": window, "truncated": truncated, "total_chars": len(text),
@@ -1174,7 +1200,7 @@ class WebSurface(Surface):
             if start:
                 result["offset"] = start
             if truncated:
-                result["note"] = message("read_truncated", next_offset=str(start + _READ_WINDOW_CHARS))
+                result["note"] = message("read_truncated", next_offset=str(next_offset))
             return result
 
         return self.guard(run)
@@ -1193,7 +1219,7 @@ class WebSurface(Surface):
             # Retina Mac (2× device pixels) the default doubles every coordinate, so a model reading
             # a click point off the image would miss by 2×; CSS scale keeps the image in the same
             # coordinate space clicks and the viewport use.
-            page.screenshot(path=path, type="png", scale="css", timeout=20_000)
+            page.screenshot(path=path, type="png", scale="css", timeout=active_tuning().amount(Limit.SCREENSHOT_TIMEOUT_MS))
             return {
                 "ok": True, "image_path": path, "url": page.url, "title": _safe_title(page),
                 "did": "Captured the visible viewport",
@@ -1223,10 +1249,10 @@ class WebSurface(Surface):
                 rendered = json.dumps(value, ensure_ascii=False, default=str)
             except Exception:
                 rendered = str(value)
-            truncated = len(rendered) > _EVALUATE_RESULT_CHARS
+            clipped, truncated = clip_to_tokens(rendered, active_tuning().amount(Limit.EVALUATE_TOKENS))
             result: dict[str, Any] = {
                 "ok": True, "did": "Evaluated JavaScript", "url": page.url,
-                "result": rendered[:_EVALUATE_RESULT_CHARS],
+                "result": clipped,
             }
             if truncated:
                 result["truncated"] = True
@@ -1249,7 +1275,7 @@ class WebSurface(Surface):
                 entry for entry in session.requests
                 if not needle or needle in entry["url"].lower()
             ]
-            entries = entries[-_NETWORK_LIMIT:]
+            entries = entries[-active_tuning().amount(Limit.NETWORK_LIMIT):]
             return {
                 "ok": True, "url": page.url, "count": len(entries), "requests": entries,
             }
@@ -1260,7 +1286,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            page.go_back(wait_until="domcontentloaded", timeout=15_000)
+            page.go_back(wait_until="domcontentloaded")
             return self._overview(session, page)
 
         return self.guard(run)
@@ -1269,7 +1295,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            page.go_forward(wait_until="domcontentloaded", timeout=15_000)
+            page.go_forward(wait_until="domcontentloaded")
             return self._overview(session, page)
 
         return self.guard(run)
@@ -1280,7 +1306,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            page.reload(wait_until="domcontentloaded", timeout=25_000)
+            page.reload(wait_until="domcontentloaded")
             return self._overview(session, page)
 
         return self.guard(run)
@@ -1305,11 +1331,11 @@ class WebSurface(Surface):
             page.bring_to_front()
             if url:
                 try:
-                    page.goto(url, wait_until="domcontentloaded", timeout=25_000)
+                    page.goto(url, wait_until="domcontentloaded")
                 except Exception:
                     pass
             # A deliberately blank tab has nothing to settle for; don't make the caller wait.
-            result = self._overview(session, page, settle=bool(url))
+            result = self._overview(session, page, settle_page=bool(url))
             result["tab"] = session.tab_id(page)
             return result
 

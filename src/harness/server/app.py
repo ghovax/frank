@@ -97,6 +97,7 @@ from harness.tools.tools import (
     _inject_artifact_runtime,
 )
 from harness.tools.file_tools import set_firecrawl_client, set_jina_api_key, set_proxy_url
+from harness.core.tuning import set_tuning, tuning_from_policy
 
 # Load .env (gitignored) so API keys are available via the environment without
 # being stored in the tracked configuration.yaml. Existing env vars win, so a
@@ -1831,6 +1832,9 @@ async def _apply_live_credentials() -> None:
     global _composio_servers, _mcp_manager
     assert _global_configuration is not None
     configuration = _global_configuration
+    # Push the tool tuning policy process-wide so every window-scaled cap, timeout, and settlement
+    # knob tracks the current configuration (mirrors the Exa/web-fetch client rebuild below).
+    set_tuning(tuning_from_policy(configuration.tuning))
     exa_key = configuration.exa.effective_api_key
     if exa_key:
         from exa_py import Exa
@@ -1908,6 +1912,7 @@ async def _reload_configuration_from_disk() -> None:
     configuration.compaction = fresh.compaction
     configuration.user_context = fresh.user_context
     configuration.computer_control = fresh.computer_control
+    configuration.tuning = fresh.tuning
     configuration.providers = fresh.providers
     configuration.default_agent = fresh.default_agent
     await _apply_live_credentials()
@@ -2009,6 +2014,9 @@ async def lifespan(application: FastAPI):
     # Guarantee at least one project exists so the app always opens into a live workspace
     # (no landing page, no empty state). On a fresh install this seeds the "Home" project.
     await asyncio.to_thread(_ensure_default_project)
+
+    # Install the tool tuning policy from the loaded configuration before any tool can run.
+    set_tuning(tuning_from_policy(_global_configuration.tuning))
 
     exa_key = _global_configuration.exa.effective_api_key
     if exa_key:
@@ -2269,6 +2277,15 @@ class CompactionUpdateRequest(BaseModel):
     observer_context_fraction: float | None = None
     reflector_observation_fraction: float | None = None
     keep_recent_turns: int | None = None
+
+
+class TuningUpdateRequest(BaseModel):
+    """Tool tuning policy. Only provided fields are changed."""
+    output_fraction: float | None = None
+    listing_fraction: float | None = None
+    settle_interval_seconds: float | None = None
+    settle_ceiling_seconds: float | None = None
+    timeout_scale: float | None = None
 
 
 class MCPToolCallRequest(BaseModel):

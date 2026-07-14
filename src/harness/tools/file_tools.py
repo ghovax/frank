@@ -31,22 +31,19 @@ if TYPE_CHECKING:
 from markdownify import markdownify as _markdownify
 
 from harness.core.configuration import PromptLoader as _PromptLoader
+from harness.core.tuning import Limit, active_tuning, clip_to_tokens
 from harness.identifiers import new_id
-from harness.locations.executor import (
-    LocationExecutor,
-    MAXIMUM_GREP_RESULTS,
-)
+from harness.locations.executor import LocationExecutor
 
 _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
 
-DEFAULT_READ_LIMIT_LINES = 2048
-MAXIMUM_LINE_LENGTH = 2048
-MAXIMUM_GLOB_RESULTS = 1024
-MAXIMUM_FETCH_CHARS = 262_144
-MAXIMUM_TOOL_OUTPUT_CHARS = 1 << 16
+# The read-line count, per-line clip, glob/grep result caps, and fetched-page clip are token
+# budgets that scale with the live model context window; they are read per call from
+# ``active_tuning()`` rather than fixed here.
 # A fetch result shorter than this (after stripping) is treated as thin — an empty
-# SPA shell or a block/challenge page — and the next engine is tried.
+# SPA shell or a block/challenge page — and the next engine is tried. A quality floor, not a
+# token budget, so it stays fixed.
 MINIMUM_USEFUL_FETCH_CHARS = 64
 
 # Web-fetch engines, injected by the server on startup and on every settings change
@@ -173,14 +170,15 @@ def read_file(
     base_directory: str,
     file_path: str,
     offset: int = 1,
-    limit: int | None = DEFAULT_READ_LIMIT_LINES,
+    limit: int | None = None,
 ) -> str:
     """Read a file and return its lines in ``cat -n`` format.
 
     ``offset`` is the 1-indexed line to start reading from and ``limit`` caps the
-    number of lines returned (defaulting to 2048). Each returned line is prefixed
-    with its right-aligned line number and a tab, exactly like ``cat -n``. Lines
-    longer than ``MAXIMUM_LINE_LENGTH`` are cut; their numbers are reported in the
+    number of lines returned (``None`` reads to the end; a non-positive value falls
+    back to the window-scaled default). Each returned line is prefixed with its
+    right-aligned line number and a tab, exactly like ``cat -n``. Lines longer than
+    the window-scaled line clip are cut; their numbers are reported in the
     ``long_lines_truncated`` field so the model knows their tails are missing (and
     must not be copied into an ``edit_file`` ``find``).
     """
@@ -191,19 +189,21 @@ def read_file(
     if executor.is_directory(resolved_path):
         raise IsADirectoryError(f"Path is a directory, not a file: {resolved_path}")
 
+    tuning = active_tuning()
+    line_clip = tuning.amount(Limit.MAXIMUM_LINE_CHARS)
     file_content = executor.read_text(resolved_path)
     file_lines = file_content.split("\n")
     start_line_index = max(1, offset)
-    effective_limit = limit if (limit is None or limit > 0) else DEFAULT_READ_LIMIT_LINES
+    effective_limit = limit if (limit is None or limit > 0) else tuning.amount(Limit.READ_LINES)
     end_line_index = len(file_lines) if effective_limit is None else min(len(file_lines), start_line_index - 1 + effective_limit)
     selected_lines = file_lines[start_line_index - 1 : end_line_index]
     long_lines_truncated = [
         line_number
         for line_number, line in enumerate(selected_lines, start=start_line_index)
-        if len(line) > MAXIMUM_LINE_LENGTH
+        if len(line) > line_clip
     ]
     rendered_output = "\n".join(
-        f"{line_number:6d}\t{line[:MAXIMUM_LINE_LENGTH]}"
+        f"{line_number:6d}\t{line[:line_clip]}"
         for line_number, line in enumerate(selected_lines, start=start_line_index)
     )
     is_truncated = start_line_index > 1 or end_line_index < len(file_lines)
@@ -286,7 +286,7 @@ def read_image_file(
 
 def find_files(executor: LocationExecutor, base_directory: str, pattern: str) -> str:
     """Match files by glob pattern, newest first. Returns JSON."""
-    paths = executor.glob_files(base_directory, pattern, MAXIMUM_GLOB_RESULTS)
+    paths = executor.glob_files(base_directory, pattern, active_tuning().amount(Limit.GLOB_RESULTS))
     return _payload("find_completed", pattern=pattern, matches=paths, count=len(paths))
 
 
@@ -309,7 +309,7 @@ def search_content(
                 "Refusing to search the home directory. "
                 "Narrow the search to a project folder or specific subdirectory."
             )
-    matches = executor.grep(pattern, target, include, MAXIMUM_GREP_RESULTS)
+    matches = executor.grep(pattern, target, include, active_tuning().amount(Limit.GREP_RESULTS))
     return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
 
 
@@ -774,15 +774,14 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
 
     content, engine = await _fetch_through_engines(url, fmt, timeout)
 
-    truncated = len(content) > MAXIMUM_FETCH_CHARS
+    inline_content, truncated = clip_to_tokens(content, active_tuning().amount(Limit.FETCH_TOKENS))
     fields: dict[str, object] = {"url": url, "format": fmt, "engine": engine, "truncated": truncated}
     if truncated:
         output_path = Path("/tmp") / f"{new_id('fetch')}.log"
         output_path.write_text(content)
         fields["output_file"] = str(output_path)
         fields["size"] = len(content)
-        content = content[:MAXIMUM_FETCH_CHARS]
-    fields["content"] = content
+    fields["content"] = inline_content
     return _payload("fetch_completed", **fields)
 
 

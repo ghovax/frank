@@ -38,6 +38,8 @@ import Quartz
 from CoreFoundation import kCFBooleanTrue
 from Foundation import NSMakeRange
 
+from harness.core.tuning import Limit, active_tuning
+
 # Attribute names. The kAX* symbols resolve to exactly these strings.
 ROLE = "AXRole"
 SUBROLE = "AXSubrole"
@@ -104,10 +106,10 @@ RECT_TYPE = getattr(AS, "kAXValueCGRectType", getattr(AS, "kAXValueTypeCGRect", 
 ERROR_VALUE_TYPE = getattr(AS, "kAXValueAXErrorType", getattr(AS, "kAXValueTypeAXError", 5))
 RANGE_TYPE = getattr(AS, "kAXValueCFRangeType", getattr(AS, "kAXValueTypeCFRange", 4))
 
-# A single message to a wedged app must not block the walk forever. This is a safety
-# valve against a hung process, not an accuracy cap: a healthy element answers in well
-# under a millisecond, so a generous ceiling never drops a real one.
-MESSAGING_TIMEOUT_SECONDS = 2.0
+# A single message to a wedged app must not block the walk forever. This is a safety valve against
+# a hung process, not an accuracy cap: a healthy element answers in well under a millisecond, so a
+# generous ceiling never drops a real one. The ceiling lives in the central tuning policy
+# (``ax_messaging_seconds``, scaled by the timeout knob), read at each call site.
 
 
 @dataclass
@@ -445,7 +447,7 @@ def snapshot_app(
     model can drill into it."""
     started = time.perf_counter()
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, MESSAGING_TIMEOUT_SECONDS)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
     enable_rich_accessibility(root)
     app_name = app_name_for_pid(pid)
 
@@ -490,7 +492,7 @@ def resolve_from_path(pid: int, path: tuple[int, ...]) -> Any:
     beat after the observe still lands on the right control. Uses the same visible-child
     traversal that produced the path."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, MESSAGING_TIMEOUT_SECONDS)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
     if not path:
         return root
     windows = _single(root, WINDOWS) or []
@@ -564,5 +566,5 @@ def set_selected_text(element: Any, text: str) -> bool:
 def focused_element(pid: int) -> Optional[Any]:
     """The app's currently focused UI element (the field the caret is in), or None."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, MESSAGING_TIMEOUT_SECONDS)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
     return _single(root, FOCUSED_ELEMENT)

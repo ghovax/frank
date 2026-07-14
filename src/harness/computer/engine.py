@@ -34,6 +34,8 @@ from harness.computer.surface import (
     Element, ElementRegistry, Surface, ToolFailure, diff_elements, message_loader,
     resolve_caret, resolve_range,
 )
+# Listing caps, physical pacing, and settlement come from the one central tuning policy.
+from harness.core.tuning import Limit, active_tuning, settle
 # The verbatim-first matcher and compact diff window from the file-edit tool: the `edit` action
 # changes a field's text exactly the way edit_file changes a file, reusing that tested logic.
 from harness.tools.file_tools import _context_diff_window as context_diff_window, _match_find_text as match_find_text
@@ -60,9 +62,10 @@ _ACCESSIBILITY_ACTIONS = frozenset({
     "select", "caret", "copy", "cut", "paste", "hover", "drag",
 })
 
-# A find walks the whole tree, so it expands far past the shallow overview depth.
+# A find walks the whole tree, so it expands far past the shallow overview depth. The depth is a
+# structural walk bound, not a token budget, so it stays fixed here; how many matches come back is
+# a listing budget and comes from the central tuning policy.
 _FIND_DEPTH = 64
-_FIND_LIMIT = 25
 
 
 @dataclass
@@ -94,6 +97,17 @@ def _as_ref(value: Any) -> Optional[str]:
 
 def _element_name(element: accessibility.Element) -> str:
     return element.title or element.description or element.help or element.role
+
+
+def _app_signature(pid: int) -> int:
+    """A cheap, comparable signature of an app's current UI — the number of elements in a shallow
+    focused-window snapshot. Fed to ``settle`` so an action that reveals content (a hover menu)
+    is waited out until the tree stops changing, instead of a blind fixed sleep. Returns -1 on a
+    transient failure so a hiccup reads as 'still moving'."""
+    try:
+        return len(accessibility.snapshot_app(pid, window="focused").elements)
+    except Exception:
+        return -1
 
 
 def _to_element(ax: accessibility.Element, token: "RegistryEntry") -> Element:
@@ -278,8 +292,9 @@ class NativeSurface(Surface):
                 or (isinstance(ax.value, str) and needle in ax.value.lower())
             ]
             matched.sort(key=lambda ax: 0 if ax.actions else 1)
-            truncated = len(matched) > _FIND_LIMIT
-            matched = matched[:_FIND_LIMIT]
+            find_limit = active_tuning().amount(Limit.FIND_LIMIT)
+            truncated = len(matched) > find_limit
+            matched = matched[:find_limit]
             elements = [
                 _to_element(ax, RegistryEntry(
                     pid=pid, name=_element_name(ax), handle=ax.handle, path=ax.path, center=ax.center,
@@ -295,7 +310,7 @@ class NativeSurface(Surface):
             }
             if truncated:
                 result["truncated"] = True
-                result["note"] = message("find_truncated", limit=str(_FIND_LIMIT))
+                result["note"] = message("find_truncated", limit=str(find_limit))
             if not listed:
                 result["note"] = message("find_no_match")
             return result
@@ -389,7 +404,7 @@ class NativeSurface(Surface):
                     return self._text_result(f"Inserted {len(text)} chars", via="ax")
                 # The field does not expose settable selected text; type at its focus instead.
                 AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-                time.sleep(0.03)
+                time.sleep(active_tuning().duration(Limit.FOCUS_SETTLE_SECONDS))
                 input_synthesis.type_text(pid, text)
                 return self._text_result(f"Typed {len(text)} chars", via="synthesized", note=message("type_synthesized"))
             # replace: set the whole value, or focus and type.
@@ -408,7 +423,7 @@ class NativeSurface(Surface):
             elif entry is not None and entry.center is not None:
                 input_synthesis.click(entry.pid, entry.center[0], entry.center[1])
             pid = entry.pid if entry is not None else self._resolve_pid("")
-            time.sleep(0.03)
+            time.sleep(active_tuning().duration(Limit.FOCUS_SETTLE_SECONDS))
             input_synthesis.type_text(pid, text)
             did = f"Typed into {entry.name!r}" if entry is not None else f"Typed {len(text)} chars"
             return self._act_result(pid, {"ok": True, "did": did, "via": "synthesized", "note": message("type_synthesized")})
@@ -534,7 +549,9 @@ class NativeSurface(Surface):
         def run() -> dict:
             pid, point_x, point_y = self._point_target(ref, x, y)
             input_synthesis.move(pid, point_x, point_y)
-            time.sleep(0.2)
+            # Let a hover menu or tooltip appear, waiting only until the app's tree stops changing
+            # rather than a blind fixed pause.
+            settle(lambda: _app_signature(pid))
             return self._act_result(pid, {"ok": True, "did": f"Hovered ({round(point_x)}, {round(point_y)})"})
 
         return self.guard(run)
@@ -569,10 +586,11 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def scroll(self, direction: str, amount: int = 300, target: str = "") -> dict:
+    def scroll(self, direction: str, amount: Optional[int] = None, target: str = "") -> dict:
         def run() -> dict:
             pid = self._resolve_pid(target)
-            vectors = {"up": (0, amount), "down": (0, -amount), "left": (amount, 0), "right": (-amount, 0)}
+            step = active_tuning().amount(Limit.SCROLL_AMOUNT_PIXELS) if amount is None else amount
+            vectors = {"up": (0, step), "down": (0, -step), "left": (step, 0), "right": (-step, 0)}
             if direction not in vectors:
                 return {"ok": False, "error": "Direction must be one of up, down, left, or right."}
             delta_x, delta_y = vectors[direction]
@@ -591,7 +609,7 @@ class NativeSurface(Surface):
             if not segments:
                 return {"ok": False, "error": "Menu path is empty."}
             root = AS.AXUIElementCreateApplication(pid)
-            AS.AXUIElementSetMessagingTimeout(root, accessibility.MESSAGING_TIMEOUT_SECONDS)
+            AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
             menu_bar = accessibility._single(root, "AXMenuBar")
             if menu_bar is None:
                 return {"ok": False, "error": "App exposes no menu bar."}

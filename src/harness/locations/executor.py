@@ -30,19 +30,21 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from harness.core.tuning import Limit, active_tuning
+
+# Baseline command and connect ceilings. These are safety valves against a dead process or link,
+# not accuracy caps; the active timeout knob scales them at each subprocess boundary
+# (``active_tuning().scale_timeout``), so a slow machine or link can widen them from the config.
 DEFAULT_TIMEOUT = 120.0
 DEFAULT_CONNECT_TIMEOUT = 16.0
 # Keep the multiplexed master alive briefly after the last use so bursts of tool calls
 # reuse one connection without holding it open forever.
 CONTROL_PERSIST_SECONDS = 120
 
-# How many matches a grep may return and how many matches a single file may
-# contribute — identical for local and remote so the model sees one contract.
-MAXIMUM_GREP_RESULTS = 512
-MAXIMUM_GREP_MATCHES_PER_FILE = 512
-# Upper bound on how many remote paths are listed before glob matching; keeps a
-# pathological remote tree (node_modules, build output) from flooding the wire.
-MAXIMUM_REMOTE_LISTING = 32_768
+# How many matches a single file may contribute and how many remote paths are listed before glob
+# matching are listing budgets that scale with the live model context window; they are read per
+# call from ``active_tuning()`` (grep_per_file / remote_listing). The total per-search match cap
+# likewise comes from the tuning policy and is passed in by the file tools.
 
 
 @dataclass
@@ -168,7 +170,7 @@ class LocalExecutor(LocationExecutor):
             ["bash", "-lc", _login_script(command, cwd, None)],
             capture_output=True,
             text=True,
-            timeout=timeout,
+            timeout=active_tuning().scale_timeout(timeout),
             env={**os.environ, **(env or {})} if env else None,
             check=False,
         )
@@ -181,7 +183,7 @@ class LocalExecutor(LocationExecutor):
         completed = subprocess.run(
             ["bash", "-lc", _login_script(command, cwd, None)],
             capture_output=True,
-            timeout=timeout,
+            timeout=active_tuning().scale_timeout(timeout),
             check=False,
         )
         if completed.returncode != 0:
@@ -228,12 +230,12 @@ class LocalExecutor(LocationExecutor):
     def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
         command = [
             "rg", "--line-number", "--no-heading", "--color=never",
-            "--max-count", str(MAXIMUM_GREP_MATCHES_PER_FILE),
+            "--max-count", str(active_tuning().amount(Limit.GREP_PER_FILE)),
         ]
         if include:
             command += ["--glob", include]
         command += ["-e", pattern, "--", target]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=active_tuning().duration(Limit.RIPGREP_SECONDS))
         # rg exits 1 on "no matches", 2 on a real error (bad pattern, IO failure).
         if result.returncode not in (0, 1):
             raise ValueError((result.stderr or "").strip() or "search failed")
@@ -241,6 +243,7 @@ class LocalExecutor(LocationExecutor):
 
     def _grep_python(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
         """Fallback grep using a pure-Python walk (used when ripgrep is unavailable)."""
+        per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
         try:
             regex = re.compile(pattern)
         except re.error as exception:
@@ -265,7 +268,7 @@ class LocalExecutor(LocationExecutor):
                     matches_in_file += 1
                     if len(results) >= max_results:
                         return results
-                    if matches_in_file >= MAXIMUM_GREP_MATCHES_PER_FILE:
+                    if matches_in_file >= per_file_limit:
                         break
         return results
 
@@ -299,7 +302,7 @@ class SshExecutor(LocationExecutor):
             argv,
             input=stdin,
             capture_output=True,
-            timeout=timeout,
+            timeout=active_tuning().scale_timeout(timeout),
             check=False,
         )
 
@@ -376,7 +379,7 @@ class SshExecutor(LocationExecutor):
         # glob semantics as the local Path.glob, server-side, so patterns behave
         # identically on both kinds of location.
         listing = self.run(
-            f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{MAXIMUM_REMOTE_LISTING}",
+            f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{active_tuning().amount(Limit.REMOTE_LISTING)}",
             base_directory,
         )
         if listing.returncode != 0 and not listing.stdout:
@@ -410,17 +413,18 @@ class SshExecutor(LocationExecutor):
             self._ripgrep_available = probe.returncode == 0
         quoted_pattern = shlex.quote(pattern)
         quoted_target = shlex.quote(target)
+        per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
         if self._ripgrep_available:
             include_flag = f"--glob {shlex.quote(include)} " if include else ""
             command = (
                 f"rg --line-number --no-heading --color=never "
-                f"--max-count {MAXIMUM_GREP_MATCHES_PER_FILE} {include_flag}"
+                f"--max-count {per_file_limit} {include_flag}"
                 f"-e {quoted_pattern} -- {quoted_target}"
             )
         else:
             include_flag = f"--include={shlex.quote(include)} " if include else ""
             command = (
-                f"grep -rEn -m {MAXIMUM_GREP_MATCHES_PER_FILE} {include_flag}"
+                f"grep -rEn -m {per_file_limit} {include_flag}"
                 f"-e {quoted_pattern} -- {quoted_target}"
             )
         completed = self._ssh(f"bash -lc {shlex.quote(command)}", timeout=DEFAULT_TIMEOUT)

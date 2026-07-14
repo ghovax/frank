@@ -45,6 +45,10 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from harness.core.configuration import PromptLoader
+# Every tunable value — the window-scaled caps, the timeouts, and the fixed per-field clip and ref
+# lengths — is reached through the one central policy object, so nothing here holds a bare
+# constant of its own.
+from harness.core.tuning import Limit, active_tuning
 
 
 def message_loader(folder: str) -> Callable[..., str]:
@@ -58,11 +62,10 @@ def message_loader(folder: str) -> Callable[..., str]:
     return message
 
 
-# Length bounds on the free text a single element contributes, so one verbose node (a web app
-# that stuffs a whole email body into a label, a native field holding a paragraph) cannot flood
-# an observation. A control's own contents get more room than its label; both are powers of two.
-LABEL_LENGTH = 256   # an element's name
-VALUE_LENGTH = 512   # an element's own value/contents
+# The free text a single element contributes is length-bounded so one verbose node (a web app that
+# stuffs a whole email body into a label, a native field holding a paragraph) cannot flood an
+# observation. A control's own contents get more room than its label; both bounds are fixed
+# ``Limit`` members read through ``active_tuning()`` at payload time.
 
 
 def bounded(text: str, limit: int) -> tuple[str, bool]:
@@ -180,15 +183,16 @@ class Element:
 
     def payload(self) -> dict[str, Any]:
         """The model-facing dict: ref and role always, everything else only when populated."""
+        tuning = active_tuning()
         data: dict[str, Any] = {"ref": self.ref, "role": self.role}
         if self.name:
-            data["name"], name_clipped = bounded(self.name, LABEL_LENGTH)
+            data["name"], name_clipped = bounded(self.name, tuning.amount(Limit.LABEL_LENGTH))
         else:
             name_clipped = False
         value_clipped = False
         if isinstance(self.value, str):
             if self.value:
-                data["value"], value_clipped = bounded(self.value, VALUE_LENGTH)
+                data["value"], value_clipped = bounded(self.value, tuning.amount(Limit.VALUE_LENGTH))
         elif self.value is not None:
             data["value"] = self.value
         if self.context:
@@ -224,9 +228,9 @@ class ElementRegistry:
     #: index. And because the id space is sparse, a stale or fabricated ref almost never collides
     #: with a live element — it resolves to nothing and fails cleanly, rather than silently acting
     #: on whatever happens to sit at that number. Six base-62 chars is ~57 billion ids, far more
-    #: than the few hundred elements a surface ever holds.
+    #: than the few hundred elements a surface ever holds. The length itself is the central
+    #: policy's ``ref_length`` (fixed, but read through the one tuning surface like everything else).
     _ALPHABET = string.ascii_letters + string.digits
-    _REF_LENGTH = 6
 
     def __init__(self) -> None:
         self._refs: dict[tuple, str] = {}     # identity → ref, grow-only within a surface's life
@@ -235,8 +239,9 @@ class ElementRegistry:
 
     def _mint(self) -> str:
         """A fresh opaque ref, regenerated on the vanishingly rare collision with a live one."""
+        length = active_tuning().amount(Limit.REF_LENGTH)
         while True:
-            ref = "".join(self._random.choices(self._ALPHABET, k=self._REF_LENGTH))
+            ref = "".join(self._random.choices(self._ALPHABET, k=length))
             if ref not in self._tokens:
                 return ref
 
@@ -304,6 +309,11 @@ def diff_elements(previous: list[dict], current: list[dict]) -> Optional[dict]:
     return delta or None
 
 
+# The fraction of newly-appeared elements above which a change is shown as the full fresh surface
+# rather than a delta. A heuristic ratio, not a token budget, so it stays fixed.
+_WHOLESALE_APPEARED_FRACTION = 0.6
+
+
 def _is_wholesale(delta: Optional[dict], current: list[dict]) -> bool:
     """Whether a change is better shown as the full fresh surface than as a delta: a navigation or
     near-total rerender, where most of what is on screen is new. A local change (a menu opening, a
@@ -311,7 +321,7 @@ def _is_wholesale(delta: Optional[dict], current: list[dict]) -> bool:
     if not delta:
         return False
     appeared = len(delta.get("appeared", []))
-    return appeared >= 0.6 * max(1, len(current))
+    return appeared >= _WHOLESALE_APPEARED_FRACTION * max(1, len(current))
 
 
 class ToolFailure(Exception):

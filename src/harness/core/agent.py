@@ -83,6 +83,7 @@ from harness.core.background import (
 )
 
 from harness.tools import file_tools
+from harness.core.tuning import Limit, active_tuning, clip_to_tokens, current_context_window
 
 from harness.core.handoff import (
     build_task,
@@ -254,7 +255,6 @@ _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "web_search",
     "bg-": "bash",
 }
-MAXIMUM_MODEL_RESULT_CHARS = 1 << 16
 
 
 def _coerce_mcp_arguments(value: Any) -> dict:
@@ -286,12 +286,13 @@ def _background_handle_kind(task_id: str) -> str | None:
 
 
 def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
-    """Keep model-facing tool results bounded while preserving a full-output file."""
-    if len(result) <= MAXIMUM_MODEL_RESULT_CHARS:
+    """Keep model-facing tool results bounded while preserving a full-output file. The cap is the
+    window-scaled output budget, so a larger model may hold a larger result inline."""
+    excerpt, was_truncated = clip_to_tokens(result, active_tuning().amount(Limit.OUTPUT_TOKENS))
+    if not was_truncated:
         return result
     output_path = Path("/tmp") / f"{new_id('tool-result')}.json"
     output_path.write_text(result)
-    excerpt = result[:MAXIMUM_MODEL_RESULT_CHARS]
     parsed = _maybe_json(result)
     if isinstance(parsed, dict):
         payload = {
@@ -2383,6 +2384,14 @@ class AgentRuntime:
     ) -> AsyncIterator[StreamEvent]:
         """Execute a single tool call, yielding events. The caller collects results from
         TOOL_RESULT, ERROR, and BACKGROUND_STARTED events."""
+
+        # Thread this agent's live context window into the tool call, so every window-scaled tool
+        # cap (a page's element listing, a read window, a truncation ceiling) is sized for the
+        # model actually running. Each tool call runs in its own asyncio task (see
+        # _drain_tools_concurrently), so this contextvar is isolated per call and copied into the
+        # worker threads the automation surfaces run on; it stays 0 (the turn-0 seed) until the
+        # first model call reports usage.
+        current_context_window.set(self._context_window)
 
         # Coerce any list/dict argument the model passed as a JSON string into its native
         # value up front, so validation and dispatch both see the real container.

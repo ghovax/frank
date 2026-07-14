@@ -20,6 +20,8 @@ from typing import Optional
 
 import Quartz
 
+from harness.core.tuning import Limit, active_tuning
+
 
 def window_id_for_pid(pid: int) -> Optional[int]:
     """The CGWindowID of the frontmost on-screen window owned by ``pid`` (layer 0, so we
@@ -48,7 +50,7 @@ def capture_window(pid: int) -> Optional[str]:
     try:
         completed = subprocess.run(
             ["screencapture", "-x", "-o", "-l", str(window_id), path],
-            capture_output=True, timeout=15, check=False,
+            capture_output=True, timeout=active_tuning().duration(Limit.SCREENCAPTURE_SECONDS), check=False,
         )
     except (OSError, subprocess.SubprocessError):
         _remove(path)

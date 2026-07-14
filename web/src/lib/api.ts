@@ -495,6 +495,21 @@ export interface CompactionSettings {
   keep_recent_turns: number;
 }
 
+export interface TuningSettings {
+  // Share of the context window one tool's textual output may fill (read windows, command
+  // output, fetched pages). Higher enlarges every text budget proportionally.
+  output_fraction: number;
+  // Share of the window a structured listing may fill (page elements, find matches, grep/glob
+  // results, file lines). Higher lengthens every listing proportionally.
+  listing_fraction: number;
+  // How often to re-check whether a surface has settled after an action, in seconds.
+  settle_interval_seconds: number;
+  // The longest to wait for a surface to settle before proceeding anyway, in seconds.
+  settle_ceiling_seconds: number;
+  // Multiplier on every action, navigation, and IO timeout.
+  timeout_scale: number;
+}
+
 export interface Settings {
   permission_mode: PermissionMode;
   exa_api_key: string;
@@ -513,6 +528,7 @@ export interface Settings {
   computer_control_enabled: boolean;
   workspace_strategy: "none" | "branch" | "worktree";
   compaction: CompactionSettings;
+  tuning: TuningSettings;
   providers: Record<string, ProviderCredential>;
 }
 
@@ -522,6 +538,23 @@ const DEFAULT_COMPACTION: CompactionSettings = {
   reflector_observation_fraction: 0.3,
   keep_recent_turns: 6,
 };
+
+const DEFAULT_TUNING: TuningSettings = {
+  output_fraction: 0.25,
+  listing_fraction: 0.15,
+  settle_interval_seconds: 0.05,
+  settle_ceiling_seconds: 1.5,
+  timeout_scale: 1.0,
+};
+
+// Persist the tool tuning policy (output/listing budget fractions, settlement, timeout scale).
+export async function updateTuningSettings(changes: Partial<TuningSettings>): Promise<void> {
+  await fetch(`${API_BASE}/settings/tuning`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(changes),
+  });
+}
 
 // Persist the Observational-Memory compaction settings (auto on/off + thresholds).
 export async function updateCompactionSettings(changes: Partial<CompactionSettings>): Promise<void> {
@@ -641,7 +674,7 @@ export interface FilesystemLease {
 export async function fetchSettings(): Promise<Settings> {
   const response = await fetch(`${API_BASE}/settings`);
   if (!response.ok) {
-    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox_enabled: true, user_context_enabled: false, computer_control_enabled: false, workspace_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox_enabled: true, user_context_enabled: false, computer_control_enabled: false, workspace_strategy: "none", compaction: DEFAULT_COMPACTION, tuning: DEFAULT_TUNING, providers: {} };
   }
   return (await response.json()) as Settings;
 }

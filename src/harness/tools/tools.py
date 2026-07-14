@@ -15,27 +15,22 @@ from pydantic import Field
 from harness.identifiers import new_id
 from harness.core.background import current_background_jobs, cancel_all_background_jobs, current_tool_call_id
 from harness.core.background_store import get_background_job_store
+from harness.core.tuning import Limit, active_tuning, clip_to_tokens
 
 _exa_client: Exa | None = None
 _mcp_client_manager: Any | None = None
 
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
-# A synchronous command blocks and returns its real output up to this ceiling; the
-# ceiling only trips for a command that runs unexpectedly long without being
-# backgrounded, at which point it falls through to the background path as a safety
-# net rather than holding the turn open forever. Ordinary git/network/package
-# commands finish well within it and return real output — the old 2s auto-background
-# window is exactly what surprised the model into re-running mutating commands (a
-# `gh pr merge` that crossed the threshold looked unfinished and got issued twice).
-# Genuinely long work is the model's cue to pass background=true.
-_BASH_SYNC_CEILING_SECONDS = 60.0
-
-# web_search gets the same inline-settle treatment as bash, with a shorter ceiling:
-# most searches return in a couple of seconds, so the results come back in-turn and
-# the model never has to reason about a pending handle. A slow search falls through
-# to the background wake path exactly like a slow command.
-_WEB_SEARCH_SYNC_CEILING_SECONDS = 10.0
+# A synchronous command blocks and returns its real output up to a ceiling; the ceiling
+# only trips for a command that runs unexpectedly long without being backgrounded, at
+# which point it falls through to the background path as a safety net rather than holding
+# the turn open forever. Ordinary git/network/package commands finish well within it and
+# return real output — the old 2s auto-background window is exactly what surprised the
+# model into re-running mutating commands (a `gh pr merge` that crossed the threshold
+# looked unfinished and got issued twice). Genuinely long work is the model's cue to pass
+# background=true. The ceiling (and web_search's shorter one) live in the central tuning
+# policy, scaled by the timeout knob, read at the settle_inline call sites below.
 
 
 def set_exa_client(client: Exa | None) -> None:
@@ -161,7 +156,7 @@ async def bash(
         except asyncio.CancelledError:
             cancel_process()
             try:
-                await asyncio.wait_for(process.wait(), timeout=2)
+                await asyncio.wait_for(process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS))
             except asyncio.TimeoutError:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -180,11 +175,12 @@ async def bash(
                 if output_path.exists()
                 else ""
             )
+            inline_output, output_truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
             payload = {
                 "code": "bash_cancelled",
-                "output": output[: 1 << 16],
+                "output": inline_output,
                 "output_file": str(output_path),
-                "truncated": len(output) > 1 << 16,
+                "truncated": output_truncated,
                 "pid": process_id,
                 "size": len(output),
                 "returncode": process.returncode,
@@ -200,10 +196,10 @@ async def bash(
         result_code = "bash_completed" if return_code == 0 else "bash_failed"
         if not output:
             return json.dumps({"code": result_code, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
-        truncated = len(output) > 1 << 16
+        inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
         return json.dumps({
             "code": result_code,
-            "output": output[: 1 << 16],
+            "output": inline_output,
             "output_file": str(output_path),
             "truncated": truncated,
             "pid": process_id,
@@ -229,7 +225,7 @@ async def bash(
         # The ceiling only trips for a command that runs unexpectedly long without
         # being backgrounded; it then falls through to the background path below as
         # a safety net rather than holding the turn open indefinitely.
-        settled = await jobs.settle_inline(task_identifier, _BASH_SYNC_CEILING_SECONDS)
+        settled = await jobs.settle_inline(task_identifier, active_tuning().duration(Limit.BASH_SYNC_CEILING_SECONDS))
         if settled is not None:
             return settled.result
     return json.dumps({
@@ -278,7 +274,7 @@ async def web_search(
             results = await asyncio.to_thread(
                 client.search,
                 query,
-                num_results=min(result_count, 10),
+                num_results=min(result_count, active_tuning().amount(Limit.WEB_SEARCH_MAXIMUM)),
                 contents={"text": True},
             )
             entries = []
@@ -316,7 +312,7 @@ async def web_search(
     )
     # Give the search a short window to finish inline. The common case returns the
     # real results directly, so the model never juggles a pending handle at all.
-    settled = await jobs.settle_inline(task_identifier, _WEB_SEARCH_SYNC_CEILING_SECONDS)
+    settled = await jobs.settle_inline(task_identifier, active_tuning().duration(Limit.WEB_SEARCH_SYNC_CEILING_SECONDS))
     if settled is not None:
         return settled.result
     # The started acknowledgement intentionally omits any file path or other
