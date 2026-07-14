@@ -53,6 +53,14 @@ export function fits(parent: Rect, child: Rect): boolean {
 }
 \`\`\`
 
+\`\`\`mermaid
+flowchart LR
+  prose[Markdown prose] --> line[Activity line]
+  line -->|expand| rail[Detail rail]
+  rail --> fields[Structured fields]
+  line -.->|running| shimmer((Shimmer))
+\`\`\`
+
 A closing paragraph after the code block, to check the block gap on both sides.`;
 
 const settledTools: ToolEvent[] = [

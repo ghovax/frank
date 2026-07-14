@@ -27,6 +27,7 @@
     "@xterm/xterm": "^6.0.0",
     "flowtoken": "^1.0.40",
     "katex": "^0.17.0",
+    "mermaid": "^11.16.0",
     "motion": "^12.42.1",
     "next": "16.2.9",
     "next-intl": "^4.13.2",

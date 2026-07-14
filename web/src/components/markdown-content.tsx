@@ -19,6 +19,7 @@ import { useReducedMotion } from "motion/react";
 // it from our own react-markdown so the streaming animation layers onto the existing renderer.
 import SplitText from "flowtoken/dist/components/SplitText";
 import { useColorModeValue } from "./ui/color-mode";
+import { MermaidDiagram } from "./mermaid-diagram";
 
 interface MarkdownContentProps {
   content: string;
@@ -263,7 +264,7 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       const isBlock = !!languageMatch || codeString.includes("\n");
 
       if (isBlock) {
-        return (
+        const block = (
           <Box
             borderRadius="md"
             overflow="auto"
@@ -295,6 +296,13 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
             </SyntaxHighlighter>
           </Box>
         );
+        // A ```mermaid fence renders as an inline diagram once its source parses;
+        // the plain code block serves as the fallback until then (and forever, if
+        // the source never parses).
+        if (languageMatch?.[1] === "mermaid") {
+          return <MermaidDiagram code={codeString} fallback={block} />;
+        }
+        return block;
       }
 
       // A subtle chip — faint fill, hairline border, rounded — mirroring the reference
