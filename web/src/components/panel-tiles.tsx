@@ -131,6 +131,9 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
           {column.map((panel, rowIndex) => (
             <Box
               key={panel.key}
+              // A panel joining the grid fades in (mount-only), softening the reshape;
+              // the grid split itself stays instant so drag-resizing never fights it.
+              className="reveal-enter"
               minW={0}
               minH={0}
               position="relative"

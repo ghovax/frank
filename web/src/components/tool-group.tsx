@@ -210,13 +210,19 @@ export const ToolGroup = memo(function ToolGroup({
             gets its height naturally from its content, no hand-tuned minH. `minmax(0,1fr)` lets
             the single column shrink so the label truncates with an ellipsis. `initial={false}`
             means the first label just appears; only a change animates. */}
-        <Box minW={0} flexShrink={1} overflow="hidden" display="grid" gridTemplateColumns="minmax(0, 1fr)">
-          <AnimatePresence initial={false}>
+        <Box minW={0} flexShrink={1} overflow="hidden" display="grid" gridTemplateColumns="minmax(0, 1fr)" position="relative">
+          {/* mode="popLayout" pops the outgoing label out of flow the moment it starts
+              exiting, so the cell sizes to the incoming label at once. Without it the
+              cell holds max(old, new) width for the exit's duration and everything
+              trailing the label jumps right and then snaps back — a double lateral
+              shift on every label change while work streams. The exit is also kept
+              faster than the entrance so the ghost never lingers over the new text. */}
+          <AnimatePresence initial={false} mode="popLayout">
             <motion.div
               key={headingText}
               initial={{ opacity: 0, filter: "blur(2px)" }}
               animate={{ opacity: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.1, ease: "easeOut" } }}
               transition={{ duration: 0.22, ease: "easeOut" }}
               style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
             >
@@ -312,6 +318,7 @@ export const ToolGroup = memo(function ToolGroup({
         // owning the viewport; the auto-scroll effect follows new calls streaming in.
         <Box
           ref={bodyRef}
+          className="reveal-enter"
           ml="5px"
           mt={0.5}
           mb={1}

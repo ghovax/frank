@@ -9,7 +9,7 @@
 // linked from the app; ConnectionGate exempts this route.
 
 import { Box, Flex, Text, VStack } from "@chakra-ui/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { ChatMessage } from "@/lib/use-chat";
 import type { ToolEvent } from "@/lib/tool-event";
 import { ChatMessageItem } from "@/components/chat-message";
@@ -160,6 +160,20 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export default function GalleryPage() {
   const { colorMode, setColorMode } = useColorMode();
+  // The running group is stateful so a driven browser can append calls and
+  // measure how the heading (label crossfade, trailing tally) settles — the
+  // exact motion a live turn produces, reproduced on demand.
+  const [liveTools, setLiveTools] = useState<ToolEvent[]>(runningTools);
+  const appendLiveTool = () =>
+    setLiveTools((current) => [
+      ...current,
+      {
+        name: "read_file",
+        toolCallId: `live-${current.length}`,
+        status: "running",
+        arguments: { file_path: `web/src/components/pass-${current.length}.tsx`, justification: `Reading pass ${current.length} of the layout` },
+      },
+    ]);
   return (
     <Box minH="100dvh" bg="bg" px={4} py={6}>
       <Flex align="center" justify="space-between" maxW="760px" mx="auto" mb={6}>
@@ -188,8 +202,19 @@ export default function GalleryPage() {
           <ChatMessageItem message={message("assistant", richMarkdown)} />
         </Box>
         <Box data-audit="group-running" display="flex" flexDirection="column">
-          <ToolGroup tools={runningTools} keepOpen />
+          <ToolGroup tools={liveTools} keepOpen />
         </Box>
+        <Text
+          as="button"
+          textStyle="fieldLabel"
+          color="fg.subtle"
+          cursor="pointer"
+          alignSelf="flex-start"
+          data-audit="append-live-tool"
+          onClick={appendLiveTool}
+        >
+          + simulate a streamed call
+        </Text>
         {/* keepOpen marks the live streaming tail — the only state in which a
             reasoning phase renders at all. */}
         <Box data-audit="group-thinking" display="flex" flexDirection="column">

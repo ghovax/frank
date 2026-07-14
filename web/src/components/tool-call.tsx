@@ -157,6 +157,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
         // ml centers the 2px rule under the 13px icon above it; pl indents the detail
         // clear of the rule so it reads as a quoted aside within the transcript.
         <Box
+          className="reveal-enter"
           ml="5px"
           mt={0.5}
           mb={1}

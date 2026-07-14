@@ -145,6 +145,27 @@ samp {
   }
 }
 
+/* One shared entrance for content that replaces or unfolds in place — an expanded
+   tool-detail rail, a mermaid diagram taking over its code block, a side panel
+   joining the tile grid. A short fade with a 2px settle: enough that the change
+   reads as intentional, never enough to feel like the UI is performing. Runs once
+   on mount (it's a CSS animation, so re-renders never replay it). */
+.reveal-enter {
+  animation: reveal-enter 0.14s ease-out;
+}
+
+@keyframes reveal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Streaming markdown: each newly-arrived token fades in with just a whisper of blur
    (flowtoken's SplitText applies this by name to the spans it wraps new text in). Kept
    quick and crisp so the text reads as typing in, not softening into place. Disabled under
@@ -164,6 +185,10 @@ samp {
   .running-title-shimmer {
     color: var(--chakra-colors-fg-muted);
     background-image: none;
+    animation: none;
+  }
+
+  .reveal-enter {
     animation: none;
   }
 

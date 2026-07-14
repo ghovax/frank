@@ -71,6 +71,9 @@ export function MermaidDiagram({ code, fallback }: { code: string; fallback: Rea
   if (!svg) return <>{fallback}</>;
   return (
     <Box
+      // The figure fades in once when it first replaces the code block (the Box
+      // stays mounted across later re-renders, so the animation never replays).
+      className="reveal-enter"
       my={1.5}
       px={3}
       py={2.5}

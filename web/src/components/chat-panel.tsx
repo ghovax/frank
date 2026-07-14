@@ -52,6 +52,11 @@ import type { ConnectionTarget } from "@/lib/connection";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
+// A Chakra Box that is also a motion component, so the right panel region can
+// animate its open/close (opacity + slide) exactly like the history sidebar on
+// the left — without losing its flex-layout props.
+const MotionBox = motion.create(Box);
+
 
 interface ChatPanelProps {
   agent: string;
@@ -1577,8 +1582,10 @@ export function ChatPanel({
           the chat (no gutter column) so the chat content keeps symmetric left/right padding;
           the resize handle overlaps the boundary as an absolute strip rather than consuming a
           column of space — mirroring the left sidebar's handle. */}
+      <AnimatePresence initial={false}>
       {(artifactPanelOpen || agentsPanelOpen || backgroundPanelOpen) && (
-        <Box
+        <MotionBox
+          key="panel-region"
           flexShrink={0}
           h="100%"
           w={{ base: "100%", md: `${artifactPanelWidth}px` }}
@@ -1587,6 +1594,14 @@ export function ChatPanel({
           pr={2}
           pb={2}
           position="relative"
+          // Same slide + fade (and timing) as the history sidebar on the left, mirrored:
+          // the two edges of the window open and close as one family. Only transform and
+          // opacity animate — the width is applied instantly, so the resize drag never
+          // fights a tween and the transcript reflows exactly once per toggle.
+          initial={{ opacity: 0, x: 24 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 24 }}
+          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
         >
           <Box
             display={{ base: "none", md: "block" }}
@@ -1990,8 +2005,9 @@ export function ChatPanel({
                 },
               ].filter(Boolean) as TilePanel[]}
             />
-        </Box>
+        </MotionBox>
       )}
+      </AnimatePresence>
 
       <SettingsDialog
         open={settingsOpen}
