@@ -201,17 +201,18 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   const collapsible = enabled && hasBody;
   return (
     <Box opacity={enabled ? 1 : 0.55}>
-    <ToolCard>
+    <ToolCard variant="row">
       <ToolCardHeader
+        variant="row"
         collapsible={collapsible}
         open={open}
         onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPuzzle size={12} /></Box>}
+        icon={<Box color="fg.muted"><LuPuzzle size={13} /></Box>}
         title={<CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} />}
         badges={enabled ? undefined : <DisabledBadge />}
       />
       {open && collapsible && (
-        <ToolCardBody>
+        <ToolCardBody variant="row">
           {skill.description && (
             <Box color="fg.muted">
               <MarkdownContent content={skill.description} fontSize="xs" />
@@ -243,25 +244,26 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
   const enabled = server.enabled !== false;
   return (
     <Box opacity={enabled ? 1 : 0.55}>
-    <ToolCard>
+    <ToolCard variant="row">
       <ToolCardHeader
+        variant="row"
         collapsible={enabled}
         open={open}
         onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPlug size={12} /></Box>}
+        icon={<Box color="fg.muted"><LuPlug size={13} /></Box>}
         title={<CapabilityTitle identifier={server.name} />}
         badges={
           !enabled ? (
             <DisabledBadge />
           ) : (
-          <Text textStyle="fieldLabel" color="fg.subtle" flexShrink={0}>
+          <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
             {t("toolCount", { count: server.tools.length })}
-          </Text>
+          </Badge>
           )
         }
       />
       {enabled && open && (
-        <ToolCardBody>
+        <ToolCardBody variant="row">
           <Flex direction="column" gap={2}>
             {server.tools.map((tool) => (
               <McpToolRow key={tool.name} tool={tool} />

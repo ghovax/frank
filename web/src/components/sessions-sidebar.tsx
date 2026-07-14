@@ -213,7 +213,7 @@ export function SessionsSidebar({
           <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{t("newConversation")}</Text>
           {/* Chakra's semantic keyboard-key component, in its `plain` variant so it reads as a
               subtle shortcut hint rather than a raised keycap chip. */}
-          <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="2xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
+          <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
         </chakra.button>
       </Box>
 

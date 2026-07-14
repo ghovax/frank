@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Box, Flex, Text } from "@chakra-ui/react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuBrain, LuChevronDown, LuChevronRight, LuCircleAlert, LuCircleX, LuLoaderCircle, LuMoon } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
@@ -38,15 +38,22 @@ function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, 
   return { order, counts };
 }
 
-// The small tally count beside a tool/reasoning/status icon in the group heading.
-// One shared chip so every count reads with the same size and weight (fieldLabel),
-// tinted by its icon's accent.
-function CountChip({ value, color }: { value: number; color: string }) {
+// One tally chip in the group heading — a subtle Badge wrapping BOTH the icon and its count
+// (not the count alone), so each tool/status reads as a single unit. Tinted by its palette;
+// the count only appears once there is more than one.
+function TallyBadge({ icon, count, colorPalette = "gray", title }: { icon: ReactNode; count: number; colorPalette?: string; title?: string }) {
   return (
-    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" textStyle="fieldLabel" color={color}>
-      <RollingNumber value={value} />
-    </Box>
+    <Badge size="sm" variant="subtle" colorPalette={colorPalette} borderRadius="sm" fontWeight="normal" flexShrink={0} title={title} display="inline-flex" alignItems="center" gap={1}>
+      {icon}
+      {count > 1 && <RollingNumber value={count} />}
+    </Badge>
   );
+}
+
+// Map a tool's icon color ("blue.fg", "green.fg", … or "fg.muted") to a Chakra colorPalette,
+// so each tool's tally badge carries that tool's own accent as its background — not a flat gray.
+function paletteFromIconColor(iconColor: string): string {
+  return iconColor.endsWith(".fg") ? iconColor.slice(0, -3) : "gray";
 }
 
 interface FileChange {
@@ -92,6 +99,10 @@ interface ToolGroupProps {
   onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   activeArtifactId?: string | null;
   onActivateArtifact?: (toolCallId: string) => void;
+  // How many reasoning phases the model went through before/among these tools. Kept as a
+  // persistent thinking chip (with this count) in the heading — a record like the tool tally,
+  // not a transient glyph — so it does not vanish the moment the tools stream in over it.
+  thinkingTurns?: number;
   // When true, the group stays expanded even after all calls complete — used by
   // the chat timeline to keep the latest group open until the assistant's text
   // response actually arrives, rather than collapsing the instant tools finish.
@@ -105,6 +116,7 @@ export const ToolGroup = memo(function ToolGroup({
   onQuestion,
   activeArtifactId,
   onActivateArtifact,
+  thinkingTurns = 0,
   keepOpen = false,
 }: ToolGroupProps) {
   const t = useTranslations("ToolGroup");
@@ -143,10 +155,9 @@ export const ToolGroup = memo(function ToolGroup({
   // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
-  // A tools-less group is a live "thinking before acting" phase. Reasoning is
-  // transient — a shimmering status while it happens, gone once the turn moves
-  // on — unlike tool calls, which are records that stay. So it renders only
-  // while live (keepOpen); a settled thinking-only group renders nothing.
+  // A tools-less group is a "thinking before acting" phase. Reasoning is a record that
+  // stays, like the tool calls: it renders as a persistent "Thinking" row (its brain chip)
+  // whether live or settled, rather than vanishing once the turn moves on.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
   // A thinking-only heading has no body to reveal, so it is not interactive.
@@ -157,24 +168,22 @@ export const ToolGroup = memo(function ToolGroup({
   // calls carry no chip; the settled line speaks for itself.
   const statusChips = [
     inputRequiredCount > 0 && {
-      key: "input", Icon: LuCircleAlert, color: "yellow.fg",
+      key: "input", Icon: LuCircleAlert, color: "yellow.fg", palette: "yellow",
       count: inputRequiredCount, title: t("inputRequired"),
     },
     failedCount > 0 && {
-      key: "failed", Icon: LuCircleX, color: "red.fg",
+      key: "failed", Icon: LuCircleX, color: "red.fg", palette: "red",
       count: failedCount, title: t("failedCount", { count: failedCount }),
     },
     runningCount > 0 && {
-      key: "running", Icon: LuLoaderCircle, color: "blue.fg", spin: true,
+      key: "running", Icon: LuLoaderCircle, color: "blue.fg", palette: "blue", spin: true,
       count: runningCount, title: t("runningCount", { count: runningCount }),
     },
     backgroundCount > 0 && {
-      key: "background", Icon: LuMoon, color: "purple.fg",
+      key: "background", Icon: LuMoon, color: "purple.fg", palette: "purple",
       count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }),
     },
-  ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; count: number; title: string; spin?: boolean } => Boolean(chip));
-
-  if (thinkingOnly && !active) return null;
+  ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; palette: string; count: number; title: string; spin?: boolean } => Boolean(chip));
 
   return (
     <Box alignSelf="flex-start" w="100%" minW={0}>
@@ -196,13 +205,6 @@ export const ToolGroup = memo(function ToolGroup({
         _hover={interactive ? { color: "fg" } : undefined}
         onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
       >
-        {/* Leading slot: the reasoning glyph for a thinking-only phase that has nothing
-            to unfold. A real tool group's disclosure caret lives at the trailing edge. */}
-        {thinkingOnly && (
-          <Box display="flex" alignItems="center" flexShrink={0} color="purple.fg">
-            <LuBrain size={13} />
-          </Box>
-        )}
         {/* Status line — the latest tool's label. When the justification changes, the new
             label blurs and fades in (the same token-in look as the streaming message, applied
             to the whole label since it swaps as a unit — per-token spans would break this
@@ -231,6 +233,7 @@ export const ToolGroup = memo(function ToolGroup({
               <Text
                 textStyle="fieldLabel"
                 fontSize="sm"
+                fontWeight="normal"
                 whiteSpace="nowrap"
                 overflow="hidden"
                 textOverflow="ellipsis"
@@ -244,6 +247,13 @@ export const ToolGroup = memo(function ToolGroup({
             </motion.div>
           </AnimatePresence>
         </Box>
+        {/* The thinking indicator, homogenized with the tally: a persistent purple chip leading
+            the tool chips, carrying how many reasoning phases the model went through (shown once
+            there is more than one). Reasoning is planning, so it reads as the first step of what
+            the group did and stays put once the tools stream in over it. */}
+        {(thinkingTurns > 0 || thinkingOnly) && (
+          <TallyBadge colorPalette="purple" count={thinkingTurns} icon={<LuBrain size={13} />} title={t("thinking")} />
+        )}
         <Flex align="center" gap={1.5} flexShrink={0}>
           <AnimatePresence initial={false}>
             {tally.order.map((name) => {
@@ -259,16 +269,12 @@ export const ToolGroup = memo(function ToolGroup({
                   transition={{ duration: 0.12, ease: "easeOut" }}
                   style={{ display: "inline-flex", alignItems: "center" }}
                 >
-                  <Flex
-                    align="center"
-                    gap={1}
-                    flexShrink={0}
+                  <TallyBadge
                     title={display.label}
-                    color={active ? display.iconColor : "fg.muted"}
-                  >
-                    <ToolIcon size={13} />
-                    {count > 1 && <CountChip value={count} color="fg.muted" />}
-                  </Flex>
+                    count={count}
+                    colorPalette={paletteFromIconColor(display.iconColor)}
+                    icon={<ToolIcon size={13} />}
+                  />
                 </motion.div>
               );
             })}
@@ -298,7 +304,7 @@ export const ToolGroup = memo(function ToolGroup({
         )}
         <ToolLocationBadge arguments={groupLocation} />
         <AnimatePresence initial={false}>
-          {statusChips.map(({ key, Icon: ChipIcon, color, count, title, spin }) => (
+          {statusChips.map(({ key, Icon: ChipIcon, palette, count, title, spin }) => (
             <motion.div
               key={key}
               initial={{ opacity: 0 }}
@@ -307,10 +313,12 @@ export const ToolGroup = memo(function ToolGroup({
               transition={{ duration: 0.12, ease: "easeOut" }}
               style={{ display: "inline-flex", alignItems: "center" }}
             >
-              <Flex align="center" gap={1} flexShrink={0} title={title} color={color}>
-                <ChipIcon size={13} className={spin ? "tool-status-spin" : undefined} />
-                {count > 1 && <CountChip value={count} color={color} />}
-              </Flex>
+              <TallyBadge
+                title={title}
+                count={count}
+                colorPalette={palette}
+                icon={<ChipIcon size={13} className={spin ? "tool-status-spin" : undefined} />}
+              />
             </motion.div>
           ))}
         </AnimatePresence>

@@ -135,6 +135,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
           textOverflow="ellipsis"
           textStyle="fieldLabel"
           fontSize="sm"
+          fontWeight="normal"
           className={status === "running" ? "running-title-shimmer" : undefined}
         >
           <ToolCallLabel name={name} args={toolArguments} />

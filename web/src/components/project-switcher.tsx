@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, Text } from "@chakra-ui/react";
+import { Button, Flex, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuFolderOpen } from "react-icons/lu";
@@ -45,30 +45,24 @@ export function ProjectSwitcher({
         variant="ghost"
         w="full"
         minW={0}
-        h="auto"
-        minH={9}
-        py={1}
         px={2}
         justifyContent="flex-start"
-        // px + a 14px leading slot match the New-session row exactly, so the folder icon here
-        // and the compose icon below share one vertical line down the sidebar's left edge.
+        // A single-line title, so the project name sits on the same horizontal line as the
+        // chat title and the side-panel titles (their strips all share TOP_BAR_HEIGHT). px + a
+        // 14px leading slot match the New-session row, keeping the folder icon on the sidebar's
+        // left grid. The description rides as a hover tooltip rather than a second line, which
+        // would push the name off that shared line.
         gap={1.5}
+        title={current?.description || undefined}
         onClick={() => setManageOpen(true)}
         _focusVisible={{ outline: "none", boxShadow: "none", bg: "bg.subtle" }}
       >
         <Flex w="14px" flexShrink={0} align="center" justify="center" color="fg.muted">
           <LuFolderOpen size={14} />
         </Flex>
-        <Box flex={1} minW={0} textAlign="left">
-          <Text truncate fontSize="sm" fontWeight="medium" lineHeight="1.3">
-            {current?.name ?? t("selectProject")}
-          </Text>
-          {current?.description ? (
-            <Text truncate fontSize="xs" fontWeight="normal" color="fg.muted" lineHeight="1.3">
-              {current.description}
-            </Text>
-          ) : null}
-        </Box>
+        <Text flex={1} minW={0} truncate textAlign="left" fontSize="sm" fontWeight="medium">
+          {current?.name ?? t("selectProject")}
+        </Text>
       </Button>
 
       <ManageProjectsDialog

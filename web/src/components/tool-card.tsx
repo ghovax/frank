@@ -6,7 +6,15 @@ import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useTranslations } from "next-intl";
 import { InlineField } from "./tool-views/primitives";
 
-export function ToolCard({ children }: { children: ReactNode }) {
+// Two looks share these primitives:
+//   • "card" — a bordered, filled box (the agents panel's agent-task cards).
+//   • "row"  — the borderless transcript tool-call line: a leading icon, an sm label, a
+//     right-edge caret, and a body that hangs off a hairline left rule. Used by the
+//     capability browser so "Skills/Tools available" read exactly like a transcript tool call.
+type ToolCardVariant = "card" | "row";
+
+export function ToolCard({ children, variant = "card" }: { children: ReactNode; variant?: ToolCardVariant }) {
+  if (variant === "row") return <Box minW={0}>{children}</Box>;
   return (
     <Box borderRadius="md" overflow="hidden" bg="bg.subtle" border="1px solid" borderColor="border">
       {children}
@@ -21,6 +29,7 @@ export function ToolCardHeader({
   open,
   collapsible = false,
   onToggle,
+  variant = "card",
 }: {
   icon?: ReactNode;
   title: ReactNode;
@@ -28,7 +37,48 @@ export function ToolCardHeader({
   open?: boolean;
   collapsible?: boolean;
   onToggle?: () => void;
+  variant?: ToolCardVariant;
 }) {
+  if (variant === "row") {
+    // Mirrors the transcript ToolCall line exactly: fit-content width, the settled/hover
+    // color rule, an sm label, and the disclosure caret at the trailing edge.
+    return (
+      <Flex
+        as={collapsible ? "button" : "div"}
+        align="center"
+        gap={1.5}
+        h={6}
+        w="fit-content"
+        maxW="100%"
+        minW={0}
+        textAlign="left"
+        cursor={collapsible ? "pointer" : undefined}
+        onClick={collapsible ? onToggle : undefined}
+        userSelect="none"
+        color={open ? "fg" : "fg.muted"}
+        _hover={collapsible ? { color: "fg" } : undefined}
+      >
+        {icon && (
+          <Box display="flex" alignItems="center" flexShrink={0}>
+            {icon}
+          </Box>
+        )}
+        <Box minW={0} overflow="hidden" whiteSpace="nowrap" textOverflow="ellipsis" textStyle="fieldLabel" fontSize="sm" fontWeight="normal">
+          {title}
+        </Box>
+        {badges && (
+          <Flex align="center" gap={1.5} flexShrink={0} minW={0}>
+            {badges}
+          </Flex>
+        )}
+        {collapsible && (
+          <Box display="flex" alignItems="center" flexShrink={0} opacity={0.7}>
+            {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+          </Box>
+        )}
+      </Flex>
+    );
+  }
   return (
     <Flex
       align="center"
@@ -74,10 +124,31 @@ export function ToolCardHeader({
 export function ToolCardBody({
   children,
   maxH,
+  variant = "card",
 }: {
   children: ReactNode;
   maxH?: string;
+  variant?: ToolCardVariant;
 }) {
+  if (variant === "row") {
+    // The transcript body: content hangs off a hairline left rule, indented under the icon.
+    return (
+      <Box
+        className="reveal-enter"
+        ml="5px"
+        mt={0.5}
+        mb={1}
+        pl={3}
+        borderLeft="2px solid"
+        borderColor="border.muted"
+        maxH={maxH}
+        overflowY={maxH ? "auto" : undefined}
+        overflowX={maxH ? "auto" : undefined}
+      >
+        {children}
+      </Box>
+    );
+  }
   return (
     <Box
       px={2.5}

@@ -23,7 +23,7 @@ import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { VersionBadge } from "./attachment-chips";
 import { InlineField } from "./tool-views/primitives";
 import { PanelTab } from "./ui/panel-tab";
-import { PanelBody, PanelCard, PanelHeader, PanelEmptyState } from "@/components/ui/panel";
+import { PanelBody, PanelCard, PanelHeader, PanelEmptyState, TOP_BAR_HEIGHT } from "@/components/ui/panel";
 import { SegmentedToggle } from "@/components/ui/segmented-toggle";
 import { extractToolArtifacts, externalArtifactUrl, ArtifactView } from "./tool-views";
 import { NativeWebview } from "./native-webview";
@@ -105,9 +105,11 @@ interface ChatPanelProps {
 
 type TimelineItem =
   | { kind: "message"; message: ChatMessage }
-  // A tool_group with no messages is a reasoning ("thinking") phase: it renders
-  // as a live status line while the turn streams and nothing once it settles.
-  | { kind: "tool_group"; id: string; messages: ChatMessage[] };
+  // A tool_group with no messages is a reasoning ("thinking") phase. `thinkingTurns`
+  // counts the distinct reasoning phases the model went through before/among these tools
+  // (each phase is one `thinking` message), so the group keeps a persistent thinking chip
+  // in its heading with that count — it does not vanish when the tools stream in over it.
+  | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingTurns: number };
 
 // One versioned state of an artifact (the filmstrip walks these in sequence order).
 // Version identity is the git commit sha; bytes are the git blob sha at that commit.
@@ -271,10 +273,14 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   // swapped for another (which would flash a remount). A prose or user row that
   // isn't a tool group discards it.
   let pendingThinkingId: string | null = null;
+  // Each `thinking` message is one reasoning phase; count them so the group's brain chip can
+  // show how many times the model paused to plan (leading + interleaved between its calls).
+  let pendingThinkingTurns = 0;
   while (index < messages.length) {
     const message = messages[index];
     if (message.role === "thinking") {
       pendingThinkingId ??= message.id;
+      pendingThinkingTurns += 1;
       index += 1;
       continue;
     }
@@ -284,19 +290,23 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     }
     if (message.role !== "tool_call") {
       if (pendingThinkingId) {
-        items.push({ kind: "tool_group", id: pendingThinkingId, messages: [] });
+        items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
       }
       items.push({ kind: "message", message });
       pendingThinkingId = null;
+      pendingThinkingTurns = 0;
       index += 1;
       continue;
     }
 
     const toolMessages: ChatMessage[] = [];
     // The leading reasoning that led into this batch keys the group (stable from
-    // the pre-tool "thinking" heading onward).
+    // the pre-tool "thinking" heading onward). Reasoning phases are tallied from the
+    // leading ones plus any interleaved between this group's calls.
     const groupKey = pendingThinkingId;
+    let thinkingTurns = pendingThinkingTurns;
     pendingThinkingId = null;
+    pendingThinkingTurns = 0;
     // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
     // timeline, so it must not split a run of tool calls either — otherwise two
     // calls issued in successive iterations (each preceded by its own thinking)
@@ -311,6 +321,7 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
         toolMessages.push(next);
         index += 1;
       } else if (next.role === "thinking") {
+        thinkingTurns += 1;
         index += 1;
       } else {
         break;
@@ -322,13 +333,14 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
       // thinking→tools transition; fall back to the first tool otherwise.
       id: groupKey ?? toolMessages[0].id,
       messages: toolMessages,
+      thinkingTurns,
     });
   }
   // A reasoning phase at the tail surfaces as the live "Thinking" status line.
   // The item is emitted here unconditionally; ToolGroup renders it only while
   // the turn is live (keepOpen), so settled reasoning leaves no row behind.
   if (pendingThinkingId) {
-    items.push({ kind: "tool_group", id: pendingThinkingId, messages: [] });
+    items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
   }
   return items;
 }
@@ -1292,7 +1304,7 @@ export function ChatPanel({
             right. Always visible so the controls have a stable home; the title
             fills in once the session names itself, matching the sidebar default
             until then. */}
-        <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0} minW={0}>
+        <Flex align="center" gap={2} pl={3} pr={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
           {onToggleHistory ? (
             <Tooltip content={historyOpen ? t("hideConversations") : t("showConversations")} openDelay={300}>
               <IconButton
@@ -1445,16 +1457,16 @@ export function ChatPanel({
                       {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
                         const key = item.kind === "tool_group" ? item.id : item.message.id;
-                        // A tools-less group is a live reasoning phase: it exists only as
-                        // the shimmering "Thinking" status at the streaming tail. Settled
-                        // reasoning leaves no transcript row (skipped here so no empty
-                        // wrapper claims a slice of the timeline's rhythm either).
-                        if (item.kind === "tool_group" && item.messages.length === 0 && !(isStreaming && isLastItem)) {
+                        // A tools-less group is a reasoning phase; it stays in the transcript as a
+                        // persistent "Thinking" row (its own record of the planning that happened),
+                        // so it is only skipped if it somehow carries neither tools nor thinking.
+                        if (item.kind === "tool_group" && item.messages.length === 0 && item.thinkingTurns === 0) {
                           return null;
                         }
                         const inner = item.kind === "tool_group" ? (
                           <ChatToolGroup
                             messages={item.messages}
+                            thinkingTurns={item.thinkingTurns}
                             onPermission={handlePermission}
                             onQuestion={handleQuestion}
                             agents={agents}
