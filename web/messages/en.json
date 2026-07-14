@@ -426,7 +426,6 @@
     "failedCount": "{count, plural, other {# failed}}",
     "backgroundCount": "{count, plural, other {# in background}}",
     "runningCount": "{count, plural, other {# running}}",
-    "thoughtCount": "{count, plural, =1 {Thought # time} other {Thought # times}}",
     "filesCount": "{count, plural, other {# files}}"
   },
   "ToolViews": {

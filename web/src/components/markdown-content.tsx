@@ -249,8 +249,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       return <Box as="li" mb={0.5} fontSize="inherit" lineHeight="1.55" display="list-item" _last={{ mb: 0 }}>{renderChildren(children, animating)}</Box>;
     },
     blockquote({ children }) {
+      // 2px rule + pl=3: the exact grammar of an expanded tool call's detail rail
+      // (tool-call.tsx), so quoted prose and quoted activity read as one language.
       return (
-        <Box borderLeftWidth="3px" borderColor="border.muted" pl={3} py={0.5} color="fg.muted" fontSize="inherit">
+        <Box borderLeftWidth="2px" borderColor="border.muted" pl={3} py={0.5} color="fg.muted" fontSize="inherit">
           {renderChildren(children, animating)}
         </Box>
       );

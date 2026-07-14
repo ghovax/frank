@@ -107,14 +107,18 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
       {/* w=fit-content: the line is only as wide as its text, so the click target and
           hover tint never extend into the blank space to the right of a short label.
           The base color sets the settled (muted) tone; every piece without its own
-          color — the label, the chevron — inherits it, so the hover brighten is one rule. */}
+          color — the label, the chevron — inherits it, so the hover brighten is one rule.
+          A collapsible line is a real <button> (like the group heading) so the disclosure
+          is keyboard-reachable, not click-only. */}
       <Flex
+        as={collapsible ? "button" : "div"}
         align="center"
         gap={1.5}
         h={6}
         w="fit-content"
         maxW="100%"
         minW={0}
+        textAlign="left"
         cursor={collapsible ? "pointer" : undefined}
         onClick={collapsible ? () => setOpen((current) => !current) : undefined}
         userSelect="none"

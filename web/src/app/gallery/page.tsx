@@ -174,7 +174,7 @@ export default function GalleryPage() {
           <ChatMessageItem message={message("user", "Could you tighten the tool cards so they blend with the prose?")} />
         </Box>
         <Box data-audit="group-settled" display="flex" flexDirection="column">
-          <ToolGroup tools={settledTools} thinkingCount={2} />
+          <ToolGroup tools={settledTools} />
         </Box>
         <Box data-audit="assistant-markdown" display="flex" flexDirection="column">
           <ChatMessageItem message={message("assistant", richMarkdown)} />
@@ -182,8 +182,10 @@ export default function GalleryPage() {
         <Box data-audit="group-running" display="flex" flexDirection="column">
           <ToolGroup tools={runningTools} keepOpen />
         </Box>
+        {/* keepOpen marks the live streaming tail — the only state in which a
+            reasoning phase renders at all. */}
         <Box data-audit="group-thinking" display="flex" flexDirection="column">
-          <ToolGroup tools={[]} thinkingCount={3} />
+          <ToolGroup tools={[]} keepOpen />
         </Box>
         <Box data-audit="call-failed" display="flex" flexDirection="column">
           <ToolCall {...failedTool} />
@@ -214,6 +216,25 @@ export default function GalleryPage() {
       </VStack>
 
       <VStack gap={6} align="stretch" maxW="760px" mx="auto" mt={10}>
+        <Section title="Agent step body (activity lines nested in a card)">
+          <Box data-audit="agent-step">
+            <ToolCard>
+              <ToolCardHeader
+                icon={<Box color="purple.fg"><LuSparkles size={13} /></Box>}
+                title="researcher — Survey the design system"
+                collapsible
+                open
+                onToggle={() => {}}
+              />
+              <ToolCardBody>
+                <VStack gap={1} align="stretch" pt={0.5}>
+                  <MarkdownContent content={"Scanning the theme first, then the call sites."} />
+                  <ToolGroup tools={settledTools.slice(0, 3)} />
+                </VStack>
+              </ToolCardBody>
+            </ToolCard>
+          </Box>
+        </Section>
         <Section title="Panel card shell (agents panel, skills)">
           <Box data-audit="panel-card">
             <ToolCard>

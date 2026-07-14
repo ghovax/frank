@@ -96,10 +96,6 @@ interface ToolGroupProps {
   // the chat timeline to keep the latest group open until the assistant's text
   // response actually arrives, rather than collapsing the instant tools finish.
   keepOpen?: boolean;
-  // How many reasoning ("thinking") phases happened while this batch of work ran.
-  // Surfaced as a brain counter in the header (persisted: replay rebuilds the
-  // thinking messages this is counted from). 0 hides it.
-  thinkingCount?: number;
 }
 
 export const ToolGroup = memo(function ToolGroup({
@@ -110,7 +106,6 @@ export const ToolGroup = memo(function ToolGroup({
   activeArtifactId,
   onActivateArtifact,
   keepOpen = false,
-  thinkingCount = 0,
 }: ToolGroupProps) {
   const t = useTranslations("ToolGroup");
   const backgroundCount = tools.filter(
@@ -148,8 +143,10 @@ export const ToolGroup = memo(function ToolGroup({
   // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
-  // A tools-less group is a live "thinking before acting" phase — its heading is
-  // just the reasoning indicator. Otherwise it tracks the latest tool's label.
+  // A tools-less group is a live "thinking before acting" phase. Reasoning is
+  // transient — a shimmering status while it happens, gone once the turn moves
+  // on — unlike tool calls, which are records that stay. So it renders only
+  // while live (keepOpen); a settled thinking-only group renders nothing.
   const thinkingOnly = tools.length === 0;
   const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
   // A thinking-only heading has no body to reveal, so it is not interactive.
@@ -176,6 +173,8 @@ export const ToolGroup = memo(function ToolGroup({
       count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }),
     },
   ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; count: number; title: string; spin?: boolean } => Boolean(chip));
+
+  if (thinkingOnly && !active) return null;
 
   return (
     <Box alignSelf="flex-start" w="100%" minW={0}>
@@ -265,24 +264,6 @@ export const ToolGroup = memo(function ToolGroup({
               );
             })}
           </AnimatePresence>
-          {/* Reasoning counter — how many times the agent stopped to think
-              while doing this batch. Same rolling-number treatment as the
-              tool counts, in the thinking (purple) accent. A thinking-only
-              heading already leads with the brain glyph, so it shows just
-              the count. */}
-          {thinkingOnly && thinkingCount > 1 && <CountChip value={thinkingCount} color="fg.muted" />}
-          {thinkingCount > 0 && !thinkingOnly && (
-            <Flex
-              align="center"
-              gap={1}
-              flexShrink={0}
-              color={active ? "purple.fg" : "fg.muted"}
-              title={t("thoughtCount", { count: thinkingCount })}
-            >
-              <LuBrain size={13} />
-              {thinkingCount > 1 && <CountChip value={thinkingCount} color="fg.muted" />}
-            </Flex>
-          )}
         </Flex>
         {hasFileChanges && fileChanges.length > 0 && (
           <Flex align="center" gap={1.5} flexShrink={0} minW={0} overflow="hidden">

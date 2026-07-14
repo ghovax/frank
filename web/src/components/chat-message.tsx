@@ -299,10 +299,9 @@ interface ChatToolGroupProps {
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
   keepOpen?: boolean;
-  thinkingCount?: number;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, keepOpen, thinkingCount }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
   // ToolGroup renders, so the chat timeline and the agents panel stay in lockstep.
   const tools: ToolEvent[] = messages.map((message) => ({
@@ -323,7 +322,6 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermissio
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
       keepOpen={keepOpen}
-      thinkingCount={thinkingCount}
     />
   );
 });
