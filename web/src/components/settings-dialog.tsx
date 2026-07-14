@@ -17,6 +17,7 @@ import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@/lib/i18n/messages";
 import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorkspaceStrategyControl, type WorkspaceStrategyValue } from "./session-controls";
+import { useScrollEdgeFade } from "@/lib/scroll-fade";
 
 export type SettingsSection = "general" | "locations" | "agents" | "connection";
 
@@ -471,6 +472,8 @@ export function SettingsDialog({
   const [settingsSearch, setSettingsSearch] = useState("");
   const query = settingsSearch.trim().toLowerCase();
   const searching = query.length > 0;
+  // Soft top/bottom fades on the content pane, matching the sessions sidebar's scroll edges.
+  const { containerRef: contentScrollRef, onScroll: onContentScroll, fade: contentFade } = useScrollEdgeFade();
 
   // Every setting modeled as data so the search box can match titles/descriptions across
   // sections. A "page" is one left-nav entry; it holds titled sections of rows (title +
@@ -613,7 +616,7 @@ export function SettingsDialog({
                 beside a column that carries the header, the scrolling content, and the footer —
                 so its tint never gets cut off between a separate header and footer. */}
                 <Flex direction="column" w={52} flexShrink={0} borderRightWidth="1px" borderColor="border.muted" minH={0} bg="bg.subtle">
-                  <Box p={3} flexShrink={0}>
+                  <Box px={2} pt={3} pb={2} flexShrink={0}>
                     <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
                       <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
                       <Input
@@ -630,7 +633,7 @@ export function SettingsDialog({
                     </Flex>
                   </Box>
                   <Box flex={1} minH={0} overflowY="auto" px={2} pb={3}>
-                    <Text px={2} pb={1} textStyle="sectionLabel">{t("title")}</Text>
+                    <Text pb={1} textStyle="sectionLabel">{t("title")}</Text>
                     <Flex direction="column" gap={1}>
                       {pages.map((page) => {
                         const active = !searching && page.id === activePage.id;
@@ -652,7 +655,7 @@ export function SettingsDialog({
                             onClick={() => { setSettingsSearch(""); onSectionChange(page.id); }}
                           >
                             <Box color={active ? "fg" : "fg.subtle"} flexShrink={0} display="flex" alignItems="center">{page.icon}</Box>
-                            <Text flex={1} minW={0} truncate fontSize="sm">{page.label}</Text>
+                            <Text flex={1} minW={0} truncate fontSize="xs">{page.label}</Text>
                           </Flex>
                         );
                       })}
@@ -665,7 +668,7 @@ export function SettingsDialog({
               </Dialog.Header>
               <Dialog.Body px={0} py={0} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
-                <Box h="100%" overflowY="auto" px={6} py={4}>
+                <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={6} py={4}>
                   {searching ? (
                     searchSections.length === 0 ? (
                       <Flex h="full" align="center" justify="center" py={10}>

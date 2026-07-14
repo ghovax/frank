@@ -262,7 +262,7 @@ export function ChatInput({
 
   const agentCollection = useMemo(
     () => createListCollection({
-      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id, description: agent.description ?? "" })),
+      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
     }),
     [agents]
   );
@@ -759,17 +759,22 @@ export function ChatInput({
             <Portal>
               <Select.Positioner>
                 <Select.Content minW="220px" maxW="320px">
-                  {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value}>
-                      <Flex direction="column" minW={0} flex={1}>
-                        <Text fontSize="xs" fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
-                        {item.description ? (
-                          <Text fontSize="2xs" color="fg.muted" lineHeight="1.35" truncate>{item.description}</Text>
-                        ) : null}
-                      </Flex>
-                      <Select.ItemIndicator />
-                    </Select.Item>
-                  ))}
+                  {agentCollection.items.map((item) => {
+                    // Look the description up from the source list by id — the collection item
+                    // only reliably carries label/value, so extra fields are read from `agents`.
+                    const description = agents.find((agent) => agent.id === item.value)?.description;
+                    return (
+                      <Select.Item item={item} key={item.value}>
+                        <Flex direction="column" minW={0} flex={1}>
+                          <Text fontSize="xs" fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
+                          {description ? (
+                            <Text fontSize="2xs" color="fg.muted" lineHeight="1.35" truncate>{description}</Text>
+                          ) : null}
+                        </Flex>
+                        <Select.ItemIndicator />
+                      </Select.Item>
+                    );
+                  })}
                 </Select.Content>
               </Select.Positioner>
             </Portal>

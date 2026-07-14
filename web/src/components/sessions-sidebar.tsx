@@ -213,7 +213,7 @@ export function SessionsSidebar({
           <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{t("newConversation")}</Text>
           {/* Chakra's semantic keyboard-key component, in its `plain` variant so it reads as a
               subtle shortcut hint rather than a raised keycap chip. */}
-          <Kbd data-kbd-hint variant="plain" fontSize="2xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
+          <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="2xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
         </chakra.button>
       </Box>
 
@@ -243,8 +243,6 @@ export function SessionsSidebar({
           align="center"
           gap={1.5}
           mb={1}
-          pl={2}
-          pr={1}
           color="fg.muted"
           css={{
             "& [data-section-action]": { opacity: 0 },
@@ -263,7 +261,7 @@ export function SessionsSidebar({
                   color="fg.muted"
                   textStyle="fieldLabel"
                   gap={1}
-                  px={1.5}
+                  size="2xs"
                   // The menu returns focus to this trigger on close, which fires a stray
                   // focus-visible ring even after a pointer selection. Swap the ring for a
                   // subtle background so keyboard focus still reads without the harsh outline.
