@@ -124,6 +124,16 @@ export function ChatGPTAuthControl({
           {t("signIn")}
         </Button>
       )}
+      {error && (
+        <Alert.Root status="error" size="sm" borderRadius="md" mt={3} alignItems="center">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Description fontSize="xs" truncate title={error}>
+              {error}
+            </Alert.Description>
+          </Alert.Content>
+        </Alert.Root>
+      )}
       {signedIn ? (
         <Alert.Root status="success" size="sm" borderRadius="md" mt={3} alignItems="center">
           <Alert.Indicator />

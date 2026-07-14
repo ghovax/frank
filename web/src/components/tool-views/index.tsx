@@ -887,7 +887,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
       default: {
         // The wrapper below already renders `justification` for every tool. Strip it here,
         // or tools without a dedicated view (MCP calls) would show it twice.
-        const { justification: _justification, ...rest } = args;
+        const rest = { ...args };
+        delete rest.justification;
         return <GenericView data={rest} />;
       }
     }

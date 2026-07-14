@@ -110,11 +110,6 @@ samp {
   }
 }
 
-.task-hover-root:hover .task-hover-panel,
-.task-hover-root:focus-within .task-hover-panel {
-  display: block;
-}
-
 /* A soft breathing pulse for the "still working" status dot in the sessions sidebar. */
 .status-dot-pulse {
   animation: status-dot-pulse 1.5s ease-in-out infinite;

@@ -324,11 +324,6 @@
     "notConnectedTitle": "ターミナルが接続されていません",
     "notConnectedDescription": "ターミナルが再接続するまで入力を送信できません。"
   },
-  "CollapsibleSection": {
-    "sessionCount": "{count, plural, other {# 件のセッション}}",
-    "showLess": "表示を減らす",
-    "showMore": "他 {count} 件を表示"
-  },
   "SessionControls": {
     "permissionDefaultLabel": "手動承認",
     "permissionDefaultDescription": "設定された権限ルールを使用し、必要に応じて確認します",

@@ -20,8 +20,6 @@ export function ToolCardHeader({
   badges,
   open,
   collapsible = false,
-  shimmer = false,
-  headerBg,
   onToggle,
 }: {
   icon?: ReactNode;
@@ -29,8 +27,6 @@ export function ToolCardHeader({
   badges?: ReactNode;
   open?: boolean;
   collapsible?: boolean;
-  shimmer?: boolean;
-  headerBg?: string;
   onToggle?: () => void;
 }) {
   return (
@@ -42,7 +38,6 @@ export function ToolCardHeader({
       // would let a badged row grow past a bare one. A fixed height centers whatever is inside
       // and keeps every row identical. No py — the fixed height + align="center" own it.
       h={7}
-      bg={headerBg}
       cursor={collapsible ? "pointer" : undefined}
       onClick={collapsible ? onToggle : undefined}
       userSelect="none"
@@ -59,7 +54,6 @@ export function ToolCardHeader({
         whiteSpace="nowrap"
         textOverflow="ellipsis"
         textStyle="fieldLabel"
-        className={shimmer ? "running-title-shimmer" : undefined}
       >
         {title}
       </Box>
@@ -97,25 +91,6 @@ export function ToolCardBody({
       maxH={maxH}
       overflowY={maxH ? "auto" : undefined}
       overflowX={maxH ? "auto" : undefined}
-    >
-      {children}
-    </Box>
-  );
-}
-
-export function ToolCardSection({
-  children,
-  borderTop = false,
-}: {
-  children: ReactNode;
-  borderTop?: boolean;
-}) {
-  return (
-    <Box
-      px={2.5}
-      py={1.5}
-      borderTop={borderTop ? "1px solid" : "none"}
-      borderColor="border"
     >
       {children}
     </Box>

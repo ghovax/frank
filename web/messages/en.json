@@ -324,11 +324,6 @@
     "notConnectedTitle": "Terminal is not connected",
     "notConnectedDescription": "Input cannot be sent until the terminal reconnects."
   },
-  "CollapsibleSection": {
-    "sessionCount": "{count, plural, one {# session} other {# sessions}}",
-    "showLess": "Show less",
-    "showMore": "Show {count} more"
-  },
   "SessionControls": {
     "permissionDefaultLabel": "Manual approvals",
     "permissionDefaultDescription": "Use the configured permission rules and ask when needed",
