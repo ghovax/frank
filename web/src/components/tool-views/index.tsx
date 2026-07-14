@@ -110,7 +110,7 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
 
 
 // Backend action name → a clear, human label key. The tool's raw actions are terse verbs
-// ("observe", "run_script"); the badge maps them to what they actually do, the same way every
+// ("observe", "screenshot"); the badge maps them to what they actually do, the same way every
 // other enum in these views is mapped rather than shown raw.
 const COMPUTER_ACTION_LABEL_KEYS: Record<string, string> = {
   observe: "computerActionObserve",
@@ -129,8 +129,6 @@ const COMPUTER_ACTION_LABEL_KEYS: Record<string, string> = {
   hover: "computerActionHover",
   drag: "computerActionDrag",
   screenshot: "computerActionScreenshot",
-  launch: "computerActionLaunch",
-  run_script: "computerActionRunScript",
 };
 
 // The mapped action as a pill. Shown both on the tool-call heading (so the action reads at a
@@ -152,12 +150,10 @@ function ComputerCallView({ args }: { args: Record<string, unknown> }) {
   const keyName = asString(args.key);
   const keyCombo = [...modifiers, keyName].filter(Boolean).join(" + ");
   const menuPath = asArray(args.menu_path).map(asString).filter(Boolean).join(" ▸ ");
-  const launchArguments = asArray(args.arguments).join(" ");
   const text = asString(args.text);
   const windowScope = asString(args.window);
   const clicks = Number(args.clicks ?? 1);
   const button = asString(args.button);
-  const isScript = action === "run_script";
   return (
     <FieldList>
       <InlineField label={t("computerAction")}>
@@ -182,18 +178,10 @@ function ComputerCallView({ args }: { args: Record<string, unknown> }) {
       {clicks > 1 && <InlineField label={t("computerClicks")}>{String(clicks)}</InlineField>}
       {button === "right" && <InlineField label={t("computerButton")}>{button}</InlineField>}
       {windowScope && windowScope !== "focused" && <InlineField label={t("computerWindow")}>{windowScope}</InlineField>}
-      {launchArguments && <InlineField label={t("fieldArguments")}>{launchArguments}</InlineField>}
-      {isScript && asString(args.language) && <InlineField label={t("language")}>{asString(args.language)}</InlineField>}
       {text && (
-        isScript ? (
-          <Field label={t("computerScript")}>
-            <MonoBlock>{text}</MonoBlock>
-          </Field>
-        ) : (
-          <Field label={t("computerText")}>
-            <Text fontSize="xs" whiteSpace="pre-wrap">{text}</Text>
-          </Field>
-        )
+        <Field label={t("computerText")}>
+          <Text fontSize="xs" whiteSpace="pre-wrap">{text}</Text>
+        </Field>
       )}
     </FieldList>
   );
@@ -217,6 +205,8 @@ const BROWSER_ACTION_LABEL_KEYS: Record<string, string> = {
   click: "browserActionClick",
   type: "browserActionType",
   read: "browserActionRead",
+  evaluate: "browserActionEvaluate",
+  network: "browserActionNetwork",
   press: "browserActionPress",
   hover: "browserActionHover",
   scroll: "browserActionScroll",
@@ -256,8 +246,15 @@ function BrowserCallView({ args }: { args: Record<string, unknown> }) {
           <Mono>{asString(args.tab)}</Mono>
         </InlineField>
       )}
-      {action === "find" && asString(args.query) && (
+      {(action === "find" || action === "network") && asString(args.query) && (
         <InlineField label={t("browserQuery")}>{asString(args.query)}</InlineField>
+      )}
+      {asString(args.goal) && <InlineField label={t("browserGoal")}>{asString(args.goal)}</InlineField>}
+      {asString(args.expect) && <InlineField label={t("browserExpect")}>{asString(args.expect)}</InlineField>}
+      {asString(args.dialog) && (
+        <InlineField label={t("browserDialog")}>
+          <Mono>{asString(args.dialog)}</Mono>
+        </InlineField>
       )}
       {action === "select" && asString(args.option) && (
         <InlineField label={t("browserOption")}>{asString(args.option)}</InlineField>
@@ -277,6 +274,11 @@ function BrowserCallView({ args }: { args: Record<string, unknown> }) {
       )}
       {action === "scroll" && asString(args.direction) && (
         <InlineField label={t("browserDirection")}>{asString(args.direction)}</InlineField>
+      )}
+      {action === "evaluate" && asString(args.expression) && (
+        <Field label={t("browserExpression")}>
+          <MonoBlock>{asString(args.expression)}</MonoBlock>
+        </Field>
       )}
       {text && (
         <Field label={t("computerText")}>
@@ -2185,7 +2187,7 @@ function ComputerResultView({ data }: { data: Record<string, unknown> }) {
     );
   }
 
-  // Action confirmation (click / type / key / menu / scroll / launch).
+  // Action confirmation (click / type / key / menu / scroll).
   if (did) {
     return (
       <FieldList>

@@ -157,14 +157,13 @@ function computerLabel(args?: Record<string, unknown>): string {
   const app = args?.app ? String(args.app) : "";
   const verbs: Record<string, string> = {
     observe: "Looking at",
+    find: "Searching in",
     click: "Clicking in",
     type: "Typing in",
-    key: "Pressing a key in",
+    press: "Pressing a key in",
     menu: "Choosing a menu in",
     scroll: "Scrolling",
     screenshot: "Capturing",
-    launch: "Opening",
-    run_script: "Scripting",
   };
   const verb = verbs[action];
   if (!verb) return app ? `Controlling ${app}` : "Controlling this Mac";
@@ -179,12 +178,18 @@ function browserLabel(args?: Record<string, unknown>): string {
       return args?.url ? `Opening ${String(args.url)}` : "Opening a page";
     case "observe":
       return "Reading the page";
+    case "find":
+      return "Searching the page";
     case "click":
       return "Clicking in the page";
     case "type":
       return "Typing in the page";
     case "read":
       return "Reading the page text";
+    case "evaluate":
+      return "Running JavaScript";
+    case "network":
+      return "Reading network activity";
     case "press":
       return args?.key ? `Pressing ${String(args.key)}` : "Pressing a key";
     case "hover":

@@ -5,23 +5,30 @@ lives here.
 
 What is shared, and why it belongs in one place:
 
-* One **observe → act-by-index** model. Every observe returns a flat list of indexed elements
-  and rebuilds a registry mapping each index to an opaque target token (a web aria-ref, a
-  native AX handle); the model then acts by index. The element schema is identical across
-  surfaces (``Element`` below), so a button reads the same whether it is in a web page or a
-  native window.
+* One **observe → act-by-ref** model. Every observe returns a flat list of elements, each
+  carrying a stable ``ref`` (a short opaque id like ``k7Bn2p``); the ``ElementRegistry`` mints that ref
+  once per element *identity* (role, name, and position in the tree) and rebinds it to the
+  element's live target token on every observe (a web aria-ref, a native AX handle — both are
+  snapshot-scoped, so they must be refreshed while the ref the model holds stays put). A ref
+  therefore survives across calls: acting on one that has since vanished fails cleanly instead
+  of bricking the loop, and a bad ``find`` never wipes what the model was paging through. The
+  element schema is identical across surfaces (``Element`` below), so a button reads the same
+  whether it is in a web page or a native window.
 * One **serial worker**. Each surface owns exactly one thread that touches its live state, and
   public operations submit closures onto it. For the web surface this is a hard requirement
   (Playwright's sync API is thread-affine); for the native surface it is what serializes the
-  index registry instead of a lock over module globals.
+  registry instead of a lock over module globals.
 * One **failure protocol**. ``ToolFailure`` carries a structured payload as control flow;
   ``Surface.guard`` wraps every operation so an unexpected exception becomes an honest payload
   and the surface gets a chance to recover (drop a dead connection, forget a stale registry).
-* One **result shape**. ``digest`` (after an action) and ``overview`` (after an observe or a
-  navigation) both end in ``finish``, which stamps the surface's location fields, a ``changed``
-  flag, and any out-of-band events. The location fields are the one thing that differs — a URL
-  and title for the web, an app and window for the native surface — so each surface supplies
-  them and the rest is common.
+* One **closed-loop result shape**. ``overview`` (after an observe or a navigation) returns the
+  full addressable surface; ``digest`` (after an action) is **diff-first** — it returns just
+  what changed (elements that appeared, disappeared, or updated) plus any live-region
+  announcement, and only falls back to the whole surface when the change was wholesale (a
+  navigation, a near-total rerender). Both end in ``finish``, which stamps the surface's
+  location fields, the change flags, and any out-of-band events. The location fields are the one
+  thing that differs — a URL and title for the web, an app and window for the native surface —
+  so each surface supplies them and the rest is common.
 
 User- and model-facing prose is never inlined here; it is loaded from ``messages/*.md`` like
 every other prompt in the harness.
@@ -30,6 +37,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import queue
+import random
+import string
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -134,31 +143,44 @@ def resolve_caret(
 
 @dataclass
 class Element:
-    """One indexed element, in the single vocabulary the model acts on across both surfaces.
+    """One element, in the single vocabulary the model acts on across both surfaces.
 
-    ``name`` is the element's accessible name (the web accessible name; the native title,
-    description, or help, whichever it has). ``value`` is its own contents. ``clickable`` marks
-    a control the model can target (a web interactive role or pointer cursor; a native node that
-    exposes a press-like AX action). ``flags`` holds only the notable states (disabled, selected,
-    checked, expanded, …); unremarkable defaults are omitted as noise. ``children`` is set only
-    on a region — a container an observe chose not to expand — and counts what waits inside so
-    the model can drill. ``actions`` is the native AX action list when present. ``token`` is the
-    opaque handle used to act on the element (an aria-ref, an AX registry entry); it never
-    reaches the model."""
-    index: int
+    ``ref`` is the stable opaque handle the model targets (``k7Bn2p``); the ``ElementRegistry`` assigns it
+    from the element's identity and rebinds it to the live ``token`` on every observe. ``name`` is
+    the element's accessible name (the web accessible name; the native title, description, or
+    help, whichever it has). ``value`` is its own contents. ``context`` is a short trail of the
+    element's named ancestors (the nearest heading/landmark/region), so twenty identical "Add to
+    Cart" buttons are told apart by the product they sit under. ``clickable`` marks a control the
+    model can target (a web interactive role or pointer cursor; a native node that exposes a
+    press-like AX action). ``flags`` holds only the notable states (disabled, selected, checked,
+    expanded, …); unremarkable defaults are omitted as noise. ``children`` is set only on a
+    region — a container an observe chose not to expand — and counts what waits inside so the
+    model can drill. ``actions`` is the native AX action list when present. ``token`` is the
+    opaque live handle used to act on the element (an aria-ref, an AX element); it never reaches
+    the model. ``ref`` is filled in by the registry after construction."""
     role: str
     name: str = ""
     value: Any = None
     clickable: bool = False
+    context: str = ""
     flags: dict[str, Any] = field(default_factory=dict)
     children: Optional[int] = None
     actions: list[str] = field(default_factory=list)
     truncated: bool = False
+    ref: str = ""
     token: Any = None
 
+    def identity(self, occurrence: int) -> tuple:
+        """The stable key the registry mints a ref from: what the element is (role, name, a short
+        prefix of its value) and where it sits (its ancestor trail), plus an ``occurrence`` index
+        that separates otherwise-identical siblings. Stable across re-observations of the same
+        surface, so the same element keeps the same ref."""
+        value_key = self.value[:32] if isinstance(self.value, str) else self.value
+        return (self.context, self.role, self.name, value_key, occurrence)
+
     def payload(self) -> dict[str, Any]:
-        """The model-facing dict: index and role always, everything else only when populated."""
-        data: dict[str, Any] = {"index": self.index, "role": self.role}
+        """The model-facing dict: ref and role always, everything else only when populated."""
+        data: dict[str, Any] = {"ref": self.ref, "role": self.role}
         if self.name:
             data["name"], name_clipped = bounded(self.name, LABEL_LENGTH)
         else:
@@ -169,6 +191,8 @@ class Element:
                 data["value"], value_clipped = bounded(self.value, VALUE_LENGTH)
         elif self.value is not None:
             data["value"] = self.value
+        if self.context:
+            data["context"] = self.context
         for flag, state in self.flags.items():
             data[flag] = state
         if self.clickable:
@@ -180,6 +204,114 @@ class Element:
         if self.truncated or name_clipped or value_clipped:
             data["truncated"] = True
         return data
+
+
+class ElementRegistry:
+    """The durable ref↔token map for one surface. A ref is minted once per element *identity* and
+    kept for the surface's life; the live token behind it is rebound on every observe (aria-refs
+    and AX handles are snapshot-scoped, so they go stale, but the ref the model holds does not).
+
+    Two properties fall out of this and matter to the model: a ref stays valid across calls, so an
+    observe/find between seeing an element and acting on it does not invalidate what was seen; and
+    the map is only ever added to, never wiped, so a ``find`` that matches nothing cannot brick a
+    paging loop the way replacing a positional index list did. Acting on a ref whose element has
+    since vanished resolves to a stale token and fails cleanly — the surface reports it and the
+    model re-observes, rather than silently acting on the wrong thing."""
+
+    #: The nanoID alphabet and length. Deliberately *not* a running counter: an opaque random id
+    #: (``k7Bn2p``) reads as a handle, not an ordinal, so it does not invite positional reasoning
+    #: the way ``1``/``2`` would; the mixed case also means it can never be mistaken for an integer
+    #: index. And because the id space is sparse, a stale or fabricated ref almost never collides
+    #: with a live element — it resolves to nothing and fails cleanly, rather than silently acting
+    #: on whatever happens to sit at that number. Six base-62 chars is ~57 billion ids, far more
+    #: than the few hundred elements a surface ever holds.
+    _ALPHABET = string.ascii_letters + string.digits
+    _REF_LENGTH = 6
+
+    def __init__(self) -> None:
+        self._refs: dict[tuple, str] = {}     # identity → ref, grow-only within a surface's life
+        self._tokens: dict[str, Any] = {}     # ref → live token, rebound each observe
+        self._random = random.Random()
+
+    def _mint(self) -> str:
+        """A fresh opaque ref, regenerated on the vanishingly rare collision with a live one."""
+        while True:
+            ref = "".join(self._random.choices(self._ALPHABET, k=self._REF_LENGTH))
+            if ref not in self._tokens:
+                return ref
+
+    def bind(self, elements: list["Element"]) -> None:
+        """Assign each element its stable ref (minting a new one only for a never-seen identity)
+        and rebind that ref to the element's current live token. Identities are disambiguated by
+        an occurrence counter so identical siblings get distinct refs."""
+        seen: dict[tuple, int] = {}
+        for element in elements:
+            base = element.identity(0)
+            occurrence = seen.get(base, 0)
+            seen[base] = occurrence + 1
+            identity = element.identity(occurrence)
+            ref = self._refs.get(identity)
+            if ref is None:
+                ref = self._mint()
+                self._refs[identity] = ref
+            element.ref = ref
+            self._tokens[ref] = element.token
+
+    def token(self, ref: str) -> Any:
+        """The live token bound to a ref, or ``None`` when the ref was never seen."""
+        return self._tokens.get(ref)
+
+    def __contains__(self, ref: str) -> bool:
+        return ref in self._tokens
+
+    def reset(self) -> None:
+        """Forget everything (a dropped connection, a fresh app)."""
+        self._refs.clear()
+        self._tokens.clear()
+
+
+# Payload keys the diff ignores when deciding whether an element "updated": the ones that never
+# change for a given element (its identity and structure), plus the volatile focus marker. A click
+# lands focus on its target, flipping ``active`` — treating that as a change would make almost every
+# click report ``changed`` and drown out the real signal, so focus movement is not a content change.
+_STABLE_KEYS = frozenset({
+    "ref", "role", "name", "context", "clickable", "children", "actions", "active",
+})
+
+
+def diff_elements(previous: list[dict], current: list[dict]) -> Optional[dict]:
+    """The structured delta between two observations of one surface, keyed by the stable ref so a
+    reordering is never mistaken for a change. Returns the elements that ``appeared``,
+    ``disappeared``, or ``updated`` (same ref, changed value/state), or ``None`` when nothing
+    moved. This is what an acting result leads with instead of re-listing the whole surface."""
+    previous_by_ref = {element["ref"]: element for element in previous if element.get("ref")}
+    current_by_ref = {element["ref"]: element for element in current if element.get("ref")}
+    appeared = [element for ref, element in current_by_ref.items() if ref not in previous_by_ref]
+    disappeared = [element for ref, element in previous_by_ref.items() if ref not in current_by_ref]
+
+    def state(element: dict) -> dict:
+        return {key: value for key, value in element.items() if key not in _STABLE_KEYS}
+
+    updated = [
+        element for ref, element in current_by_ref.items()
+        if ref in previous_by_ref and state(element) != state(previous_by_ref[ref])
+    ]
+    delta = {
+        name: value
+        for name, value in (("appeared", appeared), ("disappeared", disappeared), ("updated", updated))
+        if value
+    }
+    return delta or None
+
+
+def _is_wholesale(delta: Optional[dict], current: list[dict]) -> bool:
+    """Whether a change is better shown as the full fresh surface than as a delta: a navigation or
+    near-total rerender, where most of what is on screen is new. A local change (a menu opening, a
+    field validating) is not wholesale and comes back as just the delta."""
+    if not delta:
+        return False
+    appeared = len(delta.get("appeared", []))
+    return appeared >= 0.6 * max(1, len(current))
 
 
 class ToolFailure(Exception):
@@ -330,31 +462,57 @@ class Surface:
         self,
         *,
         context: Any,
-        elements: list[dict],
-        changed: Optional[bool] = None,
+        current: list[dict],
+        previous: Optional[list[dict]] = None,
+        url_changed: Optional[bool] = None,
         events: Optional[list[dict]] = None,
         truncated: bool = False,
         truncated_note: str = "",
         prose_note_name: str = "",
         empty_hint: str = "",
+        no_change_note: str = "",
     ) -> dict:
-        """The result an acting call returns: the surface's complete actionable surface — every
-        clickable element plus any live-region announcement — with bulk prose deferred to
-        observe/read. Nothing the model could act on is hidden; what is deferred is reading
-        material, and the note says how much. ``prose_note_name`` names the message rendered with
-        the count this method computes."""
-        listed = [
-            element for element in elements
-            if element.get("clickable") or element.get("role") in self.live_region_roles
-        ]
-        prose_deferred = len(elements) - len(listed)
-        result: dict[str, Any] = {"ok": True, "count": len(elements), "elements": listed}
-        if truncated and truncated_note:
-            result["truncated"] = True
-            result["note"] = truncated_note
-        elif prose_deferred and prose_note_name:
-            result["note"] = self.message(prose_note_name, count=str(prose_deferred))
+        """The **diff-first** result an acting call returns. Instead of re-listing the whole
+        actionable surface on every step (thousands of tokens of unchanged buttons), it leads with
+        the delta against the surface as it stood before the action — what ``appeared``,
+        ``disappeared``, or ``updated`` — plus any live-region announcement (a validation error, a
+        status line). Only a *wholesale* change (a navigation, a near-total rerender) falls back to
+        the full fresh surface, since there a delta would be the whole surface anyway and the model
+        needs the new lay of the land. ``changed`` stays as an honest boolean either way; a local
+        change carries ``changes`` (the structured delta), a wholesale one carries ``elements``."""
+        delta = diff_elements(previous, current) if previous is not None else None
+        content_changed = delta is not None
+        result: dict[str, Any] = {"ok": True}
+        if url_changed is not None:
+            result["url_changed"] = bool(url_changed)
+        result["changed"] = bool(content_changed or url_changed)
+
+        if url_changed or previous is None or _is_wholesale(delta, current):
+            # A fresh surface: the full actionable set (every clickable plus any announcement),
+            # with bulk prose deferred to observe/read, exactly as an overview defers it.
+            listed = [
+                element for element in current
+                if element.get("clickable") or element.get("role") in self.live_region_roles
+            ]
+            prose_deferred = len(current) - len(listed)
+            result["count"] = len(current)
+            result["elements"] = listed
+            if truncated and truncated_note:
+                result["truncated"] = True
+                result["note"] = truncated_note
+            elif prose_deferred and prose_note_name:
+                result["note"] = self.message(prose_note_name, count=str(prose_deferred))
+        else:
+            # A local change: just the delta, plus any announcement the page made in response.
+            announcements = [element for element in current if element.get("role") in self.live_region_roles]
+            if delta:
+                result["changes"] = delta
+            if announcements:
+                result["announcements"] = announcements
+            if not delta and not announcements and no_change_note:
+                result["note"] = no_change_note
+
         return self.finish(
-            result, context=context, elements=listed, changed=changed,
+            result, context=context, elements=current, changed=None,
             events=events, empty_hint=empty_hint,
         )

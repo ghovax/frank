@@ -35,6 +35,7 @@ that one worker thread. The dispatch layer already calls into the surface off th
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import re
 import tempfile
@@ -45,7 +46,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from harness.computer.surface import (
-    Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
+    Element, ElementRegistry, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
 )
 # The verbatim-first matcher and compact diff window from the file-edit tool: the `edit` action
 # changes a field's text exactly the way edit_file changes a file, reusing that tested logic.
@@ -126,11 +127,18 @@ class _Session:
         # A page's CDP targetId, cached once (it is stable for the page's lifetime), so tab
         # listings can join against cheap browser-level target metadata.
         self.target_ids: dict[Any, Optional[str]] = {}
-        # Maps an element index from the most recent observe/find to its aria-ref, so the
-        # model can act on elements by index.
-        self.registry: dict[int, Optional[str]] = {}
-        # The last snapshot text, for cheap "did anything change" comparisons.
-        self.last_snapshot = ""
+        # The durable ref↔token map: mints a stable ref per element identity and rebinds it to the
+        # live aria-ref on every observe, so a ref the model holds survives across calls and a
+        # no-match find never wipes what a paging loop was working through.
+        self.registry = ElementRegistry()
+        # The element payloads from the last full-page observe, so an acting result can diff
+        # against them and report only what changed instead of re-listing the whole surface.
+        self.last_elements: list[dict] = []
+        # What to do with the next JavaScript dialog this action triggers, when the model asked
+        # ("accept"/"dismiss"); None means the default (acknowledge alerts, decline questions).
+        self.pending_dialog: Optional[str] = None
+        # A rolling log of network requests the page made, for the `network` reader.
+        self.requests: deque[dict] = deque(maxlen=100)
         # Dialogs auto-handled and downloads captured since the last result, drained into it.
         self.events: deque[dict] = deque(maxlen=8)
 
@@ -155,14 +163,22 @@ class _Session:
         return self.target_ids[page]
 
     def adopt(self, page) -> None:
-        """Track a page and wire its dialog/download handling. Dialogs are answered immediately
-        because an unanswered dialog freezes the page: alerts are acknowledged, anything asking
-        a real question is declined, and both are reported in the next result so the model
-        knows what happened."""
+        """Track a page and wire its dialog/download/network handling. Dialogs are answered
+        immediately because an unanswered dialog freezes the page. By default an alert is
+        acknowledged and a question (confirm/prompt) is declined; when the action that triggered
+        it asked to ``accept`` or ``dismiss``, that intent wins — so a delete-with-confirm flow is
+        possible without giving up the safe default. Every dialog is reported in the next result."""
         self.tab_id(page)
 
         def on_dialog(dialog) -> None:
-            accepted = dialog.type == "alert"
+            intent = self.pending_dialog
+            self.pending_dialog = None
+            if intent == "accept":
+                accepted = True
+            elif intent == "dismiss":
+                accepted = False
+            else:
+                accepted = dialog.type == "alert"
             self.events.append({
                 "dialog": {"type": dialog.type, "message": dialog.message, "accepted": accepted},
             })
@@ -184,8 +200,22 @@ class _Session:
             except Exception as error:
                 self.events.append({"download": {"url": download.url, "error": str(error)}})
 
+        def on_response(response) -> None:
+            # A compact request/response log the `network` action reads: the page's own XHR/fetch
+            # and document traffic, which structured extraction (an XHR JSON endpoint) often wants
+            # rather than the rendered DOM. Best-effort; a detached response read simply skips.
+            try:
+                request = response.request
+                self.requests.append({
+                    "method": request.method, "url": request.url,
+                    "status": response.status, "type": request.resource_type,
+                })
+            except Exception:
+                pass
+
         page.on("dialog", on_dialog)
         page.on("download", on_download)
+        page.on("response", on_response)
 
 
 # Observation: Playwright's ref-carrying accessibility snapshot, parsed into the shared indexed
@@ -230,25 +260,52 @@ _STRUCTURAL_ROLES = frozenset({
     "region", "navigation", "main", "complementary", "banner", "contentinfo", "form", "search",
 })
 
+# Roles whose accessible name labels the section or card around them, and so becomes the `context`
+# of the plainer controls that follow inside it. Landmarks title their whole branch; a heading
+# titles its section; a card's leading link is usually the product/article title that its "Add to
+# Cart"/"Save" button belongs to. This is what tells twenty identical buttons apart.
+_LABEL_ROLES = _STRUCTURAL_ROLES | frozenset({"heading", "link"})
+
 # How many find matches come back at most: enough to disambiguate, small enough to stay readable.
 _FIND_LIMIT = 25
 
 
+def _relevance(element: Element, words: list[str]) -> tuple:
+    """How well an element answers the model's stated ``goal``: how many of the goal's words appear
+    in its role/name/context/value, with a clickable element winning ties. Used to rank which
+    elements survive the overview cap, so a goal-relevant control is never starved out by document
+    order (the nav links and filters that happen to come first in the DOM)."""
+    haystack = " ".join([
+        element.role, element.name, element.context,
+        element.value if isinstance(element.value, str) else "",
+    ]).lower()
+    matches = sum(1 for word in words if word in haystack)
+    return (matches, 1 if element.clickable else 0)
+
+
 def _parse_snapshot(
     snapshot: str, limit: int = _MAXIMUM_ELEMENTS, prose_budget: int = _PROSE_ELEMENT_BUDGET,
+    goal: str = "",
 ) -> tuple[list[Element], bool, int]:
     """Parse the ai-mode aria snapshot (YAML-shaped, one node per line, ``[ref=...]`` markers,
     iframe contents inlined with frame-scoped refs) into shared ``Element`` objects, each carrying
-    its aria-ref as ``token``. Interactive elements always make the list; non-interactive text is
-    kept up to ``prose_budget`` and counted past it. Returns (elements, truncated, omitted_text)."""
+    its aria-ref as ``token`` and the ``context`` of its nearest labelling ancestor/sibling.
+    Interactive elements always make the list; non-interactive text is kept up to ``prose_budget``
+    and counted past it. When the collected set exceeds ``limit``, a stated ``goal`` ranks which
+    elements survive (relevance-first, re-sorted back into document order) so the cap never starves
+    the relevant controls in favour of whatever came first in the DOM; without a goal the cap keeps
+    document order. Returns (elements, truncated, omitted_text)."""
     elements: list[Element] = []
-    truncated = False
     prose_kept = 0
     omitted_text = 0
+    # depth (indentation width) → the accessible name of the last labelling node seen there, so a
+    # control inherits the heading/card title it sits under as its `context`.
+    labels: dict[int, str] = {}
     for line in snapshot.splitlines():
         match = _SNAPSHOT_LINE.match(line)
         if match is None:
             continue
+        depth = len(match.group(1))
         role = match.group("head")
         rest = match.group("rest")
         if role.startswith("/"):  # a property line like `- /url: ...`, not a node
@@ -266,6 +323,14 @@ def _parse_snapshot(
         if role == "text" and not name:
             name, value = value, ""
 
+        # Leaving a subtree: labels recorded deeper than this line belonged to siblings we have
+        # passed, so drop them before reading or setting context at this depth.
+        for stale in [key for key in labels if key > depth]:
+            del labels[stale]
+        context = next((labels[key] for key in sorted(labels, reverse=True) if key <= depth), "")
+        if name and role in _LABEL_ROLES:
+            labels[depth] = name
+
         reference = attributes.get("ref") or None
         clickable = role in _INTERACTIVE_ROLES or attributes.get("cursor") == "pointer"
         # Containers with nothing to say (no name, no text, not actable) are structure, not
@@ -279,15 +344,21 @@ def _parse_snapshot(
                 omitted_text += 1
                 continue
             prose_kept += 1
-        if len(elements) >= limit:
-            truncated = True
-            break
-        index = len(elements)
-        element = Element(index=index, role=role, name=name, value=value or None, clickable=clickable, token=reference)
+        element = Element(role=role, name=name, value=value or None, clickable=clickable, context=context, token=reference)
         for flag in _SURFACED_FLAGS:
             if flag in attributes:
                 element.flags[flag] = attributes[flag] if attributes[flag] else True
         elements.append(element)
+
+    truncated = len(elements) > limit
+    if truncated:
+        words = [word for word in re.split(r"\W+", goal.lower()) if word] if goal.strip() else []
+        if words:
+            ranked = sorted(range(len(elements)), key=lambda position: _relevance(elements[position], words), reverse=True)
+            kept = set(ranked[:limit])
+            elements = [element for position, element in enumerate(elements) if position in kept]
+        else:
+            elements = elements[:limit]
     return elements, truncated, omitted_text
 
 
@@ -315,6 +386,11 @@ def _clean_page_text(text: str) -> str:
 
 # One read window's worth of page text. Longer pages are read progressively via `offset`.
 _READ_WINDOW_CHARS = 16_384  # Powers of 2 are nice, aren't they?
+
+# Bounds on the two structured-extraction actions: how much JSON an `evaluate` returns before it is
+# clipped, and how many recent requests the `network` reader hands back.
+_EVALUATE_RESULT_CHARS = 16_384
+_NETWORK_LIMIT = 50
 
 # Friendly lowercase key names accepted historically, mapped to Playwright's key vocabulary.
 # Playwright key names are case-sensitive by design (a bare character's case selects the typed
@@ -360,12 +436,65 @@ def _as_int(value: Any) -> Optional[int]:
         return None
 
 
-def _await_quiet(page, timeout_ms: int = 8_000) -> None:
-    """Wait for the page to reach a loaded state, tolerating pages that never settle."""
+def _as_ref(value: Any) -> Optional[str]:
+    """An element argument coerced to a ref string, or None when absent/blank. A bare integer (a
+    model that slipped back into positional thinking) is stringified so it still routes to a
+    lookup that fails cleanly with the current-refs hint, rather than a type error."""
+    if value is None or value == "":
+        return None
+    return str(value).strip()
+
+
+def _await_quiet(page, timeout_ms: int = 3_000) -> None:
+    """Let the page settle after an action without ever blocking on one stalled resource. The DOM
+    being parsed (``domcontentloaded``) is the hard signal; network quiet is then waited for only
+    up to a short ceiling and its timeout is swallowed — so a single hung ad tracker costs the
+    ceiling, not the tens of seconds the ``load`` event used to wait for it. The settle-aware read
+    that follows decides what is actually on the page."""
     try:
-        page.wait_for_load_state("load", timeout=timeout_ms)
+        page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
     except Exception:
         pass
+    try:
+        page.wait_for_load_state("networkidle", timeout=timeout_ms)
+    except Exception:
+        pass
+
+
+def _await_expectation(page, expect: str, timeout_ms: int = 8_000) -> Optional[bool]:
+    """When the model states what an action should produce, wait for it instead of a fixed pause:
+    ``expect`` is text that should appear on the page. Returns whether it showed up in time, or
+    ``None`` when no expectation was given. This is the explicit override for the cases the smart
+    default cannot know about (a toast, an async result, a slow post-submit redirect)."""
+    wanted = expect.strip()
+    if not wanted:
+        return None
+    try:
+        page.get_by_text(wanted, exact=False).first.wait_for(state="visible", timeout=timeout_ms)
+        return True
+    except Exception:
+        return False
+
+
+def _actionability_error(error: Exception) -> str:
+    """The honest reason an action could not complete, kept from Playwright's message instead of
+    truncated to its first line. Playwright names *why* — most valuably the element that
+    ``intercepts pointer events`` (a cookie banner over the button), and what it was ``waiting
+    for`` — a few lines into the message; the headline plus those diagnostic lines is what lets the
+    model dismiss the overlay rather than blindly retry. The retry-spam call-log lines are dropped."""
+    lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+    if not lines:
+        return error.__class__.__name__
+    headline = lines[0]
+    diagnostics = [
+        line for line in lines[1:]
+        if ("intercepts pointer events" in line or line.startswith("waiting for")
+            or "is not visible" in line or "is not enabled" in line or "is not stable" in line)
+    ]
+    # De-duplicate the "waiting for" spam Playwright prints once per retry, keep first of each kind.
+    seen: set[str] = set()
+    unique = [line for line in diagnostics if not (line in seen or seen.add(line))]
+    return " — ".join([headline, *unique[:3]]) if unique else headline
 
 
 class WebSurface(Surface):
@@ -461,24 +590,25 @@ class WebSurface(Surface):
 
     # Reading and shaping, touched only on the worker thread.
 
-    def _read_page(self, session: _Session, page, *, settle: bool, root_locator=None) -> tuple[list[dict], bool, int]:
-        """Snapshot the page (or one subtree), refresh the session's registry and change-detection
-        state, and return (payloads, truncated, omitted_text). ``settle`` re-reads a near-empty
-        snapshot briefly, since a JS-heavy app reports itself loaded long before it has painted
-        anything readable."""
+    def _read_page(self, session: _Session, page, *, settle: bool, root_locator=None, goal: str = "") -> tuple[list[dict], bool, int]:
+        """Snapshot the page (or one subtree), bind every element a stable ref in the session's
+        durable registry, and return (payloads, truncated, omitted_text). ``settle`` re-reads a
+        near-empty snapshot briefly, since a JS-heavy app reports itself loaded long before it has
+        painted anything readable; ``goal`` ranks which elements survive the cap."""
         snapshot = _snapshot(page, root_locator)
-        elements, truncated, omitted_text = _parse_snapshot(snapshot)
+        elements, truncated, omitted_text = _parse_snapshot(snapshot, goal=goal)
         if settle and len(elements) < _SETTLE_MINIMUM_ELEMENTS:
             deadline = time.monotonic() + _SETTLE_WINDOW_SECONDS
             while len(elements) < _SETTLE_MINIMUM_ELEMENTS and time.monotonic() < deadline:
                 time.sleep(0.35)
                 snapshot = _snapshot(page, root_locator)
-                elements, truncated, omitted_text = _parse_snapshot(snapshot)
-        session.registry = {element.index: element.token for element in elements}
+                elements, truncated, omitted_text = _parse_snapshot(snapshot, goal=goal)
+        session.registry.bind(elements)
+        payloads = [element.payload() for element in elements]
         if root_locator is None:
-            # A drilled subtree never stands in for the whole page in change detection.
-            session.last_snapshot = snapshot
-        return [element.payload() for element in elements], truncated, omitted_text
+            # A drilled subtree never stands in for the whole page as the diff baseline.
+            session.last_elements = payloads
+        return payloads, truncated, omitted_text
 
     @staticmethod
     def _drain(session: _Session) -> list[dict]:
@@ -487,10 +617,10 @@ class WebSurface(Surface):
             events.append(session.events.popleft())
         return events
 
-    def _overview(self, session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True, root_locator=None) -> dict:
-        """The full page (or one drilled subtree) as indexed elements — what observe and the
+    def _overview(self, session: _Session, page, *, before_url: Optional[str] = None, settle: bool = True, root_locator=None, goal: str = "") -> dict:
+        """The full page (or one drilled subtree) as ref-addressed elements — what observe and the
         navigation actions return."""
-        elements, truncated, omitted_text = self._read_page(session, page, settle=settle, root_locator=root_locator)
+        elements, truncated, omitted_text = self._read_page(session, page, settle=settle, root_locator=root_locator, goal=goal)
         notes = []
         if truncated:
             notes.append(message("overview_truncated", limit=str(_MAXIMUM_ELEMENTS)))
@@ -504,31 +634,52 @@ class WebSurface(Surface):
             result["url_changed"] = _safe_url(page) != before_url
         return result
 
-    def _digest(self, session: _Session, page, *, before_url: Optional[str]) -> dict:
-        """The result an acting call returns: the page's complete actionable surface, with the
-        bulk prose deferred to observe/read."""
-        elements, truncated, _ = self._read_page(session, page, settle=True)
-        result = self.digest(
-            context=page, elements=elements, events=self._drain(session), truncated=truncated,
+    def _digest(self, session: _Session, page, *, previous: list[dict], before_url: Optional[str]) -> dict:
+        """The diff-first result an acting call returns: what changed on the page against ``previous``
+        (the surface as it stood before the action), the full surface only on a wholesale change."""
+        current, truncated, _ = self._read_page(session, page, settle=True)
+        url_changed = None if before_url is None else _safe_url(page) != before_url
+        return self.digest(
+            context=page, current=current, previous=previous, url_changed=url_changed,
+            events=self._drain(session), truncated=truncated,
             truncated_note=message("overview_truncated", limit=str(_MAXIMUM_ELEMENTS)),
             prose_note_name="digest_prose", empty_hint=message("empty_page_hint"),
+            no_change_note=message("click_no_change"),
         )
-        if before_url is not None:
-            result["url_changed"] = _safe_url(page) != before_url
-        return result
 
-    def _locator(self, session: _Session, page, index: int):
-        """The Playwright locator for an element index from the last observe/find. Raises a clean
-        failure when the index is unknown or refers to plain text."""
-        if index not in session.registry:
-            raise ToolFailure({"ok": False, "error": f"No element at index {index}. Observe the page first."})
-        reference = session.registry[index]
+    def _locator(self, session: _Session, page, ref: str):
+        """The Playwright locator for an element ref from an earlier observe/find. Raises a clean
+        failure when the ref was never seen or points at plain text; a ref whose element has since
+        left the page resolves to a stale aria-ref and surfaces as an ordinary action failure."""
+        if ref not in session.registry:
+            raise ToolFailure({"ok": False, "error": f"No element {ref!r}. Observe or find the page first to get current refs."})
+        reference = session.registry.token(ref)
         if not reference:
             raise ToolFailure({
                 "ok": False,
-                "error": f"Element {index} is plain text with no actionable node. Target a clickable element instead.",
+                "error": f"Element {ref!r} is plain text with no actionable node. Target a clickable element instead.",
             })
         return page.locator(f"aria-ref={reference}")
+
+    def _viewport(self, session: _Session, page) -> dict:
+        """The page's CSS-pixel visual viewport, read over CDP. ``page.viewport_size`` is ``None``
+        on a browser we merely connected to (we never set it), which used to force scroll geometry
+        onto a hardcoded 1280×720 guess; ``Page.getLayoutMetrics`` reports the real size in CSS
+        pixels — the same coordinate space clicks and wheel gestures use — on any display, Retina
+        included."""
+        try:
+            cdp = session.context.new_cdp_session(page)
+            metrics = cdp.send("Page.getLayoutMetrics")
+            cdp.detach()
+            viewport = metrics.get("cssVisualViewport") or metrics.get("cssLayoutViewport") or {}
+            width = viewport.get("clientWidth")
+            height = viewport.get("clientHeight")
+            if width and height:
+                return {"width": float(width), "height": float(height)}
+        except Exception:
+            pass
+        fallback = page.viewport_size or {"width": 1280, "height": 720}
+        return {"width": float(fallback["width"]), "height": float(fallback["height"])}
 
     def _tab_summaries(self, session: _Session) -> list[dict]:
         """Every open tab with its title and url, read from the browser's cached target metadata in
@@ -557,33 +708,38 @@ class WebSurface(Surface):
 
     # Actions.
 
-    def navigate(self, url: str, browser: str = "chrome") -> dict:
-        """Open a URL in the user's Chrome (connecting to it if needed) and return the overview."""
+    def navigate(self, url: str, browser: str = "chrome", *, goal: str = "", expect: str = "") -> dict:
+        """Open a URL in the user's Chrome (connecting to it if needed) and return the overview. Waits
+        for the DOM, not the ``load`` event, so a stalled ad resource never holds the navigation."""
 
         def run() -> dict:
             session = self.session(browser)
             page = self.page(session)
             try:
-                page.goto(url, wait_until="load", timeout=25_000)
+                page.goto(url, wait_until="domcontentloaded", timeout=20_000)
             except Exception:
-                # A page that never fires load (busy SPA, hanging resource) can still be usable;
-                # the settle-aware overview decides what is actually there.
+                # A page that never even parses the DOM in time (busy SPA, hanging resource) can
+                # still be usable; the settle-aware overview decides what is actually there.
                 pass
-            return self._overview(session, page)
+            _await_quiet(page)
+            met = _await_expectation(page, expect)
+            result = self._overview(session, page, goal=goal)
+            if met is not None:
+                result["expected_found"] = met
+            return result
 
         return self.guard(run)
 
-    def observe(self, element: Optional[int] = None) -> dict:
-        """The current page's semantic tree as indexed elements (iframes included). With
+    def observe(self, element: Optional[str] = None, *, goal: str = "") -> dict:
+        """The current page's semantic tree as ref-addressed elements (iframes included). With
         ``element``, just that element's subtree in full detail — the tree-shaped way to expand one
-        region of a large page without paying for the rest. Indices then refer to the drilled
-        subtree until the next observe or find."""
+        region of a large page without paying for the rest. ``goal`` ranks a capped listing."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
             root_locator = self._locator(session, page, element) if element is not None else None
-            result = self._overview(session, page, settle=element is None, root_locator=root_locator)
+            result = self._overview(session, page, settle=element is None, root_locator=root_locator, goal=goal)
             if element is not None:
                 result["did"] = f"Expanded element {element}"
             return result
@@ -592,8 +748,9 @@ class WebSurface(Surface):
 
     def find(self, query: str) -> dict:
         """Search the whole page (iframes included) for elements whose name or value contains
-        ``query``, case-insensitively. Clickable matches first; every match is registered so it can
-        be acted on by index."""
+        ``query``, case-insensitively. Clickable matches first, each with its disambiguating
+        ``context``; matches are bound into the durable registry (merged, never replacing it), so a
+        no-match find cannot brick a scroll/observe paging loop the way wiping the registry did."""
 
         def run() -> dict:
             needle = query.strip().lower()
@@ -605,23 +762,19 @@ class WebSurface(Surface):
             # Search the whole page, not just what an overview would list. A match must never
             # hide behind the listing cap or the prose budget.
             elements, _, _ = _parse_snapshot(snapshot, limit=100_000, prose_budget=100_000)
-            session.last_snapshot = snapshot
             matches = [
                 element for element in elements
                 if needle in element.name.lower()
                 or (isinstance(element.value, str) and needle in element.value.lower())
+                or needle in element.context.lower()
             ]
-            matches.sort(key=lambda element: (0 if element.clickable else 1, element.index))
+            matches.sort(key=lambda element: 0 if element.clickable else 1)
             truncated = len(matches) > _FIND_LIMIT
             matches = matches[:_FIND_LIMIT]
-            registry: dict[int, Optional[str]] = {}
-            listed: list[dict] = []
-            for position, element in enumerate(matches):
-                registry[position] = element.token
-                payload = element.payload()
-                payload["index"] = position
-                listed.append(payload)
-            session.registry = registry
+            # Bind the matches into the same durable registry an observe uses: an element seen by
+            # both keeps one stable ref, and the map is only added to, never wiped.
+            session.registry.bind(matches)
+            listed = [element.payload() for element in matches]
             result: dict[str, Any] = {
                 "ok": True, "url": page.url, "title": _safe_title(page),
                 "query": query, "count": len(listed), "elements": listed,
@@ -635,50 +788,52 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def click(self, index: Optional[int] = None, *, x: Optional[int] = None, y: Optional[int] = None,
-              clicks: int = 1, button: str = "left") -> dict:
+    def click(self, ref: Optional[str] = None, *, x: Optional[int] = None, y: Optional[int] = None,
+              clicks: int = 1, button: str = "left", dialog: str = "", expect: str = "") -> dict:
         """Click an element (Playwright's full actionability pipeline) or an x/y viewport point (the
         canvas/no-structure fallback), with ``clicks`` for double/triple and ``button`` for a
-        context click. Returns the resulting page with an honest ``changed`` flag."""
+        context click. ``dialog`` sets what to do with a confirm/prompt the click triggers; ``expect``
+        waits for the click's expected result. Returns the diff of what changed."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            before_snapshot = session.last_snapshot
+            before_elements = session.last_elements
+            session.pending_dialog = dialog or None
             try:
-                if index is not None:
-                    self._locator(session, page, index).click(button=button, click_count=clicks, timeout=5_000)
-                    did = f"Clicked element {index}"
+                if ref is not None:
+                    self._locator(session, page, ref).click(button=button, click_count=clicks, timeout=5_000)
+                    did = f"Clicked {ref}"
                 elif x is not None and y is not None:
                     page.mouse.click(x, y, button=button, click_count=clicks)
                     did = f"Clicked ({x}, {y})"
                 else:
-                    return {"ok": False, "error": "The click action needs an element index or an x/y point."}
+                    return {"ok": False, "error": "The click action needs an element ref or an x/y point."}
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not click: {str(error).splitlines()[0]}"})
+                raise ToolFailure({"ok": False, "error": f"Could not click: {_actionability_error(error)}"})
             _await_quiet(page)
-            result: dict[str, Any] = {"ok": True, "did": did}
-            overview = self._digest(session, self.page(session), before_url=before_url)
-            changed = overview.get("url_changed") or session.last_snapshot != before_snapshot
-            result["changed"] = bool(changed)
-            if not changed:
-                result["note"] = message("click_no_change")
-            result.update(overview)
+            met = _await_expectation(page, expect)
+            result = self._digest(session, self.page(session), previous=before_elements, before_url=before_url)
+            result["did"] = did
+            if met is not None:
+                result["expected_found"] = met
             return result
 
         return self.guard(run)
 
-    def type_text(self, index: int, text: str, submit: bool = False, mode: str = "replace") -> dict:
+    def type_text(self, ref: str, text: str, submit: bool = False, mode: str = "replace", *, expect: str = "") -> dict:
         """Enter text into a field. ``replace`` (default) fills it in one shot; ``insert`` inserts
-        at the caret, replacing any selection. With ``submit``, press Enter and return the resulting
-        page. To change part of a field, prefer ``edit`` over rewriting the whole thing."""
+        at the caret, replacing any selection. Reads the field back and returns its resulting
+        ``value`` so a silently-rejected entry (a ``maxlength`` clamp, an input mask) is visible
+        rather than assumed. With ``submit``, press Enter and return the resulting page's diff."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            locator = self._locator(session, page, index)
+            before_elements = session.last_elements
+            locator = self._locator(session, page, ref)
             try:
                 if mode == "insert":
                     locator.focus(timeout=5_000)
@@ -686,13 +841,22 @@ class WebSurface(Surface):
                 else:
                     locator.fill(text, timeout=5_000)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not type into element {index}: {str(error).splitlines()[0]}"})
+                raise ToolFailure({"ok": False, "error": f"Could not type into {ref}: {_actionability_error(error)}"})
+            landed = self._field_text(locator)
             if not submit:
-                return {"ok": True, "did": f"Typed into element {index}"}
+                result: dict[str, Any] = {"ok": True, "did": f"Typed into {ref}", "value": landed}
+                if mode == "replace" and landed != text:
+                    result["note"] = message("type_clamped")
+                return result
+            session.pending_dialog = None
             locator.press("Enter", timeout=5_000)
             _await_quiet(page)
-            result: dict[str, Any] = {"ok": True, "did": f"Typed into element {index} and pressed Enter"}
-            result.update(self._digest(session, self.page(session), before_url=before_url))
+            met = _await_expectation(page, expect)
+            result = self._digest(session, self.page(session), previous=before_elements, before_url=before_url)
+            result["did"] = f"Typed into {ref} and pressed Enter"
+            result["value"] = landed
+            if met is not None:
+                result["expected_found"] = met
             return result
 
         return self.guard(run)
@@ -706,7 +870,7 @@ class WebSurface(Surface):
         except Exception:
             return locator.text_content(timeout=5_000) or ""
 
-    def select(self, index: int, *, text: Optional[str] = None, to_text: Optional[str] = None,
+    def select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
                select_all: bool = False, occurrence: int = 1) -> dict:
         """Select text in a field, addressed by content: a substring (``text``), a range from
         ``text`` through ``to_text``, or the whole field (``select_all``). The range is computed
@@ -715,7 +879,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            locator = self._locator(session, page, index)
+            locator = self._locator(session, page, ref)
             content = self._field_text(locator)
             if select_all:
                 start, length = resolve_range(content, select_all=True)
@@ -730,7 +894,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def caret(self, index: int, *, before: Optional[str] = None, after: Optional[str] = None,
+    def caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
               at_offset: Optional[int] = None, edge: str = "", occurrence: int = 1) -> dict:
         """Place the insertion point in a field: ``before``/``after`` a substring, ``at_offset`` a
         character offset, or at the ``start``/``end`` edge."""
@@ -738,7 +902,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            locator = self._locator(session, page, index)
+            locator = self._locator(session, page, ref)
             content = self._field_text(locator)
             offset = resolve_caret(
                 content, before=before, after=after, at_offset=at_offset,
@@ -751,7 +915,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def edit_text(self, index: int, find: str, replace: str, *, replace_all: bool = False) -> dict:
+    def edit_text(self, ref: str, find: str, replace: str, *, replace_all: bool = False) -> dict:
         """Change a field's text by replacing ``find`` with ``replace`` — the same verbatim-first,
         must-be-unique matching as the file-edit tool — then write the result back with Playwright's
         native ``fill`` (which works on inputs, textareas, and contenteditable). Returns a compact
@@ -760,7 +924,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            locator = self._locator(session, page, index)
+            locator = self._locator(session, page, ref)
             content = self._field_text(locator)
             if find == replace:
                 return {"ok": False, "error": "find and replace are identical; nothing to change."}
@@ -778,15 +942,15 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def clipboard_action(self, action: str, index: Optional[int] = None) -> dict:
+    def clipboard_action(self, action: str, ref: Optional[str] = None) -> dict:
         """Copy, cut, or paste via the real OS clipboard, using the browser's own trusted keyboard
         shortcut (so it interoperates with the user's clipboard and the native surface)."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            if index is not None:
-                self._locator(session, page, index).focus(timeout=5_000)
+            if ref is not None:
+                self._locator(session, page, ref).focus(timeout=5_000)
             combo = {"copy": "c", "cut": "x", "paste": "v"}[action]
             page.keyboard.press(f"ControlOrMeta+{combo}")
             _await_quiet(page, timeout_ms=2_000)
@@ -794,50 +958,55 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def press(self, key: str) -> dict:
-        """Press a key (or chord like Control+A) on the focused element and return the overview."""
+    def press(self, key: str, *, expect: str = "") -> dict:
+        """Press a key (or chord like Control+A) on the focused element and return the diff."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
             before_url = page.url
+            before_elements = session.last_elements
             resolved = _KEY_ALIASES.get(key.strip().lower(), key.strip())
             try:
                 page.keyboard.press(resolved)
             except Exception as error:
-                return {"ok": False, "error": f"Could not press {key!r}: {str(error).splitlines()[0]}"}
+                return {"ok": False, "error": f"Could not press {key!r}: {_actionability_error(error)}"}
             _await_quiet(page, timeout_ms=3_000)
-            return self._digest(session, self.page(session), before_url=before_url)
+            met = _await_expectation(page, expect)
+            result = self._digest(session, self.page(session), previous=before_elements, before_url=before_url)
+            if met is not None:
+                result["expected_found"] = met
+            return result
 
         return self.guard(run)
 
-    def hover(self, index: Optional[int] = None, *, x: Optional[int] = None, y: Optional[int] = None) -> dict:
+    def hover(self, ref: Optional[str] = None, *, x: Optional[int] = None, y: Optional[int] = None) -> dict:
         """Move the pointer over an element or an x/y point (revealing hover menus and tooltips)
         without clicking."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
+            before_elements = session.last_elements
             try:
-                if index is not None:
-                    self._locator(session, page, index).hover(timeout=5_000)
+                if ref is not None:
+                    self._locator(session, page, ref).hover(timeout=5_000)
                 elif x is not None and y is not None:
                     page.mouse.move(x, y)
                 else:
-                    return {"ok": False, "error": "The hover action needs an element index or an x/y point."}
+                    return {"ok": False, "error": "The hover action needs an element ref or an x/y point."}
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not hover: {str(error).splitlines()[0]}"})
+                raise ToolFailure({"ok": False, "error": f"Could not hover: {_actionability_error(error)}"})
             time.sleep(0.25)
-            return self._digest(session, page, before_url=None)
+            return self._digest(session, page, previous=before_elements, before_url=None)
 
         return self.guard(run)
 
-    def scroll(self, direction: str = "down", element: Optional[int] = None) -> dict:
-        """Scroll exactly the way a person does: point the mouse at the pane (over the ``element``,
-        or the viewport centre for the page) and turn the wheel, trusted input that the browser's
-        own scroll chaining routes to the right scroller. down/up/left/right move by most of a
-        viewport; top/bottom fling to the ends. ``changed`` reports whether the page's content
-        differs afterwards."""
+    def scroll(self, direction: str = "down", ref: Optional[str] = None) -> dict:
+        """Scroll exactly the way a person does: point the mouse at the pane (over the ``ref``
+        element, or the viewport centre for the page) and turn the wheel, trusted input that the
+        browser's own scroll chaining routes to the right scroller. down/up/left/right move by most
+        of a viewport; top/bottom fling to the ends. The diff reports what new content appeared."""
         wanted = direction.strip().lower()
         if wanted not in _SCROLL_DIRECTIONS:
             return {"ok": False, "error": f"Unknown scroll direction {direction!r}. Use down, up, left, right, top, or bottom."}
@@ -846,14 +1015,14 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            before_snapshot = session.last_snapshot
-            size = page.viewport_size or {"width": 1280, "height": 720}
-            if element is not None:
+            before_elements = session.last_elements
+            size = self._viewport(session, page)
+            if ref is not None:
                 # Aim the wheel at the element's pane. Take the element's current box and clamp the
                 # point into the viewport rather than hovering it to centre, so repeated paging keeps
                 # the wheel over the same pane even once the anchor has scrolled out of sight. If the
                 # element is not laid out yet, hover to bring it into view, then re-measure.
-                locator = self._locator(session, page, element)
+                locator = self._locator(session, page, ref)
                 box = locator.bounding_box()
                 if box is None:
                     try:
@@ -862,7 +1031,7 @@ class WebSurface(Surface):
                     except Exception:
                         box = None
                 if box is None:
-                    raise ToolFailure({"ok": False, "error": f"Element {element} has no on-screen position to scroll at. Observe again."})
+                    raise ToolFailure({"ok": False, "error": f"Element {ref!r} has no on-screen position to scroll at. Observe again."})
                 point_x = min(max(box["x"] + box["width"] / 2, 1), size["width"] - 1)
                 point_y = min(max(box["y"] + box["height"] / 2, 1), size["height"] - 1)
                 page.mouse.move(point_x, point_y)
@@ -879,15 +1048,13 @@ class WebSurface(Surface):
             page.mouse.wheel(delta_x, delta_y)
             # Let the scroll land and lazily-rendered content (virtualized lists) paint.
             time.sleep(0.4)
-            result: dict[str, Any] = {"ok": True, "did": f"Scrolled {wanted}"}
-            overview = self._digest(session, page, before_url=before_url)
-            result["changed"] = bool(overview.get("url_changed")) or session.last_snapshot != before_snapshot
-            result.update(overview)
+            result = self._digest(session, page, previous=before_elements, before_url=before_url)
+            result["did"] = f"Scrolled {wanted}"
             return result
 
         return self.guard(run)
 
-    def choose(self, index: int, option: str) -> dict:
+    def choose(self, ref: str, option: str) -> dict:
         """Pick an option in a native <select> dropdown. Playwright matches the given string
         against the option's value or its visible label."""
 
@@ -895,18 +1062,20 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            locator = self._locator(session, page, index)
+            before_elements = session.last_elements
+            locator = self._locator(session, page, ref)
             try:
                 chosen = locator.select_option(option, timeout=5_000)
             except Exception as error:
-                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in element {index}: {str(error).splitlines()[0]}"})
-            result: dict[str, Any] = {"ok": True, "did": f"Chose {option!r} in element {index}", "chosen": chosen}
-            result.update(self._digest(session, page, before_url=before_url))
+                raise ToolFailure({"ok": False, "error": f"Could not choose {option!r} in {ref}: {_actionability_error(error)}"})
+            result = self._digest(session, page, previous=before_elements, before_url=before_url)
+            result["did"] = f"Chose {option!r} in {ref}"
+            result["chosen"] = chosen
             return result
 
         return self.guard(run)
 
-    def upload(self, index: int, paths: list[str]) -> dict:
+    def upload(self, ref: str, paths: list[str]) -> dict:
         """Attach local files to a file input (or a control that opens a file chooser)."""
 
         def run() -> dict:
@@ -917,7 +1086,8 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            locator = self._locator(session, page, index)
+            before_elements = session.last_elements
+            locator = self._locator(session, page, ref)
             try:
                 locator.set_input_files(resolved, timeout=5_000)
             except Exception:
@@ -927,14 +1097,14 @@ class WebSurface(Surface):
                         locator.click(timeout=5_000)
                     chooser_info.value.set_files(resolved)
                 except Exception as error:
-                    raise ToolFailure({"ok": False, "error": f"Could not upload to element {index}: {str(error).splitlines()[0]}"})
-            result: dict[str, Any] = {"ok": True, "did": f"Attached {len(resolved)} file(s) to element {index}"}
-            result.update(self._digest(session, page, before_url=before_url))
+                    raise ToolFailure({"ok": False, "error": f"Could not upload to {ref}: {_actionability_error(error)}"})
+            result = self._digest(session, page, previous=before_elements, before_url=before_url)
+            result["did"] = f"Attached {len(resolved)} file(s) to {ref}"
             return result
 
         return self.guard(run)
 
-    def drag(self, index: Optional[int] = None, to_element: Optional[int] = None, *,
+    def drag(self, ref: Optional[str] = None, to_element: Optional[str] = None, *,
              x: Optional[int] = None, y: Optional[int] = None, to_x: Optional[int] = None,
              to_y: Optional[int] = None) -> dict:
         """Drag from a source element/point to a target element/point — drag and drop, or a
@@ -945,34 +1115,35 @@ class WebSurface(Surface):
             session = self.session()
             page = self.page(session)
             before_url = page.url
-            if index is not None and to_element is not None:
-                source = self._locator(session, page, index)
+            before_elements = session.last_elements
+            if ref is not None and to_element is not None:
+                source = self._locator(session, page, ref)
                 target = self._locator(session, page, to_element)
                 try:
                     source.drag_to(target, timeout=8_000)
                 except Exception as error:
-                    raise ToolFailure({"ok": False, "error": f"Could not drag element {index} to {to_element}: {str(error).splitlines()[0]}"})
-                did = f"Dragged element {index} onto {to_element}"
+                    raise ToolFailure({"ok": False, "error": f"Could not drag {ref} to {to_element}: {_actionability_error(error)}"})
+                did = f"Dragged {ref} onto {to_element}"
             else:
-                start = self._point_of(session, page, index, x, y)
+                start = self._point_of(session, page, ref, x, y)
                 end = self._point_of(session, page, to_element, to_x, to_y)
                 if start is None or end is None:
-                    return {"ok": False, "error": "The drag action needs a source and target, each an element index or an x/y point."}
+                    return {"ok": False, "error": "The drag action needs a source and target, each an element ref or an x/y point."}
                 page.mouse.move(start[0], start[1])
                 page.mouse.down()
                 page.mouse.move(end[0], end[1], steps=12)
                 page.mouse.up()
                 did = f"Dragged ({round(start[0])}, {round(start[1])}) to ({round(end[0])}, {round(end[1])})"
-            result: dict[str, Any] = {"ok": True, "did": did}
-            result.update(self._digest(session, page, before_url=before_url))
+            result = self._digest(session, page, previous=before_elements, before_url=before_url)
+            result["did"] = did
             return result
 
         return self.guard(run)
 
-    def _point_of(self, session: _Session, page, index: Optional[int], x: Optional[int], y: Optional[int]):
+    def _point_of(self, session: _Session, page, ref: Optional[str], x: Optional[int], y: Optional[int]):
         """A viewport point for a drag endpoint: an element's centre, or an explicit x/y, or None."""
-        if index is not None:
-            box = self._locator(session, page, index).bounding_box()
+        if ref is not None:
+            box = self._locator(session, page, ref).bounding_box()
             if box is None:
                 return None
             return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
@@ -980,16 +1151,16 @@ class WebSurface(Surface):
             return float(x), float(y)
         return None
 
-    def read(self, offset: int = 0, element: Optional[int] = None) -> dict:
-        """The page's visible text, one bounded window at a time. With ``element``, only that
-        element's subtree. ``offset`` continues a truncated read; the result says exactly which
-        offset reaches the next window."""
+    def read(self, offset: int = 0, ref: Optional[str] = None) -> dict:
+        """The page's visible text, one bounded window at a time. With ``ref``, only that element's
+        subtree. ``offset`` continues a truncated read; the result says exactly which offset reaches
+        the next window."""
 
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            if element is not None:
-                source = self._locator(session, page, element).inner_text(timeout=10_000)
+            if ref is not None:
+                source = self._locator(session, page, ref).inner_text(timeout=10_000)
             else:
                 source = page.inner_text("body", timeout=10_000)
             text = _clean_page_text(source)
@@ -1018,10 +1189,69 @@ class WebSurface(Surface):
             page = self.page(session)
             handle, path = tempfile.mkstemp(prefix="daisy-web-capture-", suffix=".png")
             os.close(handle)
-            page.screenshot(path=path, type="png", timeout=20_000)
+            # scale="css" captures at CSS-pixel resolution, not the display's device pixels. On a
+            # Retina Mac (2× device pixels) the default doubles every coordinate, so a model reading
+            # a click point off the image would miss by 2×; CSS scale keeps the image in the same
+            # coordinate space clicks and the viewport use.
+            page.screenshot(path=path, type="png", scale="css", timeout=20_000)
             return {
                 "ok": True, "image_path": path, "url": page.url, "title": _safe_title(page),
                 "did": "Captured the visible viewport",
+            }
+
+        return self.guard(run)
+
+    def evaluate(self, expression: str) -> dict:
+        """Run a JavaScript expression in the page and return its result. The most direct path to
+        structured extraction — reading an XHR endpoint's JSON, pulling a table into an array,
+        computing an aggregate — versus paging 16 KB text windows. Runs in the user's real,
+        signed-in page, so it is as privileged as anything on that origin; it rides the same
+        explicit opt-in as the rest of the tool, and every call carries the model's justification.
+        The result is JSON-serialized and length-bounded."""
+
+        def run() -> dict:
+            expression_text = expression.strip()
+            if not expression_text:
+                return {"ok": False, "error": "The evaluate action needs a JavaScript expression to run."}
+            session = self.session()
+            page = self.page(session)
+            try:
+                value = page.evaluate(expression_text)
+            except Exception as error:
+                return {"ok": False, "error": f"Evaluation failed: {str(error).splitlines()[0]}"}
+            try:
+                rendered = json.dumps(value, ensure_ascii=False, default=str)
+            except Exception:
+                rendered = str(value)
+            truncated = len(rendered) > _EVALUATE_RESULT_CHARS
+            result: dict[str, Any] = {
+                "ok": True, "did": "Evaluated JavaScript", "url": page.url,
+                "result": rendered[:_EVALUATE_RESULT_CHARS],
+            }
+            if truncated:
+                result["truncated"] = True
+                result["note"] = message("evaluate_truncated")
+            return result
+
+        return self.guard(run)
+
+    def network(self, query: str = "") -> dict:
+        """The recent network requests the page made (method, url, status, resource type), newest
+        last, optionally filtered by a substring of the url. Reads the page's own XHR/fetch traffic
+        — the data endpoints behind a rendered view — which is often the fastest, most accurate way
+        to extract what a page shows without walking its DOM."""
+
+        def run() -> dict:
+            session = self.session()
+            page = self.page(session)
+            needle = query.strip().lower()
+            entries = [
+                entry for entry in session.requests
+                if not needle or needle in entry["url"].lower()
+            ]
+            entries = entries[-_NETWORK_LIMIT:]
+            return {
+                "ok": True, "url": page.url, "count": len(entries), "requests": entries,
             }
 
         return self.guard(run)
@@ -1030,7 +1260,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            page.go_back(wait_until="load", timeout=15_000)
+            page.go_back(wait_until="domcontentloaded", timeout=15_000)
             return self._overview(session, page)
 
         return self.guard(run)
@@ -1039,7 +1269,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            page.go_forward(wait_until="load", timeout=15_000)
+            page.go_forward(wait_until="domcontentloaded", timeout=15_000)
             return self._overview(session, page)
 
         return self.guard(run)
@@ -1050,7 +1280,7 @@ class WebSurface(Surface):
         def run() -> dict:
             session = self.session()
             page = self.page(session)
-            page.reload(wait_until="load", timeout=25_000)
+            page.reload(wait_until="domcontentloaded", timeout=25_000)
             return self._overview(session, page)
 
         return self.guard(run)
@@ -1075,7 +1305,7 @@ class WebSurface(Surface):
             page.bring_to_front()
             if url:
                 try:
-                    page.goto(url, wait_until="load", timeout=25_000)
+                    page.goto(url, wait_until="domcontentloaded", timeout=25_000)
                 except Exception:
                     pass
             # A deliberately blank tab has nothing to settle for; don't make the caller wait.
@@ -1129,96 +1359,103 @@ class WebSurface(Surface):
 
     def dispatch(self, action: str, arguments: dict) -> dict:
         url = str(arguments.get("url", ""))
-        element = arguments.get("element")
         text = str(arguments.get("text", ""))
         key = str(arguments.get("key", ""))
         direction = str(arguments.get("direction") or "down")
         tab = str(arguments.get("tab", ""))
         browser_name = str(arguments.get("browser_name") or "chrome")
-        index = int(element) if element is not None else None
+        ref = _as_ref(arguments.get("element"))
+        to_ref = _as_ref(arguments.get("to_element"))
         point_x = _as_int(arguments.get("x"))
         point_y = _as_int(arguments.get("y"))
         clicks = int(arguments.get("clicks", 1) or 1)
         button = str(arguments.get("button") or "left")
         occurrence = int(arguments.get("occurrence", 1) or 1)
+        goal = str(arguments.get("goal", ""))
+        expect = str(arguments.get("expect", ""))
+        dialog = str(arguments.get("dialog", ""))
 
         def needs_element(name: str) -> dict:
-            return {"ok": False, "error": f"The {name} action needs an element index from the last observe."}
+            return {"ok": False, "error": f"The {name} action needs an element ref from the last observe/find."}
 
         if action == "navigate":
             if not url:
                 return {"ok": False, "error": "The navigate action needs a url."}
-            return self.navigate(url, browser=browser_name)
+            return self.navigate(url, browser=browser_name, goal=goal, expect=expect)
         if action == "observe":
-            return self.observe(element=index)
+            return self.observe(element=ref, goal=goal)
         if action == "find":
             query = str(arguments.get("query", ""))
             if not query.strip():
                 return {"ok": False, "error": "The find action needs a query — the text to look for on the page."}
             return self.find(query)
+        if action == "evaluate":
+            return self.evaluate(str(arguments.get("expression", "") or text))
+        if action == "network":
+            return self.network(str(arguments.get("query", "")))
         if action == "screenshot":
             return self.screenshot()
         if action == "click":
-            return self.click(index, x=point_x, y=point_y, clicks=clicks, button=button)
+            return self.click(ref, x=point_x, y=point_y, clicks=clicks, button=button, dialog=dialog, expect=expect)
         if action == "hover":
-            return self.hover(index, x=point_x, y=point_y)
+            return self.hover(ref, x=point_x, y=point_y)
         if action == "type":
-            if index is None:
+            if ref is None:
                 return needs_element("type")
-            return self.type_text(index, text, submit=bool(arguments.get("submit", False)), mode=str(arguments.get("mode", "replace") or "replace"))
+            return self.type_text(ref, text, submit=bool(arguments.get("submit", False)), mode=str(arguments.get("mode", "replace") or "replace"), expect=expect)
         if action == "edit":
-            if index is None:
+            if ref is None:
                 return needs_element("edit")
             find = str(arguments.get("find", ""))
             if not find:
                 return {"ok": False, "error": "The edit action needs find (the exact text to change) and replace."}
-            return self.edit_text(index, find, str(arguments.get("replace", "")), replace_all=bool(arguments.get("replace_all", False)))
+            return self.edit_text(ref, find, str(arguments.get("replace", "")), replace_all=bool(arguments.get("replace_all", False)))
         if action == "select":
-            if index is None:
+            if ref is None:
                 return needs_element("select")
             return self.select(
-                index, text=text or None, to_text=str(arguments.get("to_text", "")) or None,
+                ref, text=text or None, to_text=str(arguments.get("to_text", "")) or None,
                 select_all=bool(arguments.get("select_all", False)), occurrence=occurrence,
             )
         if action == "caret":
-            if index is None:
+            if ref is None:
                 return needs_element("caret")
             return self.caret(
-                index, before=str(arguments.get("before", "")) or None,
+                ref, before=str(arguments.get("before", "")) or None,
                 after=str(arguments.get("after", "")) or None, at_offset=_as_int(arguments.get("at_offset")),
                 edge=str(arguments.get("edge", "")), occurrence=occurrence,
             )
         if action in ("copy", "cut", "paste"):
-            return self.clipboard_action(action, index)
+            return self.clipboard_action(action, ref)
         if action == "choose":
-            if index is None:
+            if ref is None:
                 return needs_element("choose")
             option = str(arguments.get("option", ""))
             if not option:
                 return {"ok": False, "error": "The choose action needs an option — the visible label (or value) to pick."}
-            return self.choose(index, option)
+            return self.choose(ref, option)
         if action == "upload":
-            if index is None:
+            if ref is None:
                 return needs_element("upload")
             paths = arguments.get("paths") or []
             if isinstance(paths, str):
                 paths = [paths]
             if not paths:
                 return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
-            return self.upload(index, [str(path) for path in paths])
+            return self.upload(ref, [str(path) for path in paths])
         if action == "drag":
             return self.drag(
-                index, _as_int(arguments.get("to_element")), x=point_x, y=point_y,
+                ref, to_ref, x=point_x, y=point_y,
                 to_x=_as_int(arguments.get("to_x")), to_y=_as_int(arguments.get("to_y")),
             )
         if action == "press":
             if not key:
                 return {"ok": False, "error": "The press action needs a key (e.g. Enter)."}
-            return self.press(key)
+            return self.press(key, expect=expect)
         if action == "scroll":
-            return self.scroll(direction, element=index)
+            return self.scroll(direction, ref=ref)
         if action == "read":
-            return self.read(offset=int(arguments.get("offset", 0) or 0), element=index)
+            return self.read(offset=int(arguments.get("offset", 0) or 0), ref=ref)
         if action == "back":
             return self.history_back()
         if action == "forward":

@@ -844,10 +844,10 @@ download_file.description = _load_tool_description("download_file")
 async def computer(
     action: Literal[
         "observe", "find", "click", "type", "edit", "select", "caret", "copy", "cut", "paste",
-        "press", "menu", "scroll", "hover", "drag", "screenshot", "run_script", "launch",
+        "press", "menu", "scroll", "hover", "drag", "screenshot",
     ],
     app: str = "",
-    element: int | None = None,
+    element: str | None = None,
     text: str = "",
     query: str = "",
     find: str = "",
@@ -867,11 +867,9 @@ async def computer(
     direction: str = "",
     x: int | None = None,
     y: int | None = None,
-    to_element: int | None = None,
+    to_element: str | None = None,
     to_x: int | None = None,
     to_y: int | None = None,
-    arguments: list[str] | None = None,
-    language: str = "applescript",
     window: str = "focused",
     clicks: int = 1,
     button: str = "left",
@@ -880,17 +878,20 @@ async def computer(
 ) -> str:
     """Control the local macOS computer — any open app — the way a person does.
 
-    Choose the most accurate approach: run_script for a scriptable app's data, observe
-    then act on the accessibility tree to drive UI, screenshot only when an app exposes
-    no accessible structure. Acting never disturbs what the user is doing in another app.
-    Structural actions re-read the app and return its actionable surface plus a `changed`
-    flag; text actions (select/caret/edit/copy/cut/paste) return only what they changed.
+    Observe then act on the accessibility tree to drive UI; screenshot only when an app
+    exposes no accessible structure. Acting never disturbs what the user is doing in
+    another app. A structural action re-reads the app and returns a diff of what changed
+    (a `changed` flag with `changes`, the full surface only on a wholesale change); text
+    actions (select/caret/edit/copy/cut/paste) return only what they changed. The app must
+    already be open — this tool drives running apps, it does not launch or script them: to
+    open an app run `open -a "Name"`, and to script a cooperative one (AppleScript/JXA) run
+    `osascript`, both through the `bash` tool on this same Mac.
 
     Args:
-        action: observe, find, click, type, edit, select, caret, copy, cut, paste, press, menu, scroll, hover, drag, screenshot, run_script, or launch.
-        app: Target app name or bundle id (observe/find/press/menu/scroll/screenshot/launch/run_script).
-        element: The index of an element from the last observe/find (click/type/edit/select/caret/copy/cut/paste/hover/drag; observe expands that region).
-        text: Text to enter (type), the substring to select (select), or the script source (run_script).
+        action: observe, find, click, type, edit, select, caret, copy, cut, paste, press, menu, scroll, hover, drag, or screenshot.
+        app: Target app name or bundle id (observe/find/press/menu/scroll/screenshot).
+        element: The stable ref of an element from an earlier observe/find (click/type/edit/select/caret/copy/cut/paste/hover/drag; observe expands that region). Refs survive across calls.
+        text: Text to enter (type) or the substring to select (select).
         query: Text to search the app's on-screen elements for (find) — matches names and values.
         find: The exact existing text to change (edit).
         replace: The text to change it to (edit).
@@ -910,8 +911,6 @@ async def computer(
         x, y: A screen point to click/hover/drag from when acting without an element (the pixel fallback).
         to_element: The element to drop onto (drag).
         to_x, to_y: The screen point to drag to (drag).
-        arguments: Launch arguments for the launch action, e.g. ["--profile-directory=Profile 2"].
-        language: run_script language — "applescript" (default) or "javascript".
         window: observe scope — "focused" (default), "main", or "all".
         clicks: How many times to click — 1 (default), 2 for a double-click, 3 for a triple-click.
         button: "left" (default) or "right".
@@ -929,10 +928,11 @@ async def browser(
     action: Literal[
         "navigate", "observe", "find", "read", "click", "type", "edit", "select", "caret",
         "copy", "cut", "paste", "press", "hover", "scroll", "choose", "upload", "drag",
-        "screenshot", "back", "forward", "reload", "tabs", "new_tab", "switch_tab", "close_tab",
+        "evaluate", "network", "screenshot", "back", "forward", "reload", "tabs", "new_tab",
+        "switch_tab", "close_tab",
     ],
     url: str = "",
-    element: int | None = None,
+    element: str | None = None,
     text: str = "",
     query: str = "",
     find: str = "",
@@ -951,9 +951,13 @@ async def browser(
     direction: str = "down",
     option: str = "",
     paths: list[str] | None = None,
+    goal: str = "",
+    expect: str = "",
+    dialog: str = "",
+    expression: str = "",
     x: int | None = None,
     y: int | None = None,
-    to_element: int | None = None,
+    to_element: str | None = None,
     to_x: int | None = None,
     to_y: int | None = None,
     clicks: int = 1,
@@ -971,18 +975,20 @@ async def browser(
     page the way a person does: open pages, find and click elements (with full actionability checks),
     type and edit text, select and place the caret by content, copy/cut/paste through the real
     clipboard, press keys and chords, hover, scroll the right pane, pick dropdown options, upload
-    files, drag and drop, capture pixels when there is no structure, go back/forward, reload, and
-    manage tabs. Dialogs are answered automatically and reported. It reuses the user's existing
-    session — it never opens a separate browser, copies a profile, or moves the user's cursor.
-    Requires the user to have turned on Chrome's remote-debugging switch once; if not, the tool
-    says exactly how.
+    files, drag and drop, run JavaScript (evaluate) and read network traffic (network), capture
+    pixels when there is no structure, go back/forward, reload, and manage tabs. Elements are
+    addressed by a stable `ref` that survives across calls; an acting call returns a diff of what
+    changed, not the whole page. Dialogs are answered automatically (or per your `dialog` intent)
+    and reported. It reuses the user's existing session — it never opens a separate browser, copies
+    a profile, or moves the user's cursor. Requires the user to have turned on Chrome's
+    remote-debugging switch once; if not, the tool says exactly how.
 
     Args:
-        action: navigate, observe, find, read, click, type, edit, select, caret, copy, cut, paste, press, hover, scroll, choose, upload, drag, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
+        action: navigate, observe, find, read, click, type, edit, select, caret, copy, cut, paste, press, hover, scroll, choose, upload, drag, evaluate, network, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
         url: The address to open (navigate, new_tab).
-        element: The index of an element from the last observe/find (click/type/edit/select/caret/copy/cut/paste/hover/choose/upload/drag; scroll moves that element's pane; observe expands its subtree; read returns only its text).
+        element: The stable ref of an element from an earlier observe/find (click/type/edit/select/caret/copy/cut/paste/hover/choose/upload/drag; scroll moves that element's pane; observe expands its subtree; read returns only its text). Refs survive across calls.
         text: Text to enter into the field (type), or the substring to select (select).
-        query: Text to search the page for (find) — matches element names and values anywhere on the page, iframes included.
+        query: Text to search the page for (find) — matches element names, values, and context anywhere on the page, iframes included; or a url substring to filter by (network).
         find: The exact existing text to change (edit).
         replace: The text to change it to (edit).
         replace_all: Change every occurrence of `find`, not just a unique one (edit).
@@ -999,8 +1005,12 @@ async def browser(
         direction: Scroll direction (scroll) — down (default), up, left, right, top, or bottom.
         option: The visible label (or value) to pick in a <select> dropdown (choose).
         paths: Local file path(s) to attach (upload).
+        goal: What you're trying to reach (observe, navigate) — ranks a large page's listing so the relevant controls survive the cap instead of being starved by document order.
+        expect: Text you expect the action to produce (click/type-submit/press/navigate) — the tool waits for it and reports `expected_found`.
+        dialog: What to do with a JavaScript confirm/prompt the click triggers — "accept" or "dismiss" (default declines a question, acknowledges an alert).
+        expression: A JavaScript expression to run in the page (evaluate) — the direct path to structured extraction; the JSON result is returned, length-bounded.
         x, y: A viewport point to click/hover/drag from when acting without an element (the canvas fallback).
-        to_element: The element to drop onto (drag).
+        to_element: The ref of the element to drop onto (drag).
         to_x, to_y: The viewport point to drag to (drag).
         clicks: How many times to click — 1 (default), 2 for a double-click, 3 for a triple-click.
         button: "left" (default) or "right".
