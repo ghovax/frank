@@ -200,10 +200,21 @@ samp {
   will-change: transform;
 }
 
+/* On hover the trailing ⋯ actions appear over the row's right edge. Fade EVERY title's
+   right edge beneath them — not just a scrolling one — so a title too short to scroll but
+   long enough to reach the dots dissolves under them instead of showing straight through the
+   plain (transparent) button. Short titles that end before the fade zone are unaffected. */
+.sidebar-row:hover .sidebar-title,
+.sidebar-row:focus-within .sidebar-title {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 46px), transparent calc(100% - 26px));
+  mask-image: linear-gradient(to right, #000 calc(100% - 46px), transparent calc(100% - 26px));
+}
+
+/* A scrolling (overflowing) title additionally fades its left edge as it travels off. */
 .sidebar-row:hover .sidebar-title[data-overflow="true"],
 .sidebar-row:focus-within .sidebar-title[data-overflow="true"] {
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 44px), transparent calc(100% - 24px));
-  mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 44px), transparent calc(100% - 24px));
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 46px), transparent calc(100% - 26px));
+  mask-image: linear-gradient(to right, transparent, #000 12px, #000 calc(100% - 46px), transparent calc(100% - 26px));
 }
 
 .sidebar-row:hover .sidebar-title-inner,

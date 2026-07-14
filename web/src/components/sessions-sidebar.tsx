@@ -190,10 +190,13 @@ export function SessionsSidebar({
           gap={1.5}
           px={2}
           borderRadius={ROW_RADIUS}
-          color="fg.muted"
+          // The primary action reads as one: a subtle blue fill and blue glyph/label so it
+          // invites the click, distinct from the neutral session rows below it.
+          bg="blue.subtle"
+          color="blue.fg"
           textAlign="left"
           disabled={activeSessionId === null}
-          _hover={{ bg: HOVER_BG, color: "fg" }}
+          _hover={{ bg: "blue.muted" }}
           _disabled={{ opacity: 0.45, pointerEvents: "none" }}
           transition="color 0.12s, background-color 0.12s"
           css={{ "& [data-kbd-hint]": { opacity: 0 }, "&:hover [data-kbd-hint]": { opacity: 1 } }}
@@ -203,7 +206,9 @@ export function SessionsSidebar({
             <LuSquarePen size={14} />
           </Flex>
           <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{t("newConversation")}</Text>
-          <Kbd data-kbd-hint size="sm" fontSize="2xs" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
+          {/* Chakra's semantic keyboard-key component, in its `plain` variant so it reads as a
+              subtle shortcut hint rather than a raised keycap chip. */}
+          <Kbd data-kbd-hint variant="plain" fontSize="2xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
         </chakra.button>
       </Box>
 
@@ -297,9 +302,11 @@ export function SessionsSidebar({
                     _hover={{ bg: isActive ? SELECTED_BG : HOVER_BG }}
                     transition="background-color 0.12s"
                     css={{
-                      "& [data-row-actions]": { opacity: 0 },
-                      "&:hover [data-row-actions]": { opacity: 1 },
-                      "&:focus-within [data-row-actions]": { opacity: 1 },
+                      // Hidden actions are also click-through (pointerEvents none), so the
+                      // absolutely-positioned ⋯ never swallows a click meant for the row.
+                      "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
+                      "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+                      "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
                     }}
                   >
                     <Flex

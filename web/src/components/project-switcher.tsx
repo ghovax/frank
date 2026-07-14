@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuFolderOpen } from "react-icons/lu";
@@ -48,14 +48,17 @@ export function ProjectSwitcher({
         h="auto"
         minH={9}
         py={1}
+        px={2}
         justifyContent="flex-start"
-        gap={2}
+        // px + a 14px leading slot match the New-session row exactly, so the folder icon here
+        // and the compose icon below share one vertical line down the sidebar's left edge.
+        gap={1.5}
         onClick={() => setManageOpen(true)}
         _focusVisible={{ outline: "none", boxShadow: "none", bg: "bg.subtle" }}
       >
-        <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
+        <Flex w="14px" flexShrink={0} align="center" justify="center" color="fg.muted">
           <LuFolderOpen size={14} />
-        </Box>
+        </Flex>
         <Box flex={1} minW={0} textAlign="left">
           <Text truncate fontSize="sm" fontWeight="medium" lineHeight="1.3">
             {current?.name ?? t("selectProject")}

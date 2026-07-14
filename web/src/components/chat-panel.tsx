@@ -1612,6 +1612,8 @@ export function ChatPanel({
           recentModels={recentModels}
           agentModel={agentModel}
           onAgentModelChange={onAgentModelChange}
+          permissionMode={permissionMode}
+          onPermissionModeChange={handlePermissionModeChange}
           tokenUsage={tokenUsage}
           onCompact={compact}
           isCompacting={isCompacting}

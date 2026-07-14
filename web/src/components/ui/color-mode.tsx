@@ -15,7 +15,11 @@ export interface ColorModeProviderProps extends React.PropsWithChildren {
 }
 
 export interface UseColorModeReturn {
+  // The user's chosen preference, including "system" (follow the OS). `colorMode` is the
+  // resolved light/dark this yields right now.
+  theme: ColorMode | "system"
   colorMode: ColorMode
+  setTheme: (theme: ColorMode | "system") => void
   setColorMode: (colorMode: ColorMode) => void
   toggleColorMode: () => void
 }
@@ -33,7 +37,7 @@ export function ColorModeProvider({
   forcedTheme,
   storageKey = colorModeStorageKey,
 }: ColorModeProviderProps) {
-  const [theme, setTheme] = React.useState<ColorMode | "system">(() => {
+  const [theme, setThemeState] = React.useState<ColorMode | "system">(() => {
     if (typeof window === "undefined") return forcedTheme ?? defaultTheme
     if (isTauri()) return forcedTheme ?? defaultTheme
 
@@ -53,7 +57,7 @@ export function ColorModeProvider({
     let cancelled = false
     getAppState(storageKey)
       .then((storedTheme) => {
-        if (!cancelled && isStoredTheme(storedTheme)) setTheme(storedTheme)
+        if (!cancelled && isStoredTheme(storedTheme)) setThemeState(storedTheme)
       })
       .catch(() => {})
     return () => {
@@ -78,17 +82,19 @@ export function ColorModeProvider({
     document.documentElement.style.colorScheme = colorMode
   }, [colorMode])
 
-  const setColorMode = React.useCallback(
-    (nextColorMode: ColorMode) => {
+  // The general setter: persists any preference, "system" included. `setColorMode` is the
+  // narrower light/dark form kept for the toggle button and existing callers.
+  const setTheme = React.useCallback(
+    (nextTheme: ColorMode | "system") => {
       if (forcedTheme) return
 
-      setTheme(nextColorMode)
+      setThemeState(nextTheme)
       if (isTauri()) {
-        void setAppState(storageKey, nextColorMode)
+        void setAppState(storageKey, nextTheme)
         return
       }
       try {
-        localStorage.setItem(storageKey, nextColorMode)
+        localStorage.setItem(storageKey, nextTheme)
       } catch {
         // localStorage can be unavailable in restricted browser contexts.
       }
@@ -96,13 +102,18 @@ export function ColorModeProvider({
     [forcedTheme, storageKey],
   )
 
+  const setColorMode = React.useCallback(
+    (nextColorMode: ColorMode) => setTheme(nextColorMode),
+    [setTheme],
+  )
+
   const toggleColorMode = React.useCallback(() => {
     setColorMode(colorMode === "dark" ? "light" : "dark")
   }, [colorMode, setColorMode])
 
   const value = React.useMemo(
-    () => ({ colorMode, setColorMode, toggleColorMode }),
-    [colorMode, setColorMode, toggleColorMode],
+    () => ({ theme, colorMode, setTheme, setColorMode, toggleColorMode }),
+    [theme, colorMode, setTheme, setColorMode, toggleColorMode],
   )
 
   return (
@@ -116,7 +127,9 @@ export function useColorMode(): UseColorModeReturn {
   const context = React.useContext(ColorModeContext)
   if (!context) {
     return {
+      theme: "system",
       colorMode: "light",
+      setTheme: () => {},
       setColorMode: () => {},
       toggleColorMode: () => {},
     }

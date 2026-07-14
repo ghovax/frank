@@ -16,7 +16,8 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuPaperclip, LuSquare, LuUser } from "react-icons/lu";
-import { fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ModelOption, type ProviderOption } from "@/lib/api";
+import { fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { PermissionModeControl } from "./session-controls";
 import { activeConnectionIsLocal } from "@/lib/connection";
 import { isTauri } from "@/lib/connection-store";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
@@ -60,6 +61,10 @@ interface ChatInputProps {
   // session running that agent — not just this conversation.
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;
+  // The session's permission mode and its change handler (persists + reflects on the
+  // server). Surfaced here as a selector beside agent/model so it's adjustable inline.
+  permissionMode?: PermissionMode;
+  onPermissionModeChange?: (mode: PermissionMode) => void;
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
@@ -225,6 +230,8 @@ export function ChatInput({
   recentModels = [],
   agentModel = "",
   onAgentModelChange,
+  permissionMode = "default",
+  onPermissionModeChange,
   tokenUsage,
   onCompact,
   isCompacting = false,
@@ -771,6 +778,7 @@ export function ChatInput({
             fallbackModelId={agentModel}
             compact
           />
+          <PermissionModeControl value={permissionMode} onChange={(mode) => onPermissionModeChange?.(mode)} />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (

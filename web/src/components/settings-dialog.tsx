@@ -2,7 +2,7 @@
 
 import { Alert, Box, Button, Dialog, Flex, IconButton, Input, Portal, Spinner, Tabs, Text } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuEye, LuEyeOff, LuKeyRound, LuMapPin, LuPlug, LuPlus, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
@@ -11,6 +11,7 @@ import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { ProjectLocationsPanel } from "./project-locations";
 import { SimpleSelect } from "./ui/simple-select";
+import { useColorMode } from "./ui/color-mode";
 import { ConfirmDialog } from "./ui/confirm-dialog";
 import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
@@ -472,7 +473,7 @@ export function SettingsDialog({
                   </Tabs.Trigger>
                   {projectId && (
                     <Tabs.Trigger value="locations" justifyContent="flex-start" borderRadius="md" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
-                      <LuMapPin size={14} />
+                      <LuServer size={14} />
                       {t("tabLocations")}
                     </Tabs.Trigger>
                   )}
@@ -540,6 +541,7 @@ export function SettingsDialog({
                           </Flex>
                         )}
                       </SettingsGroup>
+                      <ThemeSetting />
                       <LanguageSetting />
                       <SettingsGroup title={t("apiKeys")}>
                         <SettingField label={t("exaApiKey")}>
@@ -724,6 +726,29 @@ export function SettingsDialog({
       {t("restartBody")}
     </ConfirmDialog>
     </>
+  );
+}
+
+// The app theme picker: follow the system appearance, or force light / dark. The choice is
+// persisted by the color-mode provider (localStorage in the browser, app state in the desktop
+// app) and resolves live — no reload.
+function ThemeSetting() {
+  const t = useTranslations("SettingsDialog");
+  const { theme, setTheme } = useColorMode();
+  return (
+    <SettingsGroup title={t("theme.label")}>
+      <Box w="200px">
+        <SimpleSelect
+          items={[
+            { value: "system", label: t("theme.system") },
+            { value: "light", label: t("theme.light") },
+            { value: "dark", label: t("theme.dark") },
+          ]}
+          value={theme}
+          onValueChange={(next) => setTheme(next as "system" | "light" | "dark")}
+        />
+      </Box>
+    </SettingsGroup>
   );
 }
 

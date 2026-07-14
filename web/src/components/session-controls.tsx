@@ -3,7 +3,7 @@
 import { Box, Button, createListCollection, Flex, Portal, Select, Text } from "@chakra-ui/react";
 import { type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHardDrive, LuMousePointerClick, LuSlidersHorizontal, LuUserSearch, LuZap } from "react-icons/lu";
+import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMousePointerClick, LuShieldOff, LuUserSearch, LuZap } from "react-icons/lu";
 import type { PermissionMode } from "@/lib/api";
 
 export type WorkspaceStrategyValue = "none" | "branch" | "worktree";
@@ -28,14 +28,14 @@ function controlMetrics(layout: "chip" | "field") {
 function permissionAppearance(permissionMode: PermissionMode) {
   return {
     default: {
-      icon: <LuSlidersHorizontal size={13} />,
+      icon: <LuHand size={13} />,
       color: "fg.subtle",
       background: "bg",
       borderColor: "border",
       colorPalette: undefined,
     },
     auto: {
-      icon: <LuZap size={13} />,
+      icon: <LuBadgeCheck size={13} />,
       color: "blue.fg",
       background: "blue.subtle",
       borderColor: "blue.muted",
@@ -49,14 +49,14 @@ function permissionAppearance(permissionMode: PermissionMode) {
       colorPalette: "green",
     },
     bypass: {
-      icon: <LuCircleSlash size={13} />,
+      icon: <LuShieldOff size={13} />,
       color: "red.fg",
       background: "red.subtle",
       borderColor: "red.muted",
       colorPalette: "red",
     },
   }[permissionMode] ?? {
-    icon: <LuSlidersHorizontal size={13} />,
+    icon: <LuHand size={13} />,
     color: "fg.subtle",
     background: "bg",
     borderColor: "border",
@@ -84,10 +84,10 @@ export function PermissionModeControl({
 }) {
   const t = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "red" }[] = [
-    { value: "default", label: t("permissionDefaultLabel"), description: t("permissionDefaultDescription"), icon: <LuSlidersHorizontal size={13} /> },
-    { value: "auto", label: t("permissionAutoLabel"), description: t("permissionAutoDescription"), icon: <LuZap size={13} />, colorPalette: "blue" },
+    { value: "default", label: t("permissionDefaultLabel"), description: t("permissionDefaultDescription"), icon: <LuHand size={13} /> },
+    { value: "auto", label: t("permissionAutoLabel"), description: t("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
     { value: "read_only", label: t("permissionReadOnlyLabel"), description: t("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
-    { value: "bypass", label: t("permissionBypassLabel"), description: t("permissionBypassDescription"), icon: <LuCircleSlash size={13} />, colorPalette: "red" },
+    { value: "bypass", label: t("permissionBypassLabel"), description: t("permissionBypassDescription"), icon: <LuShieldOff size={13} />, colorPalette: "red" },
   ];
   const permissionItems = permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
   const metrics = controlMetrics(layout);
