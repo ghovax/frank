@@ -38,7 +38,7 @@ from sse_starlette.sse import EventSourceResponse
 from watchfiles import DefaultFilter, awatch
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -49,7 +49,7 @@ from harness.core.a2a_executor import (
     agent_rpc_path,
     build_agent_card,
 )
-from harness.core.agent import AgentRuntime
+from harness.core.agent import AgentRuntime, build_chat_model, model_is_authorized
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
@@ -72,9 +72,8 @@ from harness.core.chatgpt_oauth import (
 )
 from harness.core.codex_model import clear_subscription_models_cache, fetch_subscription_models
 from harness.core.composio_router import composio_mcp_servers
-from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.mcp_client import MCPClientManager
-from harness.core.models import MODELS, ModelDefinition, available_models, find_model, provider_and_suffix, resolve_litellm
+from harness.core.models import MODELS, ModelDefinition, available_models, find_model, provider_and_suffix
 from harness.core.providers import PROVIDERS
 from harness.core.background import reap_orphaned_processes
 from harness.core.file_leases import FileLeaseManager
@@ -1413,23 +1412,20 @@ async def _generate_session_title(context_id: str, first_message: str) -> str:
     model_identifier = agent_configuration.model_identifier
     if not model_identifier:
         return ""
-    # The experimental ChatGPT-subscription provider is native (not a LiteLLM route,
-    # so resolve_litellm can't build it) and its calls are fragile/quota-metered —
-    # auto-titling is a non-essential nicety we deliberately skip for it.
-    if model_identifier.split("/", 1)[0] == "chatgpt":
+    # Auto-titling is a background nicety, so skip silently when the model's provider
+    # isn't authorized rather than surfacing an error. Authorization goes through the
+    # same central authority the main agent uses, so it covers the native chatgpt
+    # (OAuth) provider too — not just LiteLLM api keys, which is why titling used to
+    # exclude chatgpt sessions entirely.
+    if not model_is_authorized(model_identifier, configuration):
         return ""
-    resolved = resolve_litellm(
-        model_identifier,
-        configuration.configured_provider_keys(),
-        configuration.configured_provider_bases(),
-    )
-    if not resolved["api_key"]:
-        return ""
-    llm = ChatLiteLLMModel(
-        model=resolved["model"],
-        api_key=SecretStr(resolved["api_key"]),
-        api_base=resolved["api_base"] or None,
-        temperature=0,
+    # Build through the shared factory so the title call uses the same provider,
+    # auth, and request path as the agent's own turns (the chatgpt subscription route
+    # included). Reasoning is dialed down: a title is trivial and must stay cheap and
+    # fast, unlike the agent's configured effort.
+    title_agent_configuration = agent_configuration.model_copy(update={"reasoning_effort": "low"})
+    llm = build_chat_model(
+        model_identifier, configuration, title_agent_configuration
     ).bind_tools([SessionTitle], tool_choice="auto")
     prompt = _title_prompt_loader.load("session_title", {})
     response = await llm.ainvoke([

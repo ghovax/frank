@@ -40,6 +40,8 @@ from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.codex_model import ChatCodexModel
 from harness.core.file_leases import FileLeaseConflict, FileLeaseManager
 from harness.core.models import find_model, resolve_litellm
+from harness.core.providers import resolve_api_key
+from harness.core.chatgpt_oauth import is_signed_in
 from harness.locations.resolver import LocationAddress, executor_for, location_uri_for
 from harness.tools.tools import (
     bash as bash_tool,
@@ -180,6 +182,29 @@ def build_chat_model(
         temperature=0,
         reasoning_effort=agent_configuration.reasoning_effort,
     )
+
+
+def model_is_authorized(
+    model_identifier: str,
+    global_configuration: "GlobalConfiguration",
+) -> bool:
+    """Whether we currently hold credentials to call ``model_identifier``.
+
+    The single authorization authority, mirroring how ``build_chat_model`` resolves
+    credentials so every LLM call site authorizes identically: the native
+    ``chatgpt`` subscription provider is unlocked by an OAuth sign-in (token store),
+    each LiteLLM provider by a configured key or one of its env vars, and ``custom``
+    is selectable on demand. Auxiliary calls (session titling, ...) consult this
+    before building a model instead of re-deriving the check per call site — which
+    is how titling used to silently exclude the OAuth-only chatgpt provider."""
+    if "/" not in model_identifier:
+        model_identifier = f"opencode/{model_identifier}"
+    provider_identifier = model_identifier.split("/", 1)[0]
+    if provider_identifier == "chatgpt":
+        return is_signed_in()
+    if provider_identifier == "custom":
+        return True
+    return bool(resolve_api_key(provider_identifier, global_configuration.configured_provider_keys()))
 
 
 class StreamEvent:
