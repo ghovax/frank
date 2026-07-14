@@ -45,7 +45,7 @@ async def agents(working_directory: str = ""):
     # this folder's resolved set.
     available_ids = {agent["id"] for agent in agent_data}
     default_agent = _app._global_configuration.default_agent if _app._global_configuration.default_agent in available_ids else (agent_data[0]["id"] if agent_data else "")
-    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), model=agent.get("model", "")) for agent in agent_data], defaultAgent=default_agent)
+    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), description=agent.get("description", ""), model=agent.get("model", "")) for agent in agent_data], defaultAgent=default_agent)
 
 
 @router.get("/agents/{agent_name}/configuration")

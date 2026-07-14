@@ -922,12 +922,14 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
                 "id": config.identifier,
                 "name": config.identifier,
                 "title": config.display_name,
+                # What the agent is for — surfaced as the subtitle in the UI's agent picker.
+                "description": config.description,
                 # The resolved ``provider/model`` identifier; empty means the
                 # agent has not configured a runnable model.
                 "model": config.model_identifier or "",
             })
         except Exception:
-            agents.append({"id": name, "name": name, "title": name, "model": ""})
+            agents.append({"id": name, "name": name, "title": name, "description": "", "model": ""})
     return agents
 
 

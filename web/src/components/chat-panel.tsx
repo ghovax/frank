@@ -1308,7 +1308,7 @@ export function ChatPanel({
           ) : (
             <Box color="fg.muted" flexShrink={0}><LuMessageSquare size={14} /></Box>
           )}
-          <Text textStyle="panelTitle" truncate minW={0} flex={1}>
+          <Text textStyle="panelTitle" fontWeight="medium" truncate minW={0} flex={1}>
             {sessionId ? (sessionTitle || t("untitledConversation")) : t("newConversation")}
           </Text>
           <GitStatusBar status={directoryStatus} />

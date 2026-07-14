@@ -1,8 +1,8 @@
 "use client";
 
-import { Alert, Box, Button, Dialog, Flex, IconButton, Input, Portal, Spinner, Tabs, Text } from "@chakra-ui/react";
+import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
@@ -17,21 +17,41 @@ import { useTranslations } from "next-intl";
 import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@/lib/i18n/messages";
 import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorkspaceStrategyControl, type WorkspaceStrategyValue } from "./session-controls";
-import { useScrollEdgeFade } from "@/lib/scroll-fade";
 
 export type SettingsSection = "general" | "locations" | "agents" | "connection";
 
-// The single owner of every settings tab's scroll + padding. Each tab renders through
-// this wrapper instead of setting its own spacing, so all panels stay identical and no
-// tab can drift (which is exactly how the Connection tab once ended up mis-padded).
-// It also owns the soft edge fades (shared scroll-edge hook): each edge fades only while
-// there is content beyond it, so nothing is dimmed while resting at either end.
-function SettingsTabPanel({ value, children }: { value: string; children: ReactNode }) {
-  const { containerRef, onScroll, fade } = useScrollEdgeFade();
+// One setting modeled as data (so the search box can match it): a title + optional
+// description that renders on the left, and a `control` that renders on the right. `stacked`
+// puts a wide control (an API-key field) on its own line beneath the label instead.
+type SettingRowDef = { key: string; title: string; description?: string; control: ReactNode; layout?: "row" | "stacked" };
+type SettingsPageSection = { title?: string; rows: SettingRowDef[]; block?: ReactNode };
+type SettingsPage = { id: SettingsSection; label: string; icon: ReactNode; sections: SettingsPageSection[] };
+
+// A titled section: a heading over a stack of rows separated by hairline dividers (the
+// trailing full-width block, if any, sits beneath the rows).
+function SettingsSection({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <Tabs.Content ref={containerRef} onScroll={onScroll} value={value} h="100%" overflowY="auto" px={4} pt={0} pb={4} css={fade}>
-      {children}
-    </Tabs.Content>
+    <Box as="section" mb={8} _last={{ mb: 0 }}>
+      {title ? <Text fontSize="sm" fontWeight="semibold" color="fg" mb={2}>{title}</Text> : null}
+      <Box css={{ "& > *": { borderColor: "var(--chakra-colors-border-muted)" }, "& > *:not(:last-child)": { borderBottomWidth: "1px" } }}>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+// One settings row: label (+ description) on the left, control on the right. A `stacked`
+// row drops the control to its own line for wide inputs.
+function SettingRow({ title, description, children, layout = "row" }: { title: string; description?: string; children: ReactNode; layout?: "row" | "stacked" }) {
+  const stacked = layout === "stacked";
+  return (
+    <Flex direction={stacked ? "column" : "row"} align={stacked ? "stretch" : "center"} justify="space-between" gap={stacked ? 2 : 6} py={3}>
+      <Box minW={0} flex={stacked ? undefined : 1}>
+        <Text textStyle="fieldLabel" color="fg">{title}</Text>
+        {description ? <Text fontSize="xs" color="fg.muted" mt={0.5}>{description}</Text> : null}
+      </Box>
+      <Box flexShrink={0} alignSelf={stacked ? "stretch" : undefined}>{children}</Box>
+    </Flex>
   );
 }
 
@@ -446,241 +466,245 @@ export function SettingsDialog({
     onOpenChange(false);
   }
 
+  const { theme: appTheme, setTheme: setAppTheme } = useColorMode();
+  const { locale, setLocale } = useLocale();
+  const [settingsSearch, setSettingsSearch] = useState("");
+  const query = settingsSearch.trim().toLowerCase();
+  const searching = query.length > 0;
+
+  // Every setting modeled as data so the search box can match titles/descriptions across
+  // sections. A "page" is one left-nav entry; it holds titled sections of rows (title +
+  // description on the left, control on the right) plus optional full-width blocks for the
+  // richer editors that aren't a single control (locations, agent permissions, connection).
+  const grantAlerts = ((userContextEnabled && fullDiskAccess === false) || accessibilityGranted === false) ? (
+    <Flex direction="column" gap={1.5}>
+      {userContextEnabled && fullDiskAccess === false && (
+        <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
+          <Alert.Indicator />
+          <Alert.Content flex={1} minW={0}>
+            <Alert.Description fontSize="xs">{t("fullDiskAccessBody")}</Alert.Description>
+          </Alert.Content>
+          <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => void openFullDiskAccessSettings()}>
+            {t("grantFullDiskAccess")}
+          </Button>
+        </Alert.Root>
+      )}
+      {accessibilityGranted === false && (
+        <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
+          <Alert.Indicator />
+          <Alert.Content flex={1} minW={0}>
+            <Alert.Description fontSize="xs">{t("computerControlBody")}</Alert.Description>
+          </Alert.Content>
+          <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
+            try { localStorage.setItem("daisy:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
+            setAwaitingGrantReturn(true);
+            void openAccessibilitySettings();
+          }}>
+            {t("grantAccessibility")}
+          </Button>
+        </Alert.Root>
+      )}
+    </Flex>
+  ) : null;
+
+  const secretRow = (label: string, placeholder: string, value: string, onChange: (next: string) => void, description?: string): SettingRowDef => ({
+    key: label, title: label, description,
+    control: (
+      <Box w={{ base: "100%", sm: "260px" }}>
+        <SecretField label={label} placeholder={placeholder} value={value} disabled={saving} onChange={onChange} hideLabel />
+      </Box>
+    ),
+    layout: "stacked",
+  });
+
+  const pages: SettingsPage[] = [
+    {
+      id: "general", label: t("tabGeneral"), icon: <LuKeyRound size={14} />,
+      sections: [
+        {
+          title: t("runtime"),
+          rows: [
+            { key: "approvalMode", title: t("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
+            { key: "filesystemProtection", title: t("filesystemProtection"), control: <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} /> },
+            { key: "gitWorkspace", title: t("gitWorkspace"), control: <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} /> },
+            { key: "compaction", title: t("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
+            { key: "userContext", title: t("userContext"), description: t("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
+            { key: "computerControl", title: t("computerControl"), description: t("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
+          ],
+          block: grantAlerts,
+        },
+        {
+          title: t("appearance"),
+          rows: [
+            { key: "theme", title: t("theme.label"), control: (
+              <Box w="200px"><SimpleSelect items={[{ value: "system", label: t("theme.system") }, { value: "light", label: t("theme.light") }, { value: "dark", label: t("theme.dark") }]} value={appTheme} onValueChange={(next) => setAppTheme(next as "system" | "light" | "dark")} /></Box>
+            ) },
+            { key: "language", title: t("language.label"), control: (
+              <Box w="200px"><SimpleSelect items={LOCALES.map((code) => ({ value: code, label: t(`language.${code}`) }))} value={locale} onValueChange={(next) => setLocale(next as Locale)} /></Box>
+            ) },
+          ],
+        },
+        {
+          title: t("apiKeys"),
+          rows: [
+            secretRow(t("exaApiKey"), "xxxxxxxx-...", exaApiKey, setExaApiKey),
+            secretRow(t("composioApiKey"), "cmp_...", composioApiKey, setComposioApiKey),
+            secretRow(t("jinaApiKey"), "jina_...", jinaApiKey, setJinaApiKey, t("jinaApiKeyHint")),
+            secretRow(t("firecrawlApiKey"), "fc-...", firecrawlApiKey, setFirecrawlApiKey, t("firecrawlApiKeyHint")),
+            secretRow(t("proxyServer"), "http://user:pass@host:port", webFetchProxyUrl, setWebFetchProxyUrl, t("proxyServerHint")),
+          ],
+        },
+        { title: t("modelProviders"), rows: [], block: <Box maxW="520px"><ChatGPTAuthControl /></Box> },
+      ],
+    },
+    ...(projectId ? [{
+      id: "locations" as SettingsSection, label: t("tabLocations"), icon: <LuServer size={14} />,
+      sections: [{ title: t("locations"), rows: [], block: <ProjectLocationsPanel projectId={projectId} /> }],
+    }] : []),
+    {
+      id: "agents", label: t("tabAgents"), icon: <LuUsers size={14} />,
+      sections: [{
+        title: t("agent"),
+        rows: [{ key: "profile", title: t("profile"), control: <Box w="280px"><SimpleSelect items={agentItems} value={settingsAgent} onValueChange={setSettingsAgent} placeholder={t("chooseAgent")} /></Box> }],
+        block: agentLoading ? (
+          <Flex align="center" gap={2} color="fg.muted" fontSize="sm" py={3}><Spinner size="xs" />{t("loadingAgentConfiguration")}</Flex>
+        ) : agentError ? (
+          <Text fontSize="sm" color="red.fg">{agentError}</Text>
+        ) : agentConfiguration ? (
+          <AgentPermissionsEditor configuration={agentConfiguration} models={models} providers={modelProviders} recentModels={recentModels} onChange={setAgentConfiguration} />
+        ) : null,
+      }],
+    },
+    {
+      id: "connection", label: t("tabConnection"), icon: <LuPlug size={14} />,
+      sections: [{
+        rows: [],
+        block: (
+          <Flex direction="column" gap={4}>
+            <Box>
+              <Text textStyle="fieldLabel" mb={1}>{t("currentConnection")}</Text>
+              <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} onOpenConnectionSettings={() => undefined} />
+            </Box>
+            <ConnectionSettings key={connectionResetToken} variant="dialog" currentTargetId={currentConnectionId} onDirtyChange={setConnectionDirty} onConnected={(target) => { onConnectionChange?.(target); onOpenChange(false); }} />
+          </Flex>
+        ),
+      }],
+    },
+  ];
+
+  const activePage = pages.find((page) => page.id === section) ?? pages[0];
+  const rowMatches = (row: SettingRowDef) => `${row.title} ${row.description ?? ""}`.toLowerCase().includes(query);
+  // When searching, collapse every page's sections into just those with matching rows, so
+  // results read as a flat filtered list regardless of which nav entry they live under.
+  const searchSections = searching
+    ? pages.flatMap((page) => page.sections
+        .map((sec) => ({ ...sec, rows: sec.rows.filter(rowMatches), block: undefined }))
+        .filter((sec) => sec.rows.length > 0))
+    : [];
+
   return (
     <>
     <Dialog.Root open={open} onOpenChange={(event) => event.open ? onOpenChange(true) : requestClose()} placement="center">
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxW="900px" h="min(760px, calc(100vh - 48px))" display="flex" flexDirection="column" overflow="hidden">
-            <Dialog.Header>
-              <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
-            </Dialog.Header>
-            <Dialog.Body px={0} py={0} flex={1} minH={0}>
-              <Tabs.Root
-                value={section}
-                onValueChange={(details) => onSectionChange(details.value as SettingsSection)}
-                orientation="vertical"
-                variant="subtle"
-                display="flex"
-                h="100%"
-                minH={0}
-              >
-                <Tabs.List w={48} border="none" px={2} gap={1}>
-                  <Tabs.Trigger value="general" justifyContent="flex-start" borderRadius="md" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
-                    <LuKeyRound size={14} />
-                    {t("tabGeneral")}
-                  </Tabs.Trigger>
-                  {projectId && (
-                    <Tabs.Trigger value="locations" justifyContent="flex-start" borderRadius="md" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
-                      <LuServer size={14} />
-                      {t("tabLocations")}
-                    </Tabs.Trigger>
-                  )}
-                  <Tabs.Trigger value="agents" justifyContent="flex-start" borderRadius="md" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
-                    <LuUsers size={14} />
-                    {t("tabAgents")}
-                  </Tabs.Trigger>
-                  <Tabs.Trigger value="connection" justifyContent="flex-start" borderRadius="md" _selected={{ bg: "bg.muted", color: "fg", shadow: "none" }}>
-                    <LuPlug size={14} />
-                    {t("tabConnection")}
-                  </Tabs.Trigger>
-                </Tabs.List>
-                <Box flex={1} minW={0} minH={0}>
-                  <SettingsTabPanel value="general">
-                    <Flex direction="column" gap={4}>
-                      <SettingsGroup title={t("runtime")}>
-                        <Flex gap={3} wrap="wrap" align="flex-start">
-                          <SettingField label={t("approvalMode")}>
-                            <PermissionModeControl value={permissionMode} onChange={setPermissionMode} />
-                          </SettingField>
-                          <SettingField label={t("filesystemProtection")}>
-                            <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} />
-                          </SettingField>
-                          <SettingField label={t("gitWorkspace")}>
-                            <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} />
-                          </SettingField>
-                          <SettingField label={t("compaction")}>
-                            <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} />
-                          </SettingField>
-                          <SettingField label={t("userContext")} hint={t("userContextHint")}>
-                            <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} />
-                          </SettingField>
-                          <SettingField label={t("computerControl")} hint={t("computerControlHint")}>
-                            <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} />
-                          </SettingField>
-                        </Flex>
-                        {((userContextEnabled && fullDiskAccess === false) || accessibilityGranted === false) && (
-                          <Flex direction="column" gap={1.5}>
-                            {userContextEnabled && fullDiskAccess === false && (
-                              <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
-                                <Alert.Indicator />
-                                <Alert.Content flex={1} minW={0}>
-                                  <Alert.Description fontSize="xs">{t("fullDiskAccessBody")}</Alert.Description>
-                                </Alert.Content>
-                                <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => void openFullDiskAccessSettings()}>
-                                  {t("grantFullDiskAccess")}
-                                </Button>
-                              </Alert.Root>
-                            )}
-                            {accessibilityGranted === false && (
-                              <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center" mt={2}>
-                                <Alert.Indicator />
-                                <Alert.Content flex={1} minW={0}>
-                                  <Alert.Description fontSize="xs">{t("computerControlBody")}</Alert.Description>
-                                </Alert.Content>
-                                <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
-                                  try { localStorage.setItem("daisy:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
-                                  setAwaitingGrantReturn(true);
-                                  void openAccessibilitySettings();
-                                }}>
-                                  {t("grantAccessibility")}
-                                </Button>
-                              </Alert.Root>
-                            )}
-                          </Flex>
-                        )}
-                      </SettingsGroup>
-                      <ThemeSetting />
-                      <LanguageSetting />
-                      <SettingsGroup title={t("apiKeys")}>
-                        <SettingField label={t("exaApiKey")}>
-                          <Box maxW="520px">
-                            <SecretField
-                              label={t("exaApiKey")}
-                              placeholder="xxxxxxxx-..."
-                              value={exaApiKey}
-                              disabled={saving}
-                              onChange={setExaApiKey}
-                              hideLabel
-                            />
-                          </Box>
-                        </SettingField>
-                        <SettingField label={t("composioApiKey")}>
-                          <Box maxW="520px">
-                            <SecretField
-                              label={t("composioApiKey")}
-                              placeholder="cmp_..."
-                              value={composioApiKey}
-                              disabled={saving}
-                              onChange={setComposioApiKey}
-                              hideLabel
-                            />
-                          </Box>
-                        </SettingField>
-                        <SettingField label={t("jinaApiKey")} hint={t("jinaApiKeyHint")}>
-                          <Box maxW="520px">
-                            <SecretField
-                              label={t("jinaApiKey")}
-                              placeholder="jina_..."
-                              value={jinaApiKey}
-                              disabled={saving}
-                              onChange={setJinaApiKey}
-                              hideLabel
-                            />
-                          </Box>
-                        </SettingField>
-                        <SettingField label={t("firecrawlApiKey")} hint={t("firecrawlApiKeyHint")}>
-                          <Box maxW="520px">
-                            <SecretField
-                              label={t("firecrawlApiKey")}
-                              placeholder="fc-..."
-                              value={firecrawlApiKey}
-                              disabled={saving}
-                              onChange={setFirecrawlApiKey}
-                              hideLabel
-                            />
-                          </Box>
-                        </SettingField>
-                        <SettingField label={t("proxyServer")} hint={t("proxyServerHint")}>
-                          <Box maxW="520px">
-                            <SecretField
-                              label={t("proxyServer")}
-                              placeholder="http://user:pass@host:port"
-                              value={webFetchProxyUrl}
-                              disabled={saving}
-                              onChange={setWebFetchProxyUrl}
-                              hideLabel
-                            />
-                          </Box>
-                        </SettingField>
-                      </SettingsGroup>
-                      <SettingsGroup title={t("modelProviders")}>
-                        <Box maxW="520px">
-                          <ChatGPTAuthControl />
-                        </Box>
-                      </SettingsGroup>
-                    </Flex>
-                  </SettingsTabPanel>
-                  {projectId && (
-                    <SettingsTabPanel value="locations">
-                      <SettingsGroup title={t("locations")}>
-                        <ProjectLocationsPanel projectId={projectId} />
-                      </SettingsGroup>
-                    </SettingsTabPanel>
-                  )}
-                  <SettingsTabPanel value="agents">
-                    <Flex direction="column" gap={4}>
-                      <SettingsGroup title={t("agent")}>
-                        <SettingField label={t("profile")}>
-                          <Box maxW="420px">
-                            <SimpleSelect
-                              items={agentItems}
-                              value={settingsAgent}
-                              onValueChange={setSettingsAgent}
-                              placeholder={t("chooseAgent")}
-                            />
-                          </Box>
-                        </SettingField>
-                      </SettingsGroup>
-                      {agentLoading ? (
-                        <Flex align="center" gap={2} color="fg.muted" fontSize="sm" py={3}>
-                          <Spinner size="xs" />
-                          {t("loadingAgentConfiguration")}
-                        </Flex>
-                      ) : agentError ? (
-                        <Text fontSize="sm" color="red.fg">
-                          {agentError}
-                        </Text>
-                      ) : agentConfiguration ? (
-                        <AgentPermissionsEditor
-                          configuration={agentConfiguration}
-                          models={models}
-                          providers={modelProviders}
-                          recentModels={recentModels}
-                          onChange={setAgentConfiguration}
-                        />
-                      ) : null}
-                    </Flex>
-                  </SettingsTabPanel>
-                  <SettingsTabPanel value="connection">
-                    <Box mb={4}>
-                      <Text textStyle="fieldLabel" mb={1}>
-                        {t("currentConnection")}
-                      </Text>
-                      <ConnectionSwitcher
-                        currentTargetId={currentConnectionId}
-                        onConnectionChange={onConnectionChange}
-                        onOpenConnectionSettings={() => undefined}
+          <Dialog.Content maxW="900px" h="min(760px, calc(100vh - 48px))" display="flex" flexDirection="row" overflow="hidden" p={0}>
+            {/* Left nav spans the dialog's full height (flush to the rounded top/bottom edges),
+                beside a column that carries the header, the scrolling content, and the footer —
+                so its tint never gets cut off between a separate header and footer. */}
+                <Flex direction="column" w={52} flexShrink={0} borderRightWidth="1px" borderColor="border.muted" minH={0} bg="bg.subtle">
+                  <Box p={3} flexShrink={0}>
+                    <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
+                      <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
+                      <Input
+                        border="none"
+                        size="xs"
+                        h="full"
+                        px={0}
+                        placeholder={t("searchPlaceholder")}
+                        aria-label={t("searchPlaceholder")}
+                        value={settingsSearch}
+                        onChange={(event) => setSettingsSearch(event.target.value)}
+                        _focusVisible={{ boxShadow: "none", outline: "none" }}
                       />
-                    </Box>
-                    <ConnectionSettings
-                      key={connectionResetToken}
-                      variant="dialog"
-                      currentTargetId={currentConnectionId}
-                      onDirtyChange={setConnectionDirty}
-                      onConnected={(target) => {
-                        onConnectionChange?.(target);
-                        onOpenChange(false);
-                      }}
-                    />
-                  </SettingsTabPanel>
+                    </Flex>
+                  </Box>
+                  <Box flex={1} minH={0} overflowY="auto" px={2} pb={3}>
+                    <Text px={2} pb={1} textStyle="sectionLabel">{t("title")}</Text>
+                    <Flex direction="column" gap={1}>
+                      {pages.map((page) => {
+                        const active = !searching && page.id === activePage.id;
+                        return (
+                          <Flex
+                            as="button"
+                            key={page.id}
+                            align="center"
+                            gap={1.5}
+                            minH="30px"
+                            px={2}
+                            borderRadius="md"
+                            textAlign="left"
+                            color={active ? "fg" : "fg.muted"}
+                            fontWeight={active ? "medium" : "normal"}
+                            bg={active ? "bg.muted" : undefined}
+                            _hover={{ bg: active ? "bg.muted" : "bg.emphasized", color: "fg" }}
+                            transition="background-color 0.12s, color 0.12s"
+                            onClick={() => { setSettingsSearch(""); onSectionChange(page.id); }}
+                          >
+                            <Box color={active ? "fg" : "fg.subtle"} flexShrink={0} display="flex" alignItems="center">{page.icon}</Box>
+                            <Text flex={1} minW={0} truncate fontSize="sm">{page.label}</Text>
+                          </Flex>
+                        );
+                      })}
+                    </Flex>
+                  </Box>
+                </Flex>
+            <Flex direction="column" flex={1} minW={0} minH={0}>
+              <Dialog.Header>
+                <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
+              </Dialog.Header>
+              <Dialog.Body px={0} py={0} flex={1} minH={0}>
+                {/* Right content: search results across all sections, or the active page's sections. */}
+                <Box h="100%" overflowY="auto" px={6} py={4}>
+                  {searching ? (
+                    searchSections.length === 0 ? (
+                      <Flex h="full" align="center" justify="center" py={10}>
+                        <EmptyState.Root size="sm">
+                          <EmptyState.Content>
+                            <EmptyState.Indicator>
+                              <LuSearch />
+                            </EmptyState.Indicator>
+                            <VStack gap={0}>
+                              <EmptyState.Title fontSize="sm">{t("searchNoResultsTitle")}</EmptyState.Title>
+                              <EmptyState.Description fontSize="xs">{t("searchNoResults", { query: settingsSearch })}</EmptyState.Description>
+                            </VStack>
+                          </EmptyState.Content>
+                        </EmptyState.Root>
+                      </Flex>
+                    ) : (
+                      searchSections.map((sec, index) => (
+                        <SettingsSection key={index} title={sec.title}>
+                          {sec.rows.map((row) => (
+                            <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
+                          ))}
+                        </SettingsSection>
+                      ))
+                    )
+                  ) : (
+                    activePage.sections.map((sec, index) => (
+                      <SettingsSection key={index} title={sec.title}>
+                        {sec.rows.map((row) => (
+                          <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
+                        ))}
+                        {/* A block after rows is separated from the last row's divider by top
+                            padding; a standalone block (no rows) sits flush under the heading. */}
+                        {sec.block ? <Box pt={sec.rows.length > 0 ? 4 : 0}>{sec.block}</Box> : null}
+                      </SettingsSection>
+                    ))
+                  )}
                 </Box>
-              </Tabs.Root>
-            </Dialog.Body>
-            {/* No divider border: the tab panel's bottom scroll fade provides the separation.
-                The theme's footer pt=1 assumes the body carries its own bottom padding; this
-                body is px/py 0, so the footer balances itself (pb=4 comes from the theme). */}
+              </Dialog.Body>
+            {/* Footer sits inside the right column so the nav stays full height. */}
             <Dialog.Footer pt={3}>
               <Button variant="outline" onClick={requestClose} disabled={saving}>
                 {tc("close")}
@@ -697,6 +721,7 @@ export function SettingsDialog({
                 </Button>
               )}
             </Dialog.Footer>
+            </Flex>
             <Dialog.CloseTrigger />
           </Dialog.Content>
         </Dialog.Positioner>
@@ -726,47 +751,6 @@ export function SettingsDialog({
       {t("restartBody")}
     </ConfirmDialog>
     </>
-  );
-}
-
-// The app theme picker: follow the system appearance, or force light / dark. The choice is
-// persisted by the color-mode provider (localStorage in the browser, app state in the desktop
-// app) and resolves live — no reload.
-function ThemeSetting() {
-  const t = useTranslations("SettingsDialog");
-  const { theme, setTheme } = useColorMode();
-  return (
-    <SettingsGroup title={t("theme.label")}>
-      <Box w="200px">
-        <SimpleSelect
-          items={[
-            { value: "system", label: t("theme.system") },
-            { value: "light", label: t("theme.light") },
-            { value: "dark", label: t("theme.dark") },
-          ]}
-          value={theme}
-          onValueChange={(next) => setTheme(next as "system" | "light" | "dark")}
-        />
-      </Box>
-    </SettingsGroup>
-  );
-}
-
-// The app language picker. `next-intl` supplies the localized group/option labels; the
-// choice is persisted and swaps the whole UI's messages at runtime (see LocaleProvider).
-function LanguageSetting() {
-  const t = useTranslations("SettingsDialog");
-  const { locale, setLocale } = useLocale();
-  return (
-    <SettingsGroup title={t("language.label")}>
-      <Box w="200px">
-        <SimpleSelect
-          items={LOCALES.map((code) => ({ value: code, label: t(`language.${code}`) }))}
-          value={locale}
-          onValueChange={(next) => setLocale(next as Locale)}
-        />
-      </Box>
-    </SettingsGroup>
   );
 }
 

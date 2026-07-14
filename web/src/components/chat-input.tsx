@@ -49,7 +49,7 @@ interface ChatInputProps {
   // level). Gates send and colours the composer border; the composer no longer
   // validates the directory itself.
   directoryValid?: boolean;
-  agents: { id: string; name: string; title?: string }[];
+  agents: { id: string; name: string; title?: string; description?: string }[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
   models: ModelOption[];
@@ -262,7 +262,7 @@ export function ChatInput({
 
   const agentCollection = useMemo(
     () => createListCollection({
-      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
+      items: agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id, description: agent.description ?? "" })),
     }),
     [agents]
   );
@@ -758,10 +758,15 @@ export function ChatInput({
             </Select.Control>
             <Portal>
               <Select.Positioner>
-                <Select.Content minW="max-content" w="max-content">
+                <Select.Content minW="220px" maxW="320px">
                   {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap">
-                      {item.label}
+                    <Select.Item item={item} key={item.value}>
+                      <Flex direction="column" minW={0} flex={1}>
+                        <Text fontSize="xs" fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
+                        {item.description ? (
+                          <Text fontSize="2xs" color="fg.muted" lineHeight="1.35" truncate>{item.description}</Text>
+                        ) : null}
+                      </Flex>
                       <Select.ItemIndicator />
                     </Select.Item>
                   ))}

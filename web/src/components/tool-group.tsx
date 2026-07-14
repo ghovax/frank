@@ -339,7 +339,7 @@ export const ToolGroup = memo(function ToolGroup({
           maxH={80}
           overflowY="auto"
         >
-          <Flex direction="column" gap={0.5}>
+          <Flex direction="column" gap={1}>
             {tools.map((tool, index) => (
               <ToolCall
                 key={tool.toolCallId || `tool-${index}`}

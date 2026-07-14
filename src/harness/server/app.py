@@ -2122,6 +2122,8 @@ class AgentInfo(BaseModel):
     id: str
     name: str
     title: str = ""
+    # What the agent is for — shown as the subtitle in the UI's agent picker.
+    description: str = ""
     # The agent's resolved ``provider/model`` identifier, or empty when it falls
     # Empty means the agent is misconfigured; runtime model selection is per-agent.
     model: str = ""

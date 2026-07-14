@@ -6,10 +6,10 @@
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
 
-import { Box, Button, chakra, EmptyState, Flex, IconButton, Kbd, Menu, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, chakra, EmptyState, Flex, IconButton, Input, Kbd, Menu, Text, VStack } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuGlobe, LuHardDrive, LuMessageSquare, LuSquarePen, LuTerminal, LuTrash2 } from "react-icons/lu";
+import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuGlobe, LuHardDrive, LuMessageSquare, LuSearch, LuSquarePen, LuTerminal, LuTrash2 } from "react-icons/lu";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
@@ -162,6 +162,11 @@ export function SessionsSidebar({
   const t = useTranslations("SessionsSidebar");
   // Delete is confirmed through a single shared dialog rather than a per-row one.
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
+  const [search, setSearch] = useState("");
+  const searchQuery = search.trim().toLowerCase();
+  const shownSessions = searchQuery
+    ? sessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
+    : sessions;
 
   const ConnectionIcon = CONNECTION_ICON[connectionKind ?? "local"];
 
@@ -180,7 +185,7 @@ export function SessionsSidebar({
       {/* "New session" reads as the first row of the list, not a separate button — a
           circle-plus leading glyph on the shared row grid, with a ⌘N hint that surfaces on
           hover. Disabled when we're already in a fresh, un-started conversation. */}
-      <Box px={2} flexShrink={0} pb={1}>
+      <Box px={2} flexShrink={0} pb={2}>
         <chakra.button
           type="button"
           display="flex"
@@ -210,6 +215,24 @@ export function SessionsSidebar({
               subtle shortcut hint rather than a raised keycap chip. */}
           <Kbd data-kbd-hint variant="plain" fontSize="2xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
         </chakra.button>
+      </Box>
+
+      {/* Filter the list by title — the same field treatment as the settings search. */}
+      <Box px={2} flexShrink={0} pb={2}>
+        <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg.subtle" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
+          <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
+          <Input
+            border="none"
+            size="xs"
+            h="full"
+            px={0}
+            placeholder={t("searchPlaceholder")}
+            aria-label={t("searchPlaceholder")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            _focusVisible={{ boxShadow: "none", outline: "none" }}
+          />
+        </Flex>
       </Box>
 
       <PanelBody pt={1}>
@@ -280,9 +303,11 @@ export function SessionsSidebar({
               </VStack>
             </EmptyState.Content>
           </EmptyState.Root>
+        ) : shownSessions.length === 0 ? (
+          <Text fontSize="xs" color="fg.muted" px={2} py={2}>{t("noMatches", { query: search })}</Text>
         ) : (
-          <VStack gap="1px" align="stretch">
-            {sessions.map((entry) => {
+          <VStack gap={1} align="stretch">
+            {shownSessions.map((entry) => {
               const isActive = entry.sessionId === activeSessionId;
               const indicator = sessionIndicator(entry, isActive, unseenCompletions);
               const title = entry.title || t("untitledConversation");

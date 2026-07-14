@@ -373,6 +373,8 @@ export interface AgentSummary {
   id: string;
   name: string;
   title?: string;
+  // What the agent is for — shown as the subtitle in the agent picker.
+  description?: string;
   // The agent's resolved `provider/model` identifier. Empty means the agent is
   // missing a runnable model configuration.
   model?: string;
