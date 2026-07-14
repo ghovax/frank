@@ -51,6 +51,8 @@ import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactI
 import type { ConnectionTarget } from "@/lib/connection";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
+import { closePermissionNotification, notifyPermissionRequest, setPermissionNotificationHandler } from "@/lib/notify";
 
 // A Chakra Box that is also a motion component, so the right panel region can
 // animate its open/close (opacity + slide) exactly like the history sidebar on
@@ -437,7 +439,9 @@ export function ChatPanel({
   const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
-  const [artifactPanelWidth, setArtifactPanelWidth] = useState(560);
+  // Default right-region width: comfortable for one panel without dwarfing the
+  // transcript (pairs with the sidebar default of 240 in page.tsx). Drag grows it.
+  const [artifactPanelWidth, setArtifactPanelWidth] = useState(480);
   // Tabs are keyed by artifactId. A tab opens from the transcript (an open_artifact
   // result) or from History mode (selecting a changed file); its versions and bytes come
   // from the backend endpoints, refreshed live on the `artifact_captured` broadcast.
@@ -707,11 +711,15 @@ export function ChatPanel({
   }, [initialSessionId]);
 
   // New content is followed by the layout effect above (only while pinned); this
-  // just surfaces the streaming flag to the parent. The initial jump-to-bottom is
-  // also handled there: pinned starts true, so the first post-load pass lands at
-  // the bottom instantly.
+  // surfaces the streaming flag to the parent and plays the turn-end chime on the
+  // live→settled transition (never on mount, so loading a finished session is
+  // silent). The initial jump-to-bottom is also handled there: pinned starts
+  // true, so the first post-load pass lands at the bottom instantly.
+  const wasStreamingRef = useRef(false);
   useEffect(() => {
     onStreamingChangeRef.current?.(isStreaming);
+    if (wasStreamingRef.current && !isStreaming) playTurnEndSound();
+    wasStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
   async function handlePermissionModeChange(nextMode: PermissionMode) {
@@ -1202,6 +1210,42 @@ export function ChatPanel({
       break;
     }
   }
+
+  // Audio + system-notification side of a pending decision. The attention cue
+  // plays once per prompt (keyed by requestId, so re-renders never repeat it);
+  // a permission prompt additionally raises a system notification carrying the
+  // overlay's own primary action ("Allow once") as its action button — shown
+  // only while the window is unfocused, and retracted the moment the request
+  // resolves or is superseded, so nothing stale lingers in the notification
+  // center. Strings reuse the overlay's, so the two surfaces can never drift.
+  const tPermission = useTranslations("PermissionOverlay");
+  const pendingPermissionId = pendingPrompt?.kind === "permission" ? pendingPrompt.permission.requestId : "";
+  const pendingQuestionId = pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
+  const pendingPermissionBody = pendingPrompt?.kind === "permission" ? pendingPrompt.command || pendingPrompt.title : "";
+  const notifiedPermissionRef = useRef("");
+  useEffect(() => {
+    const previous = notifiedPermissionRef.current;
+    if (previous && previous !== pendingPermissionId) void closePermissionNotification(previous);
+    notifiedPermissionRef.current = pendingPermissionId;
+    if (!pendingPermissionId) return;
+    playAttentionSound();
+    void notifyPermissionRequest({
+      requestId: pendingPermissionId,
+      title: tPermission("approvalNeeded"),
+      body: pendingPermissionBody,
+      actionLabel: tPermission("allowOnce"),
+    });
+  }, [pendingPermissionId, pendingPermissionBody, tPermission]);
+  useEffect(() => {
+    if (pendingQuestionId) playAttentionSound();
+  }, [pendingQuestionId]);
+  // The notification's action button resolves the request exactly like the
+  // overlay's primary button would.
+  useEffect(() => {
+    setPermissionNotificationHandler((requestId) => handlePermission(requestId, "allow_once"));
+    return () => setPermissionNotificationHandler(null);
+  }, [handlePermission]);
+
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
   // client-side after a change) rather than in an effect.
@@ -1221,7 +1265,9 @@ export function ChatPanel({
     const startWidth = artifactPanelWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(900, Math.max(340, startWidth + startX - moveEvent.clientX));
+      // Clamp to the same bounds the region's CSS enforces (minW 360 / maxW 80vw,
+      // capped at 900) so the drag can never fight the styled limits.
+      const nextWidth = Math.min(Math.min(900, Math.round(window.innerWidth * 0.8)), Math.max(360, startWidth + startX - moveEvent.clientX));
       setArtifactPanelWidth(nextWidth);
     }
 

@@ -14,6 +14,7 @@ import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, resolveReachableConnectionUrl, type ConnectionTarget } from "@/lib/connection";
 import { setSessionConnection } from "@/lib/connection-store";
+import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds";
 
 // SessionEntry and the sessions-sidebar UI live in the SessionsSidebar component (the
 // chat history is its own unit); this page owns the data + the notification tracking.
@@ -121,7 +122,10 @@ function ProjectWorkspace() {
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<PermissionMode>("default");
   const [compactionKeepRecentTurns, setCompactionKeepRecentTurns] = useState(8);
   const [historyOpen, setHistoryOpen] = useState(true);
-  const [historyWidth, setHistoryWidth] = useState(272);
+  // Default sidebar width: enough for typical session titles without eating the
+  // transcript. Paired with the panel-region default in chat-panel.tsx (480) —
+  // both open at their comfortable minimum and grow by drag, never the reverse.
+  const [historyWidth, setHistoryWidth] = useState(240);
 
   const isCompactViewport = useCallback(() => {
     return window.matchMedia("(max-width: 767px)").matches;
@@ -257,23 +261,36 @@ function ProjectWorkspace() {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     // Flag any non-active session that just went from busy → idle (finished a run while
     // you weren't looking) as an unread completion. Comparing against the previous
-    // snapshot keeps this out of a render effect.
+    // snapshot keeps this out of a render effect. The transition is computed outside
+    // the state updater so the turn-end chime (a side effect) plays exactly once per
+    // finish — the same cue the active session's own settle plays.
     const activeId = activeSessionIdRef.current;
-    setUnseenCompletions((current) => {
-      let next: Set<string> | null = null;
-      for (const session of mapped) {
+    const finishedUnviewed = mapped
+      .filter((session) => {
         const previous = previousById.get(session.sessionId);
         const wasBusy = !!previous && (previous.running || previous.filesystemLeases.length > 0);
         const isBusy = session.running || session.filesystemLeases.length > 0;
-        const finishedUnviewed =
-          wasBusy && !isBusy && session.sessionId !== activeId && !session.awaitingInput && !session.workspaceError;
-        if (finishedUnviewed && !current.has(session.sessionId)) {
-          next = next ?? new Set(current);
-          next.add(session.sessionId);
-        }
-      }
-      return next ?? current;
+        return wasBusy && !isBusy && session.sessionId !== activeId && !session.awaitingInput && !session.workspaceError;
+      })
+      .map((session) => session.sessionId);
+    if (finishedUnviewed.length > 0) {
+      playTurnEndSound();
+      setUnseenCompletions((current) => {
+        const additions = finishedUnviewed.filter((id) => !current.has(id));
+        if (additions.length === 0) return current;
+        const next = new Set(current);
+        for (const id of additions) next.add(id);
+        return next;
+      });
+    }
+    // A background session newly waiting on a decision gets the same attention
+    // cue the active session's overlay plays — the yellow dot alone is easy to
+    // miss. (The active session's own prompts are handled in ChatPanel.)
+    const newlyAwaiting = mapped.some((session) => {
+      const previous = previousById.get(session.sessionId);
+      return session.awaitingInput && !!previous && !previous.awaitingInput && session.sessionId !== activeId;
     });
+    if (newlyAwaiting) playAttentionSound();
     sessionsRef.current = mapped;
     setSessions(mapped);
     setSessionsLoaded(true);
@@ -299,6 +316,9 @@ function ProjectWorkspace() {
         })
         .catch(() => {});
     };
+    // Arm the audio cues on the first user interaction (browsers keep audio
+    // suspended until a gesture); every later chime plays immediately.
+    primeSounds();
     refreshConnectionTargets()
       .then((targets) => loadSessions(targets))
       .catch(() => loadSessions());

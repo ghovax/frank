@@ -159,7 +159,7 @@ export function SessionsSidebar({
       </Box>
 
       <PanelBody>
-        <Flex align="center" gap={1.5} mb={2} color="fg.muted">
+        <Flex align="center" gap={1.5} mb={1.5} color="fg.muted">
           <Text textStyle="sectionLabel" flex={1}>{t("recents")}</Text>
           <DropdownMenu
             trigger={
@@ -209,7 +209,10 @@ export function SessionsSidebar({
             </EmptyState.Content>
           </EmptyState.Root>
         ) : (
-          <VStack gap={1} align="stretch">
+          <VStack gap={0.5} align="stretch">
+            {/* gap 0.5 + py 1: ~26px row pitch — the same density scale as the
+                transcript's activity lines (24px), so the sidebar reads as the
+                same instrument. The hover tint keeps rows separable. */}
             {sessions.map((entry) => {
               const sessionMeta = formatSessionTimestamp(entry.createdAt);
               const activeLease = entry.filesystemLeases[0];
@@ -256,7 +259,7 @@ export function SessionsSidebar({
                 >
                   <Box
                     px={2}
-                    py={1.5}
+                    py={1}
                     borderRadius="md"
                     cursor="pointer"
                     // The open session is marked only by a soft, non-aggressive blue tint.

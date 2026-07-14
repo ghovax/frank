@@ -110,7 +110,9 @@ samp {
   }
 }
 
-/* A soft breathing pulse for the "still working" status dot in the sessions sidebar. */
+/* A soft breathing pulse for the "still working" status dot in the sessions
+   sidebar. Intensity only — the dot must never change size, so nothing around
+   it ever shifts and the motion stays a glow, not a throb. */
 .status-dot-pulse {
   animation: status-dot-pulse 1.5s ease-in-out infinite;
 }
@@ -119,12 +121,10 @@ samp {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
   }
 
   50% {
-    opacity: 0.3;
-    transform: scale(0.66);
+    opacity: 0.35;
   }
 }
 
