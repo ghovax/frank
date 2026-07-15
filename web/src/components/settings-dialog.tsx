@@ -616,8 +616,8 @@ export function SettingsDialog({
                 beside a column that carries the header, the scrolling content, and the footer —
                 so its tint never gets cut off between a separate header and footer. */}
                 <Flex direction="column" w={52} flexShrink={0} borderRightWidth="1px" borderColor="border.muted" minH={0} bg="bg.subtle">
-                  <Box px={2} pt={3} pb={2} flexShrink={0}>
-                    <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
+                  <Box p={3} flexShrink={0}>
+                    <Flex align="center" gap={2} h={8} px={3} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
                       <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
                       <Input
                         border="none"
@@ -632,8 +632,8 @@ export function SettingsDialog({
                       />
                     </Flex>
                   </Box>
-                  <Box flex={1} minH={0} overflowY="auto" px={2} pb={3}>
-                    <Text pb={1} textStyle="sectionLabel">{t("title")}</Text>
+                  <Box flex={1} minH={0} overflowY="auto" px={3} pb={3}>
+                    <Text pb={2} textStyle="sectionLabel">{t("title")}</Text>
                     <Flex direction="column" gap={1}>
                       {pages.map((page) => {
                         const active = !searching && page.id === activePage.id;
