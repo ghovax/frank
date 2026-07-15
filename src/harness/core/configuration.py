@@ -877,10 +877,20 @@ class PromptLoader:
     def _replace_variables(template: str, variables: dict[str, str], template_name: str = "") -> str:
         """Substitute ``{{ name }}`` placeholders (spaced or not) from ``variables``.
 
-        Rendering is strict: a placeholder with no matching variable, or any ``{{ … }}``
-        left standing after substitution (a malformed or unknown placeholder), raises
-        rather than silently shipping the raw braces into a prompt the model would see."""
+        Rendering is strict: a placeholder with no matching variable, or any ``{{ … }}`` in the
+        template that is not a well-formed placeholder, raises rather than silently shipping raw
+        braces into a prompt the model would see. The strictness applies to the *template* only —
+        braces that appear inside a substituted value (a tool result echoing Handlebars, a file
+        of Jinja, AppleScript record syntax) are data, never placeholders, and pass through."""
         where = f" in prompt '{template_name}'" if template_name else ""
+        placeholder = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+        # A {{ … }} in the template that is not a well-formed {{ name }} (a dotted path, a space
+        # in the name, an unclosed brace) is a template bug — catch it before substitution so it
+        # can't be confused with stray output. Checked on the template, so injected values are safe.
+        malformed = re.search(r"\{\{.*?\}\}", placeholder.sub("", template), re.DOTALL)
+        if malformed is not None:
+            raise ValueError(f"Malformed placeholder {malformed.group(0)!r}{where}.")
 
         def replacer(match: re.Match[str]) -> str:
             variable_name = match.group(1)
@@ -891,13 +901,7 @@ class PromptLoader:
             return variables[variable_name]
 
         # Accept both the spaced ({{ name }}) and unspaced ({{name}}) forms.
-        rendered = re.sub(r"\{\{\s*(\w+)\s*\}\}", replacer, template)
-        # Anything of the {{ … }} shape still present could not be substituted — a bad name
-        # or unsupported syntax. Fail loudly instead of leaking it into the prompt.
-        leftover = re.search(r"\{\{.*?\}\}", rendered, re.DOTALL)
-        if leftover is not None:
-            raise ValueError(f"Unsubstituted placeholder {leftover.group(0)!r}{where} after rendering.")
-        return rendered
+        return placeholder.sub(replacer, template)
 
 
 def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path]:
