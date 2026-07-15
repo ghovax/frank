@@ -21,6 +21,8 @@ import {
   LuCompass,
   LuCircleStop,
   LuUserSearch,
+  LuMessageSquareShare,
+  LuMessageSquareReply,
 } from "react-icons/lu";
 
 interface ToolDisplayInfo {
@@ -42,7 +44,7 @@ interface ToolDisplayInfo {
 // Every tool that has a first-class icon/label below. Anything else is "unknown"
 // and surfaces its raw name in monospace.
 const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "web_search", "bash", "spawn_agent", "cancel_agent", "read_task", "read_file", "find_files",
+  "web_search", "bash", "spawn_agent", "cancel_agent", "ask_agent", "respond_agent", "read_task", "read_file", "find_files",
   "search_content", "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
   "set_tasks", "update_tasks", "update_goal", "computer", "browser",
   "work_habits",
@@ -65,6 +67,10 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuUsers, iconColor: "purple.fg" };
     case "cancel_agent":
       return { icon: LuCircleStop, iconColor: "red.fg" };
+    case "ask_agent":
+      return { icon: LuMessageSquareShare, iconColor: "purple.fg" };
+    case "respond_agent":
+      return { icon: LuMessageSquareReply, iconColor: "blue.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
     case "read_file":
@@ -116,6 +122,10 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
     case "cancel_agent":
       return "Canceling spawned agent";
+    case "ask_agent":
+      return "Asking an agent";
+    case "respond_agent":
+      return "Responding to an agent";
     case "read_task":
       return "Reading a related task";
     case "read_file":

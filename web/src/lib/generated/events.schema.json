@@ -690,8 +690,17 @@
     },
     "TurnContext": {
       "additionalProperties": false,
-      "description": "The single structured object injected each turn, replacing the old pile of\nnewline-joined JSON blobs.",
+      "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
       "properties": {
+        "active_agents": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
         "active_goal": {
           "default": "",
           "type": "string"
@@ -699,15 +708,13 @@
         "background": {
           "tsType": "Record<string, unknown>"
         },
-        "pwd": {
+        "now": {
           "default": "",
           "type": "string"
         },
-        "reminders": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "pwd": {
+          "default": "",
+          "type": "string"
         },
         "tasks": {
           "items": {

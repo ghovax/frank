@@ -106,6 +106,33 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
   );
 }
 
+function AskAgentCallView({ args }: { args: Record<string, unknown> }) {
+  const t = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      <InlineField label={t("taskId")}>
+        <Mono>{asString(args.task_identifier)}</Mono>
+      </InlineField>
+      <Field label={t("question")}>
+        <MarkdownContent content={asString(args.question)} fontSize="xs" />
+      </Field>
+    </FieldList>
+  );
+}
+
+function RespondAgentCallView({ args }: { args: Record<string, unknown> }) {
+  const t = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      <InlineField label={t("messageId")}>
+        <Mono>{asString(args.message_identifier)}</Mono>
+      </InlineField>
+      <Field label={t("response")}>
+        <MarkdownContent content={asString(args.response)} fontSize="xs" />
+      </Field>
+    </FieldList>
+  );
+}
 
 // Backend action name → a clear, human label key. The tool's raw actions are terse verbs
 // ("observe", "screenshot"); the badge maps them to what they actually do, the same way every
@@ -306,7 +333,7 @@ function taskStatusAppearance(status: string): { key: string; palette: string } 
   return { key: TASK_STATUS_LABEL_KEY[kind] ?? "statusUnknown", palette: STATUS_PALETTE[kind] };
 }
 
-// "task-7" -> "#7" — the internal id is never shown to the user, only its number.
+// "task-..." -> "#..." — the internal id is never shown to the user, only its suffix.
 function taskHashLabel(id: string): string {
   const match = id.match(/(\d+)\s*$/);
   return match ? `#${match[1]}` : id;
@@ -412,6 +439,8 @@ const PROSE_FIELD_KEYS = new Set([
   "content",
   "instructions",
   "query",
+  "question",
+  "response",
 ]);
 
 // Translation keys for raw argument/result key labels. Falls back to the raw key
@@ -430,6 +459,9 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   prompt: "prompt",
   task_id: "taskId",
   task_identifier: "taskId",
+  message_identifier: "messageId",
+  question: "question",
+  response: "response",
   code: "fieldStatus",
   // file / search tools (arguments)
   file_path: "filePath",
@@ -779,6 +811,10 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <WebSearchCallView args={args} />;
       case "spawn_agent":
         return <SpawnAgentCallView args={args} agents={agents} />;
+      case "ask_agent":
+        return <AskAgentCallView args={args} />;
+      case "respond_agent":
+        return <RespondAgentCallView args={args} />;
       case "set_tasks":
         return <WriteTasksCallView args={args} />;
       case "update_tasks":
@@ -841,6 +877,32 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
       ) : null}
       {output && outputFile ? <InlineField label={t("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
       {asString(data.full_output_file) ? <InlineField label={t("fullOutput")}><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}
+    </FieldList>
+  );
+}
+
+function AgentMessageResultView({ data }: { data: Record<string, unknown> }) {
+  const t = useTranslations("ToolViews");
+  const code = asString(data.code);
+  const successful = code === "agent_question_queued" || code === "agent_response_delivered";
+  if (!successful) return <ErrorView message={asString(data.message) || t("agentMessageFailed")} />;
+  return (
+    <FieldList>
+      <InlineField label={t("fieldStatus")}>
+        <Pill colorPalette="green">
+          {code === "agent_question_queued" ? t("agentQuestionQueued") : t("agentResponseDelivered")}
+        </Pill>
+      </InlineField>
+      {asString(data.agent) && (
+        <InlineField label={t("agent")}>
+          <Pill colorPalette="purple">{asString(data.agent)}</Pill>
+        </InlineField>
+      )}
+      {asString(data.message_identifier) && (
+        <InlineField label={t("messageId")}>
+          <Mono>{asString(data.message_identifier)}</Mono>
+        </InlineField>
+      )}
     </FieldList>
   );
 }
@@ -2229,8 +2291,8 @@ export function ToolResultView({ name, content, args }: { name: string; content:
   // internal noise — the call card already conveys that discovery happened.
   if (name === "list_mcp_tools" || name === "list_mcp_resources") return null;
 
-  // The task tools' result is a bare confirmation string that names raw "task-N"
-  // ids (for the model); the call card already shows the tasks as #N, so don't
+  // The task tools' result is a bare confirmation string that names raw "task-..."
+  // ids (for the model); the call card already shows the tasks as #..., so don't
   // re-render the confirmation and leak the internal ids.
   if (name === "set_tasks" || name === "update_tasks") return null;
 
@@ -2250,6 +2312,7 @@ export function ToolResultView({ name, content, args }: { name: string; content:
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || t("searchFailed")} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
+    if (name === "ask_agent" || name === "respond_agent") return <AgentMessageResultView data={data} />;
     if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
     // A spawned agent's turn failed before it could report — surface the real reason
     // (e.g. its model was rate-limited) rather than a bland field dump.

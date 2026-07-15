@@ -51,6 +51,7 @@ from a2a.types import (
 from a2a.utils import new_task
 
 from harness.core.agent import AgentRuntime, StreamEvent
+from harness.core.agent_messages import AgentMessage
 from harness.core.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
 from harness.core.events import ToolStatus, tool_status_from_result
 from harness.core.configuration import (
@@ -1121,6 +1122,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # reframed as the actionable "this model can't read images" case.
         turn_has_images = False
         runtime: AgentRuntime | None = None
+        participant_registered = False
         track_context_activity = False
         track_steerable_turn = False
         on_turn_state = self._on_turn_state
@@ -1248,6 +1250,27 @@ class HarnessAgentExecutor(AgentExecutor):
             self._aborts[task.id] = runtime
             runtime.set_a2a_task_id(task.id)
             runtime.set_delegation_depth(int(metadata.get(Metadata.DEPTH, 0)))
+            if self._registry is not None:
+                participant_task_identifier = (
+                    str(metadata.get(Metadata.AGENT_LANE_STEP_ID, ""))
+                    if delegated
+                    else task.id
+                )
+                runtime.set_agent_messaging(
+                    self._registry.ask_agent,
+                    self._registry.respond_agent,
+                    self._registry.reserve_participant,
+                    self._registry.release_reserved_participant,
+                    self._registry.active_agents,
+                )
+                self._registry.register_participant(
+                    task_id=task.id,
+                    task_identifier=participant_task_identifier,
+                    context_id=task.context_id,
+                    agent_name=self._agent_name,
+                    runtime=runtime,
+                )
+                participant_registered = True
 
             # A manual compaction turn runs no model turn: it summarizes the older
             # history in place and emits the compaction parts (the live indicator +
@@ -1472,6 +1495,8 @@ class HarnessAgentExecutor(AgentExecutor):
             logger.exception("Agent turn failed: %s", exception)
             await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception, had_images=turn_has_images))]))
         finally:
+            if participant_registered and self._registry is not None:
+                self._registry.unregister_participant(task.id)
             self._aborts.pop(task.id, None)
             # The context's live state, or None if the session was deleted mid-turn
             # (teardown_context popped it). A torn-down context must not be re-persisted
@@ -1525,20 +1550,44 @@ class HarnessAgentExecutor(AgentExecutor):
             await updater.cancel()
 
 
+@dataclass(frozen=True)
+class _ActiveAgentParticipant:
+    task_id: str
+    task_identifier: str
+    context_id: str
+    agent_name: str
+    runtime: AgentRuntime
+
+
+@dataclass
+class _AgentQuestion:
+    identifier: str
+    sender_task_id: str
+    recipient_task_id: str
+    recipient_task_identifier: str
+    recipient_agent_name: str
+    content: str
+
+
 class AgentRegistry:
     """The A2A agent directory.
 
     Holds every served agent's request handler and AgentCard, and provides A2A
     *delegation*: one agent invokes another by sending it a real A2A message
-    (``message/stream``) and receiving its task back. This is how agents
-    communicate — there is no separate, custom inter-agent channel; an agent
-    call is identical to an external client calling that agent's endpoint.
+    (``message/stream``) and receiving its task back. It also owns the mailbox
+    between concurrently active tasks. The A2A context is the authorization and
+    discovery boundary; mailbox delivery itself is a local safe-point operation,
+    because A2A has no RPC for injecting a peer question into a running model call.
     """
 
     def __init__(self, task_store: TaskStore):
         self._task_store = task_store
         self._handlers: dict[str, RequestHandler] = {}
         self._cards: dict[str, AgentCard] = {}
+        self._participants: dict[str, _ActiveAgentParticipant] = {}
+        self._participant_task_ids: dict[str, str] = {}
+        self._reserved_participants: dict[str, tuple[str, str]] = {}
+        self._agent_questions: dict[str, _AgentQuestion] = {}
 
     def register(self, name: str, handler: RequestHandler, card: AgentCard) -> None:
         self._handlers[name] = handler
@@ -1552,6 +1601,260 @@ class AgentRegistry:
 
     def card(self, name: str) -> Optional[AgentCard]:
         return self._cards.get(name)
+
+    def active_agents(self, requesting_task_id: str) -> list[dict[str, str]]:
+        """List the other addressable participants in the requester's A2A context."""
+        requester = self._participants.get(requesting_task_id)
+        if requester is None:
+            return []
+        active_participants = [
+            participant
+            for participant in self._participants.values()
+            if (
+                participant.context_id == requester.context_id
+                and participant.task_id != requesting_task_id
+            )
+        ]
+        return [
+            {
+                "task_identifier": participant.task_identifier,
+                "agent": participant.agent_name,
+            }
+            for participant in sorted(
+                active_participants,
+                key=lambda participant: participant.task_identifier,
+            )
+        ]
+
+    def reserve_participant(
+        self,
+        task_identifier: str,
+        context_id: str,
+        agent_name: str,
+    ) -> None:
+        """Reserve a public handle while its delegated A2A task is starting."""
+        if task_identifier:
+            self._reserved_participants[task_identifier] = (context_id, agent_name)
+
+    def register_participant(
+        self,
+        task_id: str,
+        task_identifier: str,
+        context_id: str,
+        agent_name: str,
+        runtime: AgentRuntime,
+    ) -> None:
+        """Register an active A2A task as an addressable mailbox participant."""
+        public_identifier = task_identifier or task_id
+        participant = _ActiveAgentParticipant(
+            task_id=task_id,
+            task_identifier=public_identifier,
+            context_id=context_id,
+            agent_name=agent_name,
+            runtime=runtime,
+        )
+        self._participants[task_id] = participant
+        self._participant_task_ids[public_identifier] = task_id
+        self._participant_task_ids[task_id] = task_id
+        self._reserved_participants.pop(public_identifier, None)
+        for question in self._agent_questions.values():
+            if (
+                not question.recipient_task_id
+                and question.recipient_task_identifier == public_identifier
+            ):
+                question.recipient_task_id = task_id
+                self._deliver_question(question)
+
+    def unregister_participant(self, task_id: str) -> None:
+        """Remove a terminal task and settle every unanswered mailbox exchange."""
+        participant = self._participants.pop(task_id, None)
+        if participant is None:
+            return
+        self._participant_task_ids.pop(participant.task_identifier, None)
+        self._participant_task_ids.pop(task_id, None)
+        for question_identifier, question in list(self._agent_questions.items()):
+            if question.sender_task_id == task_id:
+                recipient = self._participants.get(question.recipient_task_id)
+                if recipient is not None:
+                    recipient.runtime.enqueue_agent_message(AgentMessage(
+                        identifier=f"message-{uuid.uuid4().hex}",
+                        kind="withdrawn",
+                        sender_task_id=participant.task_id,
+                        sender_task_identifier=participant.task_identifier,
+                        sender_agent_name=participant.agent_name,
+                        recipient_task_id=recipient.task_id,
+                        recipient_task_identifier=recipient.task_identifier,
+                        recipient_agent_name=recipient.agent_name,
+                        content="",
+                        question_identifier=question.identifier,
+                    ))
+                self._agent_questions.pop(question_identifier, None)
+            elif question.recipient_task_id == task_id:
+                self._fail_question(
+                    question,
+                    participant.task_identifier,
+                    participant.agent_name,
+                )
+
+    def release_reserved_participant(self, task_identifier: str) -> None:
+        """Fail queued questions when a delegated task never becomes active."""
+        reservation = self._reserved_participants.pop(task_identifier, None)
+        if reservation is None:
+            return
+        agent_name = reservation[1]
+        for question in list(self._agent_questions.values()):
+            if (
+                not question.recipient_task_id
+                and question.recipient_task_identifier == task_identifier
+            ):
+                self._fail_question(question, task_identifier, agent_name)
+
+    def ask_agent(
+        self,
+        sender_task_id: str,
+        recipient_task_identifier: str,
+        content: str,
+    ) -> dict[str, Any]:
+        """Queue a question for an active or starting agent in the same A2A context."""
+        sender = self._participants.get(sender_task_id)
+        if sender is None:
+            return {
+                "code": "agent_sender_not_active",
+                "message": "The sending agent is no longer active.",
+            }
+        recipient_task_id = self._participant_task_ids.get(recipient_task_identifier, "")
+        recipient = self._participants.get(recipient_task_id)
+        reservation = self._reserved_participants.get(recipient_task_identifier)
+        if recipient is None and reservation is None:
+            return {
+                "code": "agent_not_active",
+                "task_identifier": recipient_task_identifier,
+                "message": "No active agent has that task identifier.",
+            }
+        if recipient is not None:
+            recipient_context_id = recipient.context_id
+            recipient_agent_name = recipient.agent_name
+        else:
+            assert reservation is not None
+            recipient_context_id, recipient_agent_name = reservation
+        if recipient_context_id != sender.context_id:
+            return {
+                "code": "agent_context_mismatch",
+                "task_identifier": recipient_task_identifier,
+                "message": "Agents may communicate only within the same task context.",
+            }
+        if recipient is not None and recipient.task_id == sender.task_id:
+            return {
+                "code": "agent_self_message",
+                "message": "An agent cannot ask itself a peer question.",
+            }
+        message_identifier = f"message-{uuid.uuid4().hex}"
+        question = _AgentQuestion(
+            identifier=message_identifier,
+            sender_task_id=sender_task_id,
+            recipient_task_id=recipient_task_id,
+            recipient_task_identifier=recipient_task_identifier,
+            recipient_agent_name=recipient_agent_name,
+            content=content,
+        )
+        self._agent_questions[message_identifier] = question
+        if recipient is not None:
+            self._deliver_question(question)
+        return {
+            "code": "agent_question_queued",
+            "message_identifier": message_identifier,
+            "task_identifier": recipient_task_identifier,
+            "agent": recipient_agent_name,
+            "message": "The question will be delivered at the agent's next opening.",
+        }
+
+    def respond_agent(
+        self,
+        responder_task_id: str,
+        question_identifier: str,
+        content: str,
+    ) -> dict[str, Any]:
+        """Deliver one response to the active agent that asked the question."""
+        question = self._agent_questions.get(question_identifier)
+        responder = self._participants.get(responder_task_id)
+        if question is None:
+            return {
+                "code": "agent_question_not_found",
+                "message": "No active agent question has that message identifier.",
+            }
+        if responder is None or question.recipient_task_id != responder_task_id:
+            return {
+                "code": "agent_response_not_allowed",
+                "message": "This question was not addressed to the responding agent.",
+            }
+        recipient = self._participants.get(question.sender_task_id)
+        if recipient is None:
+            self._agent_questions.pop(question_identifier, None)
+            return {
+                "code": "agent_question_withdrawn",
+                "message": "The requesting agent is no longer active.",
+            }
+        self._agent_questions.pop(question_identifier, None)
+        recipient.runtime.enqueue_agent_message(AgentMessage(
+            identifier=f"message-{uuid.uuid4().hex}",
+            kind="response",
+            sender_task_id=responder.task_id,
+            sender_task_identifier=responder.task_identifier,
+            sender_agent_name=responder.agent_name,
+            recipient_task_id=recipient.task_id,
+            recipient_task_identifier=recipient.task_identifier,
+            recipient_agent_name=recipient.agent_name,
+            content=content,
+            question_identifier=question_identifier,
+        ))
+        return {
+            "code": "agent_response_delivered",
+            "message_identifier": question_identifier,
+            "task_identifier": recipient.task_identifier,
+            "agent": recipient.agent_name,
+            "message": "The response was delivered to the requesting agent.",
+        }
+
+    def _deliver_question(self, question: _AgentQuestion) -> None:
+        sender = self._participants.get(question.sender_task_id)
+        recipient = self._participants.get(question.recipient_task_id)
+        if sender is None or recipient is None:
+            return
+        recipient.runtime.enqueue_agent_message(AgentMessage(
+            identifier=question.identifier,
+            kind="question",
+            sender_task_id=sender.task_id,
+            sender_task_identifier=sender.task_identifier,
+            sender_agent_name=sender.agent_name,
+            recipient_task_id=recipient.task_id,
+            recipient_task_identifier=recipient.task_identifier,
+            recipient_agent_name=recipient.agent_name,
+            content=question.content,
+            question_identifier=question.identifier,
+        ))
+
+    def _fail_question(
+        self,
+        question: _AgentQuestion,
+        unavailable_task_identifier: str,
+        unavailable_agent_name: str,
+    ) -> None:
+        sender = self._participants.get(question.sender_task_id)
+        self._agent_questions.pop(question.identifier, None)
+        if sender is None:
+            return
+        sender.runtime.enqueue_agent_message(AgentMessage(
+            identifier=f"message-{uuid.uuid4().hex}",
+            kind="failed",
+            sender_task_id="",
+            sender_task_identifier=unavailable_task_identifier,
+            sender_agent_name=unavailable_agent_name,
+            recipient_task_id=sender.task_id,
+            recipient_task_identifier=sender.task_identifier,
+            recipient_agent_name=sender.agent_name,
+            content="",
+            question_identifier=question.identifier,
+        ))
 
     async def cancel_delegated(self, agent_name: str, task_id: str) -> None:
         """Cancel a running agent's own A2A task (via its handler's tasks/cancel),

@@ -20,10 +20,10 @@ function CapabilityTitle({ title, identifier }: { title?: string | null; identif
   return <Span fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Span>;
 }
 
-// MCP tool descriptions come from Python docstrings, which carry an Args:/
-// Returns:/etc. section that duplicates the tool's input schema. For the
+// MCP tool descriptions come from Python docstrings, whose Arguments:/
+// Returns:/etc. sections duplicate the tool's input schema. For the
 // capability browser we only show the human-readable summary above it.
-const DOCSTRING_SECTION = /\n[ \t]*(Args|Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
+const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
 
 function docstringSummary(description: string): string {
   const match = description.match(DOCSTRING_SECTION);

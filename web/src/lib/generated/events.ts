@@ -280,16 +280,19 @@ export interface ToolResultEvent {
   tool_name: string;
 }
 /**
- * The single structured object injected each turn, replacing the old pile of
- * newline-joined JSON blobs.
+ * The structured per-turn context injected at the end of the message list: the current time,
+ * where the agent is, its goal, its tasks, and its background work.
  *
  * This interface was referenced by `DaisyEvents`'s JSON-Schema
  * via the `definition` "TurnContext".
  */
 export interface TurnContext {
+  active_agents?: {
+    [k: string]: string;
+  }[];
   active_goal?: string;
   background?: Record<string, unknown>;
+  now?: string;
   pwd?: string;
-  reminders?: string[];
   tasks?: Record<string, unknown>[];
 }

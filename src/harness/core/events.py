@@ -287,6 +287,7 @@ class TurnContext(BaseModel):
     active_goal: str = ""
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     background: dict[str, Any] = Field(default_factory=dict)
+    active_agents: list[dict[str, str]] = Field(default_factory=list)
 
 
 MODEL_ENVELOPE_MODELS: tuple[type[BaseModel], ...] = (

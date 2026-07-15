@@ -1,6 +1,7 @@
+<script>
 // Harness artifact runtime.
 //
-// Injected as an inline <script> at the top of every opened HTML artifact
+// Injected as an inline script element at the top of every opened HTML artifact
 // (see `_inject_artifact_runtime`). It talks to the host over the postMessage
 // back-channel the front end already listens on (source: "artifact"),
 // doing two jobs:
@@ -11,7 +12,7 @@
 //      the front end sizes the artifact automatically and the model never has to
 //      guess a height.
 //
-// It is injected inline (rather than loaded via `<script src>`) so the error
+// It is injected inline rather than loaded from a separate source so the error
 // listeners are registered before the model's own scripts run and so an artifact
 // works without a second network fetch.
 (function () {
@@ -75,3 +76,4 @@
   setTimeout(measure, 300);
   setTimeout(measure, 1000);
 })();
+</script>

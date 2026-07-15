@@ -39,6 +39,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.codex_model import ChatCodexModel
 from harness.core.message_content import message_content_deltas, message_text
+from harness.core.agent_messages import AgentMessage
 from harness.core.file_leases import FileLeaseConflict, FileLeaseManager
 from harness.core.models import find_model, resolve_litellm
 from harness.core.providers import resolve_api_key
@@ -49,6 +50,8 @@ from harness.tools.tools import (
     web_search as web_search_tool,
     spawn_agent as spawn_tool,
     cancel_agent as cancel_agent_tool,
+    ask_agent as ask_agent_tool,
+    respond_agent as respond_agent_tool,
     read_task as read_task_tool,
     set_tasks as set_tasks_tool,
     update_tasks as update_tasks_tool,
@@ -534,6 +537,8 @@ def _build_tools(
         update_tasks_tool,
         update_goal_tool,
         read_task_tool,
+        ask_agent_tool,
+        respond_agent_tool,
     ]
     if not is_agent:
         available.append(open_artifact_tool)
@@ -868,6 +873,15 @@ class AgentRuntime:
         self._cancel_delegated: Optional[Callable] = None
         self._active_delegations: dict[str, str] = {}
         self._a2a_task_id: str = ""
+        self._ask_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
+        self._respond_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
+        self._reserve_agent: Optional[Callable[[str, str, str], None]] = None
+        self._release_reserved_agent: Optional[Callable[[str], None]] = None
+        self._active_agents: Optional[Callable[[str], list[dict[str, str]]]] = None
+        self._agent_messages: asyncio.Queue[AgentMessage] = asyncio.Queue()
+        self._agent_message_available = asyncio.Event()
+        self._pending_agent_questions: set[str] = set()
+        self._outstanding_agent_questions: set[str] = set()
         # Reads another A2A task (sibling/agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
         self._task_reader: Optional[Callable] = None
@@ -1198,6 +1212,26 @@ class AgentRuntime:
         """Install the immediate delivery path for path-tagged agent activity."""
         self._agent_event_sink = agent_event_sink
 
+    def set_agent_messaging(
+        self,
+        ask_agent: Callable[[str, str, str], dict[str, Any]],
+        respond_agent: Callable[[str, str, str], dict[str, Any]],
+        reserve_agent: Callable[[str, str, str], None],
+        release_reserved_agent: Callable[[str], None],
+        active_agents: Callable[[str], list[dict[str, str]]],
+    ) -> None:
+        """Install the active-task mailbox operations owned by the agent registry."""
+        self._ask_agent = ask_agent
+        self._respond_agent = respond_agent
+        self._reserve_agent = reserve_agent
+        self._release_reserved_agent = release_reserved_agent
+        self._active_agents = active_agents
+
+    def enqueue_agent_message(self, message: AgentMessage) -> None:
+        """Queue a peer delivery for the next safe model boundary."""
+        self._agent_messages.put_nowait(message)
+        self._agent_message_available.set()
+
     def set_a2a_task_id(self, task_id: str) -> None:
         """Record the A2A task id of the current turn so delegated agent
         tasks can reference it as their parent."""
@@ -1451,6 +1485,11 @@ class AgentRuntime:
                 "active_count": self._background.active_count(),
                 "recent_events": self._execution_history[-20:],
             },
+            active_agents=(
+                self._active_agents(self._a2a_task_id)
+                if self._active_agents is not None and self._a2a_task_id
+                else []
+            ),
         )
         return context.model_dump_json(exclude_defaults=True)
 
@@ -1686,6 +1725,57 @@ class AgentRuntime:
             self._steering_available.clear()
         return events
 
+    def _drain_agent_messages(self) -> bool:
+        """Deliver queued peer messages into the model conversation at a safe boundary."""
+        delivered = False
+        while not self._agent_messages.empty():
+            message = self._agent_messages.get_nowait()
+            delivered = True
+            variables = {
+                "message_identifier": message.question_identifier,
+                "sender_agent_name": message.sender_agent_name,
+                "sender_task_identifier": message.sender_task_identifier,
+                "recipient_agent_name": message.recipient_agent_name,
+                "recipient_task_identifier": message.recipient_task_identifier,
+                "content": message.content,
+            }
+            if message.kind == "question":
+                self._pending_agent_questions.add(message.question_identifier)
+                template_name = "agent_question_received"
+            elif message.kind == "response":
+                self._outstanding_agent_questions.discard(message.question_identifier)
+                template_name = "agent_response_received"
+            elif message.kind == "failed":
+                self._outstanding_agent_questions.discard(message.question_identifier)
+                template_name = "agent_message_failed"
+            else:
+                self._pending_agent_questions.discard(message.question_identifier)
+                template_name = "agent_question_withdrawn"
+            self._conversation.append(
+                self._harness_note_message(self._prompt_loader.load(template_name, variables))
+            )
+        if self._agent_messages.empty():
+            self._agent_message_available.clear()
+        return delivered
+
+    async def _wait_for_agent_message_or_abort(self) -> bool:
+        """Wait for an outstanding reply while keeping Stop immediately responsive."""
+        message_waiter = asyncio.create_task(self._agent_message_available.wait())
+        abort_waiter = asyncio.create_task(self._abort_event.wait())
+        try:
+            completed, _pending = await asyncio.wait(
+                {message_waiter, abort_waiter},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            return message_waiter in completed and self._agent_message_available.is_set()
+        finally:
+            message_waiter.cancel()
+            abort_waiter.cancel()
+            with suppress(BaseException):
+                await message_waiter
+            with suppress(BaseException):
+                await abort_waiter
+
     def _model_supports_vision(self) -> bool:
         """Whether the agent's model advertises image input. Unknown models (a
         custom endpoint not in the catalog) are assumed vision-capable — the
@@ -1787,6 +1877,8 @@ class AgentRuntime:
             # tracks them while the parent works through its own iterations.
             for agent_event in self._drain_spawned_agent_events():
                 yield agent_event
+
+            self._drain_agent_messages()
 
             background_events = self._background_result_events()
             if background_events:
@@ -1956,12 +2048,42 @@ class AgentRuntime:
                 final_text = message_text(response)
                 turn_final_response = final_text
                 self._conversation.append(response)
+                if self._drain_agent_messages():
+                    self._calls_this_turn += 1
+                    continue
                 steering_events = await self._drain_steering_messages()
                 if steering_events:
                     for steering_event in steering_events:
                         yield steering_event
                     self._calls_this_turn += 1
                     continue
+                if self._pending_agent_questions:
+                    self._conversation.append(self._harness_note_message(
+                        self._prompt_loader.load("agent_response_required", {})
+                    ))
+                    self._calls_this_turn += 1
+                    continue
+                if self._outstanding_agent_questions:
+                    yield StreamEvent(
+                        StreamEvent.Type.STATUS,
+                        code="waiting_for_agent_response",
+                    )
+                    if await self._wait_for_agent_message_or_abort():
+                        self._drain_agent_messages()
+                        self._calls_this_turn += 1
+                        continue
+                    self._record_turn(
+                        recorded_user_message,
+                        turn_tool_calls_log,
+                        turn_tool_results_log,
+                        "",
+                    )
+                    yield StreamEvent(
+                        StreamEvent.Type.DONE,
+                        text="",
+                        stop_reason="cancelled",
+                    )
+                    return
                 if self._active_goal and goal_continuations < self._GOAL_CONTINUATION_LIMIT:
                     goal_continuations += 1
                     self._calls_this_turn += 1
@@ -3176,6 +3298,66 @@ class AgentRuntime:
             result_data = _maybe_json(result)
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
 
+        elif tool_name == "ask_agent":
+            task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
+            question = str(tool_arguments.get("question", "")).strip()
+            if self._ask_agent is None or not self._a2a_task_id:
+                result = {
+                    "code": "agent_messaging_unavailable",
+                    "message": "Agent messaging is not available in this execution context.",
+                }
+            elif not task_identifier:
+                result = {
+                    "code": "invalid_agent_identifier",
+                    "message": "Pass an exact identifier from active_agents or spawn_agent.",
+                }
+            elif not question:
+                result = {
+                    "code": "empty_agent_question",
+                    "message": "Provide the question to send.",
+                }
+            else:
+                result = self._ask_agent(self._a2a_task_id, task_identifier, question)
+                if result.get("code") == "agent_question_queued":
+                    self._outstanding_agent_questions.add(str(result["message_identifier"]))
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                id=tool_call_identifier,
+                name=tool_name,
+                result=result,
+            )
+
+        elif tool_name == "respond_agent":
+            message_identifier = str(tool_arguments.get("message_identifier", "")).strip()
+            response_text = str(tool_arguments.get("response", "")).strip()
+            if self._respond_agent is None or not self._a2a_task_id:
+                result = {
+                    "code": "agent_messaging_unavailable",
+                    "message": "Agent messaging is not available in this execution context.",
+                }
+            elif not response_text:
+                result = {
+                    "code": "empty_agent_response",
+                    "message": "Provide the response to send.",
+                }
+            else:
+                result = self._respond_agent(
+                    self._a2a_task_id,
+                    message_identifier,
+                    response_text,
+                )
+                if result.get("code") in {
+                    "agent_response_delivered",
+                    "agent_question_withdrawn",
+                }:
+                    self._pending_agent_questions.discard(message_identifier)
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                id=tool_call_identifier,
+                name=tool_name,
+                result=result,
+            )
+
         elif tool_name == "spawn_agent":
             child_depth = self._delegation_depth + 1
             maximum_depth = self._global_configuration.maximum_delegation_depth
@@ -3223,6 +3405,9 @@ class AgentRuntime:
             self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": agent_name, "prompt": raw_agent_prompt})
             delegate = self._delegate
             if delegate is not None:
+                if self._reserve_agent is not None:
+                    self._reserve_agent(spawn_step_id, self._session_id, agent_name)
+
                 async def _run_spawned_agent() -> str:
                     child_task = None
                     child_task_id = ""
@@ -3279,6 +3464,8 @@ class AgentRuntime:
                         raise
                     finally:
                         self._active_delegations.pop(child_task_id, None)
+                        if self._release_reserved_agent is not None:
+                            self._release_reserved_agent(spawn_step_id)
 
                 # Non-detached: a Stop cancels the agent (it is active task work),
                 # but merely ending the turn does not — the job outlives the turn and
@@ -3286,6 +3473,7 @@ class AgentRuntime:
                 spawned_task_id = self._background.spawn(
                     "spawn_agent",
                     _run_spawned_agent(),
+                    identifier=spawn_step_id,
                     tool_call_identifier=tool_call_identifier,
                     arguments={
                         "agent": agent_name,
