@@ -112,9 +112,7 @@ interface ChatPanelProps {
 type TimelineItem =
   | { kind: "message"; message: ChatMessage }
   // A tool_group with no messages is a reasoning ("thinking") phase. `thinkingTurns`
-  // counts the distinct reasoning phases the model went through before/among these tools
-  // (each phase is one `thinking` message), so the group keeps a persistent thinking chip
-  // in its heading with that count — it does not vanish when the tools stream in over it.
+  // records whether reasoning exists so a standalone Thinking row can be retained.
   | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingTurns: number };
 
 // One versioned state of an artifact (the filmstrip walks these in sequence order).
@@ -279,8 +277,8 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   // swapped for another (which would flash a remount). A prose or user row that
   // isn't a tool group discards it.
   let pendingThinkingId: string | null = null;
-  // Each `thinking` message is one reasoning phase; count them so the group's brain chip can
-  // show how many times the model paused to plan (leading + interleaved between its calls).
+  // Count reasoning messages so a tools-less Thinking group can be distinguished from
+  // an empty group.
   let pendingThinkingTurns = 0;
   while (index < messages.length) {
     const message = messages[index];
@@ -1509,7 +1507,6 @@ export function ChatPanel({
                         const inner = item.kind === "tool_group" ? (
                           <ChatToolGroup
                             messages={item.messages}
-                            thinkingTurns={item.thinkingTurns}
                             onPermission={handlePermission}
                             onQuestion={handleQuestion}
                             agents={agents}

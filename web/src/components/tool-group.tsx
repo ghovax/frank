@@ -109,10 +109,6 @@ interface ToolGroupProps {
   onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   activeArtifactId?: string | null;
   onActivateArtifact?: (toolCallId: string) => void;
-  // How many reasoning phases the model went through before/among these tools. Kept as a
-  // persistent thinking chip (with this count) in the heading — a record like the tool tally,
-  // not a transient glyph — so it does not vanish the moment the tools stream in over it.
-  thinkingTurns?: number;
   // When true, the group stays expanded even after all calls complete — used by
   // the chat timeline to keep the latest group open until the assistant's text
   // response actually arrives, rather than collapsing the instant tools finish.
@@ -126,7 +122,6 @@ export const ToolGroup = memo(function ToolGroup({
   onQuestion,
   activeArtifactId,
   onActivateArtifact,
-  thinkingTurns = 0,
   keepOpen = false,
 }: ToolGroupProps) {
   const t = useTranslations("ToolGroup");
@@ -162,10 +157,8 @@ export const ToolGroup = memo(function ToolGroup({
   // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
-  // A tools-less group is a "thinking before acting" phase. Its latest phase owns the
-  // leading brain icon; only earlier phases become a counted trailing badge.
+  // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
-  const previousThinkingTurns = Math.max(0, thinkingTurns - (thinkingOnly ? 1 : 0));
   const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
   // One call is already fully represented by the summary row. The grouped body only
   // becomes useful once it can reveal multiple calls instead of repeating that row.
@@ -214,13 +207,10 @@ export const ToolGroup = memo(function ToolGroup({
     </Box>
   );
 
-  // The heading's chip cluster: a persistent thinking chip, the live tool tally, any
-  // file-change chip, the remote badge, and the status chips — all animated in/out.
+  // The heading's chip cluster: prior-tool tallies, any file-change chip, the remote
+  // badge, and status chips — all animated in/out.
   const badgeSlot = (
     <>
-      {previousThinkingTurns > 0 && (
-        <TallyBadge colorPalette="purple" count={previousThinkingTurns} icon={<LuBrain />} title={t("thinking")} alwaysShowCount />
-      )}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
           const display = getToolCallDisplay(name);
