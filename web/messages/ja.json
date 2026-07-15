@@ -407,7 +407,6 @@
     "inputRequired": "入力が必要",
     "failedCount": "{count, plural, other {# 件失敗}}",
     "backgroundCount": "{count, plural, other {バックグラウンド #}}",
-    "runningCount": "{count, plural, other {# 件実行中}}",
     "filesCount": "{count, plural, other {# 件のファイル}}"
   },
   "ToolViews": {

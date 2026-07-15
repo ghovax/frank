@@ -407,7 +407,6 @@
     "inputRequired": "Input required",
     "failedCount": "{count, plural, other {# failed}}",
     "backgroundCount": "{count, plural, other {# in background}}",
-    "runningCount": "{count, plural, other {# running}}",
     "filesCount": "{count, plural, other {# files}}"
   },
   "ToolViews": {

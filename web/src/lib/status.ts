@@ -1,5 +1,5 @@
 import type { IconType } from "react-icons";
-import { LuCircleAlert, LuCircleX, LuLoaderCircle, LuMoon } from "react-icons/lu";
+import { LuCircleAlert, LuCircleX, LuMoon } from "react-icons/lu";
 import type { ToolEventStatus } from "@/lib/tool-event";
 
 // The normalized lifecycle status shared by every surface that shows one — a tool
@@ -32,11 +32,10 @@ export const STATUS_PALETTE: Record<StatusKind, string> = {
 };
 
 // The glyph for statuses that render as icon chips (the tool-group recap). Prose
-// surfaces show a label instead and ignore this. `running` is spun by the caller.
+// surfaces show a label instead and ignore this.
 export const STATUS_ICON: Partial<Record<StatusKind, IconType>> = {
   input_required: LuCircleAlert,
   failed: LuCircleX,
-  running: LuLoaderCircle,
   background: LuMoon,
 };
 

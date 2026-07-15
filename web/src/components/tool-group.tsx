@@ -12,7 +12,7 @@ import { DiffStatBadge, RollingNumber } from "./rolling-number";
 import { ToolCallLabel } from "./tool-label";
 import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
-import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
+import { ActivityIcon } from "./ui/activity-icon";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
 import { isBackgroundResult, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
@@ -164,14 +164,12 @@ export const ToolGroup = memo(function ToolGroup({
   // becomes useful once it can reveal multiple calls instead of repeating that row.
   const interactive = tools.length > 1;
 
-  // Status chips: one colored icon (+ count) per state, in the same visual grammar as the
-  // tool tally beside them, readable at a glance with no prose badge to parse. The colour
-  // and glyph come from the shared status table, so a status reads the same here as on an
-  // individual call. Completed calls carry no chip; the settled line speaks for itself.
+  // Status chips surface states that need separate attention. Running and completed calls
+  // carry no chip: the live shimmer already communicates activity, while the settled line
+  // speaks for itself.
   const statusChips = [
     inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: t("inputRequired") },
     failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: t("failedCount", { count: failedCount }) },
-    runningCount > 0 && { kind: "running" as StatusKind, count: runningCount, title: t("runningCount", { count: runningCount }) },
     backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }) },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
@@ -266,9 +264,7 @@ export const ToolGroup = memo(function ToolGroup({
                 title={title}
                 count={count}
                 colorPalette={palette}
-                icon={kind === "running"
-                  ? <ActivitySpinner color={`${palette}.fg`} />
-                  : ChipIcon ? <ChipIcon /> : null}
+                icon={ChipIcon ? <ChipIcon /> : null}
               />
             </motion.div>
           );
