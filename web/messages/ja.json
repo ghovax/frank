@@ -621,7 +621,7 @@
     "planNotice": "Codex のサインインを通じて ChatGPT プランを利用します。非公式であり、変更される可能性があります。",
     "usageTitle": "使用量の上限",
     "usageUsedPercent": "{percent}% 使用",
-    "usageResetsIn": "{duration}後にリセット",
+    "usageResetsLabel": "リセット",
     "usageWeekly": "週間",
     "usageDaysShort": "{count}日",
     "usageHoursShort": "{count}時間",

@@ -1,11 +1,14 @@
 "use client";
 
-import { Badge, Box, Flex, Text } from "@chakra-ui/react";
+import { Box, Flex, Text } from "@chakra-ui/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
 import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
-import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { SectionHeader } from "./ui/section-header";
+import { Pill } from "./ui/pill";
+import { InlineField } from "./ui/display";
 import { MarkdownContent } from "./markdown-content";
 
 // Renders a capability's display title: the human title when present, otherwise a
@@ -34,9 +37,9 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 }
 
 // Shows the selected agent's A2A AgentCard skills — broadcast from the served
-// agent and rendered as collapsible cards, so you can see what an agent can do —
+// agent and rendered as collapsible rows, so you can see what an agent can do —
 // plus the tools exposed by the configured MCP servers, grouped per server.
-// Every card starts collapsed to keep the empty state uncluttered.
+// Every row starts collapsed to keep the empty state uncluttered.
 export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: AgentCard | null; workingDirectory?: string; homeDirectory?: string }) {
   const t = useTranslations("AgentSkills");
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
@@ -108,13 +111,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
     <Box w="100%" maxW="640px" mx="auto" pb={4}>
       {hasSkills && (
         <>
-          <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuListChecks size={14} />
-            <Text textStyle="panelTitle">{t("skillsAvailable")}</Text>
-          </Flex>
-          <Box mb={2} color="fg.muted">
-            <Text fontSize="xs">{t("skillsDescription")}</Text>
-          </Box>
+          <SectionHeader
+            icon={<LuListChecks size={14} />}
+            title={t("skillsAvailable")}
+            description={t("skillsDescription")}
+          />
           <Flex direction="column" gap={2}>
             <ScopeGroup icon={<LuPuzzle size={14} />} label={t("skillsAvailableGlobally")}>
               {globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
@@ -130,13 +131,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
 
       {hasTools && (
         <Box mt={hasSkills ? 6 : 0}>
-          <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuWrench size={14} />
-            <Text textStyle="panelTitle">{t("toolsAvailable")}</Text>
-          </Flex>
-          <Box mb={2} color="fg.muted">
-            <Text fontSize="xs">{t("toolsDescription")}</Text>
-          </Box>
+          <SectionHeader
+            icon={<LuWrench size={14} />}
+            title={t("toolsAvailable")}
+            description={t("toolsDescription")}
+          />
           <Flex direction="column" gap={2}>
             <ScopeGroup icon={<LuPlug size={14} />} label={t("toolsAvailableGlobally")}>
               {globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
@@ -153,65 +152,38 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
   );
 }
 
-// A collapsible scope group ("… globally" / "… in this project"), built from the
-// same row-card collapsible as an individual capability — one level up: its body
-// holds that scope's skill/tool cards (or the empty placeholder). Open by default so
-// the capabilities stay visible, while letting a whole scope be tucked away.
+// A scope group ("… globally" / "… in this project") — the same disclosure row as an
+// individual capability, one level up: its body holds that scope's cards. Open by
+// default so the capabilities stay visible while letting a whole scope be tucked away.
 function ScopeGroup({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
-  const [open, setOpen] = useState(true);
   return (
-    <ToolCard variant="row">
-      <ToolCardHeader
-        variant="row"
-        collapsible
-        open={open}
-        onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.subtle">{icon}</Box>}
-        title={label}
-      />
-      {open && (
-        <ToolCardBody variant="row">
-          <Flex direction="column" gap={1}>
-            {children}
-          </Flex>
-        </ToolCardBody>
-      )}
-    </ToolCard>
+    <DisclosureRow
+      defaultOpen
+      icon={<Box color="fg.subtle">{icon}</Box>}
+      title={<DisclosureLabel>{label}</DisclosureLabel>}
+    >
+      <Flex direction="column" gap={1}>
+        {children}
+      </Flex>
+    </DisclosureRow>
   );
 }
 
-// A small chip marking a capability the agent cannot currently use.
-function DisabledBadge() {
-  const t = useTranslations("AgentSkills");
-  return (
-    <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
-      {t("disabled")}
-    </Badge>
-  );
-}
-
-// One agent skill, collapsed by default like a tool-call card. A disabled skill
-// is rendered greyed out and non-interactive (it cannot be expanded).
+// One agent skill, collapsed by default. A disabled skill is greyed out and inert;
+// a skill with no description or examples is a plain, non-expanding line.
 function SkillCard({ skill }: { skill: AgentSkill }) {
   const t = useTranslations("AgentSkills");
-  const [open, setOpen] = useState(false);
   const enabled = skill.enabled !== false;
   const hasBody = !!skill.description || (skill.examples?.length ?? 0) > 0;
-  const collapsible = enabled && hasBody;
   return (
-    <Box opacity={enabled ? 1 : 0.55}>
-    <ToolCard variant="row">
-      <ToolCardHeader
-        variant="row"
-        collapsible={collapsible}
-        open={open}
-        onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPuzzle size={14} /></Box>}
-        title={<CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} />}
-        badges={enabled ? undefined : <DisabledBadge />}
-      />
-      {open && collapsible && (
-        <ToolCardBody variant="row">
+    <DisclosureRow
+      disabled={!enabled}
+      icon={<Box color="fg.muted"><LuPuzzle size={14} /></Box>}
+      title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
+      badges={enabled ? undefined : <Pill colorPalette="gray">{t("disabled")}</Pill>}
+    >
+      {enabled && hasBody ? (
+        <>
           {skill.description && (
             <Box color="fg.muted">
               <MarkdownContent content={skill.description} fontSize="xs" />
@@ -219,59 +191,45 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
           )}
           {skill.examples && skill.examples.length > 0 && (
             <Box mt={2}>
-              <ToolMetaRow label={t("examples")}>
+              <InlineField label={t("examples")}>
                 <Flex direction="column" gap={1}>
                   {skill.examples.map((example, index) => (
                     <Text key={index} fontSize="xs" color="fg.muted">“{example}”</Text>
                   ))}
                 </Flex>
-              </ToolMetaRow>
+              </InlineField>
             </Box>
           )}
-        </ToolCardBody>
-      )}
-    </ToolCard>
-    </Box>
+        </>
+      ) : undefined}
+    </DisclosureRow>
   );
 }
 
-// One MCP server's tools, collapsed by default like a tool-call card. A disabled
-// server is rendered greyed out and non-interactive (it cannot be expanded).
+// One MCP server's tools, collapsed by default. A disabled server is greyed out and
+// inert; an enabled server shows its tool count and expands to the tool rows.
 function McpServerGroup({ server }: { server: McpServerTools }) {
   const t = useTranslations("AgentSkills");
-  const [open, setOpen] = useState(false);
   const enabled = server.enabled !== false;
   return (
-    <Box opacity={enabled ? 1 : 0.55}>
-    <ToolCard variant="row">
-      <ToolCardHeader
-        variant="row"
-        collapsible={enabled}
-        open={open}
-        onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPlug size={14} /></Box>}
-        title={<CapabilityTitle identifier={server.name} />}
-        badges={
-          !enabled ? (
-            <DisabledBadge />
-          ) : (
-          <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
-            {t("toolCount", { count: server.tools.length })}
-          </Badge>
-          )
-        }
-      />
-      {enabled && open && (
-        <ToolCardBody variant="row">
-          <Flex direction="column" gap={2}>
-            {server.tools.map((tool) => (
-              <McpToolRow key={tool.name} tool={tool} />
-            ))}
-          </Flex>
-        </ToolCardBody>
-      )}
-    </ToolCard>
-    </Box>
+    <DisclosureRow
+      disabled={!enabled}
+      icon={<Box color="fg.muted"><LuPlug size={14} /></Box>}
+      title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
+      badges={
+        enabled
+          ? <Pill colorPalette="gray">{t("toolCount", { count: server.tools.length })}</Pill>
+          : <Pill colorPalette="gray">{t("disabled")}</Pill>
+      }
+    >
+      {enabled && server.tools.length > 0 ? (
+        <Flex direction="column" gap={2}>
+          {server.tools.map((tool) => (
+            <McpToolRow key={tool.name} tool={tool} />
+          ))}
+        </Flex>
+      ) : undefined}
+    </DisclosureRow>
   );
 }
 

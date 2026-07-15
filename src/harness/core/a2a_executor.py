@@ -20,6 +20,7 @@ import json
 import logging
 import uuid
 from contextlib import suppress
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
@@ -501,6 +502,41 @@ class _TextPartBuffer:
         await self._emit(key, text)
 
 
+@dataclass
+class _ContextState:
+    """All per-context (per-session) execution state one executor holds, with a single
+    explicit lifecycle: created lazily on the context's first turn (``_context``),
+    dropped whole when the session is deleted (``teardown_context``). This replaces what
+    used to be six parallel dicts/sets keyed by ``context_id`` — so there is exactly one
+    place to reason about, and one place to release, a session's live state, and nothing
+    can leak when a session goes away.
+
+    The dialogue history is deliberately *not* here: it is shared process-wide across
+    every agent executor so a persona switch continues the same conversation, so it
+    lives in the shared ``_conversations`` map rather than per-executor state.
+    """
+
+    # Serializes turns for this context so a user turn and an autonomous background wake
+    # never drive the shared runtime concurrently. Delegated agent turns share their
+    # parent's context and run inside the parent turn, so they never take this lock.
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # The warm runtime, preserved across turns. None until the first turn builds it, and
+    # again after a deferred reset drops it (rebuilt on the next turn).
+    runtime: Optional[AgentRuntime] = None
+    # The background-resume pump: after a turn ends with work still in flight, it waits
+    # (event-driven) for each result and drives an autonomous turn to deliver it.
+    resume_pump: Optional[asyncio.Task] = None
+    # A top-level user turn is in flight, so the context is steerable.
+    running: bool = False
+    # The user pressed Stop: while this holds, no resume pump is armed, so a detached
+    # job completing later cannot wake a fresh (abort-cleared) turn. Lifted on the next
+    # real user turn.
+    aborted: bool = False
+    # A reset asked to drop the runtime but it still had background work in flight, so
+    # the drop is deferred until the runtime goes idle (see ``_maybe_evict``).
+    pending_reset: bool = False
+
+
 class HarnessAgentExecutor(AgentExecutor):
     """The A2A executor for a single agent profile. One of these is served per
     agent, so each agent is an independently addressable A2A endpoint."""
@@ -566,34 +602,23 @@ class HarnessAgentExecutor(AgentExecutor):
         # best-effort — the server owns the queue, worker, and history.db, so the runtime
         # stays free of any direct database or git dependency.
         self._capture_artifacts = capture_artifacts
-        # One runtime per context preserves the conversation across turns.
-        self._runtimes: dict[str, AgentRuntime] = {}
+        # All per-context (per-session) state — runtime, turn lock, resume pump, and the
+        # running/aborted/pending-reset flags — as one _ContextState each. Created lazily
+        # by `_context`, dropped whole by `teardown_context` on session delete, so a
+        # deleted session can never leave an orphaned runtime, pump, lock, or flag behind.
+        self._contexts: dict[str, _ContextState] = {}
+        # Maps an in-flight A2A task to its runtime, purely so `cancel` can abort it.
+        # Per-task and transient (cleared in `execute`'s finally), not per-context.
         self._aborts: dict[str, AgentRuntime] = {}
-        self._active_contexts: set[str] = set()
-        # Dialogue history keyed by context, shared across *all* agent executors
-        # in the process. The persona (system prompt) is applied per-turn on top
-        # of this, so switching agents mid-session continues the same conversation
-        # with a different persona rather than starting over.
+        # Dialogue history keyed by context, shared across *all* agent executors in the
+        # process. The persona (system prompt) is applied per-turn on top of this, so
+        # switching agents mid-session continues the same conversation with a different
+        # persona rather than starting over. Removed on session delete via teardown.
         self._conversations: dict[str, list] = conversations if conversations is not None else {}
-        # Serializes turns per context so a user turn and an autonomous background
-        # wake never drive the same (shared) runtime concurrently. Delegated
-        # agent turns share their parent's context and run *inside* the parent
-        # turn, so they deliberately do not take this lock (that would deadlock).
-        self._context_locks: dict[str, asyncio.Lock] = {}
-        # One background-resume pump per context: after a turn ends with work still
-        # in flight, the pump waits (event-driven) for each result and drives an
-        # autonomous turn to deliver it, so the agent wakes itself up.
-        self._resume_pumps: dict[str, asyncio.Task] = {}
-        # Contexts whose cached runtime a reset asked to drop but which still had
-        # background work in flight. Evicting such a runtime strands the pending
-        # result — the resume pump keys off the live runtime, and the durable store
-        # is only replayed on startup / the next user turn — so the drop is deferred
-        # until the runtime is idle (see `_maybe_evict`).
-        self._runtimes_pending_reset: set[str] = set()
-        # Holds startup-recovery wake tasks so they are not garbage-collected before
-        # they finish driving their turn.
+        # Hold startup-recovery wake tasks and in-flight manual-compaction turns so they
+        # are not garbage-collected before they finish. Self-clearing via done callbacks;
+        # not per-context.
         self._startup_resume_tasks: set[asyncio.Task] = set()
-        # Holds in-flight manual-compaction turns for the same reason.
         self._compaction_tasks: set[asyncio.Task] = set()
 
     def compact_context(self, context_id: str) -> bool:
@@ -633,29 +658,43 @@ class HarnessAgentExecutor(AgentExecutor):
             pass
 
     def abort_context(self, context_id: str) -> bool:
-        runtime = self._runtimes.get(context_id)
-        if runtime is None:
+        # Stop is broadcast to every executor (chat.py), but only the one that actually
+        # holds this context's state has anything to stop.
+        state = self._contexts.get(context_id)
+        if state is None or (state.runtime is None and state.resume_pump is None):
             return False
-        runtime.abort()
-        return True
+        # Mark Stopped so the turn's finally (and any later completion) cannot re-arm a
+        # resume pump, then cancel the pump already watching it — the autonomous wake is
+        # what otherwise revived a fresh, abort-cleared turn seconds after Stop.
+        state.aborted = True
+        handled = False
+        if state.resume_pump is not None:
+            if not state.resume_pump.done():
+                state.resume_pump.cancel()
+            state.resume_pump = None
+            handled = True
+        if state.runtime is not None:
+            state.runtime.abort()
+            handled = True
+        return handled
 
     def abort_tool(self, context_id: str, tool_call_identifier: str) -> bool:
-        runtime = self._runtimes.get(context_id)
-        if runtime is None:
+        state = self._contexts.get(context_id)
+        if state is None or state.runtime is None:
             return False
-        return runtime.abort_tool(tool_call_identifier)
+        return state.runtime.abort_tool(tool_call_identifier)
 
     def send_tool_to_background(self, context_id: str, tool_call_identifier: str) -> bool:
-        runtime = self._runtimes.get(context_id)
-        if runtime is None:
+        state = self._contexts.get(context_id)
+        if state is None or state.runtime is None:
             return False
-        return runtime.send_tool_to_background(tool_call_identifier)
+        return state.runtime.send_tool_to_background(tool_call_identifier)
 
     def background_snapshots(self, context_id: str) -> list[dict]:
-        runtime = self._runtimes.get(context_id)
-        if runtime is None:
+        state = self._contexts.get(context_id)
+        if state is None or state.runtime is None:
             return []
-        return runtime.background_snapshots()
+        return state.runtime.background_snapshots()
 
     def reset_runtimes(self) -> None:
         """Drop cached runtimes so the next turn rebuilds them — used after a
@@ -666,24 +705,23 @@ class HarnessAgentExecutor(AgentExecutor):
         durable store is only replayed on startup / the next user turn, so dropping the
         runtime mid-flight would silently hang that session. In-flight turns keep their
         own runtime reference and are unaffected."""
-        for context_id in list(self._runtimes.keys()):
-            self._runtimes_pending_reset.add(context_id)
-            self._maybe_evict(context_id)
+        for context_id, state in list(self._contexts.items()):
+            if state.runtime is not None:
+                state.pending_reset = True
+                self._maybe_evict(context_id)
 
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
-        runtime = self._runtimes.get(context_id)
-        if runtime is None:
+        state = self._contexts.get(context_id)
+        if state is None or state.runtime is None:
             return False
-        runtime.set_permission_mode(mode)
+        state.runtime.set_permission_mode(mode)
         return True
 
     def steer_context(self, context_id: str, message: str) -> bool:
-        if context_id not in self._active_contexts:
+        state = self._contexts.get(context_id)
+        if state is None or not state.running or state.runtime is None:
             return False
-        runtime = self._runtimes.get(context_id)
-        if runtime is None:
-            return False
-        return runtime.enqueue_steering(message)
+        return state.runtime.enqueue_steering(message)
 
     def reset_runtime(self, context_id: str) -> None:
         """Drop a single context's cached runtime so the next turn rebuilds it —
@@ -691,7 +729,10 @@ class HarnessAgentExecutor(AgentExecutor):
         effect without a server restart. Deferred while the context still has
         background work in flight, so evicting the runtime never strands a completed
         result the resume pump still needs to deliver (which would hang the session)."""
-        self._runtimes_pending_reset.add(context_id)
+        state = self._contexts.get(context_id)
+        if state is None:
+            return
+        state.pending_reset = True
         self._maybe_evict(context_id)
 
     def _maybe_evict(self, context_id: str) -> None:
@@ -700,41 +741,67 @@ class HarnessAgentExecutor(AgentExecutor):
         resume pump must keep delivering results, since the durable store is only
         replayed on startup / the next user turn). Dropping the runtime here, only
         after its jobs have drained, lets the next turn rebuild with the new
-        configuration without ever orphaning an undelivered result."""
-        if context_id not in self._runtimes_pending_reset:
+        configuration without ever orphaning an undelivered result. The state (and its
+        lock) survives — only the runtime slot is cleared."""
+        state = self._contexts.get(context_id)
+        if state is None or not state.pending_reset:
             return
-        runtime = self._runtimes.get(context_id)
-        if runtime is not None and runtime.background_jobs.has_pending():
+        if state.runtime is not None and state.runtime.background_jobs.has_pending():
             return  # still delivering — keep the runtime (and its pump) alive
-        self._runtimes.pop(context_id, None)
-        self._runtimes_pending_reset.discard(context_id)
+        state.runtime = None
+        state.pending_reset = False
 
-    def _context_lock(self, context_id: str) -> asyncio.Lock:
-        lock = self._context_locks.get(context_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._context_locks[context_id] = lock
-        return lock
+    def _context(self, context_id: str) -> _ContextState:
+        """The per-context state, created on first access. Use this when a turn is about
+        to establish state (acquire the lock, cache a runtime, set a flag); use
+        ``self._contexts.get`` when merely inspecting a context that may not exist."""
+        state = self._contexts.get(context_id)
+        if state is None:
+            state = _ContextState()
+            self._contexts[context_id] = state
+        return state
+
+    def teardown_context(self, context_id: str) -> None:
+        """Release every trace of a deleted session: cancel its resume pump, abort a
+        live runtime, drop its per-context state, and forget its shared conversation.
+        The single point where a session's live state is freed, so deleting sessions can
+        never accumulate orphaned runtimes, pumps, locks, or history. Idempotent and safe
+        to broadcast to every executor (only the owner holds any state)."""
+        state = self._contexts.pop(context_id, None)
+        if state is not None:
+            if state.resume_pump is not None and not state.resume_pump.done():
+                state.resume_pump.cancel()
+            if state.runtime is not None:
+                state.runtime.abort()
+        self._conversations.pop(context_id, None)
 
     def _arm_resume_pump(self, context_id: str, runtime: Optional[AgentRuntime] = None) -> None:
         """Ensure a resume pump watches this context while it has background work in
         flight. Idempotent — a live pump is left running. ``runtime`` is the runtime
         the just-finished turn actually used; it is passed explicitly rather than
-        re-read from ``self._runtimes`` so a concurrent reset that cleared the cache
-        entry cannot strand the pending work between the turn ending and the pump
-        arming. If that runtime still has pending jobs but its cache slot is empty
-        (a reset dropped it), restore it — marked for a deferred reset — so both the
-        pump and the autonomous delivery drain the very same ``BackgroundJobs``."""
-        runtime = runtime or self._runtimes.get(context_id)
+        re-read from the state so a concurrent reset that cleared the cached runtime
+        cannot strand the pending work between the turn ending and the pump arming. If
+        that runtime still has pending jobs but the state's runtime slot is empty (a
+        reset dropped it), restore it — marked for a deferred reset — so both the pump
+        and the autonomous delivery drain the very same ``BackgroundJobs``.
+
+        Only ever arms for a context that still has live state: a torn-down (deleted)
+        session has none, so a late call from an ending turn's finally is a clean no-op
+        that cannot resurrect a deleted session's pump."""
+        state = self._contexts.get(context_id)
+        # A Stopped or torn-down context stays quiet: don't arm a pump that would
+        # autonomously wake the agent. Pending work is replayed on the next user turn.
+        if state is None or state.aborted:
+            return
+        runtime = runtime or state.runtime
         if runtime is None or not runtime.background_jobs.has_pending():
             return
-        if self._runtimes.get(context_id) is None:
-            self._runtimes[context_id] = runtime
-            self._runtimes_pending_reset.add(context_id)
-        existing = self._resume_pumps.get(context_id)
-        if existing is not None and not existing.done():
+        if state.runtime is None:
+            state.runtime = runtime
+            state.pending_reset = True
+        if state.resume_pump is not None and not state.resume_pump.done():
             return
-        self._resume_pumps[context_id] = asyncio.create_task(self._resume_pump(context_id))
+        state.resume_pump = asyncio.create_task(self._resume_pump(context_id))
 
     async def _resume_pump(self, context_id: str) -> None:
         """Wait (event-driven, at zero cost) for each background result to land while
@@ -742,7 +809,8 @@ class HarnessAgentExecutor(AgentExecutor):
         loops until nothing is pending, then retires."""
         try:
             while True:
-                runtime = self._runtimes.get(context_id)
+                state = self._contexts.get(context_id)
+                runtime = state.runtime if state is not None else None
                 if runtime is None or not runtime.background_jobs.has_pending():
                     return
                 await runtime.background_jobs.wait_for_completion()
@@ -754,7 +822,11 @@ class HarnessAgentExecutor(AgentExecutor):
         except Exception:
             logger.exception("Background-resume pump failed for context %s", context_id)
         finally:
-            self._resume_pumps.pop(context_id, None)
+            # Clear the slot only if it still points at *this* pump — a freshly armed
+            # pump (the user resumed) must not be dropped by a late-finishing finally.
+            state = self._contexts.get(context_id)
+            if state is not None and state.resume_pump is asyncio.current_task():
+                state.resume_pump = None
             # The context is idle now, so any reset deferred while it had work in
             # flight can finally take effect (rebuilding with the new configuration).
             self._maybe_evict(context_id)
@@ -772,7 +844,8 @@ class HarnessAgentExecutor(AgentExecutor):
         # executor re-checks this under the per-context lock (that's the authoritative
         # guard against the race); short-circuiting here just avoids creating an empty,
         # invisible wake task in the common case.
-        runtime = self._runtimes.get(context_id)
+        state = self._contexts.get(context_id)
+        runtime = state.runtime if state is not None else None
         has_live_result = runtime is not None and runtime.background_jobs.has_completed_undelivered()
         has_stored_result = get_background_job_store().has_undelivered_jobs(context_id, self._agent_name)
         if not has_live_result and not has_stored_result:
@@ -845,7 +918,8 @@ class HarnessAgentExecutor(AgentExecutor):
         # flight: if the runtime has since gone idle, drop it now so this turn rebuilds
         # it with the new configuration rather than reusing the stale one.
         self._maybe_evict(context_id)
-        runtime = self._runtimes.get(context_id)
+        state = self._context(context_id)
+        runtime = state.runtime
         if runtime is None:
             # Restore a persisted conversation the first time a context is seen this
             # process (e.g. a session reopened after a restart), so the agent resumes
@@ -870,7 +944,7 @@ class HarnessAgentExecutor(AgentExecutor):
             )
             if self._session_permission_mode_for is not None:
                 runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, context_id))
-            self._runtimes[context_id] = runtime
+            state.runtime = runtime
             # First time this process builds a runtime for the context: replay any
             # background results the durable store holds but never delivered (e.g.
             # a parse that finished, or was interrupted, across a restart), so the
@@ -992,7 +1066,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # background wake never drive the shared runtime concurrently. Delegated
         # agent turns share the parent's context and run inside it, so they must
         # not take this lock (that would deadlock against the parent).
-        context_serialization_lock = None if delegated else self._context_lock(task.context_id)
+        context_serialization_lock = None if delegated else self._context(task.context_id).lock
         if context_serialization_lock is not None:
             await context_serialization_lock.acquire()
 
@@ -1062,7 +1136,8 @@ class HarnessAgentExecutor(AgentExecutor):
             # close the task without a model call rather than emit an empty turn. The
             # finally still runs on this early return, releasing the lock.
             if autonomous:
-                existing_runtime = self._runtimes.get(task.context_id)
+                existing_state = self._contexts.get(task.context_id)
+                existing_runtime = existing_state.runtime if existing_state is not None else None
                 has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
                 has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._agent_name)
                 if not has_live_result and not has_stored_result:
@@ -1074,9 +1149,14 @@ class HarnessAgentExecutor(AgentExecutor):
             # run within their parent turn, which is already counted, so they are not
             # tracked separately.
             track_running = not delegated and on_turn_state is not None
+            # A real user turn (not an autonomous wake or a compaction) means the user
+            # wants the agent working again, so lift any prior Stop suppression — future
+            # background completions may once more arm a resume pump.
+            if not delegated and not autonomous and not compaction:
+                self._context(task.context_id).aborted = False
             if track_running and on_turn_state is not None:
                 on_turn_state(task.context_id, True)
-                self._active_contexts.add(task.context_id)
+                self._context(task.context_id).running = True
 
             await updater.start_work()
 
@@ -1109,7 +1189,8 @@ class HarnessAgentExecutor(AgentExecutor):
                 if Metadata.READ_ONLY in metadata:
                     runtime.set_read_only(bool(metadata[Metadata.READ_ONLY]))
             else:
-                is_new_context = task.context_id not in self._runtimes
+                existing_state = self._contexts.get(task.context_id)
+                is_new_context = existing_state is None or existing_state.runtime is None
                 runtime = await self._runtime_for(task.context_id, workspace)
                 if permission_mode:
                     runtime.set_permission_mode(permission_mode)
@@ -1326,13 +1407,19 @@ class HarnessAgentExecutor(AgentExecutor):
             await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception, had_images=turn_has_images))]))
         finally:
             self._aborts.pop(task.id, None)
+            # The context's live state, or None if the session was deleted mid-turn
+            # (teardown_context popped it). A torn-down context must not be re-persisted
+            # or re-armed below — otherwise the aborted turn's finally would resurrect
+            # the very rows the delete flow just removed.
+            state = self._contexts.get(task.context_id)
             # Persist the conversation after a top-level turn so a later restart can
             # restore it. Delegated agent runs have their own throwaway history
             # and don't touch the shared context, so they are not persisted. Only save
             # when there is something to save (a built runtime, or an already-cached
             # conversation) — an autonomous no-op wake has neither, and blindly saving
-            # an empty list would clobber the persisted history.
-            if not delegated and self._save_conversation is not None and (
+            # an empty list would clobber the persisted history. Skip entirely once the
+            # session is deleted, so a stopped-and-deleted turn never re-orphans its row.
+            if state is not None and not delegated and self._save_conversation is not None and (
                 runtime is not None or task.context_id in self._conversations
             ):
                 await asyncio.to_thread(
@@ -1346,11 +1433,10 @@ class HarnessAgentExecutor(AgentExecutor):
             # were never applied to the conversation; the client re-sends them as a
             # fresh turn on stream close, so leaving them queued here would double-
             # apply them when the next turn drains the runtime at its first boundary.
-            if track_running:
-                self._active_contexts.discard(task.context_id)
-            cached_runtime = self._runtimes.get(task.context_id)
-            if cached_runtime is not None:
-                cached_runtime.discard_pending_steering()
+            if track_running and state is not None:
+                state.running = False
+            if state is not None and state.runtime is not None:
+                state.runtime.discard_pending_steering()
             if track_running and on_turn_state is not None:
                 on_turn_state(task.context_id, False)
             if context_serialization_lock is not None:

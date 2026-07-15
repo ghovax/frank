@@ -16,7 +16,8 @@ import { ChatMessageItem } from "@/components/chat-message";
 import { ToolGroup } from "@/components/tool-group";
 import { ToolCall } from "@/components/tool-call";
 import { MarkdownContent } from "@/components/markdown-content";
-import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "@/components/tool-card";
+import { DisclosureLabel, DisclosureRow } from "@/components/ui/disclosure-row";
+import { InlineField } from "@/components/ui/display";
 import { useColorMode } from "@/components/ui/color-mode";
 import { LuSparkles } from "react-icons/lu";
 
@@ -28,7 +29,7 @@ function message(role: ChatMessage["role"], content: string, meta?: Record<strin
 
 const richMarkdown = `## A settled batch of work
 
-The header row in \`tool-card.tsx\` used a **fixed height** so badges never grow it — see [the docs](https://example.com) for details. Inline math like $E = mc^2$ renders through KaTeX.
+The disclosure header in \`disclosure-row.tsx\` is one **text-height line** so a run of calls blends with the prose — see [the docs](https://example.com) for details. Inline math like $E = mc^2$ renders through KaTeX.
 
 - The first point, with \`inline code\` in it
 - A second point that wraps onto another line when the column narrows enough to force it
@@ -75,18 +76,18 @@ const settledTools: ToolEvent[] = [
     name: "search_content",
     toolCallId: "t2",
     status: "completed",
-    arguments: { pattern: "ToolCardHeader", path: "web/src" },
-    result: { matches: ["web/src/components/tool-card.tsx:17"] },
+    arguments: { pattern: "DisclosureRow", path: "web/src" },
+    result: { matches: ["web/src/components/ui/disclosure-row.tsx:60"] },
   },
   {
     name: "edit_file",
     toolCallId: "t3",
     status: "completed",
     arguments: {
-      file_path: "web/src/components/tool-card.tsx",
-      old_string: "h={8}\npx={2.5}",
-      new_string: "h={7}\npx={2.5}\ngap={1.5}",
-      justification: "Tightening the card header",
+      file_path: "web/src/components/ui/disclosure-row.tsx",
+      old_string: "ml=\"5px\"\nmt={0.5}",
+      new_string: "ml={1.5}\nmt={0.5}\npt={1.5}",
+      justification: "Aligning the disclosure body rule",
       read_only: false,
     },
     result: { code: "ok" },
@@ -249,40 +250,30 @@ export default function GalleryPage() {
       </VStack>
 
       <VStack gap={6} align="stretch" maxW="760px" mx="auto" mt={10}>
-        <Section title="Agent step body (activity lines nested in a card)">
+        <Section title="Agent step body (activity lines nested in a disclosure)">
           <Box data-audit="agent-step">
-            <ToolCard>
-              <ToolCardHeader
-                icon={<Box color="purple.fg"><LuSparkles size={13} /></Box>}
-                title="researcher — Survey the design system"
-                collapsible
-                open
-                onToggle={() => {}}
-              />
-              <ToolCardBody>
-                <VStack gap={1} align="stretch" pt={0.5}>
-                  <MarkdownContent content={"Scanning the theme first, then the call sites."} />
-                  <ToolGroup tools={settledTools.slice(0, 3)} />
-                </VStack>
-              </ToolCardBody>
-            </ToolCard>
+            <DisclosureRow
+              defaultOpen
+              icon={<Box color="purple.fg"><LuSparkles size={13} /></Box>}
+              title={<DisclosureLabel>researcher — Survey the design system</DisclosureLabel>}
+            >
+              <VStack gap={1} align="stretch">
+                <MarkdownContent content={"Scanning the theme first, then the call sites."} />
+                <ToolGroup tools={settledTools.slice(0, 3)} />
+              </VStack>
+            </DisclosureRow>
           </Box>
         </Section>
-        <Section title="Panel card shell (agents panel, skills)">
+        <Section title="Capability disclosure (agents panel, skills)">
           <Box data-audit="panel-card">
-            <ToolCard>
-              <ToolCardHeader
-                icon={<Box color="pink.fg"><LuSparkles size={13} /></Box>}
-                title="A skill card title"
-                collapsible
-                open
-                onToggle={() => {}}
-              />
-              <ToolCardBody>
-                <ToolMetaRow label="Source">daisy/skills/example</ToolMetaRow>
-                <ToolMetaRow label="Tools" mt={1}>bash, read_file</ToolMetaRow>
-              </ToolCardBody>
-            </ToolCard>
+            <DisclosureRow
+              defaultOpen
+              icon={<Box color="pink.fg"><LuSparkles size={13} /></Box>}
+              title={<DisclosureLabel>A skill card title</DisclosureLabel>}
+            >
+              <InlineField label="Source">daisy/skills/example</InlineField>
+              <InlineField label="Tools" mt={1}>bash, read_file</InlineField>
+            </DisclosureRow>
           </Box>
         </Section>
         <Section title="Compact markdown (tool detail scale)">

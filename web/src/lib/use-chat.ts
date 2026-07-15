@@ -23,6 +23,7 @@ import { isHiddenToolEventName, isSameToolEvent, type PermissionDecision, type Q
 import { artifactImageKey, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "./artifact-annotations";
 import type { ArtifactEvent } from "@/components/artifact-bridge";
 import { toaster } from "@/components/ui/toaster";
+import { asArray, asRecord } from "@/lib/coerce";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATask = A2ATaskWire;
@@ -312,9 +313,6 @@ function streamArtifactText(result: Extract<A2AStreamResult, { kind: "artifact-u
   return artifactPartsText(result.artifact?.parts);
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
 
 interface FriendlyError {
   code: string;
@@ -421,9 +419,6 @@ function mergeMcpFinalResult(existing: unknown, finalResult: unknown): unknown {
   };
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function artifactIdentifier(value: unknown): string {
   const artifact = asRecord(value);
@@ -1304,6 +1299,11 @@ export function useChat(
   // artifact + message; user-driven events (clicks) are never deduped.
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
+  // Set by a user Stop so the imminent stream-close does not auto-drain the queue
+  // into a fresh turn — which read as "Stop didn't stop it". Queued messages are
+  // left intact (not sent, not lost) for the user to send when they choose; the
+  // flag is one-shot, reset as soon as the aborted stream closes.
+  const abortedByUserRef = useRef(false);
   const errorToastKeysRef = useRef<Set<string>>(new Set());
   // Tracks whether this session was running, so we do a final refresh when its
   // turn finishes (the subscribe stream closes once it is no longer running).
@@ -1697,11 +1697,17 @@ export function useChat(
           // discards its own copy on stream close, so this can't double-apply.
           const pendingText = queuedMessagesRef.current;
           const pendingArtifact = queuedArtifactEventsRef.current;
-          if (pendingText.length > 0) {
+          // A user Stop closes the stream; do not immediately relaunch a queued
+          // message as a new turn — that is exactly the "Stop didn't stop" symptom.
+          // Consume the one-shot flag and fall through to idle, leaving the queue for
+          // the user to send deliberately.
+          const abortedByUser = abortedByUserRef.current;
+          abortedByUserRef.current = false;
+          if (!abortedByUser && pendingText.length > 0) {
             const next = pendingText[0];
             setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
             runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
-          } else if (pendingArtifact.length > 0) {
+          } else if (!abortedByUser && pendingArtifact.length > 0) {
             const [next, ...rest] = pendingArtifact;
             queuedArtifactEventsRef.current = rest;
             runStreamRef.current({ kind: "artifact", event: next });
@@ -1883,6 +1889,9 @@ export function useChat(
 
   const abort = useCallback(() => {
     const ctx = sessionIdRef.current;
+    // Suppress the queue auto-drain that the imminent stream close would otherwise
+    // trigger, so Stop halts everything instead of relaunching a queued follow-up.
+    abortedByUserRef.current = true;
     if (!ctx) {
       abortControllerRef.current?.abort();
       return Promise.resolve();

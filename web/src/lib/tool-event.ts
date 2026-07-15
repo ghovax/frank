@@ -1,3 +1,5 @@
+import { asRecord } from "./coerce";
+
 export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "input_required";
 
 // Runtime event names that do not render as tool cards. `query` was the dispatch
@@ -59,4 +61,19 @@ export function isSameToolEvent(event: ToolEvent, name: string, toolCallId: stri
 
 export function isHiddenToolEventName(name: unknown): boolean {
   return HIDDEN_TOOL_EVENT_NAMES.has(String(name ?? ""));
+}
+
+// Narrow an arbitrary value to a known tool-event status (or undefined) — for the
+// raw status strings that arrive on wire events.
+export function toolStatus(status: unknown): ToolEventStatus | undefined {
+  return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required"
+    ? status
+    : undefined;
+}
+
+// A running call whose (interim) result says the work moved to the background — its
+// result is a "*_started" (or scheduled) placeholder rather than the real output.
+export function isBackgroundResult(result: unknown): boolean {
+  const code = String(asRecord(result).code ?? "");
+  return code.endsWith("_started") || code === "background_task_scheduled";
 }

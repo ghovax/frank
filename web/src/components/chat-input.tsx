@@ -29,7 +29,7 @@ import { ConfirmDialog } from "./ui/confirm-dialog";
 import { ModelSelect, modelSupportsVision } from "./model-select";
 // SettingsDialog moved to ChatPanel top bar
 import type { TokenUsage } from "@/lib/use-chat";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 
 // The composer textarea grows with its content up to this height (px), then scrolls.
 // Shared by the maxH cap and the auto-resize effect so they can never drift apart.

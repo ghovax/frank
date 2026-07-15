@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuCheck, LuLaptop, LuNetwork, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
 import { toaster } from "@/components/ui/toaster";
+import { SectionHeader } from "@/components/ui/section-header";
 import {
   activateConnection,
   checkConnection,
@@ -321,12 +322,7 @@ export function ConnectionSettings({
           </Button>
 
           <VStack gap={2} align="stretch">
-            <Flex align="center" gap={1.5} color="fg.muted">
-              <LuServer size={15} />
-              <Text textStyle="panelTitle">
-                {t("savedConnections")}
-              </Text>
-            </Flex>
+            <SectionHeader mb={0} icon={<LuServer size={15} />} title={t("savedConnections")} />
             {connections.length === 0 ? (
               <EmptyState.Root size="sm">
                 <EmptyState.Content pt={2}>
@@ -400,12 +396,7 @@ export function ConnectionSettings({
           </VStack>
 
           <VStack gap={3} align="stretch">
-            <Flex align="center" gap={1.5} color="fg.muted">
-              <LuPlus size={15} />
-              <Text textStyle="panelTitle">
-                {t("newRemoteConnection")}
-              </Text>
-            </Flex>
+            <SectionHeader mb={0} icon={<LuPlus size={15} />} title={t("newRemoteConnection")} />
             <Flex gap={2.5}>
               <Button
                 h="auto"

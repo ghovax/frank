@@ -4,7 +4,7 @@ import { Box, Flex, Separator, Text } from "@chakra-ui/react";
 import { useFormatter, useTranslations } from "next-intl";
 import { LuArrowDown, LuArrowUp, LuGitBranch } from "react-icons/lu";
 import { Tooltip } from "./ui/tooltip";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 import type { DirectoryStatus } from "@/lib/use-directory-status";
 
 // The workspace's Git status: branch, working-tree dirtiness and ahead/behind for the

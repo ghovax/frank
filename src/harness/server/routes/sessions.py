@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 from harness.server import app as _app
 from harness.server.app import (
+    ConversationRecord,
     EventSourceResponse,
     Request,
     SessionDraftRequest,
@@ -155,8 +156,11 @@ async def delete_session(context_id: str):
     for request_id, future in list(_pending_questions.items()):
         if request_id.startswith(q_prefix) and not future.done():
             future.set_result([])
+    # Release every executor's live state for this context (runtime, resume pump, turn
+    # lock, flags, and the shared conversation) so a deleted session leaves nothing
+    # behind. Teardown subsumes abort — it stops any in-flight turn and pump first.
     for executor in _executors.values():
-        executor.abort_context(context_id)
+        executor.teardown_context(context_id)
     # Delete every task in the context from the task store, then reclaim any upload files
     # the session referenced that no surviving session still references (uploads are
     # content-addressed and may be shared, so only truly-orphaned files are removed).
@@ -175,13 +179,18 @@ async def delete_session(context_id: str):
     # Prune this session's artifact versions (shadow-git branches + index rows) before the
     # session record goes, so its locations can still be resolved for the branch delete.
     await asyncio.to_thread(_prune_session_artifacts, context_id)
-    # Delete the session record from the sessions table.
+    # Delete the session record and its persisted dialogue history in one transaction,
+    # so a deleted session leaves nothing behind in either table (the conversation row
+    # was previously orphaned forever). teardown_context already dropped the in-memory
+    # copies above.
     def _delete_record() -> bool:
         assert _app._session_factory is not None
         database_session = _app._session_factory()
         try:
+            database_session.query(ConversationRecord).filter(ConversationRecord.context_id == context_id).delete()
             record = database_session.query(SessionRecord).filter(SessionRecord.id == context_id).first()
             if record is None:
+                database_session.commit()
                 return False
             database_session.delete(record)
             database_session.commit()

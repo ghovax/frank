@@ -10,7 +10,7 @@ import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactI
 import type { MessageAttachment } from "@/lib/use-chat";
 import { PdfDocumentView, PdfThumbnail } from "./pdf-view";
 import { ArtifactView } from "./tool-views";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 import { Tooltip } from "./ui/tooltip";
 
 // Whether an attachment is a raster/vector image we can render inline (a thumbnail
@@ -409,7 +409,7 @@ export function AttachmentChip({
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{attachment.filename}</Text>
       <Flex direction="column" gap={1}>
-        {attachment.mimeType && <InlineField label={t("fieldType")}><Text>{attachment.mimeType}</Text></InlineField>}
+        {attachment.mimeType && <InlineField label={t("fieldType")}><Text truncate maxW={80}>{attachment.mimeType}</Text></InlineField>}
         {attachment.size > 0 && <InlineField label={t("fieldSize")}><Text>{formatFileSize(attachment.size)}</Text></InlineField>}
         {annotationCount > 0 && <InlineField label={t("fieldAnnotations")}><Text>{annotationCount}</Text></InlineField>}
         {attachment.path && <InlineField label={t("fieldPath")}><Text truncate maxW={80}>{attachment.path}</Text></InlineField>}

@@ -735,6 +735,18 @@ class AgentRuntime:
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' must configure both provider and model."
             )
+        # When this agent's own provider isn't authorized — the common case for a
+        # delegation-target profile still pinned to a provider the user never keyed
+        # (e.g. a shipped `opencode/*` default after the session switched to the
+        # ChatGPT subscription) — building its client anyway yields a model that
+        # 401s on its first call, so a spawned agent dies the instant it starts.
+        # Fall back to the default agent's authorized model so the sub-agent inherits
+        # the session's working model instead. This is a no-op for the default agent
+        # itself (its model is already what we'd fall back to).
+        if not model_is_authorized(effective_model, global_configuration):
+            fallback_model = self._authorized_default_model()
+            if fallback_model:
+                effective_model = fallback_model
         self._effective_model_identifier = effective_model
 
         self._llm = build_chat_model(
@@ -2058,6 +2070,20 @@ class AgentRuntime:
             self._global_configuration.agent_directories_for(self._project_directory),
         )
 
+    def _authorized_default_model(self) -> str:
+        """The default agent's model when we hold credentials for it — the fallback a
+        sub-agent uses when its own configured provider isn't authorized. Returns ""
+        when even the default isn't authorized (nothing better to offer), leaving the
+        original model in place."""
+        try:
+            default_configuration = self._load_agent(self._global_configuration.default_agent)
+        except Exception:  # noqa: BLE001 — a missing/broken default just means no fallback
+            return ""
+        candidate = default_configuration.model_identifier
+        if candidate and model_is_authorized(candidate, self._global_configuration):
+            return candidate
+        return ""
+
     def _build_agent_prompt(self, prompt: str, read_only: bool | None) -> str:
         mode = "read-only investigation" if read_only else "delegated task"
         return self._prompt_loader.load("agent_task", {
@@ -3073,7 +3099,7 @@ class AgentRuntime:
             # The agents panel heading is the model's user-facing justification (a
             # concise "why this agent" clause), never the whole prompt.
             agent_title = str(tool_arguments.get("justification", "")).strip()
-            agent_name = tool_arguments.get("agent", self._global_configuration.default_agent)
+            agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
             agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(agent_read_only, str):
                 agent_read_only = agent_read_only.lower() == "true"

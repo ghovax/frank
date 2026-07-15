@@ -15,9 +15,6 @@ import { Tooltip } from "../ui/tooltip";
 import { CenteredNumber } from "../ui/centered-number";
 import { PanelEmptyState } from "../ui/panel";
 import {
-  asArray,
-  asRecord,
-  asString,
   Card,
   EmptyHint,
   Field,
@@ -25,8 +22,10 @@ import {
   InlineField,
   Mono,
   MonoBlock,
-  Pill,
-} from "./primitives";
+} from "../ui/display";
+import { asArray, asRecord, asString } from "@/lib/coerce";
+import { Pill } from "../ui/pill";
+import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
 
 function stripCdPrefix(command: string): string {
   const match = command.match(/^cd\s+'[^']*'\s+&&\s+(.*)/s);
@@ -290,18 +289,22 @@ function BrowserCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 // A task's lifecycle status → a translation key and a colour, so it reads as a
-// proper badge instead of the raw lowercase value the model emits.
+// proper badge instead of the raw lowercase value the model emits. The colour comes
+// from the shared status palette (via the normalized kind); only the label key is
+// task-list-specific. A completed task carries no badge (its settled row speaks).
+const TASK_STATUS_LABEL_KEY: Record<string, string> = {
+  running: "statusInProgress",
+  blocked: "statusBlocked",
+  canceled: "statusCancelled",
+  failed: "statusDeleted",
+  pending: "statusPending",
+  unknown: "statusUnknown",
+};
+
 function taskStatusAppearance(status: string): { key: string; palette: string } | null {
-  switch (status.toLowerCase().replace(/[\s-]+/g, "_")) {
-    case "completed": return null;
-    case "in_progress": return { key: "statusInProgress", palette: "blue" };
-    case "blocked": return { key: "statusBlocked", palette: "yellow" };
-    case "cancelled":
-    case "canceled": return { key: "statusCancelled", palette: "gray" };
-    case "deleted": return { key: "statusDeleted", palette: "red" };
-    case "pending": case "": return { key: "statusPending", palette: "gray" };
-    default: return { key: "statusUnknown", palette: "gray" };
-  }
+  const kind = taskLifecycleKind(status);
+  if (kind === "completed") return null;
+  return { key: TASK_STATUS_LABEL_KEY[kind] ?? "statusUnknown", palette: STATUS_PALETTE[kind] };
 }
 
 // "task-7" -> "#7" — the internal id is never shown to the user, only its number.

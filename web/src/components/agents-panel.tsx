@@ -1,39 +1,39 @@
 "use client";
 
-import { Badge, Box, Flex } from "@chakra-ui/react";
-import { useEffect, useRef, useState } from "react";
+import { Box, Flex } from "@chakra-ui/react";
+import { useEffect, useRef } from "react";
 import { useTranslations } from "next-intl";
 import { LuBot, LuNetwork } from "react-icons/lu";
 import type { ToolEvent } from "@/lib/tool-event";
 import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
-import { ToolCard, ToolCardBody, ToolCardHeader } from "./tool-card";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { Pill } from "./ui/pill";
+import { STATUS_PALETTE, taskStateKind } from "@/lib/status";
 import { PanelCard, PanelHeader, PanelBody, PanelEmptyState } from "@/components/ui/panel";
 
-// Maps an A2A TaskState to a status badge. Completed steps carry no badge —
-// the settled state is self-evident from the card. Only non-default states show.
+// The per-state label; the colour comes from the shared status palette (via the
+// normalized kind), so agent-step colours track the rest of the app. Completed steps
+// carry no badge — the settled state is self-evident.
+const AGENT_STATE_LABEL_KEY: Partial<Record<TaskState, string>> = {
+  failed: "stateFailed",
+  rejected: "stateRejected",
+  canceled: "stateCanceled",
+  "input-required": "stateInputRequired",
+  "auth-required": "stateAuthRequired",
+  working: "stateWorking",
+  submitted: "stateSubmitted",
+};
+
 function AgentStateBadge({ state }: { state: TaskState }) {
   const t = useTranslations("AgentsPanel");
   if (state === "completed") return null;
-  const { label, palette } =
-    state === "failed"
-      ? { label: t("stateFailed"), palette: "red" }
-      : state === "rejected"
-        ? { label: t("stateRejected"), palette: "red" }
-        : state === "canceled"
-          ? { label: t("stateCanceled"), palette: "gray" }
-          : state === "input-required"
-            ? { label: t("stateInputRequired"), palette: "yellow" }
-            : state === "auth-required"
-              ? { label: t("stateAuthRequired"), palette: "yellow" }
-              : state === "working"
-                ? { label: t("stateWorking"), palette: "blue" }
-                : { label: t("stateSubmitted"), palette: "blue" };
+  const labelKey = AGENT_STATE_LABEL_KEY[state] ?? "stateSubmitted";
   return (
-    <Badge size="sm" variant="subtle" colorPalette={palette} borderRadius="sm" flexShrink={0}>
-      {label}
-    </Badge>
+    <Pill colorPalette={STATUS_PALETTE[taskStateKind(state)]}>
+      {t(labelKey as Parameters<typeof t>[0])}
+    </Pill>
   );
 }
 
@@ -55,38 +55,27 @@ function StepCard({
   agents: { id: string; name: string; title?: string }[];
 }) {
   const t = useTranslations("AgentsPanel");
-  const [open, setOpen] = useState(true);
   // The remote the step ran against (if any) — surfaced on the step's own (top)
-  // collapsible, mirroring the grouped tool-call heading.
+  // disclosure, mirroring the grouped tool-call heading.
   const stepLocation = collapsedHeadingLocation(
     step.parts.filter((part) => part.kind === "tool").map((part) => (part as ToolEvent).arguments),
   );
 
   return (
-    <ToolCard>
-      <ToolCardHeader
-        icon={<Box color="fg.muted"><LuBot size={12} /></Box>}
-        title={step.goal || t("agentTask")}
-        badges={
-          <>
-            <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
-              {agentLabel || t("agent")}
-            </Badge>
-            <ToolLocationBadge arguments={stepLocation} />
-            <AgentStateBadge state={step.state} />
-          </>
-        }
-        open={open}
-        collapsible
-        onToggle={() => setOpen((current) => !current)}
-      />
-
-      {open && step.parts.length > 0 && (
-        <ToolCardBody>
-          <AgentTimeline parts={step.parts} agents={agents} />
-        </ToolCardBody>
-      )}
-    </ToolCard>
+    <DisclosureRow
+      defaultOpen
+      icon={<Box color="fg.muted"><LuBot size={12} /></Box>}
+      title={<DisclosureLabel>{step.goal || t("agentTask")}</DisclosureLabel>}
+      badges={
+        <>
+          <Pill colorPalette="gray">{agentLabel || t("agent")}</Pill>
+          <ToolLocationBadge arguments={stepLocation} />
+          <AgentStateBadge state={step.state} />
+        </>
+      }
+    >
+      {step.parts.length > 0 ? <AgentTimeline parts={step.parts} agents={agents} /> : undefined}
+    </DisclosureRow>
   );
 }
 

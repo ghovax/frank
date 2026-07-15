@@ -6,7 +6,8 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ArtifactAnnotationRecord } from "@/lib/artifact-annotations";
-import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import { toolStatus } from "@/lib/tool-event";
 import { AttachmentChips, ArtifactAnnotationChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
@@ -120,10 +121,6 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
       </Box>
     </Box>
   );
-}
-
-function toolStatus(status: unknown): ToolEventStatus | undefined {
-  return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined;
 }
 
 function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact }: ChatMessageProps) {

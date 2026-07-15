@@ -8,7 +8,7 @@
 // so a pending approval always grabs attention at the bottom of the chat, even
 // when the triggering card is scrolled out of view.
 
-import { Badge, Box, Button, Flex, HStack, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, HStack, Text } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef } from "react";
@@ -16,6 +16,7 @@ import { LuShieldAlert } from "react-icons/lu";
 import type { PermissionDecision, ToolPermission } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { ToolLocationBadge } from "./tool-call";
+import { Pill } from "./ui/pill";
 
 interface PermissionOverlayProps {
   permission: ToolPermission;
@@ -101,9 +102,9 @@ export function PermissionOverlay({ permission, title, detail, command, argument
             <Flex align="center" gap={2} flexShrink={0}>
               <ToolLocationBadge arguments={toolArguments} />
               {risk && (
-                <Badge size="sm" variant="subtle" colorPalette={RISK_PALETTE[risk] ?? "gray"} borderRadius="sm" flexShrink={0}>
+                <Pill colorPalette={RISK_PALETTE[risk] ?? "gray"}>
                   {t("riskBadge", { level: RISK_KEY[risk] ? t(RISK_KEY[risk] as Parameters<typeof t>[0]) : risk })}
-                </Badge>
+                </Pill>
               )}
             </Flex>
           </Flex>

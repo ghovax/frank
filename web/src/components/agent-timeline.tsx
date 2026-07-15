@@ -55,11 +55,9 @@ export function AgentTimeline({
 }) {
   const items = buildTimelineItems(parts);
   return (
-    // pt lifts the first item so its gap from the top of the expanded step body matches
-    // the body's horizontal padding (ToolCardBody is px=2.5); without it the first tool
-    // line sits closer to the top edge than to the sides. Only the agents panel uses
-    // this timeline, so the chat is unaffected.
-    <Flex direction="column" gap={1} align="stretch" pt={0.5}>
+    // The enclosing DisclosureRow body owns the top breathing room now, so this
+    // timeline just stacks its items.
+    <Flex direction="column" gap={1} align="stretch">
       {items.map((item, itemIndex) => {
         if (item.kind === "text") {
           return <MarkdownContent key={`text-${itemIndex}`} content={item.content} />;

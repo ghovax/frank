@@ -1,16 +1,17 @@
 "use client";
 
-import { Badge, Box, Flex } from "@chakra-ui/react";
-import { useState } from "react";
-import { LuChevronDown, LuChevronRight } from "react-icons/lu";
+import { Box, Flex } from "@chakra-ui/react";
+import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/tool-display";
-import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { ToolCallLabel } from "./tool-label";
-import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
+import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
+import { isBackgroundResult } from "@/lib/tool-event";
 import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
-import { Pill } from "./tool-views/primitives";
-import { ToolRiskBadges, ToolStatusBadge } from "./tool-card";
+import { Pill } from "./ui/pill";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { STATUS_PALETTE, toolStatusKind } from "@/lib/status";
+import { asRecord } from "@/lib/coerce";
 
 // The location a filesystem/shell tool ran against, as a compact badge — but only when it
 // is *remote*. Local runs (`file://…`) get no badge: the absence of a badge already reads as
@@ -26,7 +27,37 @@ function toolLocationBadge(value: unknown): { label: string; palette: "blue" } |
 function ToolLocationBadge({ arguments: args }: { arguments?: Record<string, unknown> }) {
   const info = toolLocationBadge(args?.location);
   if (!info) return null;
-  return <Badge size="sm" variant="subtle" colorPalette={info.palette} borderRadius="sm" flexShrink={0}>{info.label}</Badge>;
+  return <Pill colorPalette={info.palette}>{info.label}</Pill>;
+}
+
+// A tool call's live status as a pill (colour from the shared status palette). A
+// completed call carries no badge — its settled line speaks for itself.
+export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
+  const t = useTranslations("ToolCard");
+  if (status === "completed" || status === "done") return null;
+  const labelKey = status === "input_required" ? "inputRequired" : status === "failed" ? "failed" : "running";
+  return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{t(labelKey)}</Pill>;
+}
+
+// Always-visible safety markers for a tool call: a write badge when it can modify
+// state (read_only === false), and its risk level when medium/high. Read-only /
+// low-risk calls stay bare.
+export function ToolRiskBadges({ arguments: toolArguments }: { arguments?: Record<string, unknown> }) {
+  const t = useTranslations("ToolCard");
+  if (!toolArguments) return null;
+  const readOnly = toolArguments.read_only !== false;
+  const risk = typeof toolArguments.risk === "string" ? toolArguments.risk : "";
+  const badges: ReactNode[] = [];
+  if (!readOnly) badges.push(<Pill key="write" colorPalette="orange">{t("write")}</Pill>);
+  if (risk === "medium" || risk === "high") {
+    badges.push(
+      <Pill key="risk" colorPalette={risk === "high" ? "red" : "yellow"}>
+        {risk === "high" ? t("highRisk") : t("mediumRisk")}
+      </Pill>,
+    );
+  }
+  if (badges.length === 0) return null;
+  return <>{badges}</>;
 }
 
 // The location to badge on a collapsed heading that summarizes several calls. A remote is
@@ -65,15 +96,54 @@ function isToolErrorResult(content: string | null): boolean {
   }
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+// Whether ToolResultView will actually render something inline for this result.
+// It mirrors the null-return paths in ToolResultView so an expanded line never
+// shows an empty bordered rail (which otherwise leaves a gap below the line):
+// a few tool names render nothing inline, and background/started/empty results
+// carry no body to show.
+function resultRendersInside(name: string, content: string): boolean {
+  if (name === "list_mcp_tools" || name === "list_mcp_resources" || name === "open_artifact") return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    // Non-JSON string results (plain text) always have something to show.
+    return true;
+  }
+  const record = asRecord(parsed);
+  const code = String(record.code ?? "");
+  if (code.endsWith("_started") || code === "background_task_scheduled") return false;
+  if (code === "empty_response" && !record.message) return false;
+  return true;
 }
 
-// A running call whose (interim) result says the work moved to the background. Exported so
-// the group header can count backgrounded calls separately from foreground-running ones.
-export function isBackgroundResult(result: unknown): boolean {
-  const code = String(asRecord(result).code ?? "");
-  return code.endsWith("_started") || code === "background_task_scheduled";
+// The single source of truth for what a tool line expands into: whether its call
+// arguments and/or its result have anything to show inside the collapsible, and thus
+// whether the line is collapsible at all. A line with no showable detail must NOT be
+// made expandable — otherwise the chevron opens onto an empty bordered rail. Exported
+// so every surface that renders a tool line (the transcript ToolCall, a grouped run)
+// makes the same decision rather than each re-deriving it and drifting.
+export interface ToolCallDetail {
+  showArguments: boolean;
+  showResult: boolean;
+  collapsible: boolean;
+}
+
+export function toolCallDetail(name: string, args: Record<string, unknown> | undefined, result: unknown): ToolCallDetail {
+  // `justification` is rendered as the line's label, and `location` as a trailing
+  // badge — neither is body content, so a call carrying only those has nothing to
+  // expand into.
+  const showArguments = !!args && Object.keys(args).some((key) => key !== "justification" && key !== "location");
+  const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
+  // Renderable artifacts (e.g. a map) render outside the line and stay visible; a
+  // tool_error is surfaced on the line itself; both leave nothing for the body.
+  const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
+  const showResult =
+    resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent);
+  // The task list is the model's own internal bookkeeping — its line never exposes
+  // the raw task entries, so it is never collapsible regardless of its arguments.
+  const isInternalPlanning = name === "set_tasks" || name === "update_tasks";
+  return { showArguments, showResult, collapsible: !isInternalPlanning && (showArguments || showResult) };
 }
 
 // A tool call is a line of activity, not a card: icon + label at the same type
@@ -83,109 +153,46 @@ export function isBackgroundResult(result: unknown): boolean {
 // prose rather than a stack of boxes interrupting it.
 export function ToolCall({ name, arguments: toolArguments, result, status, agents = [] }: ToolCallProps) {
   const t = useTranslations("ToolCall");
-  const [open, setOpen] = useState(false);
-  const hasArguments = !!toolArguments && Object.keys(toolArguments).length > 0;
+  // One decision, shared with every other tool-line surface: what (if anything) this
+  // line expands into. A line with nothing to show is not collapsible (DisclosureRow
+  // enforces that from the presence of body children), so it never opens an empty rail.
+  const { showArguments, showResult, collapsible } = toolCallDetail(name, toolArguments, result);
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
-  // Renderable artifacts (e.g. a map) render outside the line and stay visible;
-  // the textual result stays inside the collapsible detail. When the result is an
-  // artifact, there is no separate text to show inside.
-  const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
-  const showResultInside = resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent);
-  // The task list is the model's own internal bookkeeping. Its line shows only the
-  // icon + justification (e.g. "Updating task list") and a status — never an
-  // expandable detail exposing the raw task entries.
-  const isInternalPlanning = name === "set_tasks" || name === "update_tasks";
-  const collapsible = !isInternalPlanning && (hasArguments || showResultInside);
-  // A pending approval/question no longer forces the detail open — it is surfaced in
-  // an overlay above the composer (see PermissionOverlay / QuestionOverlay). The
-  // line only reflects the "input required" status in its badge and tint.
+  // A running call whose interim result says the work moved to the background.
   const background = status === "running" && isBackgroundResult(result);
-  // Soft top/bottom edge fades on the expanded detail: whichever edge has more content
-  // scrolled out of view dissolves, so a bounded, scrollable detail reads as continuous
-  // rather than hard-cut at its maxH.
-  const { containerRef, onScroll, fade } = useScrollEdgeFade();
-
   const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments);
 
   return (
-    <Box minW={0}>
-      {/* w=fit-content: the line is only as wide as its text, so the click target and
-          hover tint never extend into the blank space to the right of a short label.
-          The base color sets the settled (muted) tone; every piece without its own
-          color — the label, the chevron — inherits it, so the hover brighten is one rule.
-          A collapsible line is a real <button> (like the group heading) so the disclosure
-          is keyboard-reachable, not click-only. */}
-      <Flex
-        as={collapsible ? "button" : "div"}
-        align="center"
-        gap={1.5}
-        h={6}
-        w="fit-content"
-        maxW="100%"
-        minW={0}
-        textAlign="left"
-        cursor={collapsible ? "pointer" : undefined}
-        onClick={collapsible ? () => setOpen((current) => !current) : undefined}
-        userSelect="none"
-        color={status === "input_required" ? "yellow.fg" : open ? "fg" : "fg.muted"}
-        _hover={collapsible ? { color: "fg" } : undefined}
-      >
-        <Box color={iconColor} display="flex" alignItems="center" flexShrink={0}>
-          <Icon size={13} />
-        </Box>
-        <Box
-          minW={0}
-          overflow="hidden"
-          whiteSpace="nowrap"
-          textOverflow="ellipsis"
-          textStyle="fieldLabel"
-          fontSize="sm"
-          fontWeight="normal"
-          className={status === "running" ? "running-title-shimmer" : undefined}
-        >
+    <DisclosureRow
+      // input_required tints the whole line; otherwise it settles muted and brightens
+      // on open/hover — the one colour rule DisclosureRow owns.
+      tone={status === "input_required" ? "attention" : "muted"}
+      maxH="480px"
+      icon={<Box color={iconColor} display="flex" alignItems="center"><Icon size={13} /></Box>}
+      title={
+        <DisclosureLabel shimmer={status === "running"}>
           <ToolCallLabel name={name} args={toolArguments} />
-        </Box>
-        <Flex align="center" gap={1.5} flexShrink={0}>
+        </DisclosureLabel>
+      }
+      badges={
+        <>
           {name === "computer" && <ComputerActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
           {name === "browser" && <BrowserActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
           <ToolLocationBadge arguments={toolArguments} />
           <ToolRiskBadges arguments={toolArguments} />
           {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
-          {background ? <Pill colorPalette="purple">{t("background")}</Pill> : null}
+          {background ? <Pill colorPalette={STATUS_PALETTE.background}>{t("background")}</Pill> : null}
+        </>
+      }
+    >
+      {collapsible ? (
+        // gap matches FieldList's own field spacing so the call's last field (e.g. Risk)
+        // and the result's first (e.g. PID) read as one list.
+        <Flex direction="column" gap={2} align="stretch">
+          {showArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
+          {showResult && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} />}
         </Flex>
-        {collapsible && (
-          <Box display="flex" alignItems="center" flexShrink={0} opacity={0.7}>
-            {open ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-          </Box>
-        )}
-      </Flex>
-
-      {collapsible && open && (
-        // ml centers the 2px rule under the 13px icon above it; pl indents the detail
-        // clear of the rule so it reads as a quoted aside within the transcript.
-        <Box
-          ref={containerRef}
-          onScroll={onScroll}
-          className="reveal-enter"
-          ml="5px"
-          mt={0.5}
-          mb={1}
-          pl={3}
-          borderLeft="2px solid"
-          borderColor="border.muted"
-          maxH="480px"
-          overflowY="auto"
-          overflowX="auto"
-          css={fade}
-        >
-          {/* gap matches FieldList's own field spacing so the call's last field
-              (e.g. Risk) and the result's first (e.g. PID) read as one list. */}
-          <Flex direction="column" gap={2} align="stretch">
-            {hasArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-            {showResultInside && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} />}
-          </Flex>
-        </Box>
-      )}
-    </Box>
+      ) : undefined}
+    </DisclosureRow>
   );
 }

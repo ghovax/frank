@@ -1,0 +1,39 @@
+"use client";
+
+import { Badge } from "@chakra-ui/react";
+import type { ReactNode } from "react";
+
+// The one small labeled badge/chip across the app: size="sm", variant="subtle",
+// borderRadius="sm", non-shrinking. An optional leading `icon` (a glyph, or a
+// spinner) turns it into an icon-chip; icon and children sit inline with a small
+// gap. This is the single source for every status/risk/location/tally/action chip —
+// callers pass only a palette (and a label and/or icon), never re-spell the shape.
+export function Pill({
+  children,
+  colorPalette = "gray",
+  icon,
+  title,
+}: {
+  children?: ReactNode;
+  colorPalette?: string;
+  icon?: ReactNode;
+  title?: string;
+}) {
+  return (
+    <Badge
+      size="sm"
+      variant="subtle"
+      colorPalette={colorPalette}
+      borderRadius="sm"
+      flexShrink={0}
+      fontWeight="normal"
+      title={title}
+      display="inline-flex"
+      alignItems="center"
+      gap={1}
+    >
+      {icon}
+      {children}
+    </Badge>
+  );
+}

@@ -14,8 +14,9 @@ import { PanelTab, PANEL_TAB_HEIGHT } from "./ui/panel-tab";
 import { PanelCard, PanelHeader, PanelEmptyState } from "./ui/panel";
 import { DropdownMenu } from "@/components/ui/menu";
 import { SegmentedToggle } from "./ui/segmented-toggle";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 import { scrollFade } from "@/lib/scroll-fade";
+import { isBackgroundResult } from "@/lib/tool-event";
 
 // A shell command surfaced from the transcript, carried in the exact shape the
 // ToolCall component consumes so each row renders as a real tool call.
@@ -31,15 +32,6 @@ interface ShellTask {
   // Already detached (the model ran it with background=true, or the user pushed a
   // foreground command to the background) — its result is a "*_started" placeholder.
   backgrounded: boolean;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function isBackgroundResult(result: unknown): boolean {
-  const code = String(asRecord(result).code ?? "");
-  return code.endsWith("_started") || code === "background_task_scheduled";
 }
 
 function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {

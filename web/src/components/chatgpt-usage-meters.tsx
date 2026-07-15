@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, HStack, Stack, Text } from "@chakra-ui/react";
-import { useTranslations } from "next-intl";
+import { useFormatter, useNow, useTranslations } from "next-intl";
 import type { ChatGPTUsage } from "@/lib/api";
 
 type Translator = ReturnType<typeof useTranslations<"ChatGPTAuthControl">>;
@@ -13,20 +13,6 @@ function windowLabel(t: Translator, minutes: number): string {
   if (minutes % 1440 === 0) return t("usageDaysShort", { count: minutes / 1440 });
   if (minutes % 60 === 0) return t("usageHoursShort", { count: minutes / 60 });
   return t("usageMinutesShort", { count: minutes });
-}
-
-function resetsInLabel(t: Translator, resetsAt: number | null): string | null {
-  if (!resetsAt) return null;
-  const seconds = resetsAt - Math.floor(Date.now() / 1000);
-  if (seconds <= 0) return null;
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const parts: string[] = [];
-  if (days) parts.push(t("usageDaysShort", { count: days }));
-  if (hours) parts.push(t("usageHoursShort", { count: hours }));
-  if (!days && !hours) parts.push(t("usageMinutesShort", { count: Math.max(minutes, 1) }));
-  return t("usageResetsIn", { duration: parts.join(" ") });
 }
 
 function meterColor(percent: number): string {
@@ -45,6 +31,12 @@ function meterColor(percent: number): string {
  */
 export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
   const t = useTranslations("ChatGPTAuthControl");
+  // relativeTime owns the "in 3 hours" wording — locale-correct, rounded, and
+  // pluralized — so the reset countdown is not hand-rolled from day/hour/minute
+  // math. `useNow` supplies the reference point and re-renders it on an interval so
+  // the countdown stays live while the panel is open.
+  const format = useFormatter();
+  const now = useNow({ updateInterval: 60 * 1000 });
   const windows = usage?.windows ?? [];
   // Nothing is captured until the first turn after sign-in, so hide the section
   // entirely rather than showing a placeholder.
@@ -57,7 +49,12 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
       <Stack gap={2.5}>
         {windows.map((window) => {
           const percent = Math.min(Math.max(window.used_percent, 0), 100);
-          const resets = resetsInLabel(t, window.resets_at);
+          // resets_at is a unix timestamp in seconds; show the countdown only while
+          // it is still in the future (a past/absent reset just hides the row).
+          const resetsAt = window.resets_at ? new Date(window.resets_at * 1000) : null;
+          const resets = resetsAt && resetsAt.getTime() > now.getTime()
+            ? format.relativeTime(resetsAt, now)
+            : null;
           return (
             <Box key={window.key}>
               <HStack justify="space-between" mb={1} gap={4}>
@@ -66,7 +63,6 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
                 </Text>
                 <Text fontSize="xs" color="fg.muted">
                   {t("usageUsedPercent", { percent: Math.round(percent) })}
-                  {resets ? ` · ${resets}` : ""}
                 </Text>
               </HStack>
               <Box h="6px" bg="bg.muted" borderRadius="full" overflow="hidden">
@@ -78,6 +74,16 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
                   transition="width 0.3s ease"
                 />
               </Box>
+              {resets ? (
+                <HStack justify="space-between" mt={1} gap={4}>
+                  <Text fontSize="xs" color="fg.subtle">
+                    {t("usageResetsLabel")}
+                  </Text>
+                  <Text fontSize="xs" color="fg.muted">
+                    {resets}
+                  </Text>
+                </HStack>
+              ) : null}
             </Box>
           );
         })}

@@ -416,7 +416,7 @@ async def read_mcp_resource(server: str, uri: str, justification: str = Field(..
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "assistant", read_only: bool = False, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def spawn_agent(prompt: str = "", agent: str = "", read_only: bool = False, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Delegate a task to another agent (a real A2A call to its endpoint).
 
     The agent runs as a related A2A task in the same context. Its activity

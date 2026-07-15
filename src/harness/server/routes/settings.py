@@ -12,12 +12,15 @@ from harness.server.app import (
     SandboxUpdateRequest,
     SettingsUpdateRequest,
     UserContextUpdateRequest,
+    _agent_configuration_for_request,
     _apply_live_credentials,
     _configuration,
     _configuration_lock,
     _executors,
+    _load_agent_sidecar,
     _normalize_permission_mode,
     _persist_configuration,
+    _save_agent_sidecar,
     _publish_broadcast,
     _recent_models,
     _reset_all_runtimes,
@@ -263,12 +266,29 @@ async def update_settings(request: SettingsUpdateRequest):
             jina_api_key=request.jina_api_key,
             firecrawl_api_key=request.firecrawl_api_key,
             web_fetch_proxy_url=request.web_fetch_proxy_url,
-            permission_mode=request.permission_mode,
             sandbox_enabled=request.sandbox_enabled,
             provider_keys=request.provider_keys,
             provider_base_urls=request.provider_base_urls,
             workspace_strategy=request.workspace_strategy,
         )
+        # The default (global) approval policy lives on the default agent's sidecar —
+        # that is the single source GET /settings reads back. Writing it into the
+        # dead configuration.yaml `agent:` key (as the old permission_mode arg did)
+        # never round-tripped, so the picker snapped back to the default on the
+        # settings_changed refetch. Persist it where it is actually read.
+        if request.permission_mode is not None:
+            try:
+                agent_markdown_path, _ = _agent_configuration_for_request(
+                    configuration.default_agent, ""
+                )
+            except FileNotFoundError:
+                agent_markdown_path = None
+            if agent_markdown_path is not None:
+                sidecar = _load_agent_sidecar(agent_markdown_path)
+                sidecar["permissionMode"] = _normalize_permission_mode(request.permission_mode)
+                _save_agent_sidecar(agent_markdown_path, sidecar)
+                if configuration.default_agent in _executors:
+                    _executors[configuration.default_agent].reset_runtimes()
         if request.exa_api_key is not None:
             configuration.exa.api_key = request.exa_api_key
         if request.composio_api_key is not None:

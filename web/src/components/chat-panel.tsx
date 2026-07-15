@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Badge,
   Box,
   Button,
   EmptyState,
@@ -21,7 +20,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { VersionBadge } from "./attachment-chips";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
+import { Pill } from "./ui/pill";
 import { PanelTab } from "./ui/panel-tab";
 import { PanelBody, PanelCard, PanelHeader, PanelEmptyState, TOP_BAR_HEIGHT } from "@/components/ui/panel";
 import { SegmentedToggle } from "@/components/ui/segmented-toggle";
@@ -1426,7 +1426,7 @@ export function ChatPanel({
                         on the Projects home) — the build prompt, the project's locations (dotted
                         by connection status), then the folder's skills. */}
                     <Flex direction="column" align="center" gap={4}>
-                      <Text as="h2" fontSize="xl" fontWeight="semibold" textAlign="center">
+                      <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
                         {t("buildPrompt", { folder: currentFolderName })}
                       </Text>
                       {projectLocations.length > 0 && (
@@ -2184,9 +2184,9 @@ function ArtifactHistoryList({
                     <Text textStyle="fieldLabel" truncate title={entry.relativePath}>{fileName}</Text>
                     {directory ? <Text fontSize="xs" color="fg.subtle" truncate>{directory}</Text> : null}
                   </Flex>
-                  <Badge size="sm" variant="subtle" colorPalette={appearance.palette} borderRadius="sm" flexShrink={0}>
+                  <Pill colorPalette={appearance.palette}>
                     {t(appearance.labelKey)}
-                  </Badge>
+                  </Pill>
                   <VersionBadge number={entry.versionCount} active size="sm" />
                 </Flex>
               );
