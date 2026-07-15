@@ -576,6 +576,8 @@
     "noResults": "No results",
     "response": "Response",
     "taskNotFound": "No task with that id.",
+    "agentFailed": "The agent's turn failed before it could report.",
+    "agentNoReport": "The agent finished without producing a report.",
     "readTaskUnavailable": "Reading tasks is not available in this context.",
     "reloadArtifact": "Reload artifact",
     "annotation": "Annotation",

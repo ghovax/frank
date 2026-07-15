@@ -2305,6 +2305,11 @@ export function ToolResultView({ name, content, args }: { name: string; content:
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
     if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
+    // A spawned agent's turn failed before it could report — surface the real reason
+    // (e.g. its model was rate-limited) rather than a bland field dump.
+    if (code === "agent_failed") return <ErrorView message={asString(data.message) || asString(data.title) || t("agentFailed")} />;
+    // A spawned agent that genuinely finished with nothing to hand back.
+    if (code === "agent_no_report") return <EmptyHint>{asString(data.message) || t("agentNoReport")}</EmptyHint>;
     if (code === "empty_response") {
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;

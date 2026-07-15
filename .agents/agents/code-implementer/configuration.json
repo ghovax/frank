@@ -1,7 +1,7 @@
 {
   "preset": {
-    "model": "deepseek-v4-flash",
-    "provider": "opencode",
+    "model": "gpt-5.6-luna",
+    "provider": "chatgpt",
     "reasoningEffort": "high"
   },
   "permissionMode": "default",

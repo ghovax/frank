@@ -576,6 +576,8 @@
     "noResults": "結果なし",
     "response": "応答",
     "taskNotFound": "そのIDのタスクは見つかりません。",
+    "agentFailed": "エージェントのターンは報告前に失敗しました。",
+    "agentNoReport": "エージェントは報告を生成せずに終了しました。",
     "readTaskUnavailable": "このコンテキストではタスクの読み取りはできません。",
     "reloadArtifact": "アーティファクトを再読み込み",
     "annotation": "注釈",

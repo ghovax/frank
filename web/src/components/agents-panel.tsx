@@ -107,7 +107,7 @@ export function AgentsPanel({
         closeLabel={t("collapseSidebar")}
       />
 
-      <PanelBody>
+      <PanelBody mx={2}>
         {agentGroups.length === 0 ? (
           <PanelEmptyState
             icon={<LuBot />}
