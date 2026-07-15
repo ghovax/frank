@@ -602,8 +602,8 @@ export function SettingsDialog({
   // results read as a flat filtered list regardless of which nav entry they live under.
   const searchSections = searching
     ? pages.flatMap((page) => page.sections
-        .map((sec) => ({ ...sec, rows: sec.rows.filter(rowMatches), block: undefined }))
-        .filter((sec) => sec.rows.length > 0))
+        .map((section) => ({ ...section, rows: section.rows.filter(rowMatches), block: undefined }))
+        .filter((section) => section.rows.length > 0))
     : [];
 
   return (
@@ -664,7 +664,7 @@ export function SettingsDialog({
                   </Box>
                 </Flex>
             <Flex direction="column" flex={1} minW={0} minH={0}>
-              <Dialog.Body px={0} py={0} flex={1} minH={0}>
+              <Dialog.Body px={0} py={2} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
                 <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={6} py={4}>
                   {searching ? (
@@ -683,23 +683,23 @@ export function SettingsDialog({
                         </EmptyState.Root>
                       </Flex>
                     ) : (
-                      searchSections.map((sec, index) => (
-                        <SettingsSection key={index} title={sec.title}>
-                          {sec.rows.map((row) => (
+                      searchSections.map((section, index) => (
+                        <SettingsSection key={index} title={section.title}>
+                          {section.rows.map((row) => (
                             <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
                           ))}
                         </SettingsSection>
                       ))
                     )
                   ) : (
-                    activePage.sections.map((sec, index) => (
-                      <SettingsSection key={index} title={sec.title}>
-                        {sec.rows.map((row) => (
+                    activePage.sections.map((section, index) => (
+                      <SettingsSection key={index} title={section.title}>
+                        {section.rows.map((row) => (
                           <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
                         ))}
                         {/* A block after rows is separated from the last row's divider by top
                             padding; a standalone block (no rows) sits flush under the heading. */}
-                        {sec.block ? <Box pt={sec.rows.length > 0 ? 4 : 0}>{sec.block}</Box> : null}
+                        {section.block ? <Box pt={section.rows.length > 0 ? 4 : 0}>{section.block}</Box> : null}
                       </SettingsSection>
                     ))
                   )}

@@ -20,15 +20,13 @@ import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-ca
 // Shared, grouped/collapsible run of contiguous tool calls — the single source
 // of truth for how a batch of tool calls reads, used by both the chat timeline
 // and the agents panel so the two stay in sync. The group is a single line of
-// text in the transcript: a leading disclosure caret, the most recent call's
-// label (shimmering while live), then a compact tally of the tools used and any
+// text in the transcript: the most recent call's icon and label (shimmering while
+// live), then a compact tally of the tools used and any
 // status/file chips — all hugging the text like a sentence, not a card. Opening
 // it hangs the individual call lines off a hairline left rule, the same visual
 // grammar the calls themselves (and markdown blockquotes) use.
 
-// Tally the tools by name, preserving first-seen order (so the recap reads in the
-// order work actually happened): each distinct tool becomes one icon plus how many
-// times it was invoked.
+// Tally tools by name while preserving first-seen order.
 function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, number> } {
   const order: string[] = [];
   const counts = new Map<string, number>();
@@ -41,12 +39,23 @@ function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, 
 }
 
 // One tally chip in the group heading — the shared Pill carrying BOTH the icon and its
-// count, so each tool/status reads as a single unit. Tinted by its palette; the count
-// only appears once there is more than one.
-function TallyBadge({ icon, count, colorPalette = "gray", title }: { icon: ReactNode; count: number; colorPalette?: string; title?: string }) {
+// count, so each tool/status reads as a single unit.
+function TallyBadge({
+  icon,
+  count,
+  colorPalette = "gray",
+  title,
+  alwaysShowCount = false,
+}: {
+  icon: ReactNode;
+  count: number;
+  colorPalette?: string;
+  title?: string;
+  alwaysShowCount?: boolean;
+}) {
   return (
     <Pill colorPalette={colorPalette} title={title} icon={icon}>
-      {count > 1 ? <RollingNumber value={count} /> : null}
+      {alwaysShowCount || count > 1 ? <RollingNumber value={count} /> : null}
     </Pill>
   );
 }
@@ -139,24 +148,28 @@ export const ToolGroup = memo(function ToolGroup({
   // extension icon and diff stat, alongside the status chips.
   const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
   const hasFileChanges = fileChanges.length > 0;
-  // After the caret, a live recap: one icon per distinct tool with its invocation
-  // count, preceded by a live status line that shimmers while active.
-  const tally = useMemo(() => tallyTools(tools), [tools]);
+  // The left icon owns the latest call. The trailing tally therefore counts only
+  // earlier calls, preventing the latest tool from appearing twice in the same row.
+  const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
   // The status line shows the most recent tool's own label (its justification),
   // animated as work streams in and left in place when the batch finishes — more
   // informative than a static "Still working" / "Actions taken".
   const latestTool = tools[tools.length - 1];
+  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments) : null;
+  const HeadingIcon = headingDisplay?.icon ?? LuBrain;
+  const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // When the batch touched a single remote place, badge the collapsed heading with it
   // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
-  // A tools-less group is a "thinking before acting" phase. Reasoning is a record that
-  // stays, like the tool calls: it renders as a persistent "Thinking" row (its brain chip)
-  // whether live or settled, rather than vanishing once the turn moves on.
+  // A tools-less group is a "thinking before acting" phase. Its latest phase owns the
+  // leading brain icon; only earlier phases become a counted trailing badge.
   const thinkingOnly = tools.length === 0;
+  const previousThinkingTurns = Math.max(0, thinkingTurns - (thinkingOnly ? 1 : 0));
   const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
-  // A thinking-only heading has no body to reveal, so it is not interactive.
-  const interactive = !thinkingOnly;
+  // One call is already fully represented by the summary row. The grouped body only
+  // becomes useful once it can reveal multiple calls instead of repeating that row.
+  const interactive = tools.length > 1;
 
   // Status chips: one colored icon (+ count) per state, in the same visual grammar as the
   // tool tally beside them, readable at a glance with no prose badge to parse. The colour
@@ -169,23 +182,22 @@ export const ToolGroup = memo(function ToolGroup({
     backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }) },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
-  // The animated label slot: the latest tool's label crossfades as work streams in
-  // (blur-in the new, fade-out the old, both in the same grid cell so nothing reflows),
-  // and shimmers while active. `minmax(0,1fr)` lets it truncate with an ellipsis.
+  // The animated label slot: the latest tool's label crossfades as work streams in,
+  // with both labels in the same grid cell so nothing reflows, and shimmers while active.
+  // `minmax(0,1fr)` lets it truncate with an ellipsis.
   const titleSlot = (
-    <Box minW={0} overflow="hidden" display="grid" gridTemplateColumns="minmax(0, 1fr)" position="relative">
+    <Box minW={0} display="grid" gridTemplateColumns="minmax(0, 1fr)" position="relative">
       <AnimatePresence initial={false} mode="popLayout">
         <motion.div
           key={headingText}
-          initial={{ opacity: 0, filter: "blur(2px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.1, ease: "easeOut" } }}
           transition={{ duration: 0.22, ease: "easeOut" }}
           style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
         >
           <Text
-            textStyle="fieldLabel"
-            fontSize="sm"
+            textStyle="sm"
             fontWeight="normal"
             whiteSpace="nowrap"
             overflow="hidden"
@@ -206,8 +218,8 @@ export const ToolGroup = memo(function ToolGroup({
   // file-change chip, the remote badge, and the status chips — all animated in/out.
   const badgeSlot = (
     <>
-      {(thinkingTurns > 0 || thinkingOnly) && (
-        <TallyBadge colorPalette="purple" count={thinkingTurns} icon={<LuBrain />} title={t("thinking")} />
+      {previousThinkingTurns > 0 && (
+        <TallyBadge colorPalette="purple" count={previousThinkingTurns} icon={<LuBrain />} title={t("thinking")} alwaysShowCount />
       )}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
@@ -223,7 +235,7 @@ export const ToolGroup = memo(function ToolGroup({
               transition={{ duration: 0.12, ease: "easeOut" }}
               style={{ display: "inline-flex", alignItems: "center" }}
             >
-              <TallyBadge title={display.label} count={count} colorPalette={paletteFromIconColor(display.iconColor)} icon={<ToolIcon />} />
+              <TallyBadge title={display.label} count={count} colorPalette={paletteFromIconColor(display.iconColor)} icon={<ToolIcon />} alwaysShowCount />
             </motion.div>
           );
         })}
@@ -283,6 +295,7 @@ export const ToolGroup = memo(function ToolGroup({
         tone={active ? "active" : "muted"}
         maxH={80}
         followTailKey={tools.length}
+        icon={<Box color={headingIconColor}><HeadingIcon /></Box>}
         title={titleSlot}
         badges={badgeSlot}
       >

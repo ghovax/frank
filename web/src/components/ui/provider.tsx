@@ -52,7 +52,7 @@ const config = defineConfig({
       textarea: {
         variants: {
           size: {
-            sm: { py: "1.5", scrollPaddingBottom: "1.5" },
+            sm: { py: "1.5", lineHeight: "1.375rem", scrollPaddingBottom: "1.5" },
           },
         },
         defaultVariants: { size: "xs" },

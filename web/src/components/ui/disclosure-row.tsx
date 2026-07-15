@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
@@ -23,7 +23,7 @@ import { ActivityIcon } from "./activity-icon";
 export type DisclosureTone = "muted" | "active" | "attention";
 
 export interface DisclosureRowProps {
-  icon?: ReactNode;
+  icon: ReactNode;
   // The label. Simple callers wrap text in <DisclosureLabel>; callers with an
   // animated label (the grouped run) pass their own node.
   title: ReactNode;
@@ -47,13 +47,12 @@ export interface DisclosureRowProps {
   followTailKey?: unknown;
 }
 
-// The standard disclosure label: one line, ellipsized, at the shared field-label
-// scale. `shimmer` applies the running gradient for a live line.
+// The standard disclosure label: one line, ellipsized, with Chakra's complete sm
+// typography metrics. `shimmer` applies the running gradient for a live line.
 export function DisclosureLabel({ children, shimmer }: { children: ReactNode; shimmer?: boolean }) {
   return (
-    <Box
-      textStyle="fieldLabel"
-      fontSize="sm"
+    <Text
+      textStyle="sm"
       fontWeight="normal"
       whiteSpace="nowrap"
       overflow="hidden"
@@ -61,7 +60,7 @@ export function DisclosureLabel({ children, shimmer }: { children: ReactNode; sh
       className={shimmer ? "running-title-shimmer" : undefined}
     >
       {children}
-    </Box>
+    </Text>
   );
 }
 
@@ -101,12 +100,10 @@ export function DisclosureRow({
     tone === "attention" ? "yellow.fg" : tone === "active" ? "fg" : isOpen ? "fg" : "fg.muted";
   const triggerContent = (
     <>
-      {icon && (
-        <ActivityIcon>
-          {icon}
-        </ActivityIcon>
-      )}
-      <Box minW={0} flexShrink={1} overflow="hidden">
+      <ActivityIcon>
+        {icon}
+      </ActivityIcon>
+      <Box minW={0} flexShrink={1}>
         {title}
       </Box>
       {badges && (
@@ -140,6 +137,7 @@ export function DisclosureRow({
             maxW="100%"
             minW={0}
             p={0}
+            borderWidth={0}
             gap={1.5}
             justifyContent="flex-start"
             flexShrink={1}
@@ -176,16 +174,13 @@ export function DisclosureRow({
       </Flex>
 
       {collapsible && isOpen && (
-        // The body hangs off the hairline rule, indented clear of it so it reads as a
-        // quoted aside. `ml` centres the 2px rule under the icon; `pt` gives the first
-        // item the same breathing room as the gap between items below.
         <Box
           ref={containerRef}
           onScroll={onScroll}
           className="disclosure-enter"
           py={1}
           ml={1.5}
-          pl={3}
+          pl={3.5}
           borderLeft="2px solid"
           borderColor="border.muted"
           maxH={maxH}
