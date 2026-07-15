@@ -342,10 +342,12 @@ async def update_user_context(request: UserContextUpdateRequest):
     static system prompt, so cached runtimes are dropped to rebuild it on the next turn."""
     assert _app._global_configuration is not None
     async with _configuration_lock:
+        setting_changed = _app._global_configuration.user_context.enabled != request.enabled
         await _persist_configuration(user_context_enabled=request.enabled)
         _app._global_configuration.user_context.enabled = request.enabled
-        for executor in _executors.values():
-            executor.reset_runtimes()
+        if setting_changed:
+            for executor in _executors.values():
+                executor.reset_user_context_state()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "user_context_enabled": _app._global_configuration.user_context.enabled}
 

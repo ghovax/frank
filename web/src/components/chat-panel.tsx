@@ -1530,9 +1530,9 @@ export function ChatPanel({
                         // token by token), so its wrapper stays a plain, stable row — an entrance
                         // animation on top of the streaming text would fight it. User messages and
                         // tool-call groups, though, are complete the moment they appear, so they get
-                        // a single gentle fade-and-rise. `animatedKeys` limits it to rows a live turn
+                        // a single gentle fade. `animatedKeys` limits it to rows a live turn
                         // just appended (never load or history), and `initial` only fires on mount,
-                        // so a tool group animates once — not again as its calls fill in.
+                        // so a tool group fades once — not again as its calls fill in.
                         const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
                         if (isAssistantMessage) {
                           return (
@@ -1544,8 +1544,8 @@ export function ChatPanel({
                         return (
                           <motion.div
                             key={key}
-                            initial={animatedKeys.has(key) ? { opacity: 0, y: 6 } : false}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={animatedKeys.has(key) ? { opacity: 0 } : false}
+                            animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                             style={{ display: "flex", flexDirection: "column" }}

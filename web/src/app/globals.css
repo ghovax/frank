@@ -130,9 +130,8 @@ samp {
 
 /* One shared entrance for standalone content that replaces or joins the layout —
    a mermaid diagram taking over its code block or a side panel joining the tile
-   grid. A short fade with a 2px settle: enough that the change
-   reads as intentional, never enough to feel like the UI is performing. Runs once
-   on mount (it's a CSS animation, so re-renders never replay it). */
+   grid. Opacity only keeps the change legible without making content rise into
+   position. Runs once on mount, so re-renders never replay it. */
 .reveal-enter {
   animation: reveal-enter 0.14s ease-out;
 }
@@ -140,17 +139,14 @@ samp {
 @keyframes reveal-enter {
   from {
     opacity: 0;
-    transform: translateY(2px);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
-/* Disclosure content already enters directly beneath its trigger, so its motion
-   is a simple local fade rather than the upward settle used by standalone views. */
+/* Disclosure content enters directly beneath its trigger with a simple local fade. */
 .disclosure-enter {
   animation: disclosure-enter 0.12s ease-out;
 }

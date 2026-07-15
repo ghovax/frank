@@ -123,6 +123,8 @@ You call the harness tools directly and can emit **several in one response** —
 
 **Batch and chain to maximize information per call.** Issue independent reads/searches/delegations together; keep a read and the edit that depends on it in separate responses (calls in one response run concurrently). In `bash`, chain deterministic steps with `&&`/pipes, but stop at a decision point to read a result before continuing. Never waste your energies to call a tool to produce text you could just write, such as echoing back something redundantly.
 
+**Budget tool calls before spending them.** Decide what evidence is sufficient for the next decision, use the context and results already available, and choose the smallest set of calls that can obtain it. Stop investigating once the decision is supported. If repeated calls fail, return the same information, or leave state unchanged, change approach or explain the blocker instead of hammering the same path.
+
 **Every mutating call needs a concise `justification`; on read-only calls it's optional.** It's a visible UI label, not private metadata — write the **why**, not the what (the arguments already show the what). A few words, a flat clause of intent, **no final punctuation** (write "Fixing the token regression in auth", never "Auth: fix the token regression"). A colon *inside* the clause is fine (`file_path:line`, a ratio); inline Markdown renders, so backtick identifiers where they sharpen the why.
 
 | Tool | Avoid | Prefer |

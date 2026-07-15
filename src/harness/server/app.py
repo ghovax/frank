@@ -369,6 +369,7 @@ _pending_questions: dict[str, asyncio.Future] = {}
 # switching the active agent continues the same conversation (the persona is
 # applied per-turn on top of this shared history).
 _conversations: dict[str, list] = {}
+_work_habits_acknowledged_contexts: set[str] = set()
 # How many executions are running per context, including delegated agents. Drives
 # session-stream lifetime and the sidebar spinner; a count handles overlapping work.
 _running_contexts: dict[str, int] = {}
@@ -1570,6 +1571,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         registry=_registry,
         on_new_context=_record_session_visible,
         conversations=_conversations,
+        work_habits_acknowledged_contexts=_work_habits_acknowledged_contexts,
         on_turn_state=_set_turn_state,
         on_permission_state=_notify_permission_state,
         load_conversation=_load_conversation,
@@ -1918,6 +1920,7 @@ async def _reload_configuration_from_disk() -> None:
     assert _global_configuration is not None
     fresh = await asyncio.to_thread(GlobalConfiguration.load)
     configuration = _global_configuration
+    user_context_setting_changed = configuration.user_context.enabled != fresh.user_context.enabled
     configuration.exa = fresh.exa
     configuration.jina = fresh.jina
     configuration.firecrawl = fresh.firecrawl
@@ -1932,6 +1935,9 @@ async def _reload_configuration_from_disk() -> None:
     configuration.providers = fresh.providers
     configuration.default_agent = fresh.default_agent
     await _apply_live_credentials()
+    if user_context_setting_changed:
+        for executor in _executors.values():
+            executor.reset_user_context_state()
     _broadcaster.publish({"type": "settings_changed"})
 
 

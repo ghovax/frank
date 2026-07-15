@@ -582,6 +582,7 @@ class HarnessAgentExecutor(AgentExecutor):
         registry: Optional["AgentRegistry"] = None,
         on_new_context: Optional[Callable[..., Any]] = None,
         conversations: Optional[dict[str, list]] = None,
+        work_habits_acknowledged_contexts: Optional[set[str]] = None,
         on_turn_state: Optional[Callable[..., Any]] = None,
         on_permission_state: Optional[Callable[..., Any]] = None,
         load_conversation: Optional[Callable[..., Any]] = None,
@@ -645,6 +646,11 @@ class HarnessAgentExecutor(AgentExecutor):
         # switching agents mid-session continues the same conversation with a different
         # persona rather than starting over. Removed on session delete via teardown.
         self._conversations: dict[str, list] = conversations if conversations is not None else {}
+        self._work_habits_acknowledged_contexts: set[str] = (
+            work_habits_acknowledged_contexts
+            if work_habits_acknowledged_contexts is not None
+            else set()
+        )
         # Hold startup-recovery wake tasks and in-flight manual-compaction turns so they
         # are not garbage-collected before they finish. Self-clearing via done callbacks;
         # not per-context.
@@ -740,6 +746,31 @@ class HarnessAgentExecutor(AgentExecutor):
                 state.pending_reset = True
                 self._maybe_evict(context_id)
 
+    def reset_user_context_state(self) -> None:
+        """Rebuild runtimes and allow one fresh work-habits acknowledgement per session."""
+        self._work_habits_acknowledged_contexts.clear()
+        self.reset_runtimes()
+
+    def _claim_work_habits_acknowledgement(
+        self,
+        context_id: str,
+        *,
+        delegated: bool,
+        autonomous: bool,
+        compaction: bool,
+    ) -> bool:
+        """Claim the single user-turn acknowledgement for one shared session."""
+        if (
+            not self._global_configuration.user_context.enabled
+            or delegated
+            or autonomous
+            or compaction
+            or context_id in self._work_habits_acknowledged_contexts
+        ):
+            return False
+        self._work_habits_acknowledged_contexts.add(context_id)
+        return True
+
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
         state = self._contexts.get(context_id)
         if state is None or state.runtime is None:
@@ -804,6 +835,7 @@ class HarnessAgentExecutor(AgentExecutor):
             if state.runtime is not None:
                 state.runtime.abort()
         self._conversations.pop(context_id, None)
+        self._work_habits_acknowledged_contexts.discard(context_id)
 
     def _arm_resume_pump(self, context_id: str, runtime: Optional[AgentRuntime] = None) -> None:
         """Ensure a resume pump watches this context while it has background work in
@@ -1107,11 +1139,33 @@ class HarnessAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
+        async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
+            await updater.update_status(TaskState.working, updater.new_agent_message([part]))
+            if self._on_stream_event is not None and not delegated and publish_stream_event:
+                self._on_stream_event(task.context_id, part)
+
+        context_state = self._context(task.context_id)
+        should_acknowledge_work_habits = self._claim_work_habits_acknowledgement(
+            task.context_id,
+            delegated=delegated,
+            autonomous=autonomous,
+            compaction=compaction,
+        )
+        if should_acknowledge_work_habits:
+            try:
+                for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
+                    await emit(acknowledgement_part)
+            except Exception as exception:
+                self._work_habits_acknowledged_contexts.discard(task.context_id)
+                logger.exception("Work-habits acknowledgement failed: %s", exception)
+                await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
+                return
+
         # Serialize non-delegated turns per context so a user turn and an autonomous
         # background wake never drive the shared runtime concurrently. Delegated
         # agent turns share the parent's context and run inside it, so they must
         # not take this lock (that would deadlock against the parent).
-        context_serialization_lock = None if delegated else self._context(task.context_id).lock
+        context_serialization_lock = None if delegated else context_state.lock
         if context_serialization_lock is not None:
             await context_serialization_lock.acquire()
 
@@ -1126,14 +1180,6 @@ class HarnessAgentExecutor(AgentExecutor):
         track_context_activity = False
         track_steerable_turn = False
         on_turn_state = self._on_turn_state
-
-        async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
-            await updater.update_status(TaskState.working, updater.new_agent_message([part]))
-            # Fan the part out to non-driving viewers. publish runs AFTER the status
-            # update has persisted, so a viewer's snapshot (taken at subscribe time)
-            # plus the live tail are gap- and duplicate-free (see /sessions/.../stream).
-            if self._on_stream_event is not None and not delegated and publish_stream_event:
-                self._on_stream_event(task.context_id, part)
 
         async def emit_compaction(event) -> None:
             """Map a runtime compaction event to its ``compaction`` DataPart, so both
@@ -1201,15 +1247,6 @@ class HarnessAgentExecutor(AgentExecutor):
                 self._context(task.context_id).running = True
 
             await updater.start_work()
-
-            if (
-                self._global_configuration.user_context.enabled
-                and not delegated
-                and not autonomous
-                and not compaction
-            ):
-                for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
-                    await emit(acknowledgement_part)
 
             workspace = await self._workspace_for(
                 context_id=task.context_id,
