@@ -205,7 +205,7 @@ function ContextUsageChip({
           <InlineField label={t("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
         )}
       </Flex>
-      {chatgptUsage && (
+      {chatgptUsage && chatgptUsage.windows.length > 0 && (
         <>
           <Separator my={2} />
           <Box w="210px" whiteSpace="normal">

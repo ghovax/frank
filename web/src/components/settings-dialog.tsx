@@ -3,7 +3,7 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
-import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateTuningSettings, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type TuningSettings } from "@/lib/api";
+import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
 import { ConnectionSwitcher } from "./connection-switcher";
@@ -20,30 +20,6 @@ import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeCo
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 
 export type SettingsSection = "general" | "locations" | "agents" | "connection";
-
-// The tuning policy shown before the server responds (mirrors the backend defaults).
-const DEFAULT_TUNING: TuningSettings = {
-  output_fraction: 0.25,
-  listing_fraction: 0.15,
-  settle_interval_seconds: 0.05,
-  settle_ceiling_seconds: 1.5,
-  timeout_scale: 1.0,
-};
-
-// A compact numeric control for one tuning knob: a bounded number field that commits on change.
-function TuningNumberControl({ value, min, max, step, onChange, disabled }: { value: number; min: number; max: number; step: number; onChange: (next: number) => void; disabled?: boolean }) {
-  return (
-    <Box w="120px">
-      <Input
-        type="number" size="sm" value={String(value)} min={min} max={max} step={step} disabled={disabled}
-        onChange={(event) => {
-          const parsed = Number(event.target.value);
-          if (Number.isFinite(parsed)) onChange(Math.min(max, Math.max(min, parsed)));
-        }}
-      />
-    </Box>
-  );
-}
 
 // One setting modeled as data (so the search box can match it): a title + optional
 // description that renders on the left, and a `control` that renders on the right. `stacked`
@@ -139,8 +115,6 @@ export function SettingsDialog({
   const [savedUserContextEnabled, setSavedUserContextEnabled] = useState(false);
   const [computerControlEnabled, setComputerControlEnabled] = useState(false);
   const [savedComputerControlEnabled, setSavedComputerControlEnabled] = useState(false);
-  const [tuning, setTuning] = useState<TuningSettings>(DEFAULT_TUNING);
-  const [savedTuning, setSavedTuning] = useState<TuningSettings>(DEFAULT_TUNING);
   // Whether the server can read Full-Disk-Access-protected data (Screen Time, Safari history).
   // `null` while unknown; drives the banner shown when user-context is on but FDA is missing.
   const [fullDiskAccess, setFullDiskAccess] = useState<boolean | null>(null);
@@ -183,8 +157,7 @@ export function SettingsDialog({
     || workspaceStrategy !== savedWorkspaceStrategy
     || autoCompaction !== savedAutoCompaction
     || userContextEnabled !== savedUserContextEnabled
-    || computerControlEnabled !== savedComputerControlEnabled
-    || JSON.stringify(tuning) !== JSON.stringify(savedTuning);
+    || computerControlEnabled !== savedComputerControlEnabled;
   const hasUnsavedChanges = generalDirty || agentDirty || connectionDirty;
   const agentItems = useMemo(
     () => agents.map((agent) => ({ label: agent.title || agent.name, value: agent.id })),
@@ -210,8 +183,6 @@ export function SettingsDialog({
         setSavedUserContextEnabled(settings.user_context_enabled ?? false);
         setComputerControlEnabled(settings.computer_control_enabled ?? false);
         setSavedComputerControlEnabled(settings.computer_control_enabled ?? false);
-        setTuning(settings.tuning ?? DEFAULT_TUNING);
-        setSavedTuning(settings.tuning ?? DEFAULT_TUNING);
         setExaApiKey(settings.exa_api_key ?? "");
         setSavedExaApiKey(settings.exa_api_key ?? "");
         setComposioApiKey(settings.composio_api_key ?? "");
@@ -443,10 +414,6 @@ export function SettingsDialog({
         await updateComputerControlSetting(computerControlEnabled);
         setSavedComputerControlEnabled(computerControlEnabled);
       }
-      if (JSON.stringify(tuning) !== JSON.stringify(savedTuning)) {
-        await updateTuningSettings(tuning);
-        setSavedTuning(tuning);
-      }
       if (agentDirty && settingsAgent && agentConfiguration) {
         const savedConfiguration = await saveAgentConfiguration(settingsAgent, {
           permission_mode: agentConfiguration.permission_mode,
@@ -492,7 +459,6 @@ export function SettingsDialog({
     setAutoCompaction(savedAutoCompaction);
     setUserContextEnabled(savedUserContextEnabled);
     setComputerControlEnabled(savedComputerControlEnabled);
-    setTuning(savedTuning);
     setAgentConfiguration(savedAgentConfiguration);
     setSettingsAgent(selectedAgent || agents[0]?.id || "");
     setConnectionResetToken((current) => current + 1);
@@ -569,26 +535,6 @@ export function SettingsDialog({
             { key: "computerControl", title: t("computerControl"), description: t("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
           ],
           block: grantAlerts,
-        },
-        {
-          title: t("toolTuning"),
-          rows: [
-            { key: "outputBudget", title: t("outputBudget"), description: t("outputBudgetHint"), control: (
-              <TuningNumberControl value={tuning.output_fraction} min={0.05} max={1} step={0.05} disabled={saving} onChange={(next) => setTuning((current) => ({ ...current, output_fraction: next }))} />
-            ) },
-            { key: "listingBudget", title: t("listingBudget"), description: t("listingBudgetHint"), control: (
-              <TuningNumberControl value={tuning.listing_fraction} min={0.05} max={1} step={0.05} disabled={saving} onChange={(next) => setTuning((current) => ({ ...current, listing_fraction: next }))} />
-            ) },
-            { key: "settleInterval", title: t("settleInterval"), description: t("settleHint"), control: (
-              <TuningNumberControl value={tuning.settle_interval_seconds} min={0.01} max={1} step={0.01} disabled={saving} onChange={(next) => setTuning((current) => ({ ...current, settle_interval_seconds: next }))} />
-            ) },
-            { key: "settleCeiling", title: t("settleCeiling"), control: (
-              <TuningNumberControl value={tuning.settle_ceiling_seconds} min={0.1} max={10} step={0.1} disabled={saving} onChange={(next) => setTuning((current) => ({ ...current, settle_ceiling_seconds: next }))} />
-            ) },
-            { key: "timeoutScale", title: t("timeoutScale"), description: t("timeoutScaleHint"), control: (
-              <TuningNumberControl value={tuning.timeout_scale} min={0.25} max={5} step={0.25} disabled={saving} onChange={(next) => setTuning((current) => ({ ...current, timeout_scale: next }))} />
-            ) },
-          ],
         },
         {
           title: t("appearance"),

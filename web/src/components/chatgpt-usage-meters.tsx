@@ -46,45 +46,42 @@ function meterColor(percent: number): string {
 export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
   const t = useTranslations("ChatGPTAuthControl");
   const windows = usage?.windows ?? [];
+  // Nothing is captured until the first turn after sign-in, so hide the section
+  // entirely rather than showing a placeholder.
+  if (windows.length === 0) return null;
   return (
     <Box>
       <Text textStyle="fieldLabel" mb={1.5}>
         {t("usageTitle")}
       </Text>
-      {windows.length === 0 ? (
-        <Text fontSize="xs" color="fg.muted">
-          {t("usagePending")}
-        </Text>
-      ) : (
-        <Stack gap={2.5}>
-          {windows.map((window) => {
-            const percent = Math.min(Math.max(window.used_percent, 0), 100);
-            const resets = resetsInLabel(t, window.resets_at);
-            return (
-              <Box key={window.key}>
-                <HStack justify="space-between" mb={1} gap={4}>
-                  <Text fontSize="xs" fontWeight="medium">
-                    {windowLabel(t, window.window_minutes)}
-                  </Text>
-                  <Text fontSize="xs" color="fg.muted">
-                    {t("usageUsedPercent", { percent: Math.round(percent) })}
-                    {resets ? ` · ${resets}` : ""}
-                  </Text>
-                </HStack>
-                <Box h="6px" bg="bg.muted" borderRadius="full" overflow="hidden">
-                  <Box
-                    h="full"
-                    w={`${percent}%`}
-                    bg={meterColor(percent)}
-                    borderRadius="full"
-                    transition="width 0.3s ease"
-                  />
-                </Box>
+      <Stack gap={2.5}>
+        {windows.map((window) => {
+          const percent = Math.min(Math.max(window.used_percent, 0), 100);
+          const resets = resetsInLabel(t, window.resets_at);
+          return (
+            <Box key={window.key}>
+              <HStack justify="space-between" mb={1} gap={4}>
+                <Text fontSize="xs" fontWeight="medium">
+                  {windowLabel(t, window.window_minutes)}
+                </Text>
+                <Text fontSize="xs" color="fg.muted">
+                  {t("usageUsedPercent", { percent: Math.round(percent) })}
+                  {resets ? ` · ${resets}` : ""}
+                </Text>
+              </HStack>
+              <Box h="6px" bg="bg.muted" borderRadius="full" overflow="hidden">
+                <Box
+                  h="full"
+                  w={`${percent}%`}
+                  bg={meterColor(percent)}
+                  borderRadius="full"
+                  transition="width 0.3s ease"
+                />
               </Box>
-            );
-          })}
-        </Stack>
-      )}
+            </Box>
+          );
+        })}
+      </Stack>
     </Box>
   );
 }

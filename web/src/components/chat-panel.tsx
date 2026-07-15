@@ -1426,14 +1426,14 @@ export function ChatPanel({
                         on the Projects home) — the build prompt, the project's locations (dotted
                         by connection status), then the folder's skills. */}
                     <Flex direction="column" align="center" gap={4}>
-                      <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
+                      <Text as="h2" fontSize="xl" fontWeight="semibold" textAlign="center">
                         {t("buildPrompt", { folder: currentFolderName })}
                       </Text>
                       {projectLocations.length > 0 && (
                         <Flex direction="column" align="center" gap={2}>
                           <Flex align="center" justify="center" gap={1.5} color="fg.muted">
-                            <LuNetwork size={15} />
-                            <Text textStyle="sectionLabel">{t("locationsAvailable")}</Text>
+                            <LuNetwork size={14} />
+                            <Text textStyle="panelTitle">{t("locationsAvailable")}</Text>
                           </Flex>
                           <Flex align="center" gap={2.5} wrap="wrap" justify="center">
                             {projectLocations.map((location) => (

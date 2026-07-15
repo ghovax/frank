@@ -116,11 +116,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             <Text fontSize="xs">{t("skillsDescription")}</Text>
           </Box>
           <Flex direction="column" gap={2}>
-            <ScopeLabel icon={<LuPuzzle size={12} />}>{t("skillsAvailableGlobally")}</ScopeLabel>
+            <ScopeLabel icon={<LuPuzzle size={14} />}>{t("skillsAvailableGlobally")}</ScopeLabel>
             {globalSkills.length > 0
               ? globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
               : <EmptyScope icon={<LuPuzzle />}>{t("noGlobalSkills")}</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel icon={<LuPuzzle size={12} />}>{t("skillsAvailableInProject")}</ScopeLabel>}
+            {!isHomeFolder && <ScopeLabel icon={<LuPuzzle size={14} />}>{t("skillsAvailableInProject")}</ScopeLabel>}
             {!isHomeFolder && (projectSkills.length > 0
               ? projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
               : <EmptyScope icon={<LuPuzzle />}>{t("noProjectSkills")}</EmptyScope>)}
@@ -138,11 +138,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             <Text fontSize="xs">{t("toolsDescription")}</Text>
           </Box>
           <Flex direction="column" gap={2}>
-            <ScopeLabel icon={<LuPlug size={12} />}>{t("toolsAvailableGlobally")}</ScopeLabel>
+            <ScopeLabel icon={<LuPlug size={14} />}>{t("toolsAvailableGlobally")}</ScopeLabel>
             {globalServers.length > 0
               ? globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)
               : <EmptyScope icon={<LuPlug />}>{t("noGlobalTools")}</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel icon={<LuPlug size={12} />}>{t("toolsAvailableInProject")}</ScopeLabel>}
+            {!isHomeFolder && <ScopeLabel icon={<LuPlug size={14} />}>{t("toolsAvailableInProject")}</ScopeLabel>}
             {!isHomeFolder && (projectServers.length > 0
               ? projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)
               : <EmptyScope icon={<LuPlug />}>{t("noProjectTools")}</EmptyScope>)}
@@ -158,9 +158,9 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
 // scopes read clearly; deliberately understated, not a bold uppercase heading.
 function ScopeLabel({ icon, children }: { icon?: ReactNode; children: string }) {
   return (
-    <Flex align="center" gap={1.5} mt={1}>
+    <Flex align="center" gap={1.5}>
       {icon && <Box color="fg.subtle" flexShrink={0}>{icon}</Box>}
-      <Text textStyle="fieldLabel" color="fg.subtle">
+      <Text fontSize="xs" fontWeight="medium" color="fg.subtle">
         {children}
       </Text>
     </Flex>
@@ -207,7 +207,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
         collapsible={collapsible}
         open={open}
         onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPuzzle size={13} /></Box>}
+        icon={<Box color="fg.muted"><LuPuzzle size={14} /></Box>}
         title={<CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} />}
         badges={enabled ? undefined : <DisabledBadge />}
       />
@@ -250,7 +250,7 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
         collapsible={enabled}
         open={open}
         onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPlug size={13} /></Box>}
+        icon={<Box color="fg.muted"><LuPlug size={14} /></Box>}
         title={<CapabilityTitle identifier={server.name} />}
         badges={
           !enabled ? (

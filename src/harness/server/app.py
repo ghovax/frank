@@ -2279,15 +2279,6 @@ class CompactionUpdateRequest(BaseModel):
     keep_recent_turns: int | None = None
 
 
-class TuningUpdateRequest(BaseModel):
-    """Tool tuning policy. Only provided fields are changed."""
-    output_fraction: float | None = None
-    listing_fraction: float | None = None
-    settle_interval_seconds: float | None = None
-    settle_ceiling_seconds: float | None = None
-    timeout_scale: float | None = None
-
-
 class MCPToolCallRequest(BaseModel):
     server: str
     tool_name: str

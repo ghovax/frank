@@ -11,7 +11,6 @@ from harness.server.app import (
     PROVIDERS,
     SandboxUpdateRequest,
     SettingsUpdateRequest,
-    TuningUpdateRequest,
     UserContextUpdateRequest,
     _apply_live_credentials,
     _configuration,
@@ -240,7 +239,6 @@ async def get_settings():
         "sandbox_enabled": _app._global_configuration.sandbox.enabled,
         "workspace_strategy": _app._global_configuration.workspace.strategy,
         "compaction": _app._global_configuration.compaction.model_dump(),
-        "tuning": _app._global_configuration.tuning.model_dump(),
         "user_context_enabled": _app._global_configuration.user_context.enabled,
         "computer_control_enabled": _app._global_configuration.computer_control.enabled,
         "providers": {
@@ -359,21 +357,3 @@ async def update_compaction(request: CompactionUpdateRequest):
             _app._global_configuration.compaction = _app._global_configuration.compaction.model_copy(update=changes)
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "compaction": _app._global_configuration.compaction.model_dump()}
-
-
-@router.post("/settings/tuning")
-async def update_tuning(request: TuningUpdateRequest):
-    """Persist and apply the tool tuning policy (output/listing budget fractions, settlement
-    interval and ceiling, timeout scale). The policy is process-global and every tool reads it per
-    call, so pushing it through set_tuning takes effect immediately — no runtime reset needed."""
-    from harness.core.tuning import set_tuning, tuning_from_policy
-
-    assert _app._global_configuration is not None
-    changes = request.model_dump(exclude_none=True)
-    if changes:
-        async with _configuration_lock:
-            await _persist_configuration(tuning=changes)
-            _app._global_configuration.tuning = _app._global_configuration.tuning.model_copy(update=changes)
-            set_tuning(tuning_from_policy(_app._global_configuration.tuning))
-    _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "tuning": _app._global_configuration.tuning.model_dump()}

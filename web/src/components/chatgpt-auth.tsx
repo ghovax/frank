@@ -157,9 +157,11 @@ export function ChatGPTAuthControl({
               </Alert.Description>
             </Alert.Content>
           </Alert.Root>
-          <Box mt={3}>
-            <ChatGPTUsageMeters usage={status?.usage ?? null} />
-          </Box>
+          {(status?.usage?.windows?.length ?? 0) > 0 && (
+            <Box mt={3}>
+              <ChatGPTUsageMeters usage={status?.usage ?? null} />
+            </Box>
+          )}
         </>
       ) : (
         <Alert.Root status="info" size="sm" borderRadius="md" mt={3} alignItems="center">
