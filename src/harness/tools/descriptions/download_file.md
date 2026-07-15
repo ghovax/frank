@@ -7,4 +7,4 @@
 - For reading a page's *text* as markdown, use **fetch_url** instead.
 - It cannot pass a JavaScript "checking your browser" / CAPTCHA challenge; those need a real browser.
 
-This tool **writes a file** and is not available to read-only agents. A short *justification* is welcome when the purpose is not obvious — one open-ended sentence rather than a `label: detail` title.
+This tool **writes a file** and is not available to read-only agents.

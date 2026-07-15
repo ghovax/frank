@@ -1,10 +1,7 @@
-**Fast file-pattern matching** that works with any codebase size.
+Find files by name across a location, matching a path glob. Results come back newest-first by modification time and honor the location's `.gitignore`, so build output, dependencies, and anything else the project excludes stay out of the results.
 
-- Supports glob patterns like `**/*.js` or `src/**/*.ts`.
-- Returns matching file paths, sorted by **modification time** (most recent first).
-- Use this when you need to find files **by name pattern**.
-- For open-ended searches that may need multiple rounds, use **spawn_agent** instead.
-- You can call multiple tools in a single response — **batch several searches** at once when each might be useful.
-- **Prefer this** over `bash` with `find` or `ls` for filename lookups.
+The glob follows the usual shell conventions — `**` spans directories, while `*` and `?` stay within a single path segment. Batch several lookups in one response when each answers something you need. For an open-ended hunt that will take several rounds of reasoning, hand it to `spawn_agent` instead.
 
-This tool is **read-only**. A short *justification* is welcome when the purpose is not obvious from the pattern — a smooth open-ended clause, never a `label: detail` heading.
+Leave `include_ignored` off by default — that focus on the project's real source is what makes the results useful. Turn it on only when the file you actually need is one the project ignores (a build artifact, a generated file, something under a gitignored directory) and you have a specific reason to reach it.
+
+This tool is **read-only**.

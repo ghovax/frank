@@ -1,0 +1,1 @@
+This page can be read, so drive it through its elements: observe it, then act on what you see. A screenshot is only for a page that draws its own content with nothing to read (a canvas, WebGL, a custom editor).

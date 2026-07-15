@@ -692,13 +692,17 @@ read_file.description = _load_tool_description("read_file")
 
 
 @tool
-def find_files(pattern: str, location: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def find_files(pattern: str, location: str = "", include_ignored: bool = False, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Find files by glob pattern.
 
     Args:
-        pattern: Glob pattern such as "**/*.py" or "src/**/*.ts".
+        pattern: Path glob; ** spans directories, * and ? stay within a segment.
         location: The project location to search — its URI or name from the
             locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
+        include_ignored: Leave False. Results normally exclude what the project's
+            .gitignore excludes (build output, dependencies, caches). Set True only
+            when the file you need is itself gitignored and you have a specific
+            reason to reach it.
         justification: A concise, user-facing reason for this search.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -713,6 +717,7 @@ def search_content(
     location: str = "",
     include: str | None = None,
     path: str | None = None,
+    include_ignored: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Search file contents by regular expression.
@@ -721,8 +726,11 @@ def search_content(
         pattern: Regular expression to search for.
         location: The project location to search — its URI or name from the
             locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        include: File-pattern filter such as "*.py" or "*.{ts,tsx}".
+        include: Restrict the search to filenames matching this glob.
         path: Directory or file to search (defaults to the working directory).
+        include_ignored: Leave False. The search normally skips what the project's
+            .gitignore excludes. Set True only when what you are looking for lives in
+            a gitignored file and you have a specific reason to reach it.
         justification: A concise, user-facing reason for this search.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -838,17 +846,18 @@ download_file.description = _load_tool_description("download_file")
 
 @tool
 async def computer(
-    action: Literal[
-        "observe", "find", "click", "type", "edit", "select", "caret", "copy", "cut", "paste",
-        "press", "menu", "scroll", "hover", "drag", "screenshot",
-    ],
+    action: Literal["observe", "pointer", "press", "type", "select", "caret", "scroll", "screenshot"],
     app: str = "",
     element: str | None = None,
-    text: str = "",
     query: str = "",
-    find: str = "",
-    replace: str = "",
-    replace_all: bool = False,
+    window: str = "focused",
+    gesture: str = "click",
+    to_element: str | None = None,
+    clicks: int = 1,
+    button: str = "left",
+    key: str = "",
+    modifiers: list[str] | None = None,
+    text: str = "",
     mode: str = "replace",
     to_text: str = "",
     select_all: bool = False,
@@ -857,59 +866,34 @@ async def computer(
     after: str = "",
     at_offset: int | None = None,
     edge: str = "",
-    key: str = "",
-    modifiers: list[str] | None = None,
-    menu_path: list[str] | None = None,
     direction: str = "",
-    x: int | None = None,
-    y: int | None = None,
-    to_element: str | None = None,
-    to_x: int | None = None,
-    to_y: int | None = None,
-    window: str = "focused",
-    clicks: int = 1,
-    button: str = "left",
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Control the local macOS computer — any open app — the way a person does.
-
-    Observe then act on the accessibility tree to drive UI; screenshot only when an app
-    exposes no accessible structure. Acting never disturbs what the user is doing in
-    another app. A structural action re-reads the app and returns a diff of what changed
-    (a `changed` flag with `changes`, the full surface only on a wholesale change); text
-    actions (select/caret/edit/copy/cut/paste) return only what they changed. The app must
-    already be open — this tool drives running apps, it does not launch or script them: to
-    open an app run `open -a "Name"`, and to script a cooperative one (AppleScript/JXA) run
-    `osascript`, both through the `bash` tool on this same Mac.
+    """Look at and act on the local macOS computer the way a person does.
 
     Args:
-        action: observe, find, click, type, edit, select, caret, copy, cut, paste, press, menu, scroll, hover, drag, or screenshot.
-        app: Target app name or bundle id (observe/find/press/menu/scroll/screenshot).
-        element: The stable ref of an element from an earlier observe/find (click/type/edit/select/caret/copy/cut/paste/hover/drag; observe expands that region). Refs survive across calls.
+        action: What to do — observe (look), pointer (click/hover/drag an element), press (a key or shortcut), type (enter text), select (select text by content), caret (place the cursor), scroll (reveal content), or screenshot (see an app that can't be read).
+        app: Which app to look at or act in, by name or bundle id. Omit to reuse the last one.
+        element: The ref of an element from a recent observe (pointer/type/select/caret target; scroll brings it into view; observe expands that region). Refs stay valid across calls.
+        query: Text to search the app's UI for (observe) — matches element names and values.
+        window: Which window to observe — "focused" (default), "all", "menu" (the menu bar), or a window's title.
+        gesture: For pointer — "click" (default), "hover", or "drag".
+        to_element: For a pointer drag — the element to drop onto.
+        clicks: For pointer — 1 (default) or 2 for a double-click.
+        button: For pointer — "left" (default) or "right" (opens the element's context menu).
+        key: For press — a named key (return, tab, escape, arrows, f1…) or a single letter/digit for a shortcut.
+        modifiers: Modifier keys held with `key`, e.g. ["command"] for Cmd+C, ["command","shift"].
         text: Text to enter (type) or the substring to select (select).
-        query: Text to search the app's on-screen elements for (find) — matches names and values.
-        find: The exact existing text to change (edit).
-        replace: The text to change it to (edit).
-        replace_all: Change every occurrence of `find`, not just a unique one (edit).
-        mode: For type — "replace" (rewrite the whole field, default) or "insert" (at the caret, replacing any selection).
-        to_text: The end anchor for a range selection — select from `text` through `to_text` (select).
-        select_all: Select the whole field (select).
-        occurrence: Which occurrence to target when `text`/`before`/`after` appears more than once (1-based).
-        before: Place the caret just before this text (caret).
-        after: Place the caret just after this text (caret).
-        at_offset: Place the caret at this character offset (caret).
-        edge: Place the caret at the field "start" or "end" (caret).
-        key: A named key for the press action — return, tab, escape, up, down, f1, and so on, or a chord.
-        modifiers: Modifier keys held with `key`, e.g. ["command", "shift"].
-        menu_path: Menu-bar path for the menu action, e.g. ["File", "New Window"].
-        direction: Scroll direction — up, down, left, or right.
-        x, y: A screen point to click/hover/drag from when acting without an element (the pixel fallback).
-        to_element: The element to drop onto (drag).
-        to_x, to_y: The screen point to drag to (drag).
-        window: observe scope — "focused" (default), "main", or "all".
-        clicks: How many times to click — 1 (default), 2 for a double-click, 3 for a triple-click.
-        button: "left" (default) or "right".
+        mode: For type — "replace" (rewrite the field, default) or "insert" (at the caret).
+        to_text: For select — the end of a range: select from `text` through `to_text`.
+        select_all: For select — select the whole field.
+        occurrence: Which occurrence to target when the text appears more than once (1-based).
+        before: For caret — place it just before this text.
+        after: For caret — place it just after this text.
+        at_offset: For caret — place it at this character offset.
+        edge: For caret — the field "start" or "end".
+        direction: For scroll — up, down, left, or right (or give `element` to bring it into view).
         justification: Why this action is needed.
         risk: Damage potential — low for reads, higher for actions that change state.
     """
@@ -922,18 +906,23 @@ computer.description = _load_tool_description("computer")
 @tool
 async def browser(
     action: Literal[
-        "navigate", "observe", "find", "read", "click", "type", "edit", "select", "caret",
-        "copy", "cut", "paste", "press", "hover", "scroll", "choose", "upload", "drag",
-        "evaluate", "network", "screenshot", "back", "forward", "reload", "tabs", "new_tab",
-        "switch_tab", "close_tab",
+        "navigate", "observe", "pointer", "press", "type", "select", "caret", "scroll",
+        "choose", "upload", "evaluate", "network", "tabs", "screenshot",
     ],
     url: str = "",
     element: str | None = None,
-    text: str = "",
     query: str = "",
-    find: str = "",
-    replace: str = "",
-    replace_all: bool = False,
+    offset: int | None = None,
+    goal: str = "",
+    expect: str = "",
+    history: str = "",
+    gesture: str = "click",
+    to_element: str | None = None,
+    clicks: int = 1,
+    button: str = "left",
+    dialog: str = "",
+    key: str = "",
+    text: str = "",
     mode: str = "replace",
     submit: bool = False,
     to_text: str = "",
@@ -943,75 +932,47 @@ async def browser(
     after: str = "",
     at_offset: int | None = None,
     edge: str = "",
-    key: str = "",
     direction: str = "down",
     option: str = "",
     paths: list[str] | None = None,
-    goal: str = "",
-    expect: str = "",
-    dialog: str = "",
     expression: str = "",
-    x: int | None = None,
-    y: int | None = None,
-    to_element: str | None = None,
-    to_x: int | None = None,
-    to_y: int | None = None,
-    clicks: int = 1,
-    button: str = "left",
-    offset: int = 0,
     tab: str = "",
     browser_name: str = "chrome",
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Read and drive the web in the user's own Chrome, through Playwright over the DevTools protocol.
-
-    Connects to the user's real, signed-in browser (their logins and sessions), reads a page's real
-    semantic tree including iframes (clean roles and names, no browser chrome), and acts inside the
-    page the way a person does: open pages, find and click elements (with full actionability checks),
-    type and edit text, select and place the caret by content, copy/cut/paste through the real
-    clipboard, press keys and chords, hover, scroll the right pane, pick dropdown options, upload
-    files, drag and drop, run JavaScript (evaluate) and read network traffic (network), capture
-    pixels when there is no structure, go back/forward, reload, and manage tabs. Elements are
-    addressed by a stable `ref` that survives across calls; an acting call returns a diff of what
-    changed, not the whole page. Dialogs are answered automatically (or per your `dialog` intent)
-    and reported. It reuses the user's existing session — it never opens a separate browser, copies
-    a profile, or moves the user's cursor. Requires the user to have turned on Chrome's
-    remote-debugging switch once; if not, the tool says exactly how.
+    """Look at and act on the web in the user's own signed-in Chrome the way a person does.
 
     Args:
-        action: navigate, observe, find, read, click, type, edit, select, caret, copy, cut, paste, press, hover, scroll, choose, upload, drag, evaluate, network, screenshot, back, forward, reload, tabs, new_tab, switch_tab, or close_tab.
-        url: The address to open (navigate, new_tab).
-        element: The stable ref of an element from an earlier observe/find (click/type/edit/select/caret/copy/cut/paste/hover/choose/upload/drag; scroll moves that element's pane; observe expands its subtree; read returns only its text). Refs survive across calls.
-        text: Text to enter into the field (type), or the substring to select (select).
-        query: Text to search the page for (find) — matches element names, values, and context anywhere on the page, iframes included; or a url substring to filter by (network).
-        find: The exact existing text to change (edit).
-        replace: The text to change it to (edit).
-        replace_all: Change every occurrence of `find`, not just a unique one (edit).
-        mode: For type — "replace" (rewrite the whole field, default) or "insert" (at the caret, replacing any selection).
-        submit: With type, press Enter after entering the text and return the resulting page.
-        to_text: The end anchor for a range selection — select from `text` through `to_text` (select).
-        select_all: Select the whole field (select).
-        occurrence: Which occurrence to target when `text`/`before`/`after` appears more than once (1-based).
-        before: Place the caret just before this text (caret).
-        after: Place the caret just after this text (caret).
-        at_offset: Place the caret at this character offset (caret).
-        edge: Place the caret at the field "start" or "end" (caret).
-        key: The key to press (press) — e.g. Enter, Escape, ArrowDown, PageDown, or a chord like Control+A.
-        direction: Scroll direction (scroll) — down (default), up, left, right, top, or bottom.
-        option: The visible label (or value) to pick in a <select> dropdown (choose).
-        paths: Local file path(s) to attach (upload).
-        goal: What you're trying to reach (observe, navigate) — ranks a large page's listing so the relevant controls survive the cap instead of being starved by document order.
-        expect: Text you expect the action to produce (click/type-submit/press/navigate) — the tool waits for it and reports `expected_found`.
-        dialog: What to do with a JavaScript confirm/prompt the click triggers — "accept" or "dismiss" (default declines a question, acknowledges an alert).
-        expression: A JavaScript expression to run in the page (evaluate) — the direct path to structured extraction; the JSON result is returned, length-bounded.
-        x, y: A viewport point to click/hover/drag from when acting without an element (the canvas fallback).
-        to_element: The ref of the element to drop onto (drag).
-        to_x, to_y: The viewport point to drag to (drag).
-        clicks: How many times to click — 1 (default), 2 for a double-click, 3 for a triple-click.
-        button: "left" (default) or "right".
-        offset: Character offset to continue a truncated read from (read) — the previous result names the exact value.
-        tab: The tab id from the tabs action (switch_tab, close_tab).
+        action: What to do — navigate (go to a URL, or back/forward/reload), observe (look at the page), pointer (click/hover/drag an element), press (a key or shortcut), type (enter text), select (select text by content), caret (place the cursor), scroll, choose (pick a dropdown option), upload (attach files), evaluate (run JavaScript), network (read requests), tabs (list/open/switch/close), or screenshot (see a page that can't be read).
+        url: The address to open (navigate, or tabs with mode "open").
+        element: The ref of an element from a recent observe (pointer/type/select/caret target; scroll moves its pane; observe expands its subtree, or returns its text with `offset`). Refs stay valid across calls.
+        query: Text to search the page for (observe) — matches names, values, and context, iframes included; or a url substring to filter by (network).
+        offset: With observe on an element, return its text starting here (continue a long read; the result names the next offset).
+        goal: What you're trying to reach (observe, navigate) — ranks a large page's listing so the relevant controls survive the cap.
+        expect: Text you expect the action to produce — the tool waits for it and reports `expected_found`.
+        history: For navigate without a url — "back", "forward", or "reload".
+        gesture: For pointer — "click" (default), "hover", or "drag".
+        to_element: For a pointer drag — the element to drop onto.
+        clicks: For pointer — 1 (default) or 2 for a double-click.
+        button: For pointer — "left" (default) or "right".
+        dialog: What to do with a JavaScript confirm/prompt a click triggers — "accept" or "dismiss".
+        key: For press — a key or chord, e.g. Enter, Escape, ArrowDown, or Meta+C / Control+A for a shortcut.
+        text: Text to enter (type) or the substring to select (select).
+        mode: For type — "replace" (rewrite the field, default) or "insert" (at the caret). For tabs — "list" (default), "open", "switch", or "close".
+        submit: With type, press Enter after entering the text.
+        to_text: For select — the end of a range: select from `text` through `to_text`.
+        select_all: For select — select the whole field.
+        occurrence: Which occurrence to target when the text appears more than once (1-based).
+        before: For caret — place it just before this text.
+        after: For caret — place it just after this text.
+        at_offset: For caret — place it at this character offset.
+        edge: For caret — the field "start" or "end".
+        direction: For scroll — down (default), up, left, right, top, or bottom.
+        option: For choose — the visible label (or value) to pick in a dropdown.
+        paths: For upload — local file path(s) to attach.
+        expression: For evaluate — a JavaScript expression to run in the page; the JSON result is returned.
+        tab: For tabs switch/close — the tab id from tabs (list).
         browser_name: Which browser to connect to — "chrome" (default), "edge", or "brave".
         justification: Why this action is needed.
         risk: Damage potential — low for reads/navigation, higher for actions that change state.

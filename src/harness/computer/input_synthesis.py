@@ -10,11 +10,18 @@ force-activate the target.
 
 Text is entered with ``CGEventKeyboardSetUnicodeString``, which carries the actual
 characters — so any script (Latin, CJK, Arabic, emoji) types correctly with no
-character-to-keycode table. The only key codes used are the named, non-printing physical
-keys (Return, Tab, arrows, function keys), whose virtual codes are ABI-stable and the
-same on every keyboard layout. Character-based command shortcuts are intentionally not
-synthesized here — they are layout-dependent and lower-accuracy than invoking the app's
-menu item directly, which is what the engine does instead.
+character-to-keycode table. Discrete keys use virtual key codes: the named non-printing
+keys (Return, Tab, arrows, function keys), plus the letter/digit keys for keyboard
+shortcuts (Cmd+C, Cmd+A, Cmd+F, …) — the everyday chords a person uses to copy, select,
+find, switch, and so on.
+
+A virtual key code is a *physical* key position, and which character it yields depends on
+the active keyboard layout — Dvorak, AZERTY, and the like move the letters around. So for a
+shortcut we ask the live layout which key produces the wanted character (see
+``_layout_key_code``) rather than assuming US, and Cmd+C presses whatever key actually types
+``c``. A hardcoded US table remains only as the fallback for a layout that cannot produce
+the character at all (a non-Latin layout), which mirrors macOS's own Latin fallback for
+command chords.
 """
 from __future__ import annotations
 
@@ -40,6 +47,18 @@ _NAMED_KEY_CODES = {
     "f7": 0x62, "f8": 0x64, "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
 }
 
+# US-layout virtual key codes for the letter and digit keys — the fallback when the active
+# layout cannot produce the requested character (a non-Latin layout). The active layout is
+# consulted first via _layout_key_code; this table is only reached when that returns nothing.
+_US_CHAR_KEY_CODES = {
+    "a": 0x00, "b": 0x0B, "c": 0x08, "d": 0x02, "e": 0x0E, "f": 0x03, "g": 0x05,
+    "h": 0x04, "i": 0x22, "j": 0x26, "k": 0x28, "l": 0x25, "m": 0x2E, "n": 0x2D,
+    "o": 0x1F, "p": 0x23, "q": 0x0C, "r": 0x0F, "s": 0x01, "t": 0x11, "u": 0x20,
+    "v": 0x09, "w": 0x0D, "x": 0x07, "y": 0x10, "z": 0x06,
+    "0": 0x1D, "1": 0x12, "2": 0x13, "3": 0x14, "4": 0x15,
+    "5": 0x17, "6": 0x16, "7": 0x1A, "8": 0x1C, "9": 0x19,
+}
+
 _MODIFIER_FLAGS = {
     "command": Quartz.kCGEventFlagMaskCommand, "cmd": Quartz.kCGEventFlagMaskCommand,
     "option": Quartz.kCGEventFlagMaskAlternate, "opt": Quartz.kCGEventFlagMaskAlternate,
@@ -50,6 +69,26 @@ _MODIFIER_FLAGS = {
 }
 
 NAMED_KEYS = tuple(sorted(_NAMED_KEY_CODES))
+
+
+def _layout_key_code(char: str) -> int | None:
+    """The virtual key code that types ``char`` under the *active* keyboard layout, or None.
+
+    A key code is a physical key position; the character it produces depends on the layout.
+    Instead of assuming US, we ask the live layout: for each key code,
+    ``CGEventKeyboardGetUnicodeString`` reports the character it currently yields (unmodified),
+    and we return the first key code that yields ``char``. Pure CoreGraphics — no Carbon /
+    ``UCKeyTranslate`` binding needed. The scan is ~0.1 ms and stops at the first match, so it
+    runs per press and always reflects the layout in effect right now (a mid-session switch
+    included)."""
+    for key_code in range(128):
+        event = Quartz.CGEventCreateKeyboardEvent(None, key_code, True)
+        if event is None:
+            continue
+        _, produced = Quartz.CGEventKeyboardGetUnicodeString(event, 4, None, None)
+        if produced and produced.lower() == char:
+            return key_code
+    return None
 
 
 def click(pid: int, point_x: float, point_y: float, *, clicks: int = 1, button: str = "left") -> None:
@@ -131,10 +170,18 @@ def type_text(pid: int, text: str) -> None:
 
 
 def press_key(pid: int, key: str, modifiers: list[str]) -> bool:
-    """Press a named physical key (optionally with modifiers) in the target app. Returns
-    False if the key name or a modifier is unknown — the engine steers command shortcuts
-    to menu invocation rather than guessing a character key code."""
-    code = _NAMED_KEY_CODES.get(key.strip().lower())
+    """Press a key or chord (optionally with modifiers) in the target app — a named
+    non-printing key (return, tab, escape, arrows, f-keys) or a single letter/digit for a
+    shortcut (with Cmd/Option/Ctrl/Shift). Returns False if the key name or a modifier is
+    unknown."""
+    name = key.strip().lower()
+    code = _NAMED_KEY_CODES.get(name)
+    if code is None and len(name) == 1:
+        # Ask the active layout which physical key types this character; fall back to the US
+        # position only when the layout can't produce it (non-Latin), matching macOS itself.
+        code = _layout_key_code(name)
+        if code is None:
+            code = _US_CHAR_KEY_CODES.get(name)
     if code is None:
         return False
     flags = 0

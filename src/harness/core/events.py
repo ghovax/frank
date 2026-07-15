@@ -279,14 +279,14 @@ class ModelToolResult(BaseModel):
 
 
 class TurnContext(BaseModel):
-    """The single structured object injected each turn, replacing the old pile of
-    newline-joined JSON blobs."""
+    """The structured per-turn context injected at the end of the message list: the current time,
+    where the agent is, its goal, its tasks, and its background work."""
 
+    now: str = ""
     pwd: str = ""
     active_goal: str = ""
     tasks: list[dict[str, Any]] = Field(default_factory=list)
     background: dict[str, Any] = Field(default_factory=dict)
-    reminders: list[str] = Field(default_factory=list)
 
 
 MODEL_ENVELOPE_MODELS: tuple[type[BaseModel], ...] = (

@@ -8,4 +8,3 @@ A goal is **not** a task list. It is the top-level *completion contract* the har
 
 Do **not** set a goal for tiny one-shot answers. While an active goal is present, do **not** end the turn casually — satisfy or clear it first, or keep working.
 
-Always provide a concise **justification** — an open-ended phrase, not a titled `label: detail` form.

@@ -383,15 +383,53 @@ class Surface:
     def __init__(self, worker_name: str, message: Callable[..., str]) -> None:
         self.worker = SerialWorker(worker_name)
         self.message = message
+        # How many acting calls in a row have changed nothing. A run of these means the model
+        # is repeating something that isn't working; past ``NO_EFFECT_LIMIT`` the surface stops
+        # accepting blind actions and hands back the situation so the model tries a different
+        # approach. Any read (observe) or any action that does change something resets it.
+        self._no_effect = 0
+        # Whether the last read produced a usable view. A screenshot (pixels) is only offered
+        # once this is False — i.e. the semantic surface could not be read — so pixels stay the
+        # last resort, never a routine choice.
+        self._readable = True
+
+    # Progress tracking (shared by both surfaces).
+
+    def _reset_progress(self) -> None:
+        self._no_effect = 0
+
+    def _note_effect(self, changed: bool) -> None:
+        self._no_effect = 0 if changed else self._no_effect + 1
+
+    def stuck(self) -> bool:
+        return self._no_effect >= active_tuning().amount(Limit.NO_EFFECT_LIMIT)
+
+    def pixels_allowed(self) -> bool:
+        """A screenshot is only permitted when the last read could not be read semantically."""
+        return not self._readable
+
+    def incomplete(self, message_name: str, **variables: str) -> dict:
+        """A read that could not produce a usable view after waiting. Marks the surface
+        unreadable (so a screenshot becomes available as the fallback) and returns a clear
+        message the model can act on (wait/retry, or fall back)."""
+        self._readable = False
+        return {"ok": False, "incomplete": True, "error": self.message(message_name, **variables)}
 
     # Failure handling.
 
-    def guard(self, operation: Callable[[], dict], *, timeout: float = 120.0) -> dict:
+    def guard(self, operation: Callable[[], dict], *, acting: bool = False, timeout: float = 120.0) -> dict:
         """Submit one operation to the worker and shape every outcome into an honest payload. A
         ``ToolFailure`` becomes its payload; anything unexpected becomes ``recover``'s payload
-        after the surface is given a chance to drop dead state."""
+        after the surface is given a chance to drop dead state.
+
+        When ``acting`` (a call that tries to change something) and the model is ``stuck`` — a run
+        of actions that changed nothing — the surface refuses to keep acting blind and returns a
+        message telling the model to look again and try a different approach. Cleared by the next
+        observe."""
 
         def guarded() -> dict:
+            if acting and self.stuck():
+                return {"ok": False, "stuck": True, "error": self.message("stuck")}
             try:
                 return operation()
             except ToolFailure as failure:
@@ -457,6 +495,10 @@ class Surface:
         empty_hint: str = "",
     ) -> dict:
         """The full surface as indexed elements — what observe and the navigation actions return."""
+        # A fresh look clears the "stuck" streak and records whether the surface could be read at
+        # all — an empty read is what makes a screenshot available as the fallback.
+        self._reset_progress()
+        self._readable = bool(elements)
         result: dict[str, Any] = {"ok": True, "count": len(elements), "elements": elements}
         if truncated:
             result["truncated"] = True
@@ -521,6 +563,14 @@ class Surface:
                 result["announcements"] = announcements
             if not delta and not announcements and no_change_note:
                 result["note"] = no_change_note
+
+        # An action that changed nothing feeds the "stuck" streak; one that did resets it. Once
+        # the streak is over the limit, say so plainly and prominently so the model stops
+        # repeating and looks for another way in.
+        self._note_effect(bool(result.get("changed")))
+        if self.stuck():
+            result["stuck"] = True
+            result["note"] = self.message("stuck")
 
         return self.finish(
             result, context=context, elements=current, changed=None,

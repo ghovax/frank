@@ -13,4 +13,4 @@
 - **Call this tool in parallel** (several calls in one response) when you have several known files or line ranges to read.
 - Do not use this tool to read a folder. Use `find_files` for file discovery or `bash` for a deliberate directory inspection.
 
-This tool is **read-only**. A short *justification* is welcome when the purpose is not obvious from the path — a single flowing open-ended clause, never a `label: detail` heading.
+This tool is **read-only**.

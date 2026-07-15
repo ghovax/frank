@@ -6,7 +6,7 @@
 - `replace_with` (`string`): The text to replace it with.
 - `location` (`string`): The project location to edit in — its URI or name from your context. Defaults to the local filesystem; pass it only to edit on a different (remote) location.
 - `replace_all` (`boolean`): Replace every occurrence instead of requiring a unique match. Defaults to `false`.
-- `justification` (`string`): Concise user-facing reason for the edit, as a single smooth open-ended clause rather than a `label: detail` title.
+- `justification` (`string`): Concise user-facing reason for the edit.
 - `risk` (`"low" | "medium" | "high"`): `low` for targeted edits, `medium` for broad changes, `high` for destructive or hard-to-reverse changes.
 
 **Usage:**
@@ -56,4 +56,4 @@ If validation fails:
 }
 ```
 
-This tool **modifies files**. Provide a concise *justification* (phrased as a smooth open-ended sentence, not a `label: detail` heading) and assess **risk**: `low` for a targeted edit, `medium` for a broad change, `high` for a destructive or hard-to-reverse change.
+This tool **modifies files**. Provide a concise *justification* and assess **risk**: `low` for a targeted edit, `medium` for a broad change, `high` for a destructive or hard-to-reverse change.

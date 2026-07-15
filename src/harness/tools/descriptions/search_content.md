@@ -1,11 +1,7 @@
-**Fast content search** that works with any codebase size.
+Search file contents by regular expression across a location, returning each match with its file path and line number. The search honors the location's `.gitignore` — ripgrep walks the tree where available, extended-regex grep otherwise — so it sees only the files the project actually keeps, in a consistent regex dialect on every location.
 
-- Searches file contents using **regular expressions** (e.g. `log.*Error`, `function\s+\w+`), with the same dialect on every location (ripgrep when available, extended regex otherwise).
-- Filter by file pattern with `include` (e.g. `*.py`, `*.{ts,tsx}`).
-- Returns **file paths and line numbers** with the matching lines.
-- If you need the *exact count* of matches within files, use `bash` with `rg` (ripgrep) directly — do **not** use this tool merely to count.
-- For open-ended searches that may need multiple rounds, use **spawn_agent** instead.
-- **Prefer this** over `bash` with `grep` or `rg` for content lookups.
-- Never search the real home directory (`~` or `/Users/<name>`). Pass a project path, known subdirectory, or specific file in `path`.
+Use `include` to restrict which filenames are searched and `path` to aim at a subtree or a single file; keep it pointed inside a project rather than sweeping an entire home directory. The results are capped, so don't rely on this for an exact match count — run ripgrep through `bash` when you need a precise number. For an open-ended investigation that spans several rounds, hand it to `spawn_agent` instead.
 
-This tool is **read-only**. A short *justification* is welcome when the purpose is not obvious from the pattern — one open-ended phrase, not a `label: detail` heading.
+Leave `include_ignored` off by default — skipping what the project excludes is what keeps the matches signal, not noise from dependencies and build output. Turn it on only when what you are looking for genuinely lives in a gitignored file and you have a specific reason to reach it.
+
+This tool is **read-only**.

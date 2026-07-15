@@ -129,6 +129,7 @@ class Limit(Enum):
     DRAG_STEPS = (12, _Scale.FIXED)                          # interpolation segments a drag is split into
     SCROLL_AMOUNT_PIXELS = (300, _Scale.FIXED)               # one wheel step for the native surface
     SETTLE_STABLE_READS = (2, _Scale.FIXED)                  # identical reads that count a surface settled
+    NO_EFFECT_LIMIT = (3, _Scale.FIXED)                      # consecutive no-effect actions before a surface stops accepting blind ones
     CLICK_INTERVAL_SECONDS = (0.01, _Scale.FIXED)            # between successive synthesized clicks
     DRAG_STEP_INTERVAL_SECONDS = (0.01, _Scale.FIXED)        # between interpolated drag-move events
     TYPE_CHUNK_INTERVAL_SECONDS = (0.005, _Scale.FIXED)      # between typed chunks

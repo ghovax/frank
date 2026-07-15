@@ -1211,18 +1211,18 @@ class WebSurface(Surface):
         through the model-image side channel."""
 
         def run() -> dict:
+            if not self.pixels_allowed():
+                return {"ok": False, "error": message("screenshot_gated")}
             session = self.session()
             page = self.page(session)
             handle, path = tempfile.mkstemp(prefix="daisy-web-capture-", suffix=".png")
             os.close(handle)
-            # scale="css" captures at CSS-pixel resolution, not the display's device pixels. On a
-            # Retina Mac (2× device pixels) the default doubles every coordinate, so a model reading
-            # a click point off the image would miss by 2×; CSS scale keeps the image in the same
-            # coordinate space clicks and the viewport use.
+            # scale="css" keeps the image in CSS pixels (not the display's device pixels), so it
+            # reads at the same scale the page uses.
             page.screenshot(path=path, type="png", scale="css", timeout=active_tuning().amount(Limit.SCREENSHOT_TIMEOUT_MS))
             return {
                 "ok": True, "image_path": path, "url": page.url, "title": _safe_title(page),
-                "did": "Captured the visible viewport",
+                "did": "Captured the visible viewport", "note": message("screenshot_observe_only"),
             }
 
         return self.guard(run)
@@ -1383,7 +1383,14 @@ class WebSurface(Surface):
         from the operation itself."""
         return None
 
+    # Actions that try to change the page — refused while stuck (a run of no-effect acts), so the
+    # model looks again and tries another way instead of repeating a dead move.
+    _ACTING_ACTIONS = frozenset({"pointer", "press", "type", "select", "caret", "scroll", "choose", "upload"})
+
     def dispatch(self, action: str, arguments: dict) -> dict:
+        if action in self._ACTING_ACTIONS and self.stuck():
+            return {"ok": False, "stuck": True, "error": self.message("stuck")}
+
         url = str(arguments.get("url", ""))
         text = str(arguments.get("text", ""))
         key = str(arguments.get("key", ""))
@@ -1392,8 +1399,6 @@ class WebSurface(Surface):
         browser_name = str(arguments.get("browser_name") or "chrome")
         ref = _as_ref(arguments.get("element"))
         to_ref = _as_ref(arguments.get("to_element"))
-        point_x = _as_int(arguments.get("x"))
-        point_y = _as_int(arguments.get("y"))
         clicks = int(arguments.get("clicks", 1) or 1)
         button = str(arguments.get("button") or "left")
         occurrence = int(arguments.get("occurrence", 1) or 1)
@@ -1402,40 +1407,46 @@ class WebSurface(Surface):
         dialog = str(arguments.get("dialog", ""))
 
         def needs_element(name: str) -> dict:
-            return {"ok": False, "error": f"The {name} action needs an element ref from the last observe/find."}
+            return {"ok": False, "error": f"The {name} action needs an element ref from the last observe."}
 
-        if action == "navigate":
-            if not url:
-                return {"ok": False, "error": "The navigate action needs a url."}
-            return self.navigate(url, browser=browser_name, goal=goal, expect=expect)
         if action == "observe":
-            return self.observe(element=ref, goal=goal)
-        if action == "find":
             query = str(arguments.get("query", ""))
-            if not query.strip():
-                return {"ok": False, "error": "The find action needs a query — the text to look for on the page."}
-            return self.find(query)
-        if action == "evaluate":
-            return self.evaluate(str(arguments.get("expression", "") or text))
-        if action == "network":
-            return self.network(str(arguments.get("query", "")))
-        if action == "screenshot":
-            return self.screenshot()
-        if action == "click":
-            return self.click(ref, x=point_x, y=point_y, clicks=clicks, button=button, dialog=dialog, expect=expect)
-        if action == "hover":
-            return self.hover(ref, x=point_x, y=point_y)
+            if query.strip():
+                return self.find(query)
+            offset = _as_int(arguments.get("offset"))
+            if ref is not None and offset is not None:
+                return self.read(offset=offset, ref=ref)
+            return self.observe(element=ref, goal=goal)
+        if action == "navigate":
+            history = str(arguments.get("history", ""))
+            if history == "back":
+                return self.history_back()
+            if history == "forward":
+                return self.history_forward()
+            if history == "reload":
+                return self.reload()
+            if not url:
+                return {"ok": False, "error": "The navigate action needs a url (or history: back, forward, or reload)."}
+            return self.navigate(url, browser=browser_name, goal=goal, expect=expect)
+        if action == "pointer":
+            if ref is None:
+                return needs_element("pointer")
+            gesture = str(arguments.get("gesture", "click") or "click")
+            if gesture == "hover":
+                return self.hover(ref)
+            if gesture == "drag":
+                if to_ref is None:
+                    return {"ok": False, "error": "A drag needs to_element — the element to drop onto."}
+                return self.drag(ref, to_ref)
+            return self.click(ref, clicks=clicks, button=button, dialog=dialog, expect=expect)
+        if action == "press":
+            if not key:
+                return {"ok": False, "error": "The press action needs a key or chord (e.g. Enter, or Meta+C)."}
+            return self.press(key, expect=expect)
         if action == "type":
             if ref is None:
                 return needs_element("type")
             return self.type_text(ref, text, submit=bool(arguments.get("submit", False)), mode=str(arguments.get("mode", "replace") or "replace"), expect=expect)
-        if action == "edit":
-            if ref is None:
-                return needs_element("edit")
-            find = str(arguments.get("find", ""))
-            if not find:
-                return {"ok": False, "error": "The edit action needs find (the exact text to change) and replace."}
-            return self.edit_text(ref, find, str(arguments.get("replace", "")), replace_all=bool(arguments.get("replace_all", False)))
         if action == "select":
             if ref is None:
                 return needs_element("select")
@@ -1451,8 +1462,8 @@ class WebSurface(Surface):
                 after=str(arguments.get("after", "")) or None, at_offset=_as_int(arguments.get("at_offset")),
                 edge=str(arguments.get("edge", "")), occurrence=occurrence,
             )
-        if action in ("copy", "cut", "paste"):
-            return self.clipboard_action(action, ref)
+        if action == "scroll":
+            return self.scroll(direction, ref=ref)
         if action == "choose":
             if ref is None:
                 return needs_element("choose")
@@ -1469,35 +1480,21 @@ class WebSurface(Surface):
             if not paths:
                 return {"ok": False, "error": "The upload action needs paths — the local file(s) to attach."}
             return self.upload(ref, [str(path) for path in paths])
-        if action == "drag":
-            return self.drag(
-                ref, to_ref, x=point_x, y=point_y,
-                to_x=_as_int(arguments.get("to_x")), to_y=_as_int(arguments.get("to_y")),
-            )
-        if action == "press":
-            if not key:
-                return {"ok": False, "error": "The press action needs a key (e.g. Enter)."}
-            return self.press(key, expect=expect)
-        if action == "scroll":
-            return self.scroll(direction, ref=ref)
-        if action == "read":
-            return self.read(offset=int(arguments.get("offset", 0) or 0), ref=ref)
-        if action == "back":
-            return self.history_back()
-        if action == "forward":
-            return self.history_forward()
-        if action == "reload":
-            return self.reload()
+        if action == "evaluate":
+            return self.evaluate(str(arguments.get("expression", "") or text))
+        if action == "network":
+            return self.network(str(arguments.get("query", "")))
         if action == "tabs":
+            mode = str(arguments.get("mode", "list") or "list")
+            if mode == "open":
+                return self.new_tab(url, browser=browser_name)
+            if mode in ("switch", "close"):
+                if not tab:
+                    return {"ok": False, "error": f"tabs {mode} needs a tab id from tabs (list first)."}
+                return self.switch_tab(tab) if mode == "switch" else self.close_tab(tab)
             return self.list_tabs()
-        if action == "new_tab":
-            return self.new_tab(url, browser=browser_name)
-        if action in ("switch_tab", "close_tab"):
-            if not tab:
-                return {"ok": False, "error": f"The {action} action needs a tab id from the tabs action."}
-            if action == "switch_tab":
-                return self.switch_tab(tab)
-            return self.close_tab(tab)
+        if action == "screenshot":
+            return self.screenshot()
         return {"ok": False, "error": f"Unknown action {action!r}."}
 
 

@@ -10,4 +10,3 @@
 
 Do **not** delegate tiny edits, work that needs the same narrow context you already have, or final judgment. Agents provide evidence; **you** decide.
 
-Always provide a concise **justification** — it is the heading shown for this agent in the agents panel (the prompt itself is never shown there), so it must read as a self-contained, user-facing summary of *what this agent is doing and why*, one flowing open-ended clause, never a `label: detail` heading.

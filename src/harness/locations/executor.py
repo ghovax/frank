@@ -107,6 +107,31 @@ def _include_glob_to_regex(pattern: str) -> str:
     return "".join(translated)
 
 
+def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
+    """Drop the paths excluded by ``base``'s ``.gitignore`` chain, asking ``git`` itself
+    so the answer matches what the user sees. Only the non-ripgrep fallback needs this —
+    ripgrep applies the ignore rules while it walks. A no-op outside a git repo or when
+    ``git`` is unavailable, so a plain directory still globs normally."""
+    if not paths:
+        return paths
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(base), "check-ignore", "--stdin"],
+            input="\n".join(str(path) for path in paths),
+            capture_output=True,
+            text=True,
+            timeout=active_tuning().duration(Limit.RIPGREP_SECONDS),
+            check=False,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return paths
+    # git check-ignore: 0 => some paths ignored (printed), 1 => none, 128 => not a repo.
+    if completed.returncode not in (0, 1):
+        return paths
+    ignored = {line for line in completed.stdout.splitlines() if line}
+    return [path for path in paths if str(path) not in ignored]
+
+
 class LocationExecutor(abc.ABC):
     """Run commands and read/write/search files against one location."""
 
@@ -144,14 +169,16 @@ class LocationExecutor(abc.ABC):
         base directory, expanding ``~``, and return the absolute path string."""
 
     @abc.abstractmethod
-    def glob_files(self, base_directory: str, pattern: str, limit: int) -> list[str]:
+    def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
         """Absolute paths of files under ``base_directory`` matching the glob
-        ``pattern``, newest (by mtime) first, capped at ``limit``."""
+        ``pattern``, newest (by mtime) first, capped at ``limit``. Honors the
+        location's ``.gitignore`` unless ``include_ignored`` is set."""
 
     @abc.abstractmethod
-    def grep(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
+    def grep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
         """``path:line:content`` matches of regex ``pattern`` under the absolute
-        ``target`` path, optionally filtered by an ``include`` filename glob."""
+        ``target`` path, optionally filtered by an ``include`` filename glob. Honors
+        the location's ``.gitignore`` unless ``include_ignored`` is set."""
 
     def read_text(self, path: str) -> str:
         return self.read_bytes(path).decode("utf-8", errors="replace")
@@ -211,27 +238,63 @@ class LocalExecutor(LocationExecutor):
             candidate = base / candidate
         return str(candidate.resolve(strict=False))
 
-    def glob_files(self, base_directory: str, pattern: str, limit: int) -> list[str]:
+    def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
         base = Path(base_directory) if base_directory else Path.cwd()
         if not base.exists():
             raise FileNotFoundError(f"Directory does not exist: {base}")
-        matches = [match for match in base.glob(pattern) if not match.is_dir()]
-        matches.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
-        return [str(match) for match in matches[:limit]]
+        regex = re.compile(glob_to_regex(pattern))
+        if shutil.which("rg"):
+            # ripgrep does the walk: `rg --files` honors the full .gitignore/.ignore chain
+            # and skips .git and hidden files, and `--sortr modified` yields newest-first.
+            # We match the caller's glob against those results ourselves rather than through
+            # `rg -g`, because an rg glob is a whitelist that overrides .gitignore — a broad
+            # pattern like `**/*` would otherwise drag build output and dependencies back in.
+            command = ["rg", "--files", "--sortr", "modified"]
+            if include_ignored:
+                # Reach what the project excludes — both gitignored and hidden (dot) files.
+                # rg keeps .git internals out even with --hidden, so those still never appear.
+                command += ["--no-ignore", "--hidden"]
+            result = subprocess.run(
+                command,
+                cwd=str(base),
+                capture_output=True,
+                text=True,
+                timeout=active_tuning().duration(Limit.RIPGREP_SECONDS),
+            )
+            # rg exits 1 when the tree has no files, >1 on a real error (IO failure).
+            if result.returncode not in (0, 1):
+                raise ValueError((result.stderr or "").strip() or "glob failed")
+            matched: list[str] = []
+            for line in (result.stdout or "").splitlines():
+                relative = line[2:] if line.startswith("./") else line
+                if relative and regex.fullmatch(relative):
+                    matched.append(str(base / relative))
+                    if len(matched) >= limit:
+                        break
+            return matched
+        # Fallback when ripgrep is unavailable: Path.glob, dropping .git always and (unless
+        # include_ignored) the gitignored paths, via `git check-ignore`.
+        candidates = [match for match in base.glob(pattern) if not match.is_dir() and ".git" not in match.parts]
+        if not include_ignored:
+            candidates = _prune_gitignored(base, candidates)
+        candidates.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
+        return [str(match) for match in candidates[:limit]]
 
-    def grep(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
+    def grep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
         if shutil.which("rg"):
             try:
-                return self._grep_with_ripgrep(pattern, target, include, max_results)
+                return self._grep_with_ripgrep(pattern, target, include, max_results, include_ignored)
             except (subprocess.SubprocessError, FileNotFoundError):
                 pass
-        return self._grep_python(pattern, target, include, max_results)
+        return self._grep_python(pattern, target, include, max_results, include_ignored)
 
-    def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
+    def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
         command = [
             "rg", "--line-number", "--no-heading", "--color=never",
             "--max-count", str(active_tuning().amount(Limit.GREP_PER_FILE)),
         ]
+        if include_ignored:
+            command += ["--no-ignore", "--hidden"]  # reach gitignored + hidden files; .git stays out
         if include:
             command += ["--glob", include]
         command += ["-e", pattern, "--", target]
@@ -241,7 +304,7 @@ class LocalExecutor(LocationExecutor):
             raise ValueError((result.stderr or "").strip() or "search failed")
         return (result.stdout or "").splitlines()[:max_results]
 
-    def _grep_python(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
+    def _grep_python(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
         """Fallback grep using a pure-Python walk (used when ripgrep is unavailable)."""
         per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
         try:
@@ -250,11 +313,15 @@ class LocalExecutor(LocationExecutor):
             raise ValueError(f"Invalid regular expression: {exception}") from exception
         include_re = re.compile(_include_glob_to_regex(include)) if include else None
         root = Path(target)
-        files = [root] if root.is_file() else root.rglob("*")
+        if root.is_file():
+            candidates = [root]
+        else:
+            walked = [path for path in root.rglob("*") if path.is_file() and ".git" not in path.parts]
+            # Honor .gitignore on the fallback path too (unless include_ignored), so ripgrep's
+            # presence never changes which files a search can see.
+            candidates = walked if include_ignored else _prune_gitignored(root, walked)
         results: list[str] = []
-        for file in files:
-            if file.is_dir():
-                continue
+        for file in candidates:
             if include_re is not None and not include_re.fullmatch(file.name):
                 continue
             try:
@@ -374,17 +441,46 @@ class SshExecutor(LocationExecutor):
             path = f"{base_directory.rstrip('/')}/{path}"
         return posixpath.normpath(path)
 
-    def glob_files(self, base_directory: str, pattern: str, limit: int) -> list[str]:
-        # List the remote tree once (bounded, .git excluded) and apply the same
-        # glob semantics as the local Path.glob, server-side, so patterns behave
-        # identically on both kinds of location.
+    def _has_ripgrep(self) -> bool:
+        """Whether ripgrep is on the remote (memoized). Both glob and grep prefer it so a
+        remote location honors its .gitignore chain exactly as the local one does."""
+        if self._ripgrep_available is None:
+            probe = self._ssh("command -v rg", timeout=DEFAULT_CONNECT_TIMEOUT)
+            self._ripgrep_available = probe.returncode == 0
+        return self._ripgrep_available
+
+    def glob_files(self, base_directory: str, pattern: str, limit: int, include_ignored: bool = False) -> list[str]:
+        regex = re.compile(glob_to_regex(pattern))
+        if self._has_ripgrep():
+            # ripgrep does the walk: `rg --files` honors the remote's .gitignore/.ignore
+            # chain (and skips .git and hidden files) and `--sortr modified` yields
+            # newest-first. As on the local side we match the glob against the results
+            # ourselves — an `rg -g` glob overrides .gitignore, so `**/*` would drag the
+            # excluded tree back in.
+            no_ignore = " --no-ignore --hidden" if include_ignored else ""
+            listing = self.run(f"rg --files --sortr modified{no_ignore}", base_directory)
+            if listing.returncode not in (0, 1):  # 1 == the tree has no files
+                raise FileNotFoundError(listing.stderr.strip() or f"Directory does not exist: {base_directory}")
+            base = base_directory.rstrip("/")
+            paths: list[str] = []
+            for line in listing.stdout.splitlines():
+                relative = line.strip()
+                if not relative:
+                    continue
+                relative = relative[2:] if relative.startswith("./") else relative
+                if regex.fullmatch(relative):
+                    paths.append(relative if relative.startswith("/") else f"{base}/{relative}")
+                    if len(paths) >= limit:
+                        break
+            return paths
+        # Fallback without ripgrep: list the tree with find (.git excluded) and glob-match
+        # locally. Without ripgrep the rest of the .gitignore chain is not applied.
         listing = self.run(
             f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{active_tuning().amount(Limit.REMOTE_LISTING)}",
             base_directory,
         )
         if listing.returncode != 0 and not listing.stdout:
             raise FileNotFoundError(listing.stderr.strip() or f"Directory does not exist: {base_directory}")
-        regex = re.compile(glob_to_regex(pattern))
         relative = [line[2:] for line in listing.stdout.splitlines() if line.startswith("./")]
         matched = [path for path in relative if regex.fullmatch(path)][:limit]
         # Newest-first, matching the local contract. xargs -0 chunks very large
@@ -404,27 +500,25 @@ class SshExecutor(LocationExecutor):
         base = base_directory.rstrip("/")
         return [path if path.startswith("/") else f"{base}/{path}" for path in matched]
 
-    def grep(self, pattern: str, target: str, include: str | None, max_results: int) -> list[str]:
-        # Prefer ripgrep on the remote so the regex dialect matches the local tool;
-        # otherwise fall back to POSIX ERE via `grep -E` (never BRE, whose unescaped
-        # `+`/`?` silently match nothing and read as false "not found" results).
-        if self._ripgrep_available is None:
-            probe = self._ssh("command -v rg", timeout=DEFAULT_CONNECT_TIMEOUT)
-            self._ripgrep_available = probe.returncode == 0
+    def grep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
+        # Prefer ripgrep on the remote so the regex dialect matches the local tool and the
+        # .gitignore chain is honored; otherwise fall back to POSIX ERE via `grep -E` (never
+        # BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
         quoted_pattern = shlex.quote(pattern)
         quoted_target = shlex.quote(target)
         per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
-        if self._ripgrep_available:
+        if self._has_ripgrep():
             include_flag = f"--glob {shlex.quote(include)} " if include else ""
+            no_ignore = "--no-ignore --hidden " if include_ignored else ""
             command = (
                 f"rg --line-number --no-heading --color=never "
-                f"--max-count {per_file_limit} {include_flag}"
+                f"--max-count {per_file_limit} {no_ignore}{include_flag}"
                 f"-e {quoted_pattern} -- {quoted_target}"
             )
         else:
             include_flag = f"--include={shlex.quote(include)} " if include else ""
             command = (
-                f"grep -rEn -m {per_file_limit} {include_flag}"
+                f"grep -rEn -m {per_file_limit} --exclude-dir=.git {include_flag}"
                 f"-e {quoted_pattern} -- {quoted_target}"
             )
         completed = self._ssh(f"bash -lc {shlex.quote(command)}", timeout=DEFAULT_TIMEOUT)

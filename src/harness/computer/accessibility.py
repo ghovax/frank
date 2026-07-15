@@ -279,6 +279,26 @@ def app_name_for_pid(pid: int) -> str:
     )
 
 
+def running_app_names() -> list[str]:
+    """The regular (Dock-visible) apps currently running, by name — the situational awareness a
+    person gets from glancing at the Dock, so the model knows what it can switch to."""
+    regular = AppKit.NSApplicationActivationPolicyRegular
+    apps = AppKit.NSWorkspace.sharedWorkspace().runningApplications()
+    names = [_string(app.localizedName()) for app in apps if app.activationPolicy() == regular]
+    return [name for name in names if name]
+
+
+def window_titles(pid: int) -> list[str]:
+    """Every window title of an app — so the model can tell one window from another (a document
+    or reader window vs. the main window) and target it by name, instead of assuming the focused
+    window is the one it wants."""
+    root = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    windows = _single(root, WINDOWS) or []
+    titles = [_string(_single(window, TITLE)) for window in windows]
+    return [title for title in titles if title]
+
+
 def enable_rich_accessibility(root: Any) -> None:
     """Ask an app that gates its accessibility tree to build the full one.
 
@@ -303,6 +323,13 @@ def _window_roots(root: Any, window: str) -> list[Any]:
     if window == "main":
         main = _single(root, MAIN_WINDOW) or _single(root, FOCUSED_WINDOW)
         return [main] if main else list(_single(root, WINDOWS) or [])
+    if window and window != "focused":
+        # Anything else is a window title (or a substring of one): target the matching window,
+        # so the model can pick one window from another by name rather than by its role.
+        needle = window.strip().lower()
+        matched = [window for window in (_single(root, WINDOWS) or []) if needle in _string(_single(window, TITLE)).lower()]
+        if matched:
+            return matched
     focused = _single(root, FOCUSED_WINDOW) or _single(root, MAIN_WINDOW)
     return [focused] if focused else list(_single(root, WINDOWS) or [])
 

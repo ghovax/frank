@@ -9,4 +9,4 @@
 - Returns page **text**, not binary files. To save a file (PDF, archive, dataset), use **download_file** instead.
 - Very large results are **truncated inline**, with the full converted content written to the file named in `output_file` — read that file (with `read_file` offsets) when you need the tail.
 
-This tool is **read-only** and does not modify any files. A short *justification* is welcome when the purpose is not obvious from the URL — one open-ended sentence rather than a `label: detail` title.
+This tool is **read-only** and does not modify any files.

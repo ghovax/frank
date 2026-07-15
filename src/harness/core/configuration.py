@@ -871,15 +871,33 @@ class PromptLoader:
         if not path.exists():
             return ""
         content = path.read_text()
-        return self._replace_variables(content, variables)
+        return self._replace_variables(content, variables, template_name)
 
     @staticmethod
-    def _replace_variables(template: str, variables: dict[str, str]) -> str:
+    def _replace_variables(template: str, variables: dict[str, str], template_name: str = "") -> str:
+        """Substitute ``{{ name }}`` placeholders (spaced or not) from ``variables``.
+
+        Rendering is strict: a placeholder with no matching variable, or any ``{{ … }}``
+        left standing after substitution (a malformed or unknown placeholder), raises
+        rather than silently shipping the raw braces into a prompt the model would see."""
+        where = f" in prompt '{template_name}'" if template_name else ""
+
         def replacer(match: re.Match[str]) -> str:
             variable_name = match.group(1)
-            return variables.get(variable_name, match.group(0))
+            if variable_name not in variables:
+                raise ValueError(
+                    f"Unresolved placeholder '{{{{ {variable_name} }}}}'{where}: no value was provided (given: {sorted(variables)})."
+                )
+            return variables[variable_name]
 
-        return re.sub(r"\{\{\s*(\w+)\s*\}\}", replacer, template)
+        # Accept both the spaced ({{ name }}) and unspaced ({{name}}) forms.
+        rendered = re.sub(r"\{\{\s*(\w+)\s*\}\}", replacer, template)
+        # Anything of the {{ … }} shape still present could not be substituted — a bad name
+        # or unsupported syntax. Fail loudly instead of leaking it into the prompt.
+        leftover = re.search(r"\{\{.*?\}\}", rendered, re.DOTALL)
+        if leftover is not None:
+            raise ValueError(f"Unsubstituted placeholder {leftover.group(0)!r}{where} after rendering.")
+        return rendered
 
 
 def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path]:

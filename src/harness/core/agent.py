@@ -1424,25 +1424,12 @@ class AgentRuntime:
         return self._cached_system_prompt
 
     def _build_dynamic_context(self) -> str:
-        """Build the dynamic context injected at the end of the message list."""
-        current_datetime = datetime.now(timezone.utc)
-        current_timestamp = current_datetime.strftime("%Y-%m-%d %H:%M:%S UTC")
-        turn_metadata = {
-            "current_timestamp": current_timestamp,
-            "current_timestamp_iso": current_datetime.isoformat(),
-            "timezone": "UTC",
-            "working_directory": self._working_directory or str(Path.cwd()),
-            "project_directory": self._project_directory,
-            "session_id": self._session_id,
-            "agent_name": self._agent_configuration.name,
-            "is_agent": self._is_agent,
-        }
-        turn_reminders = self._prompt_loader.load("turn_reminders", {
-            "turn_metadata": json.dumps(turn_metadata, sort_keys=True),
-        }).strip()
-        # One structured object per turn (was a pile of separate newline-joined JSON
-        # blobs). Empty goal/tasks are omitted so the model isn't fed noise.
+        """The structured per-turn context injected at the end of the message list: the current
+        time, where the agent is, its goal, its tasks, and its background work. Empty goal/tasks
+        are omitted so the model isn't fed noise. Standing behavioural guidance lives once in the
+        system prompt, not re-injected here."""
         context = TurnContext(
+            now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             pwd=self._working_directory or str(Path.cwd()),
             active_goal=self._active_goal,
             tasks=self._task_manager.to_dict_list(),
@@ -1452,11 +1439,7 @@ class AgentRuntime:
                 "recent_events": self._execution_history[-20:],
             },
         )
-        parts = []
-        if turn_reminders:
-            parts.append(turn_reminders)
-        parts.append(context.model_dump_json(exclude_defaults=True))
-        return "\n".join(parts)
+        return context.model_dump_json(exclude_defaults=True)
 
     def _background_result_events(self) -> list[StreamEvent]:
         events: list[StreamEvent] = []
@@ -1816,10 +1799,10 @@ class AgentRuntime:
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
 
-            # Dynamic context (turn reminders, time, pwd, active goal) is injected
+            # Dynamic context (time, pwd, active goal, tasks, background) is injected
             # only on the first iteration of a turn — when the user just sent a
             # message. Subsequent iterations (after tool calls) skip it to avoid
-            # re-sending the same reminders on every LLM call within the turn.
+            # re-sending the same per-turn metadata on every LLM call within the turn.
             # Delivered as a transient user-role harness note at the very tail of
             # the request — never as a system message (LiteLLM would hoist it into
             # Anthropic's top-level system param, whose fresh timestamp would then
@@ -2815,8 +2798,13 @@ class AgentRuntime:
         elif tool_name == "find_files":
             assert resolved_location is not None
             pattern = str(tool_arguments.get("pattern", ""))
+            include_ignored = bool(tool_arguments.get("include_ignored", False))
             result = await asyncio.to_thread(
-                file_tools.find_files, resolved_location.executor, resolved_location.base_directory, pattern,
+                file_tools.find_files,
+                resolved_location.executor,
+                resolved_location.base_directory,
+                pattern,
+                include_ignored,
             )
             yield StreamEvent(
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
@@ -2829,6 +2817,7 @@ class AgentRuntime:
             include = str(include) if include else None
             search_path = tool_arguments.get("path")
             search_path = str(search_path) if search_path else None
+            include_ignored = bool(tool_arguments.get("include_ignored", False))
             result = await asyncio.to_thread(
                 file_tools.search_content,
                 resolved_location.executor,
@@ -2836,6 +2825,7 @@ class AgentRuntime:
                 pattern,
                 include,
                 search_path,
+                include_ignored,
             )
             yield StreamEvent(
                 StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
