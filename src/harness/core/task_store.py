@@ -28,6 +28,8 @@ persistence layer changes.
 """
 
 import json
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -49,7 +51,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskStore
-from a2a.types import Task, TaskState
+from a2a.types import DataPart, Message, Part, Role, Task, TaskState, TaskStatus
 
 from harness.core.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
 
@@ -247,6 +249,52 @@ class AppendOnlyTaskStore(TaskStore):
     async def _ensure_initialized(self) -> None:
         if not self._initialized:
             await self.initialize()
+
+    async def fail_orphaned_tasks(self) -> list[str]:
+        """Fail tasks left nonterminal by a previous server process.
+
+        In-memory executors cannot be resumed after a restart. Persisting an explicit
+        interrupted failure prevents stale approvals, tools, and delegated-agent lanes
+        from replaying as if they were still active.
+        """
+        await self._ensure_initialized()
+        write_lock = await acquire_sqlite_write_lock()
+        orphaned_task_ids: list[str] = []
+        try:
+            async with self._engine.begin() as connection:
+                head_rows = (await connection.execute(select(self._head))).mappings().all()
+                for head_row in head_rows:
+                    current_status = json.loads(head_row["status"])
+                    current_state = str(current_status.get("state", ""))
+                    if current_state in _TERMINAL_TASK_STATES:
+                        continue
+                    task_id = str(head_row["id"])
+                    context_id = str(head_row["context_id"] or "")
+                    interrupted_message = Message(
+                        role=Role.agent,
+                        parts=[Part(root=DataPart(data={
+                            "kind": "error",
+                            "code": "turn_interrupted",
+                            "message": "This task was interrupted because the server restarted.",
+                        }))],
+                        message_id=uuid.uuid4().hex,
+                        task_id=task_id,
+                        context_id=context_id or None,
+                    )
+                    interrupted_status = TaskStatus(
+                        state=TaskState.failed,
+                        message=interrupted_message,
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    )
+                    await connection.execute(
+                        update(self._head)
+                        .where(self._head.c.id == task_id)
+                        .values(status=_dump(interrupted_status))
+                    )
+                    orphaned_task_ids.append(task_id)
+        finally:
+            release_sqlite_write_lock(write_lock)
+        return orphaned_task_ids
 
     async def _history_count(self, connection, task_id: str) -> int:
         cached = self._persisted_count.get(task_id)
@@ -483,13 +531,29 @@ class AppendOnlyTaskStore(TaskStore):
 
             head_by_id = {str(row["id"]): row for row in head_rows}
             task_ids: list[str] = []
+            related_head_rows: list = []
             for row in head_rows:
                 metadata = json.loads(row["task_metadata"]) if row["task_metadata"] else None
                 if isinstance(metadata, dict) and isinstance(metadata.get("referenceTaskIds"), list):
+                    related_head_rows.append(row)
                     continue
                 task_ids.append(str(row["id"]))
+            related_tasks = []
+            if before_row_id is None:
+                related_tasks = [
+                    Task.model_validate({
+                        "id": str(row["id"]),
+                        "context_id": row["context_id"],
+                        "kind": row["kind"] or "task",
+                        "status": json.loads(row["status"]),
+                        "metadata": json.loads(row["task_metadata"]) if row["task_metadata"] else None,
+                        "history": [],
+                        "artifacts": None,
+                    })
+                    for row in related_head_rows
+                ]
             if not task_ids:
-                return {"tasks": [], "next_before_row_id": None, "has_more": False}
+                return {"tasks": related_tasks, "next_before_row_id": None, "has_more": False}
 
             history_query = (
                 select(self._history.c.row_id, self._history.c.task_id, self._history.c.seq, self._history.c.message)
@@ -503,7 +567,7 @@ class AppendOnlyTaskStore(TaskStore):
             has_more = len(fetched_rows) > page_limit
             page_rows = fetched_rows[:page_limit]
             if not page_rows:
-                return {"tasks": [], "next_before_row_id": None, "has_more": False}
+                return {"tasks": related_tasks, "next_before_row_id": None, "has_more": False}
 
             first_row_by_task: dict[str, int] = {}
             for row in page_rows:
@@ -554,6 +618,8 @@ class AppendOnlyTaskStore(TaskStore):
                 "artifacts": [json.loads(artifact) for artifact in artifacts[task_id]] or None,
             }
             tasks.append(Task.model_validate(data))
+
+        tasks.extend(related_tasks)
 
         next_before_row_id = min(int(row.row_id) for row in page_rows)
         return {"tasks": tasks, "next_before_row_id": next_before_row_id, "has_more": has_more}

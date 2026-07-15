@@ -23,6 +23,7 @@ const APPROVE_ACTION = "approve";
 type PermissionActionHandler = (requestId: string) => void;
 let actionHandler: PermissionActionHandler | null = null;
 let listenerAttached = false;
+const notificationTokens = new Map<string, symbol>();
 
 // The app's live decision callback (rebound as sessions change). Kept as a
 // single mutable slot because notifications outlive React renders.
@@ -79,9 +80,13 @@ export async function notifyPermissionRequest({
 }): Promise<void> {
   // Focused window: the overlay is in view, a system notification would nag.
   if (typeof document === "undefined" || document.hasFocus()) return;
+  const notificationToken = Symbol(requestId);
+  notificationTokens.set(requestId, notificationToken);
   if (!(await ensurePermission())) return;
+  if (notificationTokens.get(requestId) !== notificationToken) return;
   const tag = PERMISSION_TAG_PREFIX + requestId;
   const registration = await swRegistration();
+  if (notificationTokens.get(requestId) !== notificationToken) return;
   if (registration) {
     // `actions` is not yet in TS's NotificationOptions (Notification API level 2).
     const options = {
@@ -107,6 +112,7 @@ export async function notifyPermissionRequest({
 
 // Retract the notification for a resolved (or superseded) request.
 export async function closePermissionNotification(requestId: string): Promise<void> {
+  notificationTokens.delete(requestId);
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
   try {
     const registration = await navigator.serviceWorker.getRegistration("/notification-sw.js");

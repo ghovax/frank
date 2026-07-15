@@ -265,8 +265,6 @@ export interface Location {
 
 export interface Project {
   id: string;
-  name: string;
-  description: string;
   created_at: string;
   updated_at: string;
   session_count: number;
@@ -282,14 +280,7 @@ export interface LocationInput {
 }
 
 export interface ProjectCreateInput {
-  name: string;
-  description?: string;
   locations: LocationInput[];
-}
-
-export interface ProjectUpdateInput {
-  name?: string;
-  description?: string;
 }
 
 export async function listSshHosts(): Promise<SshHost[]> {
@@ -319,16 +310,6 @@ export async function createProject(input: ProjectCreateInput): Promise<Project>
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error(`Failed to create project (${response.status})`);
-  return await response.json() as Project;
-}
-
-export async function updateProject(projectId: string, input: ProjectUpdateInput): Promise<Project> {
-  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) throw new Error(`Failed to update project (${response.status})`);
   return await response.json() as Project;
 }
 

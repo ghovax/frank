@@ -8,7 +8,7 @@
 // compare alignment/density across states without wiring up a server. Not
 // linked from the app; ConnectionGate exempts this route.
 
-import { Box, Flex, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, Flex, Text, VStack } from "@chakra-ui/react";
 import { useState, type ReactNode } from "react";
 import type { ChatMessage } from "@/lib/use-chat";
 import type { ToolEvent } from "@/lib/tool-event";
@@ -179,8 +179,8 @@ export default function GalleryPage() {
     <Box minH="100dvh" bg="bg" px={4} py={6}>
       <Flex align="center" justify="space-between" maxW="760px" mx="auto" mb={6}>
         <Text textStyle="panelTitle">Design gallery</Text>
-        <Text
-          as="button"
+        <Button
+          variant="plain"
           textStyle="fieldLabel"
           color="fg.muted"
           cursor="pointer"
@@ -188,7 +188,7 @@ export default function GalleryPage() {
           onClick={() => setColorMode(colorMode === "dark" ? "light" : "dark")}
         >
           {colorMode === "dark" ? "Switch to light" : "Switch to dark"}
-        </Text>
+        </Button>
       </Flex>
       {/* The transcript column mirrors ChatPanel's timeline: same VStack gap, so
           what is measured here is what the chat renders. */}
@@ -205,8 +205,8 @@ export default function GalleryPage() {
         <Box data-audit="group-running" display="flex" flexDirection="column">
           <ToolGroup tools={liveTools} keepOpen />
         </Box>
-        <Text
-          as="button"
+        <Button
+          variant="plain"
           textStyle="fieldLabel"
           color="fg.subtle"
           cursor="pointer"
@@ -215,7 +215,7 @@ export default function GalleryPage() {
           onClick={appendLiveTool}
         >
           + simulate a streamed call
-        </Text>
+        </Button>
         {/* keepOpen marks the live streaming tail — the only state in which a
             reasoning phase renders at all. */}
         <Box data-audit="group-thinking" display="flex" flexDirection="column">
@@ -254,7 +254,7 @@ export default function GalleryPage() {
           <Box data-audit="agent-step">
             <DisclosureRow
               defaultOpen
-              icon={<Box color="purple.fg"><LuSparkles size={13} /></Box>}
+              icon={<Box color="purple.fg"><LuSparkles /></Box>}
               title={<DisclosureLabel>researcher — Survey the design system</DisclosureLabel>}
             >
               <VStack gap={1} align="stretch">
@@ -268,7 +268,7 @@ export default function GalleryPage() {
           <Box data-audit="panel-card">
             <DisclosureRow
               defaultOpen
-              icon={<Box color="pink.fg"><LuSparkles size={13} /></Box>}
+              icon={<Box color="pink.fg"><LuSparkles /></Box>}
               title={<DisclosureLabel>A skill card title</DisclosureLabel>}
             >
               <InlineField label="Source">daisy/skills/example</InlineField>

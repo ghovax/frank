@@ -66,10 +66,9 @@ class BashAllowRule(BaseModel):
     patterns: list[str]
 
 
-class BashPermissionDecision(BaseModel):
-    """Structured decision for automatic bash permission classification."""
+class PermissionDecision(BaseModel):
+    """Structured decision for automatic permission classification."""
 
     action: Literal["auto_approve", "escalate"]
     justification: str
     risk: Literal["low", "medium", "high"]
-

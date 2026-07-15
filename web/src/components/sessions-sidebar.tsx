@@ -1,21 +1,25 @@
 "use client";
 
-// The chat-history sidebar as a self-contained unit: the project switcher, a new-session
-// row, the sorted session list (each row a status dot + marquee title + options menu), and
-// a footer showing which connection the sessions live on. It owns nothing about layout (the
+// The chat-history sidebar as a self-contained unit: the projects list, a new-session
+// row, and each project's sorted sessions (status dot + marquee title + options menu).
+// It owns nothing about layout (the
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
 
-import { Box, Button, chakra, EmptyState, Flex, IconButton, Input, Kbd, Menu, Text, VStack } from "@chakra-ui/react";
+import { Box, Button, Flex, IconButton, Image, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuGlobe, LuHardDrive, LuMessageSquare, LuSearch, LuSquarePen, LuTerminal, LuTrash2 } from "react-icons/lu";
-import { ProjectSwitcher } from "@/components/project-switcher";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import daisyIcon from "@/app/icon.png";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
-import { PanelBody, PanelCard, PanelHeader } from "@/components/ui/panel";
-import { revealInFinder, type FilesystemLease, type PermissionMode } from "@/lib/api";
+import { PanelBody, PanelCard } from "@/components/ui/panel";
+import { Tooltip } from "@/components/ui/tooltip";
+import { deleteProject, listProjects, listSshHosts, revealInFinder, subscribeEvents, type FilesystemLease, type PermissionMode, type Project, type SshHost } from "@/lib/api";
 import type { ConnectionKind } from "@/lib/connection-store";
+import { locationTargetAddress, locationTargetLabel } from "./location-status";
+import { NewProjectDialog } from "./new-project-dialog";
+import { toaster } from "./ui/toaster";
 
 export interface SessionEntry {
   sessionId: string;
@@ -40,6 +44,10 @@ export interface SessionEntry {
 }
 
 export type SessionSort = "recent" | "active";
+
+type SidebarListEntry =
+  | { kind: "project"; project: Project }
+  | { kind: "session"; session: SessionEntry };
 
 // The status a session's dot reflects. "working" means the session is still doing
 // something — a soft pulsing gray dot, shown even while it's the active session ("not
@@ -69,20 +77,15 @@ const INDICATOR_COLOR: Record<SessionIndicator, string> = {
 // Row geometry, shared by the New-session row, the session rows, and the footer so their
 // leading glyphs, text, and left edge all line up on one grid — the reference sidebar's
 // single-column rhythm. Kept as constants (not magic numbers repeated per element).
-const ROW_MIN_H = "30px";
+const ROW_MINIMUM_H = "30px";
 // Just wide enough to hold the 14px row glyph / 8px status dot centered — kept tight so
 // titles hug the left edge of the pill rather than floating in from a wide empty gutter.
 const LEADING_SLOT = "14px";
 // The corner radius the whole row family shares — the app's standard `md` default corner.
 const ROW_RADIUS = "md";
-const HOVER_BG = { base: "gray.100", _dark: "rgba(255, 255, 255, 0.08)" } as const;
-const SELECTED_BG = { base: "gray.200", _dark: "rgba(255, 255, 255, 0.13)" } as const;
-
-const CONNECTION_ICON: Record<ConnectionKind, typeof LuGlobe> = {
-  local: LuHardDrive,
-  remote: LuGlobe,
-  ssh: LuTerminal,
-};
+const HOVER_BG = "bg.subtle";
+const SELECTED_BG = "blue.subtle";
+const SELECTED_HOVER_BG = "blue.muted";
 
 // Extra left-shift, beyond the raw overflow, so a fully-scrolled title comes to rest with
 // its end clear of the row's trailing ⋯ actions (which sit ~24px in from the right) rather
@@ -114,7 +117,7 @@ function MarqueeTitle({ text }: { text: string }) {
 
   const travel = overflow > 0 ? overflow + MARQUEE_TAIL_CLEARANCE : 0;
   return (
-    <span
+    <Span
       ref={outerRef}
       className="sidebar-title"
       data-overflow={overflow > 0 ? "true" : undefined}
@@ -123,8 +126,8 @@ function MarqueeTitle({ text }: { text: string }) {
         ["--marquee-duration" as string]: `${(travel * 0.02).toFixed(2)}s`,
       }}
     >
-      <span ref={innerRef} className="sidebar-title-inner">{text}</span>
-    </span>
+      <Span ref={innerRef} className="sidebar-title-inner">{text}</Span>
+    </Span>
   );
 }
 
@@ -136,8 +139,7 @@ export function SessionsSidebar({
   onSessionSortChange,
   unseenCompletions,
   currentProjectId,
-  connectionName,
-  connectionKind,
+  connectionId,
   onSwitchProject,
   onOpenProjectSettings,
   onNewChat,
@@ -151,8 +153,7 @@ export function SessionsSidebar({
   onSessionSortChange: (sort: SessionSort) => void;
   unseenCompletions: Set<string>;
   currentProjectId: string;
-  connectionName?: string;
-  connectionKind?: ConnectionKind;
+  connectionId?: string;
   onSwitchProject: (projectId: string) => void;
   onOpenProjectSettings: (projectId: string) => void;
   onNewChat: () => void;
@@ -160,50 +161,187 @@ export function SessionsSidebar({
   onDeleteSession: (entry: SessionEntry) => void;
 }) {
   const t = useTranslations("SessionsSidebar");
-  // Delete is confirmed through a single shared dialog rather than a per-row one.
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
+  const [pendingProjectDelete, setPendingProjectDelete] = useState<Project | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [search, setSearch] = useState("");
   const searchQuery = search.trim().toLowerCase();
-  const shownSessions = searchQuery
-    ? sessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
+  const connectionSessions = connectionId
+    ? sessions.filter((entry) => entry.connectionId === connectionId)
     : sessions;
+  const shownSessions = searchQuery
+    ? connectionSessions.filter((entry) => (entry.title || "").toLowerCase().includes(searchQuery))
+    : connectionSessions;
 
-  const ConnectionIcon = CONNECTION_ICON[connectionKind ?? "local"];
+  const refreshProjects = useCallback(() => {
+    listProjects().then(setProjects).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshProjects();
+    listSshHosts().then(setSshHosts).catch(() => {});
+    return subscribeEvents((event) => {
+      if (event.type === "projects_changed") refreshProjects();
+      if (event.type === "hosts_changed") listSshHosts().then(setSshHosts).catch(() => {});
+    });
+  }, [refreshProjects, connectionId]);
+
+  async function confirmProjectDelete() {
+    if (!pendingProjectDelete) return;
+    const deletedProjectId = pendingProjectDelete.id;
+    try {
+      await deleteProject(deletedProjectId);
+      const remainingProjects = projects.filter((project) => project.id !== deletedProjectId);
+      setProjects(remainingProjects);
+      if (deletedProjectId === currentProjectId && remainingProjects[0]) {
+        onSwitchProject(remainingProjects[0].id);
+      }
+    } catch (error) {
+      toaster.create({
+        type: "error",
+        title: t("deleteProjectError"),
+        description: error instanceof Error ? error.message : "",
+        closable: true,
+      });
+    }
+  }
+
+  function projectLabel(project: Project): string {
+    const primaryLocation = project.locations?.[0];
+    return primaryLocation ? locationTargetLabel(primaryLocation) : t("untitledProject");
+  }
+
+  function renderProjectRow(project: Project) {
+    const primaryLocation = project.locations?.[0];
+    const address = primaryLocation ? locationTargetAddress(primaryLocation) : "";
+    const label = projectLabel(project);
+    const tooltipContent = address ? (
+      <Box>
+        <Text fontWeight="semibold" color="fg" mb={1}>{label}</Text>
+        <Text color="fg.muted" fontFamily="mono" wordBreak="break-all">{address}</Text>
+      </Box>
+    ) : label;
+
+    return (
+      <Box
+        key={project.id}
+        className="sidebar-row"
+        position="relative"
+        borderRadius={ROW_RADIUS}
+        _hover={{ bg: HOVER_BG }}
+        transition="background-color 0.12s"
+        css={{
+          "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
+          "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+          "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+        }}
+      >
+        <Tooltip
+          content={tooltipContent}
+          rich={Boolean(address)}
+          openDelay={350}
+          positioning={{ placement: "right" }}
+        >
+          <Button
+            variant="ghost"
+            w="full"
+            minH={ROW_MINIMUM_H}
+            gap={1.5}
+            px={2}
+            justifyContent="flex-start"
+            textAlign="left"
+            color="fg.muted"
+            _hover={{ color: "fg" }}
+            transition="color 0.12s"
+            onClick={() => onSwitchProject(project.id)}
+          >
+            <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
+              <LuFolderOpen size={14} />
+            </Flex>
+            <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">
+              {label}
+            </Text>
+          </Button>
+        </Tooltip>
+        <Box
+          data-row-actions
+          position="absolute"
+          right={1}
+          top="50%"
+          transform="translateY(-50%)"
+          display="flex"
+          alignItems="center"
+          transition="opacity 0.12s"
+        >
+          <DropdownMenu
+            trigger={
+              <IconButton
+                aria-label={t("projectOptions")}
+                variant="plain"
+                boxSize={5}
+                color="fg.subtle"
+                _hover={{ bg: "transparent", color: "fg" }}
+                _active={{ bg: "transparent" }}
+                _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
+                css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
+              >
+                <LuEllipsis size={13} />
+              </IconButton>
+            }
+            minW="180px"
+            positioning={{ placement: "bottom-end" }}
+          >
+            <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenProjectSettings(project.id)}>
+              {t("projectSettings")}
+            </MenuOption>
+            <Menu.Item
+              value="delete-project"
+              color="red.fg"
+              disabled={projects.length <= 1}
+              onClick={() => setPendingProjectDelete(project)}
+            >
+              <LuTrash2 size={14} />
+              <Box flex={1}>{t("deleteProject")}</Box>
+            </Menu.Item>
+          </DropdownMenu>
+        </Box>
+      </Box>
+    );
+  }
+
+  const sidebarEntries = projects.flatMap<SidebarListEntry>((project) => {
+    const projectSessions = shownSessions.filter((session) => session.projectId === project.id);
+    if (searchQuery && projectSessions.length === 0) return [];
+    return [
+      { kind: "project", project },
+      ...projectSessions.map((session): SidebarListEntry => ({ kind: "session", session })),
+    ];
+  });
 
   return (
     <PanelCard flex={1}>
-      {/* The project switcher anchors the sidebar: the current project's name with a
-          chevron, opening a dropdown to switch, create, or manage projects — in place,
-          with no landing page to bounce through. It fills the shared panel top strip so
-          the sidebar's header lines up with every other panel's header. */}
-      <PanelHeader pl={2}>
-        <Box flex={1} minW={0}>
-          <ProjectSwitcher currentProjectId={currentProjectId} onSwitchProject={onSwitchProject} onOpenProjectSettings={onOpenProjectSettings} />
-        </Box>
-      </PanelHeader>
+      <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
+        <Image src={daisyIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
+        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Daisy</Text>
+      </Flex>
 
       {/* "New session" reads as the first row of the list, not a separate button — a
           circle-plus leading glyph on the shared row grid, with a ⌘N hint that surfaces on
           hover. Disabled when we're already in a fresh, un-started conversation. */}
-      <Box px={2} flexShrink={0} pb={2}>
-        <chakra.button
+      <Box px={2} pt={1} flexShrink={0} pb={1}>
+        <Button
           type="button"
-          display="flex"
+          variant="subtle"
+          colorPalette="blue"
           w="full"
-          minH={ROW_MIN_H}
-          alignItems="center"
+          minH={ROW_MINIMUM_H}
           gap={1.5}
           px={2}
-          borderRadius={ROW_RADIUS}
-          // The primary action reads as one: a subtle blue fill and blue glyph/label so it
-          // invites the click, distinct from the neutral session rows below it.
-          bg="blue.subtle"
-          color="blue.fg"
+          justifyContent="flex-start"
           textAlign="left"
           disabled={activeSessionId === null}
-          _hover={{ bg: "blue.muted" }}
-          _disabled={{ opacity: 0.45, pointerEvents: "none" }}
-          transition="color 0.12s, background-color 0.12s"
           css={{ "& [data-kbd-hint]": { opacity: 0 }, "&:hover [data-kbd-hint]": { opacity: 1 } }}
           onClick={onNewChat}
         >
@@ -214,11 +352,30 @@ export function SessionsSidebar({
           {/* Chakra's semantic keyboard-key component, in its `plain` variant so it reads as a
               subtle shortcut hint rather than a raised keycap chip. */}
           <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
-        </chakra.button>
+        </Button>
+      </Box>
+
+      <Box px={2} flexShrink={0} pb={1}>
+        <Button
+          type="button"
+          variant="outline"
+          w="full"
+          minH={ROW_MINIMUM_H}
+          gap={1.5}
+          px={2}
+          justifyContent="flex-start"
+          textAlign="left"
+          onClick={() => setNewProjectOpen(true)}
+        >
+          <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
+            <LuFolderPlus size={14} />
+          </Flex>
+          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{t("newProject")}</Text>
+        </Button>
       </Box>
 
       {/* Filter the list by title — the same field treatment as the settings search. */}
-      <Box px={2} flexShrink={0} pb={2}>
+      <Box px={2} flexShrink={0} pb={1}>
         <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg.subtle" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
           <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
           <Input
@@ -236,23 +393,9 @@ export function SessionsSidebar({
       </Box>
 
       <PanelBody pt={1}>
-        {/* Section header: the "Recents" label with a sort control that stays out of the way
-            until you reach for it — hidden until the header is hovered/focused or its menu
-            is open, matching the reference's reveal-on-hover section actions. */}
-        <Flex
-          align="center"
-          gap={1.5}
-          mb={1}
-          color="fg.muted"
-          css={{
-            "& [data-section-action]": { opacity: 0 },
-            "&:hover [data-section-action]": { opacity: 1 },
-            "&:focus-within [data-section-action]": { opacity: 1 },
-            "&:has([data-state=open]) [data-section-action]": { opacity: 1 },
-          }}
-        >
-          <Text textStyle="sectionLabel" flex={1}>{t("recents")}</Text>
-          <Box data-section-action transition="opacity 0.12s">
+        <Flex align="center" gap={1.5} mb={1} color="fg.muted">
+          <Text textStyle="sectionLabel" flex={1}>{t("projects")}</Text>
+          <Box>
             <DropdownMenu
               trigger={
                 <Button
@@ -287,25 +430,13 @@ export function SessionsSidebar({
             </DropdownMenu>
           </Box>
         </Flex>
-        {!sessionsLoaded ? null : sessions.length === 0 ? (
-          <EmptyState.Root size="sm">
-            <EmptyState.Content pt={4}>
-              <EmptyState.Indicator>
-                <LuMessageSquare />
-              </EmptyState.Indicator>
-              <VStack gap={0}>
-                <EmptyState.Title fontSize="sm">{t("noConversations")}</EmptyState.Title>
-                <EmptyState.Description fontSize="xs">
-                  {t("noConversationsHint")}
-                </EmptyState.Description>
-              </VStack>
-            </EmptyState.Content>
-          </EmptyState.Root>
-        ) : shownSessions.length === 0 ? (
+        {!sessionsLoaded || projects.length === 0 ? null : sidebarEntries.length === 0 ? (
           <Text fontSize="xs" color="fg.muted" px={2} py={2}>{t("noMatches", { query: search })}</Text>
         ) : (
           <VStack gap={1} align="stretch">
-            {shownSessions.map((entry) => {
+            {sidebarEntries.map((sidebarEntry) => {
+              if (sidebarEntry.kind === "project") return renderProjectRow(sidebarEntry.project);
+              const entry = sidebarEntry.session;
               const isActive = entry.sessionId === activeSessionId;
               const indicator = sessionIndicator(entry, isActive, unseenCompletions);
               const title = entry.title || t("untitledConversation");
@@ -314,15 +445,16 @@ export function SessionsSidebar({
                   // The row: a real button carries the click/keyboard target; the ⋯ actions
                   // ride as an absolutely-positioned sibling (not nested in the button, which
                   // would be invalid) that fades in only on hover/focus. A long title reveals
-                  // itself by scrolling on hover (MarqueeTitle) — no tooltip, which would fight
-                  // the marquee for the same hover.
+                  // itself by scrolling on hover (MarqueeTitle), while a delayed tooltip keeps
+                  // the complete title accessible without interrupting a quick pointer pass.
                   <Box
                     key={entry.sessionId}
                     className="sidebar-row"
+                    ml={3}
                     position="relative"
                     borderRadius={ROW_RADIUS}
                     bg={isActive ? SELECTED_BG : undefined}
-                    _hover={{ bg: isActive ? SELECTED_BG : HOVER_BG }}
+                    _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
                     transition="background-color 0.12s"
                     css={{
                       // Hidden actions are also click-through (pointerEvents none), so the
@@ -332,37 +464,43 @@ export function SessionsSidebar({
                       "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
                     }}
                   >
-                    <Flex
-                      as="button"
-                      w="full"
-                      minH={ROW_MIN_H}
-                      align="center"
-                      gap={1.5}
-                      pl={2}
-                      pr={2}
-                      textAlign="left"
-                      color={isActive ? "fg" : "fg.muted"}
-                      _hover={{ color: "fg" }}
-                      transition="color 0.12s"
-                      onClick={() => onResume(entry)}
+                    <Tooltip
+                      content={title}
+                      openDelay={350}
+                      positioning={{ placement: "right" }}
                     >
-                      {/* Fixed-width leading slot keeps titles aligned whether or not a status
-                          dot is present. Gray + pulsing while working; solid blue once finished
-                          since you last looked; red/amber for an error or an awaiting prompt. */}
-                      <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
-                        {indicator ? (
-                          <Box
-                            boxSize="2"
-                            borderRadius="full"
-                            bg={INDICATOR_COLOR[indicator]}
-                            className={indicator === "working" ? "status-dot-pulse" : undefined}
-                          />
-                        ) : null}
-                      </Flex>
-                      <Box flex={1} minW={0} fontSize="xs">
-                        <MarqueeTitle text={title} />
-                      </Box>
-                    </Flex>
+                      <Button
+                        variant="plain"
+                        w="full"
+                        minH={ROW_MINIMUM_H}
+                        gap={1.5}
+                        pl={2}
+                        pr={2}
+                        justifyContent="flex-start"
+                        textAlign="left"
+                        color={isActive ? "blue.fg" : "fg.muted"}
+                        _hover={{ color: isActive ? "blue.fg" : "fg" }}
+                        transition="color 0.12s"
+                        onClick={() => onResume(entry)}
+                      >
+                        {/* Fixed-width leading slot keeps titles aligned whether or not a status
+                            dot is present. Gray + pulsing while working; solid blue once finished
+                            since you last looked; red/amber for an error or an awaiting prompt. */}
+                        <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
+                          {indicator ? (
+                            <Box
+                              boxSize="2"
+                              borderRadius="full"
+                              bg={INDICATOR_COLOR[indicator]}
+                              className={indicator === "working" ? "status-dot-pulse" : undefined}
+                            />
+                          ) : null}
+                        </Flex>
+                        <Box flex={1} minW={0} fontSize="xs">
+                          <MarqueeTitle text={title} />
+                        </Box>
+                      </Button>
+                    </Tooltip>
                     <Box
                       data-row-actions
                       position="absolute"
@@ -415,16 +553,6 @@ export function SessionsSidebar({
         )}
       </PanelBody>
 
-      {/* Footer identity: which harness this project's sessions live on — a kind glyph
-          (local disk / remote / SSH) and the connection's name, the local-first analog of
-          the reference sidebar's account row. */}
-      {connectionName ? (
-        <Flex align="center" gap={2} px={3} py={2} flexShrink={0} borderTopWidth="1px" borderColor="border.muted" color="fg.muted">
-          <Box flexShrink={0} display="flex" alignItems="center"><ConnectionIcon size={13} /></Box>
-          <Text fontSize="xs" truncate flex={1}>{connectionName}</Text>
-        </Flex>
-      ) : null}
-
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
@@ -434,6 +562,29 @@ export function SessionsSidebar({
         onConfirm={() => { if (pendingDelete) onDeleteSession(pendingDelete); }}
       >
         {t("deleteBody", { title: pendingDelete?.title || t("untitledConversation") })}
+      </ConfirmDialog>
+
+      {newProjectOpen ? (
+        <NewProjectDialog
+          open
+          hosts={sshHosts}
+          onOpenChange={setNewProjectOpen}
+          onCreated={(project) => {
+            setProjects((current) => [project, ...current.filter((entry) => entry.id !== project.id)]);
+            onSwitchProject(project.id);
+          }}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={pendingProjectDelete !== null}
+        onOpenChange={(open) => { if (!open) setPendingProjectDelete(null); }}
+        title={t("deleteProjectTitle")}
+        confirmLabel={t("deleteProjectConfirm")}
+        danger
+        onConfirm={() => void confirmProjectDelete()}
+      >
+        {t("deleteProjectBody", { project: pendingProjectDelete ? projectLabel(pendingProjectDelete) : "" })}
       </ConfirmDialog>
     </PanelCard>
   );

@@ -5,9 +5,11 @@ import {
   Button,
   EmptyState,
   Flex,
+  Heading,
   IconButton,
   Menu,
   Separator,
+  Span,
   Text,
   VStack,
 } from "@chakra-ui/react";
@@ -58,6 +60,10 @@ import { closePermissionNotification, notifyPermissionRequest, setPermissionNoti
 // animate its open/close (opacity + slide) exactly like the history sidebar on
 // the left — without losing its flex-layout props.
 const MotionBox = motion.create(Box);
+
+type SidePanelKey = "artifact" | "agents" | "background";
+
+const MAXIMUM_OPEN_SIDE_PANELS = 2;
 
 
 interface ChatPanelProps {
@@ -288,6 +294,10 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
       index += 1;
       continue;
     }
+    if (message.role === "assistant" && !message.content.trim()) {
+      index += 1;
+      continue;
+    }
     if (message.role !== "tool_call") {
       if (pendingThinkingId) {
         items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
@@ -448,9 +458,11 @@ export function ChatPanel({
   // question prompt on a tool call). Read via a ref inside handleSend so a new
   // message is queued rather than steered while a decision is outstanding.
   const hasInputRequiredRef = useRef(false);
-  const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
+  const [openSidePanels, setOpenSidePanels] = useState<SidePanelKey[]>([]);
+  const agentsPanelOpen = openSidePanels.includes("agents");
+  const artifactPanelOpen = openSidePanels.includes("artifact");
+  const backgroundPanelOpen = openSidePanels.includes("background");
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
-  const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   // Default right-region width: comfortable for one panel without dwarfing the
   // transcript (pairs with the sidebar default of 240 in page.tsx). Drag grows it.
   const [artifactPanelWidth, setArtifactPanelWidth] = useState(480);
@@ -507,8 +519,30 @@ export function ChatPanel({
       ? initialSettingsSection : null;
   const [settingsOpen, setSettingsOpen] = useState(!!validInitialSection);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(validInitialSection ?? "general");
+  const [appliedInitialSettingsSection, setAppliedInitialSettingsSection] = useState(validInitialSection);
+  if (appliedInitialSettingsSection !== validInitialSection) {
+    setAppliedInitialSettingsSection(validInitialSection);
+    if (validInitialSection) {
+      setSettingsSection(validInitialSection);
+      setSettingsOpen(true);
+    }
+  }
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false);
+
+  const setSidePanelOpen = useCallback((panel: SidePanelKey, open: boolean) => {
+    setOpenSidePanels((currentPanels) => {
+      const remainingPanels = currentPanels.filter((openPanel) => openPanel !== panel);
+      if (!open) return remainingPanels;
+      return [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS);
+    });
+  }, []);
+
+  const markSidePanelActive = useCallback((panel: SidePanelKey) => {
+    setOpenSidePanels((currentPanels) => {
+      if (!currentPanels.includes(panel) || currentPanels[currentPanels.length - 1] === panel) return currentPanels;
+      return [...currentPanels.filter((openPanel) => openPanel !== panel), panel];
+    });
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1081,7 +1115,7 @@ export function ChatPanel({
     setSeenTranscriptIds((current) => new Set([...current, ...newlyOpened]));
     setOpenArtifactIds((current) => [...current, ...newlyOpened.filter((id) => !current.includes(id))]);
     setActiveTabId(newlyOpened[newlyOpened.length - 1]);
-    setArtifactPanelOpen(true);
+    setSidePanelOpen("artifact", true);
   }
 
   // Open an artifact as a tab by its group id. If already open, just switch to it.
@@ -1100,8 +1134,8 @@ export function ChatPanel({
     setOpenArtifactIds((current) => (current.includes(group.id) ? current : [...current, group.id]));
     setActiveTabId(group.id);
     setHistoryMode(false);
-    setArtifactPanelOpen(true);
-  }, []);
+    setSidePanelOpen("artifact", true);
+  }, [setSidePanelOpen]);
 
   // Close a specific artifact tab. If it was the active tab, switch to the nearest.
   const handleCloseTab = useCallback((artifactId: string) => {
@@ -1184,7 +1218,7 @@ export function ChatPanel({
 
   // A tool call awaiting the user's approval or answer pauses the turn. While it is
   // outstanding, the composer may only queue (see handleSend) and Stop auto-denies it.
-  const hasInputRequired = messages.some(
+  const hasInputRequired = isStreaming && messages.some(
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
   useEffect(() => {
@@ -1200,32 +1234,34 @@ export function ChatPanel({
     | { kind: "permission"; permission: ToolPermission; title: string; command?: string; arguments?: Record<string, unknown> }
     | null
   ) = null;
-  for (const message of messages) {
-    if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
-    const question = message.meta?.question as ToolQuestion | undefined;
-    if (question) {
-      pendingPrompt = { kind: "question", question };
-      break;
-    }
-    const permission = message.meta?.permission as ToolPermission | undefined;
-    if (permission) {
-      const name = message.content;
-      const args = message.meta?.arguments as Record<string, unknown> | undefined;
-      const command = name === "bash" && args?.command ? String(args.command) : "";
-      pendingPrompt = {
-        kind: "permission",
-        permission,
-        title: getToolCallDisplay(name, args).label,
-        command: command || undefined,
-        arguments: args,
-      };
-      break;
+  if (isStreaming) {
+    for (const message of messages) {
+      if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
+      const question = message.meta?.question as ToolQuestion | undefined;
+      if (question) {
+        pendingPrompt = { kind: "question", question };
+        break;
+      }
+      const permission = message.meta?.permission as ToolPermission | undefined;
+      if (permission) {
+        const name = message.content;
+        const args = message.meta?.arguments as Record<string, unknown> | undefined;
+        const command = name === "bash" && args?.command ? String(args.command) : "";
+        pendingPrompt = {
+          kind: "permission",
+          permission,
+          title: getToolCallDisplay(name, args).label,
+          command: command || undefined,
+          arguments: args,
+        };
+        break;
+      }
     }
   }
 
   // Audio + system-notification side of a pending decision. The attention cue
-  // plays once per prompt (keyed by requestId, so re-renders never repeat it);
-  // a permission prompt additionally raises a system notification carrying the
+  // plays for the first prompt in a turn, while later prompts stay silent; a
+  // permission prompt additionally raises a system notification carrying the
   // overlay's own primary action ("Allow once") as its action button — shown
   // only while the window is unfocused, and retracted the moment the request
   // resolves or is superseded, so nothing stale lingers in the notification
@@ -1235,12 +1271,22 @@ export function ChatPanel({
   const pendingQuestionId = pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
   const pendingPermissionBody = pendingPrompt?.kind === "permission" ? pendingPrompt.command || pendingPrompt.title : "";
   const notifiedPermissionRef = useRef("");
+  const attentionSoundPlayedRef = useRef(false);
+  const pendingPromptId = pendingPermissionId || pendingQuestionId;
+  useEffect(() => {
+    if (!isStreaming) {
+      attentionSoundPlayedRef.current = false;
+      return;
+    }
+    if (!pendingPromptId || attentionSoundPlayedRef.current) return;
+    attentionSoundPlayedRef.current = true;
+    playAttentionSound();
+  }, [isStreaming, pendingPromptId]);
   useEffect(() => {
     const previous = notifiedPermissionRef.current;
     if (previous && previous !== pendingPermissionId) void closePermissionNotification(previous);
     notifiedPermissionRef.current = pendingPermissionId;
     if (!pendingPermissionId) return;
-    playAttentionSound();
     void notifyPermissionRequest({
       requestId: pendingPermissionId,
       title: tPermission("approvalNeeded"),
@@ -1248,9 +1294,6 @@ export function ChatPanel({
       actionLabel: tPermission("allowOnce"),
     });
   }, [pendingPermissionId, pendingPermissionBody, tPermission]);
-  useEffect(() => {
-    if (pendingQuestionId) playAttentionSound();
-  }, [pendingQuestionId]);
   // The notification's action button resolves the request exactly like the
   // overlay's primary button would.
   useEffect(() => {
@@ -1265,7 +1308,7 @@ export function ChatPanel({
   if (activeSteps !== previousActiveSteps) {
     setPreviousActiveSteps(activeSteps);
     if (activeSteps > 0 && window.matchMedia("(min-width: 768px)").matches) {
-      setAgentsPanelOpen(true);
+      setSidePanelOpen("agents", true);
     }
   }
 
@@ -1331,7 +1374,7 @@ export function ChatPanel({
               active={backgroundPanelOpen}
               colorPalette="green"
               indicator={runningShellCount > 0}
-              onClick={() => setBackgroundPanelOpen((current) => !current)}
+              onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
             />
             <ToolbarAction
               label={t("agents")}
@@ -1341,7 +1384,7 @@ export function ChatPanel({
               indicator={activeSteps > 0}
               onClick={() => {
                 setFocusedGroupId(null);
-                setAgentsPanelOpen((current) => !current);
+                setSidePanelOpen("agents", !agentsPanelOpen);
               }}
             />
             <ToolbarAction
@@ -1350,7 +1393,7 @@ export function ChatPanel({
               active={artifactPanelOpen}
               colorPalette="blue"
               indicator={openGroups.length > 0 || artifactIndex.length > 0}
-              onClick={() => setArtifactPanelOpen((current) => !current)}
+              onClick={() => setSidePanelOpen("artifact", !artifactPanelOpen)}
             />
             <ToolbarAction
               label={t("settings")}
@@ -1426,9 +1469,9 @@ export function ChatPanel({
                         on the Projects home) — the build prompt, the project's locations (dotted
                         by connection status), then the folder's skills. */}
                     <Flex direction="column" align="center" gap={4}>
-                      <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
+                      <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center">
                         {t("buildPrompt", { folder: currentFolderName })}
-                      </Text>
+                      </Heading>
                       {projectLocations.length > 0 && (
                         <Flex direction="column" align="center" gap={2}>
                           <Flex align="center" justify="center" gap={1.5} color="fg.muted">
@@ -1496,9 +1539,9 @@ export function ChatPanel({
                         const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
                         if (isAssistantMessage) {
                           return (
-                            <div key={key} style={{ display: "flex", flexDirection: "column" }}>
+                            <Box key={key} display="flex" flexDirection="column">
                               {inner}
-                            </div>
+                            </Box>
                           );
                         }
                         return (
@@ -1539,9 +1582,9 @@ export function ChatPanel({
                           minW={0}
                         >
                           <Flex align="center" gap={1.5}>
-                            <Box as="span" display="inline-flex" alignItems="center">
+                            <Span display="inline-flex" alignItems="center">
                               {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
-                            </Box>
+                            </Span>
                             <Text textStyle="fieldLabel" color="fg.subtle">
                               {message.steering ? t("steeringNextOpening") : t("queued")}
                             </Text>
@@ -1679,6 +1722,7 @@ export function ChatPanel({
               panels={[
                 artifactPanelOpen && {
                   key: "artifact",
+                  onActivate: () => markSidePanelActive("artifact"),
                   content: (
                     <PanelCard
                       position="relative"
@@ -1689,7 +1733,7 @@ export function ChatPanel({
             <PanelHeader
               icon={<LuAppWindow size={14} />}
               title={t("artifacts")}
-              onClose={() => setArtifactPanelOpen(false)}
+              onClose={() => setSidePanelOpen("artifact", false)}
               closeLabel={t("collapseArtifactsSidebar")}
             >
               <SegmentedToggle
@@ -2040,22 +2084,24 @@ export function ChatPanel({
                 },
                 agentsPanelOpen && {
                   key: "agents",
+                  onActivate: () => markSidePanelActive("agents"),
                   content: (
                     <AgentsPanel
                       agentGroups={agentGroups}
                       agents={agents}
                       open={agentsPanelOpen}
-                      onClose={() => setAgentsPanelOpen(false)}
+                      onClose={() => setSidePanelOpen("agents", false)}
                       focusedGroupId={focusedGroupId}
                     />
                   ),
                 },
                 backgroundPanelOpen && {
                   key: "background",
+                  onActivate: () => markSidePanelActive("background"),
                   content: (
                     <BackgroundTasksPanel
                       open={backgroundPanelOpen}
-                      onClose={() => setBackgroundPanelOpen(false)}
+                      onClose={() => setSidePanelOpen("background", false)}
                       messages={messages}
                       sessionId={sessionId}
                       workingDirectory={workspaceRuntimeDirectory || workingDirectory || homeDirectory || ""}
@@ -2161,19 +2207,17 @@ function ArtifactHistoryList({
               const fileName = entry.relativePath.split("/").pop() || entry.title || entry.relativePath;
               const directory = entry.relativePath.slice(0, Math.max(0, entry.relativePath.length - fileName.length)).replace(/\/+$/, "");
               return (
-                <Flex
+                <Button
                   key={key}
-                  as="button"
-                  align="center"
+                  variant="outline"
+                  w="full"
+                  h="auto"
                   gap={2}
                   px={2.5}
                   py={1.5}
-                  borderRadius="md"
-                  border="1px solid"
-                  borderColor="border"
                   bg="bg.subtle"
+                  justifyContent="flex-start"
                   textAlign="left"
-                  cursor="pointer"
                   _hover={{ bg: "bg.muted", borderColor: "border.emphasized" }}
                   onClick={() => onOpen(entry)}
                 >
@@ -2188,7 +2232,7 @@ function ArtifactHistoryList({
                     {t(appearance.labelKey)}
                   </Pill>
                   <VersionBadge number={entry.versionCount} active size="sm" />
-                </Flex>
+                </Button>
               );
             })}
           </VStack>

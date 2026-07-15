@@ -645,9 +645,9 @@ function finishRunningThinkingWithDuration(state: ReduceState, durationMs: numbe
   );
 }
 
-function finishRunningTools(state: ReduceState): void {
+function finishActiveTools(state: ReduceState): void {
   state.messages = state.messages.map((message) =>
-    message.role === "tool_call" && message.meta?.status === "running"
+    message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
       ? { ...message, meta: { ...message.meta, status: "completed" } }
       : message
   );
@@ -1217,7 +1217,7 @@ function reduceArtifactUpdate(state: ReduceState, result: Extract<A2AStreamResul
 function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, { kind: "status-update" }>): void {
   if (result.final || TERMINAL_STATES.has(result.status?.state as TaskState)) {
     finishRunningThinking(state);
-    finishRunningTools(state);
+    finishActiveTools(state);
   }
 }
 
@@ -1247,6 +1247,26 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       if (message.role === "user") reduceUserMessage(state, message);
       else reduceAgentMessage(state, message);
     }
+    if (TERMINAL_STATES.has(task.status?.state as TaskState)) finishActiveTools(state);
+  }
+  // Related child tasks are not transcript turns, but their persisted terminal
+  // state is authoritative for the exact agents-panel lane they own. This closes
+  // a lane even when its live `done` event was missed because the parent was
+  // stopped, the viewer disconnected, or the server restarted.
+  for (const task of tasks) {
+    const metadata = task.metadata as Record<string, unknown> | undefined;
+    if (!metadata || !Array.isArray(metadata.referenceTaskIds)) continue;
+    const lane = metadata.agentLane as Record<string, unknown> | undefined;
+    const groupId = String(lane?.groupId ?? "");
+    const stepId = String(lane?.stepId ?? "");
+    const taskState = task.status?.state as TaskState;
+    if (!groupId || !stepId || !TERMINAL_STATES.has(taskState)) continue;
+    state.agentGroups = withStep(
+      state.agentGroups,
+      groupId,
+      stepId,
+      (step) => finishAgentStepState(step, taskState),
+    );
   }
   return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks, tokenUsage: state.tokenUsage, keyCounts: state.keyCounts };
 }
@@ -1685,7 +1705,7 @@ export function useChat(
           // spinning forever. Sweep here as the single catch-all so a card can never
           // outlive its stream.
           finishRunningThinking(stateRef.current);
-          finishRunningTools(stateRef.current);
+          finishActiveTools(stateRef.current);
           flush();
           // Drain queued text first (user intent), then any artifact events that
           // arrived mid-turn. A message still flagged `steering` here was accepted by
@@ -1815,11 +1835,25 @@ export function useChat(
     });
   }, [flush]);
 
+  const settleInactivePrompt = useCallback((requestId: string) => {
+    stateRef.current.messages = stateRef.current.messages.map((message) => {
+      const permission = message.meta?.permission as { requestId?: string } | undefined;
+      const question = message.meta?.question as { requestId?: string } | undefined;
+      if (message.role !== "tool_call" || (permission?.requestId !== requestId && question?.requestId !== requestId)) return message;
+      return { ...message, meta: { ...message.meta, status: "completed" } };
+    });
+    flush();
+  }, [flush]);
+
   const handlePermission = useCallback(
     async (requestId: string, decision: PermissionDecision) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolvePermission(ctx, requestId, decision);
+      if (result.status === "stale" || result.status === "unknown") {
+        settleInactivePrompt(requestId);
+        return;
+      }
       if (!result.ok) {
         notifyResolveFailure(requestId, "decision", result.status);
         return;
@@ -1837,7 +1871,7 @@ export function useChat(
       });
       flush();
     },
-    [flush, notifyResolveFailure]
+    [flush, notifyResolveFailure, settleInactivePrompt]
   );
 
   const handleQuestion = useCallback(
@@ -1845,6 +1879,10 @@ export function useChat(
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolveQuestion(ctx, requestId, answers);
+      if (result.status === "stale" || result.status === "unknown") {
+        settleInactivePrompt(requestId);
+        return;
+      }
       if (!result.ok) {
         notifyResolveFailure(requestId, "answer", result.status);
         return;
@@ -1861,7 +1899,7 @@ export function useChat(
       });
       flush();
     },
-    [flush, notifyResolveFailure]
+    [flush, notifyResolveFailure, settleInactivePrompt]
   );
 
   // The user dismissed the whole question prompt without answering. Report the
@@ -1873,6 +1911,10 @@ export function useChat(
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolveQuestion(ctx, requestId, [], true);
+      if (result.status === "stale" || result.status === "unknown") {
+        settleInactivePrompt(requestId);
+        return;
+      }
       if (!result.ok) {
         notifyResolveFailure(requestId, "answer", result.status);
         return;
@@ -1884,7 +1926,7 @@ export function useChat(
       });
       flush();
     },
-    [flush, notifyResolveFailure]
+    [flush, notifyResolveFailure, settleInactivePrompt]
   );
 
   const abort = useCallback(() => {

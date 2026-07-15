@@ -1,5 +1,6 @@
 "use client";
 
+import { Span } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 
 // A number centered in its container by CSS constraints alone: an absolutely-positioned
@@ -20,7 +21,7 @@ export function CenteredNumber({
   weight?: number;
 }) {
   return (
-    <span
+    <Span
       style={{
         position: "absolute",
         inset: 0,
@@ -36,6 +37,6 @@ export function CenteredNumber({
       aria-hidden
     >
       {children}
-    </span>
+    </Span>
   );
 }

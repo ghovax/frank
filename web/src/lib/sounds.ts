@@ -1,11 +1,11 @@
 "use client";
 
-// Synthesized audio cues — no audio assets, just a lazily-created AudioContext
-// and two tiny envelope-shaped sine motifs, kept quiet enough to read as
-// ambience rather than an alert:
+// The desktop app delegates cues to macOS so they sound native and follow the
+// system output settings. Browser and non-macOS builds retain two quiet Web Audio
+// motifs as a portable fallback:
 //   • turn end — a rising fourth (D5 → G5), "your result is ready";
-//   • attention — a falling third (B5 → G5), the questioning inflection for a
-//     pending approval.
+//   • attention — a rising major third (C5 → E5), a warm prompt for the first
+//     decision that needs attention during a turn.
 //
 // Browsers keep an AudioContext suspended until a user gesture, so the app
 // calls primeSounds() once at startup: it arms a one-shot listener that
@@ -15,6 +15,22 @@
 // stale one bursting out on the next click.
 
 let context: AudioContext | null = null;
+
+type SystemSoundCue = "attention" | "turnEnd";
+
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+async function playNativeSystemSound(cue: SystemSoundCue): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke<boolean>("play_system_sound", { cue });
+  } catch {
+    return false;
+  }
+}
 
 function audioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -59,18 +75,36 @@ function tone(
   oscillator.stop(start + duration + 0.05);
 }
 
-// The assistant finished a turn (in this session or a background one).
-export function playTurnEndSound(): void {
+function playFallbackTurnEndSound(): void {
   const ctx = audioContext();
   if (!ctx || ctx.state !== "running") return;
   tone(ctx, 587.33, 0, 0.3, 0.045); // D5
   tone(ctx, 783.99, 0.1, 0.45, 0.04); // G5
 }
 
-// A tool call is waiting on the user (permission or question).
-export function playAttentionSound(): void {
+function playFallbackAttentionSound(): void {
   const ctx = audioContext();
   if (!ctx || ctx.state !== "running") return;
-  tone(ctx, 987.77, 0, 0.22, 0.035); // B5
-  tone(ctx, 783.99, 0.12, 0.4, 0.035); // G5
+  tone(ctx, 523.25, 0, 0.32, 0.022); // C5
+  tone(ctx, 659.25, 0.09, 0.46, 0.018); // E5
+}
+
+function playSound(cue: SystemSoundCue, fallback: () => void): void {
+  if (!isTauri()) {
+    fallback();
+    return;
+  }
+  void playNativeSystemSound(cue).then((played) => {
+    if (!played) fallback();
+  });
+}
+
+// The assistant finished a turn (in this session or a background one).
+export function playTurnEndSound(): void {
+  playSound("turnEnd", playFallbackTurnEndSound);
+}
+
+// A tool call is waiting on the user (permission or question).
+export function playAttentionSound(): void {
+  playSound("attention", playFallbackAttentionSound);
 }

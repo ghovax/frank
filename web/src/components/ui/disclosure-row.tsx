@@ -1,9 +1,10 @@
 "use client";
 
-import { Box, Flex } from "@chakra-ui/react";
+import { Box, Button, Flex } from "@chakra-ui/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { LuChevronDown, LuChevronRight } from "react-icons/lu";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
+import { ActivityIcon } from "./activity-icon";
 
 // The one collapsible line across the app: a fit-content clickable header (leading
 // icon + label + trailing badges + disclosure chevron) whose body hangs off a 2px
@@ -28,6 +29,7 @@ export interface DisclosureRowProps {
   title: ReactNode;
   // Trailing chips, right of the label and left of the chevron.
   badges?: ReactNode;
+  actions?: ReactNode;
   // The disclosure body. Absent ⇒ the row is a plain, non-clickable line.
   children?: ReactNode;
   // Controlled open state; omit to let the row own it (with `defaultOpen`).
@@ -67,6 +69,7 @@ export function DisclosureRow({
   icon,
   title,
   badges,
+  actions,
   children,
   open,
   defaultOpen = false,
@@ -96,45 +99,79 @@ export function DisclosureRow({
 
   const color =
     tone === "attention" ? "yellow.fg" : tone === "active" ? "fg" : isOpen ? "fg" : "fg.muted";
+  const triggerContent = (
+    <>
+      {icon && (
+        <ActivityIcon>
+          {icon}
+        </ActivityIcon>
+      )}
+      <Box minW={0} flexShrink={1} overflow="hidden">
+        {title}
+      </Box>
+      {badges && (
+        <Flex align="center" gap={1.5} flexShrink={0} minW={0}>
+          {badges}
+        </Flex>
+      )}
+      {collapsible && (
+        <Box display="flex" alignItems="center" flexShrink={0} opacity={0.7}>
+          {isOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+        </Box>
+      )}
+    </>
+  );
 
   return (
     <Box minW={0} opacity={disabled ? 0.55 : 1}>
-      {/* fit-content: the click target and hover tint stop where the text does. A
-          collapsible line is a real <button> so the disclosure is keyboard-reachable. */}
       <Flex
-        as={collapsible ? "button" : "div"}
         align="center"
-        gap={1.5}
+        gap={1}
         h={6}
         w="fit-content"
         maxW="100%"
         minW={0}
-        textAlign="left"
-        cursor={collapsible ? "pointer" : undefined}
-        onClick={collapsible ? toggle : undefined}
-        userSelect="none"
-        color={color}
-        _hover={collapsible && tone === "muted" ? { color: "fg" } : undefined}
       >
-        {icon && (
-          <Box display="flex" alignItems="center" flexShrink={0}>
-            {icon}
-          </Box>
-        )}
-        {/* Shrink-to-fit (not grow): under the fit-content header a short line still
-            hugs its badges, while a long title truncates before the badges do. */}
-        <Box minW={0} flexShrink={1} overflow="hidden">
-          {title}
-        </Box>
-        {badges && (
-          <Flex align="center" gap={1.5} flexShrink={0} minW={0}>
-            {badges}
+        {collapsible ? (
+          <Button
+            variant="plain"
+            h={6}
+            w="fit-content"
+            maxW="100%"
+            minW={0}
+            p={0}
+            gap={1.5}
+            justifyContent="flex-start"
+            flexShrink={1}
+            textAlign="left"
+            fontWeight="normal"
+            userSelect="none"
+            color={color}
+            onClick={toggle}
+            _hover={tone === "muted" ? { color: "fg" } : undefined}
+          >
+            {triggerContent}
+          </Button>
+        ) : (
+          <Flex
+            align="center"
+            gap={1.5}
+            h={6}
+            w="fit-content"
+            maxW="100%"
+            minW={0}
+            flexShrink={1}
+            textAlign="left"
+            userSelect="none"
+            color={color}
+          >
+            {triggerContent}
           </Flex>
         )}
-        {collapsible && (
-          <Box display="flex" alignItems="center" flexShrink={0} opacity={0.7}>
-            {isOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-          </Box>
+        {actions && (
+          <Flex align="center" gap={0.5} flexShrink={0}>
+            {actions}
+          </Flex>
         )}
       </Flex>
 
@@ -145,7 +182,7 @@ export function DisclosureRow({
         <Box
           ref={containerRef}
           onScroll={onScroll}
-          className="reveal-enter"
+          className="disclosure-enter"
           py={1}
           ml={1.5}
           pl={3}

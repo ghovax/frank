@@ -31,7 +31,7 @@ export function SegmentedToggle<T extends string>({
             key={option.value}
             variant={active ? "subtle" : "ghost"}
             colorPalette={active ? "blue" : "gray"}
-            borderRadius="0"
+            borderRadius="none"
             px={2}
             gap={1}
             textStyle="fieldLabel"

@@ -6,6 +6,7 @@ import {
   createListCollection,
   Flex,
   IconButton,
+  Input,
   Portal,
   Select,
   Separator,
@@ -30,12 +31,7 @@ import { ModelSelect, modelSupportsVision } from "./model-select";
 // SettingsDialog moved to ChatPanel top bar
 import type { TokenUsage } from "@/lib/use-chat";
 import { InlineField } from "./ui/display";
-
-// The composer textarea grows with its content up to this height (px), then scrolls.
-// Shared by the maxH cap and the auto-resize effect so they can never drift apart.
-const COMPOSER_MAX_HEIGHT = 180;
-// Shared min-width so Send and Stop occupy the same footprint (no reflow when toggling).
-const SEND_BUTTON_MIN_WIDTH = "70px";
+import { Strong } from "./ui/semantic";
 
 interface ChatInputProps {
   onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void>;
@@ -238,16 +234,16 @@ function ContextUsageChip({
         {hasContext && (
           <>
             <ContextFillRing fraction={contextFraction} />
-            <Text textStyle="fieldLabel" whiteSpace="nowrap">
+            <Text data-composer-context-percent="" textStyle="fieldLabel" whiteSpace="nowrap">
               {contextPercent}%
             </Text>
-            <Separator orientation="vertical" h={3.5} flexShrink={0} />
+            <Separator data-composer-context-detail="" orientation="vertical" h={3.5} flexShrink={0} />
           </>
         )}
-        <Box display="flex" alignItems="center" flexShrink={0}>
+        <Box data-composer-context-detail="" display="flex" alignItems="center" flexShrink={0}>
           <LuCoins size={13} />
         </Box>
-        <Text textStyle="fieldLabel" whiteSpace="nowrap">
+        <Text data-composer-context-detail="" textStyle="fieldLabel" whiteSpace="nowrap">
           {tokenUsage.contextTokens.toLocaleString()}
           {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
         </Text>
@@ -362,15 +358,6 @@ export function ChatInput({
       onDraftChange(latestInputValueRef.current);
     };
   }, [onDraftChange, sessionId]);
-
-  // Auto-resize the textarea as the user types, so the input grows with its
-  // content up to the configured maximum height.
-  useEffect(() => {
-    const textarea = inputRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
-  }, [inputValue]);
 
   // Fetch message history when the working directory changes.
   useEffect(() => {
@@ -578,7 +565,28 @@ export function ChatInput({
   }
 
   return (
-    <Box position="relative" pb={2}>
+    <Box
+      position="relative"
+      pb={2}
+      containerType="inline-size"
+      css={{
+        "@container (max-width: 900px)": {
+          "& [data-composer-agent-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
+          "& [data-composer-model]": { minWidth: "0 !important", maxWidth: "220px", flexShrink: 1 },
+          "& [data-composer-permission-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
+        },
+        "@container (max-width: 760px)": {
+          "& [data-composer-context-detail]": { display: "none" },
+          "& [data-composer-model-provider], & [data-composer-model-capabilities]": { display: "none" },
+        },
+        "@container (max-width: 620px)": {
+          "& [data-composer-permission-label], & [data-composer-compact-label]": { display: "none" },
+        },
+        "@container (max-width: 500px)": {
+          "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-model-capabilities], & [data-composer-context-percent]": { display: "none" },
+        },
+      }}
+    >
       <ConfirmDialog
         open={compactConfirmOpen}
         onOpenChange={setCompactConfirmOpen}
@@ -589,7 +597,7 @@ export function ChatInput({
       >
         {t.rich("compactBody", {
           count: compactionKeepRecentTurns,
-          b: (chunks) => <b>{chunks}</b>,
+          b: (chunks) => <Strong>{chunks}</Strong>,
         })}
       </ConfirmDialog>
 
@@ -622,39 +630,34 @@ export function ChatInput({
             ) : null}
           </Flex>
         ) : null}
-        <Box
-          ref={dropZoneRef}
-          border="1px solid"
-          borderColor={dragActive ? "blue.muted" : directoryValid ? "border" : "red.muted"}
-          borderRadius="md"
-          boxShadow="panel"
-          bg="bg.panel"
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-            void handleFiles(event.dataTransfer.files);
-          }}
-          _focusWithin={{ borderColor: "border.emphasized" }}
-        >
-          {/* One row: the textarea grows with its content (see the auto-resize effect above)
-              while the action controls — attach, then send/stop — sit at its trailing edge and
-              stay pinned to the bottom (align="flex-end") as it grows. The textarea's own corner
-              radius is zeroed so a text selection that scrolls isn't clipped round at the edges. */}
-          <Flex align="flex-end" gap={2} px={2} py={2}>
+        <Flex align="stretch" gap={2}>
+          <Box
+            ref={dropZoneRef}
+            display="flex"
+            flex={1}
+            minW={0}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              void handleFiles(event.dataTransfer.files);
+            }}
+          >
             <Textarea
               ref={inputRef}
+              size="sm"
+              variant="outline"
               placeholder={
                 disabled
                   ? t("placeholderConnecting")
@@ -672,101 +675,86 @@ export function ChatInput({
               onChange={(event) => setInputValue(event.target.value)}
               onKeyDown={handleKeyDown}
               disabled={disabled}
-              flex={1}
-              minW={0}
-              fontSize="sm"
-              lineHeight="1.5"
               rows={1}
-              // One comfortable row at rest (matching the button height), growing from there;
-              // the auto-resize effect drives the real height inline above this floor.
-              minH={8}
-              h="auto"
-              maxH={`${COMPOSER_MAX_HEIGHT}px`}
-              px={1}
-              py={1.5}
-              border="none"
-              borderRadius="none"
-              outline="none"
-              bg="transparent"
+              fieldSizing="content"
+              maxH="44"
+              overflowY="auto"
+              borderColor={dragActive ? "blue.muted" : directoryValid ? "border" : "red.muted"}
+              bg="bg.panel"
               resize="none"
-              _focus={{ boxShadow: "none", borderColor: "transparent" }}
-              _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />
-            <Flex align="center" gap={1} flexShrink={0}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={(event) => {
-                  if (event.target.files) void handleFiles(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-              <Tooltip
-                content={attachmentTooltipContent}
-                rich
-                openDelay={200}
-                closeDelay={60}
-                positioning={{ placement: "top" }}
+          </Box>
+          <Flex align="flex-end" gap={1.5} flexShrink={0}>
+            <Input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                if (event.target.files) void handleFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <Tooltip
+              content={attachmentTooltipContent}
+              rich
+              openDelay={200}
+              closeDelay={60}
+              positioning={{ placement: "top" }}
+            >
+              <IconButton
+                aria-label={t("attachFiles")}
+                onClick={() => void handleAttachClick()}
+                size="sm"
+                variant="outline"
+                bg="bg"
+                borderColor="border"
+                disabled={disabled || !directoryValid}
               >
-                <IconButton
-                  aria-label={t("attachFiles")}
-                  onClick={() => void handleAttachClick()}
-                  variant="ghost"
-                  boxSize="8"
-                  disabled={disabled || !directoryValid}
-                >
-                  <LuPaperclip size={14} />
-                </IconButton>
-              </Tooltip>
-              {isStreaming ? (
-                <Button
-                  onClick={handleAbortClick}
-                  colorPalette="red"
-                  variant="solid"
-                  minW={SEND_BUTTON_MIN_WIDTH}
-                  h={8}
-                  px={2}
-                  gap={1.5}
-                  loading={stopPending}
-                  loadingText={t("stopping")}
-                  disabled={stopPending}
-                >
-                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                    <LuSquare size={14} />
-                  </Box>
-                  {t("stop")}
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => void handleSubmit()}
-                  colorPalette="blue"
-                  variant="solid"
-                  minW={SEND_BUTTON_MIN_WIDTH}
-                  h={8}
-                  px={2}
-                  gap={1.5}
-                  loading={sendPending}
-                  loadingText={t("sending")}
-                  disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
-                >
-                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                    <LuArrowUp size={14} />
-                  </Box>
-                  {t("send")}
-                </Button>
-              )}
-            </Flex>
+                <LuPaperclip />
+              </IconButton>
+            </Tooltip>
+            {isStreaming ? (
+              <Button
+                onClick={handleAbortClick}
+                size="sm"
+                colorPalette="red"
+                variant="solid"
+                loading={stopPending}
+                loadingText={t("stopping")}
+                disabled={stopPending}
+              >
+                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                  <LuSquare />
+                </Box>
+                {t("stop")}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => void handleSubmit()}
+                size="sm"
+                colorPalette="blue"
+                variant="solid"
+                loading={sendPending}
+                loadingText={t("sending")}
+                disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
+              >
+                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                  <LuArrowUp />
+                </Box>
+                {t("send")}
+              </Button>
+            )}
           </Flex>
-        </Box>
+        </Flex>
       </Box>
 
       {/* Selectors row (below the input): the agent and model selectors, with the
           context-usage chip and Compact action on the right. */}
-      <Flex justify="space-between" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={0} pt={1} pb={2}>
-        <Flex align="center" gap={2} flexWrap="wrap" minW={0}>
+      <Flex justify="space-between" align="center" columnGap={2} flexWrap="nowrap" px={0} pt={1} pb={2}>
+        <Flex align="center" gap={2} flexWrap="nowrap" flex={1} minW={0}>
           <Select.Root
+            data-composer-agent-control=""
             collection={agentCollection}
             value={[selectedAgent]}
             onValueChange={(details) => {
@@ -778,8 +766,9 @@ export function ChatInput({
             maxW="none"
             flexShrink={0}
           >
-            <Select.Control w="max-content" minW="max-content" maxW="none">
+            <Select.Control data-composer-agent-control="" w="max-content" minW="max-content" maxW="none">
               <Select.Trigger
+                data-composer-agent-control=""
                 w="max-content"
                 gap={1.5}
                 px={2}
@@ -795,7 +784,7 @@ export function ChatInput({
                 <Box display="flex" alignItems="center" color="fg.muted" flexShrink={0}>
                   <LuUser size={13} />
                 </Box>
-                <Select.ValueText placeholder={t("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                <Select.ValueText data-composer-agent-label="" placeholder={t("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
               </Select.Trigger>
               <Select.IndicatorGroup>
                 <Select.Indicator />
@@ -832,8 +821,9 @@ export function ChatInput({
             onChange={onAgentModelChange}
             fallbackModelId={agentModel}
             compact
+            responsiveCompact
           />
-          <PermissionModeControl value={permissionMode} onChange={(mode) => onPermissionModeChange?.(mode)} />
+          <PermissionModeControl value={permissionMode} onChange={(mode) => onPermissionModeChange?.(mode)} responsiveCompact />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
@@ -849,7 +839,7 @@ export function ChatInput({
               title={isCompacting ? t("compactingTooltip") : t("compactTooltip")}
             >
               {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
-              {isCompacting ? t("compacting") : t("compact")}
+              <Text data-composer-compact-label="">{isCompacting ? t("compacting") : t("compact")}</Text>
             </Button>
           )}
           <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} />

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Spinner, Text } from "@chakra-ui/react";
+import { Box, Flex, Text } from "@chakra-ui/react";
 import { memo, useMemo, useState, type ReactNode } from "react";
 import { LuBrain } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
@@ -12,6 +12,7 @@ import { DiffStatBadge, RollingNumber } from "./rolling-number";
 import { ToolCallLabel } from "./tool-label";
 import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
+import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
 import { isBackgroundResult, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
@@ -206,7 +207,7 @@ export const ToolGroup = memo(function ToolGroup({
   const badgeSlot = (
     <>
       {(thinkingTurns > 0 || thinkingOnly) && (
-        <TallyBadge colorPalette="purple" count={thinkingTurns} icon={<LuBrain size={13} />} title={t("thinking")} />
+        <TallyBadge colorPalette="purple" count={thinkingTurns} icon={<LuBrain />} title={t("thinking")} />
       )}
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
@@ -222,7 +223,7 @@ export const ToolGroup = memo(function ToolGroup({
               transition={{ duration: 0.12, ease: "easeOut" }}
               style={{ display: "inline-flex", alignItems: "center" }}
             >
-              <TallyBadge title={display.label} count={count} colorPalette={paletteFromIconColor(display.iconColor)} icon={<ToolIcon size={13} />} />
+              <TallyBadge title={display.label} count={count} colorPalette={paletteFromIconColor(display.iconColor)} icon={<ToolIcon />} />
             </motion.div>
           );
         })}
@@ -233,7 +234,7 @@ export const ToolGroup = memo(function ToolGroup({
           return (
             <Flex key={file.path} align="center" gap={1.5} minW={0} maxW="180px">
               <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
-                <FileIcon size={13} />
+                <ActivityIcon><FileIcon /></ActivityIcon>
               </Box>
               <Text textStyle="fieldLabel" truncate>
                 {file.path.split("/").pop() ?? file.path}
@@ -264,8 +265,8 @@ export const ToolGroup = memo(function ToolGroup({
                 count={count}
                 colorPalette={palette}
                 icon={kind === "running"
-                  ? <Spinner size="xs" borderWidth="1.5px" color={`${palette}.fg`} />
-                  : ChipIcon ? <ChipIcon size={13} /> : null}
+                  ? <ActivitySpinner color={`${palette}.fg`} />
+                  : ChipIcon ? <ChipIcon /> : null}
               />
             </motion.div>
           );

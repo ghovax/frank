@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Code, Heading, Link, Separator, Text } from "@chakra-ui/react";
+import { Box, Code, Heading, Image, Link, List, Separator, Span, Table, Text } from "@chakra-ui/react";
 import { Children, memo, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -20,6 +20,7 @@ import { useReducedMotion } from "motion/react";
 import SplitText from "flowtoken/dist/components/SplitText";
 import { useColorModeValue } from "./ui/color-mode";
 import { MermaidDiagram } from "./mermaid-diagram";
+import { DeletedText, Emphasis, Strong } from "./ui/semantic";
 
 interface MarkdownContentProps {
   content: string;
@@ -86,8 +87,7 @@ function renderTextWithTwemoji(text: string): ReactNode {
     const emojiIndex = Number(match[1]);
     const rawEmoji = emojis[emojiIndex];
     nodes.push(
-      // eslint-disable-next-line @next/next/no-img-element -- Twemoji SVGs are tiny inline emoji replacements, not content images.
-      <img
+      <Image
         key={`emoji-${matchIndex}-${emojiIndex}`}
         className="twemoji"
         draggable={false}
@@ -111,37 +111,34 @@ function renderEmojiChildren(children: ReactNode): ReactNode {
   return Children.map(children, (child) => typeof child === "string" ? renderTextWithTwemoji(child) : child);
 }
 
-// The streaming token animation, tuned for our stack: a quick, crisp fade with a whisper
-// of blur (the `token-fade-in` keyframe in globals.css). Short enough to feel like typing,
-// not a soft settle.
+// The streaming token animation is paint-only: layout and text shaping stay identical
+// before and after the turn completes.
 const TOKEN_ANIMATION = "token-fade-in";
-const TOKEN_DURATION = "0.3s";
-const TOKEN_TIMING = "ease-out";
+const TOKEN_DURATION = "0.16s";
+const TOKEN_TIMING = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 
-// One text leaf, animated: flowtoken's SplitText in `diff` mode wraps only the text that
-// arrived since the last render, so already-shown words stay put while the new ones blur in.
-function AnimatedText({ text }: { text: string }): ReactNode {
-  return (
-    <SplitText
-      input={text}
-      sep="diff"
-      animation={TOKEN_ANIMATION}
-      animationDuration={TOKEN_DURATION}
-      animationTimingFunction={TOKEN_TIMING}
-      animationIterationCount={1}
-    />
-  );
+function AnimatedText({ text, animate }: { text: string; animate: boolean }): ReactNode {
+  return Children.toArray(renderTextWithTwemoji(text)).map((segment, segmentIndex) => {
+    if (typeof segment !== "string") return segment;
+    return (
+      <Span className="flowtoken-text-leaf" key={`text-${segmentIndex}`}>
+        <SplitText
+          input={segment}
+          sep="diff"
+          animation={TOKEN_ANIMATION}
+          animationDuration={animate ? TOKEN_DURATION : "0s"}
+          animationTimingFunction={TOKEN_TIMING}
+          animationIterationCount={1}
+        />
+      </Span>
+    );
+  });
 }
 
-// How a text-bearing element renders its children. While the message is streaming, its text
-// leaves flow through the token animation; otherwise (a finalized message, history, or reduced
-// motion) they render plainly, with twemoji. Non-string children (inline elements, KaTeX spans)
-// pass straight through — their own text animates via their own component. Twemoji is applied
-// only in the static path; during the stream, emoji render as the platform glyph and are
-// swapped for twemoji on the final, non-animated render.
+// Every text leaf keeps the same Flowtoken and Twemoji structure in both states. Only the
+// animation duration changes, so completing a turn cannot change wrapping or image metrics.
 function renderChildren(children: ReactNode, animate: boolean): ReactNode {
-  if (!animate) return renderEmojiChildren(children);
-  return Children.map(children, (child) => typeof child === "string" ? <AnimatedText text={child} /> : child);
+  return Children.map(children, (child) => typeof child === "string" ? <AnimatedText text={child} animate={animate} /> : child);
 }
 
 // A single-line `$$...$$` is parsed by remark-math as *inline* math, so it lands
@@ -167,12 +164,19 @@ function isDisplayMathParagraph(node: Element | undefined): boolean {
 // first render already holds it and the effect schedules nothing new.
 const STREAMING_RENDER_INTERVAL_MS = 66;
 
-function useThrottledText(text: string, intervalMs: number): string {
+function useThrottledText(text: string, intervalMs: number, enabled: boolean): string {
   const [throttled, setThrottled] = useState(text);
   const lastRenderedAt = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
     if (text === throttled) return;
     const elapsed = performance.now() - lastRenderedAt.current;
     const commit = () => {
@@ -187,23 +191,22 @@ function useThrottledText(text: string, intervalMs: number): string {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [text, throttled, intervalMs]);
+  }, [text, throttled, intervalMs, enabled]);
 
-  return throttled;
+  return enabled ? throttled : text;
 }
 
 export const MarkdownContent = memo(function MarkdownContent({ content, fontSize = "sm", animate = false }: MarkdownContentProps) {
   const syntaxTheme = useColorModeValue(xcode, atomOneDark);
-  const renderedContent = useThrottledText(content, STREAMING_RENDER_INTERVAL_MS);
-  // Reduced-motion readers opt out at the source: the text renders plainly, no token spans.
+  // Reduced-motion readers keep the stable token structure but receive a zero-duration fade.
   const reduceMotion = useReducedMotion();
   const animating = animate && !reduceMotion;
+  const renderedContent = useThrottledText(content, STREAMING_RENDER_INTERVAL_MS, animating);
 
   const markdownComponents = useMemo<Components>(() => ({
     img({ src, alt }) {
       if (!src || (typeof src === "string" && !src.trim())) return null;
-      // eslint-disable-next-line @next/next/no-img-element -- Markdown can reference arbitrary image URLs that Next/Image cannot safely optimize.
-      return <img src={typeof src === "string" ? src : undefined} alt={alt ?? ""} style={{ maxWidth: "100%" }} />;
+      return <Image src={typeof src === "string" ? src : undefined} alt={alt ?? ""} maxW="100%" />;
     },
     p({ node, children }) {
       if (isDisplayMathParagraph(node)) {
@@ -241,13 +244,13 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
       );
     },
     ul({ children }) {
-      return <Box as="ul" pl={6} fontSize="inherit" listStyleType="disc">{children}</Box>;
+      return <List.Root pl={6} fontSize="inherit" listStyleType="disc">{children}</List.Root>;
     },
     ol({ children }) {
-      return <Box as="ol" pl={6} fontSize="inherit" listStyleType="decimal">{children}</Box>;
+      return <List.Root as="ol" pl={6} fontSize="inherit" listStyleType="decimal">{children}</List.Root>;
     },
     li({ children }) {
-      return <Box as="li" mb={0.5} fontSize="inherit" lineHeight="1.55" display="list-item" _last={{ mb: 0 }}>{renderChildren(children, animating)}</Box>;
+      return <List.Item mb={0.5} fontSize="inherit" lineHeight="1.55" _last={{ mb: 0 }}>{renderChildren(children, animating)}</List.Item>;
     },
     blockquote({ children }) {
       // 2px rule + pl=3: the exact grammar of an expanded tool call's detail rail
@@ -331,40 +334,40 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
     table({ children }) {
       return (
         <Box overflowX="auto" maxW="100%" my={2}>
-          <Box as="table" minW="100%" fontSize="inherit" lineHeight="1.55" borderCollapse="collapse">
+          <Table.Root minW="100%" fontSize="inherit" lineHeight="1.55" borderCollapse="collapse">
             {renderChildren(children, animating)}
-          </Box>
+          </Table.Root>
         </Box>
       );
     },
     tr({ children }) {
-      return <Box as="tr">{renderChildren(children, animating)}</Box>;
+      return <Table.Row>{renderChildren(children, animating)}</Table.Row>;
     },
     th({ children }) {
       return (
-        <Box as="th" textAlign="left" pr={3} pl={0} py={1.5} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
+        <Table.ColumnHeader textAlign="left" pr={3} pl={0} py={1.5} fontWeight="semibold" color="fg" borderBottom="1px solid" borderColor="border" verticalAlign="top" overflowWrap="break-word">
           {renderChildren(children, animating)}
-        </Box>
+        </Table.ColumnHeader>
       );
     },
     td({ children }) {
       return (
-        <Box as="td" pr={3} pl={0} py={1.5} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
+        <Table.Cell pr={3} pl={0} py={1.5} borderBottom="1px solid" borderColor="border.muted" verticalAlign="top" overflowWrap="break-word">
           {renderChildren(children, animating)}
-        </Box>
+        </Table.Cell>
       );
     },
     hr() {
       return <Separator borderColor="border.muted" my={1} />;
     },
     strong({ children }) {
-      return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderChildren(children, animating)}</Text>;
+      return <Strong fontSize="inherit" fontWeight="bold">{renderChildren(children, animating)}</Strong>;
     },
     em({ children }) {
-      return <Text as="em" fontSize="inherit" fontStyle="italic">{renderChildren(children, animating)}</Text>;
+      return <Emphasis fontSize="inherit" fontStyle="italic">{renderChildren(children, animating)}</Emphasis>;
     },
     del({ children }) {
-      return <Text as="del" fontSize="inherit">{renderChildren(children, animating)}</Text>;
+      return <DeletedText fontSize="inherit">{renderChildren(children, animating)}</DeletedText>;
     },
   }), [syntaxTheme, animating]);
 
@@ -409,6 +412,10 @@ export const MarkdownContent = memo(function MarkdownContent({ content, fontSize
           height: "1em",
           margin: "0 0.05em",
           verticalAlign: "-0.125em",
+        },
+        "& .flowtoken-text-leaf > span": {
+          display: "inline !important",
+          whiteSpace: "inherit !important",
         },
       }}
     >
@@ -468,13 +475,13 @@ const inlineMarkdownComponents: Components = {
     );
   },
   strong({ children }) {
-    return <Text as="strong" fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Text>;
+    return <Strong fontSize="inherit" fontWeight="bold">{renderEmojiChildren(children)}</Strong>;
   },
   em({ children }) {
-    return <Text as="em" fontSize="inherit" fontStyle="italic">{renderEmojiChildren(children)}</Text>;
+    return <Emphasis fontSize="inherit" fontStyle="italic">{renderEmojiChildren(children)}</Emphasis>;
   },
   del({ children }) {
-    return <Text as="del" fontSize="inherit">{renderEmojiChildren(children)}</Text>;
+    return <DeletedText fontSize="inherit">{renderEmojiChildren(children)}</DeletedText>;
   },
 };
 

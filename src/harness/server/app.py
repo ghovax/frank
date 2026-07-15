@@ -147,16 +147,14 @@ class SessionRecord(Base):
 
 
 class ProjectRecord(Base):
-    """A project — the top-level unit of work. A named, described container that owns a
-    set of locations (local + SSH remotes) and the sessions run against them. Server-owned
-    domain data: the server reads it and is the source of truth (unlike ~/.ssh/config and
-    configuration.yaml, which are OS/global files)."""
+    """The internal grouping key for a set of locations and their sessions.
+
+    Locations carry the user-facing identity; a project has no separate editable metadata.
+    """
 
     __tablename__ = "projects"
 
     id = Column(String, primary_key=True)  # generated uuid
-    name = Column(Text, nullable=False)
-    description = Column(Text, default="")
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=False)
 
@@ -2060,6 +2058,12 @@ async def lifespan(application: FastAPI):
 
     _task_store = AppendOnlyTaskStore(_async_engine)
     await _task_store.initialize()
+    orphaned_task_ids = await _task_store.fail_orphaned_tasks()
+    if orphaned_task_ids:
+        logging.getLogger("harness.server").warning(
+            "Marked %d A2A task(s) interrupted after server restart.",
+            len(orphaned_task_ids),
+        )
 
     _registry = AgentRegistry(_task_store)
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
@@ -2292,9 +2296,9 @@ class MCPResourceReadRequest(BaseModel):
 
 # Projects, locations, and the SSH host registry.
 #
-# A project is the top-level unit of work: a named container owning a set of locations
-# (local + SSH remotes). These are server-owned domain data in history.db. Hosts are
-# read from ~/.ssh/config (the OS source of truth) via the system ssh.
+# A project is the internal grouping key for locations (local + SSH remotes) and sessions.
+# Locations are the user-facing targets. These are server-owned domain data in history.db.
+# Hosts are read from ~/.ssh/config (the OS source of truth) via the system ssh.
 
 class LocationInput(BaseModel):
     # `name` is not accepted — it is derived from the connection (see _derive_location_name).
@@ -2305,15 +2309,7 @@ class LocationInput(BaseModel):
 
 
 class ProjectCreateRequest(BaseModel):
-    name: str
-    description: str = ""
-    # A project is created with at least one location (the New Project wizard requires it).
-    locations: list[LocationInput] = []
-
-
-class ProjectUpdateRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
+    locations: list[LocationInput] = Field(min_length=1)
 
 
 def _iso_now() -> str:
@@ -2349,8 +2345,6 @@ def _serialize_location(record: "LocationRecord") -> dict[str, Any]:
 def _serialize_project(record: "ProjectRecord", database_session, *, with_locations: bool = True) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": record.id,
-        "name": record.name,
-        "description": record.description or "",
         "created_at": record.created_at,
         "updated_at": record.updated_at,
     }
@@ -2481,8 +2475,6 @@ def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
             now = _iso_now()
             project = ProjectRecord(
                 id=str(uuid.uuid4()),
-                name=request.name.strip() or "Untitled project",
-                description=(request.description or "").strip(),
                 created_at=now,
                 updated_at=now,
             )
@@ -2499,10 +2491,11 @@ def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
 
 
 def _ensure_default_project() -> None:
-    """Guarantee at least one project exists so the app always opens straight into a live
-    workspace. On a fresh install (no projects yet) this creates the default "Home" project,
-    whose single local location is the server user's home directory. A no-op once any project
-    exists, so it never fights a user who has organized their own projects."""
+    """Guarantee the app has a location-backed grouping on a fresh install.
+
+    The initial location targets the server user's home directory. This is a no-op once any
+    project exists, so it never changes user-created groupings.
+    """
     assert _session_factory is not None
     with sqlite_write_lock():
         database_session = _session_factory()
@@ -2512,8 +2505,6 @@ def _ensure_default_project() -> None:
             now = _iso_now()
             project = ProjectRecord(
                 id=str(uuid.uuid4()),
-                name="Home",
-                description="Your home folder — the default workspace.",
                 created_at=now,
                 updated_at=now,
             )
@@ -2599,28 +2590,6 @@ def _open_screen_recording_settings() -> None:
     with suppress(Exception):
         from harness.computer import permissions
         permissions.open_screen_recording_settings()
-
-
-def _update_project(project_id: str, request: ProjectUpdateRequest) -> dict[str, Any] | None:
-    assert _session_factory is not None
-    with sqlite_write_lock():
-        database_session = _session_factory()
-        try:
-            project = database_session.get(ProjectRecord, project_id)
-            if project is None:
-                return None
-            if request.name is not None:
-                project.name = request.name.strip() or project.name
-            if request.description is not None:
-                project.description = request.description.strip()
-            project.updated_at = _iso_now()
-            database_session.commit()
-            return _serialize_project(project, database_session)
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
 
 
 def _delete_project(project_id: str) -> bool:

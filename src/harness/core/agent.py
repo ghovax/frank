@@ -47,6 +47,7 @@ from harness.tools.tools import (
     bash as bash_tool,
     web_search as web_search_tool,
     spawn_agent as spawn_tool,
+    cancel_agent as cancel_agent_tool,
     read_task as read_task_tool,
     set_tasks as set_tasks_tool,
     update_tasks as update_tasks_tool,
@@ -92,8 +93,8 @@ from harness.core.handoff import (
 from harness.core.environment import probe_local_environment, probe_user_context
 from harness.core.tool_policy import (
     BashAllowRule,
-    BashPermissionDecision,
     CallExecutionPolicy,
+    PermissionDecision,
     ResolvedLocation,
     ToolLocationError,
     _LOCATION_TOOLS,
@@ -254,6 +255,7 @@ def _maybe_json(value: str) -> Any:
 _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "web_search",
     "bg-": "bash",
+    "agent-": "spawn_agent",
 }
 
 
@@ -277,7 +279,7 @@ def _coerce_mcp_arguments(value: Any) -> dict:
 
 
 def _background_handle_kind(task_id: str) -> str | None:
-    """The background-task kind ("web_search"/"bash") if ``task_id`` is one of
+    """The background-task kind if ``task_id`` is one of
     those handles rather than a readable A2A task; otherwise ``None``."""
     for prefix, kind in _BACKGROUND_HANDLE_PREFIXES.items():
         if task_id.startswith(prefix):
@@ -537,6 +539,7 @@ def _build_tools(
         available.append(ask_user_tool)
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
+        available.append(cancel_agent_tool)
     # The computer-use tool controls the whole machine, so it is opt-in: added only when
     # the user has enabled it in Settings (which also gates the Accessibility grant flow).
     if global_configuration.computer_control.enabled:
@@ -854,6 +857,7 @@ class AgentRuntime:
         self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
         self._auto_permissions: bool = agent_configuration.permission_mode == "auto"
+        self._session_permission_mode: str = "default"
         # When set, agents (spawn_agent calls) are invoked
         # through this delegate — an A2A call to the target agent's served
         # endpoint — instead of being run in-process. Bound to the A2A context.
@@ -873,16 +877,13 @@ class AgentRuntime:
         self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
         self._steering_available = asyncio.Event()
         self._active_tool_tasks: dict[str, asyncio.Task] = {}
-        # Results from background agent tasks, keyed by spawn_step_id.
-        # Populated when an agent runs in the background; can be retrieved
-        # later via read_task or the agents panel.
-        self._background_agent_results: dict[str, dict | None] = {}
         # Live activity from non-blocking spawned agents. spawn_agent returns
         # immediately (the agent runs as a background job); the agent's
         # streamed events land here and the turn loop drains them so the agents
         # panel updates while the parent keeps working. Whatever is still queued
         # when the parent goes idle drains on the next (wake) turn.
         self._spawned_agent_events: "asyncio.Queue[StreamEvent]" = asyncio.Queue()
+        self._settled_agent_lanes: set[tuple[str, str]] = set()
         # The latest call's context occupancy (prompt + completion) and the model's
         # window, tracked from usage so auto-compaction can fire before the next call
         # would overflow. Zero until the first call reports usage.
@@ -948,23 +949,26 @@ class AgentRuntime:
 
     def _call_policy(self, location: "ResolvedLocation | None") -> CallExecutionPolicy:
         """The execution policy for one tool call. In the projects model
-        permission_mode is per-location, so a location with an explicit mode of its
-        own governs its calls; a location running on the agent's default mode uses
-        the runtime's live flags (which carry user toggles and agent overrides).
-        A runtime-level read-only override is always a floor — a read-only agent
-        stays read-only at every location. Returned as a value and threaded through
-        the call, never written to shared state, so concurrent calls to different
-        locations cannot cross policies."""
-        if location is None:
+        an explicit live session mode governs every target immediately. While the session
+        remains on ``default``, a target's explicit mode governs its calls, then the agent
+        profile is the fallback. A runtime-level read-only override is always a floor.
+        Returned as a value and threaded through the call, never written to shared state,
+        so concurrent calls to different locations cannot cross policies."""
+        session_mode_is_explicit = self._session_permission_mode != "default"
+        if location is None or session_mode_is_explicit:
             return CallExecutionPolicy(
-                location=None,
-                working_directory=self._working_directory,
+                location=location,
+                working_directory=(
+                    self._working_directory
+                    if location is None or location.is_remote
+                    else location.base_directory
+                ),
                 read_only=self._read_only,
                 bypass_permissions=self._bypass_permissions,
                 auto_permissions=self._auto_permissions,
             )
         mode = location.permission_mode
-        if mode == self._agent_configuration.permission_mode:
+        if mode == "default":
             read_only = self._read_only
             bypass = self._bypass_permissions and not read_only
             auto = self._auto_permissions and not read_only
@@ -1170,6 +1174,7 @@ class AgentRuntime:
     def set_permission_mode(self, mode: str) -> None:
         if mode not in ("default", "read_only", "bypass", "auto"):
             return
+        self._session_permission_mode = mode
         if mode == "default":
             self._bypass_permissions = self._agent_configuration.permission_mode == "bypass"
             self._read_only = self._agent_configuration.permission_mode == "read_only"
@@ -1244,9 +1249,10 @@ class AgentRuntime:
             return "allow"
         return self._permissions.evaluate_bash_permission(command)
 
-    async def _classify_bash_permission(
+    async def _classify_permission(
         self,
         *,
+        tool_kind: str,
         command: str,
         raw_command: str,
         default_decision: str,
@@ -1256,9 +1262,10 @@ class AgentRuntime:
         static_classification: str = "",
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
-    ) -> BashPermissionDecision:
+    ) -> PermissionDecision:
         context = json.dumps(
             {
+                "tool_kind": tool_kind,
                 "working_directory": self._working_directory,
                 "command": command,
                 "raw_command": raw_command,
@@ -1273,22 +1280,22 @@ class AgentRuntime:
             },
             ensure_ascii=False,
         )
-        prompt = self._prompt_loader.load("bash_permission_classifier", {"context": context})
+        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
         try:
-            model = self._llm.bind_tools([BashPermissionDecision], tool_choice="auto")
+            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
             response = await model.ainvoke([
                 SystemMessage(content=prompt),
             ])
             if not response.tool_calls:
-                return BashPermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
-            decision = BashPermissionDecision.model_validate(response.tool_calls[0]["args"])
+                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
             if default_decision == "deny" and decision.action == "auto_approve":
-                return BashPermissionDecision(action="escalate", justification="User-configured permissions deny this command.", risk="high")
+                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
             if not decision.justification.strip():
-                return BashPermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
             return decision
         except Exception as exception:
-            return BashPermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
+            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
 
     def _command_session_allowed(self, command: str) -> bool:
         """Whether a prior 'always allow' in this session covers this command, so
@@ -1516,7 +1523,7 @@ class AgentRuntime:
     async def _emit_observations(self, request: list) -> list[dict]:
         """Run one Observer/Reflector call and read its structured output from the
         model's ``ObservationBatch`` tool call — the shape is guaranteed by tool-calling,
-        not scraped from free text (same pattern as BashPermissionDecision). Returns []
+        not scraped from free text (same pattern as PermissionDecision). Returns []
         when the model emits no tool call, so a miss simply changes nothing."""
         model = self._llm.bind_tools([ObservationBatch], tool_choice="auto")
         response = await model.ainvoke(request)
@@ -1682,7 +1689,7 @@ class AgentRuntime:
 
     def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
         """Wrap a harness-injected note in a user-role message carrying a
-        ``<system-reminder>`` block.
+        ``<systemReminder>`` block.
 
         The role is deliberate — this is what keeps the conversation strictly
         append-only for the provider's prompt cache. A mid-conversation
@@ -1736,7 +1743,7 @@ class AgentRuntime:
         # attached image) so a vision model actually sees the pixels. LangChain's
         # HumanMessage accepts either, and the model adapter passes the content
         # straight through to the provider. A self-realization note (e.g. an artifact
-        # render error) enters as a <system-reminder> harness note so the model
+        # render error) enters as a <systemReminder> harness note so the model
         # treats it as its own observation, not as something the user said — in a
         # user-role message so the append stays cache-safe (_harness_note_message).
         turn_message = (
@@ -2115,6 +2122,21 @@ class AgentRuntime:
         segment = {"group_id": group_id, "step_id": step_id}
         child_event["path"] = [segment, *child_event.get("path", [])]
         return StreamEvent(StreamEvent.Type.RELAYED, event=child_event)
+
+    async def _settle_agent_lane(self, group_id: str, step_id: str, state: str) -> None:
+        """Publish exactly one terminal event for an agents-panel lane."""
+        lane_key = (group_id, step_id)
+        if lane_key in self._settled_agent_lanes:
+            return
+        self._settled_agent_lanes.add(lane_key)
+        await self._spawned_agent_events.put(StreamEvent(
+            StreamEvent.Type.RELAYED,
+            event={
+                "kind": "done",
+                "path": [{"group_id": group_id, "step_id": step_id}],
+                "state": state,
+            },
+        ))
 
     async def _run_one_tool(
         self,
@@ -2556,7 +2578,8 @@ class AgentRuntime:
                     return
                 permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
                 if policy.auto_permissions and permission_decision != "deny":
-                    decision = await self._classify_bash_permission(
+                    decision = await self._classify_permission(
+                        tool_kind="bash",
                         command=raw_command,
                         raw_command=raw_command,
                         default_decision=permission_decision,
@@ -2647,7 +2670,8 @@ class AgentRuntime:
                 and (permission_decision == "ask" or risk in ("medium", "high"))
             ):
                 if policy.auto_permissions:
-                    decision = await self._classify_bash_permission(
+                    decision = await self._classify_permission(
+                        tool_kind="bash",
                         command=raw_command,
                         raw_command=raw_command,
                         default_decision=permission_decision,
@@ -3025,21 +3049,57 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
                 return
             if not policy.bypass_permissions and not read_only and risk in ("medium", "high"):
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                future = asyncio.get_event_loop().create_future()
-                self._pending_permissions[request_identifier] = future
-                yield StreamEvent(
-                    StreamEvent.Type.PERMISSION_REQUEST,
-                    id=tool_call_identifier,
-                    request_id=request_identifier,
-                    command=f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}",
-                    justification=tool_arguments.get("justification", ""),
-                    risk=risk,
-                )
-                allowed = await self._resolve_permission_future(request_identifier, future, "", is_bash=False)
-                if not allowed:
-                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
-                    return
+                action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
+                justification = tool_arguments.get("justification", "")
+                if policy.auto_permissions:
+                    decision = await self._classify_permission(
+                        tool_kind="mcp",
+                        command=action,
+                        raw_command=json.dumps(tool_arguments.get("arguments") or {}, ensure_ascii=False),
+                        default_decision="ask",
+                        read_only=False,
+                        risk=risk,
+                        justification=justification,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("mcp_auto_approved", {
+                            "server": tool_arguments.get("server", ""),
+                            "tool": tool_arguments.get("tool_name", ""),
+                            "reason": decision.justification,
+                            "risk": decision.risk,
+                        })
+                    else:
+                        request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                        future = asyncio.get_event_loop().create_future()
+                        self._pending_permissions[request_identifier] = future
+                        yield StreamEvent(
+                            StreamEvent.Type.PERMISSION_REQUEST,
+                            id=tool_call_identifier,
+                            request_id=request_identifier,
+                            command=action,
+                            justification=decision.justification or justification,
+                            risk=decision.risk,
+                        )
+                        allowed = await self._resolve_permission_future(request_identifier, future, "", is_bash=False)
+                        if not allowed:
+                            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
+                            return
+                else:
+                    request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                    future = asyncio.get_event_loop().create_future()
+                    self._pending_permissions[request_identifier] = future
+                    yield StreamEvent(
+                        StreamEvent.Type.PERMISSION_REQUEST,
+                        id=tool_call_identifier,
+                        request_id=request_identifier,
+                        command=action,
+                        justification=justification,
+                        risk=risk,
+                    )
+                    allowed = await self._resolve_permission_future(request_identifier, future, "", is_bash=False)
+                    if not allowed:
+                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
+                        return
             event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
             async def on_mcp_event(event: dict[str, Any]) -> None:
@@ -3164,6 +3224,8 @@ class AgentRuntime:
                             child_depth,
                             self._working_directory,
                             self._project_directory,
+                            group_id,
+                            spawn_step_id,
                         ):
                             # The agent's streamed progress goes to the panel only,
                             # never into the parent's model context.
@@ -3189,19 +3251,21 @@ class AgentRuntime:
                                 # event; synthesize a `done` at this step's path so the panel
                                 # marks it terminal.
                                 child_state = str(((child_task or {}).get("status") or {}).get("state") or "completed")
-                                await self._spawned_agent_events.put(StreamEvent(
-                                    StreamEvent.Type.RELAYED,
-                                    event={
-                                        "kind": "done",
-                                        "path": [{"group_id": group_id, "step_id": spawn_step_id}],
-                                        "state": child_state,
-                                    },
-                                ))
+                                await self._settle_agent_lane(group_id, spawn_step_id, child_state)
                         # Inject ONLY the agent's final report (its deliverable
                         # artifact) into the parent — not the whole task object, and not
                         # any of the intermediate progress. The parent asked for a result,
                         # not a transcript.
                         return _spawned_agent_report(child_task, agent_name)
+                    except asyncio.CancelledError:
+                        if child_task_id and self._cancel_delegated is not None:
+                            await asyncio.shield(self._cancel_delegated(agent_name, child_task_id))
+                        await asyncio.shield(self._settle_agent_lane(
+                            group_id,
+                            spawn_step_id,
+                            TaskState.canceled.value,
+                        ))
+                        raise
                     finally:
                         self._active_delegations.pop(child_task_id, None)
 
@@ -3212,7 +3276,12 @@ class AgentRuntime:
                     "spawn_agent",
                     _run_spawned_agent(),
                     tool_call_identifier=tool_call_identifier,
-                    arguments={"agent": agent_name, "prompt": raw_agent_prompt, "read_only": agent_read_only},
+                    arguments={
+                        "agent": agent_name,
+                        "prompt": raw_agent_prompt,
+                        "read_only": agent_read_only,
+                        "justification": agent_title,
+                    },
                 )
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
@@ -3236,28 +3305,73 @@ class AgentRuntime:
                     project_directory=self._project_directory,
                 )
 
-                # Run the agent as a background task so the parent continues
-                # immediately. The agent runs to completion silently; its
-                # result is stored and can be collected later via the agents panel
-                # or a subsequent read_task call. No intermediate events are
-                # forwarded — that would bloat the parent's context.
-                async def _run_background() -> None:
+                # The standalone fallback uses the same background runner and public
+                # handle contract as an A2A delegation, so it can be canceled too.
+                async def _run_background() -> str:
                     final_text = ""
-                    async for event in runner.run_stream(always_yield_text=True):
-                        if event.type == StreamEvent.Type.DONE:
-                            final_text = event.data.get("text", final_text)
-                    done_task = serialize_task(build_task(spawn_step_id, agent_name, TaskState.completed, final_text))
-                    # Store the result so it can be retrieved later.
-                    self._background_agent_results[spawn_step_id] = done_task
+                    try:
+                        async for event in runner.run_stream(always_yield_text=True):
+                            if event.type == StreamEvent.Type.DONE:
+                                final_text = event.data.get("text", final_text)
+                        await self._settle_agent_lane(group_id, spawn_step_id, TaskState.completed.value)
+                        return final_text
+                    except asyncio.CancelledError:
+                        await asyncio.shield(self._settle_agent_lane(
+                            group_id,
+                            spawn_step_id,
+                            TaskState.canceled.value,
+                        ))
+                        raise
 
-                self._background_agent_results.setdefault(spawn_step_id, None)
-                asyncio.create_task(_run_background())
-                # Return immediately — parent continues its turn.
-                child_task = {"code": "running", "message": f"Agent {agent_name} is running in the background.", "task_id": spawn_step_id}
+                self._background.spawn(
+                    "spawn_agent",
+                    _run_background(),
+                    identifier=spawn_step_id,
+                    tool_call_identifier=tool_call_identifier,
+                    arguments={
+                        "agent": agent_name,
+                        "prompt": raw_agent_prompt,
+                        "read_only": agent_read_only,
+                        "justification": agent_title,
+                    },
+                )
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
-                    result=child_task or {"code": "empty_response", "message": "Agent produced no task."},
+                    result={
+                        "code": "agent_started",
+                        "task_identifier": spawn_step_id,
+                        "agent": agent_name,
+                        "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
+                    },
                 )
+
+        elif tool_name == "cancel_agent":
+            task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
+            if not task_identifier.startswith("agent-"):
+                result = {
+                    "code": "invalid_agent_handle",
+                    "task_identifier": task_identifier,
+                    "message": "Pass the agent-... task identifier returned by spawn_agent.",
+                }
+            elif self._background.cancel_by_identifier(task_identifier, kind="spawn_agent"):
+                result = {
+                    "code": "agent_cancellation_requested",
+                    "task_identifier": task_identifier,
+                    "message": "The spawned agent was canceled.",
+                }
+                self._record_event("agent_cancelled", {"task_identifier": task_identifier})
+            else:
+                result = {
+                    "code": "agent_not_running",
+                    "task_identifier": task_identifier,
+                    "message": "No running spawned agent has that identifier.",
+                }
+            yield StreamEvent(
+                StreamEvent.Type.TOOL_RESULT,
+                id=tool_call_identifier,
+                name=tool_name,
+                result=result,
+            )
 
         elif tool_name == "set_tasks":
             task_definitions = tool_arguments.get("tasks", [])
@@ -3436,12 +3550,6 @@ class AgentRuntime:
                     {"task_id": requested_task_id, "kind": background_kind},
                 )
                 result = {"code": "not_a_readable_task", "task_id": requested_task_id, "message": message}
-            elif requested_task_id in self._background_agent_results:
-                bg_result = self._background_agent_results[requested_task_id]
-                if bg_result is None:
-                    result = {"code": "running", "task_id": requested_task_id, "message": "Agent is still running."}
-                else:
-                    result = bg_result
             else:
                 task = await self._task_reader(requested_task_id)
                 if task is None:

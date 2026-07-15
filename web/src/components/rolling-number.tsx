@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex } from "@chakra-ui/react";
+import { Flex, Span } from "@chakra-ui/react";
 import { motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useRef, useState } from "react";
 
@@ -17,7 +17,7 @@ function normalizedValue(value: number): number {
 // the final value all at once. Capping the tick count keeps a large jump from
 // dragging: a big delta simply takes bigger steps, not longer.
 const SLOT_TICK_INTERVAL_MS = 75;
-const SLOT_MAX_TICKS = 16;
+const SLOT_MAXIMUM_TICKS = 16;
 
 function useAnimatedValue(target: number): { displayValue: number } {
   const prefersReducedMotion = useReducedMotion();
@@ -32,7 +32,7 @@ function useAnimatedValue(target: number): { displayValue: number } {
 
     const distance = Math.abs(delta);
     // Reduced motion collapses to a single notch — one `advance` lands straight on the target.
-    const ticks = prefersReducedMotion ? 1 : Math.min(distance, SLOT_MAX_TICKS);
+    const ticks = prefersReducedMotion ? 1 : Math.min(distance, SLOT_MAXIMUM_TICKS);
     const step = Math.ceil(distance / ticks) * Math.sign(delta);
 
     let interval = 0;
@@ -73,8 +73,7 @@ const Digit = memo(function Digit({ digit }: { digit: number }) {
   const prefersReducedMotion = useReducedMotion();
   const safeDigit = Number.isFinite(digit) ? Math.min(9, Math.max(0, Math.round(digit))) : 0;
   return (
-    <Box
-      as="span"
+    <Span
       display="inline-block"
       position="relative"
       h="1em"
@@ -97,12 +96,12 @@ const Digit = memo(function Digit({ digit }: { digit: number }) {
         }}
       >
         {DIGITS.map((d) => (
-          <span key={d} style={{ height: "1em", lineHeight: "1em", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Span key={d} h="1em" lineHeight="1em" display="flex" alignItems="center" justifyContent="center">
             {d}
-          </span>
+          </Span>
         ))}
       </MotionSpan>
-    </Box>
+    </Span>
   );
 });
 
@@ -117,8 +116,7 @@ export const RollingNumber = memo(function RollingNumber({
   const safeValue = normalizedValue(displayValue);
   const digits = String(safeValue).split("").map(Number);
   return (
-    <Box
-      as="span"
+    <Span
       display="inline-flex"
       alignItems="center"
       fontVariantNumeric="tabular-nums"
@@ -129,7 +127,7 @@ export const RollingNumber = memo(function RollingNumber({
         // higher place mounts already at its resting offset.
         <Digit key={digits.length - index - 1} digit={digit} />
       ))}
-    </Box>
+    </Span>
   );
 });
 
@@ -145,30 +143,28 @@ export function DiffStatBadge({
   return (
     <Flex align="center" gap={1} flexShrink={0} fontVariantNumeric="tabular-nums">
       {additions > 0 && (
-        <Box
-          as="span"
+        <Span
           gap={1}
           color="green.fg"
           textStyle="fieldLabel"
           display="inline-flex"
           alignItems="center"
         >
-          <Box as="span">+</Box>
+          <Span>+</Span>
           <RollingNumber value={additions} />
-        </Box>
+        </Span>
       )}
       {deletions > 0 && (
-        <Box
-          as="span"
+        <Span
           gap={1}
           color="red.fg"
           textStyle="fieldLabel"
           display="inline-flex"
           alignItems="center"
         >
-          <Box as="span">-</Box>
+          <Span>-</Span>
           <RollingNumber value={deletions} />
-        </Box>
+        </Span>
       )}
     </Flex>
   );

@@ -48,7 +48,7 @@ export function locationConflict(
   return null;
 }
 
-// The reusable location editor — used in the New Project wizard and in project settings.
+// The reusable folder editor — used during creation and in project-folder settings.
 // `hosts` come from ~/.ssh/config (remote only). `showPermission` reveals the permission
 // mode control (shown when editing an existing location, hidden in the create wizard so
 // creation stays about *where*, not policy). `onRemove` (optional) puts a remove control in
@@ -107,7 +107,7 @@ export function LocationForm({
     }
   }, [value.kind, hosts]);
 
-  // Prefill the base directory with the selected target's home directory as an editable
+  // Prefill the base directory with the selected location's home directory as an editable
   // starter: the local machine's home for a local location, the host's home for a remote.
   // Only fills when the field is empty or still holds a previous auto value, so a path the
   // user typed is never clobbered.
@@ -204,9 +204,8 @@ export function LocationForm({
   );
 }
 
-// A stack of editable location forms with an "Add location" button and an inline overlap
-// warning — the shared body of the New Project wizard and the project-settings Locations
-// tab (persistence differs; the editing surface is identical).
+// A stack of editable folder forms with an "Add folder" button and an inline overlap
+// warning. Creation and Settings share the same editing surface; only persistence differs.
 export function LocationEditorList({
   hosts,
   locations,

@@ -10,15 +10,14 @@ import { Box, Flex, Menu, Portal, Spinner } from "@chakra-ui/react";
 import type { ComponentProps, ReactNode } from "react";
 import { LuCheck } from "react-icons/lu";
 
-// One minimum width for every dropdown, so a project switcher and a connection switcher open
-// to the same comfortable width instead of each picking its own. A spacing-scale token
-// (14rem / 224px) rather than a raw pixel string.
-const DROPDOWN_MIN_W = "56";
+// One minimum width for every dropdown, so menus open to the same comfortable width instead
+// of each picking its own. A spacing-scale token (14rem / 224px) rather than a raw pixel string.
+const DROPDOWN_MINIMUM_W = "56";
 
 export function DropdownMenu({
   trigger,
   children,
-  minW = DROPDOWN_MIN_W,
+  minW = DROPDOWN_MINIMUM_W,
   positioning,
   onOpenChange,
 }: {

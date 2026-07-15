@@ -18,6 +18,7 @@ import { useLocale } from "@/lib/i18n/locale-provider";
 import { LOCALES, type Locale } from "@/lib/i18n/messages";
 import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeControl, SandboxToggleControl, UserContextToggleControl, WorkspaceStrategyControl, type WorkspaceStrategyValue } from "./session-controls";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
+import { Section } from "./ui/semantic";
 
 export type SettingsSection = "general" | "locations" | "agents" | "connection";
 
@@ -32,12 +33,12 @@ type SettingsPage = { id: SettingsSection; label: string; icon: ReactNode; secti
 // trailing full-width block, if any, sits beneath the rows).
 function SettingsSection({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <Box as="section" mb={8} _last={{ mb: 0 }}>
+    <Section mb={8} _last={{ mb: 0 }}>
       {title ? <Text fontSize="sm" fontWeight="semibold" color="fg" mb={2}>{title}</Text> : null}
       <Box css={{ "& > *": { borderColor: "var(--chakra-colors-border-muted)" }, "& > *:not(:last-child)": { borderBottomWidth: "1px" } }}>
         {children}
       </Box>
-    </Box>
+    </Section>
   );
 }
 
@@ -617,7 +618,7 @@ export function SettingsDialog({
                 so its tint never gets cut off between a separate header and footer. */}
                 <Flex direction="column" w={52} flexShrink={0} borderRightWidth="1px" borderColor="border.muted" minH={0} bg="bg.subtle">
                   <Box p={3} flexShrink={0}>
-                    <Flex align="center" gap={2} h={8} px={3} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
+                    <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
                       <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
                       <Input
                         border="none"
@@ -638,14 +639,14 @@ export function SettingsDialog({
                       {pages.map((page) => {
                         const active = !searching && page.id === activePage.id;
                         return (
-                          <Flex
-                            as="button"
+                          <Button
+                            variant="ghost"
                             key={page.id}
-                            align="center"
+                            w="full"
                             gap={1.5}
                             minH="30px"
                             px={2}
-                            borderRadius="md"
+                            justifyContent="flex-start"
                             textAlign="left"
                             color={active ? "fg" : "fg.muted"}
                             fontWeight={active ? "medium" : "normal"}
@@ -656,16 +657,13 @@ export function SettingsDialog({
                           >
                             <Box color={active ? "fg" : "fg.subtle"} flexShrink={0} display="flex" alignItems="center">{page.icon}</Box>
                             <Text flex={1} minW={0} truncate fontSize="xs">{page.label}</Text>
-                          </Flex>
+                          </Button>
                         );
                       })}
                     </Flex>
                   </Box>
                 </Flex>
             <Flex direction="column" flex={1} minW={0} minH={0}>
-              <Dialog.Header>
-                <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
-              </Dialog.Header>
               <Dialog.Body px={0} py={0} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
                 <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={6} py={4}>

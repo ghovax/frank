@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, Flex, Separator, Spinner, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Separator, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
@@ -12,6 +12,7 @@ import { AttachmentChips, ArtifactAnnotationChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ToolGroup } from "./tool-group";
+import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -214,7 +215,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     }
 
     case "assistant":
-      if (!message.content) return null;
+      if (!message.content.trim()) return null;
       return (
         // No horizontal inset: the assistant's prose shares the same left edge as the
         // tool-activity lines (which have none), so text and tools line up — matching
@@ -270,9 +271,9 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
               color={running ? "blue.fg" : undefined}
               title={running || !before ? undefined : t("compactedTooltip", { before, after })}
             >
-              <Box display="flex" alignItems="center">
-                {running ? <Spinner size="xs" borderWidth="1px" /> : <LuFoldVertical size={12} />}
-              </Box>
+              <ActivityIcon>
+                {running ? <ActivitySpinner /> : <LuFoldVertical />}
+              </ActivityIcon>
               <Text textStyle="fieldLabel" className={running ? "running-title-shimmer" : undefined}>
                 {running ? t("compactingContext") : t("contextCompacted")}
               </Text>

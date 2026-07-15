@@ -92,6 +92,7 @@ function ProjectWorkspace() {
   // by comparing successive session snapshots; cleared when you open the session.
   const [unseenCompletions, setUnseenCompletions] = useState<Set<string>>(new Set());
   const sessionsRef = useRef<SessionEntry[]>([]);
+  const attentionPlayedForRunRef = useRef<Set<string>>(new Set());
   const activeSessionIdRef = useRef<string | null>(activeSessionId);
   const [chatKey, setChatKey] = useState(0);
   // Keep the active-session id readable from callbacks (loadSessions) without adding it
@@ -125,7 +126,7 @@ function ProjectWorkspace() {
   // Default sidebar width: enough for typical session titles without eating the
   // transcript. Paired with the panel-region default in chat-panel.tsx (480) —
   // both open at their comfortable minimum and grow by drag, never the reverse.
-  const [historyWidth, setHistoryWidth] = useState(240);
+  const [historyWidth, setHistoryWidth] = useState(268);
 
   const isCompactViewport = useCallback(() => {
     return window.matchMedia("(max-width: 767px)").matches;
@@ -286,11 +287,23 @@ function ProjectWorkspace() {
     // A background session newly waiting on a decision gets the same attention
     // cue the active session's overlay plays — the yellow dot alone is easy to
     // miss. (The active session's own prompts are handled in ChatPanel.)
-    const newlyAwaiting = mapped.some((session) => {
+    let shouldPlayAttentionSound = false;
+    for (const session of mapped) {
       const previous = previousById.get(session.sessionId);
-      return session.awaitingInput && !!previous && !previous.awaitingInput && session.sessionId !== activeId;
-    });
-    if (newlyAwaiting) playAttentionSound();
+      const isBusy = session.running || session.filesystemLeases.length > 0;
+      if (!isBusy) attentionPlayedForRunRef.current.delete(session.sessionId);
+      if (
+        session.awaitingInput
+        && !!previous
+        && !previous.awaitingInput
+        && session.sessionId !== activeId
+        && !attentionPlayedForRunRef.current.has(session.sessionId)
+      ) {
+        attentionPlayedForRunRef.current.add(session.sessionId);
+        shouldPlayAttentionSound = true;
+      }
+    }
+    if (shouldPlayAttentionSound) playAttentionSound();
     sessionsRef.current = mapped;
     setSessions(mapped);
     setSessionsLoaded(true);
@@ -413,19 +426,21 @@ function ProjectWorkspace() {
       })
       .catch(() => {});
   }, [activeSession, currentConnectionId]);
-  // The sidebar lists this project's own conversations, flat. Sessions belong to a project
-  // (not to a working directory) — a project shares one workspace whose locations are chosen
-  // per tool call, so there is nothing to group them under.
   // Sidebar sort: "recent" (newest first, the load order) or "active" (sessions
-  // needing attention or running float to the top, then newest).
+  // needing attention or running float to the top, then newest). The sidebar groups
+  // these conversations under every project; the filtered subset remains useful to
+  // the native tray, which intentionally follows the current project.
   const [sessionSort, setSessionSort] = useState<SessionSort>("recent");
-  const projectSessions = useMemo(() => {
-    const filtered = sessions.filter((session) => session.projectId === projectId);
-    if (sessionSort !== "active") return filtered;
+  const sortedSessions = useMemo(() => {
+    if (sessionSort !== "active") return sessions;
     const rank = (session: SessionEntry) =>
       session.awaitingInput ? 0 : session.running || session.filesystemLeases.length > 0 ? 1 : 2;
-    return [...filtered].sort((left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt));
-  }, [sessions, projectId, sessionSort]);
+    return [...sessions].sort((left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt));
+  }, [sessions, sessionSort]);
+  const projectSessions = useMemo(
+    () => sortedSessions.filter((session) => session.projectId === projectId),
+    [sortedSessions, projectId],
+  );
 
   const refreshSessions = useCallback(() => {
     loadSessions()
@@ -461,7 +476,7 @@ function ProjectWorkspace() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
-  // Switch the active project from the sidebar switcher: remember it, start a fresh chat in
+  // Switch the active project from its sidebar row: remember it, start a fresh chat in
   // it, and swap the `?project=` param (which re-derives the session list, agents, and working
   // directory for that project). A no-op when it's already the current project.
   function handleSwitchProject(nextProjectId: string) {
@@ -478,19 +493,21 @@ function ProjectWorkspace() {
     if (isCompactViewport()) setHistoryOpen(false);
   }
 
-  // Open a project's real Settings dialog on a given section (used by the Manage Projects
-  // gear). Selects the project and forces a fresh ChatPanel via `chatKey`, so its mount-time
-  // `initialSettingsSection` (fed by `?settings=`) opens Settings on that section — reusing the
-  // same query-param path the Projects cog already uses, rather than a second settings channel.
+  // Open a project's real Settings dialog from its sidebar menu. Keep the current chat intact
+  // when its own project is selected; only reset the workspace when settings belongs to a
+  // different project. The query-param signal is consumed by ChatPanel after navigation.
   function openProjectSettings(nextProjectId: string, section: string = "locations") {
+    const switchingProjects = nextProjectId !== projectId;
     writeLastProject(nextProjectId);
-    setActiveSessionId(null);
-    setChatKey((current) => current + 1);
-    setWorkingDirectory("");
-    setRestoredContext(null);
+    if (switchingProjects) {
+      setActiveSessionId(null);
+      setChatKey((current) => current + 1);
+      setWorkingDirectory("");
+      setRestoredContext(null);
+    }
     const params = new URLSearchParams(window.location.search);
     params.set("project", nextProjectId);
-    params.delete("session");
+    if (switchingProjects) params.delete("session");
     params.set("settings", section);
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
@@ -540,6 +557,12 @@ function ProjectWorkspace() {
     setActiveSessionId(entry.sessionId);
     setChatKey((current) => current + 1);
     const params = new URLSearchParams(window.location.search);
+    if (entry.projectId) {
+      writeLastProject(entry.projectId);
+      params.set("project", entry.projectId);
+      setWorkingDirectory("");
+      setRestoredContext(null);
+    }
     params.set("session", entry.sessionId);
     router.replace(`?${params.toString()}`, { scroll: false });
     if (isCompactViewport()) setHistoryOpen(false);
@@ -645,7 +668,7 @@ function ProjectWorkspace() {
     const startWidth = historyWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(600, Math.max(220, startWidth + moveEvent.clientX - startX));
+      const nextWidth = Math.min(600, Math.max(240, startWidth + moveEvent.clientX - startX));
       setHistoryWidth(nextWidth);
     }
 
@@ -706,7 +729,7 @@ function ProjectWorkspace() {
             direction="column"
             w={{ base: "100%", md: `${historyWidth}px` }}
             maxW={{ base: "100%", md: "46vw" }}
-            minW={{ base: "100%", md: "220px" }}
+            minW={{ base: "100%", md: "240px" }}
             ml={{ md: 2 }}
             mb={{ md: 2 }}
             h={{ base: "100dvh", md: "auto" }}
@@ -731,15 +754,14 @@ function ProjectWorkspace() {
             onPointerDown={handleHistoryResizeStart}
           />
           <SessionsSidebar
-            sessions={projectSessions}
+            sessions={sortedSessions}
             sessionsLoaded={sessionsLoaded}
             activeSessionId={activeSessionId}
             sessionSort={sessionSort}
             onSessionSortChange={setSessionSort}
             unseenCompletions={unseenCompletions}
             currentProjectId={projectId}
-            connectionName={currentConnection?.name}
-            connectionKind={currentConnection?.kind}
+            connectionId={currentConnectionId}
             onSwitchProject={handleSwitchProject}
             onOpenProjectSettings={openProjectSettings}
             onNewChat={handleNewChat}

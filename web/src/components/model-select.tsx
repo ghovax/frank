@@ -10,6 +10,7 @@ import {
   Input,
   Portal,
   Select,
+  Span,
   Text,
 } from "@chakra-ui/react";
 import { useEffect, useMemo, useState } from "react";
@@ -34,6 +35,7 @@ interface ModelSelectProps {
   // Optional display fallback for a controlled value that has not loaded yet.
   fallbackModelId?: string;
   compact?: boolean;
+  responsiveCompact?: boolean;
 }
 
 // Sentinel option in the model dropdown that reveals the free-form Model ID
@@ -72,9 +74,9 @@ export function ModelCapabilityBadges({ model, size = 12 }: { model?: ModelOptio
   return (
     <Flex align="center" pl={0.5} gap={1} color="fg.subtle" flexShrink={0}>
       {badges.map((badge) => (
-        <Box key={badge.key} as="span" display="flex" alignItems="center" title={badge.label}>
+        <Span key={badge.key} display="flex" alignItems="center" title={badge.label}>
           {badge.icon}
-        </Box>
+        </Span>
       ))}
     </Flex>
   );
@@ -135,7 +137,7 @@ function keyByProvider(settings: Settings): Record<string, string> {
   );
 }
 
-export function ModelSelect({ models, providers, value, onChange, recent = [], fallbackModelId = "", compact }: ModelSelectProps) {
+export function ModelSelect({ models, providers, value, onChange, recent = [], fallbackModelId = "", compact, responsiveCompact = false }: ModelSelectProps) {
   const t = useTranslations("ModelSelect");
   const tc = useTranslations("Common");
   const [open, setOpen] = useState(false);
@@ -277,34 +279,37 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   return (
     <>
       <Button
+        data-composer-model=""
         variant="outline"
         px={2}
         bg="bg"
         borderColor="border"
         minW={compact ? "max-content" : undefined}
-        maxW={compact ? "220px" : "100%"}
+        maxW={responsiveCompact ? "none" : compact ? "220px" : "100%"}
         flexShrink={0}
         onClick={openDialog}
       >
         <LuBot size={compact ? 13 : 14} />
         {chipProviderLabel ? (
-          <Flex as="span" align="center" minW={0}>
-            <Box as="span" color="fg.muted" truncate>
+          <Span data-composer-model-label={responsiveCompact ? "" : undefined} display="flex" alignItems="center" minW={0}>
+            <Span data-composer-model-provider={responsiveCompact ? "" : undefined} color="fg.muted" truncate>
               {chipProviderLabel}
-            </Box>
-            <Box as="span" color="fg.subtle" display="flex" alignItems="center" flexShrink={0}>
+            </Span>
+            <Span data-composer-model-provider={responsiveCompact ? "" : undefined} color="fg.subtle" display="flex" alignItems="center" flexShrink={0}>
               <LuChevronRight size={compact ? 11 : 13} />
-            </Box>
-            <Box as="span" truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
+            </Span>
+            <Span truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
               {chipModelName}
-            </Box>
-          </Flex>
+            </Span>
+          </Span>
         ) : (
-          <Box as="span" truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
+          <Span data-composer-model-label={responsiveCompact ? "" : undefined} truncate fontFamily={chipNameIsFallback ? "var(--app-font-mono)" : undefined} fontSize={chipNameIsFallback ? "xs" : undefined}>
             {chipModelName}
-          </Box>
+          </Span>
         )}
-        <ModelCapabilityBadges model={chipModel} size={compact ? 11 : 13} />
+        <Box data-composer-model-capabilities={responsiveCompact ? "" : undefined} display="flex" flexShrink={0}>
+          <ModelCapabilityBadges model={chipModel} size={compact ? 11 : 13} />
+        </Box>
         <LuChevronDown size={compact ? 13 : 15} />
       </Button>
 
@@ -460,7 +465,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                       <Text fontSize="xs" color="fg.muted" mt={1.5}>
                         {t.rich("sentToLitellm", {
                           model: `${selectedProvider}/${modelSuffix || "model-name"}`,
-                          code: (chunks) => <Box as="span" fontFamily="var(--app-font-mono)">{chunks}</Box>,
+                          code: (chunks) => <Span fontFamily="var(--app-font-mono)">{chunks}</Span>,
                         })}
                       </Text>
                     </Box>

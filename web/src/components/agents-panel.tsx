@@ -64,7 +64,7 @@ function StepCard({
   return (
     <DisclosureRow
       defaultOpen
-      icon={<Box color="fg.muted"><LuBot size={12} /></Box>}
+      icon={<Box color="fg.muted"><LuBot /></Box>}
       title={<DisclosureLabel>{step.goal || t("agentTask")}</DisclosureLabel>}
       badges={
         <>
@@ -107,7 +107,7 @@ export function AgentsPanel({
         closeLabel={t("collapseSidebar")}
       />
 
-      <PanelBody mx={2}>
+      <PanelBody>
         {agentGroups.length === 0 ? (
           <PanelEmptyState
             icon={<LuBot />}

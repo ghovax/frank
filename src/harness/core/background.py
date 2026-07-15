@@ -396,6 +396,27 @@ class BackgroundJobs:
             return True
         return False
 
+    def cancel_by_identifier(self, identifier: str, *, kind: str | None = None) -> bool:
+        """Cancel one live job by its public handle.
+
+        ``kind`` optionally constrains the match so a caller that owns one class of
+        handle cannot accidentally cancel another background-work type.
+        """
+        record = self._jobs.get(identifier)
+        if record is None or record.task.done() or (kind is not None and record.kind != kind):
+            return False
+        if record.cancel_callback is not None:
+            try:
+                record.cancel_callback()
+            except Exception:
+                pass
+        record.task.cancel()
+        if self._context_id:
+            result = json.dumps({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+            get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
+        self._jobs.pop(identifier, None)
+        return True
+
     def request_background(self, tool_call_identifier: str) -> bool:
         """Push a still-running foreground job to the background on the user's behalf.
 

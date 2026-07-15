@@ -151,19 +151,19 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                 {item.options!.map((option) => {
                   const isSelected = !text && !isSkipped && active.includes(option.label);
                   return (
-                    <Flex
+                    <Button
                       key={option.label}
-                      as="button"
-                      align="center"
+                      variant="outline"
+                      w="full"
+                      h="auto"
                       gap={2.5}
                       px={2.5}
                       py={1.5}
-                      borderRadius="md"
-                      border="1px solid"
+                      justifyContent="flex-start"
                       borderColor={isSelected ? "blue.solid" : "border"}
                       bg={isSelected ? "blue.subtle" : "bg"}
-                      cursor="pointer"
                       textAlign="left"
+                      whiteSpace="normal"
                       transition="all 120ms"
                       _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
                       onClick={() => { if (!text) toggle(current, option.label, multiple); }}
@@ -188,7 +188,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                           </Box>
                         )}
                       </Flex>
-                    </Flex>
+                    </Button>
                   );
                 })}
               </Flex>

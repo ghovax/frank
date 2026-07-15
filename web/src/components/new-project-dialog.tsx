@@ -1,15 +1,14 @@
 "use client";
 
-import { Box, Button, Dialog, Flex, Input, Portal, Text, Textarea } from "@chakra-ui/react";
+import { Box, Button, Dialog, Portal, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { createProject, type Project, type LocationInput, type SshHost } from "@/lib/api";
 import { LocationEditorList, emptyLocation, locationConflict } from "./location-form";
 import { toaster } from "./ui/toaster";
 
-// The New Project wizard: name + description + at least one location (required before the
-// project exists). Extracted so both the sidebar project switcher and the manage-projects
-// dialog can open it. Mount it only while open so its initializers give fresh state each time.
+// A project is an internal grouping of one or more folders, so creation only asks
+// where the agent will work. Mount this only while open so its initializers give fresh state.
 export function NewProjectDialog({
   hosts,
   open,
@@ -21,17 +20,15 @@ export function NewProjectDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (project: Project) => void;
 }) {
-  const t = useTranslations("ProjectsHome");
+  const t = useTranslations("NewProjectDialog");
   const tc = useTranslations("Common");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
   const [saving, setSaving] = useState(false);
 
   const locationValid = (location: LocationInput) =>
     location.base_directory.trim().length > 0 && (location.kind === "local" || (location.host_alias ?? "").length > 0);
   const conflict = locationConflict(locations);
-  const canCreate = name.trim().length > 0 && locations.length > 0 && locations.every(locationValid) && !conflict;
+  const canCreate = locations.length > 0 && locations.every(locationValid) && !conflict;
 
   const updateLocation = (index: number, next: LocationInput) =>
     setLocations((current) => current.map((location, position) => (position === index ? next : location)));
@@ -41,7 +38,7 @@ export function NewProjectDialog({
   async function handleCreate() {
     setSaving(true);
     try {
-      const project = await createProject({ name: name.trim(), description: description.trim(), locations });
+      const project = await createProject({ locations });
       onCreated(project);
       onOpenChange(false);
     } catch (error) {
@@ -57,27 +54,20 @@ export function NewProjectDialog({
         <Dialog.Backdrop />
         <Dialog.Positioner>
           <Dialog.Content maxW="min(560px, 94vw)">
-            <Dialog.Header>
-              <Dialog.Title textStyle="panelTitle">{t("newProject")}</Dialog.Title>
+            <Dialog.Header display="flex" flexDirection="column" alignItems="flex-start" gap={1}>
+              <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
+              <Text fontSize="sm" color="fg.muted">{t("description")}</Text>
             </Dialog.Header>
             <Dialog.Body display="flex" flexDirection="column" gap={4}>
-              <Flex direction="column" gap={1.5}>
-                <Text textStyle="fieldLabel">{t("nameLabel")}</Text>
-                <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={t("namePlaceholder")} autoFocus />
-              </Flex>
-              <Flex direction="column" gap={1.5}>
-                <Text textStyle="fieldLabel">{t("descriptionLabel")}</Text>
-                <Textarea rows={3} value={description} onChange={(event) => setDescription(event.target.value)} placeholder={t("descriptionPlaceholder")} />
-              </Flex>
-              <Box borderTop="1px solid" borderColor="border" pt={3}>
-                <Text textStyle="panelTitle" mb={2}>{t("locations")}</Text>
+              <Box>
+                <Text textStyle="panelTitle" mb={2}>{t("folders")}</Text>
                 <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} />
               </Box>
             </Dialog.Body>
             <Dialog.Footer>
               <Button variant="outline" onClick={() => onOpenChange(false)}>{tc("cancel")}</Button>
               <Button colorPalette="blue" disabled={!canCreate || saving} loading={saving} onClick={handleCreate}>
-                {t("createProject")}
+                {t("create")}
               </Button>
             </Dialog.Footer>
           </Dialog.Content>

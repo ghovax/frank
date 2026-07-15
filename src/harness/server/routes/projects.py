@@ -6,7 +6,6 @@ from harness.server.app import (
     LocationInput,
     Path,
     ProjectCreateRequest,
-    ProjectUpdateRequest,
     SessionRecord,
     SshExecutor,
     _create_location,
@@ -20,7 +19,6 @@ from harness.server.app import (
     _prune_session_artifacts,
     _publish_broadcast,
     _update_location,
-    _update_project,
     asyncio,
     cast,
     host_is_defined,
@@ -79,15 +77,6 @@ async def get_project(project_id: str):
     project = await asyncio.to_thread(_project_payload, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    return project
-
-
-@router.put("/projects/{project_id}")
-async def update_project(project_id: str, request: ProjectUpdateRequest):
-    project = await asyncio.to_thread(_update_project, project_id, request)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found.")
-    _publish_broadcast({"type": "projects_changed"})
     return project
 
 

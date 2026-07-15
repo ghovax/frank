@@ -50,8 +50,8 @@ export function PanelHeader({
   ...rest
 }: {
   icon?: ReactNode;
-  // Optional: a panel whose whole strip is a custom control (e.g. the sessions sidebar's
-  // project switcher) passes no title and supplies the control as `children` instead.
+  // Optional: a panel whose whole strip is a custom control passes no title and supplies
+  // the control as `children` instead.
   title?: ReactNode;
   onClose?: () => void;
   closeLabel?: string;
@@ -59,9 +59,8 @@ export function PanelHeader({
 } & FlexProps) {
   return (
     // Default strip padding: pr={2} matches the body's content edge; pl={3} insets a plain
-    // title slightly more. A panel whose whole strip is a full-width control (the sessions
-    // sidebar) overrides `pl={2}` so its button lines up with the body rows below it — `...rest`
-    // lets that win.
+    // title slightly more. A panel whose whole strip is a full-width control can override
+    // `pl` through `...rest`.
     // Fixed height (not content-driven) so every panel's top strip — and the chat top bar,
     // which mirrors these props — is the exact same height, keeping all their titles on one
     // horizontal line. `align="center"` then lands each title at the shared vertical center.

@@ -1,5 +1,6 @@
 "use client";
 
+import { Box } from "@chakra-ui/react";
 import { useEffect } from "react";
 
 // Wires up the native-window chrome when the UI runs inside the Tauri desktop
@@ -20,5 +21,5 @@ export function DesktopChrome() {
   }, []);
 
   // Always present but zero-height (and thus inert) outside the desktop app.
-  return <div className="titlebar-drag-region" data-tauri-drag-region />;
+  return <Box className="titlebar-drag-region" data-tauri-drag-region />;
 }

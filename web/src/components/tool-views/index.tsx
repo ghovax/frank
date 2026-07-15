@@ -1,17 +1,16 @@
 "use client";
 
-import { Box, Button, Flex, IconButton, Link, Text, Textarea } from "@chakra-ui/react";
+import { Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@chakra-ui/react";
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
-import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
-import { useColorMode } from "../ui/color-mode";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging, openScreenRecordingSettings } from "@/lib/api";
 import { imageIdentityForArtifact, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import { useArtifactEvent } from "../artifact-bridge";
 import { MarkdownContent } from "../markdown-content";
 import { Tooltip } from "../ui/tooltip";
+import { Frame } from "../ui/semantic";
 import { CenteredNumber } from "../ui/centered-number";
 import { PanelEmptyState } from "../ui/panel";
 import {
@@ -479,56 +478,13 @@ function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-// One shared inline-diff surface: a single scroll container (one maxH token + the
-// `diff-scroll` hook) wrapping the diff viewer with one shared style object, so
-// the edit-call preview and the file-edit result render identically. The font size
-// resolves to the `xs` token via its CSS var rather than a raw pixel literal.
-const DIFF_VIEWER_STYLES = {
-  contentText: { fontSize: "var(--chakra-font-sizes-xs)", fontFamily: "var(--app-font-mono)" },
-};
-
-function DiffView({ oldValue, newValue }: { oldValue: string; newValue: string }) {
-  const { colorMode } = useColorMode();
-  return (
-    <Box
-      maxH={80}
-      overflowY="auto"
-      border="1px solid"
-      borderColor="border"
-      borderRadius="md"
-      className="diff-scroll"
-    >
-      <ReactDiffViewer
-        oldValue={oldValue}
-        newValue={newValue}
-        splitView={false}
-        useDarkTheme={colorMode === "dark"}
-        hideLineNumbers={false}
-        showDiffOnly={false}
-        compareMethod={DiffMethod.LINES}
-        styles={DIFF_VIEWER_STYLES}
-      />
-    </Box>
-  );
-}
-
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
   const t = useTranslations("ToolViews");
-  // An edit reads as its path and the change itself — nothing else. The find/replace
-  // strings are the two sides of the diff, so they show only as the rendered diff.
-  const find = asString(args.find);
-  const replaceWith = asString(args.replace_with);
-  const hasInlineDiff = find !== replaceWith && (find !== "" || replaceWith !== "");
   return (
     <FieldList>
       <InlineField label={t("filePath")}>
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {hasInlineDiff && (
-        <Field label={t("diff")}>
-          <DiffView oldValue={find} newValue={replaceWith} />
-        </Field>
-      )}
     </FieldList>
   );
 }
@@ -677,11 +633,6 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
   const code = asString(data.code);
   const diagnostic = asRecord(data.diagnostic);
   const message = asString(data.message);
-  const before = asString(data.before);
-  const after = asString(data.after);
-
-  // Old-format write_file response still carries before/after for inline diff.
-  const hasDiff = before !== after && (before !== "" || after !== "");
 
   if (code === "edit_find_not_found" || code === "edit_find_near_miss" || code === "edit_find_not_unique") {
     const occurrences = asString(data.occurrences);
@@ -729,15 +680,9 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
     );
   }
 
-  // A successful edit reads as its diff and nothing more — the path is on the call card,
-  // and byte/operation counts are bookkeeping the transcript doesn't need. A write with
-  // no before/after (a brand-new file) has nothing to add beyond the call's own preview.
-  if (!hasDiff) return null;
-  return (
-    <FieldList>
-      <DiffView oldValue={before} newValue={after} />
-    </FieldList>
-  );
+  // Successful edit details stay collapsed to the call row; the group-level +/-
+  // counters retain the useful summary without rendering a full inline diff.
+  return null;
 }
 
 function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
@@ -1282,7 +1227,7 @@ function ArtifactSandbox({
     return (
       <Box position="relative" w="100%" h="100%">
         <Box w="100%" h="100%" overflow="hidden">
-          <iframe
+          <Frame
             ref={frameRef}
             src={src || undefined}
             srcDoc={srcDoc || undefined}
@@ -1290,7 +1235,10 @@ function ArtifactSandbox({
             referrerPolicy="no-referrer"
             loading="lazy"
             title={title}
-            style={{ width: "100%", height: "100%", border: 0, display: "block" }}
+            w="full"
+            h="full"
+            border="none"
+            display="block"
           />
         </Box>
       </Box>
@@ -1309,7 +1257,7 @@ function ArtifactSandbox({
         overflow="hidden"
         transition={dragging ? undefined : "height 120ms ease"}
       >
-        <iframe
+        <Frame
           ref={frameRef}
           src={src || undefined}
           srcDoc={srcDoc || undefined}
@@ -1318,7 +1266,11 @@ function ArtifactSandbox({
           loading="lazy"
           title={title}
           // Ignore pointer events on the iframe mid-drag so it doesn't swallow them.
-          style={{ width: "100%", height: "100%", border: 0, display: "block", pointerEvents: dragging ? "none" : "auto" }}
+          w="full"
+          h="full"
+          border="none"
+          display="block"
+          pointerEvents={dragging ? "none" : "auto"}
         />
       </Box>
       {/* Drag the grip to set a fixed height (overriding auto-resize). */}
@@ -1775,8 +1727,8 @@ function AnnotatableImage({
       h={fillContainer ? "100%" : undefined}
       maxW="100%"
       maxH={fillContainer ? undefined : artifactHeightValue}
-      border="0"
-      borderRadius="0"
+      border="none"
+      borderRadius="none"
       bg="bg.muted"
       overflow="hidden"
     >
@@ -1809,8 +1761,7 @@ function AnnotatableImage({
           cursor={panning ? "grabbing" : editable ? "crosshair" : "grab"}
           onClick={updateDraftPosition}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element -- MCP image artifacts can be data URLs or arbitrary remote sources. */}
-          <img
+          <Image
             ref={imageRef}
             src={source}
             alt={title}
@@ -1849,25 +1800,23 @@ function AnnotatableImage({
               </Box>
             }
           >
-          <Box
-            as="button"
+          <Button
+            aria-label={t("annotationNumber", { number: annotation.sequence })}
+            size="2xs"
+            variant="solid"
+            colorPalette="blue"
             position="absolute"
             left={`${annotation.xRatio * 100}%`}
             top={`${annotation.yRatio * 100}%`}
             transform="translate(-50%, -50%)"
-            boxSize={6}
             borderRadius="full"
-            bg="blue.solid"
-            color="white"
-            // Match the comment-panel badge exactly: a native <button> uses the UA button font,
-            // so force the app font here or the digit renders in a different typeface.
-            fontFamily="var(--app-font-sans)"
+            p={0}
             boxShadow={draft?.id === annotation.id ? "0 0 0 3px var(--chakra-colors-blue-solid)" : undefined}
             cursor={readOnly ? "default" : "pointer"}
             onClick={(event: ReactMouseEvent) => openExistingAnnotation(annotation, event)}
           >
             <CenteredNumber fontSize={12} weight={600}>{annotation.sequence}</CenteredNumber>
-          </Box>
+          </Button>
           </Tooltip>
         ))}
           {annotated && draft ? (
@@ -2083,17 +2032,14 @@ export function isArtifactPanelArtifact(artifact: Record<string, unknown>): bool
 function CollapsedArtifact({ title, onOpen }: { title: string; onOpen: () => void }) {
   const t = useTranslations("ToolViews");
   return (
-    <Flex
-      as="button"
-      align="center"
+    <Button
+      variant="outline"
+      h="auto"
+      justifyContent="flex-start"
       gap={1.5}
       px={2}
       py={1.5}
-      borderRadius="md"
-      border="1px solid"
-      borderColor="border"
       bg="bg.subtle"
-      cursor="pointer"
       textAlign="left"
       w="100%"
       onClick={onOpen}
@@ -2104,7 +2050,7 @@ function CollapsedArtifact({ title, onOpen }: { title: string; onOpen: () => voi
       </Box>
       <Text textStyle="fieldLabel" flex={1} minW={0} truncate>{title}</Text>
       <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{t("clickToOpen")}</Text>
-    </Flex>
+    </Button>
   );
 }
 

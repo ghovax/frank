@@ -2,6 +2,7 @@
 
 import { Badge } from "@chakra-ui/react";
 import type { ReactNode } from "react";
+import { ActivityIcon } from "./activity-icon";
 
 // The one small labeled badge/chip across the app: size="sm", variant="subtle",
 // borderRadius="sm", non-shrinking. An optional leading `icon` (a glyph, or a
@@ -32,7 +33,7 @@ export function Pill({
       alignItems="center"
       gap={1}
     >
-      {icon}
+      {icon ? <ActivityIcon>{icon}</ActivityIcon> : null}
       {children}
     </Badge>
   );

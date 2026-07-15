@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Dialog, Flex, IconButton, Image, Link, Portal, Text } from "@chakra-ui/react";
+import { Box, Button, Dialog, Flex, IconButton, Image, Link, Portal, Span, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 import { LuExternalLink, LuMousePointerClick, LuX } from "react-icons/lu";
@@ -12,6 +12,7 @@ import { PdfDocumentView, PdfThumbnail } from "./pdf-view";
 import { ArtifactView } from "./tool-views";
 import { InlineField } from "./ui/display";
 import { Tooltip } from "./ui/tooltip";
+import { Frame } from "./ui/semantic";
 
 // Whether an attachment is a raster/vector image we can render inline (a thumbnail
 // on the chip, the full picture in the hover thumbnail and the lightbox). Prefers the
@@ -58,8 +59,7 @@ export function VersionBadge({ number, active = false, size = "sm" }: { number: 
   // of an absolute layer, so the box actually tracks the glyph width.
   const dimension = size === "md" ? 6 : 5;
   return (
-    <Box
-      as="span"
+    <Span
       display="inline-flex"
       alignItems="center"
       justifyContent="center"
@@ -78,7 +78,7 @@ export function VersionBadge({ number, active = false, size = "sm" }: { number: 
       style={{ fontVariantNumeric: "tabular-nums", textBox: "trim-both cap alphabetic" }}
     >
       {number}
-    </Box>
+    </Span>
   );
 }
 
@@ -115,8 +115,8 @@ function MediaChipCard({
   const tail = filename.slice(-7);
   const head = filename.slice(0, Math.max(0, filename.length - 7));
   return (
-    <Flex
-      direction="column"
+    <Box
+      position="relative"
       flexShrink={0}
       w={48}
       h="136px"
@@ -125,39 +125,48 @@ function MediaChipCard({
       border="1px solid"
       borderColor="border"
       bg="bg"
-      cursor="pointer"
-      textAlign="left"
-      role="button"
-      tabIndex={0}
       _hover={{ borderColor: "border.emphasized" }}
-      onClick={onClick}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}
+      _focusWithin={{ borderColor: "border.emphasized" }}
     >
-      <Flex flex={1} minH={0} w="100%" overflow="hidden" bg="bg.subtle" borderBottom="1px solid" borderColor="border" align="center" justify="center">
-        {thumbnail}
-      </Flex>
-      <Flex flexShrink={0} w="100%" px={2.5} py={2} minW={0} align="center" gap={1} textStyle="fieldLabel" color="fg" title={filename}>
-        <Flex minW={0} flex={1}>
-          <Text as="span" truncate>{head}</Text>
-          <Text as="span" flexShrink={0}>{tail}</Text>
+      <Button
+        variant="plain"
+        display="flex"
+        flexDirection="column"
+        w="full"
+        h="full"
+        p={0}
+        textAlign="left"
+        fontWeight="normal"
+        overflow="hidden"
+        onClick={onClick}
+      >
+        <Flex flex={1} minH={0} w="100%" overflow="hidden" bg="bg.subtle" borderBottom="1px solid" borderColor="border" align="center" justify="center">
+          {thumbnail}
         </Flex>
-        {badge}
-        {onRemove && (
-          <IconButton
-            aria-label={t("removeAttachment")}
-            variant="ghost"
-            boxSize="4.5"
-            minW="4.5"
-            flexShrink={0}
-            color="fg.muted"
-            _hover={{ color: "fg", bg: "bg.muted" }}
-            onClick={(event) => { event.stopPropagation(); onRemove(); }}
-          >
-            <LuX size={12} />
-          </IconButton>
-        )}
-      </Flex>
-    </Flex>
+        <Flex flexShrink={0} w="100%" px={2.5} py={2} pe={onRemove ? 8 : 2.5} minW={0} align="center" gap={1} textStyle="fieldLabel" color="fg" title={filename}>
+          <Flex minW={0} flex={1}>
+            <Span truncate>{head}</Span>
+            <Span flexShrink={0}>{tail}</Span>
+          </Flex>
+          {badge}
+        </Flex>
+      </Button>
+      {onRemove && (
+        <IconButton
+          aria-label={t("removeAttachment")}
+          variant="ghost"
+          size="2xs"
+          position="absolute"
+          right={2}
+          bottom={1.5}
+          color="fg.muted"
+          _hover={{ color: "fg", bg: "bg.muted" }}
+          onClick={onRemove}
+        >
+          <LuX />
+        </IconButton>
+      )}
+    </Box>
   );
 }
 
@@ -250,10 +259,13 @@ function AttachmentLightbox({
                   <PdfDocumentView url={url} />
                 </Box>
               ) : (
-                <iframe
+                <Frame
                   src={url}
                   title={attachment.filename}
-                  style={{ width: "100%", height: "100%", border: "none", background: "white" }}
+                  w="full"
+                  h="full"
+                  border="none"
+                  bg="white"
                 />
               )}
             </Dialog.Body>

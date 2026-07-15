@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent, type React
 export interface TilePanel {
   key: string;
   content: ReactNode;
+  onActivate?: () => void;
 }
 
 // Balance N panels into columns, filling VERTICALLY first: panels stack down a column
@@ -137,6 +138,8 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
               minW={0}
               minH={0}
               position="relative"
+              onPointerDownCapture={panel.onActivate}
+              onFocusCapture={panel.onActivate}
               // No overflow clip here: each panel already clips its own content to its
               // rounded card shape, so the only thing this would cut is the card's own
               // drop shadow. Leaving it visible lets the panel's boxShadow render.

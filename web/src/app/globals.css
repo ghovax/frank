@@ -128,9 +128,9 @@ samp {
   }
 }
 
-/* One shared entrance for content that replaces or unfolds in place — an expanded
-   tool-detail rail, a mermaid diagram taking over its code block, a side panel
-   joining the tile grid. A short fade with a 2px settle: enough that the change
+/* One shared entrance for standalone content that replaces or joins the layout —
+   a mermaid diagram taking over its code block or a side panel joining the tile
+   grid. A short fade with a 2px settle: enough that the change
    reads as intentional, never enough to feel like the UI is performing. Runs once
    on mount (it's a CSS animation, so re-renders never replay it). */
 .reveal-enter {
@@ -149,18 +149,30 @@ samp {
   }
 }
 
-/* Streaming markdown: each newly-arrived token fades in with just a whisper of blur
-   (flowtoken's SplitText applies this by name to the spans it wraps new text in). Kept
-   quick and crisp so the text reads as typing in, not softening into place. Disabled under
-   reduced motion in JS, where the animation is opted out at the source rather than here. */
-@keyframes token-fade-in {
+/* Disclosure content already enters directly beneath its trigger, so its motion
+   is a simple local fade rather than the upward settle used by standalone views. */
+.disclosure-enter {
+  animation: disclosure-enter 0.12s ease-out;
+}
+
+@keyframes disclosure-enter {
   from {
     opacity: 0;
-    filter: blur(2px);
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Streaming markdown uses opacity only. Flowtoken's wrapper layout is normalized by
+   MarkdownContent, so this animation cannot alter wrapping, metrics, or glyph positions. */
+@keyframes token-fade-in {
+  from {
+    opacity: 0.35;
   }
   to {
     opacity: 1;
-    filter: blur(0);
   }
 }
 
@@ -218,7 +230,8 @@ samp {
     animation: none;
   }
 
-  .reveal-enter {
+  .reveal-enter,
+  .disclosure-enter {
     animation: none;
   }
 

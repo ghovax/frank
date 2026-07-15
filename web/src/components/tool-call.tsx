@@ -78,6 +78,7 @@ export { ToolLocationBadge };
 
 interface ToolCallProps extends ToolEvent {
   agents?: { id: string; name: string; title?: string }[];
+  actions?: ReactNode;
   onPermission?: (requestId: string, decision: PermissionDecision) => void;
   onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   // The single live artifact id (owned by ChatPanel). Only the matching
@@ -151,7 +152,7 @@ export function toolCallDetail(name: string, args: Record<string, unknown> | und
 // hangs the structured detail off a hairline left rule — the same visual grammar
 // as a blockquote — so a run of calls reads as an annotated ledger inside the
 // prose rather than a stack of boxes interrupting it.
-export function ToolCall({ name, arguments: toolArguments, result, status, agents = [] }: ToolCallProps) {
+export function ToolCall({ name, arguments: toolArguments, result, status, agents = [], actions }: ToolCallProps) {
   const t = useTranslations("ToolCall");
   // One decision, shared with every other tool-line surface: what (if anything) this
   // line expands into. A line with nothing to show is not collapsible (DisclosureRow
@@ -168,7 +169,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
       // on open/hover — the one colour rule DisclosureRow owns.
       tone={status === "input_required" ? "attention" : "muted"}
       maxH="480px"
-      icon={<Box color={iconColor} display="flex" alignItems="center"><Icon size={13} /></Box>}
+      icon={<Box color={iconColor} display="flex" alignItems="center"><Icon /></Box>}
       title={
         <DisclosureLabel shimmer={status === "running"}>
           <ToolCallLabel name={name} args={toolArguments} />
@@ -184,6 +185,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
           {background ? <Pill colorPalette={STATUS_PALETTE.background}>{t("background")}</Pill> : null}
         </>
       }
+      actions={actions}
     >
       {collapsible ? (
         // gap matches FieldList's own field spacing so the call's last field (e.g. Risk)

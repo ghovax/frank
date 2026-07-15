@@ -19,6 +19,8 @@ import {
   LuTarget,
   LuMousePointerClick,
   LuCompass,
+  LuCircleStop,
+  LuUserSearch,
 } from "react-icons/lu";
 
 interface ToolDisplayInfo {
@@ -40,9 +42,10 @@ interface ToolDisplayInfo {
 // Every tool that has a first-class icon/label below. Anything else is "unknown"
 // and surfaces its raw name in monospace.
 const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "web_search", "bash", "spawn_agent", "read_task", "read_file", "find_files",
+  "web_search", "bash", "spawn_agent", "cancel_agent", "read_task", "read_file", "find_files",
   "search_content", "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
   "set_tasks", "update_tasks", "update_goal", "computer", "browser",
+  "work_habits",
   "open_artifact",
   "call_mcp_tool", "list_mcp_tools", "list_mcp_resources", "read_mcp_resource",
 ]);
@@ -60,6 +63,8 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuTerminal, iconColor: "green.fg" };
     case "spawn_agent":
       return { icon: LuUsers, iconColor: "purple.fg" };
+    case "cancel_agent":
+      return { icon: LuCircleStop, iconColor: "red.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
     case "read_file":
@@ -89,6 +94,8 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuMousePointerClick, iconColor: "cyan.fg" };
     case "browser":
       return { icon: LuCompass, iconColor: "orange.fg" };
+    case "work_habits":
+      return { icon: LuUserSearch, iconColor: "blue.fg" };
     case "call_mcp_tool":
     case "list_mcp_tools":
     case "list_mcp_resources":
@@ -107,6 +114,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return args?.command ? stripCdPrefix(String(args.command)) : "Running command";
     case "spawn_agent":
       return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
+    case "cancel_agent":
+      return "Canceling spawned agent";
     case "read_task":
       return "Reading a related task";
     case "read_file":
@@ -137,6 +146,8 @@ function fallbackLabel(name: string, args?: Record<string, unknown>): string {
       return computerLabel(args);
     case "browser":
       return browserLabel(args);
+    case "work_habits":
+      return "Loading your work habits…";
     case "call_mcp_tool":
       return args?.tool_name ? `Calling MCP tool "${String(args.tool_name)}"` : "Calling MCP tool";
     case "list_mcp_tools":

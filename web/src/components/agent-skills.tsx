@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Text } from "@chakra-ui/react";
+import { Box, Flex, Span, Text } from "@chakra-ui/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
@@ -17,7 +17,7 @@ import { MarkdownContent } from "./markdown-content";
 function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
   const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
-  return <Box as="span" fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Box>;
+  return <Span fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Span>;
 }
 
 // MCP tool descriptions come from Python docstrings, which carry an Args:/
@@ -117,11 +117,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             description={t("skillsDescription")}
           />
           <Flex direction="column" gap={2}>
-            <ScopeGroup icon={<LuPuzzle size={14} />} label={t("skillsAvailableGlobally")}>
+            <ScopeGroup icon={<LuPuzzle />} label={t("skillsAvailableGlobally")}>
               {globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
             </ScopeGroup>
             {!isHomeFolder && (
-              <ScopeGroup icon={<LuPuzzle size={14} />} label={t("skillsAvailableInProject")}>
+              <ScopeGroup icon={<LuPuzzle />} label={t("skillsAvailableInProject")}>
                 {projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
               </ScopeGroup>
             )}
@@ -137,11 +137,11 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             description={t("toolsDescription")}
           />
           <Flex direction="column" gap={2}>
-            <ScopeGroup icon={<LuPlug size={14} />} label={t("toolsAvailableGlobally")}>
+            <ScopeGroup icon={<LuPlug />} label={t("toolsAvailableGlobally")}>
               {globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
             </ScopeGroup>
             {!isHomeFolder && (
-              <ScopeGroup icon={<LuPlug size={14} />} label={t("toolsAvailableInProject")}>
+              <ScopeGroup icon={<LuPlug />} label={t("toolsAvailableInProject")}>
                 {projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
               </ScopeGroup>
             )}
@@ -178,7 +178,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
   return (
     <DisclosureRow
       disabled={!enabled}
-      icon={<Box color="fg.muted"><LuPuzzle size={14} /></Box>}
+      icon={<Box color="fg.muted"><LuPuzzle /></Box>}
       title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
       badges={enabled ? undefined : <Pill colorPalette="gray">{t("disabled")}</Pill>}
     >
@@ -214,7 +214,7 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
   return (
     <DisclosureRow
       disabled={!enabled}
-      icon={<Box color="fg.muted"><LuPlug size={14} /></Box>}
+      icon={<Box color="fg.muted"><LuPlug /></Box>}
       title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
       badges={
         enabled

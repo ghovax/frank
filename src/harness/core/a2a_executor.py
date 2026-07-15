@@ -52,7 +52,7 @@ from a2a.utils import new_task
 
 from harness.core.agent import AgentRuntime, StreamEvent
 from harness.core.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
-from harness.core.events import tool_status_from_result
+from harness.core.events import ToolStatus, tool_status_from_result
 from harness.core.configuration import (
     AgentConfiguration,
     GlobalConfiguration,
@@ -93,6 +93,8 @@ class Metadata:
     DELEGATED = "delegated"
     READ_ONLY = "readOnly"
     DEPTH = "depth"
+    AGENT_LANE_GROUP_ID = "agentLaneGroupId"
+    AGENT_LANE_STEP_ID = "agentLaneStepId"
     # Marks a harness-initiated turn (not user input): an autonomous background wake, or
     # an on-demand compaction pass. See AUTONOMOUS_RESUME_KIND / COMPACTION_KIND below.
     AUTONOMOUS_RESUME = "autonomousResume"
@@ -301,6 +303,30 @@ def _text_part(text: str) -> Part:
 
 def _data_part(kind: str, **fields) -> Part:
     return Part(root=DataPart(data={PART_KIND: kind, **fields}))
+
+
+def _work_habits_acknowledgement_parts(task_identifier: str) -> tuple[Part, Part]:
+    acknowledgement_identifier = f"work-habits-{task_identifier}"
+    metadata = {
+        "tool_name": "work_habits",
+        "tool_call_id": acknowledgement_identifier,
+    }
+    return (
+        _data_part(
+            "tool_call",
+            tool_name="work_habits",
+            tool_call_id=acknowledgement_identifier,
+            arguments={"justification": "Loading your work habits"},
+        ),
+        _data_part(
+            "tool_result",
+            tool_name="work_habits",
+            tool_call_id=acknowledgement_identifier,
+            status=ToolStatus.OK.value,
+            display=None,
+            metadata=metadata,
+        ),
+    )
 
 
 # Fields in a tool result that are guidance addressed to the model, or bulk payload it
@@ -1055,10 +1081,19 @@ class HarnessAgentExecutor(AgentExecutor):
         if task is None:
             task = new_task(message)
             # Link a delegated child to its parent task so the relationship is
-            # discoverable on the persisted A2A task.
+            # discoverable on the persisted A2A task. Its exact panel lane is
+            # persisted too, allowing replay to reconcile a child that reached a
+            # terminal state after the parent turn stopped streaming.
             reference_task_ids = message.reference_task_ids
             if reference_task_ids:
                 task.metadata = {**(task.metadata or {}), "referenceTaskIds": reference_task_ids}
+            lane_group_id = str(metadata.get(Metadata.AGENT_LANE_GROUP_ID, ""))
+            lane_step_id = str(metadata.get(Metadata.AGENT_LANE_STEP_ID, ""))
+            if lane_group_id and lane_step_id:
+                task.metadata = {
+                    **(task.metadata or {}),
+                    "agentLane": {"groupId": lane_group_id, "stepId": lane_step_id},
+                }
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
@@ -1160,6 +1195,15 @@ class HarnessAgentExecutor(AgentExecutor):
 
             await updater.start_work()
 
+            if (
+                self._global_configuration.user_context.enabled
+                and not delegated
+                and not autonomous
+                and not compaction
+            ):
+                for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
+                    await emit(acknowledgement_part)
+
             workspace = await self._workspace_for(
                 context_id=task.context_id,
                 requested_working_directory=requested_working_directory,
@@ -1212,13 +1256,13 @@ class HarnessAgentExecutor(AgentExecutor):
                 return
 
             # A render_error is injected as the model's own realization (a harness
-            # note delivered in a <system-reminder> block), never as user prose;
+            # note delivered in a <systemReminder> block), never as user prose;
             # every other artifact event is the turn's structured JSON input.
             as_system_note = autonomous
             if autonomous:
                 # The wake message carries no prose (only an `autonomous_resume`
                 # part); the framing note is supplied here and injected into the
-                # model as a <system-reminder> harness note — cache-safe user-role
+                # model as a <systemReminder> harness note — cache-safe user-role
                 # delivery (see AgentRuntime._harness_note_message) that never
                 # appears as user input in the transcript.
                 turn_input = _PROMPTS.load("background_resume_note", {})
@@ -1509,12 +1553,17 @@ class AgentRegistry:
             depth: int = 1,
             working_directory: str = "",
             project_directory: str = "",
+            lane_group_id: str = "",
+            lane_step_id: str = "",
         ):
             handler = self._handlers.get(agent_name)
             if handler is None:
                 yield {"type": "done", "child_task_id": "", "task": None}
                 return
             turn_fields: dict = {Metadata.DELEGATED: True, Metadata.DEPTH: depth}
+            if lane_group_id and lane_step_id:
+                turn_fields[Metadata.AGENT_LANE_GROUP_ID] = lane_group_id
+                turn_fields[Metadata.AGENT_LANE_STEP_ID] = lane_step_id
             if read_only is not None:
                 turn_fields[Metadata.READ_ONLY] = bool(read_only)
             if project_directory:

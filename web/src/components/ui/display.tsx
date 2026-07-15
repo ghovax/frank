@@ -1,7 +1,8 @@
 "use client";
 
-import { Box, Flex, Text, type TextProps } from "@chakra-ui/react";
+import { Box, Flex, Span, Text, type SpanProps } from "@chakra-ui/react";
 import type { ReactNode } from "react";
+import { Pre } from "./semantic";
 
 // Structured-display building blocks shared across the app (tool views, panels,
 // dialogs): a label/value field system, monospace spans/blocks, an empty hint, and a
@@ -10,7 +11,7 @@ import type { ReactNode } from "react";
 
 // The fixed width of an inline field's label column, so every label + value row lines
 // up. One source of truth (InlineField) rather than a literal repeated per component.
-export const FIELD_LABEL_MIN_W = "70px";
+export const FIELD_LABEL_MINIMUM_W = "70px";
 
 export function FieldList({ children }: { children: ReactNode }) {
   return (
@@ -36,7 +37,7 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 export function InlineField({ label, children, mt }: { label: string; children: ReactNode; mt?: number }) {
   return (
     <Flex align="baseline" gap={2} mt={mt}>
-      <Text textStyle="fieldLabel" color="fg.subtle" minW={FIELD_LABEL_MIN_W} flexShrink={0}>
+      <Text textStyle="fieldLabel" color="fg.subtle" minW={FIELD_LABEL_MINIMUM_W} flexShrink={0}>
         {label}
       </Text>
       <Box fontSize="xs" flex={1} minW={0}>
@@ -48,18 +49,17 @@ export function InlineField({ label, children, mt }: { label: string; children: 
 
 // Monospace inline span for identifiers/paths/patterns/URLs — the scalar values that
 // should read as code rather than prose. Extra Text props pass through for tuning.
-export function Mono({ children, ...rest }: { children: ReactNode } & TextProps) {
+export function Mono({ children, ...rest }: { children: ReactNode } & SpanProps) {
   return (
-    <Text as="span" fontFamily="var(--app-font-mono)" fontSize="xs" wordBreak="break-all" {...rest}>
+    <Span fontFamily="var(--app-font-mono)" fontSize="xs" wordBreak="break-all" {...rest}>
       {children}
-    </Text>
+    </Span>
   );
 }
 
 export function MonoBlock({ children, maxH = 64 }: { children: ReactNode; maxH?: number | string }) {
   return (
-    <Box
-      as="pre"
+    <Pre
       m={0}
       fontFamily="var(--app-font-mono)"
       fontSize="xs"
@@ -77,7 +77,7 @@ export function MonoBlock({ children, maxH = 64 }: { children: ReactNode; maxH?:
       whiteSpace="pre"
     >
       {children}
-    </Box>
+    </Pre>
   );
 }
 

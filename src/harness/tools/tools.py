@@ -210,7 +210,14 @@ async def bash(
     jobs = current_background_jobs()
     task_identifier = jobs.spawn(
         "bash", run(), output_path=output_path, cancel_callback=cancel_process,
-        arguments={"command": command, "read_only": read_only, "risk": risk, "background": background},
+        arguments={
+            "command": command,
+            "location": location,
+            "read_only": read_only,
+            "justification": justification,
+            "risk": risk,
+            "background": background,
+        },
         # Correlate the job with its tool call from the start, so the user can
         # background a still-blocking foreground command by that tool-call id.
         tool_call_identifier=current_tool_call_id(),
@@ -305,7 +312,7 @@ async def web_search(
     jobs = current_background_jobs()
     jobs.spawn(
         "web_search", run(), identifier=task_identifier, output_path=output_path,
-        arguments={"query": query, "result_count": result_count},
+        arguments={"query": query, "justification": justification, "result_count": result_count},
         # A search that outlives the turn keeps running detached — a Stop ends the
         # turn but leaves it running, so its result still lands and wakes the agent.
         detached=True,
@@ -438,6 +445,18 @@ def spawn_agent(prompt: str = "", agent: str = "", read_only: bool = False, just
             than make changes.
         justification: A concise, user-facing description of what this agent
             will do — shown directly as the label for this call.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+@tool
+def cancel_agent(task_identifier: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+    """Cancel one spawned agent by the handle returned from ``spawn_agent``.
+
+    Args:
+        task_identifier: The ``agent-...`` handle returned by ``spawn_agent``.
+        justification: A concise, user-facing description of why this agent is
+            no longer needed.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
@@ -593,17 +612,16 @@ def read_task(task_id: str = "", justification: str = Field(..., description="A 
     """Read another A2A task in this context — a sibling or agent task — by
     its id, returning its current status and artifact (deliverable).
 
-    Use this to coordinate with agents working alongside you in the same context:
-    check whether a sibling has finished and read what it produced, then build on
-    it. Task ids are the ones returned when an *agent* is spawned.
+    Use this to coordinate with externally supplied sibling A2A task ids: check
+    whether a sibling has finished and read what it produced, then build on it.
 
     This is NOT how you retrieve background results. A web_search
-    ("search-…") or background-bash ("bg-…") identifier is not a readable task —
-    those results are delivered to you automatically when ready, so never call
-    read_task on them and never use it to poll.
+    ("search-…"), background-bash ("bg-…"), or spawned-agent ("agent-…")
+    handle is not a readable task. Those results are delivered to you automatically
+    when ready, so never call read_task on them and never use it to poll.
 
     Args:
-        task_id: The id of a spawned sibling/agent task to read.
+        task_id: The id of an externally supplied sibling A2A task to read.
         justification: A concise, user-facing description of why you are reading
             this task — shown as the label for this call.
     """
@@ -1024,6 +1042,7 @@ load_skill.description = _load_tool_description("load_skill")
 bash.description = _load_tool_description("bash")
 web_search.description = _load_tool_description("web_search")
 spawn_agent.description = _load_tool_description("spawn_agent")
+cancel_agent.description = _load_tool_description("cancel_agent")
 read_task.description = _load_tool_description("read_task")
 set_tasks.description = _load_tool_description("set_tasks")
 update_tasks.description = _load_tool_description("update_tasks")

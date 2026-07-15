@@ -25,9 +25,8 @@ function draftsFrom(locations: Location[]): LocationDraft[] {
   return locations.map((location) => ({ id: location.id, value: locationToInput(location) }));
 }
 
-// The project's locations manager, inside the Settings dialog's Locations tab. Presented
-// exactly like the New Project wizard: each location is an inline editable form stacked one
-// above the next, with an "Add location" button below — no list-then-edit view. Edits are
+// The project-folder manager inside Settings. Each folder is an inline editable form stacked
+// above the next, with an "Add folder" button below — no list-then-edit view. Edits are
 // batched and persisted on Save (create new, update changed, delete removed).
 export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
   const t = useTranslations("ProjectLocationsPanel");

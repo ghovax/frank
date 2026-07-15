@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, createListCollection, Flex, Portal, Select, Text } from "@chakra-ui/react";
+import { Box, Button, createListCollection, Flex, Portal, Select, Span, Text } from "@chakra-ui/react";
 import { type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMousePointerClick, LuShieldOff, LuUserSearch, LuZap } from "react-icons/lu";
@@ -76,11 +76,13 @@ export function PermissionModeControl({
   value,
   onChange,
   layout = "chip",
+  responsiveCompact = false,
 }: {
   value: PermissionMode;
   onChange: (mode: PermissionMode) => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
+  responsiveCompact?: boolean;
 }) {
   const t = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "red" }[] = [
@@ -97,6 +99,7 @@ export function PermissionModeControl({
 
   return (
     <Select.Root
+      data-composer-permission-control={responsiveCompact ? "" : undefined}
       collection={collection}
       value={[value]}
       onValueChange={(details) => {
@@ -109,8 +112,9 @@ export function PermissionModeControl({
       maxW="none"
       flexShrink={0}
     >
-      <Select.Control w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
+      <Select.Control data-composer-permission-control={responsiveCompact ? "" : undefined} w={metrics.width} minW={layout === "field" ? 0 : "max-content"} maxW="none">
         <Select.Trigger
+          data-composer-permission-control={responsiveCompact ? "" : undefined}
           w={metrics.width}
           borderRadius={metrics.borderRadius}
           fontSize={metrics.fontSize}
@@ -131,7 +135,7 @@ export function PermissionModeControl({
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
             {selectedAppearance.icon}
           </Box>
-          <Text fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
+          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" maxW={metrics.labelMaximumWidth} truncate={metrics.labelMaximumWidth !== "none"}>
             {selectedLabel}
           </Text>
         </Select.Trigger>
@@ -219,9 +223,9 @@ function ToggleControl({
       <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" flexShrink={0}>
         {appearance.icon}
       </Box>
-      <Text as="span" fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
+      <Span fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1">
         {appearance.label}
-      </Text>
+      </Span>
     </Button>
   );
 }

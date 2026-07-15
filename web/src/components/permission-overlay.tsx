@@ -17,6 +17,7 @@ import type { PermissionDecision, ToolPermission } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { ToolLocationBadge } from "./tool-call";
 import { Pill } from "./ui/pill";
+import { Pre } from "./ui/semantic";
 
 interface PermissionOverlayProps {
   permission: ToolPermission;
@@ -112,8 +113,7 @@ export function PermissionOverlay({ permission, title, detail, command, argument
           <Flex direction="column" gap={1.5} mb={3} minH={0}>
             <Text fontSize="sm" fontWeight="medium">{title}</Text>
             {command ? (
-              <Box
-                as="pre"
+              <Pre
                 fontFamily="var(--app-font-mono)"
                 fontSize="xs"
                 color="fg.muted"
@@ -129,7 +129,7 @@ export function PermissionOverlay({ permission, title, detail, command, argument
                 whiteSpace="pre"
               >
                 {command}
-              </Box>
+              </Pre>
             ) : detail ? (
               <Box color="fg.muted" minH={0} overflow="auto">
                 <MarkdownContent content={detail} fontSize="xs" />
