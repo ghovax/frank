@@ -141,9 +141,8 @@ export function ToolCardBody({
         ref={containerRef}
         onScroll={onScroll}
         className="reveal-enter"
-        ml="5px"
-        mt={0.5}
-        mb={1}
+        ml={1.5}
+        my={1}
         pl={3}
         borderLeft="2px solid"
         borderColor="border.muted"

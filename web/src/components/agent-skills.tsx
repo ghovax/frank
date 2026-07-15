@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge, Box, EmptyState, Flex, Text } from "@chakra-ui/react";
+import { Badge, Box, Flex, Text } from "@chakra-ui/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
@@ -116,14 +116,14 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             <Text fontSize="xs">{t("skillsDescription")}</Text>
           </Box>
           <Flex direction="column" gap={2}>
-            <ScopeLabel icon={<LuPuzzle size={14} />}>{t("skillsAvailableGlobally")}</ScopeLabel>
-            {globalSkills.length > 0
-              ? globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
-              : <EmptyScope icon={<LuPuzzle />}>{t("noGlobalSkills")}</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel icon={<LuPuzzle size={14} />}>{t("skillsAvailableInProject")}</ScopeLabel>}
-            {!isHomeFolder && (projectSkills.length > 0
-              ? projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
-              : <EmptyScope icon={<LuPuzzle />}>{t("noProjectSkills")}</EmptyScope>)}
+            <ScopeGroup icon={<LuPuzzle size={14} />} label={t("skillsAvailableGlobally")}>
+              {globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+            </ScopeGroup>
+            {!isHomeFolder && (
+              <ScopeGroup icon={<LuPuzzle size={14} />} label={t("skillsAvailableInProject")}>
+                {projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+              </ScopeGroup>
+            )}
           </Flex>
         </>
       )}
@@ -138,14 +138,14 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
             <Text fontSize="xs">{t("toolsDescription")}</Text>
           </Box>
           <Flex direction="column" gap={2}>
-            <ScopeLabel icon={<LuPlug size={14} />}>{t("toolsAvailableGlobally")}</ScopeLabel>
-            {globalServers.length > 0
-              ? globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)
-              : <EmptyScope icon={<LuPlug />}>{t("noGlobalTools")}</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel icon={<LuPlug size={14} />}>{t("toolsAvailableInProject")}</ScopeLabel>}
-            {!isHomeFolder && (projectServers.length > 0
-              ? projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)
-              : <EmptyScope icon={<LuPlug />}>{t("noProjectTools")}</EmptyScope>)}
+            <ScopeGroup icon={<LuPlug size={14} />} label={t("toolsAvailableGlobally")}>
+              {globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
+            </ScopeGroup>
+            {!isHomeFolder && (
+              <ScopeGroup icon={<LuPlug size={14} />} label={t("toolsAvailableInProject")}>
+                {projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
+              </ScopeGroup>
+            )}
           </Flex>
         </Box>
       )}
@@ -153,31 +153,30 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
   );
 }
 
-// A plain label separating the global capabilities from the ones the selected
-// project contributes itself. Always shown (even in the home folder) so the two
-// scopes read clearly; deliberately understated, not a bold uppercase heading.
-function ScopeLabel({ icon, children }: { icon?: ReactNode; children: string }) {
+// A collapsible scope group ("… globally" / "… in this project"), built from the
+// same row-card collapsible as an individual capability — one level up: its body
+// holds that scope's skill/tool cards (or the empty placeholder). Open by default so
+// the capabilities stay visible, while letting a whole scope be tucked away.
+function ScopeGroup({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(true);
   return (
-    <Flex align="center" gap={1.5}>
-      {icon && <Box color="fg.subtle" flexShrink={0}>{icon}</Box>}
-      <Text fontSize="xs" fontWeight="medium" color="fg.subtle">
-        {children}
-      </Text>
-    </Flex>
-  );
-}
-
-// Placeholder for a scope that currently has no capabilities (e.g. a project with
-// no project-specific skills yet), matching the empty state used elsewhere so its
-// label is not left dangling.
-function EmptyScope({ icon, children }: { icon: ReactNode; children: string }) {
-  return (
-    <EmptyState.Root size="sm">
-      <EmptyState.Content>
-        <EmptyState.Indicator>{icon}</EmptyState.Indicator>
-        <EmptyState.Title fontSize="xs">{children}</EmptyState.Title>
-      </EmptyState.Content>
-    </EmptyState.Root>
+    <ToolCard variant="row">
+      <ToolCardHeader
+        variant="row"
+        collapsible
+        open={open}
+        onToggle={() => setOpen((value) => !value)}
+        icon={<Box color="fg.subtle">{icon}</Box>}
+        title={label}
+      />
+      {open && (
+        <ToolCardBody variant="row">
+          <Flex direction="column" gap={1}>
+            {children}
+          </Flex>
+        </ToolCardBody>
+      )}
+    </ToolCard>
   );
 }
 
