@@ -346,6 +346,7 @@ export async function deleteLocation(locationId: string): Promise<void> {
 // the message `metadata` map, not as bare top-level keys. Mirrors DAISY_METADATA_KEY
 // / Metadata in the backend's a2a_executor.
 export const DAISY_METADATA_KEY = "urn:daisy:ext:turn:v1";
+export const CONTENT_BLOCK_METADATA_KEY = "urn:daisy:ext:content-block:v1";
 
 export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
@@ -1347,6 +1348,7 @@ export interface A2APart {
   kind: A2APartKind;
   text?: string;
   data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface A2AErrorData {

@@ -149,7 +149,7 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
             <Tooltip content={t("sendToBackgroundHint")} openDelay={300}>
               <IconButton
                 aria-label={busy === "background" ? t("sending") : t("sendToBackground")}
-                variant="subtle"
+                variant="plain"
                 colorPalette="blue"
                 boxSize="5"
                 minW="5"

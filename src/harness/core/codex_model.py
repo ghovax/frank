@@ -35,6 +35,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
+from langchain_core.messages.content import ContentBlock, ReasoningContentBlock, TextContentBlock
 from langchain_core.messages.tool import ToolCallChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
@@ -47,6 +48,7 @@ from harness.core.chatgpt_oauth import (
     load_tokens,
     valid_tokens,
 )
+from harness.core.message_content import content_blocks_to_message_content, message_text
 
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 # The account's live, plan-specific model catalog. Same host/auth as the responses
@@ -126,20 +128,7 @@ class ChatCodexModel(BaseChatModel):
 
     @staticmethod
     def _text_of(message: BaseMessage) -> str:
-        content = message.content
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            parts: list[str] = []
-            for piece in content:
-                if isinstance(piece, str):
-                    parts.append(piece)
-                elif isinstance(piece, dict) and piece.get("type") in (
-                    "text", "input_text", "output_text",
-                ):
-                    parts.append(str(piece.get("text", "")))
-            return "".join(parts)
-        return str(content or "")
+        return message_text(message)
 
     def _to_responses_input(self, messages: Sequence[BaseMessage]) -> tuple[str, list[dict[str, Any]]]:
         """Translate LangChain messages into a Responses ``(instructions, input)``
@@ -270,9 +259,9 @@ class ChatCodexModel(BaseChatModel):
     def _translate_event(cls, data: dict[str, Any], state: dict[str, Any]) -> Optional[ChatGenerationChunk]:
         event_type = data.get("type", "")
         if event_type == "response.output_text.delta":
-            return cls._chunk(content=str(data.get("delta", "")))
+            return cls._chunk(content_block=cls._text_content_block(data))
         if event_type in ("response.reasoning_summary_text.delta", "response.reasoning_text.delta"):
-            return cls._chunk(reasoning=str(data.get("delta", "")))
+            return cls._chunk(content_block=cls._reasoning_content_block(data))
         if event_type == "response.output_item.added":
             item = data.get("item") or {}
             if item.get("type") == "function_call":
@@ -309,18 +298,49 @@ class ChatCodexModel(BaseChatModel):
         return None
 
     @staticmethod
+    def _content_block_index(data: dict[str, Any], block_type: str) -> int:
+        output_index = int(data.get("output_index", 0) or 0)
+        if block_type == "reasoning":
+            content_index = int(data.get("summary_index", data.get("content_index", 0)) or 0)
+        else:
+            content_index = int(data.get("content_index", 0) or 0)
+        coordinate_sum = output_index + content_index
+        return coordinate_sum * (coordinate_sum + 1) // 2 + content_index
+
+    @staticmethod
+    def _content_block_identifier(data: dict[str, Any]) -> str:
+        item_identifier = str(data.get("item_id", ""))
+        if item_identifier:
+            return item_identifier
+        return f"response-output-{int(data.get('output_index', 0) or 0)}"
+
+    @classmethod
+    def _text_content_block(cls, data: dict[str, Any]) -> TextContentBlock:
+        return TextContentBlock(
+            type="text",
+            text=str(data.get("delta", "")),
+            id=cls._content_block_identifier(data),
+            index=cls._content_block_index(data, "text"),
+        )
+
+    @classmethod
+    def _reasoning_content_block(cls, data: dict[str, Any]) -> ReasoningContentBlock:
+        return ReasoningContentBlock(
+            type="reasoning",
+            reasoning=str(data.get("delta", "")),
+            id=cls._content_block_identifier(data),
+            index=cls._content_block_index(data, "reasoning"),
+        )
+
+    @staticmethod
     def _chunk(
-        content: str = "",
-        reasoning: str = "",
+        content_block: ContentBlock | None = None,
         tool_call_chunk: Optional[ToolCallChunk] = None,
     ) -> ChatGenerationChunk:
-        additional_kwargs: dict[str, Any] = {}
-        if reasoning:
-            additional_kwargs["reasoning_content"] = reasoning
+        content_blocks = [content_block] if content_block is not None else []
         message = AIMessageChunk(
-            content=content,
+            content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=[tool_call_chunk] if tool_call_chunk else [],
-            additional_kwargs=additional_kwargs,
         )
         return ChatGenerationChunk(message=message)
 

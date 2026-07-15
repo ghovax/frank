@@ -62,6 +62,7 @@ from harness.core.configuration import (
 from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
 from harness.core.models import find_model
+from harness.core.message_content import content_block_identifier, content_block_metadata
 from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
 
@@ -297,8 +298,11 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
     )
 
 
-def _text_part(text: str) -> Part:
-    return Part(root=TextPart(text=text))
+def _text_part(text: str, block_identifier: str) -> Part:
+    return Part(root=TextPart(
+        text=text,
+        metadata=content_block_metadata(block_identifier),
+    ))
 
 
 def _data_part(kind: str, **fields) -> Part:
@@ -605,16 +609,15 @@ class HarnessAgentExecutor(AgentExecutor):
         # Resolves a context's persisted per-session permission mode so resumed
         # sessions keep approval behavior after a runtime rebuild.
         self._session_permission_mode_for = session_permission_mode_for
-        # Notified (context_id, running) when a top-level turn starts/ends, so the
-        # server can track which sessions are active and show a sidebar spinner.
+        # Notified (context_id, running) when any execution starts/ends, including
+        # delegated agents, so the live session remains active until all work ends.
         self._on_turn_state = on_turn_state
         # Notified (context_id) when a turn raises a permission request, so the
         # sidebar can swap the spinner for an attention marker on that session.
         self._on_permission_state = on_permission_state
-        # Notified (context_id, part) for every structured part a turn emits, after
-        # it is persisted. The server fans these out to non-driving viewers over a
-        # live SSE stream so they follow the turn in real time (O(delta)) instead of
-        # polling the task store and re-replaying the whole transcript (O(N)).
+        # Notified (context_id, part) for structured turn parts after persistence,
+        # and immediately for identified spawned-agent progress. The server fans
+        # these out to viewers over a live SSE stream instead of polling/replaying.
         self._on_stream_event = on_stream_event
         self._file_lease_manager = file_lease_manager
         self._ensure_session_workspace = ensure_session_workspace
@@ -922,6 +925,12 @@ class HarnessAgentExecutor(AgentExecutor):
         if self._registry is not None:
             runtime.set_delegate(self._registry.make_delegate(context_id))
             runtime.set_cancel_delegated(self._registry.cancel_delegated)
+        stream_event_callback = self._on_stream_event
+        if not is_agent and stream_event_callback is not None:
+            runtime.set_agent_event_sink(lambda event: stream_event_callback(
+                context_id,
+                Part(root=DataPart(data=event)),
+            ))
         runtime.set_task_reader(self._make_task_reader())
         if self._capture_artifacts is not None:
             runtime.set_artifact_capture(self._capture_artifacts)
@@ -1112,20 +1121,16 @@ class HarnessAgentExecutor(AgentExecutor):
         # reframed as the actionable "this model can't read images" case.
         turn_has_images = False
         runtime: AgentRuntime | None = None
-        # Whether this turn has marked the context running/steerable. Set inside the
-        # try (past the autonomous no-op check) so the finally only reverts state this
-        # turn actually established. Everything after acquire() lives inside that try,
-        # so no early return or raised exception can strand the per-context lock — a
-        # leaked lock deadlocks every later turn on this session until a restart.
-        track_running = False
+        track_context_activity = False
+        track_steerable_turn = False
         on_turn_state = self._on_turn_state
 
-        async def emit(part: Part) -> None:
+        async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
             # Fan the part out to non-driving viewers. publish runs AFTER the status
             # update has persisted, so a viewer's snapshot (taken at subscribe time)
             # plus the live tail are gap- and duplicate-free (see /sessions/.../stream).
-            if self._on_stream_event is not None:
+            if self._on_stream_event is not None and not delegated and publish_stream_event:
                 self._on_stream_event(task.context_id, part)
 
         async def emit_compaction(event) -> None:
@@ -1149,8 +1154,10 @@ class HarnessAgentExecutor(AgentExecutor):
                     tokens_before=event.data.get("tokens_before", 0),
                 ))
 
-        async def emit_text_buffer(_key: tuple[str, ...], text: str) -> None:
-            await emit(_text_part(text))
+        async def emit_text_buffer(key: tuple[str, ...], text: str) -> None:
+            if not key:
+                raise ValueError("Buffered assistant text is missing its content-block identity.")
+            await emit(_text_part(text, key[0]))
 
         text_buffer = _TextPartBuffer(emit_text_buffer)
 
@@ -1179,18 +1186,16 @@ class HarnessAgentExecutor(AgentExecutor):
                     await updater.complete()
                     return
 
-            # A top-level user turn marks its session as running so the sidebar can
-            # show a spinner and the turn becomes steerable. Delegated agent turns
-            # run within their parent turn, which is already counted, so they are not
-            # tracked separately.
-            track_running = not delegated and on_turn_state is not None
+            track_context_activity = on_turn_state is not None
+            track_steerable_turn = not delegated and on_turn_state is not None
             # A real user turn (not an autonomous wake or a compaction) means the user
             # wants the agent working again, so lift any prior Stop suppression — future
             # background completions may once more arm a resume pump.
             if not delegated and not autonomous and not compaction:
                 self._context(task.context_id).aborted = False
-            if track_running and on_turn_state is not None:
+            if track_context_activity and on_turn_state is not None:
                 on_turn_state(task.context_id, True)
+            if track_steerable_turn:
                 self._context(task.context_id).running = True
 
             await updater.start_work()
@@ -1318,17 +1323,30 @@ class HarnessAgentExecutor(AgentExecutor):
                 kind = event.type
                 data = event.data
                 if kind == StreamEvent.Type.TEXT_CHUNK:
-                    await text_buffer.push(data.get("text", ""))
+                    content_block_identifier = str(data.get("block_id", ""))
+                    if not content_block_identifier:
+                        raise ValueError("Assistant text events require a content-block identity.")
+                    await text_buffer.push(
+                        data.get("text", ""),
+                        (content_block_identifier,),
+                    )
                 elif kind == StreamEvent.Type.RELAYED:
                     # An agent's event, already in the unified vocabulary. Its `path`
                     # was extended with this agent's segment by the relay (see
                     # AgentRuntime._run_spawned_agent), so it renders in the agents panel;
                     # emit it verbatim — no per-kind re-encoding.
                     await flush_stream_buffers()
-                    await emit(Part(root=DataPart(data=data["event"])))
+                    await emit(
+                        Part(root=DataPart(data=data["event"])),
+                        publish_stream_event=False,
+                    )
                 elif kind == StreamEvent.Type.THINKING:
                     await flush_stream_buffers()
-                    await emit(_data_part("thinking", text=data.get("text", "")))
+                    await emit(_data_part(
+                        "thinking",
+                        text=data.get("text", ""),
+                        block_id=data.get("block_id", ""),
+                    ))
                 elif kind == StreamEvent.Type.THINKING_DONE:
                     await flush_stream_buffers()
                     await emit(_data_part("thinking_done", duration_ms=data.get("duration_ms", 0)))
@@ -1431,7 +1449,11 @@ class HarnessAgentExecutor(AgentExecutor):
             await flush_stream_buffers()
 
             if final_text.strip():
-                await updater.add_artifact([_text_part(final_text)], name="result", last_chunk=True)
+                await updater.add_artifact(
+                    [_text_part(final_text, f"artifact-result:{task.id}")],
+                    name="result",
+                    last_chunk=True,
+                )
             await save_runtime_conversation()
             if stop_reason == "cancelled":
                 # The user pressed Stop — end the task as canceled, not completed, so the
@@ -1477,11 +1499,11 @@ class HarnessAgentExecutor(AgentExecutor):
             # were never applied to the conversation; the client re-sends them as a
             # fresh turn on stream close, so leaving them queued here would double-
             # apply them when the next turn drains the runtime at its first boundary.
-            if track_running and state is not None:
+            if track_steerable_turn and state is not None:
                 state.running = False
             if state is not None and state.runtime is not None:
                 state.runtime.discard_pending_steering()
-            if track_running and on_turn_state is not None:
+            if track_context_activity and on_turn_state is not None:
                 on_turn_state(task.context_id, False)
             if context_serialization_lock is not None:
                 context_serialization_lock.release()
@@ -1595,7 +1617,19 @@ class AgentRegistry:
                             # (token_usage, permission/question, compaction, steering) is
                             # the child's private bookkeeping and is not surfaced.
                             if isinstance(root, TextPart):
-                                yield {"type": "event", "event": {PART_KIND: "text", "text": root.text}}
+                                block_identifier = content_block_identifier(root.metadata)
+                                if block_identifier is None:
+                                    raise ValueError(
+                                        "Relayed assistant text is missing its content-block identity."
+                                    )
+                                yield {
+                                    "type": "event",
+                                    "event": {
+                                        PART_KIND: "text",
+                                        "text": root.text,
+                                        "block_id": block_identifier,
+                                    },
+                                }
                             elif isinstance(root, DataPart) and root.data.get(PART_KIND) == "token_usage":
                                 # Not a panel event — the parent folds the child's spend
                                 # into its separate agent token bucket.

@@ -38,6 +38,7 @@ from harness.core.configuration import (
 from langchain_core.language_models.chat_models import BaseChatModel
 from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.codex_model import ChatCodexModel
+from harness.core.message_content import message_content_deltas, message_text
 from harness.core.file_leases import FileLeaseConflict, FileLeaseManager
 from harness.core.models import find_model, resolve_litellm
 from harness.core.providers import resolve_api_key
@@ -174,13 +175,13 @@ def build_chat_model(
         global_configuration.configured_provider_keys(),
         global_configuration.configured_provider_bases(),
     )
-    return ChatLiteLLMModel(
-        model=resolved["model"],
-        api_key=SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
-        api_base=resolved["api_base"] or None,
-        temperature=0,
-        reasoning_effort=agent_configuration.reasoning_effort,
-    )
+    return ChatLiteLLMModel.model_validate({
+        "model": resolved["model"],
+        "api_key": SecretStr(resolved["api_key"]) if resolved["api_key"] else None,
+        "api_base": resolved["api_base"] or None,
+        "temperature": 0,
+        "reasoning_effort": agent_configuration.reasoning_effort,
+    })
 
 
 def model_is_authorized(
@@ -883,6 +884,7 @@ class AgentRuntime:
         # panel updates while the parent keeps working. Whatever is still queued
         # when the parent goes idle drains on the next (wake) turn.
         self._spawned_agent_events: "asyncio.Queue[StreamEvent]" = asyncio.Queue()
+        self._agent_event_sink: Optional[Callable[[dict[str, Any]], None]] = None
         self._settled_agent_lanes: set[tuple[str, str]] = set()
         # The latest call's context occupancy (prompt + completion) and the model's
         # window, tracked from usage so auto-compaction can fire before the next call
@@ -1191,6 +1193,10 @@ class AgentRuntime:
     def set_cancel_delegated(self, cancel_delegated: Callable) -> None:
         """Install the callback that cancels a running agent's A2A task on Stop."""
         self._cancel_delegated = cancel_delegated
+
+    def set_agent_event_sink(self, agent_event_sink: Callable[[dict[str, Any]], None]) -> None:
+        """Install the immediate delivery path for path-tagged agent activity."""
+        self._agent_event_sink = agent_event_sink
 
     def set_a2a_task_id(self, task_id: str) -> None:
         """Record the A2A task id of the current turn so delegated agent
@@ -1752,9 +1758,8 @@ class AgentRuntime:
             else HumanMessage(content=user_message)
         )
         self._conversation.append(turn_message)
-        # The event-log recorder only wants the prose; LangChain's own `.text`
-        # accessor yields it (dropping any media blocks) — no hand-rolled flattening.
-        recorded_user_message = turn_message.text
+        # The event-log recorder only wants prose from LangChain's standard blocks.
+        recorded_user_message = message_text(turn_message)
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -1868,27 +1873,26 @@ class AgentRuntime:
                     if chunk is _STREAM_EXHAUSTED:
                         break
                     response_chunks.append(chunk)
-                    if chunk.content:
-                        # First answer token: reasoning is over. Close the thinking
-                        # phase before the text streams so the indicator flips to
-                        # "Thought for Ns" exactly as the answer begins.
-                        if not thinking_done_emitted:
-                            thinking_done_emitted = True
+                    for content_delta in message_content_deltas(chunk):
+                        if content_delta.kind == "text":
+                            if not thinking_done_emitted:
+                                thinking_done_emitted = True
+                                yield StreamEvent(
+                                    StreamEvent.Type.THINKING_DONE,
+                                    duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                                )
+                            if self._agent_configuration.stream_agent_progress:
+                                yield StreamEvent(
+                                    StreamEvent.Type.TEXT_CHUNK,
+                                    text=content_delta.text,
+                                    block_id=content_delta.block_identifier,
+                                )
+                        else:
                             yield StreamEvent(
-                                StreamEvent.Type.THINKING_DONE,
-                                duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                                StreamEvent.Type.THINKING,
+                                text=content_delta.text,
+                                block_id=content_delta.block_identifier,
                             )
-                        if self._agent_configuration.stream_agent_progress:
-                            yield StreamEvent(
-                                StreamEvent.Type.TEXT_CHUNK,
-                                text=chunk.content,
-                            )
-                    reasoning_content = chunk.additional_kwargs.get("reasoning_content", "")
-                    if reasoning_content:
-                        yield StreamEvent(
-                            StreamEvent.Type.THINKING,
-                            text=reasoning_content,
-                        )
             finally:
                 abort_waiter.cancel()
                 # Close the underlying HTTP stream so an aborted (or exhausted) turn
@@ -1948,10 +1952,8 @@ class AgentRuntime:
                 # does not hold the turn open: it ends here, and the executor's resume
                 # pump wakes the agent with an autonomous turn once the next result
                 # lands. Results that already completed were drained at the top of the
-                # loop, so nothing in hand is lost by finishing now. `.text` is the
-                # library-native prose accessor — always a string, whether the model
-                # returned plain text or a content-block list.
-                final_text = response.text
+                # loop, so nothing in hand is lost by finishing now.
+                final_text = message_text(response)
                 turn_final_response = final_text
                 self._conversation.append(response)
                 steering_events = await self._drain_steering_messages()
@@ -2121,7 +2123,14 @@ class AgentRuntime:
         child_event = dict(delegated["event"])
         segment = {"group_id": group_id, "step_id": step_id}
         child_event["path"] = [segment, *child_event.get("path", [])]
+        child_event["event_id"] = child_event.get("event_id") or uuid.uuid4().hex
         return StreamEvent(StreamEvent.Type.RELAYED, event=child_event)
+
+    async def _publish_spawned_agent_event(self, event: StreamEvent) -> None:
+        agent_event = event.data["event"]
+        if self._agent_event_sink is not None:
+            self._agent_event_sink(agent_event)
+        await self._spawned_agent_events.put(event)
 
     async def _settle_agent_lane(self, group_id: str, step_id: str, state: str) -> None:
         """Publish exactly one terminal event for an agents-panel lane."""
@@ -2129,14 +2138,16 @@ class AgentRuntime:
         if lane_key in self._settled_agent_lanes:
             return
         self._settled_agent_lanes.add(lane_key)
-        await self._spawned_agent_events.put(StreamEvent(
+        event = StreamEvent(
             StreamEvent.Type.RELAYED,
             event={
                 "kind": "done",
                 "path": [{"group_id": group_id, "step_id": step_id}],
                 "state": state,
+                "event_id": uuid.uuid4().hex,
             },
-        ))
+        )
+        await self._publish_spawned_agent_event(event)
 
     async def _run_one_tool(
         self,
@@ -3244,7 +3255,7 @@ class AgentRuntime:
                                 continue
                             event = self._relay_child_event(delegated, group_id, spawn_step_id)
                             if event is not None:
-                                await self._spawned_agent_events.put(event)
+                                await self._publish_spawned_agent_event(event)
                             if delegated.get("type") == "done":
                                 child_task = delegated.get("task")
                                 # The child's turn is a control signal, not a relayed panel

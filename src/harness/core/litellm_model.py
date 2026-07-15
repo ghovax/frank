@@ -17,6 +17,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.messages.ai import UsageMetadata
+from langchain_core.messages.content import ContentBlock, ReasoningContentBlock
 from langchain_core.messages.tool import ToolCallChunk
 from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
@@ -24,6 +25,12 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import SecretStr
+
+from harness.core.message_content import (
+    content_blocks_to_message_content,
+    message_reasoning_text,
+    message_text,
+)
 
 
 class ChatLiteLLMModel(BaseChatModel):
@@ -37,9 +44,9 @@ class ChatLiteLLMModel(BaseChatModel):
 
     One adapter replaces the former ``ChatOpenAI`` + ``ReasoningChatOpenAI`` pair:
     there is no longer an OpenAI-only path and a separate reasoning subclass.
-    LiteLLM normalizes ``reasoning_content`` (and ``thinking_blocks``) into a single
-    field for every reasoning model, so the reasoning is captured on the way out and
-    re-injected on the way in here, uniformly.
+    LiteLLM normalizes provider reasoning fields on the wire; this adapter immediately
+    converts them into LangChain's standard reasoning content blocks, so the rest of
+    the harness has one provider-neutral representation.
     """
 
     model: str
@@ -105,12 +112,15 @@ class ChatLiteLLMModel(BaseChatModel):
         dicts: list[dict[str, Any]] = []
         for message in messages:
             role = ChatLiteLLMModel._role_for(message)
-            entry: dict[str, Any] = {"role": role, "content": message.content}
+            entry: dict[str, Any] = {
+                "role": role,
+                "content": message_text(message) if isinstance(message, AIMessage) else message.content,
+            }
             if isinstance(message, AIMessage):
                 tool_calls = ChatLiteLLMModel._tool_calls_to_openai(message.tool_calls)
                 if tool_calls:
                     entry["tool_calls"] = tool_calls
-                reasoning = message.additional_kwargs.get("reasoning_content")
+                reasoning = message_reasoning_text(message)
                 if reasoning:
                     entry["reasoning_content"] = reasoning
             elif isinstance(message, ToolMessage):
@@ -271,18 +281,34 @@ class ChatLiteLLMModel(BaseChatModel):
         if not reasoning:
             # Some providers nest reasoning under a different attribute.
             reasoning = getattr(delta, "reasoning", None)
-        additional_kwargs: dict[str, Any] = {}
-        if reasoning:
-            additional_kwargs["reasoning_content"] = reasoning
+        content_blocks = ChatLiteLLMModel._standard_content_blocks(content, reasoning)
         message = AIMessageChunk(
-            content=content,
+            content=content_blocks_to_message_content(content_blocks),
             tool_call_chunks=tool_call_chunks,
-            additional_kwargs=additional_kwargs,
             usage_metadata=usage_metadata,
         )
         finish_reason = getattr(choice, "finish_reason", None)
         generation_info = {"finish_reason": finish_reason} if finish_reason else None
         return ChatGenerationChunk(message=message, generation_info=generation_info)
+
+    @staticmethod
+    def _standard_content_blocks(content: Any, reasoning: Any) -> list[ContentBlock]:
+        normalized_blocks: list[ContentBlock] = []
+        if reasoning:
+            normalized_blocks.append(ReasoningContentBlock(
+                type="reasoning",
+                reasoning=str(reasoning),
+                id="litellm-reasoning",
+                index=0,
+            ))
+        if content:
+            source_blocks = AIMessageChunk(content=content).content_blocks
+            for position, source_block in enumerate(source_blocks):
+                normalized_block: dict[str, Any] = dict(source_block)
+                normalized_block["id"] = f"litellm-content-{position}"
+                normalized_block["index"] = position + 1
+                normalized_blocks.append(cast(ContentBlock, normalized_block))
+        return normalized_blocks
 
     # Non-streaming generation.
 
@@ -323,10 +349,7 @@ class ChatLiteLLMModel(BaseChatModel):
             return ChatResult(generations=[])
         message_obj = getattr(choices[0], "message", None)
         content = getattr(message_obj, "content", None) or ""
-        additional_kwargs: dict[str, Any] = {}
         reasoning = getattr(message_obj, "reasoning_content", None)
-        if reasoning:
-            additional_kwargs["reasoning_content"] = reasoning
         tool_calls: list[dict[str, Any]] = []
         for call in getattr(message_obj, "tool_calls", None) or []:
             function = getattr(call, "function", None)
@@ -341,9 +364,8 @@ class ChatLiteLLMModel(BaseChatModel):
                 "id": getattr(call, "id", None),
             })
         message = AIMessage(
-            content=content,
+            content_blocks=ChatLiteLLMModel._standard_content_blocks(content, reasoning),
             tool_calls=tool_calls if tool_calls else None,
-            additional_kwargs=additional_kwargs,
             usage_metadata=ChatLiteLLMModel._usage_metadata(getattr(response, "usage", None)),
         )
         return ChatResult(generations=[ChatGeneration(message=message)])

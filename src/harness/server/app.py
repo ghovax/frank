@@ -31,8 +31,8 @@ import websockets
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from sqlalchemy import Boolean, Column, Index, Integer, String, Text, create_engine, event, inspect, text
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Boolean, Index, Integer, String, Text, create_engine, event, inspect, text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
 from watchfiles import DefaultFilter, awatch
@@ -107,7 +107,8 @@ load_dotenv()
 PUBLIC_BASE_URL = "http://localhost:8822"
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 class SessionRecord(Base):
@@ -116,29 +117,29 @@ class SessionRecord(Base):
 
     __tablename__ = "sessions"
 
-    id = Column(String, primary_key=True)  # == A2A contextId
-    agent = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # == A2A contextId
+    agent: Mapped[str] = mapped_column(String, nullable=False)
     # The project this session belongs to; the agent may address any of the project's
     # locations per tool call.
-    project_id = Column(String, default="")
+    project_id: Mapped[str] = mapped_column(String, default="")
     # Source path selected in the UI. Project-local agents/skills/instructions
     # are resolved from here.
-    working_directory = Column(Text, default="")
+    working_directory: Mapped[str] = mapped_column(Text, default="")
     # Actual path where shell and file tools run. For Git projects this is a
     # per-session worktree; for non-Git directories it falls back to the source.
-    runtime_working_directory = Column(Text, default="")
-    workspace_strategy = Column(Text, default="none")
-    workspace_path = Column(Text, default="")
-    workspace_branch = Column(Text, default="")
-    source_repository_root = Column(Text, default="")
-    runtime_repository_root = Column(Text, default="")
-    workspace_head = Column(Text, default="")
-    workspace_error = Column(Text, default="")
-    title = Column(Text, default="")
+    runtime_working_directory: Mapped[str] = mapped_column(Text, default="")
+    workspace_strategy: Mapped[str] = mapped_column(Text, default="none")
+    workspace_path: Mapped[str] = mapped_column(Text, default="")
+    workspace_branch: Mapped[str] = mapped_column(Text, default="")
+    source_repository_root: Mapped[str] = mapped_column(Text, default="")
+    runtime_repository_root: Mapped[str] = mapped_column(Text, default="")
+    workspace_head: Mapped[str] = mapped_column(Text, default="")
+    workspace_error: Mapped[str] = mapped_column(Text, default="")
+    title: Mapped[str] = mapped_column(Text, default="")
     # Per-session permission mode for future turns and frontend hydration.
-    permission_mode = Column(Text, default="default")
-    input_draft = Column(Text, default="")
-    created_at = Column(String, nullable=False)
+    permission_mode: Mapped[str] = mapped_column(Text, default="default")
+    input_draft: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (
         Index("idx_sessions_created_at", "created_at"),
@@ -154,9 +155,9 @@ class ProjectRecord(Base):
 
     __tablename__ = "projects"
 
-    id = Column(String, primary_key=True)  # generated uuid
-    created_at = Column(String, nullable=False)
-    updated_at = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class LocationRecord(Base):
@@ -169,14 +170,14 @@ class LocationRecord(Base):
 
     __tablename__ = "locations"
 
-    id = Column(String, primary_key=True)  # generated uuid
-    project_id = Column(String, nullable=False)
-    name = Column(Text, nullable=False)  # derived, project-scoped, e.g. "local", "prod"
-    kind = Column(Text, nullable=False)  # "local" | "remote"
-    host_alias = Column(Text, default="")  # ~/.ssh/config alias, remote only
-    base_directory = Column(Text, nullable=False)
-    permission_mode = Column(Text, default="default")  # default | auto | read_only | bypass
-    created_at = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # generated uuid
+    project_id: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)  # derived project-scoped label
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # "local" | "remote"
+    host_alias: Mapped[str] = mapped_column(Text, default="")  # SSH alias for remotes
+    base_directory: Mapped[str] = mapped_column(Text, nullable=False)
+    permission_mode: Mapped[str] = mapped_column(Text, default="default")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_locations_project", "project_id"),)
 
@@ -187,10 +188,10 @@ class ModelHistoryRecord(Base):
 
     __tablename__ = "model_history"
 
-    model_id = Column(Text, primary_key=True)
-    name = Column(Text, default="")
-    provider = Column(Text, default="")
-    selected_at = Column(String, nullable=False)
+    model_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, default="")
+    provider: Mapped[str] = mapped_column(Text, default="")
+    selected_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_model_history_selected_at", "selected_at"),)
 
@@ -203,9 +204,9 @@ class ConversationRecord(Base):
 
     __tablename__ = "conversations"
 
-    context_id = Column(String, primary_key=True)  # == A2A contextId
-    messages = Column(Text, default="")  # JSON: langchain messages_to_dict
-    updated_at = Column(String, nullable=False)
+    context_id: Mapped[str] = mapped_column(String, primary_key=True)  # == A2A contextId
+    messages: Mapped[str] = mapped_column(Text, default="")  # LangChain messages JSON
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
 class ArtifactVersionRecord(Base):
@@ -218,18 +219,18 @@ class ArtifactVersionRecord(Base):
 
     __tablename__ = "artifact_versions"
 
-    id = Column(String, primary_key=True)
-    context_id = Column(String, nullable=False)  # A2A contextId (the session)
-    project_id = Column(String, default="")
-    location_uri = Column(String, default="")
-    git_directory = Column(String, nullable=False)
-    work_tree = Column(String, nullable=False)
-    branch = Column(String, nullable=False)
-    commit_sha = Column(String, nullable=False)
-    sequence = Column(Integer, nullable=False)
-    message = Column(Text, default="")
-    tool_call_id = Column(String, default="")
-    created_at = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    context_id: Mapped[str] = mapped_column(String, nullable=False)
+    project_id: Mapped[str] = mapped_column(String, default="")
+    location_uri: Mapped[str] = mapped_column(String, default="")
+    git_directory: Mapped[str] = mapped_column(String, nullable=False)
+    work_tree: Mapped[str] = mapped_column(String, nullable=False)
+    branch: Mapped[str] = mapped_column(String, nullable=False)
+    commit_sha: Mapped[str] = mapped_column(String, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    message: Mapped[str] = mapped_column(Text, default="")
+    tool_call_id: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_artifact_versions_context", "context_id", "created_at"),)
 
@@ -243,20 +244,20 @@ class ArtifactFileRecord(Base):
 
     __tablename__ = "artifact_files"
 
-    id = Column(String, primary_key=True)
-    version_id = Column(String, nullable=False)  # -> ArtifactVersionRecord.id
-    context_id = Column(String, nullable=False)  # denormalized for fast per-session listing
-    location_uri = Column(String, default="")
-    git_directory = Column(String, nullable=False)  # denormalized so serving needs no join
-    work_tree = Column(String, nullable=False)
-    commit_sha = Column(String, nullable=False)
-    relative_path = Column(String, nullable=False)
-    absolute_path = Column(Text, default="")
-    blob_sha = Column(String, default="")  # "" for deletions and placeholders
-    change_type = Column(String, default="M")  # "A" | "M" | "D"
-    size = Column(Integer, default=0)
-    is_placeholder = Column(Boolean, default=False)
-    created_at = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    version_id: Mapped[str] = mapped_column(String, nullable=False)
+    context_id: Mapped[str] = mapped_column(String, nullable=False)
+    location_uri: Mapped[str] = mapped_column(String, default="")
+    git_directory: Mapped[str] = mapped_column(String, nullable=False)
+    work_tree: Mapped[str] = mapped_column(String, nullable=False)
+    commit_sha: Mapped[str] = mapped_column(String, nullable=False)
+    relative_path: Mapped[str] = mapped_column(String, nullable=False)
+    absolute_path: Mapped[str] = mapped_column(Text, default="")
+    blob_sha: Mapped[str] = mapped_column(String, default="")
+    change_type: Mapped[str] = mapped_column(String, default="M")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    is_placeholder: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_artifact_files_context_path", "context_id", "relative_path"),)
 
@@ -271,21 +272,21 @@ class ArtifactSurfaceRecord(Base):
 
     __tablename__ = "artifact_surfaces"
 
-    id = Column(String, primary_key=True)  # surface id (the artifact_id)
-    context_id = Column(String, nullable=False)
-    location_uri = Column(String, default="")
-    git_directory = Column(String, default="")
-    work_tree = Column(String, default="")
-    relative_path = Column(String, default="")
-    absolute_path = Column(Text, default="")
-    kind = Column(String, default="image")  # "image" | "iframe" | "html"
-    title = Column(Text, default="")
-    source = Column(Text, default="")  # the original path/URL opened
-    tool_call_id = Column(String, default="")
-    latest_commit_sha = Column(String, default="")
-    latest_blob_sha = Column(String, default="")
-    created_at = Column(String, nullable=False)
-    updated_at = Column(String, nullable=False)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    context_id: Mapped[str] = mapped_column(String, nullable=False)
+    location_uri: Mapped[str] = mapped_column(String, default="")
+    git_directory: Mapped[str] = mapped_column(String, default="")
+    work_tree: Mapped[str] = mapped_column(String, default="")
+    relative_path: Mapped[str] = mapped_column(String, default="")
+    absolute_path: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String, default="image")
+    title: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(Text, default="")
+    tool_call_id: Mapped[str] = mapped_column(String, default="")
+    latest_commit_sha: Mapped[str] = mapped_column(String, default="")
+    latest_blob_sha: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_artifact_surfaces_context", "context_id", "created_at"),)
 
@@ -297,11 +298,11 @@ class ArtifactAnnotationRecord(Base):
 
     __tablename__ = "artifact_annotations"
 
-    context_id = Column(String, primary_key=True)
-    surface_id = Column(String, primary_key=True)
-    version_id = Column(String, primary_key=True)  # the commit sha (opaque string)
-    annotations = Column(Text, default="")
-    updated_at = Column(String, nullable=False)
+    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    surface_id: Mapped[str] = mapped_column(String, primary_key=True)
+    version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    annotations: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_artifact_annotations_context_updated", "context_id", "updated_at"),)
 
@@ -311,14 +312,14 @@ class TerminalStateRecord(Base):
 
     __tablename__ = "terminal_states"
 
-    context_id = Column(String, primary_key=True)
-    terminal_key = Column(String, primary_key=True)
-    working_directory = Column(Text, default="")
-    scrollback = Column(Text, default="")
+    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    terminal_key: Mapped[str] = mapped_column(String, primary_key=True)
+    working_directory: Mapped[str] = mapped_column(Text, default="")
+    scrollback: Mapped[str] = mapped_column(Text, default="")
     # Creation time, used to order a context's terminals into stable tabs; set once on
     # insert and never touched again (unlike updated_at, which moves on every write).
-    created_at = Column(String, default="")
-    updated_at = Column(String, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_terminal_states_updated", "updated_at"),)
 
@@ -368,8 +369,8 @@ _pending_questions: dict[str, asyncio.Future] = {}
 # switching the active agent continues the same conversation (the persona is
 # applied per-turn on top of this shared history).
 _conversations: dict[str, list] = {}
-# How many top-level turns are running per context. Drives the sidebar's
-# "running" spinner; a count rather than a flag so overlapping turns are handled.
+# How many executions are running per context, including delegated agents. Drives
+# session-stream lifetime and the sidebar spinner; a count handles overlapping work.
 _running_contexts: dict[str, int] = {}
 
 
@@ -383,14 +384,15 @@ class _ContextEventBus:
 
     A non-driving viewer (e.g. the sidebar re-opened on a running session) follows
     the turn by subscribing here instead of polling the task store and re-replaying
-    the whole transcript every second. ``publish`` is called from the executor
-    *after* each part is persisted, and ``complete`` when the turn ends.
+    the whole transcript every second. Normal turn parts are published after they
+    are persisted. Spawned-agent progress is published immediately and journaled
+    here until its queued copy reaches persistence. ``complete`` closes the stream.
 
     Delivery is snapshot-then-tail and gap-/duplicate-free without a cursor: a
     subscriber takes a baseline ``high_seq``, reads a compacted snapshot of the
-    persisted transcript (which covers every event with seq <= baseline, because
-    publish runs after persist), then drains its queue for events with seq >
-    baseline and keeps reading live.
+    persisted transcript, replays journaled immediate agent events through that
+    baseline, then drains its queue for events with seq > baseline and keeps
+    reading live. Agent event IDs let the client deduplicate the persisted copy.
     """
 
     # Sentinel placed on a subscriber's queue when the context's turn completes,
@@ -400,10 +402,14 @@ class _ContextEventBus:
     def __init__(self) -> None:
         self._seq: dict[str, int] = {}
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
+        self._agent_events: dict[str, list[tuple[int, dict]]] = {}
 
     def publish(self, context_id: str, part: dict) -> int:
         seq = self._seq.get(context_id, 0) + 1
         self._seq[context_id] = seq
+        data = part.get("data") if part.get("kind") == "data" else None
+        if isinstance(data, dict) and data.get("event_id"):
+            self._agent_events.setdefault(context_id, []).append((seq, part))
         for queue in self._subscribers.get(context_id, ()):
             queue.put_nowait((seq, part))
         return seq
@@ -411,9 +417,19 @@ class _ContextEventBus:
     def complete(self, context_id: str) -> None:
         for queue in self._subscribers.get(context_id, ()):
             queue.put_nowait(self._DONE)
+        self._agent_events.pop(context_id, None)
 
     def high_seq(self, context_id: str) -> int:
         return self._seq.get(context_id, 0)
+
+    def agent_events_through(
+        self, context_id: str, maximum_sequence: int
+    ) -> list[tuple[int, dict]]:
+        return [
+            (sequence, part)
+            for sequence, part in self._agent_events.get(context_id, ())
+            if sequence <= maximum_sequence
+        ]
 
     def subscribe(self, context_id: str) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue()
@@ -960,6 +976,7 @@ def _run_capture(request: "_CaptureRequest") -> None:
 
 
 def _record_capture(request: "_CaptureRequest", project_id: str, git_directory: str, work_tree: str, result: "artifacts.CommitResult") -> None:
+    assert _session_factory is not None
     now = datetime.now(timezone.utc).isoformat()
     version_id = str(uuid.uuid4())
     with sqlite_write_lock():
@@ -992,6 +1009,7 @@ def _upsert_surface(request: "_CaptureRequest", project_id: str, location_home: 
     """Create/refresh the surface (tab) for an ``open_artifact``. Reuses an existing surface
     for the same ``(context, absolute_path)`` so re-opening a file updates one tab. For an
     external-URL artifact (no ``absolute_path``) there is no git history — only the live source."""
+    assert _session_factory is not None
     surface = request.surface or {}
     absolute_path = surface.get("absolute_path", "")
     git_directory = work_tree = relative_path = latest_commit = latest_blob = ""
@@ -2031,14 +2049,15 @@ async def lifespan(application: FastAPI):
     mcp_servers = _global_configuration.mcp.enabled_servers()
     _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
     set_mcp_client_manager(_mcp_manager)
+    mcp_start_task: asyncio.Task[None] | None = None
     if _mcp_manager is not None:
         # Connect MCP servers in the BACKGROUND so a slow or hung server (a cold
         # `uvx`/`npx` spawn, a stalled HTTP endpoint) can never delay — let alone block —
         # the harness boot; the app was failing to start when an MCP handshake stalled.
         # The manager is already wired (tool gating keys on it, not on live connections),
-        # so each server's tools simply appear as it finishes connecting. The task is
-        # pinned to the manager so it is not garbage-collected mid-run.
-        _mcp_manager.start_task = asyncio.create_task(_mcp_manager.start())
+        # so each server's tools simply appear as it finishes connecting. The lifespan
+        # owns the task and cancels it during teardown.
+        mcp_start_task = asyncio.create_task(_mcp_manager.start())
 
     _async_engine = create_async_engine(
         f"sqlite+aiosqlite:///{database_path}",
@@ -2096,6 +2115,10 @@ async def lifespan(application: FastAPI):
         configuration_watcher.cancel()
         ssh_hosts_watcher.cancel()
         capture_worker.cancel()
+        if mcp_start_task is not None and not mcp_start_task.done():
+            mcp_start_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mcp_start_task
         if _terminal_manager is not None:
             await _terminal_manager.close_all()
         cancel_all_background_tasks()

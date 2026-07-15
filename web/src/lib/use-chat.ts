@@ -12,9 +12,9 @@ import {
   fetchSessionTasks,
   fetchSessionTasksPage,
   subscribeSessionStream,
+  CONTENT_BLOCK_METADATA_KEY,
   type A2AStreamResult,
   type A2AMessage,
-  type A2APart,
   type A2ATask as A2ATaskWire,
   type PermissionMode,
   type WorkspaceStrategy,
@@ -65,6 +65,7 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   meta?: Record<string, unknown>;
+  contentBlocks?: Array<{ identifier: string; content: string }>;
 }
 
 export interface ChatTask {
@@ -119,7 +120,7 @@ export interface QueuedMessage {
 // (the same unified vocabulary as the root agent). Reasoning is captured here for
 // fidelity but, like the main chat, is surfaced by the agents panel as a live status.
 export type AgentPart =
-  | { kind: "text"; content: string }
+  | { kind: "text"; content: string; blockIdentifier: string }
   | { kind: "thinking"; content: string; status: ToolEventStatus; durationMs?: number }
   | ({ kind: "tool" } & ToolEvent);
 
@@ -228,16 +229,16 @@ function applyAgentThinking(step: AgentStep, text: string): AgentStep {
   };
 }
 
-function appendAgentText(step: AgentStep, text: string): AgentStep {
+function appendAgentText(step: AgentStep, text: string, blockIdentifier: string): AgentStep {
   if (!text) return step;
   step = finishAgentThinking(step);
   const last = step.parts[step.parts.length - 1];
-  if (last && last.kind === "text") {
+  if (last && last.kind === "text" && last.blockIdentifier === blockIdentifier) {
     const parts = step.parts.slice(0, -1);
-    parts.push({ kind: "text", content: last.content + text });
+    parts.push({ kind: "text", content: last.content + text, blockIdentifier });
     return { ...step, parts };
   }
-  return { ...step, parts: [...step.parts, { kind: "text", content: text }] };
+  return { ...step, parts: [...step.parts, { kind: "text", content: text, blockIdentifier }] };
 }
 
 function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Record<string, unknown> | undefined, toolCallId: string): AgentStep {
@@ -302,17 +303,18 @@ function agentToolResult(agentGroups: AgentGroup[], toolCallId: string): unknown
   return undefined;
 }
 
-function artifactPartsText(parts: A2APart[] | undefined): string {
-  return (parts ?? [])
-    .filter((part) => part.kind === "text" && part.text)
-    .map((part) => part.text ?? "")
-    .join("");
+function requiredContentBlockIdentifier(metadata: Record<string, unknown> | undefined): string {
+  const extension = asRecord(metadata?.[CONTENT_BLOCK_METADATA_KEY]);
+  const identifier = String(extension.id ?? "");
+  if (!identifier) throw new Error("Assistant text is missing its content-block identity.");
+  return identifier;
 }
 
-function streamArtifactText(result: Extract<A2AStreamResult, { kind: "artifact-update" }>): string {
-  return artifactPartsText(result.artifact?.parts);
+function requiredEventBlockIdentifier(value: unknown): string {
+  const identifier = String(value ?? "");
+  if (!identifier) throw new Error("Assistant stream event is missing its content-block identity.");
+  return identifier;
 }
-
 
 interface FriendlyError {
   code: string;
@@ -580,10 +582,19 @@ interface ReduceState {
   // older pages prepend without re-keying — and thus without remounting/re-animating
   // — the messages already on screen.
   keyCounts: Map<string, number>;
+  agentEventIdentifiers: Set<string>;
 }
 
 function newReduceState(): ReduceState {
-  return { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null, keyCounts: new Map() };
+  return {
+    messages: [],
+    agentGroups: [],
+    tasks: [],
+    lane: null,
+    tokenUsage: null,
+    keyCounts: new Map(),
+    agentEventIdentifiers: new Set(),
+  };
 }
 
 // A stable, position-independent id for a rendered message. Derived from the
@@ -697,17 +708,48 @@ function messageMatchesToolEvent(message: ChatMessage, name: string, toolCallId:
   return event ? isSameToolEvent(event, name, toolCallId) : false;
 }
 
-function pushAssistantText(state: ReduceState, text: string, sourceId?: string): void {
+function appendAssistantContentBlock(
+  message: ChatMessage,
+  text: string,
+  blockIdentifier: string,
+): ChatMessage {
+  if (!message.contentBlocks) {
+    throw new Error("Assistant messages require structured content blocks.");
+  }
+  const existingContentBlocks = message.contentBlocks;
+  const lastContentBlockIndex = existingContentBlocks.length - 1;
+  const lastContentBlock = existingContentBlocks[lastContentBlockIndex];
+  const contentBlocks = lastContentBlock?.identifier === blockIdentifier
+    ? existingContentBlocks.map((contentBlock, contentBlockIndex) =>
+        contentBlockIndex === lastContentBlockIndex
+          ? { ...contentBlock, content: contentBlock.content + text }
+          : contentBlock
+      )
+    : [...existingContentBlocks, { identifier: blockIdentifier, content: text }];
+  return { ...message, content: message.content + text, contentBlocks };
+}
+
+function pushAssistantText(state: ReduceState, text: string, blockIdentifier: string, sourceId?: string): void {
   if (!text) return;
+  if (!blockIdentifier) throw new Error("Assistant text requires a content-block identity.");
   finishRunningThinking(state);
   if (state.lane === null) {
     const id = stableMessageId(state, "asst", sourceId);
     state.lane = id;
-    state.messages = [...state.messages, { id, role: "assistant", content: text, timestamp: new Date().toISOString() }];
+    state.messages = [
+      ...state.messages,
+      {
+        id,
+        role: "assistant",
+        content: text,
+        contentBlocks: [{ identifier: blockIdentifier, content: text }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
   } else {
     const laneId = state.lane;
     state.messages = state.messages.map((message) =>
-      message.id === laneId ? { ...message, content: message.content + text } : message
+      message.id === laneId ? appendAssistantContentBlock(message, text, blockIdentifier) : message
     );
   }
 }
@@ -839,12 +881,26 @@ function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
 function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
   for (const part of message.parts ?? []) {
     if (part.kind === "text") {
-      pushAssistantText(state, part.text ?? "", message.messageId);
+      pushAssistantText(
+        state,
+        part.text ?? "",
+        requiredContentBlockIdentifier(part.metadata),
+        message.messageId,
+      );
       continue;
     }
     if (part.kind !== "data" || !part.data) continue;
     reduceDataPart(state, part.data, message.messageId);
   }
+}
+
+function isImmediateAgentEventMessage(message: A2AMessage): boolean {
+  return (message.parts ?? []).some((part) => (
+    part.kind === "data"
+    && Array.isArray(part.data?.path)
+    && part.data.path.length > 0
+    && Boolean(part.data.event_id)
+  ));
 }
 
 function steeringText(message: A2AMessage | undefined): string {
@@ -903,7 +959,11 @@ function reduceAgentLaneEvent(state: ReduceState, data: Record<string, unknown>)
       break;
     case "text":
       ensureLaneGroup(state, groupId, stepId);
-      apply((step) => appendAgentText(step, String(data.text ?? "")));
+      apply((step) => appendAgentText(
+        step,
+        String(data.text ?? ""),
+        requiredEventBlockIdentifier(data.block_id),
+      ));
       break;
     case "thinking":
       ensureLaneGroup(state, groupId, stepId);
@@ -950,6 +1010,11 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
   // An agent event (non-empty path) is routed to the agents panel; the root
   // agent's own events (empty path) drive the main transcript below.
   if (Array.isArray(data.path) && data.path.length > 0) {
+    const eventIdentifier = String(data.event_id ?? "");
+    if (eventIdentifier) {
+      if (state.agentEventIdentifiers.has(eventIdentifier)) return;
+      state.agentEventIdentifiers.add(eventIdentifier);
+    }
     reduceAgentLaneEvent(state, data);
     return;
   }
@@ -1208,10 +1273,16 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
 }
 
 function reduceArtifactUpdate(state: ReduceState, result: Extract<A2AStreamResult, { kind: "artifact-update" }>): void {
-  const text = streamArtifactText(result);
-  if (!text.trim()) return;
   if (hasAssistantTextAfterLastUser(state)) return;
-  pushAssistantText(state, text);
+  for (const part of result.artifact?.parts ?? []) {
+    if (part.kind !== "text" || !part.text?.trim()) continue;
+    pushAssistantText(
+      state,
+      part.text,
+      requiredContentBlockIdentifier(part.metadata),
+      result.artifact.artifactId,
+    );
+  }
 }
 
 function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, { kind: "status-update" }>): void {
@@ -1224,7 +1295,14 @@ function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, 
 // Reconstruct messages + agentGroups from a session's persisted A2A tasks. The
 // history arrives already compacted server-side (adjacent same-kind deltas merged),
 // so it is reduced as-is — no client-side compaction pass.
-function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[]; tokenUsage: TokenUsage | null; keyCounts: Map<string, number> } {
+function replayTasks(tasks: A2ATask[]): {
+  messages: ChatMessage[];
+  agentGroups: AgentGroup[];
+  tasks: ChatTask[];
+  tokenUsage: TokenUsage | null;
+  keyCounts: Map<string, number>;
+  agentEventIdentifiers: Set<string>;
+} {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
@@ -1247,6 +1325,19 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       if (message.role === "user") reduceUserMessage(state, message);
       else reduceAgentMessage(state, message);
     }
+    if (!hasAssistantTextAfterLastUser(state)) {
+      for (const artifact of task.artifacts ?? []) {
+        for (const part of artifact.parts ?? []) {
+          if (part.kind !== "text" || !part.text?.trim()) continue;
+          pushAssistantText(
+            state,
+            part.text,
+            requiredContentBlockIdentifier(part.metadata),
+            artifact.artifactId,
+          );
+        }
+      }
+    }
     if (TERMINAL_STATES.has(task.status?.state as TaskState)) finishActiveTools(state);
   }
   // Related child tasks are not transcript turns, but their persisted terminal
@@ -1268,7 +1359,14 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       (step) => finishAgentStepState(step, taskState),
     );
   }
-  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks, tokenUsage: state.tokenUsage, keyCounts: state.keyCounts };
+  return {
+    messages: state.messages,
+    agentGroups: state.agentGroups,
+    tasks: state.tasks,
+    tokenUsage: state.tokenUsage,
+    keyCounts: state.keyCounts,
+    agentEventIdentifiers: state.agentEventIdentifiers,
+  };
 }
 
 export function useChat(
@@ -1378,7 +1476,15 @@ export function useChat(
 
   const applyHistoryFragments = useCallback(() => {
     const replayed = replayTasks(historyFragmentsRef.current);
-    stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage, keyCounts: replayed.keyCounts };
+    stateRef.current = {
+      messages: replayed.messages,
+      agentGroups: replayed.agentGroups,
+      tasks: replayed.tasks,
+      lane: null,
+      tokenUsage: replayed.tokenUsage,
+      keyCounts: replayed.keyCounts,
+      agentEventIdentifiers: replayed.agentEventIdentifiers,
+    };
     flushNow();
   }, [flushNow]);
 
@@ -1536,16 +1642,15 @@ export function useChat(
     void drainOlderHistory();
   }, [isHistoryLoading, isOlderHistoryLoading, isStreaming, hasOlderHistory, drainOlderHistory]);
 
-  // Live updates for a session that is running on the server but is not being
-  // driven by this hook (we switched back to it, or it was started elsewhere).
+  // Live updates for a session that is running on the server.
   // Subscribes to the server's per-context event stream: one compacted snapshot
   // (catch-up) then a live tail of each emitted part, applied as O(delta) updates
   // through the same reducer the driver uses — instead of polling and re-replaying
-  // the whole transcript every second. Never subscribes while we're driving the
-  // turn ourselves; the live message/stream SSE is authoritative for that.
+  // the whole transcript every second. While this hook drives the root turn, this
+  // stream carries only identified agent-lane events; the root message stream stays
+  // authoritative for everything else.
   useEffect(() => {
     if (!initialSessionId) return;
-    if (streamedLocallyRef.current || isStreamingRef.current) return;
 
     let cancelled = false;
     let subscription: { abort: () => void } | null = null;
@@ -1553,7 +1658,15 @@ export function useChat(
 
     const applySnapshot = (tasks: A2ATask[]) => {
       const replayed = replayTasks(tasks);
-      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage, keyCounts: replayed.keyCounts };
+      stateRef.current = {
+        messages: replayed.messages,
+        agentGroups: replayed.agentGroups,
+        tasks: replayed.tasks,
+        lane: null,
+        tokenUsage: replayed.tokenUsage,
+        keyCounts: replayed.keyCounts,
+        agentEventIdentifiers: replayed.agentEventIdentifiers,
+      };
       sessionIdRef.current = initialSessionId;
       setSessionId(initialSessionId);
       flushNow();
@@ -1564,12 +1677,15 @@ export function useChat(
       subscription = subscribeSessionStream(
         initialSessionId,
         (frame) => {
-          if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
+          if (cancelled) return;
+          const drivingRootTurn = isStreamingRef.current || streamedLocallyRef.current;
           if (frame.kind === "snapshot") {
+            if (drivingRootTurn) return;
             applySnapshot(frame.tasks);
             setHistoryError(false);
             setIsHistoryLoading(false);
           } else if (frame.kind === "live") {
+            if (drivingRootTurn && !isImmediateAgentEventMessage(frame.message)) return;
             reduceAgentMessage(stateRef.current, frame.message);
             flush();
           }

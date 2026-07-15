@@ -53,6 +53,7 @@ from a2a.server.context import ServerCallContext
 from a2a.server.tasks import TaskStore
 from a2a.types import DataPart, Message, Part, Role, Task, TaskState, TaskStatus
 
+from harness.core.message_content import content_block_identifier
 from harness.core.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
 
 
@@ -76,13 +77,18 @@ def _sole_part(message: object) -> dict | None:
     return part if isinstance(part, dict) else None
 
 
-def _agent_text(message: object) -> str | None:
+def _agent_text_part(message: object) -> dict | None:
     if not isinstance(message, dict) or message.get("role") != "agent":
         return None
     part = _sole_part(message)
     if not part or part.get("kind") != "text":
         return None
-    return str(part.get("text", ""))
+    return part
+
+
+def _agent_text(message: object) -> str | None:
+    part = _agent_text_part(message)
+    return str(part.get("text", "")) if part is not None else None
 
 
 def _sole_data(message: object, kind: str) -> dict | None:
@@ -113,8 +119,23 @@ def _compact_history(messages: list) -> list:
         text = _agent_text(message)
         if text is not None:
             last = compacted[-1] if compacted else None
-            if last is not None and _agent_text(last) is not None:
-                last["parts"] = [{"kind": "text", "text": _agent_text(last) + text}]  # type: ignore[index]
+            current_part = _agent_text_part(message)
+            last_part = _agent_text_part(last) if last is not None else None
+            current_block_identifier = (
+                content_block_identifier(current_part.get("metadata"))
+                if current_part is not None else None
+            )
+            last_block_identifier = (
+                content_block_identifier(last_part.get("metadata"))
+                if last_part is not None else None
+            )
+            if (
+                last_part is not None
+                and current_part is not None
+                and current_block_identifier is not None
+                and current_block_identifier == last_block_identifier
+            ):
+                last_part["text"] = str(last_part.get("text", "")) + text
                 continue
             compacted.append(message)
             continue
@@ -125,7 +146,11 @@ def _compact_history(messages: list) -> list:
             key = _path_key(sub)
             last = compacted[-1] if compacted else None
             last_sub = _sole_data(last, "text") if last is not None else None
-            if last_sub is not None and _path_key(last_sub) == key:
+            if (
+                last_sub is not None
+                and _path_key(last_sub) == key
+                and str(last_sub.get("block_id", "")) == str(sub.get("block_id", ""))
+            ):
                 last["parts"] = [{"kind": "data", "data": {**last_sub, "text": str(last_sub.get("text", "")) + str(sub.get("text", ""))}}]  # type: ignore[index]
                 continue
             compacted.append(message)
@@ -135,7 +160,11 @@ def _compact_history(messages: list) -> list:
             key = _path_key(thinking)
             last = compacted[-1] if compacted else None
             last_thinking = _sole_data(last, "thinking") if last is not None else None
-            if last_thinking is not None and _path_key(last_thinking) == key:
+            if (
+                last_thinking is not None
+                and _path_key(last_thinking) == key
+                and str(last_thinking.get("block_id", "")) == str(thinking.get("block_id", ""))
+            ):
                 last["parts"] = [{"kind": "data", "data": {**last_thinking, "text": str(last_thinking.get("text", "")) + str(thinking.get("text", ""))}}]  # type: ignore[index]
                 continue
             compacted.append(message)

@@ -214,16 +214,29 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
       return <UserMessageCard message={message} />;
     }
 
-    case "assistant":
-      if (!message.content.trim()) return null;
+    case "assistant": {
+      if (!message.contentBlocks) {
+        throw new Error("Assistant messages require structured content blocks.");
+      }
+      const contentBlocks = message.contentBlocks.filter((contentBlock) => contentBlock.content.trim());
+      if (contentBlocks.length === 0) return null;
       return (
         // No horizontal inset: the assistant's prose shares the same left edge as the
         // tool-activity lines (which have none), so text and tools line up — matching
         // the agents panel. A stray px here pushed the markdown ~4px inward of them.
         <Box alignSelf="flex-start">
-          <MarkdownContent content={message.content} animate={streaming} />
+          <Flex direction="column" gap={3}>
+            {contentBlocks.map((contentBlock, contentBlockIndex) => (
+              <MarkdownContent
+                key={contentBlock.identifier}
+                content={contentBlock.content}
+                animate={streaming && contentBlockIndex === contentBlocks.length - 1}
+              />
+            ))}
+          </Flex>
         </Box>
       );
+    }
 
     // "thinking" is never rendered as a transcript row — reasoning is surfaced as
     // a compact live status instead (see ChatPanel / ToolGroup). Any thinking

@@ -106,6 +106,13 @@ async def session_stream(context_id: str, request: Request):
                 "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
             })}
 
+            for sequence, part in _event_bus.agent_events_through(context_id, baseline):
+                yield {"data": json.dumps({
+                    "kind": "live",
+                    "seq": sequence,
+                    "message": {"role": "agent", "parts": [part]},
+                })}
+
             # Drain anything queued between subscribe and now. Events with seq <=
             # baseline are already in the snapshot; only newer ones are sent live.
             done = False
