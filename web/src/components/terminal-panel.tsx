@@ -292,8 +292,8 @@ export function TerminalSurface({
         position="absolute"
         top={1}
         bottom={3}
-        left={2}
-        right={0}
+        left={4}
+        right={4}
         minH={0}
         minW={0}
       />

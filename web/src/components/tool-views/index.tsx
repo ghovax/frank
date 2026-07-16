@@ -25,6 +25,7 @@ import {
 import { asArray, asRecord, asString } from "@/lib/coerce";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
+import { hasBackgroundTaskIdentifier, type ToolEventStatus } from "@/lib/tool-event";
 
 function stripCdPrefix(command: string): string {
   const match = command.match(/^cd\s+'[^']*'\s+&&\s+(.*)/s);
@@ -1125,6 +1126,21 @@ function collectArtifacts(value: unknown): Record<string, unknown>[] {
   return direct ? [direct] : [];
 }
 
+function collectOpenArtifactArtifacts(value: unknown): Record<string, unknown>[] {
+  return asArray(asRecord(value).artifacts).flatMap((entry) => {
+    const artifact = asRecord(entry);
+    const kind = asString(artifact.kind).toLowerCase();
+    if (
+      artifact.type !== "artifact"
+      || !asString(artifact.artifact_id)
+      || !["iframe", "html", "image", "file"].includes(kind)
+    ) {
+      return [];
+    }
+    return [{ ...artifact, type: kind }];
+  });
+}
+
 function clamp(value: number, lower: number, upper: number): number {
   return Math.min(upper, Math.max(lower, value));
 }
@@ -2073,6 +2089,7 @@ export function extractToolArtifacts(name: string, content: string): Record<stri
   if (name !== "call_mcp_tool" && name !== "read_mcp_resource" && name !== "open_artifact") return [];
   const parsed = tryParse(content);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  if (name === "open_artifact") return collectOpenArtifactArtifacts(parsed);
   return collectArtifacts((parsed as Record<string, unknown>).artifacts);
 }
 
@@ -2283,7 +2300,17 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
   return null;
 }
 
-export function ToolResultView({ name, content, args }: { name: string; content: string; args?: Record<string, unknown> }) {
+export function ToolResultView({
+  name,
+  content,
+  args,
+  status,
+}: {
+  name: string;
+  content: string;
+  args?: Record<string, unknown>;
+  status?: ToolEventStatus;
+}) {
   const t = useTranslations("ToolViews");
   const parsed = tryParse(content);
 
@@ -2303,10 +2330,7 @@ export function ToolResultView({ name, content, args }: { name: string; content:
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;
     const code = asString(data.code);
-    // "scheduled" notices (web_search_started, bash_started, background_task_scheduled)
-    // are transient implementation details — the matching *_completed result arrives
-    // shortly and renders instead. Don't render the raw scheduling payload.
-    if (code.endsWith("_started") || code === "background_task_scheduled") return null;
+    if (status === "running" && hasBackgroundTaskIdentifier(data)) return null;
     if (code === "tool_error") return null;
     if (code === "web_search_completed") return <WebSearchResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || t("searchFailed")} />;

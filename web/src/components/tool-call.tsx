@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { getToolCallDisplay } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { isBackgroundResult } from "@/lib/tool-event";
+import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
 import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { Pill } from "./ui/pill";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
@@ -102,7 +102,7 @@ function isToolErrorResult(content: string | null): boolean {
 // shows an empty bordered rail (which otherwise leaves a gap below the line):
 // a few tool names render nothing inline, and background/started/empty results
 // carry no body to show.
-function resultRendersInside(name: string, content: string): boolean {
+function resultRendersInside(name: string, content: string, status: ToolEventStatus | undefined): boolean {
   if (name === "list_mcp_tools" || name === "list_mcp_resources" || name === "open_artifact") return false;
   let parsed: unknown;
   try {
@@ -112,8 +112,8 @@ function resultRendersInside(name: string, content: string): boolean {
     return true;
   }
   const record = asRecord(parsed);
+  if (status === "running" && hasBackgroundTaskIdentifier(record)) return false;
   const code = String(record.code ?? "");
-  if (code.endsWith("_started") || code === "background_task_scheduled") return false;
   if (code === "empty_response" && !record.message) return false;
   return true;
 }
@@ -130,7 +130,12 @@ export interface ToolCallDetail {
   collapsible: boolean;
 }
 
-export function toolCallDetail(name: string, args: Record<string, unknown> | undefined, result: unknown): ToolCallDetail {
+export function toolCallDetail(
+  name: string,
+  args: Record<string, unknown> | undefined,
+  result: unknown,
+  status?: ToolEventStatus,
+): ToolCallDetail {
   // `justification` is rendered as the line's label, and `location` as a trailing
   // badge — neither is body content, so a call carrying only those has nothing to
   // expand into.
@@ -140,7 +145,7 @@ export function toolCallDetail(name: string, args: Record<string, unknown> | und
   // tool_error is surfaced on the line itself; both leave nothing for the body.
   const artifacts = resultContent ? extractToolArtifacts(name, resultContent) : [];
   const showResult =
-    resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent);
+    resultContent != null && artifacts.length === 0 && !isToolErrorResult(resultContent) && resultRendersInside(name, resultContent, status);
   // The task list is the model's own internal bookkeeping — its line never exposes
   // the raw task entries, so it is never collapsible regardless of its arguments.
   const isInternalPlanning = name === "set_tasks" || name === "update_tasks";
@@ -157,10 +162,10 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
   // One decision, shared with every other tool-line surface: what (if anything) this
   // line expands into. A line with nothing to show is not collapsible (DisclosureRow
   // enforces that from the presence of body children), so it never opens an empty rail.
-  const { showArguments, showResult, collapsible } = toolCallDetail(name, toolArguments, result);
+  const { showArguments, showResult, collapsible } = toolCallDetail(name, toolArguments, result, status);
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A running call whose interim result says the work moved to the background.
-  const background = status === "running" && isBackgroundResult(result);
+  const background = status === "running" && hasBackgroundTaskIdentifier(result);
   const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments);
 
   return (
@@ -192,7 +197,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
         // and the result's first (e.g. PID) read as one list.
         <Flex direction="column" gap={2} align="stretch">
           {showArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-          {showResult && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} />}
+          {showResult && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} status={status} />}
         </Flex>
       ) : undefined}
     </DisclosureRow>

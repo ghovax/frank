@@ -36,6 +36,8 @@ export interface DisclosureRowProps {
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onActivate?: () => void;
+  fill?: boolean;
   // Has content but must not expand (and reads greyed): a disabled capability.
   disabled?: boolean;
   tone?: DisclosureTone;
@@ -73,6 +75,8 @@ export function DisclosureRow({
   open,
   defaultOpen = false,
   onOpenChange,
+  onActivate,
+  fill = false,
   disabled = false,
   tone = "muted",
   maxH,
@@ -82,6 +86,7 @@ export function DisclosureRow({
   const isControlled = open !== undefined;
   const isOpen = isControlled ? open : internalOpen;
   const collapsible = !!children && !disabled;
+  const interactive = (collapsible || !!onActivate) && !disabled;
   const { containerRef, onScroll, fade } = useScrollEdgeFade();
 
   useEffect(() => {
@@ -90,10 +95,14 @@ export function DisclosureRow({
     }
   }, [followTailKey, isOpen, containerRef]);
 
-  const toggle = () => {
-    const next = !isOpen;
-    if (!isControlled) setInternalOpen(next);
-    onOpenChange?.(next);
+  const activate = () => {
+    if (collapsible) {
+      const next = !isOpen;
+      if (!isControlled) setInternalOpen(next);
+      onOpenChange?.(next);
+      return;
+    }
+    onActivate?.();
   };
 
   const color =
@@ -103,7 +112,7 @@ export function DisclosureRow({
       <ActivityIcon>
         {icon}
       </ActivityIcon>
-      <Box minW={0} flexShrink={1}>
+      <Box minW={0} flex={fill ? 1 : undefined} flexShrink={1}>
         {title}
       </Box>
       {badges && (
@@ -125,17 +134,18 @@ export function DisclosureRow({
         align="center"
         gap={1}
         h={6}
-        w="fit-content"
+        w={fill ? "full" : "fit-content"}
         maxW="100%"
         minW={0}
       >
-        {collapsible ? (
+        {interactive ? (
           <Button
             variant="plain"
             h={6}
-            w="fit-content"
+            w={fill ? "auto" : "fit-content"}
             maxW="100%"
             minW={0}
+            flex={fill ? 1 : undefined}
             p={0}
             borderWidth={0}
             gap={1.5}
@@ -145,7 +155,7 @@ export function DisclosureRow({
             fontWeight="normal"
             userSelect="none"
             color={color}
-            onClick={toggle}
+            onClick={activate}
             _hover={tone === "muted" ? { color: "fg" } : undefined}
           >
             {triggerContent}

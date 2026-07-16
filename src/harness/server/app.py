@@ -147,6 +147,20 @@ class SessionRecord(Base):
     )
 
 
+class SessionLifecycleRecord(Base):
+    """Durable lifecycle facts for one chat session.
+
+    This row is intentionally independent of ``SessionRecord`` because lifecycle events can
+    occur before workspace preparation creates the sidebar record. Live execution machinery
+    stays in memory; only facts that must survive runtime reconstruction belong here.
+    """
+
+    __tablename__ = "session_lifecycle"
+
+    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    work_habits_acknowledged_at: Mapped[str] = mapped_column(String, default="")
+
+
 class ProjectRecord(Base):
     """The internal grouping key for a set of locations and their sessions.
 
@@ -318,7 +332,7 @@ class TerminalStateRecord(Base):
     scrollback: Mapped[str] = mapped_column(Text, default="")
     # Creation time, used to order a context's terminals into stable tabs; set once on
     # insert and never touched again (unlike updated_at, which moves on every write).
-    created_at: Mapped[str] = mapped_column(String, default="")
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
     __table_args__ = (Index("idx_terminal_states_updated", "updated_at"),)
@@ -369,7 +383,6 @@ _pending_questions: dict[str, asyncio.Future] = {}
 # switching the active agent continues the same conversation (the persona is
 # applied per-turn on top of this shared history).
 _conversations: dict[str, list] = {}
-_work_habits_acknowledged_contexts: set[str] = set()
 # How many executions are running per context, including delegated agents. Drives
 # session-stream lifetime and the sidebar spinner; a count handles overlapping work.
 _running_contexts: dict[str, int] = {}
@@ -540,6 +553,60 @@ def _save_conversation(context_id: str, messages: list) -> None:
             database_session.commit()
         except Exception:
             database_session.rollback()
+        finally:
+            database_session.close()
+
+
+def _claim_work_habits_acknowledgement(context_id: str) -> bool:
+    """Atomically claim the one-time work-habits acknowledgement for a session."""
+    if _session_factory is None or not context_id:
+        return False
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            record = database_session.get(SessionLifecycleRecord, context_id)
+            if record is not None and record.work_habits_acknowledged_at:
+                return False
+            acknowledged_at = datetime.now(timezone.utc).isoformat()
+            if record is None:
+                database_session.add(
+                    SessionLifecycleRecord(
+                        context_id=context_id,
+                        work_habits_acknowledged_at=acknowledged_at,
+                    ),
+                )
+            else:
+                record.work_habits_acknowledged_at = acknowledged_at
+            database_session.commit()
+            return True
+        except Exception:
+            database_session.rollback()
+            logging.getLogger("harness.server").exception(
+                "failed to claim work-habits acknowledgement for %s",
+                context_id,
+            )
+            return False
+        finally:
+            database_session.close()
+
+
+def _reset_work_habits_acknowledgements() -> None:
+    """Allow one fresh acknowledgement after the work-habits setting changes."""
+    if _session_factory is None:
+        return
+    with sqlite_write_lock():
+        database_session = _session_factory()
+        try:
+            database_session.query(SessionLifecycleRecord).update(
+                {SessionLifecycleRecord.work_habits_acknowledged_at: ""},
+                synchronize_session=False,
+            )
+            database_session.commit()
+        except Exception:
+            database_session.rollback()
+            logging.getLogger("harness.server").exception(
+                "failed to reset persisted work-habits acknowledgements",
+            )
         finally:
             database_session.close()
 
@@ -750,7 +817,7 @@ def _path_scope(path_value: str, home_root: Path) -> str:
 
 def _record_model_selection(model_identifier: str) -> None:
     """Record a model selection in the history (upserting by id), mirroring the
-    project-history list. Catalog models use their curated label; typed model ids
+    project-history list. Catalog models use their display label; typed model ids
     derive a readable label from the provider/model value."""
     if not model_identifier or _session_factory is None:
         return
@@ -1571,7 +1638,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         registry=_registry,
         on_new_context=_record_session_visible,
         conversations=_conversations,
-        work_habits_acknowledged_contexts=_work_habits_acknowledged_contexts,
+        claim_work_habits_acknowledgement=_claim_work_habits_acknowledgement,
         on_turn_state=_set_turn_state,
         on_permission_state=_notify_permission_state,
         load_conversation=_load_conversation,
@@ -1936,8 +2003,7 @@ async def _reload_configuration_from_disk() -> None:
     configuration.default_agent = fresh.default_agent
     await _apply_live_credentials()
     if user_context_setting_changed:
-        for executor in _executors.values():
-            executor.reset_user_context_state()
+        await asyncio.to_thread(_reset_work_habits_acknowledgements)
     _broadcaster.publish({"type": "settings_changed"})
 
 
@@ -3331,8 +3397,6 @@ def _save_terminal_state(context_identifier: str, terminal_key: str, directory: 
             else:
                 record.working_directory = str(directory)
                 record.scrollback = scrollback
-                if not record.created_at:
-                    record.created_at = now
                 record.updated_at = now
             database_session.commit()
         except Exception:
@@ -3352,6 +3416,7 @@ def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
         records = (
             database_session.query(TerminalStateRecord)
             .filter(TerminalStateRecord.context_id == context_identifier)
+            .order_by(TerminalStateRecord.created_at.asc(), TerminalStateRecord.terminal_key.asc())
             .all()
         )
     finally:
@@ -3359,15 +3424,12 @@ def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
     entries = [
         {
             "terminal_key": record.terminal_key,
-            "working_directory": record.working_directory or "",
-            "created_at": record.created_at or "",
-            "updated_at": record.updated_at or "",
+            "working_directory": record.working_directory,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
         }
         for record in records
     ]
-    # Legacy rows carry an empty created_at; fall back to terminal_key so the order is
-    # still deterministic rather than arbitrary.
-    entries.sort(key=lambda entry: (entry["created_at"], entry["terminal_key"]))
     return entries
 
 
@@ -3913,18 +3975,13 @@ def _proxy_forward_headers(request: Request, target_url: str) -> dict[str, str]:
 
 
 def _remove_upload_file(path_string: str, uploads_root: str) -> None:
-    """Delete an orphaned upload file (and its now-empty legacy per-upload directory).
-    Guarded to only ever touch paths inside the uploads root, so a mis-parse can't reach
-    outside it. Runs off the event loop (sync FS)."""
+    """Delete an orphaned content-addressed upload from Daisy's uploads directory."""
+    path = Path(path_string)
+    root = Path(uploads_root)
+    if path.parent != root:
+        return
     try:
-        path = Path(path_string)
-        root = Path(uploads_root)
-        if root not in path.parents:
-            return
         path.unlink(missing_ok=True)
-        parent = path.parent
-        if parent != root and parent.is_dir() and not any(parent.iterdir()):
-            parent.rmdir()
     except OSError:
         pass
 
@@ -3932,8 +3989,9 @@ def _remove_upload_file(path_string: str, uploads_root: str) -> None:
 def _prune_session_artifacts(context_id: str) -> None:
     """Retention on session delete: drop this session's branch in every shadow repo it
     touched, then delete its artifact index rows (versions/files/surfaces/annotations) and
-    its conversation. Runs off the event loop. Best-effort per repo — a missing/unreachable
-    location's branch is left, but its DB rows are still cleared."""
+    its persisted conversation and lifecycle facts. Runs off the event loop. Best-effort
+    per repo — a missing/unreachable location's branch is left, but its DB rows are still
+    cleared."""
     if _session_factory is None:
         return
     database_session = _session_factory()
@@ -3957,9 +4015,15 @@ def _prune_session_artifacts(context_id: str) -> None:
     with sqlite_write_lock():
         database_session = _session_factory()
         try:
-            for model in (ArtifactVersionRecord, ArtifactFileRecord, ArtifactSurfaceRecord, ArtifactAnnotationRecord, ConversationRecord):
-                identifier = ConversationRecord.context_id if model is ConversationRecord else model.context_id
-                database_session.query(model).filter(identifier == context_id).delete(synchronize_session=False)
+            for model in (
+                ArtifactVersionRecord,
+                ArtifactFileRecord,
+                ArtifactSurfaceRecord,
+                ArtifactAnnotationRecord,
+                ConversationRecord,
+                SessionLifecycleRecord,
+            ):
+                database_session.query(model).filter(model.context_id == context_id).delete(synchronize_session=False)
             database_session.commit()
         except Exception:
             database_session.rollback()

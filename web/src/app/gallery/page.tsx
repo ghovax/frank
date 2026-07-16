@@ -24,7 +24,14 @@ import { LuSparkles } from "react-icons/lu";
 const now = "2026-01-01T00:00:00Z";
 
 function message(role: ChatMessage["role"], content: string, meta?: Record<string, unknown>): ChatMessage {
-  return { id: `${role}-${content.slice(0, 12)}`, role, content, timestamp: now, meta };
+  return {
+    id: `${role}-${content.slice(0, 12)}`,
+    role,
+    content,
+    timestamp: now,
+    meta,
+    contentBlocks: role === "assistant" ? [{ identifier: `gallery-${content.slice(0, 12)}`, content }] : undefined,
+  };
 }
 
 const richMarkdown = `## A settled batch of work

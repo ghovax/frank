@@ -93,9 +93,9 @@ class _BackgroundJobRecord:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tool_call_identifier: str = ""
     arguments: dict[str, Any] = field(default_factory=dict)
-    # A detached job was deliberately backgrounded by the model (bash background=true,
-    # web_search): it outlives the turn and a Stop must NOT cancel it. A non-detached
-    # job backs a foreground/synchronous call still tied to the turn — Stop kills it.
+    # A detached job has an independent lifecycle (bash background=true, web_search,
+    # or a spawned agent): it outlives the parent turn and Stop must NOT cancel it. A
+    # non-detached job backs a foreground/synchronous call still tied to the turn.
     detached: bool = False
     # Fires when the user manually pushes a still-blocking foreground command to the
     # background: it releases the inline settle wait so the command keeps running
@@ -153,8 +153,8 @@ class BackgroundJobs:
 
         ``arguments`` carries what a restart needs to re-issue an idempotent job (e.g.
         a search query or a parse target); it is persisted, never used live.
-        ``detached`` marks work the model explicitly backgrounded, which a Stop
-        must leave running (see :meth:`cancel_foreground`)."""
+        ``detached`` marks work with an independent lifecycle, which a Stop must
+        leave running (see :meth:`cancel_foreground`)."""
         if identifier is None:
             identifier = new_id(_KIND_IDENTIFIER_PREFIX.get(kind, kind))
         task = asyncio.create_task(coroutine)

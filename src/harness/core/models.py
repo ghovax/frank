@@ -22,16 +22,11 @@ class ModelDefinition:
     ``opencode/deepseek-v4-flash``); ``name`` is the user-facing label from the
     models.dev catalog, falling back to the raw model suffix when no display name
     is available (the frontend renders those in monospace).
-
-    ``curated`` is always ``False`` — all models now come from the models.dev
-    discovery API, and the field is retained only for backward compatibility with
-    the frontend type.
     """
 
     identifier: str
     name: str
     provider: str
-    curated: bool = False
     # Capabilities from the models.dev catalog, used to gate and annotate the UI.
     # ``attachment`` is whether the model accepts file attachments at all; ``vision``
     # is whether image input is supported; ``input_modalities`` is the raw list
@@ -135,7 +130,6 @@ def _catalog() -> list[ModelDefinition]:
                 identifier=identifier,
                 name=name,
                 provider=local_id,
-                curated=False,
                 attachment=bool(model_info.get("attachment")),
                 vision="image" in input_modalities,
                 input_modalities=input_modalities,

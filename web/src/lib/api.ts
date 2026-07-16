@@ -587,7 +587,6 @@ export interface ModelOption {
   name: string;
   provider: string;
   available: boolean;
-  curated: boolean;
   // Capabilities from models.dev (raw snake_case as the /models endpoint sends
   // them). `attachment` gates the composer's file-attach button; `vision` (image
   // input) and `input_modalities` annotate the picker.
@@ -1198,6 +1197,17 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
   try {
     const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
     return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function cancelAgent(sessionId: string, taskIdentifier: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(taskIdentifier)}/abort`, { method: "POST" });
+    if (!response.ok) return false;
+    const result = await response.json() as { status?: string };
+    return result.status === "aborted";
   } catch {
     return false;
   }

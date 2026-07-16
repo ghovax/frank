@@ -24,6 +24,7 @@ from harness.server.app import (
     _publish_broadcast,
     _recent_models,
     _reset_all_runtimes,
+    _reset_work_habits_acknowledgements,
     asyncio,
     available_models,
     clear_subscription_models_cache,
@@ -118,7 +119,6 @@ async def list_models_endpoint():
             "name": model.name,
             "provider": model.provider,
             "available": _is_available(model),
-            "curated": model.curated,
             "attachment": model.attachment,
             "vision": model.vision,
             "input_modalities": list(model.input_modalities),
@@ -346,8 +346,9 @@ async def update_user_context(request: UserContextUpdateRequest):
         await _persist_configuration(user_context_enabled=request.enabled)
         _app._global_configuration.user_context.enabled = request.enabled
         if setting_changed:
+            await asyncio.to_thread(_reset_work_habits_acknowledgements)
             for executor in _executors.values():
-                executor.reset_user_context_state()
+                executor.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "user_context_enabled": _app._global_configuration.user_context.enabled}
 

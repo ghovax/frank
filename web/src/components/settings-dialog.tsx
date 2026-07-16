@@ -47,12 +47,18 @@ function SettingsSection({ title, children }: { title?: string; children: ReactN
 function SettingRow({ title, description, children, layout = "row" }: { title: string; description?: string; children: ReactNode; layout?: "row" | "stacked" }) {
   const stacked = layout === "stacked";
   return (
-    <Flex direction={stacked ? "column" : "row"} align={stacked ? "stretch" : "center"} justify="space-between" gap={stacked ? 2 : 6} py={3}>
+    <Flex
+      direction={{ base: "column", sm: stacked ? "column" : "row" }}
+      align={{ base: "stretch", sm: stacked ? "stretch" : "center" }}
+      justify="space-between"
+      gap={{ base: 2, sm: stacked ? 2 : 6 }}
+      py={3}
+    >
       <Box minW={0} flex={stacked ? undefined : 1}>
         <Text textStyle="fieldLabel" color="fg">{title}</Text>
         {description ? <Text fontSize="xs" color="fg.muted" mt={0.5}>{description}</Text> : null}
       </Box>
-      <Box flexShrink={0} alignSelf={stacked ? "stretch" : undefined}>{children}</Box>
+      <Box flexShrink={{ base: 1, sm: 0 }} alignSelf={{ base: "stretch", sm: stacked ? "stretch" : undefined }}>{children}</Box>
     </Flex>
   );
 }
@@ -612,11 +618,30 @@ export function SettingsDialog({
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxW="900px" h="min(760px, calc(100vh - 48px))" display="flex" flexDirection="row" overflow="hidden" p={0}>
+          <Dialog.Content
+            data-layout="settings-dialog"
+            w={{ base: "calc(100vw - 16px)", md: "min(900px, calc(100vw - 48px))" }}
+            maxW="900px"
+            h={{ base: "calc(100dvh - 16px)", md: "min(760px, calc(100vh - 48px))" }}
+            display="flex"
+            flexDirection={{ base: "column", md: "row" }}
+            overflow="hidden"
+            p={0}
+          >
             {/* Left nav spans the dialog's full height (flush to the rounded top/bottom edges),
                 beside a column that carries the header, the scrolling content, and the footer —
                 so its tint never gets cut off between a separate header and footer. */}
-                <Flex direction="column" w={52} flexShrink={0} borderRightWidth="1px" borderColor="border.muted" minH={0} bg="bg.subtle">
+                <Flex
+                  data-layout="settings-navigation"
+                  direction="column"
+                  w={{ base: "full", md: 52 }}
+                  flexShrink={0}
+                  borderRightWidth={{ base: 0, md: "1px" }}
+                  borderBottomWidth={{ base: "1px", md: 0 }}
+                  borderColor="border.muted"
+                  minH={0}
+                  bg="bg.subtle"
+                >
                   <Box p={3} flexShrink={0}>
                     <Flex align="center" gap={2} h={8} px={2} borderRadius="md" bg="bg" borderWidth="1px" borderColor="border.muted" _focusWithin={{ borderColor: "border.emphasized" }}>
                       <Box color="fg.muted" flexShrink={0} display="flex" alignItems="center"><LuSearch size={14} /></Box>
@@ -642,7 +667,8 @@ export function SettingsDialog({
                           <Button
                             variant="ghost"
                             key={page.id}
-                            w="full"
+                            w={{ base: "auto", md: "full" }}
+                            flexShrink={0}
                             gap={1.5}
                             minH="30px"
                             px={2}
@@ -663,7 +689,7 @@ export function SettingsDialog({
                     </Flex>
                   </Box>
                 </Flex>
-            <Flex direction="column" flex={1} minW={0} minH={0}>
+            <Flex data-layout="settings-content" direction="column" flex={1} minW={0} minH={0}>
               <Dialog.Body px={0} py={2} flex={1} minH={0}>
                 {/* Right content: search results across all sections, or the active page's sections. */}
                 <Box ref={contentScrollRef} onScroll={onContentScroll} css={contentFade} h="100%" overflowY="auto" px={6} py={4}>
@@ -692,15 +718,19 @@ export function SettingsDialog({
                       ))
                     )
                   ) : (
-                    activePage.sections.map((section, index) => (
-                      <SettingsSection key={index} title={section.title}>
-                        {section.rows.map((row) => (
-                          <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
+                    pages.map((page) => (
+                      <Box key={page.id} display={page.id === activePage.id ? "block" : "none"}>
+                        {page.sections.map((pageSection, pageSectionIndex) => (
+                          <SettingsSection key={pageSectionIndex} title={pageSection.title}>
+                            {pageSection.rows.map((row) => (
+                              <SettingRow key={row.key} title={row.title} description={row.description} layout={row.layout}>{row.control}</SettingRow>
+                            ))}
+                            {/* A block after rows is separated from the last row's divider by top
+                                padding; a standalone block (no rows) sits flush under the heading. */}
+                            {pageSection.block ? <Box pt={pageSection.rows.length > 0 ? 4 : 0}>{pageSection.block}</Box> : null}
+                          </SettingsSection>
                         ))}
-                        {/* A block after rows is separated from the last row's divider by top
-                            padding; a standalone block (no rows) sits flush under the heading. */}
-                        {section.block ? <Box pt={section.rows.length > 0 ? 4 : 0}>{section.block}</Box> : null}
-                      </SettingsSection>
+                      </Box>
                     ))
                   )}
                 </Box>

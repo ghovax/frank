@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Flex } from "@chakra-ui/react";
+import { Button, Flex, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -34,26 +34,45 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
   const [original, setOriginal] = useState<Location[]>([]);
   const [drafts, setDrafts] = useState<LocationDraft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loadedProjectId, setLoadedProjectId] = useState("");
+  const [failedProjectId, setFailedProjectId] = useState("");
 
-  const load = useCallback(() => {
-    getProject(projectId)
-      .then((project) => {
-        const locations = project?.locations ?? [];
-        setOriginal(locations);
-        setDrafts(draftsFrom(locations));
-      })
-      .catch(() => {});
+  const loadProject = useCallback(async () => {
+    const project = await getProject(projectId);
+    const locations = project?.locations ?? [];
+    setOriginal(locations);
+    setDrafts(draftsFrom(locations));
   }, [projectId]);
 
   useEffect(() => {
-    load();
-    listSshHosts().then(setHosts).catch(() => {});
+    let cancelled = false;
+    Promise.all([getProject(projectId), listSshHosts()])
+      .then(([project, nextHosts]) => {
+        if (cancelled) return;
+        const locations = project?.locations ?? [];
+        setOriginal(locations);
+        setDrafts(draftsFrom(locations));
+        setHosts(nextHosts);
+        setFailedProjectId("");
+        setLoadedProjectId(projectId);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFailedProjectId(projectId);
+        setLoadedProjectId(projectId);
+      });
     // Only re-read hosts live — never clobber in-progress location edits from a
     // projects_changed event (a save reloads explicitly).
-    return subscribeEvents((event) => {
-      if (event.type === "hosts_changed") listSshHosts().then(setHosts).catch(() => {});
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "hosts_changed") {
+        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch(() => {});
+      }
     });
-  }, [load]);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [projectId]);
 
   const updateDraft = (index: number, value: LocationInput) =>
     setDrafts((current) => current.map((draft, position) => (position === index ? { ...draft, value } : draft)));
@@ -83,7 +102,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
           }
         }
       }
-      load();
+      await loadProject();
     } catch (error) {
       toaster.create({ type: "error", title: t("saveError"), description: error instanceof Error ? error.message : "", closable: true });
     } finally {
@@ -93,19 +112,28 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
 
   return (
     <Flex direction="column" gap={3} maxW="560px">
-      <LocationEditorList
-        hosts={hosts}
-        locations={drafts.map((draft) => draft.value)}
-        onChange={updateDraft}
-        onAdd={addDraft}
-        onRemove={removeDraft}
-        showPermission
-      />
+      {failedProjectId === projectId ? (
+        <Text fontSize="sm" color="red.fg">{t("loadError")}</Text>
+      ) : (
+        <>
+          <LocationEditorList
+            hosts={hosts}
+            locations={drafts.map((draft) => draft.value)}
+            onChange={updateDraft}
+            onAdd={addDraft}
+            onRemove={removeDraft}
+            showPermission
+            loading={loadedProjectId !== projectId}
+          />
+          {loadedProjectId === projectId ? (
       <Flex justify="flex-end" mt={1}>
-        <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
-          {t("saveChanges")}
-        </Button>
-      </Flex>
+              <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
+                {t("saveChanges")}
+              </Button>
+            </Flex>
+          ) : null}
+        </>
+      )}
     </Flex>
   );
 }

@@ -123,6 +123,17 @@ async def abort_tool_call(context_id: str, tool_call_id: str):
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id, "tool_call_id": tool_call_id}
 
 
+@router.post("/chat/{context_id}/agents/{task_identifier}/abort")
+async def abort_agent(context_id: str, task_identifier: str):
+    """Cancel one spawned agent without interrupting its parent turn or peers."""
+    aborted = any(executor.cancel_agent(context_id, task_identifier) for executor in _executors.values())
+    return {
+        "status": "aborted" if aborted else "not_found",
+        "session_id": context_id,
+        "task_identifier": task_identifier,
+    }
+
+
 @router.post("/chat/{context_id}/tools/{tool_call_id}/background")
 async def send_tool_to_background(context_id: str, tool_call_id: str):
     """Push a still-blocking foreground shell command to the background: it keeps

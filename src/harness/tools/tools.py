@@ -154,6 +154,7 @@ async def bash(
             inline_output, output_truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
             payload = {
                 "code": "bash_cancelled",
+                "status": "error",
                 "output": inline_output,
                 "output_file": str(output_path),
                 "truncated": output_truncated,
@@ -166,15 +167,16 @@ async def bash(
         # (and every other session on it) while this coroutine reads it back.
         output = await asyncio.to_thread(output_path.read_text)
         # A non-zero exit code is a failure the model must be able to see — without it,
-        # `exit 7` was indistinguishable from success. `bash_failed` also lets the UI
-        # surface the card as failed (see events.tool_status_from_result).
+        # `exit 7` was indistinguishable from success.
         return_code = process.returncode or 0
         result_code = "bash_completed" if return_code == 0 else "bash_failed"
+        result_status = "ok" if return_code == 0 else "error"
         if not output:
-            return json.dumps({"code": result_code, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
+            return json.dumps({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
         inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
         return json.dumps({
             "code": result_code,
+            "status": result_status,
             "output": inline_output,
             "output_file": str(output_path),
             "truncated": truncated,
@@ -213,6 +215,7 @@ async def bash(
             return settled.result
     return json.dumps({
         "code": "bash_started",
+        "status": "running",
         "task_identifier": task_identifier,
         "output_file": str(output_path),
     })
@@ -237,7 +240,7 @@ async def web_search(
     """
     client = _exa_client
     if client is None:
-        return json.dumps({"code": "web_search_error", "message": "Web search is not configured."})
+        return json.dumps({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
 
     # Mint the identifier up front so the eventual completed/error result can echo
     # it — the model correlates a delivered result to the search it started by
@@ -263,6 +266,7 @@ async def web_search(
                 entries.append(entry)
             payload = json.dumps({
                 "code": "web_search_completed",
+                "status": "ok",
                 "task_identifier": task_identifier,
                 "query": query,
                 "results": entries,
@@ -272,6 +276,7 @@ async def web_search(
         except Exception as exception:
             payload = json.dumps({
                 "code": "web_search_error",
+                "status": "error",
                 "task_identifier": task_identifier,
                 "message": str(exception),
             })
@@ -298,6 +303,7 @@ async def web_search(
     # prompts, not in tool code).
     return json.dumps({
         "code": "web_search_started",
+        "status": "running",
         "task_identifier": task_identifier,
     })
 
@@ -316,7 +322,7 @@ async def list_mcp_tools(server: str = "", justification: str = Field(..., descr
         result = await _require_mcp_client_manager().list_tools(server)
         return json.dumps(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_list_tools_error", "message": str(exception)})
+        return json.dumps({"code": "mcp_list_tools_error", "status": "error", "message": str(exception)})
 
 
 @tool
@@ -344,7 +350,7 @@ async def call_mcp_tool(
         result = await _require_mcp_client_manager().call_tool(server, tool_name, arguments or {})
         return json.dumps(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_call_tool_error", "message": str(exception)})
+        return json.dumps({"code": "mcp_call_tool_error", "status": "error", "message": str(exception)})
 
 
 async def call_mcp_tool_with_events(
@@ -375,7 +381,7 @@ async def list_mcp_resources(server: str = "", justification: str = Field(..., d
         result = await _require_mcp_client_manager().list_resources(server)
         return json.dumps(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_list_resources_error", "message": str(exception)})
+        return json.dumps({"code": "mcp_list_resources_error", "status": "error", "message": str(exception)})
 
 
 @tool
@@ -393,7 +399,7 @@ async def read_mcp_resource(server: str, uri: str, justification: str = Field(..
         result = await _require_mcp_client_manager().read_resource(server, uri)
         return json.dumps(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_read_resource_error", "message": str(exception)})
+        return json.dumps({"code": "mcp_read_resource_error", "status": "error", "message": str(exception)})
 
 
 @tool

@@ -4,12 +4,10 @@ import { Flex } from "@chakra-ui/react";
 import type { ToolEvent } from "@/lib/tool-event";
 import type { AgentPart } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
-import { ToolCall } from "./tool-call";
 import { ToolGroup } from "./tool-group";
 
 type TimelineItem =
   | { kind: "text"; content: string }
-  | { kind: "tool"; tool: ToolEvent }
   | { kind: "tools"; id: string; tools: ToolEvent[] };
 
 // Renders an agent step's ordered timeline, mirroring the main chat's decisions:
@@ -61,22 +59,6 @@ export function AgentTimeline({
       {items.map((item, itemIndex) => {
         if (item.kind === "text") {
           return <MarkdownContent key={`text-${itemIndex}`} content={item.content} />;
-        }
-        if (item.kind === "tool") {
-          const tool = item.tool;
-          return (
-            <ToolCall
-              key={`tool-${tool.toolCallId || itemIndex}`}
-              name={tool.name}
-              arguments={tool.arguments}
-              result={tool.result}
-              toolCallId={tool.toolCallId}
-              status={tool.status}
-              permission={tool.permission}
-              question={tool.question}
-              agents={agents}
-            />
-          );
         }
         return <ToolGroup key={`tools-${item.id}`} tools={item.tools} agents={agents} />;
       })}

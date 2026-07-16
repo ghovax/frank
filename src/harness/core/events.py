@@ -52,18 +52,11 @@ class ToolStatus(str, Enum):
 
 
 def tool_status_from_result(result: Any) -> ToolStatus:
-    """Derive the lifecycle status of a tool result. The single place that still reads
-    the legacy ``code`` suffix convention; for a tool that reports an explicit ``status``
-    that value always wins, and this suffix parsing is only the fallback."""
+    """Read a result's explicit lifecycle status, defaulting synchronous results to OK."""
     record = result if isinstance(result, dict) else {}
     explicit = record.get("status")
     if explicit in (ToolStatus.RUNNING.value, ToolStatus.OK.value, ToolStatus.ERROR.value):
         return ToolStatus(explicit)
-    code = str(record.get("code", ""))
-    if code.endswith("_started") or code in ("background_task_scheduled", "running"):
-        return ToolStatus.RUNNING
-    if code == "tool_error" or code.endswith(("_error", "_cancelled", "_failed")):
-        return ToolStatus.ERROR
     return ToolStatus.OK
 
 

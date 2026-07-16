@@ -53,7 +53,7 @@ from a2a.utils import new_task
 from harness.core.agent import AgentRuntime, StreamEvent
 from harness.core.agent_messages import AgentMessage
 from harness.core.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
-from harness.core.events import ToolStatus, tool_status_from_result
+from harness.core.events import ToolStatus
 from harness.core.configuration import (
     AgentConfiguration,
     GlobalConfiguration,
@@ -358,7 +358,7 @@ def _project_display(tool_name: str, result: object) -> object:
     return {key: value for key, value in result.items() if key not in drop}
 
 
-def _tool_result_part(tool_name: str, tool_call_id: str, result: object) -> Part:
+def _tool_result_part(tool_name: str, tool_call_id: str, result: object, status: str) -> Part:
     """The unified ``tool_result`` wire event for a root-agent tool. Lifecycle is the
     explicit ``status``; ``display`` is the projected payload the UI renders (the
     model-facing view travels only in the conversation). ``metadata`` here is the minimal
@@ -368,7 +368,7 @@ def _tool_result_part(tool_name: str, tool_call_id: str, result: object) -> Part
         "tool_result",
         tool_name=tool_name,
         tool_call_id=tool_call_id,
-        status=tool_status_from_result(result).value,
+        status=ToolStatus(status).value,
         code=record.get("code"),
         display=_project_display(tool_name, result),
         metadata={"tool_name": tool_name, "tool_call_id": tool_call_id},
@@ -582,7 +582,7 @@ class HarnessAgentExecutor(AgentExecutor):
         registry: Optional["AgentRegistry"] = None,
         on_new_context: Optional[Callable[..., Any]] = None,
         conversations: Optional[dict[str, list]] = None,
-        work_habits_acknowledged_contexts: Optional[set[str]] = None,
+        claim_work_habits_acknowledgement: Optional[Callable[[str], bool]] = None,
         on_turn_state: Optional[Callable[..., Any]] = None,
         on_permission_state: Optional[Callable[..., Any]] = None,
         load_conversation: Optional[Callable[..., Any]] = None,
@@ -646,11 +646,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # switching agents mid-session continues the same conversation with a different
         # persona rather than starting over. Removed on session delete via teardown.
         self._conversations: dict[str, list] = conversations if conversations is not None else {}
-        self._work_habits_acknowledged_contexts: set[str] = (
-            work_habits_acknowledged_contexts
-            if work_habits_acknowledged_contexts is not None
-            else set()
-        )
+        self._claim_persisted_work_habits_acknowledgement = claim_work_habits_acknowledgement
         # Hold startup-recovery wake tasks and in-flight manual-compaction turns so they
         # are not garbage-collected before they finish. Self-clearing via done callbacks;
         # not per-context.
@@ -720,6 +716,12 @@ class HarnessAgentExecutor(AgentExecutor):
             return False
         return state.runtime.abort_tool(tool_call_identifier)
 
+    def cancel_agent(self, context_id: str, task_identifier: str) -> bool:
+        state = self._contexts.get(context_id)
+        if state is None or state.runtime is None:
+            return False
+        return state.runtime.cancel_agent(task_identifier)
+
     def send_tool_to_background(self, context_id: str, tool_call_identifier: str) -> bool:
         state = self._contexts.get(context_id)
         if state is None or state.runtime is None:
@@ -746,12 +748,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 state.pending_reset = True
                 self._maybe_evict(context_id)
 
-    def reset_user_context_state(self) -> None:
-        """Rebuild runtimes and allow one fresh work-habits acknowledgement per session."""
-        self._work_habits_acknowledged_contexts.clear()
-        self.reset_runtimes()
-
-    def _claim_work_habits_acknowledgement(
+    async def _claim_work_habits_acknowledgement(
         self,
         context_id: str,
         *,
@@ -759,17 +756,19 @@ class HarnessAgentExecutor(AgentExecutor):
         autonomous: bool,
         compaction: bool,
     ) -> bool:
-        """Claim the single user-turn acknowledgement for one shared session."""
+        """Claim the durable single user-turn acknowledgement for one session."""
         if (
             not self._global_configuration.user_context.enabled
             or delegated
             or autonomous
             or compaction
-            or context_id in self._work_habits_acknowledged_contexts
+            or self._claim_persisted_work_habits_acknowledgement is None
         ):
             return False
-        self._work_habits_acknowledged_contexts.add(context_id)
-        return True
+        return await asyncio.to_thread(
+            self._claim_persisted_work_habits_acknowledgement,
+            context_id,
+        )
 
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
         state = self._contexts.get(context_id)
@@ -835,7 +834,6 @@ class HarnessAgentExecutor(AgentExecutor):
             if state.runtime is not None:
                 state.runtime.abort()
         self._conversations.pop(context_id, None)
-        self._work_habits_acknowledged_contexts.discard(context_id)
 
     def _arm_resume_pump(self, context_id: str, runtime: Optional[AgentRuntime] = None) -> None:
         """Ensure a resume pump watches this context while it has background work in
@@ -1145,7 +1143,7 @@ class HarnessAgentExecutor(AgentExecutor):
                 self._on_stream_event(task.context_id, part)
 
         context_state = self._context(task.context_id)
-        should_acknowledge_work_habits = self._claim_work_habits_acknowledgement(
+        should_acknowledge_work_habits = await self._claim_work_habits_acknowledgement(
             task.context_id,
             delegated=delegated,
             autonomous=autonomous,
@@ -1156,7 +1154,6 @@ class HarnessAgentExecutor(AgentExecutor):
                 for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
                     await emit(acknowledgement_part)
             except Exception as exception:
-                self._work_habits_acknowledged_contexts.discard(task.context_id)
                 logger.exception("Work-habits acknowledgement failed: %s", exception)
                 await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
                 return
@@ -1421,7 +1418,12 @@ class HarnessAgentExecutor(AgentExecutor):
                     ))
                 elif kind == StreamEvent.Type.TOOL_RESULT:
                     await flush_stream_buffers()
-                    await emit(_tool_result_part(data.get("name", ""), data.get("id", ""), data.get("result")))
+                    await emit(_tool_result_part(
+                        data.get("name", ""),
+                        data.get("id", ""),
+                        data.get("result"),
+                        data["status"],
+                    ))
                 elif kind == StreamEvent.Type.MCP_EVENT:
                     await flush_stream_buffers()
                     await emit(_data_part(
@@ -1894,9 +1896,10 @@ class AgentRegistry:
         ))
 
     async def cancel_delegated(self, agent_name: str, task_id: str) -> None:
-        """Cancel a running agent's own A2A task (via its handler's tasks/cancel),
-        so a parent Stop actually reaps the child instead of just abandoning the wait on
-        it. A no-op if the child already finished."""
+        """Cancel a running agent's own A2A task after targeted cancellation.
+
+        This is a no-op if the child already finished.
+        """
         handler = self._handlers.get(agent_name)
         if handler is not None and task_id:
             with suppress(Exception):

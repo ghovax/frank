@@ -50,7 +50,6 @@ interface ProviderItem {
 interface ModelItem {
   value: string;
   label: string;
-  curated: boolean;
   // Whether the provider currently serves this model (has a key, or — for the
   // chatgpt subscription — the plan includes it). Unavailable models are listed
   // but greyed and non-selectable.
@@ -108,7 +107,7 @@ function displayModelName(modelId: string, models: ModelOption[]): string {
 /**
  * Whether a model's display name is a fallback to its raw ID rather than a
  * proper human-readable label. When true, the frontend renders it in monospace
- * to signal "this is a technical identifier, not a curated display name."
+ * to signal "this is a technical identifier, not a display name."
  */
 function modelNameIsFallbackId(modelId: string, models: ModelOption[]): boolean {
   const model = models.find((model) => model.id === modelId);
@@ -174,8 +173,8 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         if (byRelease !== 0) return byRelease;
         return left.name.localeCompare(right.name);
       });
-    const items = providerModels.map((model) => ({ value: model.id, label: model.name, curated: model.curated, available: model.available }));
-    items.push({ value: CUSTOM_MODEL, label: t("selectUnlisted"), curated: false, available: true });
+    const items = providerModels.map((model) => ({ value: model.id, label: model.name, available: model.available }));
+    items.push({ value: CUSTOM_MODEL, label: t("selectUnlisted"), available: true });
     return items;
   }, [models, recentIds, selectedProvider, t]);
   // Every model stays selectable (unavailable ones are only greyed as a hint) —

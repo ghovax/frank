@@ -169,6 +169,8 @@
     "changeAdded": "Added",
     "changeDeleted": "Deleted",
     "changeModified": "Modified",
+    "loadingVersions": "Loading versions…",
+    "noVersions": "No versions available",
     "loadingDiff": "Loading diff…",
     "noChangesToShow": "No changes to show for this version."
   },
@@ -269,6 +271,10 @@
     "agentTask": "Agent task",
     "agent": "Agent",
     "agents": "Agents",
+    "stopAgent": "Stop agent",
+    "stoppingAgent": "Stopping agent",
+    "stopFailed": "Couldn't stop the agent",
+    "stopFailedDescription": "The server did not confirm the cancellation. The agent may still be running.",
     "collapseSidebar": "Collapse agents sidebar",
     "noActivityTitle": "No agent activity yet",
     "noActivityDescription": "Spawned agents will appear here"
@@ -640,10 +646,12 @@
     "permissionReadOnly": "Read-only",
     "permissionBypass": "Bypass approvals",
     "addLocation": "Add folder",
+    "loadingLocations": "Loading project folders",
     "conflictSameDirectory": "Two entries use the same folder {directory}. Remove one or choose a different folder.",
     "conflictNested": "{inner} is inside {outer}, so the folders overlap. The outer folder already includes everything beneath it."
   },
   "ProjectLocationsPanel": {
+    "loadError": "Could not load project folders",
     "saveError": "Could not save project folders",
     "saveChanges": "Save changes"
   },

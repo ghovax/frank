@@ -306,6 +306,7 @@ export function ConnectionSettings({
       <VStack gap={4} w="100%" minH={0} align="stretch">
           <Button
             w="100%"
+            size={variant === "page" ? "md" : undefined}
             variant={localActive ? "subtle" : "outline"}
             bg={localActive ? "bg.subtle" : "bg"}
             borderColor="border"

@@ -23,9 +23,8 @@ import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { VersionBadge } from "./attachment-chips";
 import { InlineField } from "./ui/display";
-import { Pill } from "./ui/pill";
 import { PanelTab } from "./ui/panel-tab";
-import { PanelBody, PanelCard, PanelHeader, PanelEmptyState, TOP_BAR_HEIGHT } from "@/components/ui/panel";
+import { PanelCard, PanelHeader, PanelEmptyState, TOP_BAR_HEIGHT } from "@/components/ui/panel";
 import { SegmentedToggle } from "@/components/ui/segmented-toggle";
 import { extractToolArtifacts, externalArtifactUrl, ArtifactView } from "./tool-views";
 import { NativeWebview } from "./native-webview";
@@ -45,7 +44,7 @@ import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay } from "@/lib/tool-display";
-import { isHiddenToolEventName, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
+import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, setPermissionMode, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
@@ -55,6 +54,7 @@ import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
 import { closePermissionNotification, notifyPermissionRequest, setPermissionNotificationHandler } from "@/lib/notify";
+import { ArtifactHistoryList } from "./artifact-history";
 
 // A Chakra Box that is also a motion component, so the right panel region can
 // animate its open/close (opacity + slide) exactly like the history sidebar on
@@ -101,7 +101,7 @@ interface ChatPanelProps {
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
-  models?: { id: string; name: string; provider: string; available: boolean; curated: boolean }[];
+  models?: { id: string; name: string; provider: string; available: boolean }[];
   modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
   recentModels?: { id: string; name: string; provider: string }[];
   agentModel?: string;
@@ -162,7 +162,7 @@ type TranscriptArtifact = {
 
 function versionEntryFromWire(version: ArtifactVersion): ArtifactVersionEntry {
   return {
-    versionId: version.versionId || version.commitSha,
+    versionId: version.versionId,
     commitSha: version.commitSha,
     blobSha: version.blobSha,
     sequence: version.sequence,
@@ -178,8 +178,8 @@ function groupFromSurface(surface: ArtifactSurface): ArtifactGroup {
     id: surface.artifactId,
     artifactId: surface.artifactId,
     kind: surface.kind,
-    title: surface.title || surface.relativePath || "Artifact",
-    source: surface.source || surface.relativePath,
+    title: surface.title,
+    source: surface.source,
     gitDirectory: surface.gitDirectory,
     relativePath: surface.relativePath,
     absolutePath: surface.absolutePath,
@@ -230,18 +230,17 @@ function transcriptArtifactsFromMessages(messages: ChatMessage[]): Map<string, T
     const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
     if (resultContent == null) continue;
     for (const artifact of extractToolArtifacts("open_artifact", resultContent)) {
-      const artifactId = String(artifact.artifact_id ?? artifact.artifactId ?? artifact.id ?? "");
+      const artifactId = String(artifact.artifact_id ?? "");
       if (!artifactId) continue;
-      const rawKind = String(artifact.kind ?? artifact.type ?? "").toLowerCase();
-      const kind: TranscriptArtifact["kind"] =
-        rawKind === "image" || rawKind === "html" || rawKind === "iframe" ? rawKind : "file";
+      const kind = String(artifact.type ?? "").toLowerCase();
+      if (kind !== "image" && kind !== "html" && kind !== "iframe" && kind !== "file") continue;
       collected.set(artifactId, {
         artifactId,
         kind,
-        title: String(artifact.title ?? "Artifact"),
-        source: String(artifact.source ?? artifact.src ?? artifact.url ?? ""),
+        title: String(artifact.title ?? ""),
+        source: String(artifact.source ?? ""),
         location: String(artifact.location ?? ""),
-        absolutePath: String(artifact.absolute_path ?? artifact.absolutePath ?? ""),
+        absolutePath: String(artifact.absolute_path ?? ""),
         toolCallId,
       });
     }
@@ -288,10 +287,6 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
       index += 1;
       continue;
     }
-    if (message.role === "tool_call" && isHiddenToolEventName(message.content)) {
-      index += 1;
-      continue;
-    }
     if (message.role === "assistant" && !message.content.trim()) {
       index += 1;
       continue;
@@ -322,10 +317,6 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
     while (index < messages.length) {
       const next = messages[index];
       if (next.role === "tool_call") {
-        if (isHiddenToolEventName(next.content)) {
-          index += 1;
-          continue;
-        }
         toolMessages.push(next);
         index += 1;
       } else if (next.role === "thinking") {
@@ -534,6 +525,11 @@ export function ChatPanel({
       return [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS);
     });
   }, []);
+
+  useEffect(() => {
+    if (openSidePanels.length === 0 || !historyOpen || !window.matchMedia("(max-width: 1199px)").matches) return;
+    onToggleHistory?.();
+  }, [openSidePanels.length, historyOpen, onToggleHistory]);
 
   const markSidePanelActive = useCallback((panel: SidePanelKey) => {
     setOpenSidePanels((currentPanels) => {
@@ -862,16 +858,7 @@ export function ChatPanel({
       groups.set(artifactId, groupFromTranscript(transcriptArtifact));
     }
     for (const surface of artifactSurfaces) {
-      const transcriptGroup = groups.get(surface.artifactId);
-      const surfaceGroup = groupFromSurface(surface);
-      // Keep the transcript's absolute path/source if the surface omitted it.
-      groups.set(surface.artifactId, {
-        ...surfaceGroup,
-        title: surfaceGroup.title || transcriptGroup?.title || "Artifact",
-        source: surfaceGroup.source || transcriptGroup?.source || "",
-        absolutePath: surfaceGroup.absolutePath || transcriptGroup?.absolutePath || "",
-        toolCallId: surfaceGroup.toolCallId || transcriptGroup?.toolCallId || "",
-      });
+      groups.set(surface.artifactId, groupFromSurface(surface));
     }
     for (const [id, group] of Object.entries(historyGroupsById)) {
       if (!groups.has(id)) groups.set(id, group);
@@ -1126,9 +1113,10 @@ export function ChatPanel({
 
   // Open a changed file from the History list in the same tab+filmstrip flow. The file may
   // never have been surfaced as a tab, so its group is registered here.
-  const handleOpenHistoryFile = useCallback((entry: ArtifactIndexEntry) => {
+  const handleOpenHistoryFile = useCallback((entry: ArtifactIndexEntry, versionId: string) => {
     const group = groupFromIndexEntry(entry);
     setHistoryGroupsById((current) => (current[group.id] ? current : { ...current, [group.id]: group }));
+    setSelectedVersionByArtifact((current) => ({ ...current, [group.id]: versionId }));
     setOpenArtifactIds((current) => (current.includes(group.id) ? current : [...current, group.id]));
     setActiveTabId(group.id);
     setHistoryMode(false);
@@ -1345,7 +1333,7 @@ export function ChatPanel({
             right. Always visible so the controls have a stable home; the title
             fills in once the session names itself, matching the sidebar default
             until then. */}
-        <Flex align="center" gap={2} pl={3} pr={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
+        <Flex align="center" gap={2} px={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
           {onToggleHistory ? (
             <Tooltip content={historyOpen ? t("hideConversations") : t("showConversations")} openDelay={300}>
               <IconButton
@@ -1686,14 +1674,17 @@ export function ChatPanel({
       {(artifactPanelOpen || agentsPanelOpen || backgroundPanelOpen) && (
         <MotionBox
           key="panel-region"
+          data-layout="side-panel-region"
           flexShrink={0}
           h="100%"
-          w={{ base: "100%", md: `${artifactPanelWidth}px` }}
-          minW={{ base: "100%", md: "360px" }}
+          w={{ base: "100%", md: `min(${artifactPanelWidth}px, 55%)` }}
+          minW={{ base: "100%", md: "min(360px, 55%)" }}
           maxW={{ base: "100%", md: "80vw" }}
           pr={2}
           pb={2}
-          position="relative"
+          position={{ base: "absolute", md: "relative" }}
+          inset={{ base: 0, md: "auto" }}
+          zIndex={{ base: 3, md: "auto" }}
           // Same slide + fade (and timing) as the history sidebar on the left, mirrored:
           // the two edges of the window open and close as one family. Only transform and
           // opacity animate — the width is applied instantly, so the resize drag never
@@ -1744,6 +1735,7 @@ export function ChatPanel({
             </PanelHeader>
             {historyMode ? (
               <ArtifactHistoryList
+                sessionId={sessionId}
                 index={artifactIndex}
                 scope={artifactScope}
                 onScopeChange={setArtifactScope}
@@ -1761,7 +1753,7 @@ export function ChatPanel({
                     scrolls horizontally when tabs overflow, but the scrollbar is hidden so
                     it doesn't flicker across the row while scrolling. */}
                 <Flex
-                  px={2}
+                  px={4}
                   pt={2}
                   overflowX="auto"
                   flexShrink={0}
@@ -1799,7 +1791,7 @@ export function ChatPanel({
                     download, close. The 32px icon-button controls are the tallest element in
                     the row, so it keeps a constant height whether or not the (shorter) image
                     annotation pill is present — the bar never jumps switching image ⇄ web page. */}
-                <Flex pl={3} pr={2} py={2} align="center" gap={1} flexShrink={0}>
+                <Flex px={4} py={2} align="center" gap={1} flexShrink={0}>
                   <Flex align="center" gap={1.5} flex={1} minW={0}>
                     <Text textStyle="panelTitle" truncate>
                       {activeGroup.title}
@@ -1898,7 +1890,7 @@ export function ChatPanel({
                     stepping. Only shown when there's more than one version. Newest is
                     editable; older nodes are read-only history. */}
                 {activeVersions.length > 1 ? (
-                  <Flex px={2} pt={2} pb={1.5} align="center" gap={1} flexShrink={0}>
+                  <Flex px={4} pt={2} pb={1.5} align="center" gap={1} flexShrink={0}>
                     <IconButton
                       aria-label={t("previousVersion")}
                       variant="ghost"
@@ -2086,6 +2078,7 @@ export function ChatPanel({
                     <AgentsPanel
                       agentGroups={agentGroups}
                       agents={agents}
+                      sessionId={sessionId}
                       open={agentsPanelOpen}
                       onClose={() => setSidePanelOpen("agents", false)}
                       focusedGroupId={focusedGroupId}
@@ -2148,94 +2141,6 @@ export function ChatPanel({
       </ConfirmDialog>
     </Flex>
     </ArtifactEventProvider>
-  );
-}
-
-// The translation key + colour for a version/file change kind, so a row reads as a proper badge.
-function changeTypeAppearance(changeType: "A" | "M" | "D"): { labelKey: "changeAdded" | "changeDeleted" | "changeModified"; palette: string } {
-  if (changeType === "A") return { labelKey: "changeAdded", palette: "green" };
-  if (changeType === "D") return { labelKey: "changeDeleted", palette: "red" };
-  return { labelKey: "changeModified", palette: "blue" };
-}
-
-// History mode's body: the file-history index, newest first, with a scope switch (this
-// session ⇄ all sessions). Selecting a row opens the file in the tab+filmstrip flow.
-function ArtifactHistoryList({
-  index,
-  scope,
-  onScopeChange,
-  onOpen,
-}: {
-  index: ArtifactIndexEntry[];
-  scope: ArtifactScope;
-  onScopeChange: (scope: ArtifactScope) => void;
-  onOpen: (entry: ArtifactIndexEntry) => void;
-}) {
-  const t = useTranslations("ChatPanel");
-  const sortedEntries = [...index].sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || ""));
-  return (
-    <Flex direction="column" flex={1} minH={0}>
-      {/* Sub-header aligned with the top bar (same px/py, same segmented control) so the
-          scope switch reads as a peer of the Artifacts ⇄ History toggle above it. */}
-      <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0}>
-        <SegmentedToggle<ArtifactScope>
-          value={scope}
-          onChange={onScopeChange}
-          options={[
-            { value: "session", label: t("thisSession") },
-            { value: "full", label: t("allSessions") },
-          ]}
-        />
-      </Flex>
-      {sortedEntries.length === 0 ? (
-        <PanelEmptyState
-          icon={<LuHistory />}
-          title={t("noChangedFilesTitle")}
-          description={t("noChangedFilesDescription")}
-        />
-      ) : (
-        <PanelBody>
-          <VStack gap={2} align="stretch">
-            {sortedEntries.map((entry) => {
-              const appearance = changeTypeAppearance(entry.latestChange);
-              const key = entry.artifactId || `${entry.gitDirectory}::${entry.relativePath}`;
-              // Name on top, its directory muted beneath (only when there is one) — so the
-              // path isn't repeated in full twice. Change badge + version count sit at the end.
-              const fileName = entry.relativePath.split("/").pop() || entry.title || entry.relativePath;
-              const directory = entry.relativePath.slice(0, Math.max(0, entry.relativePath.length - fileName.length)).replace(/\/+$/, "");
-              return (
-                <Button
-                  key={key}
-                  variant="outline"
-                  w="full"
-                  h="auto"
-                  gap={2}
-                  px={2.5}
-                  py={1.5}
-                  bg="bg.subtle"
-                  justifyContent="flex-start"
-                  textAlign="left"
-                  _hover={{ bg: "bg.muted", borderColor: "border.emphasized" }}
-                  onClick={() => onOpen(entry)}
-                >
-                  <Box color="fg.muted" flexShrink={0} display="flex">
-                    <LuFile size={14} />
-                  </Box>
-                  <Flex direction="column" gap={1} flex={1} minW={0}>
-                    <Text textStyle="fieldLabel" truncate title={entry.relativePath}>{fileName}</Text>
-                    {directory ? <Text fontSize="xs" color="fg.subtle" truncate>{directory}</Text> : null}
-                  </Flex>
-                  <Pill colorPalette={appearance.palette}>
-                    {t(appearance.labelKey)}
-                  </Pill>
-                  <VersionBadge number={entry.versionCount} active size="sm" />
-                </Button>
-              );
-            })}
-          </VStack>
-        </PanelBody>
-      )}
-    </Flex>
   );
 }
 

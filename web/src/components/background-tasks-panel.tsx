@@ -10,13 +10,13 @@ import type { ToolEventStatus } from "@/lib/tool-event";
 import { ToolCall } from "./tool-call";
 import { TerminalSurface } from "./terminal-panel";
 import { Tooltip } from "./ui/tooltip";
-import { PanelTab, PANEL_TAB_HEIGHT } from "./ui/panel-tab";
+import { PanelTab } from "./ui/panel-tab";
 import { PanelCard, PanelHeader, PanelEmptyState } from "./ui/panel";
 import { DropdownMenu } from "@/components/ui/menu";
 import { SegmentedToggle } from "./ui/segmented-toggle";
 import { InlineField } from "./ui/display";
 import { scrollFade } from "@/lib/scroll-fade";
-import { isBackgroundResult } from "@/lib/tool-event";
+import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
@@ -34,7 +34,7 @@ interface ShellTask {
   running: boolean;
   canBackground: boolean;
   // Already detached (the model ran it with background=true, or the user pushed a
-  // foreground command to the background) — its result is a "*_started" placeholder.
+  // foreground command to the background).
   backgrounded: boolean;
 }
 
@@ -54,7 +54,7 @@ function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
       timestamp: message.timestamp,
       running,
       canBackground: message.content === "bash",
-      backgrounded: running && isBackgroundResult(meta.result),
+      backgrounded: running && hasBackgroundTaskIdentifier(meta.result),
     });
   }
   // Newest first — the live tail of shell activity reads back in time.
@@ -204,8 +204,8 @@ export function BackgroundTasksPanel({
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const [activeView, setActiveView] = useState<"terminal" | "processes">("terminal");
   // The set of terminals for this session's context, and which one is on top. Restored
-  // from the server on mount/context change so tabs survive reloads; "main" is the
-  // legacy single-terminal key, kept as the default so existing scrollback carries over.
+  // from the server on mount/context change so tabs survive reloads. "main" is the
+  // canonical key for the first terminal created in an empty context.
   const [terminals, setTerminals] = useState<string[]>(["main"]);
   const [activeTerminal, setActiveTerminal] = useState<string>("main");
   // The location each terminal targets (by id); defaults to the project's first location.
@@ -305,7 +305,7 @@ export function BackgroundTasksPanel({
         <Flex position="absolute" inset={0} direction="column" visibility={activeView === "terminal" ? "visible" : "hidden"}>
           {/* Terminal tabs — the shared PanelTab (identical to the Artifacts panel's tabs),
               plus a "＋" to spawn a new terminal and the location switcher, all at one height. */}
-          <Flex px={2} py={2} overflowX="auto" flexShrink={0}>
+          <Flex px={4} py={2} overflowX="auto" flexShrink={0}>
             <Flex gap={1.5} align="center">
               {terminals.map((key, index) => {
                 const terminalLocation = locationForTerminal(key);
@@ -338,7 +338,7 @@ export function BackgroundTasksPanel({
                 // Multiple environments: "＋" opens a menu to pick where the new terminal runs.
                 <DropdownMenu
                   trigger={
-                    <IconButton aria-label={t("newTerminal")} title={t("newTerminal")} variant="ghost" h={PANEL_TAB_HEIGHT} minW={PANEL_TAB_HEIGHT} flexShrink={0}>
+                    <IconButton aria-label={t("newTerminal")} title={t("newTerminal")} variant="ghost" flexShrink={0}>
                       <LuPlus size={14} />
                     </IconButton>
                   }
@@ -354,7 +354,7 @@ export function BackgroundTasksPanel({
                 </DropdownMenu>
               ) : (
                 <Tooltip content={t("newTerminal")} openDelay={300}>
-                  <IconButton aria-label={t("newTerminal")} variant="ghost" h={PANEL_TAB_HEIGHT} minW={PANEL_TAB_HEIGHT} flexShrink={0} onClick={() => addTerminal()}>
+                  <IconButton aria-label={t("newTerminal")} variant="ghost" flexShrink={0} onClick={() => addTerminal()}>
                     <LuPlus size={14} />
                   </IconButton>
                 </Tooltip>
@@ -384,7 +384,7 @@ export function BackgroundTasksPanel({
           inset={0}
           display={activeView === "processes" ? "block" : "none"}
           overflowY="auto"
-          px={2}
+          px={4}
           py={2}
           css={scrollFade}
         >

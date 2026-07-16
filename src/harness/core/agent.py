@@ -236,6 +236,10 @@ class StreamEvent:
         COMPACTION_DONE = "compaction_done"
 
     def __init__(self, event_type: Type, **data):
+        if event_type == self.Type.TOOL_RESULT:
+            data["status"] = ToolStatus(
+                data.get("status", tool_status_from_result(data.get("result")))
+            ).value
         self.type = event_type
         self.data = data
 
@@ -416,18 +420,21 @@ def _spawned_agent_report(child_task: dict | None, agent_name: str) -> str:
     genuinely finished empty."""
     artifacts = child_task.get("artifacts") if isinstance(child_task, dict) else None
     if artifacts:
-        return json.dumps({"code": "agent_report", "agent": agent_name, "artifacts": artifacts}, ensure_ascii=False)
+        return json.dumps(
+            {"code": "agent_report", "status": ToolStatus.OK.value, "agent": agent_name, "artifacts": artifacts},
+            ensure_ascii=False,
+        )
     error = _spawned_agent_error(child_task)
     if error is not None:
         return json.dumps(
-            {"code": "agent_failed", "agent": agent_name,
+            {"code": "agent_failed", "status": ToolStatus.ERROR.value, "agent": agent_name,
              "reason": error.get("code") or "",
              "title": error.get("title") or "Agent turn failed",
              "message": error.get("message") or f"The '{agent_name}' agent's turn failed before it could report."},
             ensure_ascii=False,
         )
     return json.dumps(
-        {"code": "agent_no_report", "agent": agent_name,
+        {"code": "agent_no_report", "status": ToolStatus.OK.value, "agent": agent_name,
          "message": f"The '{agent_name}' agent finished without producing a report."},
         ensure_ascii=False,
     )
@@ -868,10 +875,9 @@ class AgentRuntime:
         # through this delegate — an A2A call to the target agent's served
         # endpoint — instead of being run in-process. Bound to the A2A context.
         self._delegate: Optional[Callable] = None
-        # Cancels a running agent's own A2A task on Stop (async callback injected by
-        # the executor), plus the live agent task ids to cancel: {child_task_id -> agent}.
+        # Cancels a running agent's own A2A task when its public agent handle is
+        # explicitly canceled. The executor injects the async callback.
         self._cancel_delegated: Optional[Callable] = None
-        self._active_delegations: dict[str, str] = {}
         self._a2a_task_id: str = ""
         self._ask_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
         self._respond_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
@@ -1127,21 +1133,14 @@ class AgentRuntime:
         return self._read_only
 
     def abort(self) -> None:
-        # Stop tears down the live turn: signal the loop to end, kill every
-        # foreground tool still running (a synchronous bash, a search awaited
-        # inline), but leave detached background work — anything the model
-        # explicitly sent to the background — running, so a long build/scan the
-        # user chose to background is not collateral of stopping the turn.
+        # Stop tears down only the live turn: signal the loop to end and kill every
+        # foreground tool still running. Detached background work and spawned agents
+        # have independent lifecycles and must not become collateral of steering the
+        # main flow; each can be canceled through its own targeted control.
         self._abort_event.set()
         self._background.cancel_foreground()
         for task in list(self._active_tool_tasks.values()):
             task.cancel()
-        # Cancelling the delegation driver (cancel_foreground) only stops our *wait* on a
-        # agent; its own A2A task keeps running. Reap those too, so Stop truly ends an
-        # in-flight agent. Detached background work (bash background=true) is untouched.
-        if self._cancel_delegated is not None:
-            for child_task_id, agent_name in list(self._active_delegations.items()):
-                asyncio.create_task(self._cancel_delegated(agent_name, child_task_id))
 
     def abort_tool(self, tool_call_identifier: str) -> bool:
         task = self._active_tool_tasks.get(tool_call_identifier)
@@ -1150,6 +1149,10 @@ class AgentRuntime:
             task.cancel()
             aborted = True
         return self._background.cancel_by_tool_call(tool_call_identifier) or aborted
+
+    def cancel_agent(self, task_identifier: str) -> bool:
+        """Cancel one spawned agent by its public agent handle."""
+        return self._background.cancel_by_identifier(task_identifier, kind="spawn_agent")
 
     def background_snapshots(self) -> list[dict[str, Any]]:
         return self._background.active_snapshots()
@@ -1205,7 +1208,7 @@ class AgentRuntime:
         self._delegate = delegate
 
     def set_cancel_delegated(self, cancel_delegated: Callable) -> None:
-        """Install the callback that cancels a running agent's A2A task on Stop."""
+        """Install the callback used by targeted spawned-agent cancellation."""
         self._cancel_delegated = cancel_delegated
 
     def set_agent_event_sink(self, agent_event_sink: Callable[[dict[str, Any]], None]) -> None:
@@ -1533,6 +1536,7 @@ class AgentRuntime:
                 id=completion.tool_call_identifier,
                 name=completion.kind,
                 result=_maybe_json(capped_result),
+                status=background_status,
                 task_id=completion.identifier,
             ))
             completion_event_data: dict[str, Any] = {"task_identifier": completion.identifier}
@@ -2326,8 +2330,7 @@ class AgentRuntime:
                     result_str = event.data.get("result", "")
                     if (
                         isinstance(result_str, dict)
-                        and isinstance(result_str.get("code"), str)
-                        and result_str["code"].endswith("_started")
+                        and event.data["status"] == ToolStatus.RUNNING.value
                     ):
                         raw_task_identifier = result_str.get("task_identifier")
                         background_task_identifier = (
@@ -2342,7 +2345,7 @@ class AgentRuntime:
                         if isinstance(result_str, dict):
                             # A structured result that reports an error status marks the
                             # call failed for the model and the UI alike.
-                            if tool_status_from_result(result_str) == ToolStatus.ERROR:
+                            if event.data["status"] == ToolStatus.ERROR.value:
                                 tool_failed = True
                             # Minified for the model — no spaces, and non-ASCII kept verbatim
                             # (window titles, emoji) rather than \uXXXX-escaped. This is the one
@@ -3426,10 +3429,7 @@ class AgentRuntime:
                             # The agent's streamed progress goes to the panel only,
                             # never into the parent's model context.
                             if delegated.get("type") == "started":
-                                # Track the child's own A2A task so a Stop can reap it.
                                 child_task_id = delegated.get("child_task_id", "")
-                                if child_task_id:
-                                    self._active_delegations[child_task_id] = agent_name
                                 continue
                             if delegated.get("type") == "usage":
                                 usage = delegated["event"]
@@ -3463,13 +3463,12 @@ class AgentRuntime:
                         ))
                         raise
                     finally:
-                        self._active_delegations.pop(child_task_id, None)
                         if self._release_reserved_agent is not None:
                             self._release_reserved_agent(spawn_step_id)
 
-                # Non-detached: a Stop cancels the agent (it is active task work),
-                # but merely ending the turn does not — the job outlives the turn and
-                # wakes the parent when it completes.
+                # Spawned agents own an independent lifecycle: stopping the parent turn
+                # leaves them running, while targeted cancellation still cancels this
+                # driver and, through its CancelledError handler, the child A2A task.
                 spawned_task_id = self._background.spawn(
                     "spawn_agent",
                     _run_spawned_agent(),
@@ -3481,11 +3480,13 @@ class AgentRuntime:
                         "read_only": agent_read_only,
                         "justification": agent_title,
                     },
+                    detached=True,
                 )
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
                     result={
                         "code": "agent_started",
+                        "status": ToolStatus.RUNNING.value,
                         "task_identifier": spawned_task_id,
                         "agent": agent_name,
                         "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
@@ -3533,11 +3534,13 @@ class AgentRuntime:
                         "read_only": agent_read_only,
                         "justification": agent_title,
                     },
+                    detached=True,
                 )
                 yield StreamEvent(
                     StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
                     result={
                         "code": "agent_started",
+                        "status": ToolStatus.RUNNING.value,
                         "task_identifier": spawn_step_id,
                         "agent": agent_name,
                         "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
@@ -3616,6 +3619,7 @@ class AgentRuntime:
                 if not goal:
                     result = {
                         "code": "goal_update_error",
+                        "status": ToolStatus.ERROR.value,
                         "message": "A non-empty goal is required when status is 'active'.",
                     }
                 else:
@@ -3636,6 +3640,7 @@ class AgentRuntime:
             else:
                 result = {
                     "code": "goal_update_error",
+                    "status": ToolStatus.ERROR.value,
                     "message": "Status must be one of 'active', 'satisfied', or 'cleared'.",
                 }
             yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)

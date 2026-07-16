@@ -336,7 +336,7 @@ function ProjectWorkspace() {
       .then((targets) => loadSessions(targets))
       .catch(() => loadSessions());
     loadSettings();
-    // The model catalog (provider list + curated models) drives the agent model picker.
+    // The model catalog drives the provider and agent model pickers.
     loadModelCatalog();
     fetchRecentModels()
       .then(setRecentModels)

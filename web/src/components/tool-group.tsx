@@ -14,7 +14,7 @@ import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon } from "./ui/activity-icon";
 import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
-import { isBackgroundResult, toolStatus } from "@/lib/tool-event";
+import { hasBackgroundTaskIdentifier, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
 
 // Shared, grouped/collapsible run of contiguous tool calls — the single source
@@ -126,7 +126,7 @@ export const ToolGroup = memo(function ToolGroup({
 }: ToolGroupProps) {
   const t = useTranslations("ToolGroup");
   const backgroundCount = tools.filter(
-    (tool) => toolStatus(tool.status) === "running" && isBackgroundResult(tool.result),
+    (tool) => toolStatus(tool.status) === "running" && hasBackgroundTaskIdentifier(tool.result),
   ).length;
   const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length - backgroundCount;
   const inputRequiredCount = tools.filter((tool) => toolStatus(tool.status) === "input_required").length;

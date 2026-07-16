@@ -9,7 +9,7 @@
 import { Box, Button, Flex, IconButton, Image, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuFolderPlus, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
 import daisyIcon from "@/app/icon.png";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
@@ -19,6 +19,7 @@ import { deleteProject, listProjects, listSshHosts, revealInFinder, subscribeEve
 import type { ConnectionKind } from "@/lib/connection-store";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
 import { NewProjectDialog } from "./new-project-dialog";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { toaster } from "./ui/toaster";
 
 export interface SessionEntry {
@@ -44,10 +45,6 @@ export interface SessionEntry {
 }
 
 export type SessionSort = "recent" | "active";
-
-type SidebarListEntry =
-  | { kind: "project"; project: Project }
-  | { kind: "session"; session: SessionEntry };
 
 // The status a session's dot reflects. "working" means the session is still doing
 // something — a soft pulsing gray dot, shown even while it's the active session ("not
@@ -165,7 +162,9 @@ export function SessionsSidebar({
   const [pendingProjectDelete, setPendingProjectDelete] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
+  const [loadedSshHostsConnectionId, setLoadedSshHostsConnectionId] = useState<string | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [projectOpenOverrides, setProjectOpenOverrides] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const searchQuery = search.trim().toLowerCase();
   const connectionSessions = connectionId
@@ -180,12 +179,29 @@ export function SessionsSidebar({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const sshHostsConnectionId = connectionId ?? "";
+    const refreshSshHosts = () => {
+      listSshHosts()
+        .then((nextHosts) => {
+          if (cancelled) return;
+          setSshHosts(nextHosts);
+          setLoadedSshHostsConnectionId(sshHostsConnectionId);
+        })
+        .catch(() => {
+          if (!cancelled) setLoadedSshHostsConnectionId(sshHostsConnectionId);
+        });
+    };
     refreshProjects();
-    listSshHosts().then(setSshHosts).catch(() => {});
-    return subscribeEvents((event) => {
+    refreshSshHosts();
+    const unsubscribe = subscribeEvents((event) => {
       if (event.type === "projects_changed") refreshProjects();
-      if (event.type === "hosts_changed") listSshHosts().then(setSshHosts).catch(() => {});
+      if (event.type === "hosts_changed") refreshSshHosts();
     });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [refreshProjects, connectionId]);
 
   async function confirmProjectDelete() {
@@ -213,112 +229,12 @@ export function SessionsSidebar({
     return primaryLocation ? locationTargetLabel(primaryLocation) : t("untitledProject");
   }
 
-  function renderProjectRow(project: Project) {
-    const primaryLocation = project.locations?.[0];
-    const address = primaryLocation ? locationTargetAddress(primaryLocation) : "";
-    const label = projectLabel(project);
-    const tooltipContent = address ? (
-      <Box>
-        <Text fontWeight="semibold" color="fg" mb={1}>{label}</Text>
-        <Text color="fg.muted" fontFamily="mono" wordBreak="break-all">{address}</Text>
-      </Box>
-    ) : label;
-
-    return (
-      <Box
-        key={project.id}
-        className="sidebar-row"
-        position="relative"
-        borderRadius={ROW_RADIUS}
-        _hover={{ bg: HOVER_BG }}
-        transition="background-color 0.12s"
-        css={{
-          "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
-          "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
-          "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
-        }}
-      >
-        <Tooltip
-          content={tooltipContent}
-          rich={Boolean(address)}
-          openDelay={350}
-          positioning={{ placement: "right" }}
-        >
-          <Button
-            variant="ghost"
-            w="full"
-            minH={ROW_MINIMUM_H}
-            gap={1.5}
-            px={2}
-            justifyContent="flex-start"
-            textAlign="left"
-            color="fg.muted"
-            _hover={{ color: "fg" }}
-            transition="color 0.12s"
-            onClick={() => onSwitchProject(project.id)}
-          >
-            <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
-              <LuFolderOpen size={14} />
-            </Flex>
-            <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">
-              {label}
-            </Text>
-          </Button>
-        </Tooltip>
-        <Box
-          data-row-actions
-          position="absolute"
-          right={1}
-          top="50%"
-          transform="translateY(-50%)"
-          display="flex"
-          alignItems="center"
-          transition="opacity 0.12s"
-        >
-          <DropdownMenu
-            trigger={
-              <IconButton
-                aria-label={t("projectOptions")}
-                variant="plain"
-                boxSize={5}
-                color="fg.subtle"
-                _hover={{ bg: "transparent", color: "fg" }}
-                _active={{ bg: "transparent" }}
-                _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
-                css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
-              >
-                <LuEllipsis size={13} />
-              </IconButton>
-            }
-            minW="180px"
-            positioning={{ placement: "bottom-end" }}
-          >
-            <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenProjectSettings(project.id)}>
-              {t("projectSettings")}
-            </MenuOption>
-            <Menu.Item
-              value="delete-project"
-              color="red.fg"
-              disabled={projects.length <= 1}
-              onClick={() => setPendingProjectDelete(project)}
-            >
-              <LuTrash2 size={14} />
-              <Box flex={1}>{t("deleteProject")}</Box>
-            </Menu.Item>
-          </DropdownMenu>
-        </Box>
-      </Box>
-    );
-  }
-
-  const sidebarEntries = projects.flatMap<SidebarListEntry>((project) => {
-    const projectSessions = shownSessions.filter((session) => session.projectId === project.id);
-    if (searchQuery && projectSessions.length === 0) return [];
-    return [
-      { kind: "project", project },
-      ...projectSessions.map((session): SidebarListEntry => ({ kind: "session", session })),
-    ];
-  });
+  const visibleProjects = projects
+    .map((project) => ({
+      project,
+      sessions: shownSessions.filter((session) => session.projectId === project.id),
+    }))
+    .filter(({ sessions: projectSessions }) => !searchQuery || projectSessions.length > 0);
 
   return (
     <PanelCard flex={1}>
@@ -430,123 +346,173 @@ export function SessionsSidebar({
             </DropdownMenu>
           </Box>
         </Flex>
-        {!sessionsLoaded || projects.length === 0 ? null : sidebarEntries.length === 0 ? (
+        {!sessionsLoaded || projects.length === 0 ? null : visibleProjects.length === 0 ? (
           <Text fontSize="xs" color="fg.muted" px={2} py={2}>{t("noMatches", { query: search })}</Text>
         ) : (
           <VStack gap={1} align="stretch">
-            {sidebarEntries.map((sidebarEntry) => {
-              if (sidebarEntry.kind === "project") return renderProjectRow(sidebarEntry.project);
-              const entry = sidebarEntry.session;
-              const isActive = entry.sessionId === activeSessionId;
-              const indicator = sessionIndicator(entry, isActive, unseenCompletions);
-              const title = entry.title || t("untitledConversation");
+            {visibleProjects.map(({ project, sessions: projectSessions }) => {
+              const primaryLocation = project.locations?.[0];
+              const address = primaryLocation ? locationTargetAddress(primaryLocation) : "";
+              const label = projectLabel(project);
+              const projectOpenKey = searchQuery ? `${project.id}:${searchQuery}` : project.id;
+              const projectOpen = projectOpenOverrides[projectOpenKey]
+                ?? (searchQuery ? projectSessions.length > 0 : project.id === currentProjectId);
+              const tooltipContent = address ? (
+                <Box>
+                  <Text fontWeight="semibold" color="fg" mb={1}>{label}</Text>
+                  <Text color="fg.muted" fontFamily="mono" wordBreak="break-all">{address}</Text>
+                </Box>
+              ) : label;
+              const projectActions = (
+                <Box>
+                  <DropdownMenu
+                    trigger={
+                      <IconButton
+                        aria-label={t("projectOptions")}
+                        variant="plain"
+                        boxSize={5}
+                        color="fg.subtle"
+                        _hover={{ bg: "transparent", color: "fg" }}
+                        _active={{ bg: "transparent" }}
+                        _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
+                        css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
+                      >
+                        <LuEllipsis size={13} />
+                      </IconButton>
+                    }
+                    minW="180px"
+                    positioning={{ placement: "bottom-end" }}
+                  >
+                    <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenProjectSettings(project.id)}>
+                      {t("projectSettings")}
+                    </MenuOption>
+                    <Menu.Item
+                      value="delete-project"
+                      color="red.fg"
+                      disabled={projects.length <= 1}
+                      onClick={() => setPendingProjectDelete(project)}
+                    >
+                      <LuTrash2 size={14} />
+                      <Box flex={1}>{t("deleteProject")}</Box>
+                    </Menu.Item>
+                  </DropdownMenu>
+                </Box>
+              );
 
               return (
-                  // The row: a real button carries the click/keyboard target; the ⋯ actions
-                  // ride as an absolutely-positioned sibling (not nested in the button, which
-                  // would be invalid) that fades in only on hover/focus. A long title reveals
-                  // itself by scrolling on hover (MarqueeTitle), while a delayed tooltip keeps
-                  // the complete title accessible without interrupting a quick pointer pass.
-                  <Box
-                    key={entry.sessionId}
-                    className="sidebar-row"
-                    ml={3}
-                    position="relative"
-                    borderRadius={ROW_RADIUS}
-                    bg={isActive ? SELECTED_BG : undefined}
-                    _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
-                    transition="background-color 0.12s"
-                    css={{
-                      // Hidden actions are also click-through (pointerEvents none), so the
-                      // absolutely-positioned ⋯ never swallows a click meant for the row.
-                      "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
-                      "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
-                      "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+                <Box
+                  key={project.id}
+                  className="sidebar-row"
+                  borderRadius={ROW_RADIUS}
+                >
+                  <DisclosureRow
+                    fill
+                    open={projectOpen}
+                    onOpenChange={(nextOpen) => {
+                      setProjectOpenOverrides((current) => ({ ...current, [projectOpenKey]: nextOpen }));
+                      if (nextOpen) onSwitchProject(project.id);
                     }}
+                    onActivate={() => onSwitchProject(project.id)}
+                    icon={<Box color="fg.muted"><LuFolderOpen /></Box>}
+                    title={
+                      <Tooltip content={tooltipContent} rich={Boolean(address)} openDelay={350} positioning={{ placement: "right" }}>
+                        <Box minW={0}><DisclosureLabel>{label}</DisclosureLabel></Box>
+                      </Tooltip>
+                    }
+                    actions={projectActions}
                   >
-                    <Tooltip
-                      content={title}
-                      openDelay={350}
-                      positioning={{ placement: "right" }}
-                    >
-                      <Button
-                        variant="plain"
-                        w="full"
-                        minH={ROW_MINIMUM_H}
-                        gap={1.5}
-                        pl={2}
-                        pr={2}
-                        justifyContent="flex-start"
-                        textAlign="left"
-                        color={isActive ? "blue.fg" : "fg.muted"}
-                        _hover={{ color: isActive ? "blue.fg" : "fg" }}
-                        transition="color 0.12s"
-                        onClick={() => onResume(entry)}
-                      >
-                        {/* Fixed-width leading slot keeps titles aligned whether or not a status
-                            dot is present. Gray + pulsing while working; solid blue once finished
-                            since you last looked; red/amber for an error or an awaiting prompt. */}
-                        <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
-                          {indicator ? (
+                    {projectSessions.length > 0 ? (
+                      <VStack gap={1} align="stretch">
+                        {projectSessions.map((entry) => {
+                          const isActive = entry.sessionId === activeSessionId;
+                          const indicator = sessionIndicator(entry, isActive, unseenCompletions);
+                          const title = entry.title || t("untitledConversation");
+                          return (
                             <Box
-                              boxSize="2"
-                              borderRadius="full"
-                              bg={INDICATOR_COLOR[indicator]}
-                              className={indicator === "working" ? "status-dot-pulse" : undefined}
-                            />
-                          ) : null}
-                        </Flex>
-                        <Box flex={1} minW={0} fontSize="xs">
-                          <MarqueeTitle text={title} />
-                        </Box>
-                      </Button>
-                    </Tooltip>
-                    <Box
-                      data-row-actions
-                      position="absolute"
-                      right={1}
-                      top="50%"
-                      transform="translateY(-50%)"
-                      display="flex"
-                      alignItems="center"
-                      transition="opacity 0.12s"
-                    >
-                      <DropdownMenu
-                        trigger={
-                          <IconButton
-                            aria-label={t("sessionOptions")}
-                            // Plain (no background box) in every state — including hover and
-                            // while the menu is open — so the ⋯ reads as a bare glyph, not a chip.
-                            variant="plain"
-                            boxSize={5}
-                            color="fg.subtle"
-                            _hover={{ bg: "transparent", color: "fg" }}
-                            _active={{ bg: "transparent" }}
-                            _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
-                            css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <LuEllipsis size={13} />
-                          </IconButton>
-                        }
-                        minW="180px"
-                        positioning={{ placement: "bottom-end" }}
-                      >
-                        <Menu.Item
-                          value="reveal"
-                          fontSize="xs"
-                          disabled={!entry.workingDirectory}
-                          onClick={() => { if (entry.workingDirectory) void revealInFinder(entry.workingDirectory); }}
-                        >
-                          <LuFolderOpen size={14} />
-                          <Box flex={1}>{t("openFolder")}</Box>
-                        </Menu.Item>
-                        <MenuOption value="delete" danger icon={<LuTrash2 size={14} />} onClick={() => setPendingDelete(entry)}>
-                          {t("deleteSession")}
-                        </MenuOption>
-                      </DropdownMenu>
-                    </Box>
-                  </Box>
+                              key={entry.sessionId}
+                              className="sidebar-row"
+                              borderRadius={ROW_RADIUS}
+                              bg={isActive ? SELECTED_BG : undefined}
+                              _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
+                              transition="background-color 0.12s"
+                              css={{
+                                "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
+                                "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+                                "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+                              }}
+                            >
+                              <DisclosureRow
+                                fill
+                                tone={isActive ? "active" : "muted"}
+                                onActivate={() => onResume(entry)}
+                                icon={
+                                  <Box position="relative" color={isActive ? "blue.fg" : "fg.muted"}>
+                                    <LuMessageSquare />
+                                    {indicator ? (
+                                      <Box
+                                        position="absolute"
+                                        right="-2px"
+                                        bottom="-2px"
+                                        boxSize="1.5"
+                                        borderRadius="full"
+                                        bg={INDICATOR_COLOR[indicator]}
+                                        outline="1px solid"
+                                        outlineColor="bg.panel"
+                                        className={indicator === "working" ? "status-dot-pulse" : undefined}
+                                      />
+                                    ) : null}
+                                  </Box>
+                                }
+                                title={
+                                  <Tooltip content={title} openDelay={350} positioning={{ placement: "right" }}>
+                                    <Box minW={0} color={isActive ? "blue.fg" : undefined}>
+                                      <MarqueeTitle text={title} />
+                                    </Box>
+                                  </Tooltip>
+                                }
+                                actions={
+                                  <Box data-row-actions opacity={0} pointerEvents="none" transition="opacity 0.12s">
+                                    <DropdownMenu
+                                      trigger={
+                                        <IconButton
+                                          aria-label={t("sessionOptions")}
+                                          variant="plain"
+                                          boxSize={5}
+                                          color="fg.subtle"
+                                          _hover={{ bg: "transparent", color: "fg" }}
+                                          _active={{ bg: "transparent" }}
+                                          _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
+                                          css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
+                                        >
+                                          <LuEllipsis size={13} />
+                                        </IconButton>
+                                      }
+                                      minW="180px"
+                                      positioning={{ placement: "bottom-end" }}
+                                    >
+                                      <Menu.Item
+                                        value="reveal"
+                                        fontSize="xs"
+                                        disabled={!entry.workingDirectory}
+                                        onClick={() => { if (entry.workingDirectory) void revealInFinder(entry.workingDirectory); }}
+                                      >
+                                        <LuFolderOpen size={14} />
+                                        <Box flex={1}>{t("openFolder")}</Box>
+                                      </Menu.Item>
+                                      <MenuOption value="delete" danger icon={<LuTrash2 size={14} />} onClick={() => setPendingDelete(entry)}>
+                                        {t("deleteSession")}
+                                      </MenuOption>
+                                    </DropdownMenu>
+                                  </Box>
+                                }
+                              />
+                            </Box>
+                          );
+                        })}
+                      </VStack>
+                    ) : undefined}
+                  </DisclosureRow>
+                </Box>
               );
             })}
           </VStack>
@@ -568,6 +534,7 @@ export function SessionsSidebar({
         <NewProjectDialog
           open
           hosts={sshHosts}
+          hostsLoaded={loadedSshHostsConnectionId === (connectionId ?? "")}
           onOpenChange={setNewProjectOpen}
           onCreated={(project) => {
             setProjects((current) => [project, ...current.filter((entry) => entry.id !== project.id)]);

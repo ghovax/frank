@@ -11,11 +11,13 @@ import { toaster } from "./ui/toaster";
 // where the agent will work. Mount this only while open so its initializers give fresh state.
 export function NewProjectDialog({
   hosts,
+  hostsLoaded,
   open,
   onOpenChange,
   onCreated,
 }: {
   hosts: SshHost[];
+  hostsLoaded: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (project: Project) => void;
@@ -53,7 +55,7 @@ export function NewProjectDialog({
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
-          <Dialog.Content maxW="min(560px, 94vw)">
+          <Dialog.Content w="min(560px, calc(100vw - 16px))">
             <Dialog.Header display="flex" flexDirection="column" alignItems="flex-start" gap={1}>
               <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
               <Text fontSize="sm" color="fg.muted">{t("description")}</Text>
@@ -61,7 +63,7 @@ export function NewProjectDialog({
             <Dialog.Body display="flex" flexDirection="column" gap={4}>
               <Box>
                 <Text textStyle="panelTitle" mb={2}>{t("folders")}</Text>
-                <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} />
+                <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} loading={!hostsLoaded} />
               </Box>
             </Dialog.Body>
             <Dialog.Footer>

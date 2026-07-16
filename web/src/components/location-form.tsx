@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
+import { Alert, Box, Button, Flex, IconButton, Input, Skeleton, Text } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef } from "react";
 import { LuFolder, LuFolderOpen, LuPlus, LuServer, LuTrash2 } from "react-icons/lu";
 import { useTranslations } from "next-intl";
@@ -213,6 +213,7 @@ export function LocationEditorList({
   onAdd,
   onRemove,
   showPermission = false,
+  loading = false,
 }: {
   hosts: SshHost[];
   locations: LocationInput[];
@@ -220,8 +221,34 @@ export function LocationEditorList({
   onAdd: () => void;
   onRemove: (index: number) => void;
   showPermission?: boolean;
+  loading?: boolean;
 }) {
   const t = useTranslations("LocationForm");
+  if (loading) {
+    return (
+      <Flex data-layout="location-editor-loading" direction="column" gap={3} aria-label={t("loadingLocations")}>
+        <Box borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
+          <Flex direction="column" gap={3}>
+            <Flex gap={2}>
+              <Skeleton h={8} flex={1} borderRadius="md" />
+              <Skeleton h={8} flex={1} borderRadius="md" />
+            </Flex>
+            <Flex direction="column" gap={1}>
+              <Skeleton h={5} w={24} borderRadius="sm" />
+              <Skeleton h={8} w="full" borderRadius="md" />
+            </Flex>
+            {showPermission ? (
+              <Flex direction="column" gap={1}>
+                <Skeleton h={5} w={24} borderRadius="sm" />
+                <Skeleton h={8} w="full" borderRadius="md" />
+              </Flex>
+            ) : null}
+          </Flex>
+        </Box>
+        <Skeleton h={8} w="full" borderRadius="md" />
+      </Flex>
+    );
+  }
   const conflict = locationConflict(locations);
   return (
     <Flex direction="column" gap={3}>

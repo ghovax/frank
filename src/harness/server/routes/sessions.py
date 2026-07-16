@@ -2,7 +2,6 @@
 from fastapi import APIRouter
 from harness.server import app as _app
 from harness.server.app import (
-    ConversationRecord,
     EventSourceResponse,
     Request,
     SessionDraftRequest,
@@ -186,15 +185,12 @@ async def delete_session(context_id: str):
     # Prune this session's artifact versions (shadow-git branches + index rows) before the
     # session record goes, so its locations can still be resolved for the branch delete.
     await asyncio.to_thread(_prune_session_artifacts, context_id)
-    # Delete the session record and its persisted dialogue history in one transaction,
-    # so a deleted session leaves nothing behind in either table (the conversation row
-    # was previously orphaned forever). teardown_context already dropped the in-memory
-    # copies above.
+    # The retention pass above already removed persisted conversation/lifecycle state;
+    # finish by removing the sidebar record. teardown_context dropped the live copies.
     def _delete_record() -> bool:
         assert _app._session_factory is not None
         database_session = _app._session_factory()
         try:
-            database_session.query(ConversationRecord).filter(ConversationRecord.context_id == context_id).delete()
             record = database_session.query(SessionRecord).filter(SessionRecord.id == context_id).first()
             if record is None:
                 database_session.commit()

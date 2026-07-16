@@ -19,7 +19,7 @@ import {
   type PermissionMode,
   type WorkspaceStrategy,
 } from "./api";
-import { isHiddenToolEventName, isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
+import { isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
 import { artifactImageKey, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "./artifact-annotations";
 import type { ArtifactEvent } from "@/components/artifact-bridge";
 import { toaster } from "@/components/ui/toaster";
@@ -252,19 +252,10 @@ function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Recor
   };
 }
 
-// Legacy fallback: infer lifecycle from a result payload's `code` suffix. Only used
-// when a wire event carries no explicit status (a replayed pre-migration part).
-function toolResultStatus(result: unknown): ToolEventStatus {
-  const code = String(asRecord(result).code ?? "");
-  if (code === "tool_error") return "failed";
-  if (code.endsWith("_started") || code === "background_task_scheduled") return "running";
-  return "completed";
-}
-
 // The explicit ToolStatus from the wire mapped to the UI lifecycle. `input_required`
 // is a separate, UI-only state driven by permission/question events, never a result.
-function statusFromWire(wireStatus: unknown, result: unknown): ToolEventStatus {
-  switch (String(wireStatus ?? "")) {
+function statusFromWire(wireStatus: unknown): ToolEventStatus {
+  switch (wireStatus) {
     case "ok":
       return "completed";
     case "error":
@@ -272,7 +263,7 @@ function statusFromWire(wireStatus: unknown, result: unknown): ToolEventStatus {
     case "running":
       return "running";
     default:
-      return toolResultStatus(result);
+      throw new Error(`Invalid tool result status: ${String(wireStatus)}`);
   }
 }
 
@@ -976,17 +967,15 @@ function reduceAgentLaneEvent(state: ReduceState, data: Record<string, unknown>)
       if (String(data.code ?? "") === "waiting_for_tools") apply(finishAgentThinking);
       break;
     case "tool_call":
-      if (isHiddenToolEventName(data.tool_name)) break;
       ensureLaneGroup(state, groupId, stepId);
       apply((step) => appendAgentToolCall(step, String(data.tool_name ?? "unknown"), data.arguments as Record<string, unknown> | undefined, String(data.tool_call_id ?? "")));
       break;
     case "tool_result": {
       const toolName = String(data.tool_name ?? "unknown");
-      if (isHiddenToolEventName(toolName)) break;
       const toolCallId = String(data.tool_call_id ?? "");
       const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(agentToolResult(state.agentGroups, toolCallId), data.display) : data.display;
       const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
-      const status = statusFromWire(data.status, artifactUpdate.result);
+      const status = statusFromWire(data.status);
       state.agentGroups = withStep(artifactUpdate.agentGroups, groupId, stepId, (step) => upsertAgentToolResult(step, toolName, toolCallId, artifactUpdate.result, status));
       break;
     }
@@ -1125,10 +1114,8 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       finishRunningThinkingWithDuration(state, Number(data.duration_ms ?? 0));
       break;
     case "tool_call": {
-      // Every tool call breaks the prose lane so surrounding text doesn't run
-      // together. Hidden runtime envelopes such as query still cause the break.
+      // Every tool call breaks the prose lane so surrounding text doesn't run together.
       state.lane = null;
-      if (isHiddenToolEventName(data.tool_name)) break;
       finishRunningThinking(state);
       const toolCallId = String(data.tool_call_id ?? "");
       state.messages = [
@@ -1144,7 +1131,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       break;
     }
     case "tool_result": {
-      if (isHiddenToolEventName(data.tool_name)) break;
       finishRunningThinking(state);
       state.lane = null;
       const toolName = String(data.tool_name ?? "");
@@ -1152,7 +1138,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
       const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, data.display) : data.display;
       const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
-      const resultStatus = statusFromWire(data.status, artifactUpdate.result);
+      const resultStatus = statusFromWire(data.status);
       // set_tasks / update_tasks complete through this same universal path and carry
       // the authoritative task list for the side panel inside their result.
       const resultTasks = asRecord(artifactUpdate.result).tasks;

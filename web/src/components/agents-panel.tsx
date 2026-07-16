@@ -1,15 +1,19 @@
 "use client";
 
-import { Box, Flex } from "@chakra-ui/react";
-import { useEffect, useRef } from "react";
+import { Box, Flex, IconButton } from "@chakra-ui/react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { LuBot, LuNetwork } from "react-icons/lu";
+import { LuBot, LuNetwork, LuSquare } from "react-icons/lu";
+import { cancelAgent } from "@/lib/api";
 import type { ToolEvent } from "@/lib/tool-event";
-import type { AgentStep, AgentGroup, TaskState } from "@/lib/use-chat";
+import { isStepDone, type AgentStep, type AgentGroup, type TaskState } from "@/lib/use-chat";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { Pill } from "./ui/pill";
+import { Tooltip } from "./ui/tooltip";
+import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
+import { toaster } from "./ui/toaster";
 import { STATUS_PALETTE, taskStateKind } from "@/lib/status";
 import { PanelCard, PanelHeader, PanelBody, PanelEmptyState } from "@/components/ui/panel";
 
@@ -40,6 +44,7 @@ function AgentStateBadge({ state }: { state: TaskState }) {
 interface AgentsPanelProps {
   agentGroups: AgentGroup[];
   agents: { id: string; name: string; title?: string }[];
+  sessionId: string | null;
   open: boolean;
   onClose: () => void;
   focusedGroupId: string | null;
@@ -49,17 +54,39 @@ function StepCard({
   step,
   agentLabel,
   agents,
+  sessionId,
 }: {
   step: AgentStep;
   agentLabel: string;
   agents: { id: string; name: string; title?: string }[];
+  sessionId: string | null;
 }) {
   const t = useTranslations("AgentsPanel");
+  const [stopping, setStopping] = useState(false);
+  const active = !isStepDone(step);
   // The remote the step ran against (if any) — surfaced on the step's own (top)
   // disclosure, mirroring the grouped tool-call heading.
   const stepLocation = collapsedHeadingLocation(
     step.parts.filter((part) => part.kind === "tool").map((part) => (part as ToolEvent).arguments),
   );
+
+  async function handleStop() {
+    if (!sessionId || stopping) return;
+    setStopping(true);
+    try {
+      const stopped = await cancelAgent(sessionId, step.stepId);
+      if (!stopped) {
+        toaster.create({
+          type: "error",
+          title: t("stopFailed"),
+          description: t("stopFailedDescription"),
+          closable: true,
+        });
+      }
+    } finally {
+      setStopping(false);
+    }
+  }
 
   return (
     <DisclosureRow
@@ -73,6 +100,21 @@ function StepCard({
           <AgentStateBadge state={step.state} />
         </>
       }
+      actions={active ? (
+        <Tooltip content={t("stopAgent")} openDelay={300}>
+          <IconButton
+            aria-label={stopping ? t("stoppingAgent") : t("stopAgent")}
+            variant="plain"
+            colorPalette="red"
+            boxSize="5"
+            minW="5"
+            disabled={!sessionId || stopping}
+            onClick={handleStop}
+          >
+            {stopping ? <ActivitySpinner /> : <ActivityIcon><LuSquare /></ActivityIcon>}
+          </IconButton>
+        </Tooltip>
+      ) : undefined}
     >
       {step.parts.length > 0 ? <AgentTimeline parts={step.parts} agents={agents} /> : undefined}
     </DisclosureRow>
@@ -82,6 +124,7 @@ function StepCard({
 export function AgentsPanel({
   agentGroups,
   agents,
+  sessionId,
   open,
   onClose,
   focusedGroupId,
@@ -107,7 +150,7 @@ export function AgentsPanel({
         closeLabel={t("collapseSidebar")}
       />
 
-      <PanelBody>
+      <PanelBody px={4}>
         {agentGroups.length === 0 ? (
           <PanelEmptyState
             icon={<LuBot />}
@@ -131,6 +174,7 @@ export function AgentsPanel({
                       step={step}
                       agentLabel={agentLabels.get(step.agent) ?? step.agent}
                       agents={agents}
+                      sessionId={sessionId}
                     />
                   ))}
                 </Flex>
