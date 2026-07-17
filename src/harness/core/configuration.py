@@ -421,6 +421,37 @@ class RemoteAgentsConfiguration(BaseModel):
         return cls(agents=agents)
 
 
+class A2AServerConfiguration(BaseModel):
+    """Inbound authentication for this harness's own A2A endpoints. Off by default so the
+    localhost bundled server stays zero-config; enabling any field advertises the matching
+    security scheme on the AgentCard and enforces it on ``/a2a`` requests (the well-known
+    card and signed file URLs stay public)."""
+
+    # Shared secret required in a header (``${ENV}`` expanded at load).
+    api_key: str = ""
+    api_key_header: str = "X-API-Key"
+    # When set, ``Authorization: Bearer <JWT>`` is validated against this JWKS.
+    oauth2_jwks_url: str = ""
+    oauth2_issuer: str = ""
+    oauth2_audience: str = ""
+
+    def enabled(self) -> bool:
+        return bool(self.api_key or self.oauth2_jwks_url)
+
+    def card_security(self) -> tuple[Optional[dict], Optional[list[dict]]]:
+        """The ``securitySchemes`` map and ``security`` requirement (a logical OR) to
+        advertise on the card for whatever inbound auth is configured."""
+        schemes: dict[str, dict] = {}
+        requirement: list[dict] = []
+        if self.api_key:
+            schemes["apiKey"] = {"type": "apiKey", "in": "header", "name": self.api_key_header}
+            requirement.append({"apiKey": []})
+        if self.oauth2_jwks_url:
+            schemes["bearer"] = {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+            requirement.append({"bearer": []})
+        return (schemes or None, requirement or None)
+
+
 class ProviderCredential(BaseModel):
     """Credentials for one LLM provider. ``base_url`` is only meaningful for the
     OpenAI-compatible providers (opencode and custom); first-party clouds leave it
@@ -450,6 +481,7 @@ class GlobalConfiguration(BaseModel):
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
     remote_agents: RemoteAgentsConfiguration = RemoteAgentsConfiguration()
+    a2a: A2AServerConfiguration = A2AServerConfiguration()
     default_agent: str = "general-assistant"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).
@@ -472,6 +504,7 @@ class GlobalConfiguration(BaseModel):
         configuration = cls(**data)
         configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
         configuration.remote_agents = RemoteAgentsConfiguration.from_dotagents_roots(configuration.agents_root_directories())
+        configuration.a2a.api_key = os.path.expandvars(configuration.a2a.api_key)
         return configuration
 
     def configured_provider_keys(self) -> dict[str, str]:

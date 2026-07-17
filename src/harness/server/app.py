@@ -2,6 +2,8 @@ import asyncio
 import base64
 import fcntl
 import hashlib
+import hmac
+import jwt
 import uuid
 import json
 import logging
@@ -42,6 +44,7 @@ from pydantic import BaseModel, Field
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import BasePushNotificationSender, InMemoryPushNotificationConfigStore
 
 from harness.core.a2a_executor import (
     AgentRegistry,
@@ -372,6 +375,10 @@ _mcp_manager: Optional[MCPClientManager] = None
 _remote_agent_manager: Optional[RemoteAgentManager] = None
 # Signs short-lived URLs for the A2A file-serving endpoint. Built at startup.
 _file_url_signer: Optional[FileUrlSigner] = None
+# Push-notification config store and sender, shared by every mounted agent's handler.
+_push_config_store: Optional[InMemoryPushNotificationConfigStore] = None
+_push_sender: Optional[BasePushNotificationSender] = None
+_push_httpx_client: Optional[httpx.AsyncClient] = None
 _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
 _workspace_manager: SessionWorkspaceManager | None = None
@@ -1626,7 +1633,11 @@ def _card_for(agent_name: str, working_directory: str = ""):
     )
     all_skills = load_skills(skill_roots)
     agent_skills = skills_for_agent(all_skills, configuration.skills)
-    return configuration, build_agent_card(configuration, agent_skills, PUBLIC_BASE_URL)
+    security_schemes, security = _global_configuration.a2a.card_security()
+    return configuration, build_agent_card(
+        configuration, agent_skills, PUBLIC_BASE_URL,
+        security_schemes=security_schemes, security=security,
+    )
 
 
 def _mount_agent(application: FastAPI, agent_name: str) -> None:
@@ -1659,7 +1670,12 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         resolve_locations=_resolve_session_locations,
         capture_artifacts=_capture_artifacts,
     )
-    handler = DefaultRequestHandler(agent_executor=executor, task_store=_task_store)
+    handler = DefaultRequestHandler(
+        agent_executor=executor,
+        task_store=_task_store,
+        push_config_store=_push_config_store,
+        push_sender=_push_sender,
+    )
     _executors[agent_name] = executor
     _registry.register(agent_name, handler, card)
     rpc_path = agent_rpc_path(agent_name)
@@ -2106,7 +2122,7 @@ async def _watch_ssh_hosts() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _remote_agent_manager, _file_url_signer, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _remote_agent_manager, _file_url_signer, _push_config_store, _push_sender, _push_httpx_client, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
     _main_loop = asyncio.get_running_loop()
     _file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
     _workspace_manager = SessionWorkspaceManager()
@@ -2211,6 +2227,9 @@ async def lifespan(application: FastAPI):
     _registry = AgentRegistry(_task_store)
     _file_url_signer = FileUrlSigner(load_or_create_secret(harness_home_directory()), PUBLIC_BASE_URL)
     _registry.set_file_url_signer(_file_url_signer)
+    _push_config_store = InMemoryPushNotificationConfigStore()
+    _push_httpx_client = httpx.AsyncClient(timeout=30.0)
+    _push_sender = BasePushNotificationSender(_push_httpx_client, _push_config_store)
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
@@ -2272,6 +2291,58 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Cache one JWKS client per issuer URL — each fetches and caches signing keys itself.
+_jwks_clients: dict[str, "jwt.PyJWKClient"] = {}
+
+
+def _a2a_request_authorized(request: Request, configuration: "_configuration.A2AServerConfiguration") -> bool:
+    """Whether an inbound A2A request satisfies the configured auth: a matching API-key
+    header, or a Bearer JWT that verifies against the configured JWKS (issuer/audience)."""
+    if configuration.api_key:
+        provided = request.headers.get(configuration.api_key_header, "")
+        if provided and hmac.compare_digest(provided, configuration.api_key):
+            return True
+    if configuration.oauth2_jwks_url:
+        header = request.headers.get("Authorization", "")
+        if header.startswith("Bearer "):
+            token = header[len("Bearer "):]
+            try:
+                client = _jwks_clients.get(configuration.oauth2_jwks_url)
+                if client is None:
+                    client = jwt.PyJWKClient(configuration.oauth2_jwks_url)
+                    _jwks_clients[configuration.oauth2_jwks_url] = client
+                signing_key = client.get_signing_key_from_jwt(token)
+                jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["RS256", "ES256"],
+                    audience=configuration.oauth2_audience or None,
+                    issuer=configuration.oauth2_issuer or None,
+                )
+                return True
+            except Exception:
+                return False
+    return False
+
+
+@app.middleware("http")
+async def _a2a_auth_middleware(request: Request, call_next):
+    """Enforce inbound auth on the A2A RPC endpoints when configured. Discovery (the
+    well-known card) and self-authenticating signed file URLs stay public so peers can
+    still resolve the agent and fetch files it handed them."""
+    configuration = _global_configuration.a2a if _global_configuration is not None else None
+    path = request.url.path
+    protected = (
+        configuration is not None
+        and configuration.enabled()
+        and path.startswith("/a2a/")
+        and not path.startswith("/a2a/files/")
+        and not path.endswith("/.well-known/agent-card.json")
+    )
+    if protected and not _a2a_request_authorized(request, configuration):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)

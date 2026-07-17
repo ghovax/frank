@@ -35,6 +35,9 @@ from a2a.server.tasks import TaskStore, TaskUpdater
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
+    AgentExtension,
+    AgentInterface,
+    AgentProvider,
     AgentSkill,
     DataPart,
     FilePart,
@@ -281,7 +284,14 @@ def agent_rpc_path(agent_name: str) -> str:
     return f"{AGENT_RPC_PREFIX}/{agent_name}"
 
 
-def build_agent_card(configuration: AgentConfiguration, available_skills: list[Skill], base_url: str) -> AgentCard:
+def build_agent_card(
+    configuration: AgentConfiguration,
+    available_skills: list[Skill],
+    base_url: str,
+    *,
+    security_schemes: Optional[dict] = None,
+    security: Optional[list[dict]] = None,
+) -> AgentCard:
     """Compile an agent's markdown definition into its A2A AgentCard — the
     A2A-native way to broadcast an agent's identity and capabilities. Each
     profile becomes an independently addressable, discoverable A2A agent.
@@ -289,6 +299,7 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
     The agent's available skills (discovered from the skills directory) are
     advertised on the card; if there are none, a single default skill describing
     the agent's role is synthesised so the card always carries at least one skill.
+    ``security_schemes``/``security`` are set when inbound auth is enabled.
     """
     display_name = configuration.display_name
     capability = (
@@ -315,16 +326,30 @@ def build_agent_card(configuration: AgentConfiguration, available_skills: list[S
                 examples=[f"Ask {display_name} to help with a task in its domain."],
             )
         )
+    url = f"{base_url.rstrip('/')}{agent_rpc_path(configuration.identifier)}"
     return AgentCard(
         name=configuration.identifier,
         description=configuration.description or f"The '{display_name}' agent.",
-        url=f"{base_url.rstrip('/')}{agent_rpc_path(configuration.identifier)}",
+        url=url,
         version="1.0.0",
         protocol_version="0.3.0",
         preferred_transport="JSONRPC",
-        default_input_modes=["text/plain"],
-        default_output_modes=["text/plain"],
-        capabilities=AgentCapabilities(streaming=True, state_transition_history=True),
+        additional_interfaces=[AgentInterface(transport="JSONRPC", url=url)],
+        provider=AgentProvider(organization="Daisy", url="https://github.com/ghovax/daisy"),
+        default_input_modes=["text/plain", "application/json"],
+        default_output_modes=["text/plain", "text/markdown", "application/json"],
+        capabilities=AgentCapabilities(
+            streaming=True,
+            push_notifications=True,
+            state_transition_history=True,
+            extensions=[AgentExtension(
+                uri=DAISY_METADATA_KEY,
+                description="Daisy per-turn metadata (working directory, permission mode, delegation).",
+                required=False,
+            )],
+        ),
+        security_schemes=security_schemes or None,
+        security=security or None,
         skills=skills,
     )
 
