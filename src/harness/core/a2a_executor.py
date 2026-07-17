@@ -64,6 +64,7 @@ from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
 from harness.core.models import find_model
 from harness.core.message_content import content_block_identifier, content_block_metadata
+from harness.core.remote_agents import RemoteAgentManager
 from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
 
@@ -956,6 +957,7 @@ class HarnessAgentExecutor(AgentExecutor):
         if self._registry is not None:
             runtime.set_delegate(self._registry.make_delegate(context_id))
             runtime.set_cancel_delegated(self._registry.cancel_delegated)
+            runtime.set_remote_agents(self._registry.remote_roster, self._registry.is_remote_agent)
         stream_event_callback = self._on_stream_event
         if not is_agent and stream_event_callback is not None:
             runtime.set_agent_event_sink(lambda event: stream_event_callback(
@@ -1627,6 +1629,38 @@ class AgentRegistry:
         self._participant_task_ids: dict[str, str] = {}
         self._reserved_participants: dict[str, tuple[str, str]] = {}
         self._agent_questions: dict[str, _AgentQuestion] = {}
+        # External (over-the-wire) A2A agents, if configured. When a delegation names one
+        # of these, make_delegate reaches it through this manager's A2A client instead of
+        # the in-process local handler path.
+        self._remote_manager: Optional["RemoteAgentManager"] = None
+        # Per (local session context, remote agent) → the remote server's contextId, so a
+        # session keeps continuity with a remote agent across turns without ever leaking
+        # our own contextId. In-memory for now; persisted in a later phase.
+        self._remote_contexts: dict[tuple[str, str], str] = {}
+
+    def set_remote_manager(self, remote_manager: Optional["RemoteAgentManager"]) -> None:
+        """Install (or replace) the outbound A2A client manager. Safe to call on reload."""
+        self._remote_manager = remote_manager
+
+    def is_remote_agent(self, name: str) -> bool:
+        return self._remote_manager is not None and self._remote_manager.is_remote(name)
+
+    def remote_roster(self) -> list[dict[str, str]]:
+        """Describe the reachable remote agents the way ``describe_available_agents``
+        describes local ones, so the model sees them in its roster."""
+        if self._remote_manager is None:
+            return []
+        roster: list[dict[str, str]] = []
+        for name in self._remote_manager.names():
+            card = self._remote_manager.card(name)
+            description = (card.description if card is not None else "") or ""
+            roster.append({
+                "id": name,
+                "title": (card.name if card is not None else name) or name,
+                "description": (description + " (external A2A agent)").strip(),
+                "role": "remote",
+            })
+        return roster
 
     def register(self, name: str, handler: RequestHandler, card: AgentCard) -> None:
         self._handlers[name] = handler
@@ -1905,6 +1939,67 @@ class AgentRegistry:
             with suppress(Exception):
                 await handler.on_cancel_task(TaskIdParams(id=task_id))
 
+    async def _remote_delegate(self, agent_name: str, prompt: str, context_id: str):
+        """Delegate to an external A2A agent over the wire, yielding the same event
+        vocabulary the local (in-process) delegate does — so the parent runtime and the
+        agents panel cannot tell a remote agent from a local one. The remote agent's own
+        token spend is opaque to us (its model, its credentials), so no usage is relayed.
+        """
+        assert self._remote_manager is not None
+        remote_context = self._remote_contexts.get((context_id, agent_name))
+        message = Message(
+            role=Role.user,
+            parts=[Part(root=TextPart(text=prompt))],
+            message_id=uuid.uuid4().hex,
+            context_id=remote_context,  # None on first contact; the remote assigns one
+        )
+        child_task_id = ""
+        final_task: Optional[Task] = None
+        block_counter = 0
+
+        def _relay_text(text: str):
+            nonlocal block_counter
+            block_counter += 1
+            # Remote text carries no harness content-block identity, so synthesize a
+            # stable-per-chunk one — the parent relay requires a block id and merges
+            # only adjacent chunks sharing it.
+            return {"type": "event", "event": {
+                PART_KIND: "text", "text": text, "block_id": f"remote:{agent_name}:{block_counter}",
+            }}
+
+        try:
+            async for event in self._remote_manager.send_message(agent_name, message):
+                if isinstance(event, Message):
+                    for part in event.parts:
+                        root = part.root
+                        if isinstance(root, TextPart) and root.text:
+                            yield _relay_text(root.text)
+                    continue
+                task, update = event
+                if isinstance(task, Task):
+                    final_task = task
+                    if not child_task_id:
+                        child_task_id = task.id
+                        if task.context_id:
+                            self._remote_contexts[(context_id, agent_name)] = task.context_id
+                        yield {"type": "started", "child_task_id": child_task_id}
+                if isinstance(update, TaskStatusUpdateEvent) and update.status.message:
+                    for part in update.status.message.parts:
+                        root = part.root
+                        if isinstance(root, TextPart) and root.text:
+                            yield _relay_text(root.text)
+        except Exception as exception:  # noqa: BLE001 — a remote failure ends the lane, never the parent
+            logger.warning("Remote delegation to %r failed: %s", agent_name, exception)
+            yield {"type": "event", "event": {
+                PART_KIND: "error", "message": f"Remote agent {agent_name} could not be reached.",
+                "tool_name": "spawn_agent",
+            }}
+        yield {
+            "type": "done",
+            "child_task_id": child_task_id,
+            "task": final_task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if final_task else None,
+        }
+
     def make_delegate(self, context_id: str):
         """Return a delegate bound to a context. Calling it invokes another agent
         as a related A2A task and yields its activity as it streams, ending with
@@ -1921,6 +2016,12 @@ class AgentRegistry:
             lane_group_id: str = "",
             lane_step_id: str = "",
         ):
+            # A remote agent is reached over the wire; everything after this branch is the
+            # in-process local path, unchanged.
+            if self.is_remote_agent(agent_name):
+                async for event in self._remote_delegate(agent_name, prompt, context_id):
+                    yield event
+                return
             handler = self._handlers.get(agent_name)
             if handler is None:
                 yield {"type": "done", "child_task_id": "", "task": None}

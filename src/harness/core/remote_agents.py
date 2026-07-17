@@ -1,0 +1,348 @@
+"""Outbound A2A client — reach third-party A2A agents over the wire.
+
+This is the client half of A2A, which the harness otherwise lacks: it lets a local
+agent delegate to an agent that lives on someone else's server. It mirrors
+:class:`~harness.core.mcp_client.MCPClientManager`'s shape (a manager of external
+connections that starts best-effort, isolates per-connection failures, and reconciles
+live on a config change), but for A2A rather than MCP.
+
+Responsibilities:
+
+* Resolve and cache each remote agent's :class:`AgentCard` (fetch on register, refresh
+  on a TTL or on demand), so a card fetch is not on the hot path of a delegation.
+* Build an :class:`a2a.client.Client` per agent, letting :class:`ClientFactory` negotiate
+  the transport (JSONRPC / gRPC / HTTP+JSON) from the card — so the harness can talk to
+  any of them while itself serving only JSONRPC.
+* Inject per-agent authentication (static bearer / api-key header, or an OAuth2
+  client-credentials token that is fetched and refreshed) by baking it into that agent's
+  own :class:`httpx.AsyncClient`.
+* Enforce host trust *before* any network call: the card's advertised URLs must stay on
+  the origin the user registered, and private/loopback ranges are refused unless the user
+  explicitly opts in — so a malicious or compromised card cannot redirect the harness at
+  an internal endpoint (an SSRF-shaped attack).
+
+The mapping from a remote task's streamed events into the harness's own relayed-child
+event vocabulary lives with the delegation code in ``a2a_executor.py`` (right next to the
+local-delegation mapping it mirrors); this module stays transport-focused and returns the
+raw A2A client stream.
+"""
+
+import asyncio
+import ipaddress
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Optional
+from urllib.parse import urlparse
+
+import httpx
+
+from a2a.client import Client, ClientConfig, ClientEvent, ClientFactory
+from a2a.client.card_resolver import A2ACardResolver
+from a2a.types import AgentCard, Message, TransportProtocol
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+
+logger = logging.getLogger(__name__)
+
+# How long to wait for a remote agent's card resolution / first contact before giving up
+# and marking it unreachable, so one slow peer never freezes startup or a turn. Mirrors
+# the MCP client's connect timeout.
+_CARD_RESOLVE_TIMEOUT_SECONDS = 20.0
+
+def _available_transports() -> list[TransportProtocol]:
+    """Transports the client is willing to negotiate, in preference order. The peer's card
+    decides which is actually used; the harness serves only JSONRPC but can *call* any.
+
+    gRPC is included only when its optional dependency is importable — ``ClientFactory``
+    eagerly imports the gRPC transport for any listed transport, so advertising it without
+    ``a2a-sdk[grpc]`` installed would raise at client construction. JSON-RPC and HTTP+JSON
+    are always available."""
+    transports = [TransportProtocol.jsonrpc, TransportProtocol.http_json]
+    try:
+        from a2a.client.transports.grpc import GrpcTransport  # noqa: F401
+
+        transports.insert(1, TransportProtocol.grpc)
+    except Exception:  # noqa: BLE001 — grpc extra not installed; skip it
+        pass
+    return transports
+
+
+@dataclass
+class RemoteAgentAuth:
+    """How to authenticate to one remote agent.
+
+    ``kind`` is ``"none"`` (public), ``"bearer"`` / ``"api_key"`` (a static token placed
+    in a header), or ``"oauth2"`` (an OAuth2 client-credentials token fetched from
+    ``token_url`` and refreshed before expiry). Secrets are resolved from the environment
+    by the config loader before they reach here — never stored inline.
+    """
+
+    kind: str = "none"
+    token: str = ""
+    header: str = "Authorization"
+    scheme_prefix: str = "Bearer"
+    # OAuth2 client-credentials.
+    token_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RemoteAgentConfiguration:
+    """One registered remote agent. ``name`` is the local handle the model uses to
+    delegate to it (same namespace as local agent names); ``card_url`` is the agent-card
+    URL the user vetted, and is the trust anchor every later URL is checked against."""
+
+    name: str
+    card_url: str
+    auth: RemoteAgentAuth = field(default_factory=RemoteAgentAuth)
+    card_ttl_seconds: int = 3600
+    # Extra hostnames allowed beyond the card_url origin (rare; e.g. a documented
+    # separate RPC host). The card_url host is always allowed.
+    allowed_hosts: list[str] = field(default_factory=list)
+    # Opt in to private/loopback/link-local targets (e.g. a Daisy-to-Daisy loopback test).
+    allow_private: bool = False
+
+
+class RemoteAgentTrustError(Exception):
+    """A remote card's URL failed the host-trust check (origin mismatch or a
+    disallowed private/loopback target)."""
+
+
+class _OAuth2ClientCredentials(httpx.Auth):
+    """httpx auth flow that keeps a valid OAuth2 client-credentials bearer token,
+    fetching a fresh one (and caching it until shortly before expiry) as needed. Sync
+    flow is unsupported — the harness only makes async calls."""
+
+    def __init__(self, auth: RemoteAgentAuth):
+        self._auth = auth
+        self._token = ""
+        self._expiry = 0.0
+        self._lock = asyncio.Lock()
+
+    async def async_auth_flow(self, request):
+        token = await self._ensure_token()
+        if token:
+            request.headers["Authorization"] = f"Bearer {token}"
+        yield request
+
+    async def _ensure_token(self) -> str:
+        # A 30s skew guards against using a token that expires mid-flight.
+        if self._token and time.monotonic() < self._expiry - 30:
+            return self._token
+        async with self._lock:
+            if self._token and time.monotonic() < self._expiry - 30:
+                return self._token
+            data = {"grant_type": "client_credentials"}
+            if self._auth.scopes:
+                data["scope"] = " ".join(self._auth.scopes)
+            async with httpx.AsyncClient(timeout=_CARD_RESOLVE_TIMEOUT_SECONDS) as client:
+                response = await client.post(
+                    self._auth.token_url,
+                    data=data,
+                    auth=(self._auth.client_id, self._auth.client_secret),
+                )
+                response.raise_for_status()
+                payload = response.json()
+            self._token = str(payload.get("access_token", ""))
+            self._expiry = time.monotonic() + float(payload.get("expires_in", 3600))
+            return self._token
+
+
+def _host_of(url: str) -> str:
+    return (urlparse(url).hostname or "").lower()
+
+
+def _is_private_host(host: str) -> bool:
+    """Whether a host literal is loopback/private/link-local. Hostnames that are not IP
+    literals are treated as non-private here (full DNS-resolution SSRF protection, incl.
+    rebinding, is out of scope for v1 — the origin check below is the primary guard)."""
+    if host in {"localhost", "localhost.localdomain"}:
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private or address.is_link_local or address.is_reserved
+
+
+def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> None:
+    """Refuse a URL that leaves the registered origin or targets a private range.
+
+    The card's ``url`` and every ``additionalInterfaces`` URL flow through here before the
+    client is built, so a card cannot point the harness anywhere the user did not vet."""
+    host = _host_of(url)
+    if not host:
+        raise RemoteAgentTrustError(f"Remote agent {configuration.name!r}: malformed URL {url!r}.")
+    allowed = {_host_of(configuration.card_url), *(h.lower() for h in configuration.allowed_hosts)}
+    if host not in allowed:
+        raise RemoteAgentTrustError(
+            f"Remote agent {configuration.name!r}: card URL host {host!r} is not the registered "
+            f"origin {_host_of(configuration.card_url)!r} (and not in allowed_hosts)."
+        )
+    if _is_private_host(host) and not configuration.allow_private:
+        raise RemoteAgentTrustError(
+            f"Remote agent {configuration.name!r}: host {host!r} is a private/loopback address; "
+            "set allow_private to permit it."
+        )
+
+
+def _card_urls(card: AgentCard) -> list[str]:
+    urls = [card.url]
+    for interface in (card.additional_interfaces or []):
+        urls.append(interface.url)
+    return [url for url in urls if url]
+
+
+class _RemoteAgent:
+    """Live state for one registered remote agent: its config, its own auth-bearing httpx
+    client, the last resolved card (+ when), a health string, and a lazily built A2A
+    client. Kept per-agent so different agents never share auth headers."""
+
+    def __init__(self, configuration: RemoteAgentConfiguration):
+        self.configuration = configuration
+        self.card: Optional[AgentCard] = None
+        self.card_fetched_at = 0.0
+        self.health = "unresolved"  # unresolved | ok | unreachable | untrusted
+        self.error = ""
+        self._httpx: Optional[httpx.AsyncClient] = None
+        self._client: Optional[Client] = None
+
+    def _httpx_client(self) -> httpx.AsyncClient:
+        if self._httpx is None:
+            headers: dict[str, str] = {}
+            auth_flow: Optional[httpx.Auth] = None
+            auth = self.configuration.auth
+            if auth.kind in {"bearer", "api_key"} and auth.token:
+                value = f"{auth.scheme_prefix} {auth.token}".strip() if auth.kind == "bearer" else auth.token
+                headers[auth.header] = value
+            elif auth.kind == "oauth2":
+                auth_flow = _OAuth2ClientCredentials(auth)
+            self._httpx = httpx.AsyncClient(
+                headers=headers or None,
+                auth=auth_flow,
+                timeout=_CARD_RESOLVE_TIMEOUT_SECONDS,
+                follow_redirects=False,  # a redirect could bounce us off the trusted origin
+            )
+        return self._httpx
+
+    async def resolve_card(self, *, force: bool = False) -> Optional[AgentCard]:
+        """Fetch (or reuse a still-fresh) card, enforcing host trust on every URL it
+        advertises. On failure the previous card is kept and health reflects the fault."""
+        ttl = max(0, self.configuration.card_ttl_seconds)
+        fresh = self.card is not None and (time.monotonic() - self.card_fetched_at) < ttl
+        if fresh and not force:
+            return self.card
+        base = self.configuration.card_url
+        # Split the well-known URL into base + path for the resolver.
+        parsed = urlparse(base)
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        path = parsed.path or AGENT_CARD_WELL_KNOWN_PATH
+        try:
+            _assert_url_trusted(base, self.configuration)
+            resolver = A2ACardResolver(self._httpx_client(), origin, agent_card_path=path)
+            card = await asyncio.wait_for(resolver.get_agent_card(), timeout=_CARD_RESOLVE_TIMEOUT_SECONDS)
+            for url in _card_urls(card):
+                _assert_url_trusted(url, self.configuration)
+        except RemoteAgentTrustError as exception:
+            self.health, self.error = "untrusted", str(exception)
+            logger.warning("Remote agent %r untrusted: %s", self.configuration.name, exception)
+            return None
+        except Exception as exception:  # noqa: BLE001 — any resolution failure is non-fatal
+            self.health, self.error = "unreachable", str(exception)
+            logger.warning("Remote agent %r unreachable: %s", self.configuration.name, exception)
+            return None
+        self.card = card
+        self.card_fetched_at = time.monotonic()
+        self.health, self.error = "ok", ""
+        self._client = None  # a new card may change transport/URL; rebuild the client lazily
+        return card
+
+    async def client(self) -> Optional[Client]:
+        card = await self.resolve_card()
+        if card is None:
+            return None
+        if self._client is None:
+            config = ClientConfig(
+                httpx_client=self._httpx_client(),
+                supported_transports=_available_transports(),
+                streaming=bool(card.capabilities and card.capabilities.streaming),
+            )
+            self._client = ClientFactory(config).create(card)
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._httpx is not None:
+            with_suppress = self._httpx.aclose()
+            try:
+                await with_suppress
+            except Exception:  # noqa: BLE001
+                pass
+        self._httpx = None
+        self._client = None
+
+
+class RemoteAgentManager:
+    """Facade over the registered remote agents. Construction is cheap; cards resolve on
+    :meth:`start` (best-effort) and refresh on TTL/demand, and :meth:`reconcile` applies a
+    new config set live (used by the file watcher, mirroring the MCP manager)."""
+
+    def __init__(self, configurations: Optional[dict[str, RemoteAgentConfiguration]] = None):
+        self._agents: dict[str, _RemoteAgent] = {
+            name: _RemoteAgent(configuration)
+            for name, configuration in (configurations or {}).items()
+        }
+
+    def names(self) -> list[str]:
+        return sorted(self._agents)
+
+    def is_remote(self, name: str) -> bool:
+        return name in self._agents
+
+    def card(self, name: str) -> Optional[AgentCard]:
+        agent = self._agents.get(name)
+        return agent.card if agent is not None else None
+
+    def health(self, name: str) -> dict[str, str]:
+        agent = self._agents.get(name)
+        if agent is None:
+            return {"health": "unknown", "error": ""}
+        return {"health": agent.health, "error": agent.error}
+
+    async def start(self) -> None:
+        """Resolve every agent's card once, isolating failures so one bad agent never
+        blocks the others (or startup)."""
+        await asyncio.gather(*(agent.resolve_card() for agent in self._agents.values()), return_exceptions=True)
+
+    async def refresh(self, name: str) -> Optional[AgentCard]:
+        agent = self._agents.get(name)
+        return await agent.resolve_card(force=True) if agent is not None else None
+
+    async def reconcile(self, configurations: dict[str, RemoteAgentConfiguration]) -> None:
+        """Apply a new config set live: drop removed/changed agents (closing their
+        clients), keep unchanged ones connected, resolve new/changed ones."""
+        for name, agent in list(self._agents.items()):
+            if name not in configurations or configurations[name] != agent.configuration:
+                await agent.aclose()
+                self._agents.pop(name, None)
+        for name, configuration in configurations.items():
+            if name not in self._agents:
+                self._agents[name] = _RemoteAgent(configuration)
+        await self.start()
+
+    async def send_message(self, name: str, message: Message) -> AsyncIterator[ClientEvent | Message]:
+        """Stream a message to a remote agent, yielding the A2A client's ``(Task, Update)``
+        pairs (or a final ``Message``). Raises ``LookupError`` if the agent is unknown and
+        ``RuntimeError`` if it cannot currently be reached (unresolved/untrusted card)."""
+        agent = self._agents.get(name)
+        if agent is None:
+            raise LookupError(f"No remote agent named {name!r}.")
+        client = await agent.client()
+        if client is None:
+            raise RuntimeError(f"Remote agent {name!r} is not reachable ({agent.health}: {agent.error}).")
+        async for event in client.send_message(message):
+            yield event
+
+    async def aclose(self) -> None:
+        await asyncio.gather(*(agent.aclose() for agent in self._agents.values()), return_exceptions=True)

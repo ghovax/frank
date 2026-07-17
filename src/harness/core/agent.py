@@ -884,6 +884,12 @@ class AgentRuntime:
         self._reserve_agent: Optional[Callable[[str, str, str], None]] = None
         self._release_reserved_agent: Optional[Callable[[str], None]] = None
         self._active_agents: Optional[Callable[[str], list[dict[str, str]]]] = None
+        # External (over-the-wire) A2A agents the model may delegate to. The registry
+        # supplies a roster (so they appear in the system prompt alongside local agents)
+        # and a predicate (so the spawn path resolves a remote name over the wire via the
+        # delegate instead of trying to load an on-disk config that does not exist).
+        self._remote_agent_roster: Callable[[], list[dict[str, str]]] = lambda: []
+        self._is_remote_agent: Callable[[str], bool] = lambda name: False
         self._agent_messages: asyncio.Queue[AgentMessage] = asyncio.Queue()
         self._agent_message_available = asyncio.Event()
         self._pending_agent_questions: set[str] = set()
@@ -1211,6 +1217,17 @@ class AgentRuntime:
         """Install the callback used by targeted spawned-agent cancellation."""
         self._cancel_delegated = cancel_delegated
 
+    def set_remote_agents(
+        self,
+        roster: Callable[[], list[dict[str, str]]],
+        is_remote: Callable[[str], bool],
+    ) -> None:
+        """Install the external A2A agent roster and predicate. Remote agents appear in
+        the model's roster like local ones, but the spawn path resolves them over the wire
+        (through the delegate) rather than loading an on-disk agent config."""
+        self._remote_agent_roster = roster
+        self._is_remote_agent = is_remote
+
     def set_agent_event_sink(self, agent_event_sink: Callable[[dict[str, Any]], None]) -> None:
         """Install the immediate delivery path for path-tagged agent activity."""
         self._agent_event_sink = agent_event_sink
@@ -1423,6 +1440,9 @@ class AgentRuntime:
             available_agents = describe_available_agents(
                 self._global_configuration.agent_directories_for(self._project_directory)
             )
+            # External A2A agents are advertised alongside the on-disk ones so the model
+            # can address them by name; the spawn path routes them over the wire.
+            available_agents = [*available_agents, *self._remote_agent_roster()]
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
@@ -3382,11 +3402,17 @@ class AgentRuntime:
             agent_prompt = self._build_agent_prompt(raw_agent_prompt, agent_read_only)
             spawn_step_id = new_id("agent")
 
-            try:
-                sub_configuration = self._load_agent(agent_name)
-            except FileNotFoundError as exception:
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
-                return
+            # A remote agent lives on another server, so there is no on-disk config to
+            # load or validate — it is resolved over the wire by the delegate. A local
+            # agent must resolve to a real config file, or the spawn is rejected here.
+            is_remote_agent = self._is_remote_agent(agent_name)
+            sub_configuration = None
+            if not is_remote_agent:
+                try:
+                    sub_configuration = self._load_agent(agent_name)
+                except FileNotFoundError as exception:
+                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
+                    return
 
             # Spawning is non-blocking: the agent runs as a background job (a
             # related A2A task) and the parent continues immediately. The agent's
@@ -3492,6 +3518,14 @@ class AgentRuntime:
                         "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
                     },
                 )
+            elif is_remote_agent:
+                # A remote agent can only be reached through the delegate (the wire path).
+                # With no delegate installed there is nothing to run locally.
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                    message=f"Remote agent {agent_name!r} requires the delegation runtime, which is not available here.",
+                )
+                return
             else:
                 child_task = None
                 runner = AgentRunner(
