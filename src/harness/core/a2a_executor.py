@@ -68,6 +68,7 @@ from harness.core.configuration import (
 from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
 from harness.core.models import find_model
+from harness.core import telemetry as _telemetry
 from harness.core.a2a_files import FileUrlSigner, build_file_part, ingest_file_part
 from harness.core.message_content import content_block_identifier, content_block_metadata
 from harness.core.remote_agents import RemoteAgentManager
@@ -1276,6 +1277,18 @@ class HarnessAgentExecutor(AgentExecutor):
             if not delegated and self._save_conversation is not None and runtime is not None:
                 await asyncio.to_thread(self._save_conversation, task.context_id, runtime.conversation)
 
+        # The turn is one trace, grouped by the session (context_id); a delegation's
+        # traceparent (in the message metadata) makes this turn nest under its parent.
+        turn_kind = "autonomous" if autonomous else "compaction" if compaction else "delegated" if delegated else "user"
+        parent_context = _telemetry.context_from_traceparent((message.metadata or {}).get("traceparent", ""))
+        turn_span_context = _telemetry.span("agent.turn", {
+            "session.id": task.context_id,
+            "daisy.task.id": task.id,
+            "daisy.agent.name": self._agent_name,
+            "daisy.turn.kind": turn_kind,
+        }, parent_context)
+        turn_span = turn_span_context.__enter__()
+
         # The runtime setup — building the agent runtime and its model client —
         # runs inside the try so any failure (e.g. missing API credentials) is
         # surfaced as a clean A2A `failed` status rather than escaping and tearing
@@ -1501,6 +1514,13 @@ class HarnessAgentExecutor(AgentExecutor):
                     await flush_stream_buffers()
                     cumulative = data.get("cumulative", {})
                     agents = data.get("agents", {}) or {}
+                    _telemetry.set_attributes(turn_span, {
+                        "gen_ai.request.model": runtime.effective_model_identifier if runtime is not None else None,
+                        "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
+                        "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
+                        "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
+                        "gen_ai.model.calls": cumulative.get("model_calls", 0),
+                    })
                     await emit(_data_part(
                         "token_usage",
                         input_tokens=data.get("input_tokens", 0),
@@ -1598,6 +1618,8 @@ class HarnessAgentExecutor(AgentExecutor):
             logger.exception("Agent turn failed: %s", exception)
             await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception, had_images=turn_has_images))]))
         finally:
+            with suppress(Exception):
+                turn_span_context.__exit__(None, None, None)
             if participant_registered and self._registry is not None:
                 self._registry.unregister_participant(task.id)
             self._aborts.pop(task.id, None)
@@ -2030,11 +2052,13 @@ class AgentRegistry:
                 file_part = build_file_part(attachment, self._file_url_signer)
                 if file_part is not None:
                     parts.append(file_part)
+        traceparent = _telemetry.current_traceparent()
         message = Message(
             role=Role.user,
             parts=parts,
             message_id=uuid.uuid4().hex,
             context_id=remote_context,  # None on first contact; the remote assigns one
+            metadata={"traceparent": traceparent} if traceparent else None,
         )
         child_task_id = ""
         final_task: Optional[Task] = None
@@ -2121,13 +2145,17 @@ class AgentRegistry:
                 turn_fields[Metadata.PROJECT_DIRECTORY] = project_directory
             if working_directory:
                 turn_fields[Metadata.RUNTIME_WORKING_DIRECTORY] = working_directory
+            envelope = _harness_metadata_envelope(turn_fields)
+            traceparent = _telemetry.current_traceparent()
+            if traceparent:
+                envelope["traceparent"] = traceparent
             message = Message(
                 role=Role.user,
                 parts=[Part(root=TextPart(text=prompt))],
                 message_id=uuid.uuid4().hex,
                 context_id=context_id,
                 reference_task_ids=[parent_task_id] if parent_task_id else None,
-                metadata=_harness_metadata_envelope(turn_fields),
+                metadata=envelope,
             )
             child_task_id = ""
             async for event in handler.on_message_send_stream(MessageSendParams(message=message)):

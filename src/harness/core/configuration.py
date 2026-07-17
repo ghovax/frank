@@ -452,6 +452,35 @@ class A2AServerConfiguration(BaseModel):
         return (schemes or None, requirement or None)
 
 
+class TelemetryCaptureConfiguration(BaseModel):
+    """Per-payload capture posture: ``off`` (no body), ``redacted`` (strip detected
+    secrets), or ``full``."""
+
+    prompts: Literal["off", "redacted", "full"] = "redacted"
+    completions: Literal["off", "redacted", "full"] = "redacted"
+    tool_io: Literal["off", "redacted", "full"] = "redacted"
+    screenshots: Literal["off", "redacted", "full"] = "off"
+
+
+class TelemetryExporterConfiguration(BaseModel):
+    endpoint: str = ""
+    protocol: str = "http/protobuf"
+    headers: dict[str, str] = {}
+
+
+class TelemetryConfiguration(BaseModel):
+    """OpenTelemetry export of agent traces to a user-chosen OTLP backend. Off until an
+    endpoint is set, so nothing leaves the machine by default."""
+
+    enabled: bool = False
+    exporter: TelemetryExporterConfiguration = TelemetryExporterConfiguration()
+    capture: TelemetryCaptureConfiguration = TelemetryCaptureConfiguration()
+    sample_ratio: float = 1.0
+
+    def resolved_headers(self) -> dict[str, str]:
+        return {key: os.path.expandvars(value) for key, value in self.exporter.headers.items()}
+
+
 class ProviderCredential(BaseModel):
     """Credentials for one LLM provider. ``base_url`` is only meaningful for the
     OpenAI-compatible providers (opencode and custom); first-party clouds leave it
@@ -482,6 +511,7 @@ class GlobalConfiguration(BaseModel):
     mcp: MCPConfiguration = MCPConfiguration()
     remote_agents: RemoteAgentsConfiguration = RemoteAgentsConfiguration()
     a2a: A2AServerConfiguration = A2AServerConfiguration()
+    telemetry: TelemetryConfiguration = TelemetryConfiguration()
     default_agent: str = "general-assistant"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).

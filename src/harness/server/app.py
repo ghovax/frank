@@ -55,6 +55,7 @@ from harness.core.a2a_executor import (
 from harness.core.agent import AgentRuntime, build_chat_model, model_is_authorized
 from harness.core.remote_agents import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
 from harness.core.a2a_files import FileUrlSigner, load_or_create_secret
+from harness.core import telemetry as _telemetry
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
@@ -1858,6 +1859,17 @@ async def _reload_mcp() -> None:
             executor.reset_runtimes()
 
 
+def _configure_telemetry(configuration: GlobalConfiguration) -> None:
+    telemetry_configuration = configuration.telemetry
+    _telemetry.configure(
+        enabled=telemetry_configuration.enabled,
+        endpoint=telemetry_configuration.exporter.endpoint,
+        headers=telemetry_configuration.resolved_headers(),
+        capture=telemetry_configuration.capture.model_dump(),
+        sample_ratio=telemetry_configuration.sample_ratio,
+    )
+
+
 def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
     """Convert the loaded ``remote-agents.json`` config into the manager's dataclasses."""
     assert _global_configuration is not None
@@ -2128,6 +2140,7 @@ async def lifespan(application: FastAPI):
     _workspace_manager = SessionWorkspaceManager()
     _terminal_manager = TerminalSessionManager()
     _global_configuration = GlobalConfiguration.load()
+    _configure_telemetry(_global_configuration)
     # Seed the home layer (~/.agents) with editable copies of the server-shipped
     # agents/skills, non-destructively. This is what makes the desktop app's bundled
     # profiles appear AND gives each a writable home copy so per-agent settings (the
