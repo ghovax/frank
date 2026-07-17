@@ -2,7 +2,7 @@
 
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuEye, LuEyeOff, LuGlobe, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
 import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
@@ -10,6 +10,7 @@ import { ConnectionSwitcher } from "./connection-switcher";
 import { ModelSelect } from "./model-select";
 import { ChatGPTAuthControl } from "./chatgpt-auth";
 import { ProjectLocationsPanel } from "./project-locations";
+import { RemoteAgentsPanel } from "./remote-agents-panel";
 import { SimpleSelect } from "./ui/simple-select";
 import { useColorMode } from "./ui/color-mode";
 import { ConfirmDialog } from "./ui/confirm-dialog";
@@ -20,7 +21,7 @@ import { CompactionToggleControl, ComputerControlToggleControl, PermissionModeCo
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 import { Section } from "./ui/semantic";
 
-export type SettingsSection = "general" | "locations" | "agents" | "connection";
+export type SettingsSection = "general" | "locations" | "agents" | "remoteAgents" | "connection";
 
 // One setting modeled as data (so the search box can match it): a title + optional
 // description that renders on the left, and a `control` that renders on the right. `stacked`
@@ -584,6 +585,10 @@ export function SettingsDialog({
           <AgentPermissionsEditor configuration={agentConfiguration} models={models} providers={modelProviders} recentModels={recentModels} onChange={setAgentConfiguration} />
         ) : null,
       }],
+    },
+    {
+      id: "remoteAgents" as SettingsSection, label: "External agents", icon: <LuGlobe size={14} />,
+      sections: [{ title: "External A2A agents", rows: [], block: <RemoteAgentsPanel /> }],
     },
     {
       id: "connection", label: t("tabConnection"), icon: <LuPlug size={14} />,
