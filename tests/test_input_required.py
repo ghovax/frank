@@ -8,7 +8,6 @@ from a2a.types import DataPart, Message, Part, Role, TextPart
 from harness.core.a2a_executor import (
     INPUT_RESPONSE_KIND,
     HarnessAgentExecutor,
-    _data_part,
     _input_response_payload,
 )
 from harness.core.configuration import GlobalConfiguration

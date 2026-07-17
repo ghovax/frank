@@ -26,7 +26,7 @@ import ipaddress
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Optional
+from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
 import httpx

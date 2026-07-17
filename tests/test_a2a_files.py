@@ -3,7 +3,6 @@
 import base64
 import time
 
-import pytest
 
 from a2a.types import FilePart, FileWithBytes, FileWithUri, Part
 
