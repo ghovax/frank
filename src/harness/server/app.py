@@ -4100,7 +4100,7 @@ def _prune_session_artifacts(context_id: str) -> None:
 # `from .routes import artifacts` would shadow that alias, breaking artifact capture with an
 # AttributeError. Import each router module by path and include only its `router`.
 import importlib as _importlib  # noqa: E402
-for _route_name in ("agents", "artifacts", "chat", "filesystem", "mcp", "projects", "sessions", "settings", "terminals", "uploads"):
+for _route_name in ("agents", "artifacts", "chat", "filesystem", "mcp", "projects", "remote_agents", "sessions", "settings", "terminals", "uploads"):
     app.include_router(_importlib.import_module(f"harness.server.routes.{_route_name}").router)
 
 
