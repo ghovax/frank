@@ -957,7 +957,11 @@ class HarnessAgentExecutor(AgentExecutor):
         if self._registry is not None:
             runtime.set_delegate(self._registry.make_delegate(context_id))
             runtime.set_cancel_delegated(self._registry.cancel_delegated)
-            runtime.set_remote_agents(self._registry.remote_roster, self._registry.is_remote_agent)
+            profile = configuration.identifier
+            runtime.set_remote_agents(
+                lambda profile=profile: self._registry.remote_roster(profile),
+                lambda name, profile=profile: self._registry.is_remote_agent(name, profile),
+            )
         stream_event_callback = self._on_stream_event
         if not is_agent and stream_event_callback is not None:
             runtime.set_agent_event_sink(lambda event: stream_event_callback(
@@ -1642,16 +1646,23 @@ class AgentRegistry:
         """Install (or replace) the outbound A2A client manager. Safe to call on reload."""
         self._remote_manager = remote_manager
 
-    def is_remote_agent(self, name: str) -> bool:
-        return self._remote_manager is not None and self._remote_manager.is_remote(name)
+    def is_remote_agent(self, name: str, profile: str = "") -> bool:
+        return (
+            self._remote_manager is not None
+            and self._remote_manager.is_remote(name)
+            and self._remote_manager.is_allowed_for(name, profile)
+        )
 
-    def remote_roster(self) -> list[dict[str, str]]:
-        """Describe the reachable remote agents the way ``describe_available_agents``
-        describes local ones, so the model sees them in its roster."""
+    def remote_roster(self, profile: str = "") -> list[dict[str, str]]:
+        """Describe the reachable remote agents this ``profile`` may call, the way
+        ``describe_available_agents`` describes local ones, so the model sees them in its
+        roster."""
         if self._remote_manager is None:
             return []
         roster: list[dict[str, str]] = []
         for name in self._remote_manager.names():
+            if not self._remote_manager.is_allowed_for(name, profile):
+                continue
             card = self._remote_manager.card(name)
             description = (card.description if card is not None else "") or ""
             roster.append({

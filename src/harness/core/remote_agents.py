@@ -103,6 +103,8 @@ class RemoteAgentConfiguration:
     allowed_hosts: list[str] = field(default_factory=list)
     # Opt in to private/loopback/link-local targets (e.g. a Daisy-to-Daisy loopback test).
     allow_private: bool = False
+    # Local agent profiles permitted to delegate to this remote agent. Empty = all.
+    allowed_profiles: list[str] = field(default_factory=list)
 
 
 class RemoteAgentTrustError(Exception):
@@ -299,6 +301,19 @@ class RemoteAgentManager:
 
     def is_remote(self, name: str) -> bool:
         return name in self._agents
+
+    def is_allowed_for(self, name: str, profile: str) -> bool:
+        """Whether a local ``profile`` may delegate to remote agent ``name``. An empty
+        allow-list (or an empty profile, e.g. a delegated sub-agent) permits all."""
+        agent = self._agents.get(name)
+        if agent is None:
+            return False
+        allowed = agent.configuration.allowed_profiles
+        return not allowed or not profile or profile in allowed
+
+    def configuration(self, name: str) -> Optional[RemoteAgentConfiguration]:
+        agent = self._agents.get(name)
+        return agent.configuration if agent is not None else None
 
     def card(self, name: str) -> Optional[AgentCard]:
         agent = self._agents.get(name)

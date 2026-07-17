@@ -50,6 +50,7 @@ from harness.core.a2a_executor import (
     build_agent_card,
 )
 from harness.core.agent import AgentRuntime, build_chat_model, model_is_authorized
+from harness.core.remote_agents import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
@@ -364,6 +365,10 @@ _async_engine = None
 _task_store: Optional[AppendOnlyTaskStore] = None
 _registry: Optional[AgentRegistry] = None
 _mcp_manager: Optional[MCPClientManager] = None
+# Outbound A2A client manager (external agents this harness may delegate to). None until
+# startup builds it from remote-agents.json; installed on the registry so make_delegate
+# can branch a delegation over the wire.
+_remote_agent_manager: Optional[RemoteAgentManager] = None
 _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
 _workspace_manager: SessionWorkspaceManager | None = None
@@ -1834,6 +1839,48 @@ async def _reload_mcp() -> None:
             executor.reset_runtimes()
 
 
+def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
+    """Convert the loaded ``remote-agents.json`` config into the manager's dataclasses."""
+    assert _global_configuration is not None
+    result: dict[str, RemoteAgentConfiguration] = {}
+    for name, configuration in _global_configuration.remote_agents.enabled_agents().items():
+        auth = configuration.auth
+        result[name] = RemoteAgentConfiguration(
+            name=name,
+            card_url=configuration.card_url,
+            auth=RemoteAgentAuth(
+                kind=auth.type, token=auth.token, header=auth.header, scheme_prefix=auth.scheme_prefix,
+                token_url=auth.token_url, client_id=auth.client_id, client_secret=auth.client_secret,
+                scopes=list(auth.scopes),
+            ),
+            card_ttl_seconds=configuration.card_ttl_seconds,
+            allowed_hosts=list(configuration.allowed_hosts),
+            allow_private=configuration.allow_private,
+            allowed_profiles=list(configuration.allowed_profiles),
+        )
+    return result
+
+
+async def _reload_remote_agents() -> None:
+    """Re-read remote-agents.json and apply the external-agent set live: reconcile the
+    outbound client manager and drop cached runtimes so the next turn's roster reflects
+    the change. Mirrors ``_reload_mcp``. No server restart required."""
+    global _remote_agent_manager
+    assert _global_configuration is not None and _registry is not None
+    async with _configuration_lock:
+        _global_configuration.remote_agents = GlobalConfiguration.load().remote_agents
+        configurations = _remote_agent_dataclasses()
+        if _remote_agent_manager is None:
+            _remote_agent_manager = RemoteAgentManager(configurations)
+            await _remote_agent_manager.start()
+            _registry.set_remote_manager(_remote_agent_manager)
+        else:
+            await _remote_agent_manager.reconcile(configurations)
+        for executor in _executors.values():
+            executor.reset_runtimes()
+        _broadcaster.publish({"type": "remote_agents_changed"})
+
+
 async def _ensure_mcp_servers_for(working_directory: str) -> None:
     """Additively grow the shared MCP server pool with the working directory's own
     ``mcp.json`` servers, so a folder's servers are running and listable once that
@@ -1880,6 +1927,8 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
         async for changes in awatch(*watched):
             if any(str(path).endswith("mcp.json") for _change, path in changes):
                 await _reload_mcp()
+            if any(str(path).endswith("remote-agents.json") for _change, path in changes):
+                await _reload_remote_agents()
             for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
                 if agent_name not in _mounted_agents:
                     _mount_agent(application, agent_name)
@@ -2054,7 +2103,7 @@ async def _watch_ssh_hosts() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _remote_agent_manager, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
     _main_loop = asyncio.get_running_loop()
     _file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
     _workspace_manager = SessionWorkspaceManager()
@@ -2159,6 +2208,16 @@ async def lifespan(application: FastAPI):
     _registry = AgentRegistry(_task_store)
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
+
+    # Outbound A2A: build the external-agent client manager from remote-agents.json and
+    # install it on the registry, so a delegation to a registered remote agent is routed
+    # over the wire. Card resolution is best-effort (started in the background) so an
+    # unreachable peer never blocks boot.
+    _remote_agent_configurations = _remote_agent_dataclasses()
+    if _remote_agent_configurations:
+        _remote_agent_manager = RemoteAgentManager(_remote_agent_configurations)
+        _registry.set_remote_manager(_remote_agent_manager)
+        asyncio.create_task(_remote_agent_manager.start())
 
     # Kill any process groups orphaned by a previous unclean shutdown (a SIGKILL or
     # crash could not run the teardown handlers) so a background shell subtree — a

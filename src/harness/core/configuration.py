@@ -358,6 +358,69 @@ class MCPConfiguration(BaseModel):
         return cls(servers=servers)
 
 
+class RemoteAgentAuthConfiguration(BaseModel):
+    """How to authenticate to one external A2A agent. ``${VAR}`` in any secret field is
+    expanded from the environment at load time, so tokens never live in the tracked file."""
+
+    type: Literal["none", "bearer", "api_key", "oauth2"] = "none"
+    token: str = ""
+    header: str = "Authorization"
+    scheme_prefix: str = "Bearer"
+    token_url: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    scopes: list[str] = []
+
+
+class RemoteAgentServerConfiguration(BaseModel):
+    """One registered external A2A agent (a ``remote-agents.json`` entry)."""
+
+    enabled: bool = True
+    card_url: str = ""
+    auth: RemoteAgentAuthConfiguration = RemoteAgentAuthConfiguration()
+    card_ttl_seconds: int = 3600
+    # Hostnames allowed beyond the card_url origin (the origin is always allowed).
+    allowed_hosts: list[str] = []
+    # Permit private/loopback targets (e.g. a Daisy-to-Daisy loopback).
+    allow_private: bool = False
+    # Which local agent profiles may delegate to this remote agent. Empty = all profiles.
+    allowed_profiles: list[str] = []
+
+
+class RemoteAgentsConfiguration(BaseModel):
+    """The set of external A2A agents the harness may delegate to, loaded from
+    ``remote-agents.json`` in the ``.agents`` roots (mirroring ``mcp.json``)."""
+
+    agents: dict[str, RemoteAgentServerConfiguration] = {}
+
+    def enabled_agents(self) -> dict[str, RemoteAgentServerConfiguration]:
+        return {
+            name: agent
+            for name, agent in self.agents.items()
+            if agent.enabled and agent.card_url
+        }
+
+    @classmethod
+    def from_dotagents_roots(cls, roots: Iterable[Path]) -> "RemoteAgentsConfiguration":
+        agents: dict[str, RemoteAgentServerConfiguration] = {}
+        for root in roots:
+            path = root / "remote-agents.json"
+            if not path.exists():
+                continue
+            data = json.loads(path.read_text())
+            raw_agents = data.get("agents", {})
+            for name, raw_configuration in raw_agents.items():
+                configuration = dict(raw_configuration)
+                raw_auth = dict(configuration.get("auth") or {})
+                for secret_field in ("token", "client_secret", "client_id"):
+                    if isinstance(raw_auth.get(secret_field), str):
+                        raw_auth[secret_field] = os.path.expandvars(raw_auth[secret_field])
+                if raw_auth:
+                    configuration["auth"] = raw_auth
+                agents[name] = RemoteAgentServerConfiguration(**configuration)
+        return cls(agents=agents)
+
+
 class ProviderCredential(BaseModel):
     """Credentials for one LLM provider. ``base_url`` is only meaningful for the
     OpenAI-compatible providers (opencode and custom); first-party clouds leave it
@@ -386,6 +449,7 @@ class GlobalConfiguration(BaseModel):
     tuning: TuningConfiguration = TuningConfiguration()
     composio: ComposioConfiguration = ComposioConfiguration()
     mcp: MCPConfiguration = MCPConfiguration()
+    remote_agents: RemoteAgentsConfiguration = RemoteAgentsConfiguration()
     default_agent: str = "general-assistant"
     # How deep a chain of agents delegating to other agents may go, to bound
     # runaway delegation (agent A spawns B spawns C ...).
@@ -407,6 +471,7 @@ class GlobalConfiguration(BaseModel):
             data = yaml.safe_load(file_handle)
         configuration = cls(**data)
         configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
+        configuration.remote_agents = RemoteAgentsConfiguration.from_dotagents_roots(configuration.agents_root_directories())
         return configuration
 
     def configured_provider_keys(self) -> dict[str, str]:
@@ -526,6 +591,12 @@ class GlobalConfiguration(BaseModel):
         working directory overriding home). Used to filter what the UI lists and
         to grow the shared server pool, never to scope the launch directory in."""
         return MCPConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
+
+    def remote_agents_configuration_for(self, working_directory: str) -> "RemoteAgentsConfiguration":
+        """The external A2A agents declared for a working directory: those in the home
+        ``remote-agents.json`` plus the working directory's own. Mirrors
+        ``mcp_configuration_for``."""
+        return RemoteAgentsConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
