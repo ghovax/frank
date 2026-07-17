@@ -120,36 +120,22 @@ and DB rows, consistent with how the file‑plus‑UI split already works for ot
 
 ### Human-in-the-loop via input-required
 
-Today a permission or question pauses the task in `working` and emits a vendor `DataPart`, resolved by
-a private REST call (`a2a_executor.py:1460`; `routes/chat.py`; the futures in `app.py:377`). We replace
-this with the spec state machine:
+A permission or question raises a request the runtime blocks on (a future the resolver completes), and
+emits a vendor `DataPart`. The runtime blocking model keeps the connection open while it waits — the
+paused turn holds the per‑context turn lock across the wait — so the answer is delivered without tearing
+the turn down and rebuilding it.
 
-1. When the runtime needs approval or an answer, the executor moves the task to `input-required` and
-   emits the request as a `DataPart` namespaced under `urn:daisy:ext:turn:v1` in the status message.
-2. The turn suspends; the task is not terminal, and the SSE stream ends on a non‑final `input-required`
-   status per the spec.
-3. The client — including Daisy's own app — answers with a fresh `message/send` carrying the same
-   `taskId` and a namespaced `DataPart` encoding the decision (allow / deny / always) or the structured
-   answers. A naive external peer may reply with plain text, which the runtime tolerates as a fallback.
-4. The executor resumes the suspended runtime with the answer and drives the task forward.
+On such a request the executor sets the task to `input-required`, carrying the request as its status
+message, in addition to emitting the `DataPart`. An external A2A client sees the spec state and answers
+with a `message/send` carrying an `input_response` part (the request id plus the decision or answers);
+the executor routes that to the same pending future the resolver uses. This answer path runs before the
+per‑context turn lock is taken — the paused turn holds that lock while awaiting the future, so taking it
+there would deadlock against the very turn the answer unblocks. A naive peer that replies with plain
+text simply doesn't resolve the request (the request stays open until answered, denied, or aborted).
 
-This removes the REST permission/question endpoints and the pending‑future maps; resolution flows
-through the normal message path. The main cost is frontend: the permission and question overlays
-(`permission-overlay.tsx`, `question-overlay.tsx`) now submit a `message/send` that resumes the task
-instead of POSTing to the side channel, and `streamA2A` (`web/src/lib/api.ts`) grows an "answer
-input‑required" call. This is called out as its own build phase.
-
-Two things this must handle. First, the suspension outlives the SSE stream (the client may answer much
-later or after a reconnect); the suspended state is keyed on the task and rehydratable, which the
-append‑only store already supports for replay. Second, it must survive a server restart. Today
-`fail_orphaned_tasks` (`task_store.py:282`) fails every non‑terminal task on startup, which would
-silently kill a legitimately long pause. `input-required` is therefore exempted: the pending request is
-persisted, and on restart the task is rehydrated as still‑suspended rather than failed. That is the one
-carve‑out in the orphan‑failing rule, and it needs a test.
-
-Because a pause can last minutes, hours, or span a restart, the telemetry turn span is closed at the
-pause and a linked span opens on resume — no span is held open across an indefinite wait (see the
-telemetry doc).
+The lifecycle a client observes is `working` → `input-required` (while paused) → `working` → terminal.
+The native app's own resolution path is untouched, so its overlays keep working while external clients
+gain the spec‑correct route.
 
 ### Server auth
 
@@ -221,8 +207,8 @@ to the initial card fetch, the RPC endpoint, and any push webhook target a peer 
 3. **Configuration.** `remote-agents.json` plus the watcher, then the Settings → Connections UI with its
    routes and tables.
 4. **Files.** Emit and accept `FileWithUri`, the signed serving endpoint, and inbound ingest.
-5. **input-required.** Runtime suspend/resume, the executor state machine, the frontend overlay rework,
-   and removal of the REST side channel.
+5. **input-required.** The executor sets the `input-required` state and accepts `message/send` answers
+   routed to the pending future, alongside the native resolution path.
 6. **Server auth and card completeness.**
 7. **Push, both directions.**
 8. **Transports.** Confirm client negotiation across JSON‑RPC / gRPC / HTTP+JSON; keep the server on

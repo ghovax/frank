@@ -36,21 +36,19 @@ we don't export it.
 
 ```
 trace (root)  = one A2A task / user turn        session.id = context_id, agent.name, task.id
- └─ agent.turn
-     ├─ gen_ai.generation   (each model call)    request model, usage tokens, latency, finish reason
-     ├─ tool.execute        (each tool call)      tool name, status; args/results redacted
-     │    └─ tool detail     (mcp.call, bash, …)
-     └─ agent.delegate      (each sub-agent)      child agent name, local or remote
-          └─ nested child turn spans (in-process locally, or over the A2A client remotely)
+ └─ agent.turn      carries gen_ai.* usage (model, tokens, model calls) as attributes
+     └─ agent.turn  (each delegated / remote sub-agent, nested via traceparent)
 ```
 
-The trace boundary is the executor turn (`a2a_executor.py:1101`): it opens the root span and stamps the
-session id from `context_id`, the task id, the agent name, and the turn kind (user, autonomous wake, or
-compaction — the executor already distinguishes these). Generations wrap each model call and take their
-usage numbers from what Daisy already emits (`a2a_executor.py:1440`). Tool spans wrap the runtime's
-tool dispatch (`agent.py:2885`, `agent.py:3300`, `agent.py:3732`). Delegation opens a child span; with
-the external‑agent work, a remote delegation is the same span tagged local or remote, so that feature
-is observable end to end in one trace.
+The trace boundary is the executor turn: `HarnessAgentExecutor.execute` opens the `agent.turn` span and
+stamps the session id from `context_id`, the task id, the agent name, and the turn kind (user,
+autonomous wake, compaction, or delegated). The executor is a plain coroutine, so the span safely wraps
+its whole body; model usage lands on the turn span as `gen_ai.*` attributes when the usage event
+arrives. The runtime's `stream()` is an async generator — opening an OTEL `start_as_current_span` across
+its `yield`s would corrupt the context stack — so per‑generation and per‑tool child spans are not opened
+inside it; the turn span with usage attributes is the model‑latency/cost record, taking its numbers from
+the usage event Daisy already emits. Sub‑agent turns (local and remote) nest under their parent via the
+propagated `traceparent`, so a delegation is observable end to end in one trace.
 
 ### Trace context across the A2A wire
 
@@ -62,19 +60,19 @@ for it. This is best effort: a peer that ignores or doesn't emit trace context j
 traces, never an error. It rides the same message metadata map used for the turn extension, under the
 standard `traceparent` key rather than the Daisy namespace.
 
-### Spans across a suspended or restarted turn
+### Spans across an input-required pause
 
-An `input-required` pause can last minutes, hours, or span a restart. We do not hold a span open across
-it: the turn span closes at the suspension and a new span, linked to it, opens when the turn resumes.
-That keeps traces bounded and correct even when a human answer arrives much later or after the server
-restarted.
+During an `input-required` pause the executor coroutine is parked awaiting the resolver's future while
+its connection stays open, so the turn span stays open across the wait and closes when the turn
+finishes — the span's lifetime tracks the turn's, with no separate suspend/resume span handling.
 
-### Async context propagation (the real implementation risk)
+### Nesting across task boundaries
 
-Sub‑agents and background wakes run as separate asyncio tasks, and OTEL context rides `contextvars`,
-which do not auto‑propagate across `asyncio.create_task`. We explicitly carry the parent span context
-into delegated and background coroutines so the tree nests correctly instead of producing orphaned root
-spans. This is the part that needs care and a dedicated test.
+Sub‑agents run as separate asyncio tasks and, for remote agents, on a different server entirely, so OTEL
+context does not flow to them implicitly. Nesting therefore rides the propagated `traceparent`: a
+delegation stamps the current turn's `traceparent` into the message metadata, and the child turn opens
+its span with that as parent. The same mechanism works identically for local (in‑process) and remote
+sub‑agents.
 
 ## Where it plugs in
 
@@ -137,13 +135,12 @@ given the framing: it is this harness's telemetry, wherever the harness runs.
 
 ## Build order
 
-1. Core traces: `telemetry.py`, the config and no‑op path, turn/generation/tool spans, session
+1. Core traces: `telemetry.py`, the config and no‑op path, the turn span with usage attributes, session
    grouping.
-2. Async context propagation for delegation and background wakes, with its test.
+2. `traceparent` propagation across local and remote delegations, so sub‑agent turns nest.
 3. The redaction pass and the capture config.
-4. Remote‑agent spans and `traceparent` propagation, once external delegation exists.
-5. Metrics (token counters, latency and cost histograms), optional.
-6. The Settings → Observability toggle.
+4. Metrics (token counters, latency and cost histograms), optional.
+5. The Settings → Observability toggle.
 
 ## Testing
 
