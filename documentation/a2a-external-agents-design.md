@@ -40,6 +40,10 @@ Today Daisy is server‑only and its "delegation" is in‑process (`a2a_executor
 | D14 | Access control | **Per‑profile allow‑list** of which remote agents a profile may call |
 | D15 | Card discovery/refresh | **Fetch on register, cache with TTL + manual refresh** |
 | D16 | Context sent to remote | **Delegated prompt + explicitly referenced artifacts only** |
+| D17 | HITL pause across a server restart | **Exempt `input-required` from orphan-failing; persist the pending request and rehydrate on resume** |
+| D18 | Remote agents & the mailbox | **Delegation‑only; remote agents are hidden from `active_agents` and cannot be `ask_agent`'d** (A2A has no mid‑run peer‑inject RPC) |
+| D19 | Trust of a remote card's `url`/interfaces | **Host allow‑list + card‑origin check + block private/loopback ranges** (anti‑SSRF) |
+| D20 | Egress prompt mechanism | **Egress consent (D13) is delivered as `input-required`, not the old REST channel** — one unified HITL path |
 
 ---
 
@@ -119,19 +123,29 @@ history" contract (`a2a_executor.py:1984‑1995`).
 - Send **only** the delegated prompt plus artifacts the caller explicitly references; resolve those
   to `FilePart`s (§7). No parent transcript egress.
 
-### 4.4 Egress permissioning (D13)
+### 4.4 Egress permissioning (D13, D20)
 
-Contacting a remote agent is a **permissioned action**, routed through the existing permission
-machinery the runtime already uses for risky tools (the same `_pending_permissions` future +
-`permission_request` surface, `a2a_executor.py:1460`, `app.py:377`). First contact with a given
-remote agent in a session prompts (allow / always‑allow / deny), with a risk level reflecting that
-data leaves the machine. "Always allow" is remembered per remote agent.
+Contacting a remote agent is a **permissioned action**. Because the HITL migration (D5) removes the
+old REST channel, egress consent is delivered as an **`input-required`** pause (D20), not the legacy
+`_pending_permissions` route — one unified human‑in‑the‑loop mechanism (see §6.1). First contact with
+a given remote agent in a session prompts (allow / always‑allow / deny), with a risk level reflecting
+that data leaves the machine. "Always allow" is remembered per remote agent.
 
-### 4.5 Access control (D14)
+### 4.5 Access control (D14) and mailbox exclusion (D18)
 
 Each agent **profile** declares an allow‑list of remote agents it may call (alongside its existing
 skills/tools scoping). The remote registry is global (server‑wide); *use* is scoped per profile.
 A profile calling an unlisted remote agent is refused before any network call.
+
+**Remote agents are delegation‑only (D18).** They can be spawned/delegated, but they do **not** appear
+in `active_agents` and cannot be targeted by `ask_agent`/`respond_agent`. The mailbox's contract is a
+*mid‑run injection into a live model call* (`a2a_executor.py:1617`), for which A2A has no RPC; rather
+than fake it over the wire, remote agents are simply absent from the mailbox. (A future "ask = new
+`message/send` on the shared remote context" is possible but explicitly out of scope for v1.)
+
+**Cost is opaque (note):** a remote agent runs its own model on its own credentials, so its token
+spend is not Daisy's and is not folded into the `token_usage`/agents buckets — the UI shows a remote
+delegation as an opaque sub‑task, not a metered one.
 
 ---
 
@@ -196,6 +210,17 @@ Consequences (accepted, no backward‑compat constraint):
   later or after reconnect) — the suspended state is keyed on the task and rehydratable, which the
   append‑only task store already supports for replay.
 
+**Survives a server restart (D17).** Today `fail_orphaned_tasks` (`task_store.py:282`) fails every
+non‑terminal task on startup — which would silently kill a legitimately long `input-required` pause.
+`input-required` is therefore **exempted**: the pending request (permission command/risk or question
+schema) is persisted, and on restart the task is rehydrated as still‑suspended rather than failed;
+answering it resumes the runtime as normal. This is the one place the orphan‑failing rule gets a
+carve‑out, and it needs a test.
+
+**Telemetry interaction:** a suspension can outlast a turn (or a restart), so the OTEL turn span is
+**closed at the pause** and a **linked** span opens on resume — no span is held open across an
+indefinite wait (see [`telemetry-otel-design.md`](./telemetry-otel-design.md) §4).
+
 ### 6.2 Server auth (D6)
 
 Add an auth dependency in front of the mounted A2A routes (`app.py:1658` mount site). Two schemes,
@@ -254,6 +279,12 @@ related tasks exactly like local ones (`referenceTaskIds`), so replay/history "j
 - **Outbound:** per‑profile allow‑list (D14) → per‑call permission prompt (D13) → minimal context
   egress (D16) → signed short‑lived file URLs (§6.3). Defense in depth against accidental data
   exfiltration to a remote agent.
+- **Card / URL trust (D19, anti‑SSRF):** a remote AgentCard's `url` and `additionalInterfaces` can
+  point anywhere, so they are not trusted blindly. Daisy only connects to hosts on the user's
+  configured allow‑list, requires the card's `url` host to match the registration origin (a card
+  can't redirect Daisy to a different endpoint than the one the user vetted), and blocks
+  private/loopback/link‑local IP ranges unless the user explicitly opts a host in. This applies to
+  the initial card resolution, the RPC endpoint, and any push webhook target the peer supplies.
 - **Inbound:** optional API‑key/OAuth2 auth (D6), advertised in the card, CORS tightened when on.
 - **Secrets** resolve from env, never tracked.
 
@@ -295,6 +326,4 @@ Each phase is independently shippable and reviewable.
 - Card TTL default value and whether health‑checks are active (polled) or lazy (on‑use).
 - Signed‑URL lifetime and whether remote peers can be trusted to fetch within it, vs falling back to
   `FileWithBytes` for small files.
-- Do we expose remote agents as *peers for `ask_agent`/mailbox*, or delegation‑only? (Mailbox is
-  explicitly in‑process today, `a2a_executor.py:1617`; extending it over the wire is a larger step —
-  proposed **out of scope** for v1.)
+- *(Resolved D18 — remote agents are delegation‑only, hidden from the mailbox in v1.)*

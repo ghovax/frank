@@ -32,6 +32,7 @@ span tree explicitly (§4), which is exactly what makes the traces valuable.
 | T2 | Default posture | **Off until the user configures an endpoint** |
 | T3 | Trace structure | **Turn = trace, `context_id` = session, delegated/remote agents = nested spans** |
 | T4 | Redaction | **Redact sensitive by default; user can widen** |
+| T5 | Trace context across the A2A wire | **Propagate W3C `traceparent` both ways** (emit outbound in message metadata, accept inbound) |
 
 Rationale for **OTLP over the Langfuse SDK**: it satisfies the actual goal (users capture telemetry
 in *their* backend) with **one** integration. Langfuse v3 is itself OTEL‑native, so nothing is lost
@@ -77,6 +78,24 @@ trace  (root span)  = one A2A Task / user turn        [attrs: session.id = conte
 - **Delegation** (`make_delegate`, `a2a_executor.py:1908`) opens a child span. With the external‑agent
   work, a **remote** delegation is the same span, tagged `local|remote` and carrying the remote
   agent id — so the companion A2A feature is observable end‑to‑end in one trace.
+
+### Trace context across the A2A wire (T5)
+
+When Daisy **calls a remote agent** (the external‑agent feature), it injects the current
+W3C **`traceparent`** into the A2A message `metadata` so a shared OTLP backend can stitch Daisy's
+`agent.delegate` span to the *remote* agent's own spans — one end‑to‑end trace across two systems.
+Symmetrically, Daisy's **inbound** server reads a `traceparent` from an external caller and continues
+that trace, so a third‑party client's trace links to the work Daisy does on its behalf. Propagation
+is best‑effort: a peer that ignores or doesn't emit trace context simply yields two separate traces,
+never an error. (This rides the same message `metadata` map used for the `urn:daisy:ext:turn:v1`
+extension, kept under the standard `traceparent` key rather than the Daisy namespace.)
+
+### Spans across a suspended / restarted turn
+
+An `input-required` pause (A2A design D5/D17) can last minutes, hours, or span a restart. A span is
+**not** held open across it: the turn span is **closed at the suspension** and a new span, **linked**
+to it (OTEL span link), opens when the turn resumes. This keeps traces bounded and correct even when
+a HITL answer arrives long later or after the server restarted.
 
 ### Async context propagation (the real implementation risk)
 
@@ -150,6 +169,12 @@ Daisy keeps its in‑app token/cost UI (`token_usage` events) — that's a *prod
 local. Telemetry is an *optional export* of the same underlying numbers plus prompt/latency/trace
 structure for users who run an observability stack. No duplication of source‑of‑truth: both read the
 same computed usage.
+
+**Telemetry is a *harness*-level egress (note).** Because a harness can serve multiple clients and run
+remotely, emission is configured on and performed by the harness, not per connected app. A shared
+harness attributes all traces to that harness (grouped by `context_id`/session), not per end user —
+worth stating plainly given the "users capture their telemetry" framing: it's *this harness's*
+telemetry, wherever the harness runs.
 
 ## 9. Phasing
 
