@@ -1,5 +1,7 @@
 """Uploads routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi.responses import FileResponse
+from harness.server import app as _app
 from harness.server.app import (
     AttachmentReference,
     File,
@@ -15,6 +17,19 @@ from harness.server.app import (
 )
 
 router = APIRouter()
+
+
+@router.get("/a2a/files/{token}")
+async def serve_a2a_file(token: str):
+    """Stream a file authorized by a signed A2A file URL. The token binds the path and an
+    expiry, so only a currently-valid link issued by this server resolves."""
+    signer = _app._file_url_signer
+    if signer is None:
+        raise HTTPException(status_code=404, detail="File serving is unavailable.")
+    file_path = signer.verify(token)
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="File not found or link expired.")
+    return FileResponse(file_path)
 
 @router.post("/uploads")
 async def upload_file(file: UploadFile = File(...)):

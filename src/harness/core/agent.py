@@ -890,6 +890,8 @@ class AgentRuntime:
         # delegate instead of trying to load an on-disk config that does not exist).
         self._remote_agent_roster: Callable[[], list[dict[str, str]]] = lambda: []
         self._is_remote_agent: Callable[[str], bool] = lambda name: False
+        # The current turn's file attachments, forwarded to a remote agent as FileParts.
+        self._pending_attachments: list[dict] = []
         self._agent_messages: asyncio.Queue[AgentMessage] = asyncio.Queue()
         self._agent_message_available = asyncio.Event()
         self._pending_agent_questions: set[str] = set()
@@ -1227,6 +1229,11 @@ class AgentRuntime:
         (through the delegate) rather than loading an on-disk agent config."""
         self._remote_agent_roster = roster
         self._is_remote_agent = is_remote
+
+    def set_pending_attachments(self, attachments: list[dict]) -> None:
+        """Record the current turn's file attachments so a delegation to a remote agent can
+        forward them as FileParts."""
+        self._pending_attachments = attachments or []
 
     def set_agent_event_sink(self, agent_event_sink: Callable[[dict[str, Any]], None]) -> None:
         """Install the immediate delivery path for path-tagged agent activity."""
@@ -3451,6 +3458,7 @@ class AgentRuntime:
                             self._project_directory,
                             group_id,
                             spawn_step_id,
+                            self._pending_attachments,
                         ):
                             # The agent's streamed progress goes to the panel only,
                             # never into the parent's model context.

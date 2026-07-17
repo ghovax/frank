@@ -133,6 +133,42 @@ async def test_make_delegate_routes_to_remote_agent():
         assert any("echo: hello" in text for text in artifact_text), done
 
 
+async def test_remote_delegation_forwards_attachments_as_fileparts(tmp_path):
+    """A delegation's file attachments reach the remote agent as FileParts (signed URLs)."""
+    from harness.core.a2a_executor import AgentRegistry
+    from harness.core.a2a_files import FileUrlSigner
+
+    stored = tmp_path / "report.txt"
+    stored.write_text("data")
+
+    with running_echo_agent() as base_url:
+        manager = RemoteAgentManager({
+            "echo": RemoteAgentConfiguration(
+                name="echo", card_url=f"{base_url}/.well-known/agent-card.json", allow_private=True
+            )
+        })
+        await manager.start()
+        registry = AgentRegistry(task_store=object())
+        registry.set_remote_manager(manager)
+        registry.set_file_url_signer(FileUrlSigner(b"secret", base_url))
+
+        delegate = registry.make_delegate("ctx-1")
+        events = []
+        async for event in delegate(
+            "echo", "look at this", "", None, 1, "", "", "", "",
+            [{"path": str(stored), "filename": "report.txt", "mime_type": "text/plain"}],
+        ):
+            events.append(event)
+        await manager.aclose()
+
+        relayed = " ".join(
+            event["event"].get("text", "")
+            for event in events
+            if event["type"] == "event" and event["event"].get("kind") == "text"
+        )
+        assert "report.txt" in relayed, events
+
+
 def test_origin_mismatch_blocked():
     configuration = RemoteAgentConfiguration(
         name="acme", card_url="https://agents.acme.com/.well-known/agent-card.json"

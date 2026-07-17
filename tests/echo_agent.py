@@ -22,6 +22,7 @@ from a2a.types import (
     AgentCapabilities,
     AgentCard,
     AgentSkill,
+    FilePart,
     Part,
     TaskState,
     TextPart,
@@ -34,17 +35,23 @@ class EchoExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         text = context.get_user_input()
+        file_names = [
+            (root.file.name or "file")
+            for part in (context.message.parts if context.message else [])
+            if isinstance((root := getattr(part, "root", part)), FilePart)
+        ]
+        reply = f"echo: {text}"
+        if file_names:
+            reply += f" files: {', '.join(file_names)}"
         task = context.current_task or new_task(context.message)
         await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.start_work()
         await updater.update_status(
             TaskState.working,
-            updater.new_agent_message([Part(root=TextPart(text=f"echo: {text}"))]),
+            updater.new_agent_message([Part(root=TextPart(text=reply))]),
         )
-        await updater.add_artifact(
-            [Part(root=TextPart(text=f"echo: {text}"))], name="result", last_chunk=True
-        )
+        await updater.add_artifact([Part(root=TextPart(text=reply))], name="result", last_chunk=True)
         await updater.complete()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:

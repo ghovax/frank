@@ -37,6 +37,7 @@ from a2a.types import (
     AgentCard,
     AgentSkill,
     DataPart,
+    FilePart,
     Message,
     MessageSendParams,
     Part,
@@ -58,11 +59,13 @@ from harness.core.configuration import (
     AgentConfiguration,
     GlobalConfiguration,
     PromptLoader,
+    harness_home_directory,
     load_agent_configuration,
 )
 from harness.core.background_store import get_background_job_store
 from harness.core.file_leases import FileLeaseManager
 from harness.core.models import find_model
+from harness.core.a2a_files import FileUrlSigner, build_file_part, ingest_file_part
 from harness.core.message_content import content_block_identifier, content_block_metadata
 from harness.core.remote_agents import RemoteAgentManager
 from harness.core.session_workspaces import SessionWorkspace
@@ -167,6 +170,20 @@ def _artifact_event_payload(message) -> Optional[dict]:
     return None
 
 
+async def _ingest_incoming_file_parts(message) -> list[dict]:
+    """Materialize every ``FilePart`` an inbound message carries into the upload store,
+    returning attachment dicts so a file another agent sends reaches the model exactly like
+    a local attachment."""
+    attachments: list[dict] = []
+    for part in (message.parts or []):
+        root = getattr(part, "root", part)
+        if isinstance(root, FilePart):
+            attachment = await ingest_file_part(part, harness_home_directory())
+            if attachment is not None:
+                attachments.append(attachment)
+    return attachments
+
+
 def _structured_data_payloads(message) -> list[dict]:
     """Return non-artifact DataPart payloads carried by the user turn."""
     payloads: list[dict] = []
@@ -202,6 +219,18 @@ def _image_attachments(structured_payloads: list[dict]) -> list[dict]:
             if str(attachment.get("mime_type", "")).startswith(_INLINE_IMAGE_MIME_PREFIX):
                 images.append(attachment)
     return images
+
+
+def _all_attachments(structured_payloads: list[dict]) -> list[dict]:
+    """Every file attachment carried by the turn (images and non-images alike)."""
+    attachments: list[dict] = []
+    for payload in structured_payloads:
+        if payload.get(PART_KIND) != "attachments":
+            continue
+        for attachment in payload.get("attachments") or []:
+            if isinstance(attachment, dict):
+                attachments.append(attachment)
+    return attachments
 
 
 def _model_supports_vision(model_identifier: str) -> bool:
@@ -1115,6 +1144,9 @@ class HarnessAgentExecutor(AgentExecutor):
         # self-realization note the model repairs as its own output.
         artifact_payload = _artifact_event_payload(message)
         structured_payloads = _structured_data_payloads(message)
+        ingested_attachments = await _ingest_incoming_file_parts(message)
+        if ingested_attachments:
+            structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
         metadata = _harness_metadata(message)
         requested_working_directory = str(metadata.get(Metadata.WORKING_DIRECTORY, ""))
         requested_workspace_strategy = str(metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
@@ -1382,6 +1414,7 @@ class HarnessAgentExecutor(AgentExecutor):
             else:
                 turn_input = user_text
 
+            runtime.set_pending_attachments(_all_attachments(structured_payloads))
             async for event in runtime.stream(turn_input, as_system_note=as_system_note):
                 kind = event.type
                 data = event.data
@@ -1637,6 +1670,8 @@ class AgentRegistry:
         # of these, make_delegate reaches it through this manager's A2A client instead of
         # the in-process local handler path.
         self._remote_manager: Optional["RemoteAgentManager"] = None
+        # Signs URLs for files forwarded to a remote agent as FileParts.
+        self._file_url_signer: Optional[FileUrlSigner] = None
         # Per (local session context, remote agent) → the remote server's contextId, so a
         # session keeps continuity with a remote agent across turns without ever leaking
         # our own contextId. In-memory for now; persisted in a later phase.
@@ -1645,6 +1680,9 @@ class AgentRegistry:
     def set_remote_manager(self, remote_manager: Optional["RemoteAgentManager"]) -> None:
         """Install (or replace) the outbound A2A client manager. Safe to call on reload."""
         self._remote_manager = remote_manager
+
+    def set_file_url_signer(self, signer: Optional[FileUrlSigner]) -> None:
+        self._file_url_signer = signer
 
     def is_remote_agent(self, name: str, profile: str = "") -> bool:
         return (
@@ -1950,17 +1988,26 @@ class AgentRegistry:
             with suppress(Exception):
                 await handler.on_cancel_task(TaskIdParams(id=task_id))
 
-    async def _remote_delegate(self, agent_name: str, prompt: str, context_id: str):
+    async def _remote_delegate(
+        self, agent_name: str, prompt: str, context_id: str, attachments: Optional[list[dict]] = None
+    ):
         """Delegate to an external A2A agent over the wire, yielding the same event
         vocabulary the local (in-process) delegate does — so the parent runtime and the
-        agents panel cannot tell a remote agent from a local one. The remote agent's own
-        token spend is opaque to us (its model, its credentials), so no usage is relayed.
+        agents panel cannot tell a remote agent from a local one. The task's file
+        attachments ride as FileParts (signed URLs to this server); the remote agent's own
+        token spend is opaque to us, so no usage is relayed.
         """
         assert self._remote_manager is not None
         remote_context = self._remote_contexts.get((context_id, agent_name))
+        parts: list[Part] = [Part(root=TextPart(text=prompt))]
+        if self._file_url_signer is not None:
+            for attachment in (attachments or []):
+                file_part = build_file_part(attachment, self._file_url_signer)
+                if file_part is not None:
+                    parts.append(file_part)
         message = Message(
             role=Role.user,
-            parts=[Part(root=TextPart(text=prompt))],
+            parts=parts,
             message_id=uuid.uuid4().hex,
             context_id=remote_context,  # None on first contact; the remote assigns one
         )
@@ -2026,11 +2073,12 @@ class AgentRegistry:
             project_directory: str = "",
             lane_group_id: str = "",
             lane_step_id: str = "",
+            attachments: Optional[list[dict]] = None,
         ):
             # A remote agent is reached over the wire; everything after this branch is the
             # in-process local path, unchanged.
             if self.is_remote_agent(agent_name):
-                async for event in self._remote_delegate(agent_name, prompt, context_id):
+                async for event in self._remote_delegate(agent_name, prompt, context_id, attachments):
                     yield event
                 return
             handler = self._handlers.get(agent_name)

@@ -51,6 +51,7 @@ from harness.core.a2a_executor import (
 )
 from harness.core.agent import AgentRuntime, build_chat_model, model_is_authorized
 from harness.core.remote_agents import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
+from harness.core.a2a_files import FileUrlSigner, load_or_create_secret
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
@@ -369,6 +370,8 @@ _mcp_manager: Optional[MCPClientManager] = None
 # startup builds it from remote-agents.json; installed on the registry so make_delegate
 # can branch a delegation over the wire.
 _remote_agent_manager: Optional[RemoteAgentManager] = None
+# Signs short-lived URLs for the A2A file-serving endpoint. Built at startup.
+_file_url_signer: Optional[FileUrlSigner] = None
 _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
 _workspace_manager: SessionWorkspaceManager | None = None
@@ -2103,7 +2106,7 @@ async def _watch_ssh_hosts() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _remote_agent_manager, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
+    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _remote_agent_manager, _file_url_signer, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
     _main_loop = asyncio.get_running_loop()
     _file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
     _workspace_manager = SessionWorkspaceManager()
@@ -2206,6 +2209,8 @@ async def lifespan(application: FastAPI):
         )
 
     _registry = AgentRegistry(_task_store)
+    _file_url_signer = FileUrlSigner(load_or_create_secret(harness_home_directory()), PUBLIC_BASE_URL)
+    _registry.set_file_url_signer(_file_url_signer)
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
