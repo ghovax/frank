@@ -174,6 +174,21 @@ def _artifact_event_payload(message) -> Optional[dict]:
     return None
 
 
+# A message/send answering an input-required pause carries this DataPart kind, with the
+# request id and the decision/answers, so an external A2A client can resolve a permission
+# or question the spec-correct way rather than through the native REST side channel.
+INPUT_RESPONSE_KIND = "input_response"
+
+
+def _input_response_payload(message) -> Optional[dict]:
+    """The input-required answer this message carries, or ``None``."""
+    for part in (message.parts or []):
+        root = getattr(part, "root", part)
+        if isinstance(root, DataPart) and root.data.get(PART_KIND) == INPUT_RESPONSE_KIND:
+            return dict(root.data)
+    return None
+
+
 async def _ingest_incoming_file_parts(message) -> list[dict]:
     """Materialize every ``FilePart`` an inbound message carries into the upload store,
     returning attachment dicts so a file another agent sends reaches the model exactly like
@@ -826,6 +841,25 @@ class HarnessAgentExecutor(AgentExecutor):
             context_id,
         )
 
+    def _resolve_input_response(self, payload: dict) -> bool:
+        """Resolve a pending permission/question from an input-required answer message,
+        returning whether one matched. These are the same futures the REST endpoints
+        resolve, so an external client and the native app share one resolution path."""
+        request_id = str(payload.get("request_id", ""))
+        if not request_id:
+            return False
+        permission_future = self._pending_permissions.get(request_id)
+        if permission_future is not None and not permission_future.done():
+            permission_future.set_result(str(payload.get("decision", "deny")))
+            return True
+        question_future = self._pending_questions.get(request_id)
+        if question_future is not None and not question_future.done():
+            question_future.set_result(
+                {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
+            )
+            return True
+        return False
+
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
         state = self._contexts.get(context_id)
         if state is None or state.runtime is None:
@@ -1201,10 +1235,27 @@ class HarnessAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
+        # An input-required answer resolves the pending request's future and returns
+        # without a model turn. It must run before the per-context turn lock is taken: the
+        # paused turn holds that lock while awaiting the future, so taking it here would
+        # deadlock against the very turn this answer unblocks.
+        input_response = _input_response_payload(message)
+        if input_response is not None:
+            self._resolve_input_response(input_response)
+            await updater.complete()
+            return
+
         async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
             if self._on_stream_event is not None and not delegated and publish_stream_event:
                 self._on_stream_event(task.context_id, part)
+
+        async def emit_input_required(part: Part) -> None:
+            """Emit a human-in-the-loop request: the DataPart for the native stream, then an
+            ``input-required`` task status so an external A2A client sees the spec state and
+            can answer with a message/send carrying an ``input_response`` part."""
+            await emit(part)
+            await updater.update_status(TaskState.input_required, updater.new_agent_message([part]))
 
         context_state = self._context(task.context_id)
         should_acknowledge_work_habits = await self._claim_work_habits_acknowledgement(
@@ -1543,7 +1594,7 @@ class HarnessAgentExecutor(AgentExecutor):
                     ))
                 elif kind == StreamEvent.Type.PERMISSION_REQUEST:
                     await flush_stream_buffers()
-                    await emit(_data_part(
+                    await emit_input_required(_data_part(
                         "permission_request", request_id=data.get("request_id", ""),
                         tool_call_id=data.get("id", ""),
                         command=data.get("command", ""), justification=data.get("justification", ""),
@@ -1554,7 +1605,7 @@ class HarnessAgentExecutor(AgentExecutor):
                         self._on_permission_state(task.context_id)
                 elif kind == StreamEvent.Type.QUESTION:
                     await flush_stream_buffers()
-                    await emit(_data_part(
+                    await emit_input_required(_data_part(
                         "question",
                         request_id=data.get("request_id", ""),
                         tool_call_id=data.get("id", ""),
