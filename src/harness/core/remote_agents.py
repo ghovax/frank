@@ -1,10 +1,5 @@
-"""Outbound A2A client — reach third-party A2A agents over the wire.
-
-This is the client half of A2A, which the harness otherwise lacks: it lets a local
-agent delegate to an agent that lives on someone else's server. It mirrors
-:class:`~harness.core.mcp_client.MCPClientManager`'s shape (a manager of external
-connections that starts best-effort, isolates per-connection failures, and reconciles
-live on a config change), but for A2A rather than MCP.
+"""Outbound A2A client — reach third-party A2A agents over the wire, letting a local
+agent delegate to an agent that lives on someone else's server.
 
 Responsibilities:
 
@@ -22,9 +17,8 @@ Responsibilities:
   an internal endpoint (an SSRF-shaped attack).
 
 The mapping from a remote task's streamed events into the harness's own relayed-child
-event vocabulary lives with the delegation code in ``a2a_executor.py`` (right next to the
-local-delegation mapping it mirrors); this module stays transport-focused and returns the
-raw A2A client stream.
+event vocabulary lives with the delegation code in ``a2a_executor.py``; this module stays
+transport-focused and returns the raw A2A client stream.
 """
 
 import asyncio
@@ -45,8 +39,7 @@ from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 logger = logging.getLogger(__name__)
 
 # How long to wait for a remote agent's card resolution / first contact before giving up
-# and marking it unreachable, so one slow peer never freezes startup or a turn. Mirrors
-# the MCP client's connect timeout.
+# and marking it unreachable, so one slow peer never freezes startup or a turn.
 _CARD_RESOLVE_TIMEOUT_SECONDS = 20.0
 
 def _available_transports() -> list[TransportProtocol]:
@@ -159,7 +152,7 @@ def _host_of(url: str) -> str:
 def _is_private_host(host: str) -> bool:
     """Whether a host literal is loopback/private/link-local. Hostnames that are not IP
     literals are treated as non-private here (full DNS-resolution SSRF protection, incl.
-    rebinding, is out of scope for v1 — the origin check below is the primary guard)."""
+    rebinding, is not attempted — the origin check below is the primary guard)."""
     if host in {"localhost", "localhost.localdomain"}:
         return True
     try:
@@ -288,7 +281,7 @@ class _RemoteAgent:
 class RemoteAgentManager:
     """Facade over the registered remote agents. Construction is cheap; cards resolve on
     :meth:`start` (best-effort) and refresh on TTL/demand, and :meth:`reconcile` applies a
-    new config set live (used by the file watcher, mirroring the MCP manager)."""
+    new config set live (used by the file watcher)."""
 
     def __init__(self, configurations: Optional[dict[str, RemoteAgentConfiguration]] = None):
         self._agents: dict[str, _RemoteAgent] = {

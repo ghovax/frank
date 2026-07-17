@@ -1772,7 +1772,7 @@ class AgentRegistry:
         self._file_url_signer: Optional[FileUrlSigner] = None
         # Per (local session context, remote agent) → the remote server's contextId, so a
         # session keeps continuity with a remote agent across turns without ever leaking
-        # our own contextId. In-memory for now; persisted in a later phase.
+        # our own contextId.
         self._remote_contexts: dict[tuple[str, str], str] = {}
 
     def set_remote_manager(self, remote_manager: Optional["RemoteAgentManager"]) -> None:
@@ -2175,8 +2175,7 @@ class AgentRegistry:
             lane_step_id: str = "",
             attachments: Optional[list[dict]] = None,
         ):
-            # A remote agent is reached over the wire; everything after this branch is the
-            # in-process local path, unchanged.
+            # A remote agent is reached over the wire; the in-process local path follows below.
             if self.is_remote_agent(agent_name):
                 async for event in self._remote_delegate(agent_name, prompt, context_id, attachments):
                     yield event

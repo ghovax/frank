@@ -1895,7 +1895,7 @@ def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
 async def _reload_remote_agents() -> None:
     """Re-read remote-agents.json and apply the external-agent set live: reconcile the
     outbound client manager and drop cached runtimes so the next turn's roster reflects
-    the change. Mirrors ``_reload_mcp``. No server restart required."""
+    the change. No server restart required."""
     global _remote_agent_manager
     assert _global_configuration is not None and _registry is not None
     async with _configuration_lock:

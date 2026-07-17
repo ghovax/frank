@@ -389,7 +389,7 @@ class RemoteAgentServerConfiguration(BaseModel):
 
 class RemoteAgentsConfiguration(BaseModel):
     """The set of external A2A agents the harness may delegate to, loaded from
-    ``remote-agents.json`` in the ``.agents`` roots (mirroring ``mcp.json``)."""
+    ``remote-agents.json`` in the ``.agents`` roots."""
 
     agents: dict[str, RemoteAgentServerConfiguration] = {}
 
@@ -657,8 +657,7 @@ class GlobalConfiguration(BaseModel):
 
     def remote_agents_configuration_for(self, working_directory: str) -> "RemoteAgentsConfiguration":
         """The external A2A agents declared for a working directory: those in the home
-        ``remote-agents.json`` plus the working directory's own. Mirrors
-        ``mcp_configuration_for``."""
+        ``remote-agents.json`` plus the working directory's own."""
         return RemoteAgentsConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
 
 
