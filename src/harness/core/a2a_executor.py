@@ -681,8 +681,6 @@ class HarnessAgentExecutor(AgentExecutor):
         claim_work_habits_acknowledgement: Optional[Callable[[str], bool]] = None,
         on_turn_state: Optional[Callable[..., Any]] = None,
         on_permission_state: Optional[Callable[..., Any]] = None,
-        load_conversation: Optional[Callable[..., Any]] = None,
-        save_conversation: Optional[Callable[..., Any]] = None,
         session_permission_mode_for: Optional[Callable[..., Any]] = None,
         on_stream_event: Optional[Callable[..., Any]] = None,
         file_lease_manager: FileLeaseManager | None = None,
@@ -697,12 +695,9 @@ class HarnessAgentExecutor(AgentExecutor):
         self._task_store = task_store
         self._registry = registry
         self._on_new_context = on_new_context
-        # Persist/restore the dialogue history so a session keeps its context across
-        # a server restart. ``_conversations`` is in-memory; without these the agent
-        # would resume a reopened session with an empty history while the UI still
-        # replays the transcript from the task store, silently losing all context.
-        self._load_conversation = load_conversation
-        self._save_conversation = save_conversation
+        # The model-facing dialogue is persisted as the task store's per-context
+        # checkpoint (the single durable turn surface) and restored from it on
+        # ``_runtime_for``; ``_conversations`` is the in-memory write-through cache.
         # Resolves a context's persisted per-session permission mode so resumed
         # sessions keep approval behavior after a runtime rebuild.
         self._session_permission_mode_for = session_permission_mode_for

@@ -217,19 +217,6 @@ class ModelHistoryRecord(Base):
     __table_args__ = (Index("idx_model_history_selected_at", "selected_at"),)
 
 
-class ConversationRecord(Base):
-    """The agent's dialogue history (LangChain messages) per A2A context, persisted
-    so a session keeps its context across a server restart. The A2A task store holds
-    the transcript the UI replays; this holds the model-facing message list the agent
-    actually resumes from."""
-
-    __tablename__ = "conversations"
-
-    context_id: Mapped[str] = mapped_column(String, primary_key=True)  # == A2A contextId
-    messages: Mapped[str] = mapped_column(Text, default="")  # LangChain messages JSON
-    updated_at: Mapped[str] = mapped_column(String, nullable=False)
-
-
 class ArtifactVersionRecord(Base):
     """One captured version — a commit on a session branch in a shadow git repo. The
     shadow repo lives under the location's ``~/.daisy/versions`` and is driven with an
@@ -537,46 +524,6 @@ def _schedule_session_title(context_id: str, first_message: str) -> None:
     except RuntimeError:
         # No running event loop (e.g. called outside a request) — keep the provisional title.
         pass
-
-
-def _load_conversation(context_id: str) -> list:
-    """Restore a context's persisted dialogue history (LangChain messages). Returns
-    an empty list when there is nothing stored or the stored form can't be decoded —
-    a resumed session then simply starts fresh rather than erroring."""
-    if _session_factory is None:
-        return []
-    database_session = _session_factory()
-    try:
-        record = database_session.get(ConversationRecord, context_id)
-        if record is None or not record.messages:
-            return []
-        return messages_from_dict(json.loads(record.messages))
-    except Exception:
-        return []
-    finally:
-        database_session.close()
-
-
-def _save_conversation(context_id: str, messages: list) -> None:
-    """Persist a context's dialogue history after a turn, so it survives a restart."""
-    if _session_factory is None or not context_id:
-        return
-    with sqlite_write_lock():
-        database_session = _session_factory()
-        try:
-            serialized = json.dumps(messages_to_dict(messages))
-            record = database_session.get(ConversationRecord, context_id)
-            now = datetime.now(timezone.utc).isoformat()
-            if record is None:
-                database_session.add(ConversationRecord(context_id=context_id, messages=serialized, updated_at=now))
-            else:
-                record.messages = serialized
-                record.updated_at = now
-            database_session.commit()
-        except Exception:
-            database_session.rollback()
-        finally:
-            database_session.close()
 
 
 def _claim_work_habits_acknowledgement(context_id: str) -> bool:
@@ -1685,8 +1632,6 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         claim_work_habits_acknowledgement=_claim_work_habits_acknowledgement,
         on_turn_state=_set_turn_state,
         on_permission_state=_notify_permission_state,
-        load_conversation=_load_conversation,
-        save_conversation=_save_conversation,
         session_permission_mode_for=_session_permission_mode_for,
         on_stream_event=_publish_stream_event,
         file_lease_manager=_file_lease_manager,
@@ -4252,7 +4197,6 @@ def _prune_session_artifacts(context_id: str) -> None:
                 ArtifactFileRecord,
                 ArtifactSurfaceRecord,
                 ArtifactAnnotationRecord,
-                ConversationRecord,
                 SessionLifecycleRecord,
             ):
                 database_session.query(model).filter(model.context_id == context_id).delete(synchronize_session=False)

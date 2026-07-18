@@ -172,9 +172,9 @@ async def delete_session(context_id: str):
         referenced_uploads: set[str] = set()
         for text in await _app._task_store.context_message_texts(context_id):
             referenced_uploads.update(upload_pattern.findall(text))
-        task_ids = await _app._task_store.task_ids_for_context(context_id)
-        for task_id in task_ids:
-            await _app._task_store.delete(task_id)
+        # One call drops the context's tasks (head/history/artifacts) and its
+        # conversation checkpoint — the single durable turn surface.
+        await _app._task_store.delete_context(context_id)
         for path_string in referenced_uploads:
             if not await _app._task_store.any_history_references(path_string):
                 await asyncio.to_thread(_remove_upload_file, path_string, uploads_root)
