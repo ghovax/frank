@@ -239,6 +239,12 @@ class StreamEvent:
         # A2A task to input-required, and closes the segment. A later answer resumes
         # the turn from the checkpoint via ``AgentRuntime.resume_stream``.
         SUSPENDED = "suspended"
+        # The conversation is at a durable-safe point (a tool-result batch was just
+        # appended, so no tool_call dangles). The executor snapshots the checkpoint here,
+        # so a crash mid-turn leaves the record of already-completed side-effecting tools
+        # in the conversation — the next turn sees them and does not redo them. The runtime
+        # only signals the safe point; the executor owns persistence.
+        CHECKPOINT = "checkpoint"
         ERROR = "error"
         DENIED_INJECTION = "denied_injection"
         # A spawn_agent invocation begins a child group. RELAYED carries a child's own
@@ -2099,6 +2105,7 @@ class AgentRuntime:
             ):
                 yield event
             self._append_tool_results(response, resume_outcomes)
+            yield StreamEvent(StreamEvent.Type.CHECKPOINT)
         else:
             # A prior turn may have suspended at input-required and been superseded by
             # this new message instead of answered. Close its dangling tool calls (an
@@ -2445,6 +2452,7 @@ class AgentRuntime:
                 ):
                     yield event
             self._append_tool_results(response, outcomes)
+            yield StreamEvent(StreamEvent.Type.CHECKPOINT)
 
             if self._abort_event.is_set():
                 if self._has_queued_steering():

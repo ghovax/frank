@@ -1630,6 +1630,11 @@ class HarnessAgentExecutor(AgentExecutor):
                         data.get("result"),
                         data["status"],
                     ))
+                elif kind == StreamEvent.Type.CHECKPOINT:
+                    # A durable-safe point: snapshot the conversation so a mid-turn crash
+                    # leaves completed tools' results in the record (the next turn does not
+                    # redo them). Not a panel event; not relayed.
+                    await save_runtime_conversation()
                 elif kind == StreamEvent.Type.MCP_EVENT:
                     await flush_stream_buffers()
                     await emit(_data_part(
