@@ -91,7 +91,14 @@ The delegated in-process continuation and `background_store` are kept, for the r
 
 ## Implementation status
 
-Implemented and committed as coherent, compiling increments: the checkpoint store; the conversation rewire onto it; safe-point `CHECKPOINT`; the data-driven reconciliation with turn-kind stamping; the `conversations`-table deletion; and the `SUSPENDED` unification (one suspend event and prompt path for every turn, deleting the `PERMISSION_REQUEST`/`QUESTION` machinery). Unit-verified against real SQLite / in isolation: the checkpoint save/load and compaction-replace; the reconciliation policy matrix (top-level and unmarked preserved; delegated and mid-execution failed; terminal untouched); `delete_context`; and the delegated park/resolve routing plus the Stop-while-parked fail-safe. Not verifiable in this environment (no live model or running server): the end-to-end top-level suspend→persist→rebuild→resume and the delegated park→relay→resolve→continue across a real model turn, and the `CHECKPOINT` cadence under a live tool loop — these compile and are wired by inspection but need a live run, as with every durable-turn change. The background-store fold from the original draft was evaluated and deliberately not done (a distinct subsystem, not a duplicate).
+Implemented and committed as coherent, compiling increments: the checkpoint store; the conversation rewire onto it; safe-point `CHECKPOINT`; the data-driven reconciliation with turn-kind stamping; the `conversations`-table deletion; and the `SUSPENDED` unification (one suspend event and prompt path for every turn, deleting the `PERMISSION_REQUEST`/`QUESTION` machinery). The background-store fold from the original draft was evaluated and deliberately not done (a distinct subsystem, not a duplicate).
+
+Verified by a `tests/` suite (pytest; a scripted fake LLM drives the *real* runtime turn loop, no network):
+
+- **Store** (`test_task_store.py`, real in-memory SQLite): checkpoint save/load and compaction-replace; the reconciliation policy matrix (top-level and unmarked preserved; delegated and mid-execution failed; terminal untouched); `delete_context`.
+- **Runtime suspend/resume** (`test_durable_turn.py`): a top-level turn hits an ask-by-default gate, yields the one `SUSPENDED` event and returns with the pending tool-call checkpoint; resuming `allow` runs the tool, fires `CHECKPOINT`, and completes; resuming `deny` records a valid denial ToolMessage; and a delegated turn emits the *same* single `SUSPENDED`, parks in place, and continues the *same* stream to completion once the shared resolver answers it.
+
+What that leaves to a live run is only the executor↔SDK glue tying these verified layers together — the `SUSPENDED` handler's `save_checkpoint` + `input-required` `final=True` close, and the `input_response` `message/send` rebuild — which is compile-verified and built from the store and runtime pieces the suite covers. The recommended live smoke test remains: one session that hits a gate and is answered, and one interrupted mid-`input-required` and resumed.
 
 ## Testing
 
