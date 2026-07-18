@@ -1565,13 +1565,15 @@ class HarnessAgentExecutor(AgentExecutor):
                     await flush_stream_buffers()
                     cumulative = data.get("cumulative", {})
                     agents = data.get("agents", {}) or {}
+                    model_identifier = runtime.effective_model_identifier if runtime is not None else ""
                     _telemetry.set_attributes(turn_span, {
-                        "gen_ai.request.model": runtime.effective_model_identifier if runtime is not None else None,
+                        "gen_ai.request.model": model_identifier or None,
                         "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
                         "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
                         "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
                         "gen_ai.model.calls": cumulative.get("model_calls", 0),
                     })
+                    _telemetry.record_usage(model_identifier, data.get("input_tokens", 0), data.get("output_tokens", 0))
                     await emit(_data_part(
                         "token_usage",
                         input_tokens=data.get("input_tokens", 0),

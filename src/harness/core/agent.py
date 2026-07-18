@@ -36,6 +36,7 @@ from harness.core.configuration import (
     describe_available_agents,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
+from harness.core import telemetry as _telemetry
 from harness.core.litellm_model import ChatLiteLLMModel
 from harness.core.codex_model import ChatCodexModel
 from harness.core.message_content import message_content_deltas, message_text
@@ -1986,6 +1987,11 @@ class AgentRuntime:
             # checking the flag between chunks (the previous behaviour) let a provider
             # that had gone quiet swallow the cancel until it happened to emit again,
             # which is why Stop "sometimes" appeared to do nothing.
+            # A generation span for this model call. Started (not made "current") so it is
+            # safe to hold open across this generator's yields; ended in the finally below.
+            generation_span = _telemetry.start_span(
+                "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
+            )
             model_stream = self._bound_llm.astream(messages)
             abort_waiter = asyncio.ensure_future(self._abort_event.wait())
             try:
@@ -2031,6 +2037,7 @@ class AgentRuntime:
                                 block_id=content_delta.block_identifier,
                             )
             finally:
+                _telemetry.end_span(generation_span)
                 abort_waiter.cancel()
                 # Close the underlying HTTP stream so an aborted (or exhausted) turn
                 # never leaks a provider connection.
@@ -2355,6 +2362,7 @@ class AgentRuntime:
         image_followups: list[dict[str, str]] = []
         tool_failed = False
 
+        tool_span = _telemetry.start_span("tool.execute", {"tool.name": tool_name})
         try:
             async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier):
                 # An image read carries its pixels on a model-facing side channel;
@@ -2426,6 +2434,8 @@ class AgentRuntime:
                 StreamEvent.Type.ERROR, id=tool_call_identifier, message=result_content, tool=tool_name,
             )
             turn_tool_results_log.append({"name": tool_name, "result": result_content})
+        finally:
+            _telemetry.end_span(tool_span)
 
         completed_at = datetime.now(timezone.utc)
         duration_milliseconds = int((time.monotonic() - started_monotonic) * 1000)

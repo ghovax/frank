@@ -12,15 +12,15 @@ So instrumentation is additive and idiomatic — no wrapping hacks, no shadow ev
 
 OpenTelemetry traces following the GenAI semantic conventions (`gen_ai.*` attributes), over OTLP (HTTP/protobuf by default, gRPC optional). The user points that OTLP endpoint at whatever they run — Langfuse, Phoenix, Grafana, Honeycomb, Datadog, anything OTLP‑compatible. This is deliberately not the Langfuse SDK: going through OTLP satisfies the actual goal with one integration, and Langfuse v3 is itself OTEL‑native, so nothing is lost by pointing OTLP at it.
 
-Traces are the primary signal. Metrics (token counters, latency and cost histograms, derived from data we already track) come in a later phase. Logs stay out of scope; Daisy already has server logging and we don't export it.
+Traces are the primary signal, alongside two token metrics (a `gen_ai.client.token.usage` counter split by input/output, and a `gen_ai.client.operation.count` model-call counter) exported over OTLP to the metrics endpoint derived from the traces endpoint. Logs stay out of scope; Daisy already has server logging and we don't export it.
 
 ## The span tree
 
-- The root span is one A2A task / user turn, carrying `session.id = context_id`, `agent.name`, and `task.id`.
-- That `agent.turn` span carries `gen_ai.*` usage (model, tokens, model calls) as attributes.
+- The root span is one A2A task / user turn (`agent.turn`), carrying `session.id = context_id`, `agent.name`, `task.id`, and `gen_ai.*` usage (model, tokens, model calls) as attributes.
+- Each model call is a nested `gen_ai.generation` span; each tool call is a nested `tool.execute` span.
 - Each delegated or remote sub-agent is a nested `agent.turn` span, linked to its parent via the propagated `traceparent`.
 
-The trace boundary is the executor turn: `HarnessAgentExecutor.execute` opens the `agent.turn` span and stamps the session id from `context_id`, the task id, the agent name, and the turn kind (user, autonomous wake, compaction, or delegated). The executor is a plain coroutine, so the span safely wraps its whole body; model usage lands on the turn span as `gen_ai.*` attributes when the usage event arrives. The runtime's `stream()` is an async generator — opening an OTEL `start_as_current_span` across its `yield`s would corrupt the context stack — so per‑generation and per‑tool child spans are not opened inside it; the turn span with usage attributes is the model‑latency/cost record, taking its numbers from the usage event Daisy already emits. Sub‑agent turns (local and remote) nest under their parent via the propagated `traceparent`, so a delegation is observable end to end in one trace.
+The trace boundary is the executor turn: `HarnessAgentExecutor.execute` opens the `agent.turn` span and stamps the session id from `context_id`, the task id, the agent name, and the turn kind (user, autonomous wake, compaction, or delegated). The executor is a plain coroutine, so the span safely wraps its whole body via `start_as_current_span`. Inside the runtime's `stream()` — an async generator, where `start_as_current_span` across a `yield` would corrupt the context stack — generation and tool spans are opened with `start_span` (never made "current") and ended explicitly; they still parent to the current turn span, without touching the async context. Sub-agent turns (local and remote) nest under their parent via the propagated `traceparent`, so a delegation is observable end to end in one trace.
 
 ### Trace context across the A2A wire
 
@@ -54,7 +54,7 @@ Nothing is emitted until the user configures an endpoint. This preserves the loc
 
 ## What is (and isn't) in the payload
 
-Only span structure and usage/metadata are exported: session/task/agent ids, turn kind, model id, token usage, and model-call counts. Prompt and completion bodies, tool arguments/results, and computer-use screenshots are not put on spans, so there is nothing sensitive to redact and no secret-scrubbing pass to maintain. This keeps the exporter honest and dependency-free; if body capture is ever added, it should route through a maintained scrubbing library rather than hand-rolled patterns.
+Only span structure, usage/metadata, and token counts are exported: session/task/agent ids, turn kind, model id, model/tool span names, token usage, and model-call counts. Prompt and completion bodies, tool arguments/results, and computer-use screenshots are not put on spans, so there is nothing sensitive to redact and no secret-scrubbing pass to maintain. This keeps the exporter honest and dependency-free; if body capture is ever added, it should route through a maintained scrubbing library rather than hand-rolled patterns.
 
 ## Dependencies
 
@@ -71,7 +71,7 @@ Telemetry is a harness‑level egress. Because a harness can serve multiple clie
 1. Core traces: `telemetry.py`, the config and no‑op path, the turn span with usage attributes, session grouping.
 2. `traceparent` propagation across local and remote delegations, so sub‑agent turns nest.
 3. Optional prompt/completion body capture, routed through a maintained scrubbing library.
-4. Metrics (token counters, latency and cost histograms), optional.
+4. Optional latency/cost histograms on top of the token counters.
 5. The Settings → Observability toggle.
 
 ## Testing
@@ -84,7 +84,7 @@ Do it, as vendor‑neutral OTLP, off by default, structure‑and‑usage only (n
 
 ## Open questions
 
-- Traces only for the first version, or ship metrics alongside.
+- Whether to add latency/cost histograms beyond the token counters already exported.
 - Sampling: always on, or head sampling for heavy sessions.
 - Whether to also trace harness server operations (task store, artifact capture, MCP calls) or scope strictly to agent turns first (leaning: agent turns first).
 - Whether to add optional prompt/completion body capture at all, and if so which maintained scrubbing library to route it through.
