@@ -1,7 +1,7 @@
 "use client";
 
 import { Flex } from "@chakra-ui/react";
-import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
+import type { ToolEvent } from "@/lib/tool-event";
 import type { AgentPart } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
 import { ToolGroup } from "./tool-group";
@@ -47,34 +47,22 @@ function buildTimelineItems(parts: AgentPart[]): TimelineItem[] {
 export function AgentTimeline({
   parts,
   agents = [],
-  onPermission,
-  onQuestion,
 }: {
   parts: AgentPart[];
   agents?: { id: string; name: string; title?: string }[];
-  // A sub-agent's parked gate is resolved through the same handlers as a root prompt;
-  // routing is by request id, so the shared resolve reaches the parked sub-agent runtime.
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
 }) {
   const items = buildTimelineItems(parts);
   return (
     // The enclosing DisclosureRow body owns the top breathing room now, so this
-    // timeline just stacks its items.
+    // timeline just stacks its items. A parked gate raised inside a step shows here as
+    // an "input required" tool line; the actionable approve/deny lives in the shared
+    // overlay (driven from agentGroups), the same surface the root transcript uses.
     <Flex direction="column" gap={1} align="stretch">
       {items.map((item, itemIndex) => {
         if (item.kind === "text") {
           return <MarkdownContent key={`text-${itemIndex}`} content={item.content} />;
         }
-        return (
-          <ToolGroup
-            key={`tools-${item.id}`}
-            tools={item.tools}
-            agents={agents}
-            onPermission={onPermission}
-            onQuestion={onQuestion}
-          />
-        );
+        return <ToolGroup key={`tools-${item.id}`} tools={item.tools} agents={agents} />;
       })}
     </Flex>
   );

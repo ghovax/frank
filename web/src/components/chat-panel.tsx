@@ -1244,6 +1244,36 @@ export function ChatPanel({
       }
     }
   }
+  // A parked sub-agent's gate lives in the agents panel, not the main transcript, and it
+  // outlives the parent turn (spawn_agent is non-blocking), so it is surfaced through the
+  // same overlay regardless of isStreaming — otherwise the user could never answer it and
+  // the sub-agent would hang. The top-level prompt (above) takes priority when both exist.
+  if (!pendingPrompt) {
+    outer: for (const group of agentGroups) {
+      for (const step of group.steps) {
+        for (const part of step.parts) {
+          if (part.kind !== "tool" || part.status !== "input_required") continue;
+          const agentLabel = agents.find((candidate) => candidate.id === step.agent)?.title || step.agent;
+          if (part.question) {
+            pendingPrompt = { kind: "question", question: part.question };
+            break outer;
+          }
+          if (part.permission) {
+            const command = part.name === "bash" && part.arguments?.command ? String(part.arguments.command) : "";
+            const label = getToolCallDisplay(part.name, part.arguments).label;
+            pendingPrompt = {
+              kind: "permission",
+              permission: part.permission,
+              title: agentLabel ? `${agentLabel}: ${label}` : label,
+              command: command || undefined,
+              arguments: part.arguments,
+            };
+            break outer;
+          }
+        }
+      }
+    }
+  }
 
   // Audio + system-notification side of a pending decision. The attention cue
   // plays for the first prompt in a turn, while later prompts stay silent; a
@@ -2082,8 +2112,6 @@ export function ChatPanel({
                       open={agentsPanelOpen}
                       onClose={() => setSidePanelOpen("agents", false)}
                       focusedGroupId={focusedGroupId}
-                      onPermission={handlePermission}
-                      onQuestion={handleQuestion}
                     />
                   ),
                 },

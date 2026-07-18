@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuBot, LuNetwork, LuSquare } from "react-icons/lu";
 import { cancelAgent } from "@/lib/api";
-import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
+import type { ToolEvent } from "@/lib/tool-event";
 import { isStepDone, type AgentStep, type AgentGroup, type TaskState } from "@/lib/use-chat";
 import { AgentTimeline } from "./agent-timeline";
 import { ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
@@ -48,8 +48,6 @@ interface AgentsPanelProps {
   open: boolean;
   onClose: () => void;
   focusedGroupId: string | null;
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
 }
 
 function StepCard({
@@ -57,15 +55,11 @@ function StepCard({
   agentLabel,
   agents,
   sessionId,
-  onPermission,
-  onQuestion,
 }: {
   step: AgentStep;
   agentLabel: string;
   agents: { id: string; name: string; title?: string }[];
   sessionId: string | null;
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
 }) {
   const translation = useTranslations("AgentsPanel");
   const [stopping, setStopping] = useState(false);
@@ -122,9 +116,7 @@ function StepCard({
         </Tooltip>
       ) : undefined}
     >
-      {step.parts.length > 0 ? (
-        <AgentTimeline parts={step.parts} agents={agents} onPermission={onPermission} onQuestion={onQuestion} />
-      ) : undefined}
+      {step.parts.length > 0 ? <AgentTimeline parts={step.parts} agents={agents} /> : undefined}
     </DisclosureRow>
   );
 }
@@ -136,8 +128,6 @@ export function AgentsPanel({
   open,
   onClose,
   focusedGroupId,
-  onPermission,
-  onQuestion,
 }: AgentsPanelProps) {
   const translation = useTranslations("AgentsPanel");
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -185,8 +175,6 @@ export function AgentsPanel({
                       agentLabel={agentLabels.get(step.agent) ?? step.agent}
                       agents={agents}
                       sessionId={sessionId}
-                      onPermission={onPermission}
-                      onQuestion={onQuestion}
                     />
                   ))}
                 </Flex>
