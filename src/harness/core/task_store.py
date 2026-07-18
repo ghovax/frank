@@ -285,17 +285,22 @@ class AppendOnlyTaskStore(TaskStore):
         In-memory executors cannot be resumed after a restart. Persisting an explicit
         interrupted failure prevents stale approvals, tools, and delegated-agent lanes
         from replaying as if they were still active.
+
+        An ``input-required`` task is the exception: its resume checkpoint (the pending
+        interactions and the conversation) is durable, so it is preserved rather than
+        failed — a later answer rebuilds and resumes it from the database.
         """
         await self._ensure_initialized()
         write_lock = await acquire_sqlite_write_lock()
         orphaned_task_ids: list[str] = []
+        preserved_states = _TERMINAL_TASK_STATES | {TaskState.input_required.value}
         try:
             async with self._engine.begin() as connection:
                 head_rows = (await connection.execute(select(self._head))).mappings().all()
                 for head_row in head_rows:
                     current_status = json.loads(head_row["status"])
                     current_state = str(current_status.get("state", ""))
-                    if current_state in _TERMINAL_TASK_STATES:
+                    if current_state in preserved_states:
                         continue
                     task_id = str(head_row["id"])
                     context_id = str(head_row["context_id"] or "")
@@ -664,6 +669,24 @@ class AppendOnlyTaskStore(TaskStore):
         finally:
             release_sqlite_write_lock(write_lock)
         self._persisted_count.pop(task_id, None)
+
+    async def input_required_context_ids(self) -> list[str]:
+        """Context ids whose persisted task is input-required, so the sidebar's
+        awaiting-input marker can be restored after a restart (the pause is durable)."""
+        await self._ensure_initialized()
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(select(self._head.c.context_id, self._head.c.status))
+            ).all()
+        contexts: list[str] = []
+        for context_id, status in rows:
+            try:
+                state = str(json.loads(status).get("state", ""))
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                continue
+            if state == TaskState.input_required.value and context_id:
+                contexts.append(str(context_id))
+        return contexts
 
     async def task_ids_for_context(self, context_id: str) -> list[str]:
         """The ids of every task in a context — for replaying a session."""

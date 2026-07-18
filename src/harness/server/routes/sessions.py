@@ -7,10 +7,10 @@ from harness.server.app import (
     SessionDraftRequest,
     SessionRecord,
     _ContextEventBus,
+    _abort_pending_input,
+    _awaiting_input_contexts,
     _event_bus,
     _executors,
-    _pending_permissions,
-    _pending_questions,
     _prune_session_artifacts,
     _publish_broadcast,
     _remove_upload_file,
@@ -154,14 +154,10 @@ async def session_stream(context_id: str, request: Request):
 @router.delete("/sessions/{context_id}")
 async def delete_session(context_id: str):
     """Permanently delete a session and all its tasks. Aborts the context first."""
-    # Abort any running turn and settle pending prompts.
-    for request_id, future in list(_pending_permissions.items()):
-        if request_id.startswith(f"perm-{context_id}-") and not future.done():
-            future.set_result("deny")
-    q_prefix = f"q-{context_id}-"
-    for request_id, future in list(_pending_questions.items()):
-        if request_id.startswith(q_prefix) and not future.done():
-            future.set_result([])
+    # Settle any input-required pause and drop the awaiting-input marker; the pending
+    # record and tasks are removed with the session below regardless.
+    await _abort_pending_input(context_id)
+    _awaiting_input_contexts.discard(context_id)
     # Release every executor's live state for this context (runtime, resume pump, turn
     # lock, flags, and the shared conversation) so a deleted session leaves nothing
     # behind. Teardown subsumes abort — it stops any in-flight turn and pump first.

@@ -23,7 +23,7 @@
       "title": "Connecting Daisy to External A2A Agents",
       "kind": "spec",
       "created": "2026-07-17T17:44:00Z",
-      "updated": "2026-07-18T07:05:39Z"
+      "updated": "2026-07-18T11:59:20Z"
     },
     {
       "path": "specs/telemetry.md",
@@ -31,7 +31,14 @@
       "kind": "spec",
       "created": "2026-07-17T17:44:00Z",
       "updated": "2026-07-17T21:17:26Z"
+    },
+    {
+      "path": "specs/input-required.md",
+      "title": "Durable, Segment-Based input-required",
+      "kind": "spec",
+      "created": "2026-07-18T11:59:20Z",
+      "updated": "2026-07-18T11:59:20Z"
     }
   ],
-  "generatedAt": "2026-07-18T07:05:39Z"
+  "generatedAt": "2026-07-18T11:59:20Z"
 }

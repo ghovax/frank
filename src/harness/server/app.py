@@ -390,11 +390,6 @@ _terminal_manager: "TerminalSessionManager | None" = None
 _composio_servers: dict[str, _configuration.MCPServerConfiguration] = {}
 _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
-_pending_permissions: dict[str, asyncio.Future] = {}
-# Pending ask_user answers, keyed by request id (prefixed "q-<context_id>-").
-# Mirrors _pending_permissions: the runtime awaits a future the UI resolves via
-# the /chat/{context_id}/question endpoint.
-_pending_questions: dict[str, asyncio.Future] = {}
 # Dialogue history per A2A context, shared across every agent executor so that
 # switching the active agent continues the same conversation (the persona is
 # applied per-turn on top of this shared history).
@@ -499,9 +494,18 @@ def _set_turn_state(context_id: str, running: bool) -> None:
         _event_bus.complete(context_id)
 
 
-def _notify_permission_state(context_id: str) -> None:
-    """A turn raised (or settled) a permission request — refresh the sidebar so it
-    can swap the spinner for an attention marker on the waiting session."""
+# Contexts whose latest turn is parked at input-required (durably; also populated on
+# startup from persisted input-required tasks, so the marker survives a restart).
+_awaiting_input_contexts: set[str] = set()
+
+
+def _notify_permission_state(context_id: str, awaiting: bool) -> None:
+    """A turn suspended at (or resumed from) an input-required pause — track it durably
+    and refresh the sidebar so it can swap the spinner for an attention marker."""
+    if awaiting:
+        _awaiting_input_contexts.add(context_id)
+    else:
+        _awaiting_input_contexts.discard(context_id)
     _broadcaster.publish({"type": "sessions_changed"})
 
 _broadcaster = Broadcaster()
@@ -668,6 +672,29 @@ def _executor_for_context(context_id: str) -> "HarnessAgentExecutor | None":
     after a restart, before the session has taken a turn)."""
     agent_name = _session_agent_for(context_id)
     return _executors.get(agent_name) if agent_name else None
+
+
+async def _resolve_pending_input(
+    context_id: str, request_id: str, *,
+    decision: str = "", answers: "list | None" = None, declined: bool = False,
+) -> bool:
+    """Route a native resolve (permission decision or question answers) into the durable
+    input-required resolution the registry owns, so the native REST path and an external
+    ``input_response`` message share one resume."""
+    if _registry is None:
+        return False
+    return await _registry.resolve_pending_input(
+        context_id, request_id, decision=decision, answers=answers, declined=declined,
+    )
+
+
+async def _abort_pending_input(context_id: str) -> bool:
+    """Deny every pending interaction of a context's input-required task, resuming it so
+    the denials are recorded and the conversation stays valid, instead of stranding a
+    checkpoint that a later turn could not build on."""
+    if _registry is None:
+        return False
+    return await _registry.abort_pending_input(context_id)
 
 
 def _normalize_permission_mode(mode: str) -> str:
@@ -1606,10 +1633,7 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                         else []
                     ),
                     "running": row.id in _running_contexts,
-                    "awaiting_input": any(
-                        request_id.startswith(f"perm-{row.id}-") and not future.done()
-                        for request_id, future in _pending_permissions.items()
-                    ),
+                    "awaiting_input": row.id in _awaiting_input_contexts,
                 }
                 for row in rows
             ]
@@ -1653,8 +1677,6 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         agent_name=agent_name,
         global_configuration=_global_configuration,
         task_store=_task_store,
-        pending_permissions=_pending_permissions,
-        pending_questions=_pending_questions,
         registry=_registry,
         on_new_context=_record_session_visible,
         conversations=_conversations,
@@ -2245,6 +2267,10 @@ async def lifespan(application: FastAPI):
             "Marked %d A2A task(s) interrupted after server restart.",
             len(orphaned_task_ids),
         )
+    # An input-required task is preserved (not orphaned): restore its awaiting-input
+    # marker so the sidebar shows the pause survived the restart. A later answer resumes
+    # it durably from its checkpoint.
+    _awaiting_input_contexts.update(await _task_store.input_required_context_ids())
 
     _registry = AgentRegistry(_task_store)
     _file_url_signer = FileUrlSigner(load_or_create_secret(harness_home_directory()), PUBLIC_BASE_URL)

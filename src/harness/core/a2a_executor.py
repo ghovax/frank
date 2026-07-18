@@ -179,6 +179,12 @@ def _artifact_event_payload(message) -> Optional[dict]:
 # or question the spec-correct way rather than through the native REST side channel.
 INPUT_RESPONSE_KIND = "input_response"
 
+# The durable pending-interaction record lives under this key in the task's metadata while
+# the task is input-required: the gates awaiting a human, the full preflight plans, and the
+# answers gathered so far. It is the source of truth a resume rebuilds from, so an
+# input-required task survives a restart.
+PENDING_INTERACTION_KEY = "pendingInteraction"
+
 
 def _input_response_payload(message) -> Optional[dict]:
     """The input-required answer this message carries, or ``None``."""
@@ -648,8 +654,6 @@ class HarnessAgentExecutor(AgentExecutor):
         agent_name: str,
         global_configuration: GlobalConfiguration,
         task_store: TaskStore,
-        pending_permissions: dict[str, asyncio.Future],
-        pending_questions: dict[str, asyncio.Future],
         registry: Optional["AgentRegistry"] = None,
         on_new_context: Optional[Callable[..., Any]] = None,
         conversations: Optional[dict[str, list]] = None,
@@ -669,8 +673,6 @@ class HarnessAgentExecutor(AgentExecutor):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
         self._task_store = task_store
-        self._pending_permissions = pending_permissions
-        self._pending_questions = pending_questions
         self._registry = registry
         self._on_new_context = on_new_context
         # Persist/restore the dialogue history so a session keeps its context across
@@ -841,24 +843,31 @@ class HarnessAgentExecutor(AgentExecutor):
             context_id,
         )
 
-    def _resolve_input_response(self, payload: dict) -> bool:
-        """Resolve a pending permission/question from an input-required answer message,
-        returning whether one matched. These are the same futures the REST endpoints
-        resolve, so an external client and the native app share one resolution path."""
+    def _record_pending_answer(self, task, payload: dict) -> Optional[tuple[dict, dict]]:
+        """Record one human answer into the task's durable pending-interaction record and
+        report whether the batch is now fully answered. Returns ``(plans, answers)`` when
+        every gate has an answer (ready to resume), else ``None`` (a partial answer, or an
+        answer for a request this task is not waiting on). Mutates ``task.metadata`` in
+        place; the caller persists it. This is the single resolution path an external
+        ``input_response`` message and the native REST resolve both feed."""
+        pending = (task.metadata or {}).get(PENDING_INTERACTION_KEY)
+        if not isinstance(pending, dict):
+            return None
+        gates = pending.get("gates", []) or []
         request_id = str(payload.get("request_id", ""))
-        if not request_id:
-            return False
-        permission_future = self._pending_permissions.get(request_id)
-        if permission_future is not None and not permission_future.done():
-            permission_future.set_result(str(payload.get("decision", "deny")))
-            return True
-        question_future = self._pending_questions.get(request_id)
-        if question_future is not None and not question_future.done():
-            question_future.set_result(
-                {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
-            )
-            return True
-        return False
+        gate = next((candidate for candidate in gates if candidate.get("request_id") == request_id), None)
+        if gate is None:
+            return None
+        answers = dict(pending.get("answers", {}) or {})
+        if gate.get("kind") == "question":
+            answers[request_id] = {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
+        else:
+            answers[request_id] = str(payload.get("decision", "deny"))
+        pending = {**pending, "answers": answers}
+        task.metadata = {**(task.metadata or {}), PENDING_INTERACTION_KEY: pending}
+        if all(candidate.get("request_id") in answers for candidate in gates):
+            return pending.get("plans", {}) or {}, answers
+        return None
 
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
         state = self._contexts.get(context_id)
@@ -1033,8 +1042,6 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime = AgentRuntime(
             agent_configuration=configuration,
             global_configuration=self._global_configuration,
-            pending_permissions=self._pending_permissions,
-            pending_questions=self._pending_questions,
             session_id=context_id,
             conversation=conversation,
             working_directory=working_directory or "",
@@ -1235,27 +1242,40 @@ class HarnessAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
-        # An input-required answer resolves the pending request's future and returns
-        # without a model turn. It must run before the per-context turn lock is taken: the
-        # paused turn holds that lock while awaiting the future, so taking it here would
-        # deadlock against the very turn this answer unblocks.
+        # An input-required answer is a durable resume, not a parked-future wake. Record
+        # it against the task's pending-interaction record; once every gate is answered,
+        # this call rebuilds the runtime from the persisted checkpoint and drives the next
+        # segment (below). A partial answer leaves the task input-required for the next
+        # one; an answer for a task that is not paused is a no-op acknowledgement.
         input_response = _input_response_payload(message)
+        is_resume = False
+        resume_plans: dict = {}
+        resume_answers: dict = {}
         if input_response is not None:
-            self._resolve_input_response(input_response)
-            await updater.complete()
-            return
+            if not isinstance((task.metadata or {}).get(PENDING_INTERACTION_KEY), dict):
+                await updater.complete()
+                return
+            ready = self._record_pending_answer(task, input_response)
+            await self._task_store.save(task)
+            if self._on_permission_state is not None:
+                # Still awaiting while gates remain; cleared once this answer resumes.
+                self._on_permission_state(task.context_id, ready is None)
+            if ready is None:
+                await updater.update_status(
+                    TaskState.input_required,
+                    updater.new_agent_message([_data_part("status", code="input_required")]),
+                    final=True,
+                )
+                return
+            resume_plans, resume_answers = ready
+            task.metadata = {key: value for key, value in (task.metadata or {}).items() if key != PENDING_INTERACTION_KEY}
+            await self._task_store.save(task)
+            is_resume = True
 
         async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))
             if self._on_stream_event is not None and not delegated and publish_stream_event:
                 self._on_stream_event(task.context_id, part)
-
-        async def emit_input_required(part: Part) -> None:
-            """Emit a human-in-the-loop request: the DataPart for the native stream, then an
-            ``input-required`` task status so an external A2A client sees the spec state and
-            can answer with a message/send carrying an ``input_response`` part."""
-            await emit(part)
-            await updater.update_status(TaskState.input_required, updater.new_agent_message([part]))
 
         context_state = self._context(task.context_id)
         should_acknowledge_work_habits = await self._claim_work_habits_acknowledgement(
@@ -1504,7 +1524,16 @@ class HarnessAgentExecutor(AgentExecutor):
                 turn_input = user_text
 
             runtime.set_pending_attachments(_all_attachments(structured_payloads))
-            async for event in runtime.stream(turn_input, as_system_note=as_system_note):
+            # A resume drives the turn from the durable checkpoint (the pending tool-call
+            # AIMessage the rebuilt runtime already holds) with the answered decisions; a
+            # fresh turn drives the model from this segment's input. Both feed the same
+            # event loop, so a re-suspension is handled identically.
+            event_source = (
+                runtime.resume_stream(resume_plans, resume_answers)
+                if is_resume
+                else runtime.stream(turn_input, as_system_note=as_system_note)
+            )
+            async for event in event_source:
                 kind = event.type
                 data = event.data
                 if kind == StreamEvent.Type.TEXT_CHUNK:
@@ -1594,28 +1623,47 @@ class HarnessAgentExecutor(AgentExecutor):
                             "model_calls": agents.get("model_calls", 0),
                         },
                     ))
-                elif kind == StreamEvent.Type.PERMISSION_REQUEST:
+                elif kind == StreamEvent.Type.SUSPENDED:
+                    # The turn needs one or more human decisions before it can run its tool
+                    # batch. The runtime has appended the tool-call AIMessage (the durable
+                    # checkpoint). Persist the pending-interaction record and the conversation
+                    # checkpoint, surface each gate as its native DataPart so the app renders
+                    # the prompt(s), and close this segment as input-required (final): a later
+                    # answer rebuilds and resumes from the checkpoint. Nothing is parked.
                     await flush_stream_buffers()
-                    await emit_input_required(_data_part(
-                        "permission_request", request_id=data.get("request_id", ""),
-                        tool_call_id=data.get("id", ""),
-                        command=data.get("command", ""), justification=data.get("justification", ""),
-                        risk=data.get("risk", ""),
-                    ))
-                    # Let the sidebar flag this session as awaiting input.
+                    interactions = data.get("interactions", []) or []
+                    plans = data.get("plans", {}) or {}
+                    task.metadata = {
+                        **(task.metadata or {}),
+                        PENDING_INTERACTION_KEY: {
+                            "gates": interactions, "plans": plans, "answers": {},
+                            "agent": self._agent_name,
+                        },
+                    }
+                    for gate in interactions:
+                        if gate.get("kind") == "question":
+                            await emit(_data_part(
+                                "question", request_id=gate.get("request_id", ""),
+                                tool_call_id=gate.get("tool_call_id", ""),
+                                questions=gate.get("questions", []) or [],
+                            ))
+                        else:
+                            await emit(_data_part(
+                                "permission_request", request_id=gate.get("request_id", ""),
+                                tool_call_id=gate.get("tool_call_id", ""),
+                                command=gate.get("command", ""), justification=gate.get("justification", ""),
+                                risk=gate.get("risk", ""),
+                            ))
                     if self._on_permission_state is not None:
-                        self._on_permission_state(task.context_id)
-                elif kind == StreamEvent.Type.QUESTION:
-                    await flush_stream_buffers()
-                    await emit_input_required(_data_part(
-                        "question",
-                        request_id=data.get("request_id", ""),
-                        tool_call_id=data.get("id", ""),
-                        questions=data.get("questions", []) or [],
-                    ))
-                    # A question is human-in-the-loop input, same as a permission.
-                    if self._on_permission_state is not None:
-                        self._on_permission_state(task.context_id)
+                        self._on_permission_state(task.context_id, True)
+                    await save_runtime_conversation()
+                    await self._task_store.save(task)
+                    await updater.update_status(
+                        TaskState.input_required,
+                        updater.new_agent_message([_data_part("status", code="input_required")]),
+                        final=True,
+                    )
+                    return
                 elif kind == StreamEvent.Type.ERROR:
                     await flush_stream_buffers()
                     failed_message = data.get("message", "error")
@@ -1766,6 +1814,9 @@ class AgentRegistry:
         self._participant_task_ids: dict[str, str] = {}
         self._reserved_participants: dict[str, tuple[str, str]] = {}
         self._agent_questions: dict[str, _AgentQuestion] = {}
+        # Serializes native input-required resolves per context, so answers to a
+        # multi-gate batch are recorded one at a time rather than racing on task metadata.
+        self._resolve_locks: dict[str, asyncio.Lock] = {}
         # External (over-the-wire) A2A agents, if configured. When a delegation names one
         # of these, make_delegate reaches it through this manager's A2A client instead of
         # the in-process local handler path.
@@ -1814,6 +1865,78 @@ class AgentRegistry:
     def register(self, name: str, handler: RequestHandler, card: AgentCard) -> None:
         self._handlers[name] = handler
         self._cards[name] = card
+
+    async def resolve_pending_input(
+        self, context_id: str, request_id: str, *,
+        decision: str = "", answers: Optional[list] = None, declined: bool = False,
+    ) -> bool:
+        """Route a native resolve (a permission decision or a question's answers) into the
+        same durable ``input_response`` path an external client uses, so both share one
+        resolution and one resume. Finds the input-required task that owns ``request_id``,
+        then drives an ``input_response`` message/send on that task's agent handler — which
+        records the answer and, once every gate is answered, rebuilds and resumes the turn."""
+        tasks = await self._task_store.tasks_for_context(context_id)
+        for task in tasks:
+            pending = (task.metadata or {}).get(PENDING_INTERACTION_KEY)
+            if not isinstance(pending, dict):
+                continue
+            gates = pending.get("gates", []) or []
+            if not any(gate.get("request_id") == request_id for gate in gates):
+                continue
+            handler = self._handlers.get(str(pending.get("agent", "")))
+            if handler is None:
+                return False
+            data: dict[str, Any] = {"request_id": request_id}
+            if declined:
+                data["declined"] = True
+            elif answers is not None:
+                data["answers"] = answers
+            else:
+                data["decision"] = decision
+            message = Message(
+                role=Role.user,
+                parts=[_data_part(INPUT_RESPONSE_KIND, **data)],
+                message_id=uuid.uuid4().hex,
+                task_id=task.id,
+                context_id=context_id,
+            )
+            # Drive in the background so a REST resolve returns at once while the resumed
+            # turn streams over the fan-out, serialized per context so answers to a
+            # multi-gate batch are recorded one at a time rather than racing on metadata.
+            lock = self._resolve_locks.setdefault(context_id, asyncio.Lock())
+
+            async def drive(handler=handler, message=message, lock=lock) -> None:
+                try:
+                    async with lock:
+                        async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
+                            pass
+                except Exception:
+                    logger.exception("Durable input resume failed for context %s", context_id)
+
+            asyncio.create_task(drive())
+            return True
+        return False
+
+    async def abort_pending_input(self, context_id: str) -> bool:
+        """Deny every pending gate of a context's input-required task. The last denial
+        resumes the turn, which records a denial ToolMessage for each call — keeping the
+        conversation valid (no dangling tool-call AIMessage) — and then ends. Returns
+        whether a pending task was found."""
+        tasks = await self._task_store.tasks_for_context(context_id)
+        for task in tasks:
+            pending = (task.metadata or {}).get(PENDING_INTERACTION_KEY)
+            if not isinstance(pending, dict):
+                continue
+            gates = pending.get("gates", []) or []
+            if not gates:
+                continue
+            for gate in gates:
+                if gate.get("kind") == "question":
+                    await self.resolve_pending_input(context_id, str(gate.get("request_id", "")), declined=True)
+                else:
+                    await self.resolve_pending_input(context_id, str(gate.get("request_id", "")), decision="deny")
+            return True
+        return False
 
     def names(self) -> list[str]:
         return list(self._cards.keys())

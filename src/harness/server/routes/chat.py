@@ -7,12 +7,12 @@ from harness.server.app import (
     PermissionRequest,
     QuestionRequest,
     SteeringRequest,
+    _abort_pending_input,
     _broadcaster,
     _executor_for_context,
     _executors,
     _normalize_permission_mode,
-    _pending_permissions,
-    _pending_questions,
+    _resolve_pending_input,
     _set_session_permission_mode,
     asyncio,
     event,
@@ -41,15 +41,12 @@ async def events():
 async def resolve_permission(context_id: str, request: PermissionRequest):
     """Resolve a pending human-in-the-loop permission request. ``deny`` rejects;
     ``allow_once`` and ``allow_always`` both let this command run (``allow_always``
-    additionally records a session rule — handled separately)."""
-    future = _pending_permissions.get(request.request_id)
-    if not future:
+    additionally records a session rule). The decision is recorded against the task's
+    durable pending-interaction record and, once the batch is fully answered, the turn
+    resumes from its checkpoint — the same path an external ``input_response`` uses."""
+    resolved = await _resolve_pending_input(context_id, request.request_id, decision=request.decision)
+    if not resolved:
         return {"status": "unknown", "error": "No pending permission request with that identifier."}
-    if future.done():
-        return {"status": "stale", "error": "Permission request was already resolved."}
-    # The runtime resumes on the decision string ("deny" / "allow_once" /
-    # "allow_always") so it can record a session rule for "allow_always".
-    future.set_result(request.decision)
     # The session is no longer waiting — refresh the sidebar marker.
     _broadcaster.publish({"type": "sessions_changed"})
     return {"status": "resolved", "decision": request.decision}
@@ -57,16 +54,14 @@ async def resolve_permission(context_id: str, request: PermissionRequest):
 
 @router.post("/chat/{context_id}/question")
 async def resolve_question(context_id: str, request: QuestionRequest):
-    """Resolve a pending ask_user request with the user's answers."""
-    future = _pending_questions.get(request.request_id)
-    if not future:
+    """Resolve a pending ask_user request with the user's answers (or a dismissal, which
+    the ask_user tool reports to the model as a decline). Recorded durably and resumed
+    like any other input-required answer."""
+    resolved = await _resolve_pending_input(
+        context_id, request.request_id, answers=request.answers, declined=request.declined,
+    )
+    if not resolved:
         return {"status": "unknown", "error": "No pending question with that identifier."}
-    if future.done():
-        return {"status": "stale", "error": "Question was already resolved."}
-    # A dismissal resolves to the decline sentinel the ask_user tool recognizes: it
-    # reports the decline to the model and ends the turn, instead of returning
-    # answers the user never gave.
-    future.set_result({"__declined__": True} if request.declined else request.answers)
     _broadcaster.publish({"type": "sessions_changed"})
     return {"status": "resolved", "answers": request.answers, "declined": request.declined}
 
@@ -85,17 +80,10 @@ async def steer_context(context_id: str, request: SteeringRequest):
 
 @router.post("/chat/{context_id}/abort")
 async def abort_session(context_id: str):
-    """Abort the running turn for a context and reject any pending permissions."""
-    prefix = f"perm-{context_id}-"
-    for request_id, future in list(_pending_permissions.items()):
-        if request_id.startswith(prefix) and not future.done():
-            future.set_result("deny")
-    q_prefix = f"q-{context_id}-"
-    for request_id, future in list(_pending_questions.items()):
-        if request_id.startswith(q_prefix) and not future.done():
-            # A cancelled question resolves to an empty answer list so the
-            # awaiting tool call completes cleanly instead of hanging.
-            future.set_result([])
+    """Abort the running turn for a context and reject any pending interactions. Aborting
+    an input-required task denies its pending gates so the turn resolves (with denials)
+    rather than stranding a checkpoint."""
+    await _abort_pending_input(context_id)
     aborted = any(executor.abort_context(context_id) for executor in _executors.values())
     return {"status": "aborted" if aborted else "not_found", "session_id": context_id}
 

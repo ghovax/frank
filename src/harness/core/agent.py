@@ -5,6 +5,7 @@ import platform
 import shlex
 import time
 import uuid
+from dataclasses import dataclass, field
 from contextlib import suppress
 from datetime import datetime, timezone
 from enum import Enum
@@ -225,6 +226,14 @@ class StreamEvent:
         BACKGROUND_STARTED = "background_started"
         PERMISSION_REQUEST = "permission_request"
         QUESTION = "question"
+        # A turn cannot proceed without a human decision (one or more permission
+        # prompts and/or an ask_user question). The runtime has appended the
+        # initiating tool-call AIMessage (the durable resume checkpoint: an
+        # AIMessage carrying tool_calls with no ToolMessages yet) and yields this,
+        # then returns — the executor persists the pending interactions, drives the
+        # A2A task to input-required, and closes the segment. A later answer resumes
+        # the turn from the checkpoint via ``AgentRuntime.resume_stream``.
+        SUSPENDED = "suspended"
         ERROR = "error"
         DENIED_INJECTION = "denied_injection"
         # A spawn_agent invocation begins a child group. RELAYED carries a child's own
@@ -744,6 +753,94 @@ class TaskManager:
         return [task.model_dump() for task in self._tasks]
 
 
+@dataclass
+class _ToolGate:
+    """One human-in-the-loop interaction a tool call needs before it can run: a
+    permission prompt or an ``ask_user`` question. Surfaced by the preflight pass
+    and carried in a ``SUSPENDED`` event; the durable pending-interaction record the
+    executor persists is built from these, and a later answer resolves each by
+    ``request_id``."""
+
+    request_id: str
+    tool_call_id: str
+    kind: str  # "permission" | "question"
+    command: str = ""
+    justification: str = ""
+    risk: str = ""
+    questions: list = field(default_factory=list)
+    # A bash command approval remembers an "always allow" as a session rule.
+    is_bash: bool = False
+    # The model-facing error if the user denies this specific gate.
+    deny_message: str = ""
+    # For an egress gate, the remote agent name (an "always allow" is remembered).
+    egress_agent: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "request_id": self.request_id, "tool_call_id": self.tool_call_id, "kind": self.kind,
+            "command": self.command, "justification": self.justification, "risk": self.risk,
+            "questions": self.questions, "is_bash": self.is_bash,
+            "deny_message": self.deny_message, "egress_agent": self.egress_agent,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "_ToolGate":
+        return cls(
+            request_id=str(data.get("request_id", "")), tool_call_id=str(data.get("tool_call_id", "")),
+            kind=str(data.get("kind", "permission")), command=str(data.get("command", "")),
+            justification=str(data.get("justification", "")), risk=str(data.get("risk", "")),
+            questions=list(data.get("questions", []) or []), is_bash=bool(data.get("is_bash", False)),
+            deny_message=str(data.get("deny_message", "")), egress_agent=str(data.get("egress_agent", "")),
+        )
+
+
+@dataclass
+class _ToolPlan:
+    """The preflight verdict for one tool call. Exactly one shape holds: a hard
+    ``denial`` (a policy block — the tool never runs and the model gets this error),
+    one or more pending ``gates`` (needs a human), or neither (auto-approved: run it).
+    The decision logic is computed once, here, so ``_execute_tool`` only ever carries
+    out a verdict and can no longer approve anything itself."""
+
+    tool_call_id: str
+    denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command"}
+    gates: list[_ToolGate] = field(default_factory=list)
+
+    @property
+    def needs_human(self) -> bool:
+        return bool(self.gates)
+
+    @property
+    def approved(self) -> bool:
+        return self.denial is None and not self.gates
+
+    def to_dict(self) -> dict:
+        return {"tool_call_id": self.tool_call_id, "denial": self.denial, "gates": [g.to_dict() for g in self.gates]}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "_ToolPlan":
+        return cls(
+            tool_call_id=str(data.get("tool_call_id", "")),
+            denial=data.get("denial"),
+            gates=[_ToolGate.from_dict(g) for g in (data.get("gates") or [])],
+        )
+
+
+@dataclass
+class _ResolvedToolDecision:
+    """The verdict a batch runner hands each tool: run it, deny it (with the exact
+    error the gate would have produced), or — for ``ask_user`` — the answers to return.
+    Produced from the preflight plans plus any human answers, on both the fresh and the
+    resumed path, so ``_execute_tool`` only carries a decision out."""
+
+    tool_call_id: str
+    approved: bool = True
+    denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command"}
+    answers: Any = None  # ask_user: the answers list, or the decline sentinel
+    allow_always_bash_command: str = ""
+    egress_allow_always_agent: str = ""
+
+
 class AgentRuntime:
     _GOAL_CONTINUATION_LIMIT = 8
     # Agents (delegation depth > 0) get a tighter iteration budget than the
@@ -757,8 +854,6 @@ class AgentRuntime:
         self,
         agent_configuration: AgentConfiguration,
         global_configuration: GlobalConfiguration,
-        pending_permissions: Optional[dict[str, asyncio.Future]] = None,
-        pending_questions: Optional[dict[str, asyncio.Future]] = None,
         on_record_event: Optional[Callable[..., Any]] = None,
         on_record_message: Optional[Callable[..., Any]] = None,
         session_id: str = "",
@@ -772,8 +867,6 @@ class AgentRuntime:
         self._session_id = session_id
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
-        self._pending_permissions = pending_permissions if pending_permissions is not None else {}
-        self._pending_questions = pending_questions if pending_questions is not None else {}
         self._on_record_event = on_record_event
         self._on_record_message = on_record_message
         self._working_directory = working_directory or str(Path.home())
@@ -1384,20 +1477,6 @@ class AgentRuntime:
             return False
         return self._agent_configuration.tools.bash.command_matches(command, self._session_allow_patterns)
 
-    async def _resolve_permission_future(
-        self, request_identifier: str, future: "asyncio.Future", command: str, *, is_bash: bool
-    ) -> bool:
-        """Await the user's decision on a permission request and clean it up.
-        Returns whether the command may run; on 'allow_always' for a bash command,
-        also schedules a session rule so matching commands won't prompt again."""
-        try:
-            decision = await future
-        finally:
-            self._pending_permissions.pop(request_identifier, None)
-        if is_bash and decision == "allow_always" and command:
-            self._schedule_bash_allow_rule(command)
-        return decision != "deny"
-
     def _schedule_bash_allow_rule(self, command: str) -> None:
         try:
             asyncio.create_task(self._remember_bash_allow_rule(command))
@@ -1874,33 +1953,67 @@ class AgentRuntime:
         raw error rides along as its JSON payload, intact."""
         return self._prompt_loader.load("artifact_render_error", {"payload": payload})
 
+    async def resume_stream(
+        self, plans: dict[str, dict], answers: dict[str, Any]
+    ) -> AsyncIterator[StreamEvent]:
+        """Resume a durably-suspended turn. The conversation was rebuilt from the DB and
+        ends with the pending tool-call AIMessage (the checkpoint); ``plans`` are the
+        persisted preflight plans and ``answers`` the human decisions keyed by request id.
+        Runs the pending batch with those decisions, then continues the turn normally —
+        into the next model call, or a fresh suspension if it needs another decision."""
+        async for event in self.stream("", resume_plans=plans, resume_answers=answers):
+            yield event
+
     async def stream(
-        self, user_message: str | list, as_system_note: bool = False
+        self, user_message: str | list, as_system_note: bool = False,
+        resume_plans: Optional[dict[str, dict]] = None,
+        resume_answers: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator[StreamEvent]:
         self._abort_event.clear()
         self._calls_this_turn = 0
-
-        # A turn's input is usually plain text, but an attachment turn carries a
-        # multimodal content list (a text block plus one image_url block per
-        # attached image) so a vision model actually sees the pixels. LangChain's
-        # HumanMessage accepts either, and the model adapter passes the content
-        # straight through to the provider. A self-realization note (e.g. an artifact
-        # render error) enters as a <systemReminder> harness note so the model
-        # treats it as its own observation, not as something the user said — in a
-        # user-role message so the append stays cache-safe (_harness_note_message).
-        turn_message = (
-            self._harness_note_message(user_message)
-            if as_system_note and isinstance(user_message, str)
-            else HumanMessage(content=user_message)
-        )
-        self._conversation.append(turn_message)
-        # The event-log recorder only wants prose from LangChain's standard blocks.
-        recorded_user_message = message_text(turn_message)
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
         turn_final_response = ""
         goal_continuations = 0
+
+        if resume_plans is not None:
+            # Resume: the checkpoint AIMessage is already at the tail of the rebuilt
+            # conversation. Run its batch with the resolved decisions, then fall into the
+            # loop for the next model call. No new user message is appended.
+            recorded_user_message = ""
+            response = self._conversation[-1] if self._conversation else None
+            if response is None or not getattr(response, "tool_calls", None):
+                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="completed")
+                return
+            resolved = self._resolve_tool_decisions(
+                {tool_call_id: _ToolPlan.from_dict(plan) for tool_call_id, plan in resume_plans.items()},
+                resume_answers or {},
+            )
+            self._apply_allow_always(resolved)
+            resume_outcomes: dict[str, dict] = {}
+            async for event in self._drain_tools_concurrently(
+                cast(list[dict], response.tool_calls), turn_tool_calls_log, turn_tool_results_log, resume_outcomes, resolved,
+            ):
+                yield event
+            self._append_tool_results(response, resume_outcomes)
+        else:
+            # A turn's input is usually plain text, but an attachment turn carries a
+            # multimodal content list (a text block plus one image_url block per
+            # attached image) so a vision model actually sees the pixels. LangChain's
+            # HumanMessage accepts either, and the model adapter passes the content
+            # straight through to the provider. A self-realization note (e.g. an artifact
+            # render error) enters as a <systemReminder> harness note so the model
+            # treats it as its own observation, not as something the user said — in a
+            # user-role message so the append stays cache-safe (_harness_note_message).
+            turn_message = (
+                self._harness_note_message(user_message)
+                if as_system_note and isinstance(user_message, str)
+                else HumanMessage(content=user_message)
+            )
+            self._conversation.append(turn_message)
+            # The event-log recorder only wants prose from LangChain's standard blocks.
+            recorded_user_message = message_text(turn_message)
 
         effective_maximum_iterations = self._agent_configuration.maximum_iterations
         if self._delegation_depth > 0:
@@ -2154,85 +2267,31 @@ class AgentRuntime:
                 yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
                 return
 
-            # Collect each tool's outcome as it runs, then append the AIMessage
-            # and all ToolMessages afterward. Appending together (rather than as
-            # tools finish) keeps the conversation valid even if a tool is
-            # aborted mid-flight — every tool_call always gets a ToolMessage.
+            # Append the initiating AIMessage first — an AIMessage carrying tool_calls
+            # with no ToolMessages yet is the durable resume checkpoint. Then resolve the
+            # whole batch's permissions BEFORE any tool runs (concurrent tools cannot be
+            # re-run on resume without re-doing side effects). If a human is needed the
+            # turn suspends here, carrying the pending interactions and the plans the
+            # executor persists; otherwise it drains with every decision already in hand.
+            self._conversation.append(response)
+            tool_calls = cast(list[dict], response.tool_calls)
             outcomes: dict[str, dict] = {}
-
-            if response.tool_calls and not self._abort_event.is_set():
-                tool_calls = cast(list[dict], response.tool_calls)
+            if not self._abort_event.is_set():
+                plans, pending = await self._preflight_permissions(tool_calls)
+                if pending:
+                    yield StreamEvent(
+                        StreamEvent.Type.SUSPENDED,
+                        interactions=[gate.to_dict() for gate in pending],
+                        plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
+                    )
+                    return
+                decisions = self._resolve_tool_decisions(plans, {})
+                self._apply_allow_always(decisions)
                 async for event in self._drain_tools_concurrently(
-                    tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                    tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
                 ):
                     yield event
-
-            # Append the initiating AIMessage, then a ToolMessage for every call.
-            # The ToolMessage block must stay CONTIGUOUS: providers require every
-            # tool_call's result in the immediately-following turn (LiteLLM merges
-            # consecutive tool messages into one Anthropic user turn), so any
-            # harness notes (denied commands) are appended after the whole block.
-            self._conversation.append(response)
-            denied_command_notes: list[str] = []
-            image_followup_notes: list[dict[str, str]] = []
-            for tool_call_data in cast(list[dict], response.tool_calls):
-                tool_call_identifier = tool_call_data["id"]
-                outcome = outcomes.get(tool_call_identifier, {})
-                content = outcome.get("content", "")
-                if not content:
-                    content = "(interrupted)" if self._abort_event.is_set() else ""
-                result_status, result_code = _model_result_status(
-                    content,
-                    ok=outcome.get("ok", True),
-                    backgrounded=bool(outcome.get("background_task_identifier")),
-                )
-                model_visible_content = _model_visible_tool_result(
-                    content,
-                    outcome.get("metadata") or _tool_timing_metadata(
-                        tool_name=tool_call_data.get("name", ""),
-                        tool_call_identifier=tool_call_identifier,
-                        started_at=datetime.now(timezone.utc),
-                        completed_at=datetime.now(timezone.utc),
-                        duration_milliseconds=0,
-                    ),
-                    result_status,
-                    result_code,
-                )
-                self._conversation.append(
-                    ToolMessage(content=model_visible_content, tool_call_id=tool_call_identifier)
-                )
-                background_task_identifier = outcome.get("background_task_identifier")
-                if background_task_identifier:
-                    self._background.bind_tool_call(
-                        background_task_identifier, tool_call_identifier,
-                    )
-                denied_commands = outcome.get("denied_commands", [])
-                if denied_commands:
-                    commands_list = ", ".join(f"'{command}'" for command in denied_commands)
-                    denied_command_notes.append(
-                        self._prompt_loader.load("command_denied", {"commands": commands_list})
-                    )
-                image_followup_notes.extend(outcome.get("image_followups") or [])
-            # Images read this round attach right after the tool block, as
-            # image-bearing harness notes — the append-only, every-provider way
-            # for a vision model to see pixels a tool produced.
-            for followup in image_followup_notes:
-                note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
-                self._conversation.append(self._harness_note_message(
-                    note_text,
-                    image_blocks=[{"type": "image_url", "image_url": {"url": followup["data_uri"]}}],
-                ))
-            for denied_message in denied_command_notes:
-                self._conversation.append(self._harness_note_message(denied_message))
-
-            # Malformed tool calls serialized alongside valid ones: correct them
-            # with a harness note (not a ToolMessage — invalid calls aren't in the
-            # serialized tool_calls, so a ToolMessage would be orphaned and rejected
-            # by strict providers). Model-facing; not surfaced to the user.
-            for invalid in response.invalid_tool_calls:
-                self._conversation.append(self._harness_note_message(
-                    self._invalid_tool_call_content(cast(dict, invalid)),
-                ))
+            self._append_tool_results(response, outcomes)
 
             if self._abort_event.is_set():
                 if self._has_queued_steering():
@@ -2329,13 +2388,16 @@ class AgentRuntime:
         turn_tool_calls_log: list[dict],
         turn_tool_results_log: list[dict],
         outcomes: dict[str, dict],
+        decision: "_ResolvedToolDecision",
     ) -> AsyncIterator[StreamEvent]:
         """Run a single tool call, yielding its events and recording its outcome
         in ``outcomes`` (keyed by tool_call_id). The caller appends ToolMessages
         afterward so the conversation stays consistent even on abort.
 
         Self-contained so it can run concurrently with other tools: each owns its
-        TOOL_CALL emit, result collection, and outcome record.
+        TOOL_CALL emit, result collection, and outcome record. ``decision`` is the
+        preflight verdict — approve, deny, or (ask_user) the answers — so this path
+        never prompts; the human decision was resolved before the batch started.
         """
         tool_name = tool_call_data["name"]
         tool_arguments = tool_call_data["args"]
@@ -2364,7 +2426,7 @@ class AgentRuntime:
 
         tool_span = _telemetry.start_span("tool.execute", {"tool.name": tool_name})
         try:
-            async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier):
+            async for event in self._execute_tool(tool_name, tool_arguments, tool_call_identifier, decision):
                 # An image read carries its pixels on a model-facing side channel;
                 # strip it here so the base64 never reaches the UI or the event
                 # log — the turn loop attaches it to the conversation instead.
@@ -2463,11 +2525,13 @@ class AgentRuntime:
         turn_tool_calls_log: list[dict],
         turn_tool_results_log: list[dict],
         outcomes: dict[str, dict],
+        decisions: dict[str, "_ResolvedToolDecision"],
     ) -> AsyncIterator[StreamEvent]:
         """Run independent tool calls concurrently, yielding their events as they
         arrive (interleaved). The model emits several tool calls in one response
         when work is parallel; they run concurrently so multiple spawned agents
-        and other independent tools progress together."""
+        and other independent tools progress together. ``decisions`` carries the
+        preflight verdict for each call, so no tool prompts mid-batch."""
         if not tool_calls:
             return
 
@@ -2481,8 +2545,9 @@ class AgentRuntime:
             if current_task is not None:
                 self._active_tool_tasks[tool_call_identifier] = current_task
             try:
+                decision = decisions.get(tool_call_identifier) or _ResolvedToolDecision(tool_call_id=tool_call_identifier)
                 async for event in self._run_one_tool(
-                    tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes,
+                    tool_call_data, turn_tool_calls_log, turn_tool_results_log, outcomes, decision,
                 ):
                     await queue.put(event)
             except Exception:
@@ -2627,11 +2692,345 @@ class AgentRuntime:
                     outside.append(display)
         return outside
 
+    def _new_permission_request_id(self) -> str:
+        return f"perm-{self._session_id}-{uuid.uuid4()}"
+
+    def _new_question_request_id(self) -> str:
+        return f"q-{self._session_id}-{uuid.uuid4()}"
+
+    async def _preflight_permissions(
+        self, tool_calls: list[dict]
+    ) -> tuple[dict[str, _ToolPlan], list[_ToolGate]]:
+        """Resolve the human-in-the-loop verdict for every tool call in a batch BEFORE
+        any tool runs, so a pause can be checkpointed durably (concurrent tools cannot
+        be re-run on resume without re-doing their side effects). Returns the per-call
+        plans keyed by tool_call_id and the flat list of gates that need a human. When
+        that list is non-empty the turn suspends; otherwise the batch executes with
+        every decision already in hand."""
+        plans: dict[str, _ToolPlan] = {}
+        pending: list[_ToolGate] = []
+        for tool_call_data in tool_calls:
+            plan = await self._classify_tool_permission(
+                tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
+            )
+            plans[tool_call_data["id"]] = plan
+            pending.extend(plan.gates)
+        return plans, pending
+
+    def _resolve_tool_decisions(
+        self, plans: dict[str, _ToolPlan], answers: dict[str, Any]
+    ) -> dict[str, _ResolvedToolDecision]:
+        """Collapse the preflight plans plus any human answers into one verdict per tool.
+        Used on both paths: the fresh path passes empty ``answers`` (plans with no gates),
+        and the resumed path passes the answers keyed by ``request_id``. A tool runs only
+        if every one of its gates was approved; any deny turns it into that gate's denial."""
+        decisions: dict[str, _ResolvedToolDecision] = {}
+        for tool_call_id, plan in plans.items():
+            decision = _ResolvedToolDecision(tool_call_id=tool_call_id)
+            if plan.denial is not None:
+                decision.approved = False
+                decision.denial = plan.denial
+                decisions[tool_call_id] = decision
+                continue
+            for gate in plan.gates:
+                answer = answers.get(gate.request_id)
+                if gate.kind == "question":
+                    # ask_user: the answers list, or the decline sentinel from the resolver.
+                    decision.answers = answer
+                    continue
+                decision_value = str(answer) if answer is not None else "deny"
+                if decision_value == "deny":
+                    decision.approved = False
+                    decision.denial = {"code": "", "message": gate.deny_message, "denied_injection": False, "raw_command": gate.command}
+                    break
+                if gate.is_bash and decision_value == "allow_always":
+                    decision.allow_always_bash_command = gate.command
+                if gate.egress_agent and decision_value == "allow_always":
+                    decision.egress_allow_always_agent = gate.egress_agent
+            decisions[tool_call_id] = decision
+        return decisions
+
+    def _apply_allow_always(self, decisions: dict[str, _ResolvedToolDecision]) -> None:
+        """Apply the durable side effects of an 'always allow' answer: a session bash
+        allow-rule, or an egress agent added to the per-session approved set."""
+        for decision in decisions.values():
+            if decision.allow_always_bash_command:
+                self._schedule_bash_allow_rule(decision.allow_always_bash_command)
+            if decision.egress_allow_always_agent:
+                self._egress_approved_agents.add(decision.egress_allow_always_agent)
+
+    def _append_tool_results(self, response, outcomes: dict[str, dict]) -> None:
+        """Append a ToolMessage for every tool_call of ``response`` (the AIMessage is
+        already at the tail of the conversation), plus the image/denied harness notes.
+        The ToolMessage block stays contiguous: providers require every tool_call's
+        result in the immediately-following turn, so notes come after the whole block.
+        An aborted or un-run tool records ``(interrupted)`` so every call still gets a
+        ToolMessage and the conversation stays valid."""
+        denied_command_notes: list[str] = []
+        image_followup_notes: list[dict[str, str]] = []
+        for tool_call_data in cast(list[dict], response.tool_calls):
+            tool_call_identifier = tool_call_data["id"]
+            outcome = outcomes.get(tool_call_identifier, {})
+            content = outcome.get("content", "")
+            if not content:
+                content = "(interrupted)" if self._abort_event.is_set() else ""
+            result_status, result_code = _model_result_status(
+                content,
+                ok=outcome.get("ok", True),
+                backgrounded=bool(outcome.get("background_task_identifier")),
+            )
+            model_visible_content = _model_visible_tool_result(
+                content,
+                outcome.get("metadata") or _tool_timing_metadata(
+                    tool_name=tool_call_data.get("name", ""),
+                    tool_call_identifier=tool_call_identifier,
+                    started_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(timezone.utc),
+                    duration_milliseconds=0,
+                ),
+                result_status,
+                result_code,
+            )
+            self._conversation.append(
+                ToolMessage(content=model_visible_content, tool_call_id=tool_call_identifier)
+            )
+            background_task_identifier = outcome.get("background_task_identifier")
+            if background_task_identifier:
+                self._background.bind_tool_call(
+                    background_task_identifier, tool_call_identifier,
+                )
+            denied_commands = outcome.get("denied_commands", [])
+            if denied_commands:
+                commands_list = ", ".join(f"'{command}'" for command in denied_commands)
+                denied_command_notes.append(
+                    self._prompt_loader.load("command_denied", {"commands": commands_list})
+                )
+            image_followup_notes.extend(outcome.get("image_followups") or [])
+        # Images read this round attach right after the tool block, as image-bearing
+        # harness notes — the append-only, every-provider way for a vision model to see
+        # pixels a tool produced.
+        for followup in image_followup_notes:
+            note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
+            self._conversation.append(self._harness_note_message(
+                note_text,
+                image_blocks=[{"type": "image_url", "image_url": {"url": followup["data_uri"]}}],
+            ))
+        for denied_message in denied_command_notes:
+            self._conversation.append(self._harness_note_message(denied_message))
+
+        # Malformed tool calls serialized alongside valid ones: correct them with a
+        # harness note (not a ToolMessage — invalid calls aren't in the serialized
+        # tool_calls, so a ToolMessage would be orphaned and rejected by strict
+        # providers). Model-facing; not surfaced to the user.
+        for invalid in response.invalid_tool_calls:
+            self._conversation.append(self._harness_note_message(
+                self._invalid_tool_call_content(cast(dict, invalid)),
+            ))
+
+    async def _classify_tool_permission(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+    ) -> _ToolPlan:
+        """The preflight verdict for one tool call: a hard denial, one or more pending
+        gates, or auto-approved. This is the single place permission is decided — it
+        reuses the same functions the inline gates used, so nothing that used to prompt
+        or block silently becomes auto-approved. Setup errors (bad location, failed
+        validation) are left to ``_execute_tool`` to surface; here a tool that cannot be
+        set up simply yields no gate and is 'approved' to run, where the error is raised."""
+        plan = _ToolPlan(tool_call_id=tool_call_identifier)
+        schema = self._tool_schemas.get(tool_name)
+        if schema is not None:
+            tool_arguments = _coerce_structured_arguments(schema, tool_arguments)
+
+        resolved_location: ResolvedLocation | None = None
+        if tool_name in _LOCATION_TOOLS:
+            tool_arguments = dict(tool_arguments)
+            location_value = tool_arguments.pop("location", None) or None
+            try:
+                resolved_location = self._resolve_location(location_value)
+            except ToolLocationError:
+                # A bad location is an execution error, surfaced by _execute_tool; there
+                # is no permission decision to make, so the batch runs and errors there.
+                return plan
+        policy = self._call_policy(resolved_location)
+
+        if tool_name == "bash":
+            raw_command = tool_arguments.get("command", "")
+            justification = tool_arguments.get("justification", "")
+            risk = tool_arguments.get("risk", "")
+            read_only = tool_arguments.get("read_only", False)
+            if isinstance(read_only, str):
+                read_only = read_only.lower() == "true"
+            session_allowed = self._command_session_allowed(raw_command)
+            static_classification, static_detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
+            outside_reads = (
+                []
+                if policy.is_remote
+                else self._outside_working_directory_reads(raw_command, policy.working_directory)
+            )
+            # Sandbox read approval (reads outside the working directory).
+            if outside_reads and not session_allowed and not policy.bypass_permissions:
+                paths = ", ".join(outside_reads)
+                sandbox_message = (
+                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
+                )
+                if self._is_agent:
+                    plan.denial = {"code": "sandbox_denied", "message": sandbox_message, "denied_injection": True, "raw_command": raw_command}
+                    return plan
+                permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
+                if policy.auto_permissions and permission_decision != "deny":
+                    decision = await self._classify_permission(
+                        tool_kind="bash", command=raw_command, raw_command=raw_command,
+                        default_decision=permission_decision, read_only=read_only,
+                        risk=risk or "medium", justification=justification or sandbox_message,
+                        static_classification=static_classification, static_detail=static_detail,
+                        outside_reads=outside_reads,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
+                    else:
+                        plan.gates.append(_ToolGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command=raw_command,
+                            justification=decision.justification or sandbox_message, risk=decision.risk, is_bash=True,
+                            deny_message="Sandbox read was not approved by the user.",
+                        ))
+                else:
+                    if permission_decision == "deny":
+                        plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
+                        return plan
+                    plan.gates.append(_ToolGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command=raw_command, justification=sandbox_message, risk="medium", is_bash=True,
+                        deny_message="Sandbox read was not approved by the user.",
+                    ))
+            # Read-only enforcement is a hard block (no human in the loop).
+            if policy.read_only:
+                violation = None
+                if static_classification == "mutating":
+                    violation = static_detail
+                elif static_classification == "unknown" and not read_only:
+                    violation = "a command not recognized as read-only that you marked as modifying state"
+                if violation:
+                    deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
+                    plan.denial = {"code": "", "message": deny_message, "denied_injection": True, "raw_command": raw_command}
+                    return plan
+            # Main command approval.
+            permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
+            if permission_decision == "deny":
+                plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
+                return plan
+            elif (
+                not session_allowed
+                and not policy.bypass_permissions
+                and (permission_decision == "ask" or risk in ("medium", "high"))
+            ):
+                if policy.auto_permissions:
+                    decision = await self._classify_permission(
+                        tool_kind="bash", command=raw_command, raw_command=raw_command,
+                        default_decision=permission_decision, read_only=read_only,
+                        risk=risk or "medium", justification=justification,
+                        static_classification=static_classification, static_detail=static_detail,
+                        outside_reads=outside_reads,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
+                    else:
+                        plan.gates.append(_ToolGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command=raw_command,
+                            justification=decision.justification or justification, risk=decision.risk, is_bash=True,
+                            deny_message="Command was not approved by the user.",
+                        ))
+                else:
+                    plan.gates.append(_ToolGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command=raw_command, justification=justification, risk=risk, is_bash=True,
+                        deny_message="Command was not approved by the user.",
+                    ))
+            return plan
+
+        if tool_name == "call_mcp_tool":
+            read_only = tool_arguments.get("read_only", False)
+            risk = tool_arguments.get("risk", "low")
+            if policy.read_only and not read_only:
+                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
+                plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
+                return plan
+            if not policy.bypass_permissions and not read_only and risk in ("medium", "high"):
+                action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
+                justification = tool_arguments.get("justification", "")
+                if policy.auto_permissions:
+                    decision = await self._classify_permission(
+                        tool_kind="mcp", command=action,
+                        raw_command=json.dumps(tool_arguments.get("arguments") or {}, ensure_ascii=False),
+                        default_decision="ask", read_only=False, risk=risk, justification=justification,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("mcp_auto_approved", {
+                            "server": tool_arguments.get("server", ""), "tool": tool_arguments.get("tool_name", ""),
+                            "reason": decision.justification, "risk": decision.risk,
+                        })
+                    else:
+                        plan.gates.append(_ToolGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command=action,
+                            justification=decision.justification or justification, risk=decision.risk,
+                            deny_message="MCP tool call not approved by user",
+                        ))
+                else:
+                    plan.gates.append(_ToolGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command=action, justification=justification, risk=risk,
+                        deny_message="MCP tool call not approved by user",
+                    ))
+            return plan
+
+        if tool_name in ("spawn_agent", "call_remote_agent"):
+            agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
+            if self._is_remote_agent(agent_name) and not self._bypass_permissions and agent_name not in self._egress_approved_agents:
+                plan.gates.append(_ToolGate(
+                    request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                    kind="permission", command=f"Contact external agent '{agent_name}'",
+                    justification=f"Send this task and any attachments to the external agent '{agent_name}'. Data will leave this machine.",
+                    risk="high",
+                    deny_message=f"Contacting external agent '{agent_name}' was not approved.",
+                    egress_agent=agent_name,
+                ))
+            return plan
+
+        if tool_name == "ask_user":
+            plan.gates.append(_ToolGate(
+                request_id=self._new_question_request_id(), tool_call_id=tool_call_identifier,
+                kind="question", questions=tool_arguments.get("questions", []) or [],
+            ))
+            return plan
+
+        return plan
+
     async def _execute_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision",
     ) -> AsyncIterator[StreamEvent]:
         """Execute a single tool call, yielding events. The caller collects results from
-        TOOL_RESULT, ERROR, and BACKGROUND_STARTED events."""
+        TOOL_RESULT, ERROR, and BACKGROUND_STARTED events.
+
+        Permission is already resolved: ``decision`` says whether this call may run, was
+        denied (with the exact error the gate would have produced), or — for ``ask_user``
+        — carries the answers. This path never prompts and never awaits a decision future;
+        the preflight pass made every human decision before the batch began."""
+        # A tool the preflight denied never runs: surface the recorded denial (and the
+        # denied-command injection where the inline gate would have), then stop.
+        if decision.denial is not None:
+            error_kwargs: dict[str, Any] = {"id": tool_call_identifier, "tool": tool_name, "message": decision.denial.get("message", "")}
+            if decision.denial.get("code"):
+                error_kwargs["code"] = decision.denial["code"]
+            yield StreamEvent(StreamEvent.Type.ERROR, **error_kwargs)
+            if decision.denial.get("denied_injection"):
+                yield StreamEvent(
+                    StreamEvent.Type.DENIED_INJECTION, id=tool_call_identifier,
+                    command=decision.denial.get("raw_command", ""),
+                )
+            return
 
         # Thread this agent's live context window into the tool call, so every window-scaled tool
         # cap (a page's element listing, a read window, a truncation ceiling) is sized for the
@@ -2729,185 +3128,9 @@ class AgentRuntime:
             if isinstance(read_only, str):
                 read_only = read_only.lower() == "true"
 
-            # A command the user chose to "always allow" this session skips both
-            # the sandbox and approval prompts below.
-            session_allowed = self._command_session_allowed(raw_command)
-
-            static_classification, static_detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
-            # Path-boundary sandboxing protects THIS machine's filesystem; a remote
-            # command only touches remote paths, so the check does not apply there.
-            outside_reads = (
-                []
-                if policy.is_remote
-                else self._outside_working_directory_reads(raw_command, policy.working_directory)
-            )
-            # Bypass mode means bypass: no sandbox or risk-based approval prompts.
-            # (The hard blocks below — read-only enforcement and explicit deny
-            # rules — still apply; bypass only skips the human-in-the-loop asks.)
-            if outside_reads and not session_allowed and not policy.bypass_permissions:
-                paths = ", ".join(outside_reads)
-                sandbox_message = (
-                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
-                )
-                if self._is_agent:
-                    yield StreamEvent(
-                        StreamEvent.Type.ERROR,
-                        id=tool_call_identifier,
-                        code="sandbox_denied",
-                        message=sandbox_message,
-                        tool=tool_name,
-                    )
-                    yield StreamEvent(
-                        StreamEvent.Type.DENIED_INJECTION,
-                        id=tool_call_identifier,
-                        command=raw_command,
-                    )
-                    return
-                permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
-                if policy.auto_permissions and permission_decision != "deny":
-                    decision = await self._classify_permission(
-                        tool_kind="bash",
-                        command=raw_command,
-                        raw_command=raw_command,
-                        default_decision=permission_decision,
-                        read_only=read_only,
-                        risk=risk or "medium",
-                        justification=justification or sandbox_message,
-                        static_classification=static_classification,
-                        static_detail=static_detail,
-                        outside_reads=outside_reads,
-                    )
-                    if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {
-                            "command": raw_command,
-                            "reason": decision.justification,
-                            "risk": decision.risk,
-                        })
-                    else:
-                        request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                        future = asyncio.get_event_loop().create_future()
-                        self._pending_permissions[request_identifier] = future
-                        yield StreamEvent(
-                            StreamEvent.Type.PERMISSION_REQUEST,
-                            id=tool_call_identifier,
-                            request_id=request_identifier,
-                            command=raw_command,
-                            justification=decision.justification or sandbox_message,
-                            risk=decision.risk,
-                        )
-                        allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
-                        if not allowed:
-                            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="Sandbox read was not approved by the user.", tool=tool_name)
-                            return
-                else:
-                    if permission_decision == "deny":
-                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="Sandbox read denied by the default permission policy.", tool=tool_name)
-                        return
-                    request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                    future = asyncio.get_event_loop().create_future()
-                    self._pending_permissions[request_identifier] = future
-                    yield StreamEvent(
-                        StreamEvent.Type.PERMISSION_REQUEST,
-                        id=tool_call_identifier,
-                        request_id=request_identifier,
-                        command=raw_command,
-                        justification=sandbox_message,
-                        risk="medium",
-                    )
-                    allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
-                    if not allowed:
-                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="Sandbox read was not approved by the user.", tool=tool_name)
-                        return
-
-            # Read-only agents and read-only locations may only run read-only
-            # commands. Static analysis classifies the command (local and remote
-            # alike — never the model's own declaration alone); a detected mutation
-            # is always blocked, and a command that can't be classified is blocked
-            # only when the model itself marked it as a write. This is a hard
-            # block — agents have no human in the loop to approve.
-            if policy.read_only:
-                violation = None
-                if static_classification == "mutating":
-                    violation = static_detail
-                elif static_classification == "unknown" and not read_only:
-                    violation = "a command not recognized as read-only that you marked as modifying state"
-                if violation:
-                    deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
-                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
-                    yield StreamEvent(
-                        StreamEvent.Type.DENIED_INJECTION,
-                        id=tool_call_identifier,
-                        command=raw_command,
-                    )
-                    return
-
-            permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
-            if permission_decision == "deny":
-                deny_message = f"Command '{raw_command}' is not permitted."
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
-                yield StreamEvent(
-                    StreamEvent.Type.DENIED_INJECTION,
-                    id=tool_call_identifier,
-                    command=raw_command,
-                )
-                return
-            elif (
-                not session_allowed
-                and not policy.bypass_permissions
-                and (permission_decision == "ask" or risk in ("medium", "high"))
-            ):
-                if policy.auto_permissions:
-                    decision = await self._classify_permission(
-                        tool_kind="bash",
-                        command=raw_command,
-                        raw_command=raw_command,
-                        default_decision=permission_decision,
-                        read_only=read_only,
-                        risk=risk or "medium",
-                        justification=justification,
-                        static_classification=static_classification,
-                        static_detail=static_detail,
-                        outside_reads=outside_reads,
-                    )
-                    if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {
-                            "command": raw_command,
-                            "reason": decision.justification,
-                            "risk": decision.risk,
-                        })
-                    else:
-                        request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                        future = asyncio.get_event_loop().create_future()
-                        self._pending_permissions[request_identifier] = future
-                        yield StreamEvent(
-                            StreamEvent.Type.PERMISSION_REQUEST,
-                            id=tool_call_identifier,
-                            request_id=request_identifier,
-                            command=raw_command,
-                            justification=decision.justification or justification,
-                            risk=decision.risk,
-                        )
-                        allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
-                        if not allowed:
-                            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="Command was not approved by the user.", tool=tool_name)
-                            return
-                else:
-                    request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                    future = asyncio.get_event_loop().create_future()
-                    self._pending_permissions[request_identifier] = future
-                    yield StreamEvent(
-                        StreamEvent.Type.PERMISSION_REQUEST,
-                        id=tool_call_identifier,
-                        request_id=request_identifier,
-                        command=raw_command,
-                        justification=justification,
-                        risk=risk,
-                    )
-                    allowed = await self._resolve_permission_future(request_identifier, future, raw_command, is_bash=True)
-                    if not allowed:
-                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="Command was not approved by the user.", tool=tool_name)
-                        return
-
+            # Permission (sandbox reads, read-only enforcement, risk approval) was
+            # resolved by the preflight pass and applied above; an approved bash call
+            # reaches here and runs.
             lease_token = ""
             # Filesystem leases guard this machine's working trees; a remote command
             # mutates the remote host, so no local lease applies.
@@ -3191,20 +3414,10 @@ class AgentRuntime:
             )
 
         elif tool_name == "ask_user":
-            questions = tool_arguments.get("questions", [])
-            request_identifier = f"q-{self._session_id}-{uuid.uuid4()}"
-            future = asyncio.get_event_loop().create_future()
-            self._pending_questions[request_identifier] = future
-            yield StreamEvent(
-                StreamEvent.Type.QUESTION,
-                id=tool_call_identifier,
-                request_id=request_identifier,
-                questions=questions,
-            )
-            try:
-                answers = await future
-            finally:
-                self._pending_questions.pop(request_identifier, None)
+            # ask_user's answers are the preflight "decision" — the question was
+            # surfaced as a gate before the batch ran, and the human answered it (or
+            # declined) as an input-required response.
+            answers = decision.answers
             # The user dismissed the whole prompt without answering (the decline
             # sentinel from resolve_question). Report it to the model and end the
             # turn cleanly — do not proceed on a guess. Setting the abort event lets
@@ -3229,64 +3442,8 @@ class AgentRuntime:
             )
 
         elif tool_name == "call_mcp_tool":
-            read_only = tool_arguments.get("read_only", False)
-            risk = tool_arguments.get("risk", "low")
-            if policy.read_only and not read_only:
-                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name)
-                return
-            if not policy.bypass_permissions and not read_only and risk in ("medium", "high"):
-                action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
-                justification = tool_arguments.get("justification", "")
-                if policy.auto_permissions:
-                    decision = await self._classify_permission(
-                        tool_kind="mcp",
-                        command=action,
-                        raw_command=json.dumps(tool_arguments.get("arguments") or {}, ensure_ascii=False),
-                        default_decision="ask",
-                        read_only=False,
-                        risk=risk,
-                        justification=justification,
-                    )
-                    if decision.action == "auto_approve":
-                        self._record_event("mcp_auto_approved", {
-                            "server": tool_arguments.get("server", ""),
-                            "tool": tool_arguments.get("tool_name", ""),
-                            "reason": decision.justification,
-                            "risk": decision.risk,
-                        })
-                    else:
-                        request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                        future = asyncio.get_event_loop().create_future()
-                        self._pending_permissions[request_identifier] = future
-                        yield StreamEvent(
-                            StreamEvent.Type.PERMISSION_REQUEST,
-                            id=tool_call_identifier,
-                            request_id=request_identifier,
-                            command=action,
-                            justification=decision.justification or justification,
-                            risk=decision.risk,
-                        )
-                        allowed = await self._resolve_permission_future(request_identifier, future, "", is_bash=False)
-                        if not allowed:
-                            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
-                            return
-                else:
-                    request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                    future = asyncio.get_event_loop().create_future()
-                    self._pending_permissions[request_identifier] = future
-                    yield StreamEvent(
-                        StreamEvent.Type.PERMISSION_REQUEST,
-                        id=tool_call_identifier,
-                        request_id=request_identifier,
-                        command=action,
-                        justification=justification,
-                        risk=risk,
-                    )
-                    allowed = await self._resolve_permission_future(request_identifier, future, "", is_bash=False)
-                    if not allowed:
-                        yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message="MCP tool call not approved by user", tool=tool_name)
-                        return
+            # Read-only enforcement and risk approval were resolved by the preflight
+            # pass and applied above; an approved MCP call reaches here and runs.
             event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
             async def on_mcp_event(event: dict[str, Any]) -> None:
@@ -3460,30 +3617,10 @@ class AgentRuntime:
                     yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
                     return
 
-            # Contacting a remote agent sends the prompt and attachments off this machine,
-            # so it is gated by an egress permission — asked once per agent per session
-            # (skipped under bypass, like other permissions).
-            if is_remote_agent and not self._bypass_permissions and agent_name not in self._egress_approved_agents:
-                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
-                egress_future = asyncio.get_event_loop().create_future()
-                self._pending_permissions[request_identifier] = egress_future
-                yield StreamEvent(
-                    StreamEvent.Type.PERMISSION_REQUEST,
-                    id=tool_call_identifier,
-                    request_id=request_identifier,
-                    command=f"Contact external agent '{agent_name}'",
-                    justification=f"Send this task and any attachments to the external agent '{agent_name}'. Data will leave this machine.",
-                    risk="high",
-                )
-                try:
-                    egress_decision = await egress_future
-                finally:
-                    self._pending_permissions.pop(request_identifier, None)
-                if egress_decision == "deny":
-                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name, message=f"Contacting external agent '{agent_name}' was not approved.")
-                    return
-                if egress_decision == "allow_always":
-                    self._egress_approved_agents.add(agent_name)
+            # Contacting a remote agent sends the prompt and attachments off this machine.
+            # That egress consent was resolved by the preflight pass (asked once per agent
+            # per session; an "always allow" was applied to the approved set above), so an
+            # approved call reaches here and runs.
 
             # Spawning is non-blocking: the agent runs as a background job (a
             # related A2A task) and the parent continues immediately. The agent's

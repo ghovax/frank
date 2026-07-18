@@ -69,11 +69,7 @@ Secrets resolve from the environment like existing keys, never inlined in tracke
 
 ### Human-in-the-loop via input-required
 
-A permission or question raises a request the runtime blocks on (a future the resolver completes), and emits a vendor `DataPart`. The runtime blocking model keeps the connection open while it waits — the paused turn holds the per‑context turn lock across the wait — so the answer is delivered without tearing the turn down and rebuilding it.
-
-On such a request the executor sets the task to `input-required`, carrying the request as its status message, in addition to emitting the `DataPart`. An external A2A client sees the spec state and answers with a `message/send` carrying an `input_response` part (the request id plus the decision or answers); the executor routes that to the same pending future the resolver uses. This answer path runs before the per‑context turn lock is taken — the paused turn holds that lock while awaiting the future, so taking it there would deadlock against the very turn the answer unblocks. A naive peer that replies with plain text simply doesn't resolve the request (the request stays open until answered, denied, or aborted).
-
-The lifecycle a client observes is `working` → `input-required` (while paused) → `working` → terminal. The native app's own resolution path is untouched, so its overlays keep working while external clients gain the spec‑correct route.
+Permissions and `ask_user` questions become a durable, segment-based `input-required` flow, specified in full in [`input-required.md`](./input-required.md). The executor sets the task to `input-required` with `final=True` and closes the segment; the pending interaction and the mid-turn conversation checkpoint are persisted, so an external client answers with a later `message/send` carrying an `input_response` part (the request id plus the decision or answers), the runtime rebuilds from the checkpoint, and the turn resumes — surviving a restart. An external A2A client sees the spec `input-required` state; a naive peer that replies with plain text simply doesn't resolve the request, which stays open until answered, denied, or aborted. The native resolve path and external answers converge on the one durable resume.
 
 ### Server auth
 
