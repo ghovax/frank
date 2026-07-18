@@ -1,7 +1,8 @@
 "use client";
 
-import { Box, Button, Flex, Input, Text } from "@chakra-ui/react";
+import { Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
+import { LuPlus, LuRefreshCw, LuTrash2 } from "react-icons/lu";
 import {
   deleteRemoteAgent,
   listRemoteAgents,
@@ -12,7 +13,7 @@ import {
   type RemoteAgentInput,
 } from "@/lib/api";
 import { Pill } from "./ui/pill";
-import { SimpleSelect } from "./ui/simple-select";
+import { SimpleSelect, type SelectOption } from "./ui/simple-select";
 import { toaster } from "./ui/toaster";
 
 type Draft = {
@@ -39,14 +40,14 @@ const EMPTY_DRAFT: Draft = {
   allowedProfiles: "",
 };
 
-const AUTH_ITEMS = [
+const AUTH_ITEMS: SelectOption[] = [
   { value: "none", label: "No auth" },
   { value: "bearer", label: "Bearer token" },
   { value: "api_key", label: "API key header" },
   { value: "oauth2", label: "OAuth2 client credentials" },
 ];
 
-const YES_NO = [
+const YES_NO: SelectOption[] = [
   { value: "no", label: "No" },
   { value: "yes", label: "Yes" },
 ];
@@ -144,16 +145,24 @@ export function RemoteAgentsPanel() {
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   return (
-    <Flex direction="column" gap={4}>
-      <Flex direction="column" gap={2}>
-        {agents.length === 0 && (
-          <Text fontSize="sm" color="fg.muted">
-            No external agents registered. Add one below, or edit ~/.agents/remote-agents.json.
-          </Text>
-        )}
-        {agents.map((agent) => (
-          <Flex key={agent.name} align="center" justify="space-between" gap={3} borderWidth="1px" borderRadius="md" px={3} py={2}>
-            <Flex direction="column" gap={0.5} minW={0}>
+    <Flex direction="column" gap={3}>
+      {agents.length === 0 ? (
+        <Text fontSize="sm" color="fg.muted">
+          No external agents registered. Add one below, or edit ~/.agents/remote-agents.json.
+        </Text>
+      ) : (
+        agents.map((agent) => (
+          <Flex
+            key={agent.name}
+            align="center"
+            justify="space-between"
+            gap={3}
+            borderWidth="1px"
+            borderColor="border"
+            borderRadius="md"
+            p={3}
+          >
+            <Flex direction="column" gap={1} minW={0}>
               <Flex align="center" gap={2}>
                 <Pill colorPalette={HEALTH_PALETTE[agent.health] ?? "gray"}>{agent.health}</Pill>
                 <Text fontWeight="medium">{agent.name}</Text>
@@ -172,61 +181,72 @@ export function RemoteAgentsPanel() {
                 </Text>
               )}
             </Flex>
-            <Flex gap={2} flex="0 0 auto">
-              <Button size="xs" variant="outline" onClick={() => void refresh(agent.name)}>
-                Refresh
-              </Button>
-              <Button size="xs" variant="outline" colorPalette="red" onClick={() => void remove(agent.name)}>
-                Remove
-              </Button>
+            <Flex gap={1} flexShrink={0}>
+              <IconButton aria-label="Refresh card" variant="ghost" onClick={() => void refresh(agent.name)}>
+                <LuRefreshCw size={13} />
+              </IconButton>
+              <IconButton aria-label="Remove agent" variant="ghost" colorPalette="red" onClick={() => void remove(agent.name)}>
+                <LuTrash2 size={13} />
+              </IconButton>
             </Flex>
           </Flex>
-        ))}
-      </Flex>
+        ))
+      )}
 
-      <Flex direction="column" gap={2} borderWidth="1px" borderRadius="md" p={3}>
-        <Text fontWeight="medium" fontSize="sm">
-          Add external agent
-        </Text>
-        <Input size="xs" placeholder="Local name (e.g. acme-researcher)" value={draft.name} onChange={(event) => update({ name: event.target.value })} />
-        <Input
-          size="xs"
-          placeholder="Agent card URL (https://.../.well-known/agent-card.json)"
-          value={draft.cardUrl}
-          onChange={(event) => update({ cardUrl: event.target.value })}
-        />
-        <Box w="240px">
+      <Flex direction="column" gap={3} borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
+        <Flex direction="column" gap={1}>
+          <Text textStyle="fieldLabel">Name</Text>
+          <Input value={draft.name} onChange={(event) => update({ name: event.target.value })} placeholder="acme-researcher" />
+        </Flex>
+        <Flex direction="column" gap={1}>
+          <Text textStyle="fieldLabel">Agent card URL</Text>
+          <Input
+            value={draft.cardUrl}
+            onChange={(event) => update({ cardUrl: event.target.value })}
+            placeholder="https://agents.example.com/.well-known/agent-card.json"
+          />
+        </Flex>
+        <Flex direction="column" gap={1}>
+          <Text textStyle="fieldLabel">Authentication</Text>
           <SimpleSelect items={AUTH_ITEMS} value={draft.authType} onValueChange={(value) => update({ authType: value })} />
-        </Box>
+        </Flex>
         {(draft.authType === "bearer" || draft.authType === "api_key") && (
-          <Input size="xs" placeholder="Token (or ${ENV_VAR})" value={draft.token} onChange={(event) => update({ token: event.target.value })} />
+          <Flex direction="column" gap={1}>
+            <Text textStyle="fieldLabel">Token</Text>
+            <Input value={draft.token} onChange={(event) => update({ token: event.target.value })} placeholder="${ACME_TOKEN}" />
+          </Flex>
         )}
         {draft.authType === "oauth2" && (
           <>
-            <Input size="xs" placeholder="Token URL" value={draft.tokenUrl} onChange={(event) => update({ tokenUrl: event.target.value })} />
-            <Input size="xs" placeholder="Client ID" value={draft.clientId} onChange={(event) => update({ clientId: event.target.value })} />
-            <Input size="xs" placeholder="Client secret (or ${ENV_VAR})" value={draft.clientSecret} onChange={(event) => update({ clientSecret: event.target.value })} />
+            <Flex direction="column" gap={1}>
+              <Text textStyle="fieldLabel">Token URL</Text>
+              <Input value={draft.tokenUrl} onChange={(event) => update({ tokenUrl: event.target.value })} placeholder="https://auth.example.com/oauth/token" />
+            </Flex>
+            <Flex direction="column" gap={1}>
+              <Text textStyle="fieldLabel">Client ID</Text>
+              <Input value={draft.clientId} onChange={(event) => update({ clientId: event.target.value })} />
+            </Flex>
+            <Flex direction="column" gap={1}>
+              <Text textStyle="fieldLabel">Client secret</Text>
+              <Input value={draft.clientSecret} onChange={(event) => update({ clientSecret: event.target.value })} placeholder="${ACME_CLIENT_SECRET}" />
+            </Flex>
           </>
         )}
-        <Input
-          size="xs"
-          placeholder="Allowed profiles (comma-separated; blank = all)"
-          value={draft.allowedProfiles}
-          onChange={(event) => update({ allowedProfiles: event.target.value })}
-        />
-        <Flex align="center" justify="space-between" gap={3}>
-          <Flex align="center" gap={2}>
-            <Text fontSize="xs" color="fg.muted">
-              Allow private/loopback host
-            </Text>
-            <Box w="90px">
-              <SimpleSelect items={YES_NO} value={draft.allowPrivate} onValueChange={(value) => update({ allowPrivate: value })} />
-            </Box>
-          </Flex>
-          <Button size="xs" onClick={() => void save()} loading={saving}>
-            Add agent
-          </Button>
+        <Flex direction="column" gap={1}>
+          <Text textStyle="fieldLabel">Allowed profiles</Text>
+          <Input
+            value={draft.allowedProfiles}
+            onChange={(event) => update({ allowedProfiles: event.target.value })}
+            placeholder="comma-separated; blank = all"
+          />
         </Flex>
+        <Flex direction="column" gap={1}>
+          <Text textStyle="fieldLabel">Allow private/loopback host</Text>
+          <SimpleSelect items={YES_NO} value={draft.allowPrivate} onValueChange={(value) => update({ allowPrivate: value })} />
+        </Flex>
+        <Button variant="subtle" colorPalette="blue" w="100%" loading={saving} onClick={() => void save()}>
+          <LuPlus size={14} /> Add external agent
+        </Button>
       </Flex>
     </Flex>
   );
