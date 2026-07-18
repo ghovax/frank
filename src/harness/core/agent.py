@@ -562,10 +562,13 @@ def _build_tools(
         read_task_tool,
         ask_agent_tool,
         respond_agent_tool,
+        # A sub-agent can ask the user directly: the question parks the delegated turn and
+        # is propagated to the panel/overlay like any human-in-the-loop gate, then resumes
+        # on the answer. (open_artifact stays top-level only — it drives the user's UI.)
+        ask_user_tool,
     ]
     if not is_agent:
         available.append(open_artifact_tool)
-        available.append(ask_user_tool)
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
         available.append(cancel_agent_tool)
