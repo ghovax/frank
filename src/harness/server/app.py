@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sse_starlette.sse import EventSourceResponse
 from watchfiles import DefaultFilter, awatch
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
