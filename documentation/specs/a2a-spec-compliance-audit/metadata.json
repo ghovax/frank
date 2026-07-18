@@ -1,4 +1,5 @@
 {
+  "$schema": "../metadata.schema.json",
   "title": "A2A Specification Compliance: Audit and Plans",
   "description": "Audit of the Daisy harness's conformance to the A2A (Agent2Agent) protocol, and the design plans for the bidirectional external-agent, OpenTelemetry, and durable input-required work built from it.",
   "repository": "ghovax/daisy",

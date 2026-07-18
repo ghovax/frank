@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ghovax/daisy/documentation/specs/metadata.schema.json",
+  "title": "Spec metadata",
+  "description": "Schema for a spec folder's metadata.json under documentation/specs/<task>/. Each spec folder groups an audit and/or design plans for one body of work; metadata.json describes the set and its provenance. Referenced by each metadata.json via its \"$schema\" key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "description", "documents", "generatedAt"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URI of this schema, so editors validate the file. Typically the relative path \"../metadata.schema.json\".",
+      "format": "uri-reference"
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable name for the whole spec set.",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "One- or two-sentence summary of what this spec set covers.",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "description": "The GitHub repository the work targets, as \"owner/repo\".",
+      "pattern": "^[^/\\s]+/[^/\\s]+$"
+    },
+    "branch": {
+      "type": "string",
+      "description": "The development branch the work lives on.",
+      "minLength": 1
+    },
+    "pullRequest": {
+      "type": "string",
+      "description": "URL of the pull request tracking the work, if one is open.",
+      "format": "uri"
+    },
+    "commit": {
+      "type": "string",
+      "description": "Git commit the metadata was last reconciled against (a full or abbreviated SHA-1).",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "subject": {
+      "type": "object",
+      "description": "Optional, domain-specific subject of the spec set. Free-form; the keys below are the conventional ones for a protocol-conformance spec, but any subject shape is allowed.",
+      "additionalProperties": true,
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "description": "The protocol or standard the spec concerns, e.g. \"A2A (Agent2Agent)\"."
+        },
+        "protocolVersion": {
+          "type": "string",
+          "description": "The protocol version, e.g. \"0.3.0\"."
+        },
+        "sdk": {
+          "type": "string",
+          "description": "The pinned SDK/library, e.g. \"a2a-sdk==0.3.7\"."
+        }
+      }
+    },
+    "documents": {
+      "type": "array",
+      "description": "The documents that make up this spec set, in reading order.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/document" }
+    },
+    "generatedAt": {
+      "description": "When the metadata was generated or last regenerated (UTC, RFC 3339).",
+      "$ref": "#/$defs/timestamp"
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "description": "An RFC 3339 date-time. `format` is advisory (most validators don't assert it), so the pattern enforces the shape: e.g. \"2026-07-18T19:18:51Z\".",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "title", "kind", "created", "updated"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the document, relative to this metadata.json's folder. A Markdown file; may sit in a subfolder (e.g. \"plans/telemetry.md\").",
+          "pattern": "^(?!/)(?!.*\\.\\.).*\\.md$"
+        },
+        "title": {
+          "type": "string",
+          "description": "The document's title (matches its top-level H1).",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "description": "The document's role in the set. \"audit\" is an assessment of current state; \"plan\" is a design for a change built on it.",
+          "enum": ["audit", "plan"]
+        },
+        "created": {
+          "description": "When the document was first added (UTC, RFC 3339).",
+          "$ref": "#/$defs/timestamp"
+        },
+        "updated": {
+          "description": "When the document was last edited (UTC, RFC 3339); equal to \"created\" if never edited.",
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}
