@@ -224,8 +224,6 @@ class StreamEvent:
         USAGE = "usage"
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
-        PERMISSION_REQUEST = "permission_request"
-        QUESTION = "question"
         # A turn cannot proceed without a human decision (one or more permission
         # prompts and/or an ask_user question). The runtime has appended the
         # initiating tool-call AIMessage (the durable resume checkpoint: an
@@ -3156,9 +3154,6 @@ class AgentRuntime:
                         return
                     tool_arguments = dict(tool_arguments)
                     tool_arguments["command"] = f"cd {shlex.quote(str(directory_path))} && {raw_command}"
-            command = tool_arguments.get("command", "")
-            justification = tool_arguments.get("justification", "")
-            risk = tool_arguments.get("risk", "")
             read_only = tool_arguments.get("read_only", False)
             if isinstance(read_only, str):
                 read_only = read_only.lower() == "true"

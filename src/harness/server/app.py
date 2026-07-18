@@ -494,7 +494,7 @@ def _set_turn_state(context_id: str, running: bool) -> None:
         _event_bus.complete(context_id)
 
 
-# Contexts whose latest turn is parked at input-required (durably; also populated on
+# Contexts whose latest turn is paused at input-required (durably; also populated on
 # startup from persisted input-required tasks, so the marker survives a restart).
 _awaiting_input_contexts: set[str] = set()
 

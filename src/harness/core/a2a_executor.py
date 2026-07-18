@@ -1242,11 +1242,11 @@ class HarnessAgentExecutor(AgentExecutor):
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
-        # An input-required answer is a durable resume, not a parked-future wake. Record
-        # it against the task's pending-interaction record; once every gate is answered,
-        # this call rebuilds the runtime from the persisted checkpoint and drives the next
-        # segment (below). A partial answer leaves the task input-required for the next
-        # one; an answer for a task that is not paused is a no-op acknowledgement.
+        # An input-required answer is recorded against the task's pending-interaction
+        # record; once every gate is answered, this call rebuilds the runtime from the
+        # persisted checkpoint and drives the next segment (below). A partial answer leaves
+        # the task input-required for the next one; an answer for a task that is not paused
+        # is a no-op acknowledgement.
         input_response = _input_response_payload(message)
         is_resume = False
         resume_plans: dict = {}
@@ -1633,7 +1633,7 @@ class HarnessAgentExecutor(AgentExecutor):
                     # checkpoint). Persist the pending-interaction record and the conversation
                     # checkpoint, surface each gate as its native DataPart so the app renders
                     # the prompt(s), and close this segment as input-required (final): a later
-                    # answer rebuilds and resumes from the checkpoint. Nothing is parked.
+                    # answer rebuilds and resumes from the checkpoint.
                     await flush_stream_buffers()
                     interactions = data.get("interactions", []) or []
                     plans = data.get("plans", {}) or {}
