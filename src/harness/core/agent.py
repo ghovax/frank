@@ -224,6 +224,13 @@ class StreamEvent:
         USAGE = "usage"
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
+        # A sub-agent's human-in-the-loop request. A delegated turn does not durably
+        # suspend (it is an ephemeral, in-process background job); instead it emits this,
+        # which the executor relays to the user through the agents panel, and parks in
+        # place awaiting the decision — so the same continuous stream carries the prompt
+        # and the resumed work. A top-level turn uses SUSPENDED instead.
+        PERMISSION_REQUEST = "permission_request"
+        QUESTION = "question"
         # A turn cannot proceed without a human decision (one or more permission
         # prompts and/or an ask_user question). The runtime has appended the
         # initiating tool-call AIMessage (the durable resume checkpoint: an
@@ -972,6 +979,12 @@ class AgentRuntime:
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
         self._auto_permissions: bool = agent_configuration.permission_mode == "auto"
         self._session_permission_mode: str = "default"
+        # A sub-agent under the interactive policy asks (escalates to the user) for any
+        # command its card does not explicitly allow, rather than running it unattended.
+        self._sub_agent_ask_by_default: bool = False
+        # A sub-agent parks on these while its human-in-the-loop request is escalated to
+        # the user; the resolver (native REST or an A2A input_response) completes them.
+        self._agent_permission_futures: dict[str, asyncio.Future] = {}
         # When set, agents (spawn_agent calls) are invoked
         # through this delegate — an A2A call to the target agent's served
         # endpoint — instead of being run in-process. Bound to the A2A context.
@@ -1315,6 +1328,38 @@ class AgentRuntime:
         self._read_only = mode == "read_only"
         self._auto_permissions = mode == "auto"
 
+    @property
+    def configured_permission_mode(self) -> str:
+        """The permission mode the agent's own card declares (its ceiling before a
+        caller's grant tightens it)."""
+        return self._agent_configuration.permission_mode
+
+    def resolve_agent_permission(self, request_id: str, value: Any) -> bool:
+        """Complete a sub-agent's parked human-in-the-loop request with the user's answer
+        (a decision string for a permission, or the answers / decline for a question).
+        Returns whether a matching pending request was found."""
+        future = self._agent_permission_futures.get(request_id)
+        if future is not None and not future.done():
+            future.set_result(value)
+            return True
+        return False
+
+    def has_pending_agent_permission(self, request_id: str) -> bool:
+        future = self._agent_permission_futures.get(request_id)
+        return future is not None and not future.done()
+
+    def set_sub_agent_policy(self, mode: str) -> None:
+        """Apply a sub-agent's effective permission policy. Unlike ``set_permission_mode``,
+        "default" means the interactive (ask) policy — never the agent's own configured
+        mode — and ``bypass`` is never applied: a sub-agent can never run unattended. Under
+        the interactive policy an unmatched command asks (escalates to the user)."""
+        mode = mode if mode in ("default", "read_only", "auto") else "default"
+        self._session_permission_mode = mode
+        self._bypass_permissions = False
+        self._read_only = mode == "read_only"
+        self._auto_permissions = mode == "auto"
+        self._sub_agent_ask_by_default = mode == "default"
+
     def set_delegate(self, delegate: Callable) -> None:
         """Install the A2A delegate used to invoke agents as related tasks."""
         self._delegate = delegate
@@ -1418,7 +1463,8 @@ class AgentRuntime:
         effective_bypass = self._bypass_permissions if bypass is None else bypass
         if effective_bypass:
             return "allow"
-        return self._permissions.evaluate_bash_permission(command)
+        unmatched = "ask" if self._sub_agent_ask_by_default else "allow"
+        return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
 
     async def _classify_permission(
         self,
@@ -2296,14 +2342,60 @@ class AgentRuntime:
             outcomes: dict[str, dict] = {}
             if not self._abort_event.is_set():
                 plans, pending = await self._preflight_permissions(tool_calls)
-                if pending:
+                if pending and not self._is_agent:
+                    # A top-level turn suspends durably: the executor persists the
+                    # checkpoint and closes the segment, and a later answer resumes it.
                     yield StreamEvent(
                         StreamEvent.Type.SUSPENDED,
                         interactions=[gate.to_dict() for gate in pending],
                         plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
                     )
                     return
-                decisions = self._resolve_tool_decisions(plans, {})
+                if pending:
+                    # A sub-agent escalates each gate to the user and parks in place until
+                    # it is answered, so the parent's relay carries the prompt and the
+                    # resumed work to the panel on this one continuous stream.
+                    loop = asyncio.get_running_loop()
+                    futures: dict[str, "asyncio.Future"] = {}
+                    gate_by_request: dict[str, "_ToolGate"] = {}
+                    for gate in pending:
+                        future = loop.create_future()
+                        self._agent_permission_futures[gate.request_id] = future
+                        futures[gate.request_id] = future
+                        gate_by_request[gate.request_id] = gate
+                        if gate.kind == "question":
+                            yield StreamEvent(
+                                StreamEvent.Type.QUESTION, id=gate.tool_call_id,
+                                request_id=gate.request_id, questions=gate.questions,
+                            )
+                        else:
+                            yield StreamEvent(
+                                StreamEvent.Type.PERMISSION_REQUEST, id=gate.tool_call_id,
+                                request_id=gate.request_id, command=gate.command,
+                                justification=gate.justification, risk=gate.risk,
+                            )
+                    answers: dict[str, Any] = {}
+                    abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+                    try:
+                        for request_id, future in futures.items():
+                            await asyncio.wait({future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
+                            if future.done():
+                                answers[request_id] = future.result()
+                            else:
+                                # A Stop while parked ends the outstanding gates fail-safe:
+                                # a question declines, a permission denies.
+                                answers[request_id] = (
+                                    {"__declined__": True}
+                                    if gate_by_request[request_id].kind == "question"
+                                    else "deny"
+                                )
+                    finally:
+                        abort_waiter.cancel()
+                        for request_id in futures:
+                            self._agent_permission_futures.pop(request_id, None)
+                    decisions = self._resolve_tool_decisions(plans, answers)
+                else:
+                    decisions = self._resolve_tool_decisions(plans, {})
                 self._apply_allow_always(decisions)
                 async for event in self._drain_tools_concurrently(
                     tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
@@ -2731,21 +2823,6 @@ class AgentRuntime:
             plan = await self._classify_tool_permission(
                 tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
             )
-            # A delegated agent has no reliable interactive human, and its throwaway
-            # conversation is not persisted, so it cannot durably suspend and resume: a
-            # gate that would prompt becomes a hard denial (as the sandbox gate already is
-            # for agents). Interactive approval is for the top-level user turn; a sub-agent
-            # runs read-only or the parent performs the guarded action.
-            if self._is_agent and plan.gates:
-                gate = plan.gates[0]
-                plan.denial = {
-                    "code": "", "raw_command": gate.command, "denied_injection": False,
-                    "message": (
-                        "An autonomous agent cannot request interactive approval. "
-                        + (gate.deny_message or "This action was not approved.")
-                    ),
-                }
-                plan.gates = []
             plans[tool_call_data["id"]] = plan
             pending.extend(plan.gates)
         return plans, pending
@@ -2906,9 +2983,9 @@ class AgentRuntime:
                 sandbox_message = (
                     f"Sandbox approval required: this command reads outside the working directory ({paths})."
                 )
-                if self._is_agent:
-                    plan.denial = {"code": "sandbox_denied", "message": sandbox_message, "denied_injection": True, "raw_command": raw_command}
-                    return plan
+                # A sub-agent escalates a sandbox read to the user like any other gate
+                # (it parks in place and resumes on the answer), rather than hard-denying:
+                # every human-in-the-loop interrupt a sub-agent raises reaches the user.
                 permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
                 if policy.auto_permissions and permission_decision != "deny":
                     decision = await self._classify_permission(
@@ -3617,6 +3694,11 @@ class AgentRuntime:
             agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(agent_read_only, str):
                 agent_read_only = agent_read_only.lower() == "true"
+            # The caller's approval grant for this sub-agent; bypass is not accepted here,
+            # and the executor combines it with the sub-agent card and clamps it.
+            agent_permission_mode = str(tool_arguments.get("permission_mode", "") or "")
+            if agent_permission_mode not in ("default", "auto", "read_only"):
+                agent_permission_mode = ""
             agent_prompt = self._build_agent_prompt(raw_agent_prompt, agent_read_only)
             spawn_step_id = new_id("agent")
 
@@ -3690,6 +3772,7 @@ class AgentRuntime:
                             group_id,
                             spawn_step_id,
                             self._pending_attachments,
+                            agent_permission_mode,
                         ):
                             # The agent's streamed progress goes to the panel only,
                             # never into the parent's model context.

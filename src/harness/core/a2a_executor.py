@@ -124,6 +124,21 @@ def _harness_metadata_envelope(fields: dict) -> dict:
     return {DAISY_METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
 
 
+# Restrictiveness of a permission mode, lowest to highest. A sub-agent runs at the more
+# restrictive of its own card and the caller's grant, and never at bypass.
+_MODE_RESTRICTIVENESS = {"bypass": 0, "auto": 1, "default": 2, "read_only": 3}
+
+
+def _effective_sub_agent_mode(caller: str, card: str) -> str:
+    """A sub-agent's effective permission policy: the more restrictive of the caller's
+    grant and the sub-agent card's own mode, clamped so it can never be bypass (a
+    sub-agent never runs unattended). An unknown/empty input is ignored; with neither the
+    interactive ``default`` policy applies."""
+    candidates = [mode for mode in (caller, card) if mode in _MODE_RESTRICTIVENESS]
+    chosen = max(candidates, key=_MODE_RESTRICTIVENESS.get) if candidates else "default"
+    return "default" if chosen == "bypass" else chosen
+
+
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
 PART_KIND = "kind"
 
@@ -132,11 +147,16 @@ PART_KIND = "kind"
 _PROMPTS = PromptLoader(Path(__file__).parent / "prompts")
 
 # An agent's events that are surfaced in the parent's agents panel (relayed with a
-# path prefix). Everything else a child emits — token_usage, permission/question,
-# compaction, steering — is its private bookkeeping and stays out of the parent stream.
+# path prefix) — including a parked gate's permission/question prompt, so the user can
+# answer it. Everything else a child emits — token_usage, compaction, steering — is its
+# private bookkeeping and stays out of the parent stream.
 _RELAYABLE_CHILD_KINDS = frozenset({
     "text", "thinking", "thinking_done", "status",
     "tool_call", "tool_result", "mcp_event", "group_started", "error",
+    # A sub-agent's human-in-the-loop gate is surfaced to the user through the panel:
+    # the prompt is relayed so the user can approve or deny it, and the sub-agent
+    # resumes in place on the answer (routed back by request id).
+    "permission_request", "question",
 })
 # A user turn whose input is an artifact interaction carries it as a DataPart of
 # this kind rather than as prose, so the payload reaches the model intact.
@@ -1422,8 +1442,17 @@ class HarnessAgentExecutor(AgentExecutor):
                     is_agent=True,
                     locations=sub_locations,
                 )
-                if Metadata.READ_ONLY in metadata:
-                    runtime.set_read_only(bool(metadata[Metadata.READ_ONLY]))
+                # A sub-agent's effective policy is the more restrictive of the caller's
+                # grant and its own card, clamped away from bypass, with the interactive
+                # policy asking for anything the card does not explicitly allow. Enforced
+                # here, the one place, so a sub-agent can never run looser than intended.
+                runtime.set_sub_agent_policy(
+                    _effective_sub_agent_mode(permission_mode, runtime.configured_permission_mode)
+                )
+                # The read_only spawn flag only ever adds read-only on top; it can never
+                # lift a read-only that the effective policy already mandated.
+                if bool(metadata.get(Metadata.READ_ONLY)):
+                    runtime.set_read_only(True)
             else:
                 existing_state = self._contexts.get(task.context_id)
                 is_new_context = existing_state is None or existing_state.runtime is None
@@ -1668,6 +1697,29 @@ class HarnessAgentExecutor(AgentExecutor):
                         final=True,
                     )
                     return
+                elif kind == StreamEvent.Type.PERMISSION_REQUEST:
+                    # A sub-agent parked on a gate. Surface it as a permission_request part,
+                    # relayed to the parent's panel with this sub-agent's lane path, and the
+                    # runtime resumes in place once the user answers — so this same stream
+                    # carries the prompt and the resumed work. Deliberately NOT flagged into
+                    # the durable awaiting-input marker: that marker is coupled to the
+                    # durable input-required task lifecycle (set on SUSPENDED, cleared on
+                    # resolve, rehydrated from the database on restart), and a parked
+                    # sub-agent is ephemeral — it is failed, not preserved, on restart.
+                    await flush_stream_buffers()
+                    await emit(_data_part(
+                        "permission_request", request_id=data.get("request_id", ""),
+                        tool_call_id=data.get("id", ""),
+                        command=data.get("command", ""), justification=data.get("justification", ""),
+                        risk=data.get("risk", ""),
+                    ))
+                elif kind == StreamEvent.Type.QUESTION:
+                    await flush_stream_buffers()
+                    await emit(_data_part(
+                        "question", request_id=data.get("request_id", ""),
+                        tool_call_id=data.get("id", ""),
+                        questions=data.get("questions", []) or [],
+                    ))
                 elif kind == StreamEvent.Type.ERROR:
                     await flush_stream_buffers()
                     failed_message = data.get("message", "error")
@@ -1919,6 +1971,18 @@ class AgentRegistry:
 
             asyncio.create_task(drive())
             return True
+        # No durable (top-level) record owns this request: it is a sub-agent parked in
+        # place awaiting the user. Resolve its in-memory future on the sub-agent's runtime,
+        # which continues on its own live delegation stream.
+        if declined:
+            value: Any = {"__declined__": True}
+        elif answers is not None:
+            value = answers
+        else:
+            value = decision
+        for participant in list(self._participants.values()):
+            if participant.context_id == context_id and participant.runtime.resolve_agent_permission(request_id, value):
+                return True
         return False
 
     async def abort_pending_input(self, context_id: str) -> bool:
@@ -2303,6 +2367,7 @@ class AgentRegistry:
             lane_group_id: str = "",
             lane_step_id: str = "",
             attachments: Optional[list[dict]] = None,
+            permission_mode: str = "",
         ):
             # A remote agent is reached over the wire; the in-process local path follows below.
             if self.is_remote_agent(agent_name):
@@ -2319,6 +2384,10 @@ class AgentRegistry:
                 turn_fields[Metadata.AGENT_LANE_STEP_ID] = lane_step_id
             if read_only is not None:
                 turn_fields[Metadata.READ_ONLY] = bool(read_only)
+            # The caller's approval grant for this sub-agent; the executor combines it with
+            # the sub-agent card and clamps away bypass before the turn runs.
+            if permission_mode:
+                turn_fields[Metadata.PERMISSION_MODE] = permission_mode
             if project_directory:
                 turn_fields[Metadata.WORKING_DIRECTORY] = project_directory
                 turn_fields[Metadata.PROJECT_DIRECTORY] = project_directory
@@ -2348,9 +2417,10 @@ class AgentRegistry:
                             root = part.root
                             # The child already speaks the unified vocabulary. Relay its
                             # panel-relevant events verbatim (the parent prepends the path);
-                            # a plain TextPart becomes a `text` event. Everything else
-                            # (token_usage, permission/question, compaction, steering) is
-                            # the child's private bookkeeping and is not surfaced.
+                            # a plain TextPart becomes a `text` event, and a parked gate's
+                            # permission/question prompt is relayed so the user can answer it.
+                            # The rest (token_usage, compaction, steering) is the child's
+                            # private bookkeeping and is not surfaced.
                             if isinstance(root, TextPart):
                                 block_identifier = content_block_identifier(root.metadata)
                                 if block_identifier is None:

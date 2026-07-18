@@ -19,7 +19,7 @@ import {
   type PermissionMode,
   type WorkspaceStrategy,
 } from "./api";
-import { isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
+import { isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
 import { artifactImageKey, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "./artifact-annotations";
 import type { ArtifactEvent } from "@/components/artifact-bridge";
 import { toaster } from "@/components/ui/toaster";
@@ -279,6 +279,34 @@ function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string
   return {
     ...step,
     parts: [...step.parts, { kind: "tool", name: name || "unknown", toolCallId, result, status }],
+  };
+}
+
+// A sub-agent parked on a human-in-the-loop gate: flip the tool part that raised it
+// to `input_required` and attach the prompt, so the agents-panel card renders the same
+// inline approve/deny (or question) UI as the root transcript. The resolve routes by
+// request id to the parked sub-agent runtime, which resumes in place on the answer.
+function applyAgentToolPermission(step: AgentStep, toolCallId: string, permission: ToolPermission): AgentStep {
+  if (!toolCallId) return step;
+  return {
+    ...step,
+    parts: step.parts.map((part) =>
+      isToolPart(part) && part.toolCallId === toolCallId
+        ? { ...part, status: "input_required" as const, permission }
+        : part
+    ),
+  };
+}
+
+function applyAgentToolQuestion(step: AgentStep, toolCallId: string, question: ToolQuestion): AgentStep {
+  if (!toolCallId) return step;
+  return {
+    ...step,
+    parts: step.parts.map((part) =>
+      isToolPart(part) && part.toolCallId === toolCallId
+        ? { ...part, status: "input_required" as const, question }
+        : part
+    ),
   };
 }
 
@@ -984,6 +1012,27 @@ function reduceAgentLaneEvent(state: ReduceState, data: Record<string, unknown>)
       const mergedResult = mergeMcpResult(agentToolResult(state.agentGroups, toolCallId), streamedMcpResult(data));
       const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
       state.agentGroups = withStep(artifactUpdate.agentGroups, groupId, stepId, (step) => upsertAgentToolResult(step, "call_mcp_tool", toolCallId, artifactUpdate.result, "running"));
+      break;
+    }
+    case "permission_request": {
+      ensureLaneGroup(state, groupId, stepId);
+      const toolCallId = String(data.tool_call_id ?? "");
+      const permission: ToolPermission = {
+        requestId: String(data.request_id ?? ""),
+        justification: data.justification ? String(data.justification) : undefined,
+        risk: data.risk ? String(data.risk) : undefined,
+      };
+      apply((step) => applyAgentToolPermission(step, toolCallId, permission));
+      break;
+    }
+    case "question": {
+      ensureLaneGroup(state, groupId, stepId);
+      const toolCallId = String(data.tool_call_id ?? "");
+      const question: ToolQuestion = {
+        requestId: String(data.request_id ?? ""),
+        questions: Array.isArray(data.questions) ? (data.questions as QuestionItem[]) : [],
+      };
+      apply((step) => applyAgentToolQuestion(step, toolCallId, question));
       break;
     }
     case "done":

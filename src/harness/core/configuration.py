@@ -813,10 +813,13 @@ class BashToolConfiguration(BaseModel):
             return ("read_only", "")
         return ("unknown", "")
 
-    def evaluate_permission(self, command: str) -> str:
+    def evaluate_permission(self, command: str, unmatched: str = "allow") -> str:
+        """The configured decision for ``command``. ``unmatched`` is returned when no
+        pattern matches — "allow" for a normal turn, but "ask" for a sub-agent under the
+        interactive policy, so an unlisted command escalates rather than running."""
         segments = self._extract_segments(command)
         best_match_length = 0
-        best_decision = "allow"
+        best_decision = unmatched
         for segment in segments:
             for pattern, decision in self.permissions.items():
                 if self._segment_matches(segment, pattern):
@@ -967,8 +970,8 @@ class PermissionEvaluator:
                 f"Tool '{tool_name}' is not enabled for agent '{self._configuration.identifier}'"
             )
 
-    def evaluate_bash_permission(self, command: str) -> str:
-        return self._configuration.tools.bash.evaluate_permission(command)
+    def evaluate_bash_permission(self, command: str, unmatched: str = "allow") -> str:
+        return self._configuration.tools.bash.evaluate_permission(command, unmatched=unmatched)
 
     def check_bash_background(self) -> None:
         if not self._configuration.tools.bash.background_allowed:

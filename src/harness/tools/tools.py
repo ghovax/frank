@@ -403,7 +403,7 @@ async def read_mcp_resource(server: str, uri: str, justification: str = Field(..
 
 
 @tool
-def spawn_agent(prompt: str = "", agent: str = "", read_only: bool = False, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+def spawn_agent(prompt: str = "", agent: str = "", read_only: bool = False, permission_mode: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Delegate a task to another agent (a real A2A call to its endpoint).
 
     **Non-blocking:** the agent runs in the background as a related A2A task in the same context. This call returns an ``agent-...`` handle immediately, its activity streams live, and its structured deliverable is injected automatically when it finishes—even after the current turn ends. Do not wait, poll, or spawn the same work again. Use ``ask_agent`` for a mid-run question and ``cancel_agent`` when its work is no longer needed.
@@ -414,6 +414,7 @@ def spawn_agent(prompt: str = "", agent: str = "", read_only: bool = False, just
         prompt: The task for the agent. State the goal clearly and, when it should build on or coordinate with other agents, name their task ids. Include the expected return shape: findings, evidence, uncertainty, and recommended next action and all else relevant.
         agent: Name of the agent profile to delegate to (e.g. 'reader', 'builder', 'scout').
         read_only: Force the agent into read-only mode — it may only run read-only commands and cannot modify the system or write files. Use for investigation/research agents that should report back rather than make changes.
+        permission_mode: The approval policy to hold this sub-agent to, tightening (never loosening) its own configured policy: 'default' asks the user for anything not explicitly allowed, 'auto' lets it self-classify low-risk actions, 'read_only' forbids any modification. Omit to use the agent's own policy. 'bypass' is not permitted for a sub-agent.
         justification: A concise, user-facing description of what this agent will do — shown directly as the label for this call.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")

@@ -2082,6 +2082,8 @@ export function ChatPanel({
                       open={agentsPanelOpen}
                       onClose={() => setSidePanelOpen("agents", false)}
                       focusedGroupId={focusedGroupId}
+                      onPermission={handlePermission}
+                      onQuestion={handleQuestion}
                     />
                   ),
                 },
