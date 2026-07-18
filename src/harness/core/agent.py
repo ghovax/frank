@@ -1348,10 +1348,6 @@ class AgentRuntime:
             return True
         return False
 
-    def has_pending_agent_permission(self, request_id: str) -> bool:
-        future = self._agent_permission_futures.get(request_id)
-        return future is not None and not future.done()
-
     def set_sub_agent_policy(self, mode: str) -> None:
         """Apply a sub-agent's effective permission policy. Unlike ``set_permission_mode``,
         "default" means the interactive (ask) policy — never the agent's own configured
