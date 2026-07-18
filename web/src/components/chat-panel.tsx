@@ -1244,10 +1244,10 @@ export function ChatPanel({
       }
     }
   }
-  // A parked sub-agent's gate lives in the agents panel, not the main transcript, and it
+  // A parked delegated agent's gate lives in the agents panel, not the main transcript, and it
   // outlives the parent turn (spawn_agent is non-blocking), so it is surfaced through the
   // same overlay regardless of isStreaming — otherwise the user could never answer it and
-  // the sub-agent would hang. The top-level prompt (above) takes priority when both exist.
+  // the delegated agent would hang. The top-level prompt (above) takes priority when both exist.
   if (!pendingPrompt) {
     outer: for (const group of agentGroups) {
       for (const step of group.steps) {

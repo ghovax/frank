@@ -4,9 +4,9 @@ This is the plan for letting people who run Daisy capture its telemetry in their
 
 ## Why this fits cleanly
 
-Daisy's model layer is pure LangChain. Every provider flows through `build_chat_model` (`agent.py:155`) into `ChatLiteLLMModel(BaseChatModel)` (`litellm_model.py:36`) or `ChatCodexModel`, invoked via `ainvoke` (`agent.py:1329`, `agent.py:1380`, `agent.py:1578`) and `astream` (`agent.py:1948`). The A2A executor already gives us natural trace boundaries: one user turn is one A2A task (`a2a_executor.py:1101`), grouped by `context_id`, with delegated sub‑agents as related tasks. And Daisy already computes rich token and latency data (`token_usage` events, cumulative and per‑agent buckets, `a2a_executor.py:1440`), which telemetry reuses rather than recomputing.
+Daisy's model layer is pure LangChain. Every provider flows through `build_chat_model` (`agent.py:155`) into `ChatLiteLLMModel(BaseChatModel)` (`litellm_model.py:36`) or `ChatCodexModel`, invoked via `ainvoke` (`agent.py:1329`, `agent.py:1380`, `agent.py:1578`) and `astream` (`agent.py:1948`). The A2A executor already gives us natural trace boundaries: one user turn is one A2A task (`a2a_executor.py:1101`), grouped by `context_id`, with delegated agents as related tasks. And Daisy already computes rich token and latency data (`token_usage` events, cumulative and per‑agent buckets, `a2a_executor.py:1440`), which telemetry reuses rather than recomputing.
 
-So instrumentation is additive and idiomatic — no wrapping hacks, no shadow event system. The one honest caveat is that the agent loop is hand‑rolled, not LangGraph, so a bare LangChain callback would capture individual generations but not the turn/tool/sub‑agent structure. We therefore own the span tree explicitly, which is exactly what makes the traces worth having.
+So instrumentation is additive and idiomatic — no wrapping hacks, no shadow event system. The one honest caveat is that the agent loop is hand‑rolled, not LangGraph, so a bare LangChain callback would capture individual generations but not the turn/tool/agent structure. We therefore own the span tree explicitly, which is exactly what makes the traces worth having.
 
 ## What we emit
 
@@ -18,9 +18,9 @@ Traces are the primary signal, alongside two token metrics (a `gen_ai.client.tok
 
 - The root span is one A2A task / user turn (`agent.turn`), carrying `session.id = context_id`, `agent.name`, `task.id`, and `gen_ai.*` usage (model, tokens, model calls) as attributes.
 - Each model call is a nested `gen_ai.generation` span; each tool call is a nested `tool.execute` span.
-- Each delegated or remote sub-agent is a nested `agent.turn` span, linked to its parent via the propagated `traceparent`.
+- Each delegated or remote agent is a nested `agent.turn` span, linked to its parent via the propagated `traceparent`.
 
-The trace boundary is the executor turn: `HarnessAgentExecutor.execute` opens the `agent.turn` span and stamps the session id from `context_id`, the task id, the agent name, and the turn kind (user, autonomous wake, compaction, or delegated). The executor is a plain coroutine, so the span safely wraps its whole body via `start_as_current_span`. Inside the runtime's `stream()` — an async generator, where `start_as_current_span` across a `yield` would corrupt the context stack — generation and tool spans are opened with `start_span` (never made "current") and ended explicitly; they still parent to the current turn span, without touching the async context. Sub-agent turns (local and remote) nest under their parent via the propagated `traceparent`, so a delegation is observable end to end in one trace.
+The trace boundary is the executor turn: `HarnessAgentExecutor.execute` opens the `agent.turn` span and stamps the session id from `context_id`, the task id, the agent name, and the turn kind (user, autonomous wake, compaction, or delegated). The executor is a plain coroutine, so the span safely wraps its whole body via `start_as_current_span`. Inside the runtime's `stream()` — an async generator, where `start_as_current_span` across a `yield` would corrupt the context stack — generation and tool spans are opened with `start_span` (never made "current") and ended explicitly; they still parent to the current turn span, without touching the async context. Delegated agent turns (local and remote) nest under their parent via the propagated `traceparent`, so a delegation is observable end to end in one trace.
 
 ### Trace context across the A2A wire
 
@@ -32,7 +32,7 @@ During an `input-required` pause the executor coroutine is parked awaiting the r
 
 ### Nesting across task boundaries
 
-Sub‑agents run as separate asyncio tasks and, for remote agents, on a different server entirely, so OTEL context does not flow to them implicitly. Nesting therefore rides the propagated `traceparent`: a delegation stamps the current turn's `traceparent` into the message metadata, and the child turn opens its span with that as parent. The same mechanism works identically for local (in‑process) and remote sub‑agents.
+Delegated agents run as separate asyncio tasks and, for remote agents, on a different server entirely, so OTEL context does not flow to them implicitly. Nesting therefore rides the propagated `traceparent`: a delegation stamps the current turn's `traceparent` into the message metadata, and the child turn opens its span with that as parent. The same mechanism works identically for local (in‑process) and remote delegated agents.
 
 ## Where it plugs in
 
@@ -69,14 +69,14 @@ Telemetry is a harness‑level egress. Because a harness can serve multiple clie
 ## Build order
 
 1. Core traces: `telemetry.py`, the config and no‑op path, the turn span with usage attributes, session grouping.
-2. `traceparent` propagation across local and remote delegations, so sub‑agent turns nest.
+2. `traceparent` propagation across local and remote delegations, so agent turns nest.
 3. Optional prompt/completion body capture, routed through a maintained scrubbing library.
 4. Optional latency/cost histograms on top of the token counters.
 5. The Settings → Observability toggle.
 
 ## Testing
 
-In CI we export against a local OTLP collector (deterministic, no SaaS) and assert the span tree shape, session grouping, and usage attributes. A context‑propagation test confirms a delegated sub‑agent's spans nest under the parent turn rather than as orphan roots. A disabled‑path test confirms zero exporter calls and negligible overhead when telemetry is off. Optionally we verify manually against a self‑hosted Langfuse and against Phoenix, to prove the "any OTLP backend" claim.
+In CI we export against a local OTLP collector (deterministic, no SaaS) and assert the span tree shape, session grouping, and usage attributes. A context‑propagation test confirms a delegated agent's spans nest under the parent turn rather than as orphan roots. A disabled‑path test confirms zero exporter calls and negligible overhead when telemetry is off. Optionally we verify manually against a self‑hosted Langfuse and against Phoenix, to prove the "any OTLP backend" claim.
 
 ## Recommendation
 

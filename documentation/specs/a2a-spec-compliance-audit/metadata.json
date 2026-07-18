@@ -16,7 +16,7 @@
       "title": "A2A Specification Compliance Audit: Daisy Harness",
       "kind": "audit",
       "created": "2026-07-16T13:26:44Z",
-      "updated": "2026-07-16T13:26:44Z"
+      "updated": "2026-07-18T19:18:51Z"
     },
     {
       "path": "plans/external-agents.md",
@@ -30,21 +30,21 @@
       "title": "User-Capturable Telemetry via OpenTelemetry",
       "kind": "plan",
       "created": "2026-07-17T17:44:00Z",
-      "updated": "2026-07-17T21:17:26Z"
+      "updated": "2026-07-18T19:18:51Z"
     },
     {
       "path": "plans/input-required.md",
       "title": "Durable, Segment-Based input-required",
       "kind": "plan",
       "created": "2026-07-18T11:59:20Z",
-      "updated": "2026-07-18T17:27:00Z"
+      "updated": "2026-07-18T19:18:51Z"
     },
     {
-      "path": "plans/sub-agent-permissions.md",
-      "title": "Sub-Agent Permissions and Propagated Human-in-the-Loop",
+      "path": "plans/delegated-agent-permissions.md",
+      "title": "Delegated-Agent Permissions and Propagated Human-in-the-Loop",
       "kind": "plan",
       "created": "2026-07-18T14:27:02Z",
-      "updated": "2026-07-18T17:27:00Z"
+      "updated": "2026-07-18T19:18:51Z"
     }
   ],
   "generatedAt": "2026-07-18T14:27:02Z"

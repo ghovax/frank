@@ -815,7 +815,7 @@ class BashToolConfiguration(BaseModel):
 
     def evaluate_permission(self, command: str, unmatched: str = "allow") -> str:
         """The configured decision for ``command``. ``unmatched`` is returned when no
-        pattern matches — "allow" for a normal turn, but "ask" for a sub-agent under the
+        pattern matches — "allow" for a normal turn, but "ask" for a delegated agent under the
         interactive policy, so an unlisted command escalates rather than running."""
         segments = self._extract_segments(command)
         best_match_length = 0

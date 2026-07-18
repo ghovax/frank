@@ -282,10 +282,10 @@ function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string
   };
 }
 
-// A sub-agent parked on a human-in-the-loop gate: flip the tool part that raised it
+// A delegated agent parked on a human-in-the-loop gate: flip the tool part that raised it
 // to `input_required` and attach the prompt, so the agents-panel card renders the same
 // inline approve/deny (or question) UI as the root transcript. The resolve routes by
-// request id to the parked sub-agent runtime, which resumes in place on the answer.
+// request id to the parked delegated agent runtime, which resumes in place on the answer.
 function applyAgentToolPermission(step: AgentStep, toolCallId: string, permission: ToolPermission): AgentStep {
   if (!toolCallId) return step;
   return {

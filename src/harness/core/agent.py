@@ -224,7 +224,7 @@ class StreamEvent:
         USAGE = "usage"
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
-        # A sub-agent's human-in-the-loop request. A delegated turn does not durably
+        # A delegated agent's human-in-the-loop request. A delegated turn does not durably
         # suspend (it is an ephemeral, in-process background job); instead it emits this,
         # which the executor relays to the user through the agents panel, and parks in
         # place awaiting the decision — so the same continuous stream carries the prompt
@@ -562,7 +562,7 @@ def _build_tools(
         read_task_tool,
         ask_agent_tool,
         respond_agent_tool,
-        # A sub-agent can ask the user directly: the question parks the delegated turn and
+        # A delegated agent can ask the user directly: the question parks the delegated turn and
         # is propagated to the panel/overlay like any human-in-the-loop gate, then resumes
         # on the answer. (open_artifact stays top-level only — it drives the user's UI.)
         ask_user_tool,
@@ -897,7 +897,7 @@ class AgentRuntime:
         # (e.g. a shipped `opencode/*` default after the session switched to the
         # ChatGPT subscription) — building its client anyway yields a model that
         # 401s on its first call, so a spawned agent dies the instant it starts.
-        # Fall back to the default agent's authorized model so the sub-agent inherits
+        # Fall back to the default agent's authorized model so the delegated agent inherits
         # the session's working model instead. This is a no-op for the default agent
         # itself (its model is already what we'd fall back to).
         if not model_is_authorized(effective_model, global_configuration):
@@ -982,12 +982,12 @@ class AgentRuntime:
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
         self._auto_permissions: bool = agent_configuration.permission_mode == "auto"
         self._session_permission_mode: str = "default"
-        # A sub-agent parks on these while its human-in-the-loop request is escalated to
+        # A delegated agent parks on these while its human-in-the-loop request is escalated to
         # the user; the resolver (native REST or an A2A input_response) completes them.
         self._agent_permission_futures: dict[str, asyncio.Future] = {}
-        # Durably persists a sub-agent's 'always allow' as allow-patterns on its own agent
+        # Durably persists a delegated agent's 'always allow' as allow-patterns on its own agent
         # profile's configuration: async (agent_identifier, project_directory, patterns).
-        # Injected by the executor; a sub-agent has no session to remember the rule in.
+        # Injected by the executor; a delegated agent has no session to remember the rule in.
         self._persist_agent_allow_patterns: Optional[Callable[..., Any]] = None
         # When set, agents (spawn_agent calls) are invoked
         # through this delegate — an A2A call to the target agent's served
@@ -1339,7 +1339,7 @@ class AgentRuntime:
         return self._agent_configuration.permission_mode
 
     def resolve_agent_permission(self, request_id: str, value: Any) -> bool:
-        """Complete a sub-agent's parked human-in-the-loop request with the user's answer
+        """Complete a delegated agent's parked human-in-the-loop request with the user's answer
         (a decision string for a permission, or the answers / decline for a question).
         Returns whether a matching pending request was found."""
         future = self._agent_permission_futures.get(request_id)
@@ -1348,10 +1348,10 @@ class AgentRuntime:
             return True
         return False
 
-    def set_sub_agent_policy(self, mode: str) -> None:
-        """Apply a sub-agent's effective permission policy. Unlike ``set_permission_mode``,
+    def set_delegated_policy(self, mode: str) -> None:
+        """Apply a delegated agent's effective permission policy. Unlike ``set_permission_mode``,
         "default" means the interactive (ask) policy — never the agent's own configured
-        mode — and ``bypass`` is never applied: a sub-agent can never run unattended. Under
+        mode — and ``bypass`` is never applied: a delegated agent can never run unattended. Under
         the interactive policy an unmatched command asks (escalates to the user)."""
         mode = mode if mode in ("default", "read_only", "auto") else "default"
         self._session_permission_mode = mode
@@ -1368,7 +1368,7 @@ class AgentRuntime:
         self._cancel_delegated = cancel_delegated
 
     def set_persist_agent_allow_patterns(self, persist: Callable[..., Any]) -> None:
-        """Install the callback that durably records a sub-agent's 'always allow' as
+        """Install the callback that durably records a delegated agent's 'always allow' as
         allow-patterns on its agent profile's configuration."""
         self._persist_agent_allow_patterns = persist
 
@@ -1468,7 +1468,7 @@ class AgentRuntime:
         """The interactive ("manual") permission policy: not auto-classifying, not
         read-only, not bypass. Under it, a command the card does not explicitly allow is
         asked (escalated to the user) rather than run — for the top-level agent and a
-        sub-agent alike. Auto self-classifies, read-only hard-blocks mutations, and bypass
+        delegated agent alike. Auto self-classifies, read-only hard-blocks mutations, and bypass
         allows everything, so none of those ask on an unmatched command."""
         return not self._auto_permissions and not self._read_only and not self._bypass_permissions
 
@@ -1572,11 +1572,11 @@ class AgentRuntime:
                 self._session_allow_patterns.append(pattern)
 
     async def _persist_bash_allow_rule(self, command: str) -> None:
-        """A sub-agent's 'always allow': a sub-agent has no durable session to remember
+        """A delegated agent's 'always allow': a delegated agent has no durable session to remember
         the rule in, so its authority is its card — persist the distilled patterns as
         ``allow`` on this agent profile's configuration (best effort), so every future
         spawn of the profile inherits them. Also add them to the live session allowlist so
-        the rest of this sub-agent's turn stops asking, without waiting for the reload."""
+        the rest of this delegated agent's turn stops asking, without waiting for the reload."""
         patterns = await self._distill_bash_allow_patterns(command)
         if not patterns:
             return
@@ -2395,7 +2395,7 @@ class AgentRuntime:
                     )
                     return
                 if pending:
-                    # A sub-agent escalates each gate to the user and parks in place until
+                    # A delegated agent escalates each gate to the user and parks in place until
                     # it is answered, so the parent's relay carries the prompt and the
                     # resumed work to the panel on this one continuous stream.
                     loop = asyncio.get_running_loop()
@@ -2480,7 +2480,7 @@ class AgentRuntime:
 
     def _authorized_default_model(self) -> str:
         """The default agent's model when we hold credentials for it — the fallback a
-        sub-agent uses when its own configured provider isn't authorized. Returns ""
+        delegated agent uses when its own configured provider isn't authorized. Returns ""
         when even the default isn't authorized (nothing better to offer), leaving the
         original model in place."""
         try:
@@ -2906,7 +2906,7 @@ class AgentRuntime:
     def _apply_allow_always(self, decisions: dict[str, _ResolvedToolDecision]) -> None:
         """Apply the durable side effects of an 'always allow' answer: a bash allow-rule
         (scoped to the session for a top-level turn, persisted to the profile's config for
-        a sub-agent, which has no durable session), or an egress agent added to the
+        a delegated agent, which has no durable session), or an egress agent added to the
         per-session approved set."""
         for decision in decisions.values():
             if decision.allow_always_bash_command:
@@ -3031,9 +3031,9 @@ class AgentRuntime:
                 sandbox_message = (
                     f"Sandbox approval required: this command reads outside the working directory ({paths})."
                 )
-                # A sub-agent escalates a sandbox read to the user like any other gate
+                # A delegated agent escalates a sandbox read to the user like any other gate
                 # (it parks in place and resumes on the answer), rather than hard-denying:
-                # every human-in-the-loop interrupt a sub-agent raises reaches the user.
+                # every human-in-the-loop interrupt a delegated agent raises reaches the user.
                 permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
                 if policy.auto_permissions and permission_decision != "deny":
                     decision = await self._classify_permission(
@@ -3742,8 +3742,8 @@ class AgentRuntime:
             agent_read_only = tool_arguments.get("read_only", None)
             if isinstance(agent_read_only, str):
                 agent_read_only = agent_read_only.lower() == "true"
-            # The caller's approval grant for this sub-agent; bypass is not accepted here,
-            # and the executor combines it with the sub-agent card and clamps it.
+            # The caller's approval grant for this delegated agent; bypass is not accepted here,
+            # and the executor combines it with the delegated agent card and clamps it.
             agent_permission_mode = str(tool_arguments.get("permission_mode", "") or "")
             if agent_permission_mode not in ("default", "auto", "read_only"):
                 agent_permission_mode = ""

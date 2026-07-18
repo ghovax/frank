@@ -124,15 +124,15 @@ def _harness_metadata_envelope(fields: dict) -> dict:
     return {DAISY_METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
 
 
-# Restrictiveness of a permission mode, lowest to highest. A sub-agent runs at the more
+# Restrictiveness of a permission mode, lowest to highest. A delegated agent runs at the more
 # restrictive of its own card and the caller's grant, and never at bypass.
 _MODE_RESTRICTIVENESS = {"bypass": 0, "auto": 1, "default": 2, "read_only": 3}
 
 
-def _effective_sub_agent_mode(caller: str, card: str) -> str:
-    """A sub-agent's effective permission policy: the more restrictive of the caller's
-    grant and the sub-agent card's own mode, clamped so it can never be bypass (a
-    sub-agent never runs unattended). An unknown/empty input is ignored; with neither the
+def _effective_delegated_mode(caller: str, card: str) -> str:
+    """A delegated agent's effective permission policy: the more restrictive of the caller's
+    grant and the delegated agent card's own mode, clamped so it can never be bypass (a
+    delegated agent never runs unattended). An unknown/empty input is ignored; with neither the
     interactive ``default`` policy applies."""
     candidates = [mode for mode in (caller, card) if mode in _MODE_RESTRICTIVENESS]
     chosen = max(candidates, key=_MODE_RESTRICTIVENESS.get) if candidates else "default"
@@ -153,8 +153,8 @@ _PROMPTS = PromptLoader(Path(__file__).parent / "prompts")
 _RELAYABLE_CHILD_KINDS = frozenset({
     "text", "thinking", "thinking_done", "status",
     "tool_call", "tool_result", "mcp_event", "group_started", "error",
-    # A sub-agent's human-in-the-loop gate is surfaced to the user through the panel:
-    # the prompt is relayed so the user can approve or deny it, and the sub-agent
+    # A delegated agent's human-in-the-loop gate is surfaced to the user through the panel:
+    # the prompt is relayed so the user can approve or deny it, and the delegated agent
     # resumes in place on the answer (routed back by request id).
     "permission_request", "question",
 })
@@ -727,9 +727,9 @@ class HarnessAgentExecutor(AgentExecutor):
         # best-effort — the server owns the queue, worker, and history.db, so the runtime
         # stays free of any direct database or git dependency.
         self._capture_artifacts = capture_artifacts
-        # Durably records a sub-agent's 'always allow' as allow-patterns on its agent
+        # Durably records a delegated agent's 'always allow' as allow-patterns on its agent
         # profile's configuration (the server owns the on-disk config format), so a
-        # sub-agent's approval outlives its ephemeral runtime.
+        # delegated agent's approval outlives its ephemeral runtime.
         self._persist_agent_allow_patterns = persist_agent_allow_patterns
         # All per-context (per-session) state — runtime, turn lock, resume pump, and the
         # running/aborted/pending-reset flags — as one _ContextState each. Created lazily
@@ -1449,12 +1449,12 @@ class HarnessAgentExecutor(AgentExecutor):
                     is_agent=True,
                     locations=sub_locations,
                 )
-                # A sub-agent's effective policy is the more restrictive of the caller's
+                # A delegated agent's effective policy is the more restrictive of the caller's
                 # grant and its own card, clamped away from bypass, with the interactive
                 # policy asking for anything the card does not explicitly allow. Enforced
-                # here, the one place, so a sub-agent can never run looser than intended.
-                runtime.set_sub_agent_policy(
-                    _effective_sub_agent_mode(permission_mode, runtime.configured_permission_mode)
+                # here, the one place, so a delegated agent can never run looser than intended.
+                runtime.set_delegated_policy(
+                    _effective_delegated_mode(permission_mode, runtime.configured_permission_mode)
                 )
                 # The read_only spawn flag only ever adds read-only on top; it can never
                 # lift a read-only that the effective policy already mandated.
@@ -1705,14 +1705,14 @@ class HarnessAgentExecutor(AgentExecutor):
                     )
                     return
                 elif kind == StreamEvent.Type.PERMISSION_REQUEST:
-                    # A sub-agent parked on a gate. Surface it as a permission_request part,
-                    # relayed to the parent's panel with this sub-agent's lane path, and the
+                    # A delegated agent parked on a gate. Surface it as a permission_request part,
+                    # relayed to the parent's panel with this delegated agent's lane path, and the
                     # runtime resumes in place once the user answers — so this same stream
                     # carries the prompt and the resumed work. Deliberately NOT flagged into
                     # the durable awaiting-input marker: that marker is coupled to the
                     # durable input-required task lifecycle (set on SUSPENDED, cleared on
                     # resolve, rehydrated from the database on restart), and a parked
-                    # sub-agent is ephemeral — it is failed, not preserved, on restart.
+                    # delegated agent is ephemeral — it is failed, not preserved, on restart.
                     await flush_stream_buffers()
                     await emit(_data_part(
                         "permission_request", request_id=data.get("request_id", ""),
@@ -1978,8 +1978,8 @@ class AgentRegistry:
 
             asyncio.create_task(drive())
             return True
-        # No durable (top-level) record owns this request: it is a sub-agent parked in
-        # place awaiting the user. Resolve its in-memory future on the sub-agent's runtime,
+        # No durable (top-level) record owns this request: it is a delegated agent parked in
+        # place awaiting the user. Resolve its in-memory future on the delegated agent's runtime,
         # which continues on its own live delegation stream.
         if declined:
             value: Any = {"__declined__": True}
@@ -2391,8 +2391,8 @@ class AgentRegistry:
                 turn_fields[Metadata.AGENT_LANE_STEP_ID] = lane_step_id
             if read_only is not None:
                 turn_fields[Metadata.READ_ONLY] = bool(read_only)
-            # The caller's approval grant for this sub-agent; the executor combines it with
-            # the sub-agent card and clamps away bypass before the turn runs.
+            # The caller's approval grant for this delegated agent; the executor combines it with
+            # the delegated agent card and clamps away bypass before the turn runs.
             if permission_mode:
                 turn_fields[Metadata.PERMISSION_MODE] = permission_mode
             if project_directory:

@@ -1825,8 +1825,8 @@ def _apply_agent_configuration_update(sidecar: dict[str, Any], request: "AgentCo
 
 
 async def _persist_agent_allow_patterns(agent_identifier: str, project_directory: str, patterns: list[str]) -> None:
-    """Durably add allow-patterns to a sub-agent profile's configured bash permissions,
-    so a sub-agent's 'always allow' outlives its ephemeral runtime and every future spawn
+    """Durably add allow-patterns to a delegated agent profile's configured bash permissions,
+    so a delegated agent's 'always allow' outlives its ephemeral runtime and every future spawn
     of the profile inherits it. Best effort; an existing decision for a pattern is never
     overridden (a deliberate deny/ask is not silently flipped to allow)."""
     if not patterns or _global_configuration is None:
@@ -1859,7 +1859,7 @@ async def _persist_agent_allow_patterns(agent_identifier: str, project_directory
 
     if not await asyncio.to_thread(_write):
         return
-    # The current sub-agent already runs the command (its live session allowlist covers
+    # The current delegated agent already runs the command (its live session allowlist covers
     # it); this makes the change take effect for future spawns and the discovery cards.
     if agent_identifier in _executors:
         _executors[agent_identifier].reset_runtimes()
