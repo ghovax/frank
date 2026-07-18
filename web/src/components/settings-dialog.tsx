@@ -109,7 +109,7 @@ export function SettingsDialog({
   onSandboxEnabledChange?: (enabled: boolean) => void | Promise<void>;
   onWorkspaceStrategyChange?: (strategy: WorkspaceStrategyValue) => void | Promise<void>;
 }) {
-  const t = useTranslations("SettingsDialog");
+  const translation = useTranslations("SettingsDialog");
   const tc = useTranslations("Common");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(livePermissionMode);
   const [savedPermissionMode, setSavedPermissionMode] = useState<PermissionMode>(livePermissionMode);
@@ -362,7 +362,7 @@ export function SettingsDialog({
         if (cancelled) return;
         setAgentConfiguration(null);
         setSavedAgentConfiguration(null);
-        setAgentError(error instanceof Error ? error.message : t("loadAgentError"));
+        setAgentError(error instanceof Error ? error.message : translation("loadAgentError"));
       })
       .finally(() => {
         if (!cancelled) setLoadedAgentKey(agentRequestKey);
@@ -370,7 +370,7 @@ export function SettingsDialog({
     return () => {
       cancelled = true;
     };
-  }, [agentRequestKey, settingsAgent, workingDirectory, t]);
+  }, [agentRequestKey, settingsAgent, workingDirectory, translation]);
 
   async function handleSave() {
     setSaving(true);
@@ -493,10 +493,10 @@ export function SettingsDialog({
         <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
           <Alert.Indicator />
           <Alert.Content flex={1} minW={0}>
-            <Alert.Description fontSize="xs">{t("fullDiskAccessBody")}</Alert.Description>
+            <Alert.Description fontSize="xs">{translation("fullDiskAccessBody")}</Alert.Description>
           </Alert.Content>
           <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => void openFullDiskAccessSettings()}>
-            {t("grantFullDiskAccess")}
+            {translation("grantFullDiskAccess")}
           </Button>
         </Alert.Root>
       )}
@@ -504,14 +504,14 @@ export function SettingsDialog({
         <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
           <Alert.Indicator />
           <Alert.Content flex={1} minW={0}>
-            <Alert.Description fontSize="xs">{t("computerControlBody")}</Alert.Description>
+            <Alert.Description fontSize="xs">{translation("computerControlBody")}</Alert.Description>
           </Alert.Content>
           <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
             try { localStorage.setItem("daisy:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
             setAwaitingGrantReturn(true);
             void openAccessibilitySettings();
           }}>
-            {t("grantAccessibility")}
+            {translation("grantAccessibility")}
           </Button>
         </Alert.Root>
       )}
@@ -530,56 +530,56 @@ export function SettingsDialog({
 
   const pages: SettingsPage[] = [
     {
-      id: "general", label: t("tabGeneral"), icon: <LuKeyRound size={14} />,
+      id: "general", label: translation("tabGeneral"), icon: <LuKeyRound size={14} />,
       sections: [
         {
-          title: t("runtime"),
+          title: translation("runtime"),
           rows: [
-            { key: "approvalMode", title: t("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
-            { key: "filesystemProtection", title: t("filesystemProtection"), control: <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} /> },
-            { key: "gitWorkspace", title: t("gitWorkspace"), control: <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} /> },
-            { key: "compaction", title: t("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
-            { key: "userContext", title: t("userContext"), description: t("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
-            { key: "computerControl", title: t("computerControl"), description: t("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
+            { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
+            { key: "filesystemProtection", title: translation("filesystemProtection"), control: <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} /> },
+            { key: "gitWorkspace", title: translation("gitWorkspace"), control: <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} /> },
+            { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
+            { key: "userContext", title: translation("userContext"), description: translation("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
+            { key: "computerControl", title: translation("computerControl"), description: translation("computerControlHint"), control: <ComputerControlToggleControl enabled={computerControlEnabled} onChange={accessibilityGranted ? setComputerControlEnabled : undefined} /> },
           ],
           block: grantAlerts,
         },
         {
-          title: t("appearance"),
+          title: translation("appearance"),
           rows: [
-            { key: "theme", title: t("theme.label"), control: (
-              <Box w="200px"><SimpleSelect items={[{ value: "system", label: t("theme.system") }, { value: "light", label: t("theme.light") }, { value: "dark", label: t("theme.dark") }]} value={appTheme} onValueChange={(next) => setAppTheme(next as "system" | "light" | "dark")} /></Box>
+            { key: "theme", title: translation("theme.label"), control: (
+              <Box w="200px"><SimpleSelect items={[{ value: "system", label: translation("theme.system") }, { value: "light", label: translation("theme.light") }, { value: "dark", label: translation("theme.dark") }]} value={appTheme} onValueChange={(next) => setAppTheme(next as "system" | "light" | "dark")} /></Box>
             ) },
-            { key: "language", title: t("language.label"), control: (
-              <Box w="200px"><SimpleSelect items={LOCALES.map((code) => ({ value: code, label: t(`language.${code}`) }))} value={locale} onValueChange={(next) => setLocale(next as Locale)} /></Box>
+            { key: "language", title: translation("language.label"), control: (
+              <Box w="200px"><SimpleSelect items={LOCALES.map((code) => ({ value: code, label: translation(`language.${code}`) }))} value={locale} onValueChange={(next) => setLocale(next as Locale)} /></Box>
             ) },
           ],
         },
         {
-          title: t("apiKeys"),
+          title: translation("apiKeys"),
           rows: [
-            secretRow(t("exaApiKey"), "xxxxxxxx-...", exaApiKey, setExaApiKey),
-            secretRow(t("composioApiKey"), "cmp_...", composioApiKey, setComposioApiKey),
-            secretRow(t("jinaApiKey"), "jina_...", jinaApiKey, setJinaApiKey, t("jinaApiKeyHint")),
-            secretRow(t("firecrawlApiKey"), "fc-...", firecrawlApiKey, setFirecrawlApiKey, t("firecrawlApiKeyHint")),
-            secretRow(t("proxyServer"), "http://user:pass@host:port", webFetchProxyUrl, setWebFetchProxyUrl, t("proxyServerHint")),
+            secretRow(translation("exaApiKey"), "xxxxxxxx-...", exaApiKey, setExaApiKey),
+            secretRow(translation("composioApiKey"), "cmp_...", composioApiKey, setComposioApiKey),
+            secretRow(translation("jinaApiKey"), "jina_...", jinaApiKey, setJinaApiKey, translation("jinaApiKeyHint")),
+            secretRow(translation("firecrawlApiKey"), "fc-...", firecrawlApiKey, setFirecrawlApiKey, translation("firecrawlApiKeyHint")),
+            secretRow(translation("proxyServer"), "http://user:pass@host:port", webFetchProxyUrl, setWebFetchProxyUrl, translation("proxyServerHint")),
           ],
         },
-        { title: t("modelProviders"), rows: [], block: <Box maxW="520px"><ChatGPTAuthControl /></Box> },
+        { title: translation("modelProviders"), rows: [], block: <Box maxW="520px"><ChatGPTAuthControl /></Box> },
       ],
     },
     ...(projectId ? [{
-      id: "locations" as SettingsSection, label: t("tabLocations"), icon: <LuServer size={14} />,
-      sections: [{ title: t("locations"), rows: [], block: <ProjectLocationsPanel projectId={projectId} /> }],
+      id: "locations" as SettingsSection, label: translation("tabLocations"), icon: <LuServer size={14} />,
+      sections: [{ title: translation("locations"), rows: [], block: <ProjectLocationsPanel projectId={projectId} /> }],
     }] : []),
     {
-      id: "agents", label: t("tabAgents"), icon: <LuUsers size={14} />,
+      id: "agents", label: translation("tabAgents"), icon: <LuUsers size={14} />,
       sections: [
         {
-          title: t("agent"),
-          rows: [{ key: "profile", title: t("profile"), control: <Box w="280px"><SimpleSelect items={agentItems} value={settingsAgent} onValueChange={setSettingsAgent} placeholder={t("chooseAgent")} /></Box> }],
+          title: translation("agent"),
+          rows: [{ key: "profile", title: translation("profile"), control: <Box w="280px"><SimpleSelect items={agentItems} value={settingsAgent} onValueChange={setSettingsAgent} placeholder={translation("chooseAgent")} /></Box> }],
           block: agentLoading ? (
-            <Flex align="center" gap={2} color="fg.muted" fontSize="sm" py={3}><Spinner size="xs" />{t("loadingAgentConfiguration")}</Flex>
+            <Flex align="center" gap={2} color="fg.muted" fontSize="sm" py={3}><Spinner size="xs" />{translation("loadingAgentConfiguration")}</Flex>
           ) : agentError ? (
             <Text fontSize="sm" color="red.fg">{agentError}</Text>
           ) : agentConfiguration ? (
@@ -590,13 +590,13 @@ export function SettingsDialog({
       ],
     },
     {
-      id: "connection", label: t("tabConnection"), icon: <LuPlug size={14} />,
+      id: "connection", label: translation("tabConnection"), icon: <LuPlug size={14} />,
       sections: [{
         rows: [],
         block: (
           <Flex direction="column" gap={4}>
             <Box>
-              <Text textStyle="fieldLabel" mb={1}>{t("currentConnection")}</Text>
+              <Text textStyle="fieldLabel" mb={1}>{translation("currentConnection")}</Text>
               <ConnectionSwitcher currentTargetId={currentConnectionId} onConnectionChange={onConnectionChange} onOpenConnectionSettings={() => undefined} />
             </Box>
             <ConnectionSettings key={connectionResetToken} variant="dialog" currentTargetId={currentConnectionId} onDirtyChange={setConnectionDirty} onConnected={(target) => { onConnectionChange?.(target); onOpenChange(false); }} />
@@ -654,8 +654,8 @@ export function SettingsDialog({
                         size="xs"
                         h="full"
                         px={0}
-                        placeholder={t("searchPlaceholder")}
-                        aria-label={t("searchPlaceholder")}
+                        placeholder={translation("searchPlaceholder")}
+                        aria-label={translation("searchPlaceholder")}
                         value={settingsSearch}
                         onChange={(event) => setSettingsSearch(event.target.value)}
                         _focusVisible={{ boxShadow: "none", outline: "none" }}
@@ -663,7 +663,7 @@ export function SettingsDialog({
                     </Flex>
                   </Box>
                   <Box flex={1} minH={0} overflowY="auto" px={3} pb={3}>
-                    <Text pb={2} textStyle="sectionLabel">{t("title")}</Text>
+                    <Text pb={2} textStyle="sectionLabel">{translation("title")}</Text>
                     <Flex direction="column" gap={1}>
                       {pages.map((page) => {
                         const active = !searching && page.id === activePage.id;
@@ -706,8 +706,8 @@ export function SettingsDialog({
                               <LuSearch />
                             </EmptyState.Indicator>
                             <VStack gap={0}>
-                              <EmptyState.Title fontSize="sm">{t("searchNoResultsTitle")}</EmptyState.Title>
-                              <EmptyState.Description fontSize="xs">{t("searchNoResults", { query: settingsSearch })}</EmptyState.Description>
+                              <EmptyState.Title fontSize="sm">{translation("searchNoResultsTitle")}</EmptyState.Title>
+                              <EmptyState.Description fontSize="xs">{translation("searchNoResults", { query: settingsSearch })}</EmptyState.Description>
                             </VStack>
                           </EmptyState.Content>
                         </EmptyState.Root>
@@ -765,25 +765,25 @@ export function SettingsDialog({
     <ConfirmDialog
       open={discardConfirmOpen}
       onOpenChange={setDiscardConfirmOpen}
-      title={t("discardTitle")}
-      cancelLabel={t("keepEditing")}
-      confirmLabel={t("discard")}
+      title={translation("discardTitle")}
+      cancelLabel={translation("keepEditing")}
+      confirmLabel={translation("discard")}
       danger
       maxW="420px"
       onConfirm={discardChangesAndClose}
     >
-      {t("discardBody")}
+      {translation("discardBody")}
     </ConfirmDialog>
     <ConfirmDialog
       open={restartPromptOpen}
       onOpenChange={setRestartPromptOpen}
-      title={t("restartTitle")}
-      cancelLabel={t("restartLater")}
-      confirmLabel={t("restartConfirm")}
+      title={translation("restartTitle")}
+      cancelLabel={translation("restartLater")}
+      confirmLabel={translation("restartConfirm")}
       maxW="420px"
       onConfirm={() => void restartApp()}
     >
-      {t("restartBody")}
+      {translation("restartBody")}
     </ConfirmDialog>
     </>
   );
@@ -831,14 +831,14 @@ function AgentPermissionsEditor({
   recentModels: RecentModel[];
   onChange: (configuration: AgentConfiguration) => void;
 }) {
-  const t = useTranslations("SettingsDialog");
+  const translation = useTranslations("SettingsDialog");
   const ruleDecisionItems = useMemo(
     () => [
-      { label: t("ruleAllow"), value: "allow" },
-      { label: t("ruleAsk"), value: "ask" },
-      { label: t("ruleDeny"), value: "deny" },
+      { label: translation("ruleAllow"), value: "allow" },
+      { label: translation("ruleAsk"), value: "ask" },
+      { label: translation("ruleDeny"), value: "deny" },
     ],
-    [t],
+    [translation],
   );
   const rules = Object.entries(configuration.bash.permissions).sort(([leftPattern], [rightPattern]) => leftPattern.localeCompare(rightPattern));
   const toolsEnabled = new Set(configuration.tools_enabled);
@@ -901,9 +901,9 @@ function AgentPermissionsEditor({
 
   return (
     <Flex direction="column" gap={4}>
-      <SettingsGroup title={t("defaults")}>
+      <SettingsGroup title={translation("defaults")}>
         <Flex gap={3} wrap="wrap" align="flex-start">
-          <SettingField label={t("configuredModel")}>
+          <SettingField label={translation("configuredModel")}>
             <Box maxW="520px">
               <ModelSelect
                 models={models}
@@ -914,7 +914,7 @@ function AgentPermissionsEditor({
               />
             </Box>
           </SettingField>
-          <SettingField label={t("permissionMode")}>
+          <SettingField label={translation("permissionMode")}>
             <PermissionModeControl
               value={configuration.permission_mode}
               onChange={(permissionModeValue) => updateConfiguration({ permission_mode: permissionModeValue })}
@@ -922,9 +922,9 @@ function AgentPermissionsEditor({
           </SettingField>
         </Flex>
       </SettingsGroup>
-      <SettingsGroup title={t("tools")}>
+      <SettingsGroup title={translation("tools")}>
         <Flex gap={3} wrap="wrap" align="flex-start">
-          <SettingField label={t("bash")}>
+          <SettingField label={translation("bash")}>
             <Flex gap={2} minW={0} wrap="wrap">
               <Button
                 h={8}
@@ -933,7 +933,7 @@ function AgentPermissionsEditor({
                 colorPalette={configuration.bash.enabled ? "green" : "gray"}
                 onClick={() => updateBash({ enabled: !configuration.bash.enabled })}
               >
-                {configuration.bash.enabled ? t("enabled") : t("disabled")}
+                {configuration.bash.enabled ? translation("enabled") : translation("disabled")}
               </Button>
               <Button
                 h={8}
@@ -942,11 +942,11 @@ function AgentPermissionsEditor({
                 colorPalette={configuration.bash.background_allowed ? "blue" : "gray"}
                 onClick={() => updateBash({ background_allowed: !configuration.bash.background_allowed })}
               >
-                {configuration.bash.background_allowed ? t("backgroundAllowed") : t("backgroundBlocked")}
+                {configuration.bash.background_allowed ? translation("backgroundAllowed") : translation("backgroundBlocked")}
               </Button>
             </Flex>
           </SettingField>
-          <SettingField label={t("spawnAgents")}>
+          <SettingField label={translation("spawnAgents")}>
             <Button
               h={8}
               justifyContent="flex-start"
@@ -954,13 +954,13 @@ function AgentPermissionsEditor({
               colorPalette={configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? "purple" : "gray"}
               onClick={() => updateSpawnAgent(!(configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent")))}
             >
-              {configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? t("enabled") : t("disabled")}
+              {configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? translation("enabled") : translation("disabled")}
             </Button>
           </SettingField>
         </Flex>
       </SettingsGroup>
-      <SettingsGroup title={t("commandPermissions")}>
-        <SettingField label={t("rules")}>
+      <SettingsGroup title={translation("commandPermissions")}>
+        <SettingField label={translation("rules")}>
           <Flex direction="column" gap={2} minW={0}>
             {rules.map(([pattern, decision], ruleIndex) => (
               <Flex key={ruleIndex} gap={2} align="center" minW={0}>
@@ -978,7 +978,7 @@ function AgentPermissionsEditor({
                   />
                 </Box>
                 <IconButton
-                  aria-label={t("deleteRule", { pattern })}
+                  aria-label={translation("deleteRule", { pattern })}
                   variant="ghost"
                   colorPalette="red"
                   flexShrink={0}
@@ -990,7 +990,7 @@ function AgentPermissionsEditor({
             ))}
             <Button variant="outline" justifyContent="flex-start" onClick={addRule}>
               <LuPlus size={14} />
-              {t("addRule")}
+              {translation("addRule")}
             </Button>
           </Flex>
         </SettingField>
@@ -1014,7 +1014,7 @@ function SecretField({
   onChange: (value: string) => void;
   hideLabel?: boolean;
 }) {
-  const t = useTranslations("SettingsDialog");
+  const translation = useTranslations("SettingsDialog");
   const [visible, setVisible] = useState(false);
   return (
     <Box>
@@ -1034,7 +1034,7 @@ function SecretField({
           onChange={(event) => onChange(event.target.value)}
         />
         <IconButton
-          aria-label={visible ? t("hide") : t("show")}
+          aria-label={visible ? translation("hide") : translation("show")}
           variant="ghost"
           flexShrink={0}
           onClick={() => setVisible((current) => !current)}

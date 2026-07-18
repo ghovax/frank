@@ -8,11 +8,11 @@ type Translator = ReturnType<typeof useTranslations<"ChatGPTAuthControl">>;
 
 // The 5h/weekly split is not pinned to a fixed slot across accounts, so label a
 // window by its own length rather than trusting a "primary"/"secondary" position.
-function windowLabel(t: Translator, minutes: number): string {
-  if (minutes === 10080) return t("usageWeekly");
-  if (minutes % 1440 === 0) return t("usageDaysShort", { count: minutes / 1440 });
-  if (minutes % 60 === 0) return t("usageHoursShort", { count: minutes / 60 });
-  return t("usageMinutesShort", { count: minutes });
+function windowLabel(translation: Translator, minutes: number): string {
+  if (minutes === 10080) return translation("usageWeekly");
+  if (minutes % 1440 === 0) return translation("usageDaysShort", { count: minutes / 1440 });
+  if (minutes % 60 === 0) return translation("usageHoursShort", { count: minutes / 60 });
+  return translation("usageMinutesShort", { count: minutes });
 }
 
 function meterColor(percent: number): string {
@@ -30,7 +30,7 @@ function meterColor(percent: number): string {
  * stay in the one `ChatGPTAuthControl` namespace regardless of the host surface.
  */
 export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
-  const t = useTranslations("ChatGPTAuthControl");
+  const translation = useTranslations("ChatGPTAuthControl");
   // relativeTime owns the "in 3 hours" wording — locale-correct, rounded, and
   // pluralized — so the reset countdown is not hand-rolled from day/hour/minute
   // math. `useNow` supplies the reference point and re-renders it on an interval so
@@ -44,7 +44,7 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
   return (
     <Box>
       <Text textStyle="fieldLabel" mb={1.5}>
-        {t("usageTitle")}
+        {translation("usageTitle")}
       </Text>
       <Stack gap={2.5}>
         {windows.map((window) => {
@@ -59,10 +59,10 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
             <Box key={window.key}>
               <HStack justify="space-between" mb={1} gap={4}>
                 <Text fontSize="xs" fontWeight="medium">
-                  {windowLabel(t, window.window_minutes)}
+                  {windowLabel(translation, window.window_minutes)}
                 </Text>
                 <Text fontSize="xs" color="fg.muted">
-                  {t("usageUsedPercent", { percent: Math.round(percent) })}
+                  {translation("usageUsedPercent", { percent: Math.round(percent) })}
                 </Text>
               </HStack>
               <Box h="6px" bg="bg.muted" borderRadius="full" overflow="hidden">
@@ -77,7 +77,7 @@ export function ChatGPTUsageMeters({ usage }: { usage: ChatGPTUsage | null }) {
               {resets ? (
                 <HStack justify="space-between" mt={1} gap={4}>
                   <Text fontSize="xs" color="fg.subtle">
-                    {t("usageResetsLabel")}
+                    {translation("usageResetsLabel")}
                   </Text>
                   <Text fontSize="xs" color="fg.muted">
                     {resets}

@@ -154,7 +154,7 @@ function ContextUsageChip({
   tokenUsage?: TokenUsage | null;
   chatgptUsage?: ChatGPTUsage | null;
 }) {
-  const t = useTranslations("ChatInput");
+  const translation = useTranslations("ChatInput");
   if (!tokenUsage || tokenUsage.contextTokens <= 0) return null;
   const hasContext = tokenUsage.contextWindow > 0;
   const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
@@ -162,43 +162,43 @@ function ContextUsageChip({
   const tooltipContent = (
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg">
-        {t("sessionTotals")}
+        {translation("sessionTotals")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={t("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={t("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={t("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
         {tokenUsage.cacheReadTokens > 0 && (
-          <InlineField label={t("cacheReads")}><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("cacheReads")}><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
         )}
         {tokenUsage.reasoningTokens > 0 && (
-          <InlineField label={t("reasoning")}><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("reasoning")}><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
         )}
-        <InlineField label={t("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
+        <InlineField label={translation("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
       </Flex>
       {tokenUsage.agentTotalTokens > 0 && (
         <>
           <Separator my={2} />
           <Text fontWeight="semibold" mb={1} color="fg">
-            {t("agents")}
+            {translation("agents")}
           </Text>
           <Flex direction="column" ps={2} gap={1}>
-            <InlineField label={t("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={t("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={t("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={t("modelCalls")}><Text>{tokenUsage.agentModelCalls}</Text></InlineField>
+            <InlineField label={translation("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
+            <InlineField label={translation("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
+            <InlineField label={translation("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
+            <InlineField label={translation("modelCalls")}><Text>{tokenUsage.agentModelCalls}</Text></InlineField>
           </Flex>
         </>
       )}
       <Separator my={2} />
       <Text fontWeight="semibold" mb={1} color="fg">
-        {t("usageThisTurn")}
+        {translation("usageThisTurn")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={t("input")}><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={t("output")}><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("input")}><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("output")}><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
         {hasContext && (
-          <InlineField label={t("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
         )}
       </Flex>
       {chatgptUsage && chatgptUsage.windows.length > 0 && (
@@ -279,7 +279,7 @@ export function ChatInput({
   compactionUserCount,
   artifactAnnotationRecords = [],
 }: ChatInputProps) {
-  const t = useTranslations("ChatInput");
+  const translation = useTranslations("ChatInput");
   const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -315,11 +315,11 @@ export function ChatInput({
   const attachmentTooltipContent = (
     <Box w="420px" maxW="calc(100vw - 32px)">
       <Text fontWeight="semibold" mb={1} color="fg">
-        {t("fileAttachments")}
+        {translation("fileAttachments")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={t("images")}>
-          <Text>{visionSupported ? t("imagesSupported") : t("imagesUnsupported")}</Text>
+        <InlineField label={translation("images")}>
+          <Text>{visionSupported ? translation("imagesSupported") : translation("imagesUnsupported")}</Text>
         </InlineField>
       </Flex>
     </Box>
@@ -590,12 +590,12 @@ export function ChatInput({
       <ConfirmDialog
         open={compactConfirmOpen}
         onOpenChange={setCompactConfirmOpen}
-        title={t("compactTitle")}
-        confirmLabel={t("compactConfirm")}
+        title={translation("compactTitle")}
+        confirmLabel={translation("compactConfirm")}
         confirmIcon={<LuFoldVertical size={14} />}
         onConfirm={() => onCompact?.()}
       >
-        {t.rich("compactBody", {
+        {translation.rich("compactBody", {
           count: compactionKeepRecentTurns,
           b: (chunks) => <Strong>{chunks}</Strong>,
         })}
@@ -625,7 +625,7 @@ export function ChatInput({
             {uploadingCount > 0 ? (
               <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="md" bg="bg.subtle">
                 <Box color="blue.fg"><LuPaperclip size={14} /></Box>
-                <Text fontSize="xs" color="fg.subtle">{t("uploading", { count: uploadingCount })}</Text>
+                <Text fontSize="xs" color="fg.subtle">{translation("uploading", { count: uploadingCount })}</Text>
               </Flex>
             ) : null}
           </Flex>
@@ -660,16 +660,16 @@ export function ChatInput({
               variant="outline"
               placeholder={
                 disabled
-                  ? t("placeholderConnecting")
+                  ? translation("placeholderConnecting")
                   : !directoryValid
-                    ? t("placeholderInvalidPath")
+                    ? translation("placeholderInvalidPath")
                     : hasPendingAnnotations
-                      ? t("placeholderAnnotations")
+                      ? translation("placeholderAnnotations")
                       : attachments.length > 0
-                        ? t("placeholderAttachments")
+                        ? translation("placeholderAttachments")
                         : isStreaming
-                          ? t("placeholderStreaming")
-                          : t("placeholderDefault")
+                          ? translation("placeholderStreaming")
+                          : translation("placeholderDefault")
               }
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
@@ -703,7 +703,7 @@ export function ChatInput({
               positioning={{ placement: "top" }}
             >
               <IconButton
-                aria-label={t("attachFiles")}
+                aria-label={translation("attachFiles")}
                 onClick={() => void handleAttachClick()}
                 size="sm"
                 variant="outline"
@@ -721,13 +721,13 @@ export function ChatInput({
                 colorPalette="red"
                 variant="solid"
                 loading={stopPending}
-                loadingText={t("stopping")}
+                loadingText={translation("stopping")}
                 disabled={stopPending}
               >
                 <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                   <LuSquare />
                 </Box>
-                {t("stop")}
+                {translation("stop")}
               </Button>
             ) : (
               <Button
@@ -736,13 +736,13 @@ export function ChatInput({
                 colorPalette="blue"
                 variant="solid"
                 loading={sendPending}
-                loadingText={t("sending")}
+                loadingText={translation("sending")}
                 disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
               >
                 <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
                   <LuArrowUp />
                 </Box>
-                {t("send")}
+                {translation("send")}
               </Button>
             )}
           </Flex>
@@ -784,7 +784,7 @@ export function ChatInput({
                 <Box display="flex" alignItems="center" color="fg.muted" flexShrink={0}>
                   <LuUser size={13} />
                 </Box>
-                <Select.ValueText data-composer-agent-label="" placeholder={t("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                <Select.ValueText data-composer-agent-label="" placeholder={translation("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
               </Select.Trigger>
               <Select.IndicatorGroup>
                 <Select.Indicator />
@@ -836,10 +836,10 @@ export function ChatInput({
               flexShrink={0}
               disabled={isStreaming || isCompacting}
               onClick={() => setCompactConfirmOpen(true)}
-              title={isCompacting ? t("compactingTooltip") : t("compactTooltip")}
+              title={isCompacting ? translation("compactingTooltip") : translation("compactTooltip")}
             >
               {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
-              <Text data-composer-compact-label="">{isCompacting ? t("compacting") : t("compact")}</Text>
+              <Text data-composer-compact-label="">{isCompacting ? translation("compacting") : translation("compact")}</Text>
             </Button>
           )}
           <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} />

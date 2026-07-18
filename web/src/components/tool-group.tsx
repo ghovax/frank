@@ -124,7 +124,7 @@ export const ToolGroup = memo(function ToolGroup({
   onActivateArtifact,
   keepOpen = false,
 }: ToolGroupProps) {
-  const t = useTranslations("ToolGroup");
+  const translation = useTranslations("ToolGroup");
   const backgroundCount = tools.filter(
     (tool) => toolStatus(tool.status) === "running" && hasBackgroundTaskIdentifier(tool.result),
   ).length;
@@ -159,7 +159,7 @@ export const ToolGroup = memo(function ToolGroup({
   const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
-  const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
+  const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
   // One call is already fully represented by the summary row. The grouped body only
   // becomes useful once it can reveal multiple calls instead of repeating that row.
   const interactive = tools.length > 1;
@@ -168,9 +168,9 @@ export const ToolGroup = memo(function ToolGroup({
   // carry no chip: the live shimmer already communicates activity, while the settled line
   // speaks for itself.
   const statusChips = [
-    inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: t("inputRequired") },
-    failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: t("failedCount", { count: failedCount }) },
-    backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }) },
+    inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: translation("inputRequired") },
+    failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: translation("failedCount", { count: failedCount }) },
+    backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: translation("backgroundCount", { count: backgroundCount }) },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
   // The animated label slot: the latest tool's label crossfades as work streams in,
@@ -243,7 +243,7 @@ export const ToolGroup = memo(function ToolGroup({
             </Flex>
           );
         }) : (
-          <Pill colorPalette="gray">{t("filesCount", { count: fileChanges.length })}</Pill>
+          <Pill colorPalette="gray">{translation("filesCount", { count: fileChanges.length })}</Pill>
         )
       )}
       <ToolLocationBadge arguments={groupLocation} />

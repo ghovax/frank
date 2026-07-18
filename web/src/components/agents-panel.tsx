@@ -31,12 +31,12 @@ const AGENT_STATE_LABEL_KEY: Partial<Record<TaskState, string>> = {
 };
 
 function AgentStateBadge({ state }: { state: TaskState }) {
-  const t = useTranslations("AgentsPanel");
+  const translation = useTranslations("AgentsPanel");
   if (state === "completed") return null;
   const labelKey = AGENT_STATE_LABEL_KEY[state] ?? "stateSubmitted";
   return (
     <Pill colorPalette={STATUS_PALETTE[taskStateKind(state)]}>
-      {t(labelKey as Parameters<typeof t>[0])}
+      {translation(labelKey as Parameters<typeof translation>[0])}
     </Pill>
   );
 }
@@ -61,7 +61,7 @@ function StepCard({
   agents: { id: string; name: string; title?: string }[];
   sessionId: string | null;
 }) {
-  const t = useTranslations("AgentsPanel");
+  const translation = useTranslations("AgentsPanel");
   const [stopping, setStopping] = useState(false);
   const active = !isStepDone(step);
   // The remote the step ran against (if any) — surfaced on the step's own (top)
@@ -78,8 +78,8 @@ function StepCard({
       if (!stopped) {
         toaster.create({
           type: "error",
-          title: t("stopFailed"),
-          description: t("stopFailedDescription"),
+          title: translation("stopFailed"),
+          description: translation("stopFailedDescription"),
           closable: true,
         });
       }
@@ -92,18 +92,18 @@ function StepCard({
     <DisclosureRow
       defaultOpen
       icon={<Box color="fg.muted"><LuBot /></Box>}
-      title={<DisclosureLabel>{step.goal || t("agentTask")}</DisclosureLabel>}
+      title={<DisclosureLabel>{step.goal || translation("agentTask")}</DisclosureLabel>}
       badges={
         <>
-          <Pill colorPalette="gray">{agentLabel || t("agent")}</Pill>
+          <Pill colorPalette="gray">{agentLabel || translation("agent")}</Pill>
           <ToolLocationBadge arguments={stepLocation} />
           <AgentStateBadge state={step.state} />
         </>
       }
       actions={active ? (
-        <Tooltip content={t("stopAgent")} openDelay={300}>
+        <Tooltip content={translation("stopAgent")} openDelay={300}>
           <IconButton
-            aria-label={stopping ? t("stoppingAgent") : t("stopAgent")}
+            aria-label={stopping ? translation("stoppingAgent") : translation("stopAgent")}
             variant="plain"
             colorPalette="red"
             boxSize="5"
@@ -129,7 +129,7 @@ export function AgentsPanel({
   onClose,
   focusedGroupId,
 }: AgentsPanelProps) {
-  const t = useTranslations("AgentsPanel");
+  const translation = useTranslations("AgentsPanel");
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const agentLabels = new Map(agents.map((agent) => [agent.id, agent.title || agent.name]));
 
@@ -145,17 +145,17 @@ export function AgentsPanel({
     <PanelCard>
       <PanelHeader
         icon={<LuNetwork size={14} />}
-        title={t("agents")}
+        title={translation("agents")}
         onClose={onClose}
-        closeLabel={t("collapseSidebar")}
+        closeLabel={translation("collapseSidebar")}
       />
 
       <PanelBody px={4}>
         {agentGroups.length === 0 ? (
           <PanelEmptyState
             icon={<LuBot />}
-            title={t("noActivityTitle")}
-            description={t("noActivityDescription")}
+            title={translation("noActivityTitle")}
+            description={translation("noActivityDescription")}
           />
         ) : (
           <Flex direction="column" gap={2}>

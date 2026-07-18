@@ -44,12 +44,12 @@ export function reloadIntoConnection(): void {
 }
 
 export function ConnectionGate({ children }: { children: React.ReactNode }) {
-  const t = useTranslations("ConnectionGate");
+  const translation = useTranslations("ConnectionGate");
   // The design gallery (/gallery) is a backend-less fixture sheet of the app's
   // building blocks, used for visual audits — the one route that must render
   // without a server, so it bypasses the gate entirely.
   const pathname = usePathname();
-  const [statusLabel, setStatusLabel] = useState(t("connecting"));
+  const [statusLabel, setStatusLabel] = useState(translation("connecting"));
   // "connecting" while the auto-connect loop runs, "settings" when it can't reach a
   // backend (show the picker), "ready" once connected (render the app).
   const [phase, setPhase] = useState<"connecting" | "settings" | "ready">("connecting");
@@ -69,10 +69,10 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       if (!ok) {
         toaster.create({
           type: "error",
-          title: t("couldntConnect"),
+          title: translation("couldntConnect"),
           description: isTauri()
-            ? t("localServerNotStarted")
-            : t("noServerAt", { url: LOCAL_DEFAULT_URL.replace(/^https?:\/\//, "") }),
+            ? translation("localServerNotStarted")
+            : translation("noServerAt", { url: LOCAL_DEFAULT_URL.replace(/^https?:\/\//, "") }),
           closable: true,
         });
         return false;
@@ -82,13 +82,13 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     } catch (caught) {
       toaster.create({
         type: "error",
-        title: t("couldntConnect"),
+        title: translation("couldntConnect"),
         description: caught instanceof Error ? caught.message : String(caught),
         closable: true,
       });
       return false;
     }
-  }, [t]);
+  }, [translation]);
 
   const connectToProfile = useCallback(async (profile: ConnectionProfile): Promise<boolean> => {
     try {
@@ -99,8 +99,8 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       if (!ok) {
         toaster.create({
           type: "error",
-          title: t("couldntReach", { name: profile.name }),
-          description: t("noResponseFrom", { url }),
+          title: translation("couldntReach", { name: profile.name }),
+          description: translation("noResponseFrom", { url }),
           closable: true,
         });
         return false;
@@ -110,13 +110,13 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     } catch (caught) {
       toaster.create({
         type: "error",
-        title: t("couldntReach", { name: profile.name }),
+        title: translation("couldntReach", { name: profile.name }),
         description: caught instanceof Error ? caught.message : String(caught),
         closable: true,
       });
       return false;
     }
-  }, [t]);
+  }, [translation]);
 
   // Auto-connect on every route — no route works without a backend (except the
   // gallery, which skips the loop so it never spawns a server or toasts failures).
@@ -135,7 +135,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
         try { sessionStorage.removeItem(RECONNECT_FLAG); } catch { /* best-effort */ }
         const lastTarget = await getLastTargetId();
         if (lastTarget === LOCAL_TARGET_ID) {
-          setStatusLabel(t("connecting"));
+          setStatusLabel(translation("connecting"));
           const ok = await connectToLocal();
           if (!cancelled && aliveRef.current) setPhase(ok ? "ready" : "settings");
           return;
@@ -144,7 +144,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
           const saved = await listConnections();
           const profile = saved.find((entry) => entry.id === lastTarget);
           if (profile) {
-            setStatusLabel(t("connectingTo", { name: profile.name }));
+            setStatusLabel(translation("connectingTo", { name: profile.name }));
             const ok = await connectToProfile(profile);
             if (!cancelled && aliveRef.current) setPhase(ok ? "ready" : "settings");
             return;
@@ -157,14 +157,14 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       const lastTarget = await getLastTargetId();
       if (lastTarget) {
         if (lastTarget === LOCAL_TARGET_ID) {
-          setStatusLabel(t("reopeningLast"));
+          setStatusLabel(translation("reopeningLast"));
           const ok = await connectToLocal();
           if (!cancelled && aliveRef.current) { if (ok) { setPhase("ready"); return; } }
         } else {
           const saved = await listConnections();
           const profile = saved.find((entry) => entry.id === lastTarget);
           if (profile) {
-            setStatusLabel(t("connectingTo", { name: profile.name }));
+            setStatusLabel(translation("connectingTo", { name: profile.name }));
             const ok = await connectToProfile(profile);
             if (!cancelled && aliveRef.current) { if (ok) { setPhase("ready"); return; } }
           }
@@ -178,7 +178,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     })();
 
     return () => { cancelled = true; };
-  }, [connectToLocal, connectToProfile, t, pathname]);
+  }, [connectToLocal, connectToProfile, translation, pathname]);
 
   if (pathname?.startsWith("/gallery") || phase === "ready") {
     return <>{children}</>;

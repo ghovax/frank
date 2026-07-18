@@ -50,9 +50,9 @@ interface FriendlyWarning {
 // the message below as rendered markdown, and a "Try again" action, so the user
 // reads it as a system failure with a clear next step rather than model prose.
 function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?: () => void }) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   const error = message.meta?.error as FriendlyError | undefined;
-  const title = error?.title?.trim() || t("errorTitle");
+  const title = error?.title?.trim() || translation("errorTitle");
   const body = error?.message?.trim() || message.content;
   return (
     <Box
@@ -85,7 +85,7 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
             onClick={onRetry}
           >
             <LuRotateCw size={13} />
-            {t("tryAgain")}
+            {translation("tryAgain")}
           </Button>
         </Flex>
       )}
@@ -94,9 +94,9 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
 }
 
 function WarningMessageCard({ message }: { message: ChatMessage }) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   const warning = message.meta?.warning as FriendlyWarning | undefined;
-  const title = warning?.title?.trim() || t("warningTitle");
+  const title = warning?.title?.trim() || translation("warningTitle");
   const body = warning?.message?.trim() || message.content;
   return (
     <Box
@@ -144,7 +144,7 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
 }
 
 function UserMessageCard({ message }: { message: ChatMessage }) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
   const artifactAnnotationRecords = (message.meta?.artifactAnnotationRecords as ArtifactAnnotationRecord[] | undefined) ?? [];
   const contentRef = useRef<HTMLDivElement>(null);
@@ -200,7 +200,7 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
           fontWeight="medium"
           onClick={() => setExpanded((current) => !current)}
         >
-          {expanded ? t("showLess") : t("showMore")}
+          {expanded ? translation("showLess") : translation("showMore")}
         </Button>
       )}
     </Flex>
@@ -208,7 +208,7 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
 }
 
 export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
       return <UserMessageCard message={message} />;
@@ -282,13 +282,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
               gap={1.5}
               flexShrink={0}
               color={running ? "blue.fg" : undefined}
-              title={running || !before ? undefined : t("compactedTooltip", { before, after })}
+              title={running || !before ? undefined : translation("compactedTooltip", { before, after })}
             >
               <ActivityIcon>
                 {running ? <ActivitySpinner /> : <LuFoldVertical />}
               </ActivityIcon>
               <Text textStyle="fieldLabel" className={running ? "running-title-shimmer" : undefined}>
-                {running ? t("compactingContext") : t("contextCompacted")}
+                {running ? translation("compactingContext") : translation("contextCompacted")}
               </Text>
             </Flex>
             <Separator flex={1} />

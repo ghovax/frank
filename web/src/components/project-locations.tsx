@@ -29,7 +29,7 @@ function draftsFrom(locations: Location[]): LocationDraft[] {
 // above the next, with an "Add folder" button below — no list-then-edit view. Edits are
 // batched and persisted on Save (create new, update changed, delete removed).
 export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
-  const t = useTranslations("ProjectLocationsPanel");
+  const translation = useTranslations("ProjectLocationsPanel");
   const [hosts, setHosts] = useState<SshHost[]>([]);
   const [original, setOriginal] = useState<Location[]>([]);
   const [drafts, setDrafts] = useState<LocationDraft[]>([]);
@@ -104,7 +104,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
       }
       await loadProject();
     } catch (error) {
-      toaster.create({ type: "error", title: t("saveError"), description: error instanceof Error ? error.message : "", closable: true });
+      toaster.create({ type: "error", title: translation("saveError"), description: error instanceof Error ? error.message : "", closable: true });
     } finally {
       setSaving(false);
     }
@@ -113,7 +113,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
   return (
     <Flex direction="column" gap={3} maxW="560px">
       {failedProjectId === projectId ? (
-        <Text fontSize="sm" color="red.fg">{t("loadError")}</Text>
+        <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>
       ) : (
         <>
           <LocationEditorList
@@ -128,7 +128,7 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
           {loadedProjectId === projectId ? (
       <Flex justify="flex-end" mt={1}>
               <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
-                {t("saveChanges")}
+                {translation("saveChanges")}
               </Button>
             </Flex>
           ) : null}

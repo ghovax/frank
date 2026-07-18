@@ -26,7 +26,7 @@ export function ChatGPTAuthControl({
 }: {
   onStatusChange?: (status: ChatGPTAuthStatus) => void;
 }) {
-  const t = useTranslations("ChatGPTAuthControl");
+  const translation = useTranslations("ChatGPTAuthControl");
   const [status, setStatus] = useState<ChatGPTAuthStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [awaiting, setAwaiting] = useState(false);
@@ -91,7 +91,7 @@ export function ChatGPTAuthControl({
         }
       }, 2000);
     } catch (caught) {
-      setError((caught as Error).message || t("signInError"));
+      setError((caught as Error).message || translation("signInError"));
     } finally {
       setBusy(false);
     }
@@ -115,7 +115,7 @@ export function ChatGPTAuthControl({
   return (
     <Box>
       <Text textStyle="fieldLabel" mb={1.5}>
-        {t("title")}
+        {translation("title")}
       </Text>
       {signedIn ? (
         <Button
@@ -124,17 +124,17 @@ export function ChatGPTAuthControl({
           loading={busy}
         >
           <LuLogOut size={14} />
-          {t("signOut")}
+          {translation("signOut")}
         </Button>
       ) : (
         <Button
           colorPalette="green"
           onClick={handleSignIn}
           loading={busy || awaiting}
-          loadingText={awaiting ? t("waitingForBrowser") : undefined}
+          loadingText={awaiting ? translation("waitingForBrowser") : undefined}
         >
           <LuLogIn size={14} />
-          {t("signIn")}
+          {translation("signIn")}
         </Button>
       )}
       {error && (
@@ -153,7 +153,7 @@ export function ChatGPTAuthControl({
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Description fontSize="xs" truncate>
-                {status?.email ? t("signedInAs", { email: status.email }) : t("signedIn")}
+                {status?.email ? translation("signedInAs", { email: status.email }) : translation("signedIn")}
               </Alert.Description>
             </Alert.Content>
           </Alert.Root>
@@ -168,7 +168,7 @@ export function ChatGPTAuthControl({
           <Alert.Indicator />
           <Alert.Content>
             <Alert.Description fontSize="xs">
-              {t("planNotice")}
+              {translation("planNotice")}
             </Alert.Description>
           </Alert.Content>
         </Alert.Root>

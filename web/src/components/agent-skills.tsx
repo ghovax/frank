@@ -41,7 +41,7 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 // plus the tools exposed by the configured MCP servers, grouped per server.
 // Every row starts collapsed to keep the empty state uncluttered.
 export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: AgentCard | null; workingDirectory?: string; homeDirectory?: string }) {
-  const t = useTranslations("AgentSkills");
+  const translation = useTranslations("AgentSkills");
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
   const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
 
@@ -113,15 +113,15 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
         <>
           <SectionHeader
             icon={<LuListChecks size={14} />}
-            title={t("skillsAvailable")}
-            description={t("skillsDescription")}
+            title={translation("skillsAvailable")}
+            description={translation("skillsDescription")}
           />
           <Flex direction="column" gap={2}>
-            <ScopeGroup icon={<LuPuzzle />} label={t("skillsAvailableGlobally")}>
+            <ScopeGroup icon={<LuPuzzle />} label={translation("skillsAvailableGlobally")}>
               {globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
             </ScopeGroup>
             {!isHomeFolder && (
-              <ScopeGroup icon={<LuPuzzle />} label={t("skillsAvailableInProject")}>
+              <ScopeGroup icon={<LuPuzzle />} label={translation("skillsAvailableInProject")}>
                 {projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
               </ScopeGroup>
             )}
@@ -133,15 +133,15 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
         <Box mt={hasSkills ? 6 : 0}>
           <SectionHeader
             icon={<LuWrench size={14} />}
-            title={t("toolsAvailable")}
-            description={t("toolsDescription")}
+            title={translation("toolsAvailable")}
+            description={translation("toolsDescription")}
           />
           <Flex direction="column" gap={2}>
-            <ScopeGroup icon={<LuPlug />} label={t("toolsAvailableGlobally")}>
+            <ScopeGroup icon={<LuPlug />} label={translation("toolsAvailableGlobally")}>
               {globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
             </ScopeGroup>
             {!isHomeFolder && (
-              <ScopeGroup icon={<LuPlug />} label={t("toolsAvailableInProject")}>
+              <ScopeGroup icon={<LuPlug />} label={translation("toolsAvailableInProject")}>
                 {projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
               </ScopeGroup>
             )}
@@ -172,7 +172,7 @@ function ScopeGroup({ icon, label, children }: { icon: ReactNode; label: string;
 // One agent skill, collapsed by default. A disabled skill is greyed out and inert;
 // a skill with no description or examples is a plain, non-expanding line.
 function SkillCard({ skill }: { skill: AgentSkill }) {
-  const t = useTranslations("AgentSkills");
+  const translation = useTranslations("AgentSkills");
   const enabled = skill.enabled !== false;
   const hasBody = !!skill.description || (skill.examples?.length ?? 0) > 0;
   return (
@@ -180,7 +180,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
       disabled={!enabled}
       icon={<Box color="fg.muted"><LuPuzzle /></Box>}
       title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
-      badges={enabled ? undefined : <Pill colorPalette="gray">{t("disabled")}</Pill>}
+      badges={enabled ? undefined : <Pill colorPalette="gray">{translation("disabled")}</Pill>}
     >
       {enabled && hasBody ? (
         <>
@@ -191,7 +191,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
           )}
           {skill.examples && skill.examples.length > 0 && (
             <Box mt={2}>
-              <InlineField label={t("examples")}>
+              <InlineField label={translation("examples")}>
                 <Flex direction="column" gap={1}>
                   {skill.examples.map((example, index) => (
                     <Text key={index} fontSize="xs" color="fg.muted">“{example}”</Text>
@@ -209,7 +209,7 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
 // One MCP server's tools, collapsed by default. A disabled server is greyed out and
 // inert; an enabled server shows its tool count and expands to the tool rows.
 function McpServerGroup({ server }: { server: McpServerTools }) {
-  const t = useTranslations("AgentSkills");
+  const translation = useTranslations("AgentSkills");
   const enabled = server.enabled !== false;
   return (
     <DisclosureRow
@@ -218,8 +218,8 @@ function McpServerGroup({ server }: { server: McpServerTools }) {
       title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
       badges={
         enabled
-          ? <Pill colorPalette="gray">{t("toolCount", { count: server.tools.length })}</Pill>
-          : <Pill colorPalette="gray">{t("disabled")}</Pill>
+          ? <Pill colorPalette="gray">{translation("toolCount", { count: server.tools.length })}</Pill>
+          : <Pill colorPalette="gray">{translation("disabled")}</Pill>
       }
     >
       {enabled && server.tools.length > 0 ? (

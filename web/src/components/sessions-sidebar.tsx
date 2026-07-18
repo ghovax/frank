@@ -157,7 +157,7 @@ export function SessionsSidebar({
   onResume: (entry: SessionEntry) => void;
   onDeleteSession: (entry: SessionEntry) => void;
 }) {
-  const t = useTranslations("SessionsSidebar");
+  const translation = useTranslations("SessionsSidebar");
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
   const [pendingProjectDelete, setPendingProjectDelete] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -217,7 +217,7 @@ export function SessionsSidebar({
     } catch (error) {
       toaster.create({
         type: "error",
-        title: t("deleteProjectError"),
+        title: translation("deleteProjectError"),
         description: error instanceof Error ? error.message : "",
         closable: true,
       });
@@ -226,7 +226,7 @@ export function SessionsSidebar({
 
   function projectLabel(project: Project): string {
     const primaryLocation = project.locations?.[0];
-    return primaryLocation ? locationTargetLabel(primaryLocation) : t("untitledProject");
+    return primaryLocation ? locationTargetLabel(primaryLocation) : translation("untitledProject");
   }
 
   const visibleProjects = projects
@@ -264,7 +264,7 @@ export function SessionsSidebar({
           <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
             <LuSquarePen size={14} />
           </Flex>
-          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{t("newConversation")}</Text>
+          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newConversation")}</Text>
           {/* Chakra's semantic keyboard-key component, in its `plain` variant so it reads as a
               subtle shortcut hint rather than a raised keycap chip. */}
           <Kbd data-kbd-hint variant="plain" fontFamily="var(--app-font-sans)" fontSize="xs" color="blue.fg" transition="opacity 0.12s" flexShrink={0}>⌘N</Kbd>
@@ -286,7 +286,7 @@ export function SessionsSidebar({
           <Flex w={LEADING_SLOT} flexShrink={0} align="center" justify="center">
             <LuFolderPlus size={14} />
           </Flex>
-          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{t("newProject")}</Text>
+          <Text flex={1} minW={0} truncate fontSize="xs" fontWeight="semibold">{translation("newProject")}</Text>
         </Button>
       </Box>
 
@@ -299,8 +299,8 @@ export function SessionsSidebar({
             size="xs"
             h="full"
             px={0}
-            placeholder={t("searchPlaceholder")}
-            aria-label={t("searchPlaceholder")}
+            placeholder={translation("searchPlaceholder")}
+            aria-label={translation("searchPlaceholder")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             _focusVisible={{ boxShadow: "none", outline: "none" }}
@@ -310,12 +310,12 @@ export function SessionsSidebar({
 
       <PanelBody pt={1}>
         <Flex align="center" gap={1.5} mb={1} color="fg.muted">
-          <Text textStyle="sectionLabel" flex={1}>{t("projects")}</Text>
+          <Text textStyle="sectionLabel" flex={1}>{translation("projects")}</Text>
           <Box>
             <DropdownMenu
               trigger={
                 <Button
-                  aria-label={t("sortSessions")}
+                  aria-label={translation("sortSessions")}
                   variant="ghost"
                   color="fg.muted"
                   textStyle="fieldLabel"
@@ -327,7 +327,7 @@ export function SessionsSidebar({
                   _focusVisible={{ outline: "none", boxShadow: "none", bg: "bg.subtle" }}
                 >
                   <LuArrowDownUp size={12} />
-                  {sessionSort === "active" ? t("activeFirst") : t("newest")}
+                  {sessionSort === "active" ? translation("activeFirst") : translation("newest")}
                   <LuChevronDown size={12} />
                 </Button>
               }
@@ -335,19 +335,19 @@ export function SessionsSidebar({
               positioning={{ placement: "bottom-end" }}
             >
               <Menu.ItemGroup>
-                <Menu.ItemGroupLabel>{t("sortBy")}</Menu.ItemGroupLabel>
+                <Menu.ItemGroupLabel>{translation("sortBy")}</Menu.ItemGroupLabel>
                 <MenuOption value="recent" selected={sessionSort === "recent"} onClick={() => onSessionSortChange("recent")}>
-                  {t("newestFirst")}
+                  {translation("newestFirst")}
                 </MenuOption>
                 <MenuOption value="active" selected={sessionSort === "active"} onClick={() => onSessionSortChange("active")}>
-                  {t("activeFirst")}
+                  {translation("activeFirst")}
                 </MenuOption>
               </Menu.ItemGroup>
             </DropdownMenu>
           </Box>
         </Flex>
         {!sessionsLoaded || projects.length === 0 ? null : visibleProjects.length === 0 ? (
-          <Text fontSize="xs" color="fg.muted" px={2} py={2}>{t("noMatches", { query: search })}</Text>
+          <Text fontSize="xs" color="fg.muted" px={2} py={2}>{translation("noMatches", { query: search })}</Text>
         ) : (
           <VStack gap={1} align="stretch">
             {visibleProjects.map(({ project, sessions: projectSessions }) => {
@@ -368,7 +368,7 @@ export function SessionsSidebar({
                   <DropdownMenu
                     trigger={
                       <IconButton
-                        aria-label={t("projectOptions")}
+                        aria-label={translation("projectOptions")}
                         variant="plain"
                         boxSize={5}
                         color="fg.subtle"
@@ -384,7 +384,7 @@ export function SessionsSidebar({
                     positioning={{ placement: "bottom-end" }}
                   >
                     <MenuOption value="settings" icon={<LuSettings size={14} />} onClick={() => onOpenProjectSettings(project.id)}>
-                      {t("projectSettings")}
+                      {translation("projectSettings")}
                     </MenuOption>
                     <Menu.Item
                       value="delete-project"
@@ -393,7 +393,7 @@ export function SessionsSidebar({
                       onClick={() => setPendingProjectDelete(project)}
                     >
                       <LuTrash2 size={14} />
-                      <Box flex={1}>{t("deleteProject")}</Box>
+                      <Box flex={1}>{translation("deleteProject")}</Box>
                     </Menu.Item>
                   </DropdownMenu>
                 </Box>
@@ -426,7 +426,7 @@ export function SessionsSidebar({
                         {projectSessions.map((entry) => {
                           const isActive = entry.sessionId === activeSessionId;
                           const indicator = sessionIndicator(entry, isActive, unseenCompletions);
-                          const title = entry.title || t("untitledConversation");
+                          const title = entry.title || translation("untitledConversation");
                           return (
                             <Box
                               key={entry.sessionId}
@@ -475,7 +475,7 @@ export function SessionsSidebar({
                                     <DropdownMenu
                                       trigger={
                                         <IconButton
-                                          aria-label={t("sessionOptions")}
+                                          aria-label={translation("sessionOptions")}
                                           variant="plain"
                                           boxSize={5}
                                           color="fg.subtle"
@@ -497,10 +497,10 @@ export function SessionsSidebar({
                                         onClick={() => { if (entry.workingDirectory) void revealInFinder(entry.workingDirectory); }}
                                       >
                                         <LuFolderOpen size={14} />
-                                        <Box flex={1}>{t("openFolder")}</Box>
+                                        <Box flex={1}>{translation("openFolder")}</Box>
                                       </Menu.Item>
                                       <MenuOption value="delete" danger icon={<LuTrash2 size={14} />} onClick={() => setPendingDelete(entry)}>
-                                        {t("deleteSession")}
+                                        {translation("deleteSession")}
                                       </MenuOption>
                                     </DropdownMenu>
                                   </Box>
@@ -522,12 +522,12 @@ export function SessionsSidebar({
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
-        title={t("deleteTitle")}
-        confirmLabel={t("deleteConfirm")}
+        title={translation("deleteTitle")}
+        confirmLabel={translation("deleteConfirm")}
         danger
         onConfirm={() => { if (pendingDelete) onDeleteSession(pendingDelete); }}
       >
-        {t("deleteBody", { title: pendingDelete?.title || t("untitledConversation") })}
+        {translation("deleteBody", { title: pendingDelete?.title || translation("untitledConversation") })}
       </ConfirmDialog>
 
       {newProjectOpen ? (
@@ -546,12 +546,12 @@ export function SessionsSidebar({
       <ConfirmDialog
         open={pendingProjectDelete !== null}
         onOpenChange={(open) => { if (!open) setPendingProjectDelete(null); }}
-        title={t("deleteProjectTitle")}
-        confirmLabel={t("deleteProjectConfirm")}
+        title={translation("deleteProjectTitle")}
+        confirmLabel={translation("deleteProjectConfirm")}
         danger
         onConfirm={() => void confirmProjectDelete()}
       >
-        {t("deleteProjectBody", { project: pendingProjectDelete ? projectLabel(pendingProjectDelete) : "" })}
+        {translation("deleteProjectBody", { project: pendingProjectDelete ? projectLabel(pendingProjectDelete) : "" })}
       </ConfirmDialog>
     </PanelCard>
   );

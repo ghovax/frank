@@ -66,17 +66,17 @@ export function LocationForm({
   showPermission?: boolean;
   onRemove?: () => void;
 }) {
-  const t = useTranslations("LocationForm");
+  const translation = useTranslations("LocationForm");
   const set = (patch: Partial<LocationInput>) => onChange({ ...value, ...patch });
 
   const permissionModeItems = useMemo<SelectOption[]>(
     () => [
-      { value: "default", label: t("permissionManual") },
-      { value: "auto", label: t("permissionAuto") },
-      { value: "read_only", label: t("permissionReadOnly") },
-      { value: "bypass", label: t("permissionBypass") },
+      { value: "default", label: translation("permissionManual") },
+      { value: "auto", label: translation("permissionAuto") },
+      { value: "read_only", label: translation("permissionReadOnly") },
+      { value: "bypass", label: translation("permissionBypass") },
     ],
-    [t],
+    [translation],
   );
 
   const hostItems = useMemo<SelectOption[]>(
@@ -146,7 +146,7 @@ export function LocationForm({
           colorPalette={value.kind === "local" ? "green" : undefined}
           onClick={() => set({ kind: "local" })}
         >
-          <LuFolder size={13} /> {t("local")}
+          <LuFolder size={13} /> {translation("local")}
         </Button>
         <Button
           flex={1}
@@ -157,10 +157,10 @@ export function LocationForm({
           // case where hosts finish loading after the switch.
           onClick={() => set({ kind: "remote", host_alias: value.host_alias || hosts[0]?.alias || "" })}
         >
-          <LuServer size={13} /> {t("remote")}
+          <LuServer size={13} /> {translation("remote")}
         </Button>
         {onRemove && (
-          <IconButton aria-label={t("removeLocation")} variant="ghost" colorPalette="red" flexShrink={0} onClick={onRemove}>
+          <IconButton aria-label={translation("removeLocation")} variant="ghost" colorPalette="red" flexShrink={0} onClick={onRemove}>
             <LuTrash2 size={13} />
           </IconButton>
         )}
@@ -168,9 +168,9 @@ export function LocationForm({
 
       {value.kind === "remote" && (
         <Flex direction="column" gap={1}>
-          <Text textStyle="fieldLabel">{t("host")}</Text>
+          <Text textStyle="fieldLabel">{translation("host")}</Text>
           {hosts.length === 0 ? (
-            <Text fontSize="2xs" color="orange.fg">{t("noHosts")}</Text>
+            <Text fontSize="2xs" color="orange.fg">{translation("noHosts")}</Text>
           ) : (
             <SimpleSelect items={hostItems} value={value.host_alias ?? ""} onValueChange={(next) => set({ host_alias: next })} />
           )}
@@ -178,7 +178,7 @@ export function LocationForm({
       )}
 
       <Flex direction="column" gap={1}>
-        <Text textStyle="fieldLabel">{t("baseDirectory")}</Text>
+        <Text textStyle="fieldLabel">{translation("baseDirectory")}</Text>
         <Flex gap={2}>
           <Input
             flex={1}
@@ -188,7 +188,7 @@ export function LocationForm({
           />
           {value.kind === "local" && (
             <Button variant="outline" flexShrink={0} onClick={pickFolder}>
-              <LuFolderOpen size={14} /> {t("openFolder")}
+              <LuFolderOpen size={14} /> {translation("openFolder")}
             </Button>
           )}
         </Flex>
@@ -196,7 +196,7 @@ export function LocationForm({
 
       {showPermission && (
         <Flex direction="column" gap={1}>
-          <Text textStyle="fieldLabel">{t("permissionMode")}</Text>
+          <Text textStyle="fieldLabel">{translation("permissionMode")}</Text>
           <SimpleSelect items={permissionModeItems} value={value.permission_mode ?? "default"} onValueChange={(next) => set({ permission_mode: next })} />
         </Flex>
       )}
@@ -223,10 +223,10 @@ export function LocationEditorList({
   showPermission?: boolean;
   loading?: boolean;
 }) {
-  const t = useTranslations("LocationForm");
+  const translation = useTranslations("LocationForm");
   if (loading) {
     return (
-      <Flex data-layout="location-editor-loading" direction="column" gap={3} aria-label={t("loadingLocations")}>
+      <Flex data-layout="location-editor-loading" direction="column" gap={3} aria-label={translation("loadingLocations")}>
         <Box borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
           <Flex direction="column" gap={3}>
             <Flex gap={2}>
@@ -264,7 +264,7 @@ export function LocationEditorList({
         </Box>
       ))}
       <Button variant="subtle" colorPalette="blue" w="100%" onClick={onAdd}>
-        <LuPlus size={14} /> {t("addLocation")}
+        <LuPlus size={14} /> {translation("addLocation")}
       </Button>
       {conflict && (
         <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
@@ -272,8 +272,8 @@ export function LocationEditorList({
           <Alert.Content>
             <Alert.Description fontSize="xs">
               {conflict.key === "conflictSameDirectory"
-                ? t("conflictSameDirectory", conflict.values)
-                : t("conflictNested", conflict.values)}
+                ? translation("conflictSameDirectory", conflict.values)
+                : translation("conflictNested", conflict.values)}
             </Alert.Description>
           </Alert.Content>
         </Alert.Root>

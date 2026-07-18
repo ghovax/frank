@@ -50,38 +50,38 @@ function createClientIdentifier(prefix: string): string {
 // Tool call (input) views
 
 function BashCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const command = stripCdPrefix(asString(args.command));
   const readOnly = args.read_only !== false;
   const risk = asString(args.risk) || "low";
   // Display label for each bash risk level. Falls back to the raw value when
   // unmapped so an unexpected level still renders something readable.
   const riskLabels: Record<string, string> = {
-    low: t("riskLow"),
-    medium: t("riskMedium"),
-    high: t("riskHigh"),
+    low: translation("riskLow"),
+    medium: translation("riskMedium"),
+    high: translation("riskHigh"),
   };
   const riskText = riskLabels[risk] ?? risk;
   return (
     <FieldList>
-      <Field label={t("command")}>
+      <Field label={translation("command")}>
         <MonoBlock>{command}</MonoBlock>
       </Field>
-      <InlineField label={t("readOnly")}>{readOnly ? t("yes") : t("no")}</InlineField>
-      <InlineField label={t("risk")}>{riskText}</InlineField>
+      <InlineField label={translation("readOnly")}>{readOnly ? translation("yes") : translation("no")}</InlineField>
+      <InlineField label={translation("risk")}>{riskText}</InlineField>
     </FieldList>
   );
 }
 
 function WebSearchCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <Field label={t("query")}>
+      <Field label={translation("query")}>
         <Text fontSize="xs">{asString(args.query)}</Text>
       </Field>
       {args.result_count != null && (
-        <InlineField label={t("results")}>{asString(args.result_count)}</InlineField>
+        <InlineField label={translation("results")}>{asString(args.result_count)}</InlineField>
       )}
     </FieldList>
   );
@@ -93,14 +93,14 @@ function agentLabelFor(agentName: string, agents: { id: string; name: string; ti
 }
 
 function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { id: string; name: string; title?: string }[] }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const agentName = asString(args.agent) || "assistant";
   return (
     <FieldList>
-      <InlineField label={t("agent")}>
+      <InlineField label={translation("agent")}>
         <Pill colorPalette="purple">{agentLabelFor(agentName, agents)}</Pill>
       </InlineField>
-      <Field label={t("prompt")}>
+      <Field label={translation("prompt")}>
         <MarkdownContent content={asString(args.prompt)} fontSize="xs" />
       </Field>
     </FieldList>
@@ -108,13 +108,13 @@ function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; a
 }
 
 function AskAgentCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("taskId")}>
+      <InlineField label={translation("taskId")}>
         <Mono>{asString(args.task_identifier)}</Mono>
       </InlineField>
-      <Field label={t("question")}>
+      <Field label={translation("question")}>
         <MarkdownContent content={asString(args.question)} fontSize="xs" />
       </Field>
     </FieldList>
@@ -122,13 +122,13 @@ function AskAgentCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function RespondAgentCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("messageId")}>
+      <InlineField label={translation("messageId")}>
         <Mono>{asString(args.message_identifier)}</Mono>
       </InlineField>
-      <Field label={t("response")}>
+      <Field label={translation("response")}>
         <MarkdownContent content={asString(args.response)} fontSize="xs" />
       </Field>
     </FieldList>
@@ -160,17 +160,17 @@ const COMPUTER_ACTION_LABEL_KEYS: Record<string, string> = {
 // The mapped action as a pill. Shown both on the tool-call heading (so the action reads at a
 // glance) and inside the expanded body. Exported for the heading in tool-call.tsx.
 export function ComputerActionBadge({ action }: { action?: string }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   if (!action) return null;
   const key = COMPUTER_ACTION_LABEL_KEYS[action];
-  return <Pill colorPalette="cyan">{key ? t(key as Parameters<typeof t>[0]) : action}</Pill>;
+  return <Pill colorPalette="cyan">{key ? translation(key as Parameters<typeof translation>[0]) : action}</Pill>;
 }
 
 // The computer-control tool packs one of several actions into a shared argument set,
 // so only the fields that action actually uses are shown — the action itself as a pill,
 // then whichever of app / element / key combo / menu path / direction / etc. are present.
 function ComputerCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const action = asString(args.action);
   const modifiers = asArray(args.modifiers).map(asString).filter(Boolean);
   const keyName = asString(args.key);
@@ -182,30 +182,30 @@ function ComputerCallView({ args }: { args: Record<string, unknown> }) {
   const button = asString(args.button);
   return (
     <FieldList>
-      <InlineField label={t("computerAction")}>
+      <InlineField label={translation("computerAction")}>
         <ComputerActionBadge action={action} />
       </InlineField>
-      {asString(args.app) && <InlineField label={t("computerApp")}>{asString(args.app)}</InlineField>}
+      {asString(args.app) && <InlineField label={translation("computerApp")}>{asString(args.app)}</InlineField>}
       {action === "find" && asString(args.query) && (
-        <InlineField label={t("browserQuery")}>{asString(args.query)}</InlineField>
+        <InlineField label={translation("browserQuery")}>{asString(args.query)}</InlineField>
       )}
       {args.element != null && (
-        <InlineField label={t("computerElement")}>
+        <InlineField label={translation("computerElement")}>
           <Mono>{asString(args.element)}</Mono>
         </InlineField>
       )}
       {keyCombo && (
-        <InlineField label={t("computerKey")}>
+        <InlineField label={translation("computerKey")}>
           <Mono>{keyCombo}</Mono>
         </InlineField>
       )}
-      {menuPath && <InlineField label={t("computerMenuPath")}>{menuPath}</InlineField>}
-      {asString(args.direction) && <InlineField label={t("computerDirection")}>{asString(args.direction)}</InlineField>}
-      {clicks > 1 && <InlineField label={t("computerClicks")}>{String(clicks)}</InlineField>}
-      {button === "right" && <InlineField label={t("computerButton")}>{button}</InlineField>}
-      {windowScope && windowScope !== "focused" && <InlineField label={t("computerWindow")}>{windowScope}</InlineField>}
+      {menuPath && <InlineField label={translation("computerMenuPath")}>{menuPath}</InlineField>}
+      {asString(args.direction) && <InlineField label={translation("computerDirection")}>{asString(args.direction)}</InlineField>}
+      {clicks > 1 && <InlineField label={translation("computerClicks")}>{String(clicks)}</InlineField>}
+      {button === "right" && <InlineField label={translation("computerButton")}>{button}</InlineField>}
+      {windowScope && windowScope !== "focused" && <InlineField label={translation("computerWindow")}>{windowScope}</InlineField>}
       {text && (
-        <Field label={t("computerText")}>
+        <Field label={translation("computerText")}>
           <Text fontSize="xs" whiteSpace="pre-wrap">{text}</Text>
         </Field>
       )}
@@ -246,68 +246,68 @@ const BROWSER_ACTION_LABEL_KEYS: Record<string, string> = {
 };
 
 export function BrowserActionBadge({ action }: { action?: string }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   if (!action) return null;
   const key = BROWSER_ACTION_LABEL_KEYS[action];
-  return <Pill colorPalette="orange">{key ? t(key as Parameters<typeof t>[0]) : action}</Pill>;
+  return <Pill colorPalette="orange">{key ? translation(key as Parameters<typeof translation>[0]) : action}</Pill>;
 }
 
 function BrowserCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const action = asString(args.action);
   const text = asString(args.text);
   return (
     <FieldList>
-      <InlineField label={t("computerAction")}>
+      <InlineField label={translation("computerAction")}>
         <BrowserActionBadge action={action} />
       </InlineField>
-      {asString(args.url) && <InlineField label={t("url")}>{asString(args.url)}</InlineField>}
+      {asString(args.url) && <InlineField label={translation("url")}>{asString(args.url)}</InlineField>}
       {args.element != null && (
-        <InlineField label={t("computerElement")}>
+        <InlineField label={translation("computerElement")}>
           <Mono>{asString(args.element)}</Mono>
         </InlineField>
       )}
       {asString(args.tab) && (
-        <InlineField label={t("browserTab")}>
+        <InlineField label={translation("browserTab")}>
           <Mono>{asString(args.tab)}</Mono>
         </InlineField>
       )}
       {(action === "find" || action === "network") && asString(args.query) && (
-        <InlineField label={t("browserQuery")}>{asString(args.query)}</InlineField>
+        <InlineField label={translation("browserQuery")}>{asString(args.query)}</InlineField>
       )}
-      {asString(args.goal) && <InlineField label={t("browserGoal")}>{asString(args.goal)}</InlineField>}
-      {asString(args.expect) && <InlineField label={t("browserExpect")}>{asString(args.expect)}</InlineField>}
+      {asString(args.goal) && <InlineField label={translation("browserGoal")}>{asString(args.goal)}</InlineField>}
+      {asString(args.expect) && <InlineField label={translation("browserExpect")}>{asString(args.expect)}</InlineField>}
       {asString(args.dialog) && (
-        <InlineField label={t("browserDialog")}>
+        <InlineField label={translation("browserDialog")}>
           <Mono>{asString(args.dialog)}</Mono>
         </InlineField>
       )}
       {action === "select" && asString(args.option) && (
-        <InlineField label={t("browserOption")}>{asString(args.option)}</InlineField>
+        <InlineField label={translation("browserOption")}>{asString(args.option)}</InlineField>
       )}
       {action === "upload" && Array.isArray(args.paths) && args.paths.length > 0 && (
-        <InlineField label={t("browserPaths")}>{asArray(args.paths).map(asString).join(", ")}</InlineField>
+        <InlineField label={translation("browserPaths")}>{asArray(args.paths).map(asString).join(", ")}</InlineField>
       )}
       {action === "drag" && args.to_element != null && (
-        <InlineField label={t("computerElement")}>
+        <InlineField label={translation("computerElement")}>
           <Mono>{`${asString(args.element)} → ${asString(args.to_element)}`}</Mono>
         </InlineField>
       )}
       {action === "press" && asString(args.key) && (
-        <InlineField label={t("browserKey")}>
+        <InlineField label={translation("browserKey")}>
           <Mono>{asString(args.key)}</Mono>
         </InlineField>
       )}
       {action === "scroll" && asString(args.direction) && (
-        <InlineField label={t("browserDirection")}>{asString(args.direction)}</InlineField>
+        <InlineField label={translation("browserDirection")}>{asString(args.direction)}</InlineField>
       )}
       {action === "evaluate" && asString(args.expression) && (
-        <Field label={t("browserExpression")}>
+        <Field label={translation("browserExpression")}>
           <MonoBlock>{asString(args.expression)}</MonoBlock>
         </Field>
       )}
       {text && (
-        <Field label={t("computerText")}>
+        <Field label={translation("computerText")}>
           <Text fontSize="xs" whiteSpace="pre-wrap">{text}</Text>
         </Field>
       )}
@@ -349,19 +349,19 @@ function TaskRow({ label, status, body, dependencies = [] }: {
   body: string;
   dependencies?: string[];
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const appearance = taskStatusAppearance(status);
   return (
     <Card>
       <Flex align="center" gap={2} mb={body ? 1.5 : 0}>
         <Text textStyle="sectionLabel" flexShrink={0}>{label}</Text>
         <Box flex={1} />
-        {appearance && <Pill colorPalette={appearance.palette}>{t(appearance.key as Parameters<typeof t>[0])}</Pill>}
+        {appearance && <Pill colorPalette={appearance.palette}>{translation(appearance.key as Parameters<typeof translation>[0])}</Pill>}
       </Flex>
       {body && <MarkdownContent content={body} fontSize="xs" />}
       {dependencies.length > 0 && (
         <Flex align="center" gap={1} mt={1.5} flexWrap="wrap">
-          <Text fontSize="2xs" color="fg.subtle">{t("dependsOn")}</Text>
+          <Text fontSize="2xs" color="fg.subtle">{translation("dependsOn")}</Text>
           {dependencies.map((dependency) => (
             <Pill key={dependency} colorPalette="purple">{taskHashLabel(dependency)}</Pill>
           ))}
@@ -407,23 +407,23 @@ function UpdateTasksCallView({ args }: { args: Record<string, unknown> }) {
 // The artifact renders outside the card, so the call view just names what is
 // being opened (its URL/path) — never the page contents.
 function OpenArtifactCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const url = asString(args.url);
   const title = asString(args.title);
   return (
     <FieldList>
-      {title && <InlineField label={t("title")}>{title}</InlineField>}
-      {url && <InlineField label={t("source")}><Mono>{url}</Mono></InlineField>}
+      {title && <InlineField label={translation("title")}>{title}</InlineField>}
+      {url && <InlineField label={translation("source")}><Mono>{url}</Mono></InlineField>}
     </FieldList>
   );
 }
 
 function ReadTaskCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const taskId = asString(args.task_id);
   return (
     <FieldList>
-      <InlineField label={t("taskId")}>{taskId || "—"}</InlineField>
+      <InlineField label={translation("taskId")}>{taskId || "—"}</InlineField>
     </FieldList>
   );
 }
@@ -499,23 +499,23 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
 };
 
 function ReadFileCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("filePath")}>
+      <InlineField label={translation("filePath")}>
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      {args.offset != null && <InlineField label={t("offset")}>{asString(args.offset)}</InlineField>}
-      {args.limit != null && <InlineField label={t("limit")}>{asString(args.limit)}</InlineField>}
+      {args.offset != null && <InlineField label={translation("offset")}>{asString(args.offset)}</InlineField>}
+      {args.limit != null && <InlineField label={translation("limit")}>{asString(args.limit)}</InlineField>}
     </FieldList>
   );
 }
 
 function EditFileCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("filePath")}>
+      <InlineField label={translation("filePath")}>
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
     </FieldList>
@@ -523,13 +523,13 @@ function EditFileCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function WriteFileCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("filePath")}>
+      <InlineField label={translation("filePath")}>
         <Mono>{asString(args.file_path)}</Mono>
       </InlineField>
-      <Field label={t("content")}>
+      <Field label={translation("content")}>
         <MonoBlock>{asString(args.content)}</MonoBlock>
       </Field>
     </FieldList>
@@ -537,19 +537,19 @@ function WriteFileCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function SearchContentCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("pattern")}>
+      <InlineField label={translation("pattern")}>
         <Mono>{asString(args.pattern)}</Mono>
       </InlineField>
       {args.include ? (
-        <InlineField label={t("include")}>
+        <InlineField label={translation("include")}>
           <Mono>{asString(args.include)}</Mono>
         </InlineField>
       ) : null}
       {args.path ? (
-        <InlineField label={t("path")}>
+        <InlineField label={translation("path")}>
           <Mono>{asString(args.path)}</Mono>
         </InlineField>
       ) : null}
@@ -558,10 +558,10 @@ function SearchContentCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function FindFilesCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("pattern")}>
+      <InlineField label={translation("pattern")}>
         <Mono>{asString(args.pattern)}</Mono>
       </InlineField>
     </FieldList>
@@ -569,23 +569,23 @@ function FindFilesCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function FetchUrlCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("url")}>
+      <InlineField label={translation("url")}>
         <Mono>{asString(args.url)}</Mono>
       </InlineField>
-      {args.format ? <InlineField label={t("format")}>{asString(args.format)}</InlineField> : null}
-      {args.timeout != null && <InlineField label={t("timeout")}>{t("secondsValue", { value: asString(args.timeout) })}</InlineField>}
+      {args.format ? <InlineField label={translation("format")}>{asString(args.format)}</InlineField> : null}
+      {args.timeout != null && <InlineField label={translation("timeout")}>{translation("secondsValue", { value: asString(args.timeout) })}</InlineField>}
     </FieldList>
   );
 }
 
 function LoadSkillCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <FieldList>
-      <InlineField label={t("skill")}>
+      <InlineField label={translation("skill")}>
         <Mono>{asString(args.name)}</Mono>
       </InlineField>
     </FieldList>
@@ -593,14 +593,14 @@ function LoadSkillCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function AskUserCallView({ args }: { args: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const questions = asArray(args.questions).map(asRecord);
   if (questions.length === 0) return null;
   return (
     <FieldList>
       {questions.map((item, index) => {
         const options = asArray(item.options).map(asRecord);
-        const label = asString(item.header) || t("questionN", { number: index + 1 });
+        const label = asString(item.header) || translation("questionN", { number: index + 1 });
         return (
           <Field key={index} label={label}>
             <Text fontSize="xs" mb={options.length ? 1.5 : 0}>
@@ -617,7 +617,7 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
             ) : null}
             {item.multiple === true ? (
               <Text fontSize="2xs" color="fg.subtle">
-                {t("multiSelect")}
+                {translation("multiSelect")}
               </Text>
             ) : null}
           </Field>
@@ -628,7 +628,7 @@ function AskUserCallView({ args }: { args: Record<string, unknown> }) {
 }
 
 function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // The call already shows the file path; the result only confirms how much was read
   // (the line range) — the file body itself is the model's to read, not the transcript's.
   const range = [asString(data.start_line), asString(data.end_line)].filter(Boolean).join("–");
@@ -636,23 +636,23 @@ function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
   if (!range) return null;
   return (
     <FieldList>
-      <InlineField label={t("lines")}>
-        {total ? t("linesOfTotal", { range, total }) : range}
+      <InlineField label={translation("lines")}>
+        {total ? translation("linesOfTotal", { range, total }) : range}
       </InlineField>
     </FieldList>
   );
 }
 
 function MatchListResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // Pattern is already shown on the call card — only surface the count + matches.
   const matches = asArray(data.matches).map(asString);
   const count = asString(data.count) || String(matches.length);
   return (
     <FieldList>
-      <InlineField label={t("count")}>{count}</InlineField>
+      <InlineField label={translation("count")}>{count}</InlineField>
       {matches.length > 0 && (
-        <Field label={t("matches")}>
+        <Field label={translation("matches")}>
           <MonoBlock>{matches.join("\n")}</MonoBlock>
         </Field>
       )}
@@ -661,7 +661,7 @@ function MatchListResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FileEditResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // Shared by edit_file and write_file. Path is on the call card.
   const code = asString(data.code);
   const diagnostic = asRecord(data.diagnostic);
@@ -671,14 +671,14 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
     const occurrences = asString(data.occurrences);
     return (
       <FieldList>
-        <InlineField label={t("match")}>
-          <Pill colorPalette="red">{code === "edit_find_not_unique" ? t("notUnique") : t("notFound")}</Pill>
+        <InlineField label={translation("match")}>
+          <Pill colorPalette="red">{code === "edit_find_not_unique" ? translation("notUnique") : translation("notFound")}</Pill>
         </InlineField>
         {code === "edit_find_not_unique" && occurrences && (
-          <InlineField label={t("occurrences")}>{occurrences}</InlineField>
+          <InlineField label={translation("occurrences")}>{occurrences}</InlineField>
         )}
         {message && (
-          <Field label={t("reason")}>
+          <Field label={translation("reason")}>
             <Text fontSize="xs" color="fg.subtle">{message}</Text>
           </Field>
         )}
@@ -690,22 +690,22 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
     const contextLines = asArray(diagnostic.context_snapshot).map(asString);
     return (
       <FieldList>
-        <InlineField label={t("validation")}>
-          <Pill colorPalette="red">{t("failed")}</Pill>
+        <InlineField label={translation("validation")}>
+          <Pill colorPalette="red">{translation("failed")}</Pill>
         </InlineField>
-        <InlineField label={t("origin")}>{asString(diagnostic.origin)}</InlineField>
-        <InlineField label={t("language")}>{asString(diagnostic.language)}</InlineField>
+        <InlineField label={translation("origin")}>{asString(diagnostic.origin)}</InlineField>
+        <InlineField label={translation("language")}>{asString(diagnostic.language)}</InlineField>
         {asString(diagnostic.line) && (
-          <InlineField label={t("line")}>{asString(diagnostic.line)}:{asString(diagnostic.column)}</InlineField>
+          <InlineField label={translation("line")}>{asString(diagnostic.line)}:{asString(diagnostic.column)}</InlineField>
         )}
-        <InlineField label={t("error")}>{asString(diagnostic.message)}</InlineField>
+        <InlineField label={translation("error")}>{asString(diagnostic.message)}</InlineField>
         {contextLines.length > 0 && (
-          <Field label={t("context")}>
+          <Field label={translation("context")}>
             <MonoBlock maxH={32}>{contextLines.join("\n")}</MonoBlock>
           </Field>
         )}
         {message && (
-          <Field label={t("recovery")}>
+          <Field label={translation("recovery")}>
             <Text fontSize="xs" color="fg.subtle">{message}</Text>
           </Field>
         )}
@@ -719,14 +719,14 @@ function FileEditResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // URL + format are on the call card; only surface truncation + fetched content.
   const content = asString(data.content);
   return (
     <FieldList>
-      {data.truncated === true && <InlineField label={t("truncated")}>{t("yes")}</InlineField>}
+      {data.truncated === true && <InlineField label={translation("truncated")}>{translation("yes")}</InlineField>}
       {content && (
-        <Field label={t("content")}>
+        <Field label={translation("content")}>
           <MarkdownContent content={content} fontSize="xs" />
         </Field>
       )}
@@ -735,15 +735,15 @@ function FetchUrlResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function LoadSkillResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // Skill name is on the call card; the internal resolved `path` is dropped.
   const title = asString(data.title);
   const content = asString(data.content);
   return (
     <FieldList>
-      {title && <InlineField label={t("title")}>{title}</InlineField>}
+      {title && <InlineField label={translation("title")}>{title}</InlineField>}
       {content && (
-        <Field label={t("content")}>
+        <Field label={translation("content")}>
           <MarkdownContent content={content} fontSize="xs" />
         </Field>
       )}
@@ -752,7 +752,7 @@ function LoadSkillResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function AskUserResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // Answers arrive as a per-question array of labels (string | string[]). Flatten
   // into readable pills instead of dumping the raw JSON array.
   const answers = asArray(data.answers);
@@ -762,10 +762,10 @@ function AskUserResultView({ data }: { data: Record<string, unknown> }) {
     else labels.push(asString(answer));
   }
   const shown = labels.filter(Boolean);
-  if (shown.length === 0) return <EmptyHint>{t("noAnswer")}</EmptyHint>;
+  if (shown.length === 0) return <EmptyHint>{translation("noAnswer")}</EmptyHint>;
   return (
     <FieldList>
-      <Field label={t("answers")}>
+      <Field label={translation("answers")}>
         <Flex wrap="wrap" gap={1}>
           {shown.map((label, index) => (
             <Pill key={index} colorPalette="green">
@@ -779,13 +779,13 @@ function AskUserResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function GenericView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const entries = Object.entries(data);
-  if (entries.length === 0) return <EmptyHint>{t("noData")}</EmptyHint>;
+  if (entries.length === 0) return <EmptyHint>{translation("noData")}</EmptyHint>;
   return (
     <FieldList>
       {entries.map(([key, value]) => (
-        <InlineField key={key} label={FIELD_LABEL_KEYS[key] ? t(FIELD_LABEL_KEYS[key] as Parameters<typeof t>[0]) : key}>
+        <InlineField key={key} label={FIELD_LABEL_KEYS[key] ? translation(FIELD_LABEL_KEYS[key] as Parameters<typeof translation>[0]) : key}>
           {value && typeof value === "object" ? (
             // Structured values (objects/arrays) are data — monospace JSON.
             <MonoBlock>{JSON.stringify(value, null, 2)}</MonoBlock>
@@ -859,48 +859,48 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
 // Tool result (output) views
 
 function BashResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const output = asString(data.output);
   const outputFile = asString(data.output_file);
   const hasMeta = data.pid != null || data.size != null;
   if (!output && !outputFile && !hasMeta) return null;
   return (
     <FieldList>
-      {data.pid != null && <InlineField label={t("pid")}>{asString(data.pid)}</InlineField>}
-      {data.size != null && <InlineField label={t("size")}>{t("bytesValue", { value: asString(data.size) })}</InlineField>}
-      {data.truncated === true && <InlineField label={t("truncated")}>{t("yes")}</InlineField>}
+      {data.pid != null && <InlineField label={translation("pid")}>{asString(data.pid)}</InlineField>}
+      {data.size != null && <InlineField label={translation("size")}>{translation("bytesValue", { value: asString(data.size) })}</InlineField>}
+      {data.truncated === true && <InlineField label={translation("truncated")}>{translation("yes")}</InlineField>}
       {output ? (
-        <Field label={t("output")}>
+        <Field label={translation("output")}>
           <MonoBlock>{output}</MonoBlock>
         </Field>
       ) : outputFile ? (
-        <InlineField label={t("output")}>{t("writtenTo", { file: outputFile })}</InlineField>
+        <InlineField label={translation("output")}>{translation("writtenTo", { file: outputFile })}</InlineField>
       ) : null}
-      {output && outputFile ? <InlineField label={t("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
-      {asString(data.full_output_file) ? <InlineField label={t("fullOutput")}><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}
+      {output && outputFile ? <InlineField label={translation("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
+      {asString(data.full_output_file) ? <InlineField label={translation("fullOutput")}><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}
     </FieldList>
   );
 }
 
 function AgentMessageResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const code = asString(data.code);
   const successful = code === "agent_question_queued" || code === "agent_response_delivered";
-  if (!successful) return <ErrorView message={asString(data.message) || t("agentMessageFailed")} />;
+  if (!successful) return <ErrorView message={asString(data.message) || translation("agentMessageFailed")} />;
   return (
     <FieldList>
-      <InlineField label={t("fieldStatus")}>
+      <InlineField label={translation("fieldStatus")}>
         <Pill colorPalette="green">
-          {code === "agent_question_queued" ? t("agentQuestionQueued") : t("agentResponseDelivered")}
+          {code === "agent_question_queued" ? translation("agentQuestionQueued") : translation("agentResponseDelivered")}
         </Pill>
       </InlineField>
       {asString(data.agent) && (
-        <InlineField label={t("agent")}>
+        <InlineField label={translation("agent")}>
           <Pill colorPalette="purple">{asString(data.agent)}</Pill>
         </InlineField>
       )}
       {asString(data.message_identifier) && (
-        <InlineField label={t("messageId")}>
+        <InlineField label={translation("messageId")}>
           <Mono>{asString(data.message_identifier)}</Mono>
         </InlineField>
       )}
@@ -909,8 +909,8 @@ function AgentMessageResultView({ data }: { data: Record<string, unknown> }) {
 }
 
 function WebResultCard({ result }: { result: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
-  const title = asString(result.title) || t("untitled");
+  const translation = useTranslations("ToolViews");
+  const title = asString(result.title) || translation("untitled");
   const url = asString(result.url);
   const summary = asString(result.summary);
   const date = asString(result.published_date);
@@ -942,9 +942,9 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
 // result view only renders the result cards — shown directly, not behind a
 // nested collapsible (the tool-call card is the collapsible).
 function WebSearchResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const results = asArray(data.results).map(asRecord);
-  if (results.length === 0) return <EmptyHint>{t("noResults")}</EmptyHint>;
+  if (results.length === 0) return <EmptyHint>{translation("noResults")}</EmptyHint>;
   return (
     <Flex direction="column" gap={1.5}>
       {results.map((result, index) => <WebResultCard key={index} result={result} />)}
@@ -955,11 +955,11 @@ function WebSearchResultView({ data }: { data: Record<string, unknown> }) {
 // A spawned agent returns its A2A task as the tool result; show its
 // deliverable (artifact).
 function AgentTaskResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const task = data as unknown as A2ATask;
   return (
     <FieldList>
-      <Field label={t("response")}>
+      <Field label={translation("response")}>
         <MarkdownContent content={taskArtifactText(task)} />
       </Field>
     </FieldList>
@@ -988,12 +988,12 @@ function ErrorView({ message }: { message: string }) {
 // Shown when the browser tool can't reach Chrome because remote debugging is off: a brief message,
 // the exact address, and a one-click button that opens that settings page in the user's browser.
 function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string; browserName?: string }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
   return (
     <AlertBox colorPalette="yellow">
-      <Text textStyle="fieldLabel">{t("browserEnableTitle")}</Text>
-      <Text fontSize="xs" color="fg.muted" mt={0.5}>{t("browserEnableBody")}</Text>
+      <Text textStyle="fieldLabel">{translation("browserEnableTitle")}</Text>
+      <Text fontSize="xs" color="fg.muted" mt={0.5}>{translation("browserEnableBody")}</Text>
       <Flex align="center" gap={2} mt={2}>
         <Button
           size="xs"
@@ -1002,11 +1002,11 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
           onClick={async () => setOpened(await openBrowserRemoteDebugging(browserName || "chrome"))}
         >
           <LuExternalLink size={12} />
-          {t("browserEnableButton")}
+          {translation("browserEnableButton")}
         </Button>
         <Mono fontSize="2xs" color="fg.subtle">{address}</Mono>
       </Flex>
-      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{t("browserEnableOpened")}</Text>}
+      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{translation("browserEnableOpened")}</Text>}
     </AlertBox>
   );
 }
@@ -1015,16 +1015,16 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
 // in-chat alert language as the remote-debugging one, with a brief message and a one-click
 // button that surfaces the system prompt and opens the right System Settings pane.
 function PermissionGrantAlert({ kind }: { kind: string }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
   const isScreenRecording = kind === "screen_recording";
   return (
     <AlertBox colorPalette="yellow">
       <Text textStyle="fieldLabel">
-        {isScreenRecording ? t("permissionScreenRecordingTitle") : t("permissionAccessibilityTitle")}
+        {isScreenRecording ? translation("permissionScreenRecordingTitle") : translation("permissionAccessibilityTitle")}
       </Text>
       <Text fontSize="xs" color="fg.muted" mt={0.5}>
-        {isScreenRecording ? t("permissionScreenRecordingBody") : t("permissionAccessibilityBody")}
+        {isScreenRecording ? translation("permissionScreenRecordingBody") : translation("permissionAccessibilityBody")}
       </Text>
       <Flex align="center" gap={2} mt={2}>
         <Button
@@ -1037,10 +1037,10 @@ function PermissionGrantAlert({ kind }: { kind: string }) {
           }}
         >
           <LuExternalLink size={12} />
-          {t("permissionGrantButton")}
+          {translation("permissionGrantButton")}
         </Button>
       </Flex>
-      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{t("permissionOpened")}</Text>}
+      {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{translation("permissionOpened")}</Text>}
     </AlertBox>
   );
 }
@@ -1049,11 +1049,11 @@ function PermissionGrantAlert({ kind }: { kind: string }) {
 // task object itself (kind === "task"). The id is already shown on the call
 // card, so the result only surfaces the outcome — it never re-renders the id.
 function ReadTaskResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const code = asString(data.code);
-  if (code === "task_not_found") return <ErrorView message={t("taskNotFound")} />;
+  if (code === "task_not_found") return <ErrorView message={translation("taskNotFound")} />;
   if (code === "read_task_unavailable") {
-    return <EmptyHint>{t("readTaskUnavailable")}</EmptyHint>;
+    return <EmptyHint>{translation("readTaskUnavailable")}</EmptyHint>;
   }
   return <AgentTaskResultView data={data} />;
 }
@@ -1181,7 +1181,7 @@ function compactMcpContent(content: unknown): unknown {
 // An artifact's title/label may contain markdown, so it is rendered through the
 // markdown renderer above the artifact body.
 function ArtifactFrame({ title, showHeader = true, fillContainer = false, children }: { title: string; showHeader?: boolean; fillContainer?: boolean; children: ReactNode }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // Remounting the content (via a changing key) forces a fresh fetch of the
   // rendered page — the /artifact-page route is served no-store, so the iframe
   // reloads the current file/URL rather than showing a stale render. Works for every
@@ -1195,8 +1195,8 @@ function ArtifactFrame({ title, showHeader = true, fillContainer = false, childr
             {title}
           </Text>
           <IconButton
-            aria-label={t("reloadArtifact")}
-            title={t("reloadArtifact")}
+            aria-label={translation("reloadArtifact")}
+            title={translation("reloadArtifact")}
             variant="ghost"
             boxSize="8"
             flexShrink={0}
@@ -1243,7 +1243,7 @@ function ArtifactSandbox({
   fixedHeight: string;
   fillContainer?: boolean;
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const frameRef = useRef<HTMLIFrameElement>(null);
   const onArtifactEvent = useArtifactEvent();
   const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
@@ -1364,7 +1364,7 @@ function ArtifactSandbox({
         alignItems="center"
         justifyContent="center"
         role="separator"
-        aria-label={t("resizeArtifactHeight")}
+        aria-label={translation("resizeArtifactHeight")}
         _hover={{ "& > div": { bg: "fg.muted" } }}
       />
     </Box>
@@ -1411,7 +1411,7 @@ function ImageAnnotationPanel({
   onDelete: () => void;
   onDone: () => void;
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const horizontalOffset = draft.xRatio > 0.68 ? "calc(-100% - 14px)" : "14px";
   const verticalOffset = draft.yRatio > 0.68 ? "calc(-100% + 14px)" : "14px";
   return (
@@ -1432,7 +1432,7 @@ function ImageAnnotationPanel({
       onClick={(event: ReactMouseEvent) => event.stopPropagation()}
     >
       <Text fontSize="xs" fontWeight="semibold" mb={2}>
-        {t("annotation")}
+        {translation("annotation")}
       </Text>
       <Textarea
         value={draft.comment}
@@ -1444,20 +1444,20 @@ function ImageAnnotationPanel({
             onDone();
           }
         }}
-        placeholder={t("annotationPlaceholder")}
+        placeholder={translation("annotationPlaceholder")}
         fontSize="sm"
         bg="bg.subtle"
         minH={16}
         autoFocus
       />
       <Flex align="center" justify="flex-end" gap={2} mt={2}>
-        <Button aria-label={t("deleteAnnotation")} title={t("deleteAnnotation")} variant="ghost" colorPalette="red" onClick={onDelete}>
+        <Button aria-label={translation("deleteAnnotation")} title={translation("deleteAnnotation")} variant="ghost" colorPalette="red" onClick={onDelete}>
           <LuTrash2 size={12} />
-          {t("removeIt")}
+          {translation("removeIt")}
         </Button>
-        <Button aria-label={t("saveAnnotation")} title={t("saveAnnotation")} variant="solid" colorPalette="blue" onClick={onDone}>
+        <Button aria-label={translation("saveAnnotation")} title={translation("saveAnnotation")} variant="solid" colorPalette="blue" onClick={onDone}>
           <LuCheck size={12} />
-          {t("saveIt")}
+          {translation("saveIt")}
         </Button>
       </Flex>
     </Box>
@@ -1477,7 +1477,7 @@ function AnnotatableImage({
   fillContainer: boolean;
   annotationsControl?: ArtifactImageAnnotationControls;
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const imageRef = useRef<HTMLImageElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // The panned content box — gets a dampened translate when a drag pushes past the scroll
@@ -1873,13 +1873,13 @@ function AnnotatableImage({
             contentProps={{ maxW: "340px" }}
             content={
               <Box>
-                <Text fontWeight="semibold" mb={1} color="fg">{t("annotationNumber", { number: annotation.sequence })}</Text>
+                <Text fontWeight="semibold" mb={1} color="fg">{translation("annotationNumber", { number: annotation.sequence })}</Text>
                 <MarkdownContent content={annotation.comment} fontSize="xs" />
               </Box>
             }
           >
           <Button
-            aria-label={t("annotationNumber", { number: annotation.sequence })}
+            aria-label={translation("annotationNumber", { number: annotation.sequence })}
             size="2xs"
             variant="solid"
             colorPalette="blue"
@@ -1920,14 +1920,14 @@ function AnnotatableImage({
 // brief moment while a version's bytes are still resolving, so there's no error flash. In
 // the panel (fillContainer) it centers to fill; inline in the transcript it's a small hint.
 function ArtifactUnavailable({ fillContainer, children }: { fillContainer?: boolean; children: ReactNode }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   // In the panel (fillContainer) this is a real empty state — icon + title + hint, styled
   // exactly like the app's other panel empty states. Inline in the transcript it stays a
   // one-line hint.
   if (fillContainer) {
     return (
       <Flex flex={1} minH={0} align="center" justify="center">
-        <PanelEmptyState icon={<LuImageOff />} title={children} description={t("nothingToPreviewHint")} />
+        <PanelEmptyState icon={<LuImageOff />} title={children} description={translation("nothingToPreviewHint")} />
       </Flex>
     );
   }
@@ -1945,9 +1945,9 @@ function RenderArtifact({
   fillContainer?: boolean;
   annotationsControl?: ArtifactImageAnnotationControls;
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const type = asString(artifact.type);
-  const title = asString(artifact.title) || t("mcpArtifact");
+  const title = asString(artifact.title) || translation("mcpArtifact");
   const artifactId = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id);
   const isAutoHeight = artifact.height === "auto" || artifact.height == null || artifact.height === "";
   if (type === "iframe") {
@@ -1972,7 +1972,7 @@ function RenderArtifact({
       ? `${baseSrc}${baseSrc.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`
       : baseSrc;
     const srcDoc = asString(artifact.srcdoc);
-    if (!src && !srcDoc) return <ArtifactUnavailable fillContainer={fillContainer}>{t("nothingToPreview")}</ArtifactUnavailable>;
+    if (!src && !srcDoc) return <ArtifactUnavailable fillContainer={fillContainer}>{translation("nothingToPreview")}</ArtifactUnavailable>;
     return (
       <ArtifactFrame title={title} showHeader={showHeader} fillContainer={fillContainer}>
         <ArtifactSandbox
@@ -1992,7 +1992,7 @@ function RenderArtifact({
   }
   if (type === "html") {
     const html = asString(artifact.html) || asString(artifact.srcdoc);
-    if (!html) return <ArtifactUnavailable fillContainer={fillContainer}>{t("nothingToPreview")}</ArtifactUnavailable>;
+    if (!html) return <ArtifactUnavailable fillContainer={fillContainer}>{translation("nothingToPreview")}</ArtifactUnavailable>;
     return (
       <ArtifactFrame title={title} showHeader={showHeader} fillContainer={fillContainer}>
         <ArtifactSandbox
@@ -2016,7 +2016,7 @@ function RenderArtifact({
     // an empty "nothing to preview" when the blob URL is not yet available.
     const explicit = safeImageSource(asString(artifact.data) || asString(artifact.src) || asString(artifact.url));
     const source = explicit || (file ? artifactPageUrl(file, { location: asString(artifact.location), session: asString(artifact.session) }) : "");
-    if (!source) return <ArtifactUnavailable fillContainer={fillContainer}>{t("nothingToPreview")}</ArtifactUnavailable>;
+    if (!source) return <ArtifactUnavailable fillContainer={fillContainer}>{translation("nothingToPreview")}</ArtifactUnavailable>;
     const imageIdentity = imageIdentityForArtifact({ ...artifact, type });
     return (
       <ArtifactFrame title={title} showHeader={showHeader} fillContainer={fillContainer}>
@@ -2047,7 +2047,7 @@ function RenderArtifact({
     );
   }
   const href = safeWebUrl(asString(artifact.href) || asString(artifact.url) || asString(artifact.src));
-  if (!href) return <ErrorView message={t("linkNoSafeUrl")} />;
+  if (!href) return <ErrorView message={translation("linkNoSafeUrl")} />;
   return (
     <ArtifactFrame title={title} showHeader={showHeader}>
       <Link href={href} target="_blank" rel="noopener noreferrer" colorPalette="blue">
@@ -2109,7 +2109,7 @@ export function isArtifactPanelArtifact(artifact: Record<string, unknown>): bool
 // active. Unmounting the iframe stops its scripts and network activity, which is
 // what keeps a long transcript (many artifacts) from dragging the page down.
 function CollapsedArtifact({ title, onOpen }: { title: string; onOpen: () => void }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   return (
     <Button
       variant="outline"
@@ -2128,7 +2128,7 @@ function CollapsedArtifact({ title, onOpen }: { title: string; onOpen: () => voi
         <LuAppWindow size={13} />
       </Box>
       <Text textStyle="fieldLabel" flex={1} minW={0} truncate>{title}</Text>
-      <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{t("clickToOpen")}</Text>
+      <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{translation("clickToOpen")}</Text>
     </Button>
   );
 }
@@ -2146,7 +2146,7 @@ export function ToolArtifacts({
   onOpenTab?: (toolCallId: string) => void;
   toolCallId?: string;
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   if (artifacts.length === 0) return null;
   // If this tool call's artifact is already an open tab, mount it live; otherwise
   // show a collapsed placeholder the user can click to open.
@@ -2156,7 +2156,7 @@ export function ToolArtifacts({
       {artifacts.map((artifact, index) => {
         const key = asString(artifact.artifact_id) || asString(artifact.artifactId) || asString(artifact.id) || String(index);
         if (isLiveArtifact(artifact) && !callOpen) {
-          const title = asString(artifact.title) || t("artifactFallback");
+          const title = asString(artifact.title) || translation("artifactFallback");
           return <CollapsedArtifact key={key} title={title} onOpen={() => onOpenTab?.(toolCallId ?? "")} />;
         }
         return <RenderArtifact key={key} artifact={artifact} />;
@@ -2168,9 +2168,9 @@ export function ToolArtifacts({
 // The MCP result shown inside the tool-call card. Artifacts are rendered
 // separately (outside the card), so this only surfaces the tool's textual output.
 function McpResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   if (data.is_error === true) {
-    return <ErrorView message={t("mcpToolError")} />;
+    return <ErrorView message={translation("mcpToolError")} />;
   }
   const structuredContent = data.structured_content;
   const output = structuredContent != null ? structuredContent : compactMcpContent(data.content ?? data.contents);
@@ -2189,13 +2189,13 @@ function McpResultView({ data }: { data: Record<string, unknown> }) {
 // Element lists (the observe payload and the diff) are shown as their raw JSON in a code block,
 // like a diff or file body: no per-row assembly, just the data.
 function ComputerResultView({ data }: { data: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   if (data.ok === false) {
     // A missing macOS privacy grant is not a failure to report but a thing to fix, so
     // render the grant flow instead of a red error box.
     const neededPermission = asString(data.needs_permission);
     if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
-    return <ErrorView message={asString(data.error) || t("failed")} />;
+    return <ErrorView message={asString(data.error) || translation("failed")} />;
   }
   const did = asString(data.did);
 
@@ -2206,10 +2206,10 @@ function ComputerResultView({ data }: { data: Record<string, unknown> }) {
     const durationMs = Number(data.duration_ms);
     return (
       <FieldList>
-        {asString(data.window) && <InlineField label={t("computerWindow")}>{asString(data.window)}</InlineField>}
-        <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>
+        {asString(data.window) && <InlineField label={translation("computerWindow")}>{asString(data.window)}</InlineField>}
+        <InlineField label={translation("computerTotalElements")}>{asString(data.count)}</InlineField>
         {Number.isFinite(durationMs) && (
-          <InlineField label={t("computerDuration")}>{t("computerMs", { value: Math.round(durationMs) })}</InlineField>
+          <InlineField label={translation("computerDuration")}>{translation("computerMs", { value: Math.round(durationMs) })}</InlineField>
         )}
       </FieldList>
     );
@@ -2219,7 +2219,7 @@ function ComputerResultView({ data }: { data: Record<string, unknown> }) {
   if (did) {
     return (
       <FieldList>
-        <InlineField label={t("computerResult")}>{did}</InlineField>
+        <InlineField label={translation("computerResult")}>{did}</InlineField>
       </FieldList>
     );
   }
@@ -2231,7 +2231,7 @@ function ComputerResultView({ data }: { data: Record<string, unknown> }) {
 // The URL row is suppressed when it merely echoes the call's own `url` argument (the call
 // card already shows it); it appears only when the browser ended up somewhere else.
 function BrowserResultView({ data, args }: { data: Record<string, unknown>; args?: Record<string, unknown> }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const normalizeUrl = (value: string) => value.replace(/\/+$/, "");
   const requestedUrl = normalizeUrl(asString(args?.url));
   const resultUrl = asString(data.url);
@@ -2240,7 +2240,7 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
     if (asString(data.code) === "browser_remote_debugging_off") {
       return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
     }
-    return <ErrorView message={asString(data.error) || t("failed")} />;
+    return <ErrorView message={asString(data.error) || translation("failed")} />;
   }
   if (Array.isArray(data.tabs)) {
     const tabs = asArray(data.tabs).map(asRecord);
@@ -2251,7 +2251,7 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
             key={asString(tab.tab) || index}
             label={asString(tab.title) || asString(tab.url) || String(index + 1)}
           >
-            {asString(tab.url)}{tab.active ? ` · ${t("browserTabActive")}` : ""}
+            {asString(tab.url)}{tab.active ? ` · ${translation("browserTabActive")}` : ""}
           </InlineField>
         ))}
       </FieldList>
@@ -2260,9 +2260,9 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
   if (data.text != null) {
     return (
       <FieldList>
-        {asString(data.title) && <InlineField label={t("title")}>{asString(data.title)}</InlineField>}
-        {showUrl && <InlineField label={t("url")}>{resultUrl}</InlineField>}
-        <Field label={t("browserPageText")}>
+        {asString(data.title) && <InlineField label={translation("title")}>{asString(data.title)}</InlineField>}
+        {showUrl && <InlineField label={translation("url")}>{resultUrl}</InlineField>}
+        <Field label={translation("browserPageText")}>
           <MonoBlock>{asString(data.text)}</MonoBlock>
         </Field>
       </FieldList>
@@ -2273,16 +2273,16 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
   if (data.count != null) {
     return (
       <FieldList>
-        {asString(data.did) && <InlineField label={t("computerResult")}>{asString(data.did)}</InlineField>}
-        {asString(data.title) && <InlineField label={t("title")}>{asString(data.title)}</InlineField>}
+        {asString(data.did) && <InlineField label={translation("computerResult")}>{asString(data.did)}</InlineField>}
+        {asString(data.title) && <InlineField label={translation("title")}>{asString(data.title)}</InlineField>}
         {showUrl && (
-          <InlineField label={t("url")}>
-            {resultUrl}{data.url_changed === true ? ` · ${t("browserUrlChanged")}` : ""}
+          <InlineField label={translation("url")}>
+            {resultUrl}{data.url_changed === true ? ` · ${translation("browserUrlChanged")}` : ""}
           </InlineField>
         )}
-        <InlineField label={t("computerTotalElements")}>{asString(data.count)}</InlineField>
+        <InlineField label={translation("computerTotalElements")}>{asString(data.count)}</InlineField>
         {data.dialog != null && (
-          <InlineField label={t("browserDialog")}>
+          <InlineField label={translation("browserDialog")}>
             {`${asString(asRecord(data.dialog).type)}: ${asString(asRecord(data.dialog).message)}`}
           </InlineField>
         )}
@@ -2293,7 +2293,7 @@ function BrowserResultView({ data, args }: { data: Record<string, unknown>; args
   if (did) {
     return (
       <FieldList>
-        <InlineField label={t("computerResult")}>{did}</InlineField>
+        <InlineField label={translation("computerResult")}>{did}</InlineField>
       </FieldList>
     );
   }
@@ -2311,7 +2311,7 @@ export function ToolResultView({
   args?: Record<string, unknown>;
   status?: ToolEventStatus;
 }) {
-  const t = useTranslations("ToolViews");
+  const translation = useTranslations("ToolViews");
   const parsed = tryParse(content);
 
   // MCP discovery results (the full server/tool catalog with JSON schemas) are
@@ -2333,16 +2333,16 @@ export function ToolResultView({
     if (status === "running" && hasBackgroundTaskIdentifier(data)) return null;
     if (code === "tool_error") return null;
     if (code === "web_search_completed") return <WebSearchResultView data={data} />;
-    if (code === "web_search_error") return <ErrorView message={asString(data.message) || t("searchFailed")} />;
+    if (code === "web_search_error") return <ErrorView message={asString(data.message) || translation("searchFailed")} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
     if (name === "ask_agent" || name === "respond_agent") return <AgentMessageResultView data={data} />;
     if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
     // A spawned agent's turn failed before it could report — surface the real reason
     // (e.g. its model was rate-limited) rather than a bland field dump.
-    if (code === "agent_failed") return <ErrorView message={asString(data.message) || asString(data.title) || t("agentFailed")} />;
+    if (code === "agent_failed") return <ErrorView message={asString(data.message) || asString(data.title) || translation("agentFailed")} />;
     // A spawned agent that genuinely finished with nothing to hand back.
-    if (code === "agent_no_report") return <EmptyHint>{asString(data.message) || t("agentNoReport")}</EmptyHint>;
+    if (code === "agent_no_report") return <EmptyHint>{asString(data.message) || translation("agentNoReport")}</EmptyHint>;
     if (code === "empty_response") {
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;

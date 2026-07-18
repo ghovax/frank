@@ -56,7 +56,7 @@ export function ConnectionSettings({
   // it since the dialog already has a titled header.
   variant?: "page" | "dialog";
 }) {
-  const t = useTranslations("ConnectionSettings");
+  const translation = useTranslations("ConnectionSettings");
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   // Which target is mid-connect (its id), or null. Deriving `connecting` from this — instead
   // of a separate flag that swapped the entire picker out for a spinner — keeps the picker
@@ -134,10 +134,10 @@ export function ConnectionSettings({
         setConnectingTarget(null);
         toaster.create({
           type: "error",
-          title: t("couldNotConnect"),
+          title: translation("couldNotConnect"),
           description: isTauri()
-            ? t("localServerDidNotStart")
-            : t("noServerResponding", { url: LOCAL_DEFAULT_URL.replace(/^https?:\/\//, "") }),
+            ? translation("localServerDidNotStart")
+            : translation("noServerResponding", { url: LOCAL_DEFAULT_URL.replace(/^https?:\/\//, "") }),
           closable: true,
         });
         return;
@@ -149,12 +149,12 @@ export function ConnectionSettings({
       setConnectingTarget(null);
       toaster.create({
         type: "error",
-        title: t("couldNotConnect"),
+        title: translation("couldNotConnect"),
         description: caught instanceof Error ? caught.message : String(caught),
         closable: true,
       });
     }
-  }, [onConnected, t]);
+  }, [onConnected, translation]);
 
   const connectRemote = useCallback(
     async (profile: ConnectionProfile) => {
@@ -170,8 +170,8 @@ export function ConnectionSettings({
           setConnectingTarget(null);
           toaster.create({
             type: "error",
-            title: t("couldNotReach", { name: profile.name }),
-            description: t("noResponse", { url: profile.url }),
+            title: translation("couldNotReach", { name: profile.name }),
+            description: translation("noResponse", { url: profile.url }),
             closable: true,
           });
           return;
@@ -183,13 +183,13 @@ export function ConnectionSettings({
         setConnectingTarget(null);
         toaster.create({
           type: "error",
-          title: t("couldNotReach", { name: profile.name }),
+          title: translation("couldNotReach", { name: profile.name }),
           description: caught instanceof Error ? caught.message : String(caught),
           closable: true,
         });
       }
     },
-    [onConnected, t]
+    [onConnected, translation]
   );
 
   const handleAddConnection = useCallback(async () => {
@@ -298,7 +298,7 @@ export function ConnectionSettings({
             </Text>
           </Flex>
           <Text fontSize="sm" color="fg.muted" textAlign="center">
-            {t("selectEnvironment")}
+            {translation("selectEnvironment")}
           </Text>
         </VStack>
       )}
@@ -315,14 +315,14 @@ export function ConnectionSettings({
             onClick={connectLocal}
             disabled={localActive || connecting}
             loading={connectingTarget === LOCAL_TARGET_ID}
-            loadingText={isTauri() ? t("startingLocalServer") : t("lookingForLocalServer")}
+            loadingText={isTauri() ? translation("startingLocalServer") : translation("lookingForLocalServer")}
           >
             {localActive ? <LuCheck /> : failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw /> : <LuLaptop />}
-            {localActive ? t("connectedToLocalServer") : failedTarget === LOCAL_TARGET_ID ? t("retryLocalServer") : t("connectLocalServer")}
+            {localActive ? translation("connectedToLocalServer") : failedTarget === LOCAL_TARGET_ID ? translation("retryLocalServer") : translation("connectLocalServer")}
           </Button>
 
           <VStack gap={2} align="stretch">
-            <SectionHeader mb={0} icon={<LuServer size={15} />} title={t("savedConnections")} />
+            <SectionHeader mb={0} icon={<LuServer size={15} />} title={translation("savedConnections")} />
             {connections.length === 0 ? (
               <EmptyState.Root size="sm">
                 <EmptyState.Content pt={2}>
@@ -330,9 +330,9 @@ export function ConnectionSettings({
                     <LuServer />
                   </EmptyState.Indicator>
                   <VStack gap={0}>
-                    <EmptyState.Title fontSize="sm">{t("noSavedConnections")}</EmptyState.Title>
+                    <EmptyState.Title fontSize="sm">{translation("noSavedConnections")}</EmptyState.Title>
                     <EmptyState.Description fontSize="xs">
-                      {t("noSavedConnectionsHint")}
+                      {translation("noSavedConnectionsHint")}
                     </EmptyState.Description>
                   </VStack>
                 </EmptyState.Content>
@@ -365,7 +365,7 @@ export function ConnectionSettings({
                     {active ? (
                       <Flex align="center" gap={1} color="green.fg" px={1} flexShrink={0}>
                         <LuCheck size={12} />
-                        <Text textStyle="fieldLabel">{t("connected")}</Text>
+                        <Text textStyle="fieldLabel">{translation("connected")}</Text>
                       </Flex>
                     ) : (
                       <Button
@@ -373,10 +373,10 @@ export function ConnectionSettings({
                         onClick={() => connectRemote(profile)}
                         disabled={connecting}
                         loading={connectingTarget === profile.id}
-                        loadingText={t("connectingTo", { name: profile.name })}
+                        loadingText={translation("connectingTo", { name: profile.name })}
                       >
                         {failedTarget === profile.id ? <LuRotateCcw size={12} /> : <LuPlug size={12} />}
-                        {failedTarget === profile.id ? t("retry") : t("connect")}
+                        {failedTarget === profile.id ? translation("retry") : translation("connect")}
                       </Button>
                     )}
                     <Button
@@ -385,7 +385,7 @@ export function ConnectionSettings({
                       onClick={() => handleDelete(profile.id)}
                       loading={deletingConnectionId === profile.id}
                       disabled={deletingConnectionId !== null}
-                      aria-label={t("deleteConnection", { url: profile.url })}
+                      aria-label={translation("deleteConnection", { url: profile.url })}
                     >
                       <LuTrash2 size={12} />
                     </Button>
@@ -396,7 +396,7 @@ export function ConnectionSettings({
           </VStack>
 
           <VStack gap={3} align="stretch">
-            <SectionHeader mb={0} icon={<LuPlus size={15} />} title={t("newRemoteConnection")} />
+            <SectionHeader mb={0} icon={<LuPlus size={15} />} title={translation("newRemoteConnection")} />
             <Flex gap={2.5}>
               <Button
                 h="auto"
@@ -409,8 +409,8 @@ export function ConnectionSettings({
               >
                 <LuServer size={14} />
                 <Box textAlign="left" pl={1.5}>
-                  <Text fontSize="sm" fontWeight="medium">{t("serverUrl")}</Text>
-                  <Text fontSize="xs" color="fg.muted">{t("serverUrlSubtitle")}</Text>
+                  <Text fontSize="sm" fontWeight="medium">{translation("serverUrl")}</Text>
+                  <Text fontSize="xs" color="fg.muted">{translation("serverUrlSubtitle")}</Text>
                 </Box>
               </Button>
               <Button
@@ -424,8 +424,8 @@ export function ConnectionSettings({
               >
                 <LuNetwork size={14} />
                 <Box textAlign="left" pl={1.5}>
-                  <Text fontSize="sm" fontWeight="medium">{t("sshHost")}</Text>
-                  <Text fontSize="xs" color="fg.muted">{t("sshHostSubtitle")}</Text>
+                  <Text fontSize="sm" fontWeight="medium">{translation("sshHost")}</Text>
+                  <Text fontSize="xs" color="fg.muted">{translation("sshHostSubtitle")}</Text>
                 </Box>
               </Button>
             </Flex>
@@ -433,7 +433,7 @@ export function ConnectionSettings({
               {addMode === "url" ? (
                 <VStack align="stretch" gap={3}>
                   <Field.Root>
-                    <Field.Label textStyle="fieldLabel">{t("serverUrl")}</Field.Label>
+                    <Field.Label textStyle="fieldLabel">{translation("serverUrl")}</Field.Label>
                     <Input
                       bg="bg.subtle"
                       placeholder="http://localhost:8822"
@@ -444,7 +444,7 @@ export function ConnectionSettings({
                       }}
                     />
                     <Field.HelperText fontSize="xs">
-                      {t("serverUrlHelper")}
+                      {translation("serverUrlHelper")}
                     </Field.HelperText>
                   </Field.Root>
                   <Flex justify="flex-end">
@@ -455,14 +455,14 @@ export function ConnectionSettings({
                       disabled={!newUrl.trim() || savingConnection}
                     >
                       <LuPlus size={14} />
-                      {t("saveConnection")}
+                      {translation("saveConnection")}
                     </Button>
                   </Flex>
                 </VStack>
               ) : (
                 <VStack align="stretch" gap={3}>
                   <Field.Root>
-                    <Field.Label textStyle="fieldLabel">{t("hostAlias")}</Field.Label>
+                    <Field.Label textStyle="fieldLabel">{translation("hostAlias")}</Field.Label>
                     {sshHosts.length > 0 && (
                       <Flex gap={1.5} wrap="wrap" mb={2}>
                         {sshHosts.slice(0, 8).map((host) => (
@@ -486,45 +486,45 @@ export function ConnectionSettings({
                       <Input flex={1} minW={0} bg="bg.subtle" placeholder="biowulf, lab-gpu, coder.myworkspace" value={sshAlias} onChange={(event) => setSshAlias(event.target.value)} />
                       <Button variant="ghost" onClick={refreshSshHosts} loading={sshLoading} disabled={sshLoading} flexShrink={0}>
                         <LuRotateCcw size={12} />
-                        {t("reloadHosts")}
+                        {translation("reloadHosts")}
                       </Button>
                     </Flex>
                     <Field.HelperText fontSize="xs">
-                      {t("hostAliasHelper")}
+                      {translation("hostAliasHelper")}
                     </Field.HelperText>
                   </Field.Root>
                   <Flex gap={2} align="flex-start">
                     <Field.Root>
-                      <Field.Label textStyle="fieldLabel">{t("userOverride")}</Field.Label>
-                      <Input bg="bg.subtle" placeholder={t("userOverridePlaceholder")} value={sshUser} onChange={(event) => setSshUser(event.target.value)} />
+                      <Field.Label textStyle="fieldLabel">{translation("userOverride")}</Field.Label>
+                      <Input bg="bg.subtle" placeholder={translation("userOverridePlaceholder")} value={sshUser} onChange={(event) => setSshUser(event.target.value)} />
                     </Field.Root>
                     <Field.Root maxW="132px">
-                      <Field.Label textStyle="fieldLabel">{t("sshPort")}</Field.Label>
+                      <Field.Label textStyle="fieldLabel">{translation("sshPort")}</Field.Label>
                       <Input bg="bg.subtle" placeholder="22" value={sshPort} onChange={(event) => setSshPort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                   </Flex>
                   <Field.Root>
-                    <Field.Label textStyle="fieldLabel">{t("identityFileOverride")}</Field.Label>
-                    <Input bg="bg.subtle" placeholder={t("identityFilePlaceholder")} value={sshIdentityFile} onChange={(event) => setSshIdentityFile(event.target.value)} />
+                    <Field.Label textStyle="fieldLabel">{translation("identityFileOverride")}</Field.Label>
+                    <Input bg="bg.subtle" placeholder={translation("identityFilePlaceholder")} value={sshIdentityFile} onChange={(event) => setSshIdentityFile(event.target.value)} />
                   </Field.Root>
                   <Flex gap={2} align="flex-start">
                     <Field.Root>
-                      <Field.Label textStyle="fieldLabel">{t("localTunnelPort")}</Field.Label>
-                      <Input bg="bg.subtle" placeholder={t("localTunnelPortPlaceholder")} value={sshLocalPort} onChange={(event) => setSshLocalPort(event.target.value.replace(/\D/g, ""))} />
+                      <Field.Label textStyle="fieldLabel">{translation("localTunnelPort")}</Field.Label>
+                      <Input bg="bg.subtle" placeholder={translation("localTunnelPortPlaceholder")} value={sshLocalPort} onChange={(event) => setSshLocalPort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                     <Field.Root>
-                      <Field.Label textStyle="fieldLabel">{t("serverPortOnHost")}</Field.Label>
+                      <Field.Label textStyle="fieldLabel">{translation("serverPortOnHost")}</Field.Label>
                       <Input bg="bg.subtle" placeholder="8822" value={sshRemotePort} onChange={(event) => setSshRemotePort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                   </Flex>
                   <Field.Root>
-                    <Field.Label textStyle="fieldLabel">{t("hostNotes")}</Field.Label>
-                    <Textarea bg="bg.subtle" rows={3} placeholder={t("hostNotesPlaceholder")} value={sshContext} onChange={(event) => setSshContext(event.target.value)} />
+                    <Field.Label textStyle="fieldLabel">{translation("hostNotes")}</Field.Label>
+                    <Textarea bg="bg.subtle" rows={3} placeholder={translation("hostNotesPlaceholder")} value={sshContext} onChange={(event) => setSshContext(event.target.value)} />
                   </Field.Root>
                   <Flex justify="flex-end">
                     <Button variant="subtle" onClick={handleAddSshConnection} loading={savingSshConnection} disabled={!sshAlias.trim() || savingSshConnection}>
                       <LuPlus size={14} />
-                      {t("saveSshConnection")}
+                      {translation("saveSshConnection")}
                     </Button>
                   </Flex>
                 </VStack>

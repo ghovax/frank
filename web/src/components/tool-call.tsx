@@ -33,26 +33,26 @@ function ToolLocationBadge({ arguments: args }: { arguments?: Record<string, unk
 // A tool call's live status as a pill (colour from the shared status palette). A
 // completed call carries no badge — its settled line speaks for itself.
 export function ToolStatusBadge({ status }: { status: ToolEventStatus }) {
-  const t = useTranslations("ToolCard");
+  const translation = useTranslations("ToolCard");
   if (status === "completed" || status === "done") return null;
   const labelKey = status === "input_required" ? "inputRequired" : status === "failed" ? "failed" : "running";
-  return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{t(labelKey)}</Pill>;
+  return <Pill colorPalette={STATUS_PALETTE[toolStatusKind(status)]}>{translation(labelKey)}</Pill>;
 }
 
 // Always-visible safety markers for a tool call: a write badge when it can modify
 // state (read_only === false), and its risk level when medium/high. Read-only /
 // low-risk calls stay bare.
 export function ToolRiskBadges({ arguments: toolArguments }: { arguments?: Record<string, unknown> }) {
-  const t = useTranslations("ToolCard");
+  const translation = useTranslations("ToolCard");
   if (!toolArguments) return null;
   const readOnly = toolArguments.read_only !== false;
   const risk = typeof toolArguments.risk === "string" ? toolArguments.risk : "";
   const badges: ReactNode[] = [];
-  if (!readOnly) badges.push(<Pill key="write" colorPalette="orange">{t("write")}</Pill>);
+  if (!readOnly) badges.push(<Pill key="write" colorPalette="orange">{translation("write")}</Pill>);
   if (risk === "medium" || risk === "high") {
     badges.push(
       <Pill key="risk" colorPalette={risk === "high" ? "red" : "yellow"}>
-        {risk === "high" ? t("highRisk") : t("mediumRisk")}
+        {risk === "high" ? translation("highRisk") : translation("mediumRisk")}
       </Pill>,
     );
   }
@@ -158,7 +158,7 @@ export function toolCallDetail(
 // as a blockquote — so a run of calls reads as an annotated ledger inside the
 // prose rather than a stack of boxes interrupting it.
 export function ToolCall({ name, arguments: toolArguments, result, status, agents = [], actions }: ToolCallProps) {
-  const t = useTranslations("ToolCall");
+  const translation = useTranslations("ToolCall");
   // One decision, shared with every other tool-line surface: what (if anything) this
   // line expands into. A line with nothing to show is not collapsible (DisclosureRow
   // enforces that from the presence of body children), so it never opens an empty rail.
@@ -187,7 +187,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
           <ToolLocationBadge arguments={toolArguments} />
           <ToolRiskBadges arguments={toolArguments} />
           {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
-          {background ? <Pill colorPalette={STATUS_PALETTE.background}>{t("background")}</Pill> : null}
+          {background ? <Pill colorPalette={STATUS_PALETTE.background}>{translation("background")}</Pill> : null}
         </>
       }
       actions={actions}
