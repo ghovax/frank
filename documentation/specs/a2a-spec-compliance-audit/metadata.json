@@ -37,14 +37,14 @@
       "title": "Durable, Segment-Based input-required",
       "kind": "plan",
       "created": "2026-07-18T11:59:20Z",
-      "updated": "2026-07-18T12:52:30Z"
+      "updated": "2026-07-18T17:27:00Z"
     },
     {
       "path": "plans/sub-agent-permissions.md",
       "title": "Sub-Agent Permissions and Propagated Human-in-the-Loop",
       "kind": "plan",
       "created": "2026-07-18T14:27:02Z",
-      "updated": "2026-07-18T17:21:59Z"
+      "updated": "2026-07-18T17:27:00Z"
     }
   ],
   "generatedAt": "2026-07-18T14:27:02Z"

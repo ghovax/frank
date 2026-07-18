@@ -42,6 +42,8 @@ Because a suspended segment releases the per-context turn lock (nothing is parke
 
 Delegated sub-agents do not durably suspend. A delegated turn is a fresh, one-shot run whose throwaway conversation is not persisted, so it has no resumable checkpoint — and an autonomous agent has no reliable interactive human anyway. A gate that would prompt is therefore turned into a hard denial for an agent (as the sandbox gate already was), so a sub-agent runs read-only or the parent performs the guarded action. Interactive approval is for the top-level user turn.
 
+> **Superseded.** The hard-denial decision in the paragraph above was later reversed by [`sub-agent-permissions.md`](./sub-agent-permissions.md). A delegated gate is no longer denied: the sub-agent *parks in place* on an in-memory future (staying a `working` task, not durably suspending), emits the prompt to the agents panel and the shared overlay, and resumes on the user's answer. It remains true that a delegated turn does not durably suspend and is failed on restart rather than preserved — only the "hard-deny instead of prompt" conclusion changed.
+
 ## Security model
 
 The one security-sensitive move is relocating permission decisions from execution time to preflight. The mitigation is that the decision logic is moved verbatim and continues to flow through the same shared functions, so the set of things that auto-approve, hard-deny, or prompt is unchanged — only the timing moves earlier. `_execute_tool` becomes strictly less privileged: it can no longer approve anything, only carry out a decision made upstream or emit the denial the preflight recorded. Bypass mode, read-only enforcement, and explicit deny rules keep their current force, since they are computed by the same functions.

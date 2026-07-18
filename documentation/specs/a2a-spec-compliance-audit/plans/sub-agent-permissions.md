@@ -41,6 +41,8 @@ The resolver reconciles the two paths in one place. It first looks for a durable
 
 Because a parked sub-agent never enters the durable `input-required` state and is not flagged into the durable awaiting-input marker, it stays a plain `working` task for its whole pause. That is deliberate: the marker and the input-required state are the durable top-level machinery, and coupling an ephemeral delegated pause to them would strand state that no restart can honor.
 
+One consequence is worth stating: the awaiting-input marker is what drives the session list's "needs attention" dot and the cross-session notification, so a sub-agent parked in a session the user is *not* currently viewing raises no such signal — its prompt appears in the shared overlay (and the attention sound / system notification) only when that session is the active one. This is an accepted limitation of keeping the pause ephemeral, not an oversight; a lightweight live "a sub-agent here needs input" signal, decoupled from the durable marker, is a possible follow-up if cross-session visibility matters.
+
 ## Restart
 
 A top-level `input-required` task is durable and resumes after a restart. A delegated pause is not, and needs no special reconciliation to be treated as such: a parked sub-agent is a `working` task, and the parent that consumes its stream is gone after a restart, so the orphaned-task pass fails it like any other interrupted background work — while an `input-required` task is the one state that pass preserves. The distinction the plan called for falls out of the state model for free: only a top-level pause is ever `input-required`. The user simply re-runs the turn, which re-spawns the sub-agent.
@@ -48,6 +50,8 @@ A top-level `input-required` task is durable and resumes after a restart. A dele
 ## Security model
 
 The invariants are worth stating plainly. A sub-agent's effective authority is never broader than the intersection of its card and the caller's grant; `bypass` is unreachable for a sub-agent; and an unmatched command under the interactive policy asks rather than runs. Escalation is fail-safe: a gate that cannot reach a human, or a delegated pause interrupted by a restart, ends as a denial or a failure, never as a silent allow. The decision logic remains the shared functions the top-level turn uses, so a sub-agent is evaluated by exactly the same rules, only with a stricter default and a mandatory ceiling.
+
+This whole model governs *local* sub-agents — the in-process delegated runtimes we build and run. An **external (over-the-wire A2A) agent** reached through `call_remote_agent` is a different trust boundary: it runs on another server we do not control, so we cannot clamp its permission mode, the `permission_mode`/`read_only` spawn flags do not apply to it (they are ignored on the remote path), and a human-in-the-loop prompt it raises is not proxied to our user — its request id belongs to the remote server and our resolver cannot route to it. A remote agent that pauses for input therefore simply ends its lane; the user re-runs. Bringing remote HITL into this model (proxying the remote prompt to our user and relaying the answer back over A2A) is out of scope here and noted as an open question.
 
 ## Build order
 
@@ -65,3 +69,5 @@ The effective-policy computation is a pure function and is unit-tested across th
 - Whether the caller should also be able to pre-approve specific commands for a sub-agent at spawn (a scoped allowlist), or only set the mode. Persisting an `allow always` to the profile's card (implemented) covers the durable case; a per-spawn, non-persisted allowlist is still open.
 - Whether a denied sub-agent gate should end the sub-agent or report the denial back to the sub-agent's model so it can choose an alternative — the plan denies the single action and lets the sub-agent continue, matching the top-level semantics.
 - Whether a very deep delegation chain should escalate every level's gates to the one human, or collapse them; today each gate escalates independently.
+- Whether an external (over-the-wire A2A) agent's human-in-the-loop prompt should be proxied to our user and its answer relayed back, rather than ending the lane; today remote agents are outside the governance and propagation model (mode flags ignored, prompt not surfaced).
+- Whether a background sub-agent parked in a non-active session should raise a cross-session "needs attention" signal, decoupled from the durable input-required marker; today its prompt is surfaced only in the active session's overlay.
