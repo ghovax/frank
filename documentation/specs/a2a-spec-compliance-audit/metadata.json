@@ -1,6 +1,6 @@
 {
-  "title": "A2A Specification Compliance: Audit and Design Specs",
-  "description": "Audit of the Daisy harness's conformance to the A2A (Agent2Agent) protocol, and the design specs for the bidirectional external-agent and OpenTelemetry work built from it.",
+  "title": "A2A Specification Compliance: Audit and Plans",
+  "description": "Audit of the Daisy harness's conformance to the A2A (Agent2Agent) protocol, and the design plans for the bidirectional external-agent, OpenTelemetry, and durable input-required work built from it.",
   "repository": "ghovax/daisy",
   "branch": "claude/a2a-spec-compliance-audit-h19bai",
   "pullRequest": "https://github.com/ghovax/daisy/pull/5",
@@ -12,33 +12,33 @@
   },
   "documents": [
     {
-      "path": "a2a-compliance-audit.md",
+      "path": "audit.md",
       "title": "A2A Specification Compliance Audit: Daisy Harness",
       "kind": "audit",
       "created": "2026-07-16T13:26:44Z",
       "updated": "2026-07-16T13:26:44Z"
     },
     {
-      "path": "external-agents.md",
+      "path": "plans/external-agents.md",
       "title": "Connecting Daisy to External A2A Agents",
-      "kind": "spec",
+      "kind": "plan",
       "created": "2026-07-17T17:44:00Z",
       "updated": "2026-07-18T11:59:20Z"
     },
     {
-      "path": "telemetry.md",
+      "path": "plans/telemetry.md",
       "title": "User-Capturable Telemetry via OpenTelemetry",
-      "kind": "spec",
+      "kind": "plan",
       "created": "2026-07-17T17:44:00Z",
       "updated": "2026-07-17T21:17:26Z"
     },
     {
-      "path": "input-required.md",
+      "path": "plans/input-required.md",
       "title": "Durable, Segment-Based input-required",
-      "kind": "spec",
+      "kind": "plan",
       "created": "2026-07-18T11:59:20Z",
       "updated": "2026-07-18T12:52:30Z"
     }
   ],
-  "generatedAt": "2026-07-18T13:24:07Z"
+  "generatedAt": "2026-07-18T14:16:23Z"
 }
