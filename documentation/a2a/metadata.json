@@ -1,0 +1,37 @@
+{
+  "title": "A2A Specification Compliance: Audit and Design Specs",
+  "description": "Audit of the Daisy harness's conformance to the A2A (Agent2Agent) protocol, and the design specs for the bidirectional external-agent and OpenTelemetry work built from it.",
+  "repository": "ghovax/daisy",
+  "branch": "claude/a2a-spec-compliance-audit-h19bai",
+  "pullRequest": "https://github.com/ghovax/daisy/pull/5",
+  "commit": "78cd7e930474ec074031ebc6a2a5bacba6a7f2b0",
+  "subject": {
+    "protocol": "A2A (Agent2Agent)",
+    "protocolVersion": "0.3.0",
+    "sdk": "a2a-sdk==0.3.7"
+  },
+  "documents": [
+    {
+      "path": "audit.md",
+      "title": "A2A Specification Compliance Audit: Daisy Harness",
+      "kind": "audit",
+      "created": "2026-07-16T13:26:44Z",
+      "updated": "2026-07-16T13:26:44Z"
+    },
+    {
+      "path": "specs/external-agents.md",
+      "title": "Connecting Daisy to External A2A Agents",
+      "kind": "spec",
+      "created": "2026-07-17T17:44:00Z",
+      "updated": "2026-07-18T07:05:39Z"
+    },
+    {
+      "path": "specs/telemetry.md",
+      "title": "User-Capturable Telemetry via OpenTelemetry",
+      "kind": "spec",
+      "created": "2026-07-17T17:44:00Z",
+      "updated": "2026-07-17T21:17:26Z"
+    }
+  ],
+  "generatedAt": "2026-07-18T07:05:39Z"
+}
