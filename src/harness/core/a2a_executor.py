@@ -53,6 +53,7 @@ from a2a.types import (
     TextPart,
 )
 from a2a.utils import new_task
+from langchain_core.messages import messages_from_dict, messages_to_dict
 
 from harness.core.agent import AgentRuntime, StreamEvent
 from harness.core.agent_messages import AgentMessage
@@ -1119,8 +1120,10 @@ class HarnessAgentExecutor(AgentExecutor):
             # Restore a persisted conversation the first time a context is seen this
             # process (e.g. a session reopened after a restart), so the agent resumes
             # with the same history the UI is replaying rather than a blank slate.
-            if context_id not in self._conversations and self._load_conversation is not None:
-                restored = await asyncio.to_thread(self._load_conversation, context_id)
+            if context_id not in self._conversations:
+                # The model-facing conversation is the task store's per-context checkpoint
+                # (the single durable turn surface); a reopened session resumes from it.
+                restored = messages_from_dict(await self._task_store.load_checkpoint(context_id))
                 if restored:
                     self._conversations[context_id] = restored
             # Seed from (and bind to) the process-wide dialogue history for this
@@ -1376,8 +1379,14 @@ class HarnessAgentExecutor(AgentExecutor):
             await text_buffer.flush(force=force)
 
         async def save_runtime_conversation() -> None:
-            if not delegated and self._save_conversation is not None and runtime is not None:
-                await asyncio.to_thread(self._save_conversation, task.context_id, runtime.conversation)
+            # A safe-point (or end-of-turn) snapshot of the model-facing conversation to
+            # the per-context checkpoint. Delegated turns keep their throwaway conversation
+            # in memory (their pause is ephemeral, and their conversation is not the
+            # context's), so they never write the context checkpoint.
+            if not delegated and runtime is not None:
+                await self._task_store.save_checkpoint(
+                    task.context_id, task.id, messages_to_dict(runtime.conversation)
+                )
 
         # The turn is one trace, grouped by the session (context_id); a delegation's
         # traceparent (in the message metadata) makes this turn nest under its parent.
@@ -1799,13 +1808,12 @@ class HarnessAgentExecutor(AgentExecutor):
             # conversation) — an autonomous no-op wake has neither, and blindly saving
             # an empty list would clobber the persisted history. Skip entirely once the
             # session is deleted, so a stopped-and-deleted turn never re-orphans its row.
-            if state is not None and not delegated and self._save_conversation is not None and (
+            if state is not None and not delegated and (
                 runtime is not None or task.context_id in self._conversations
             ):
-                await asyncio.to_thread(
-                    self._save_conversation,
-                    task.context_id,
-                    runtime.conversation if runtime is not None else self._conversations.get(task.context_id, []),
+                messages = runtime.conversation if runtime is not None else self._conversations.get(task.context_id, [])
+                await self._task_store.save_checkpoint(
+                    task.context_id, task.id, messages_to_dict(messages)
                 )
             # Stop accepting steering for this context before draining the queue, then
             # discard anything that arrived too late to be honored (raced in after the
