@@ -47,19 +47,14 @@ telemetry:
     endpoint: "https://otlp.user-backend.example/v1/traces"
     protocol: "http/protobuf"          # or grpc
     headers: { Authorization: "${OTEL_EXPORTER_TOKEN}" }
-  capture:
-    prompts: redacted                  # full | redacted | off
-    completions: redacted
-    tool_io: redacted
-    screenshots: off                   # computer-use / browser DOM off by default
   sample_ratio: 1.0
 ```
 
 Nothing is emitted until the user configures an endpoint. This preserves the local‑first promise: telemetry is opt‑in by configuration, and the machine stays quiet by default.
 
-## Redaction
+## What is (and isn't) in the payload
 
-Redaction runs before export, in `telemetry.py`, defaulting to redact‑sensitive. By default we redact file contents, computer‑use screenshots, browser DOM and text, and anything matching secret patterns — the high‑risk payloads unique to Daisy's tool surface. The app already treats similar fields as model‑only or heavy (`a2a_executor.py:340`), and the same instinct applies to what leaves the box as telemetry. Captured by default are prompt and completion text (with a secret‑stripping pass), token usage, latency, model id, tool names, and finish reasons. The user can widen to full fidelity or narrow to metadata only through the capture block. Since the endpoint is user‑controlled, this governs what Daisy puts in the payload, not where it goes — the user still owns egress.
+Only span structure and usage/metadata are exported: session/task/agent ids, turn kind, model id, token usage, and model-call counts. Prompt and completion bodies, tool arguments/results, and computer-use screenshots are not put on spans, so there is nothing sensitive to redact and no secret-scrubbing pass to maintain. This keeps the exporter honest and dependency-free; if body capture is ever added, it should route through a maintained scrubbing library rather than hand-rolled patterns.
 
 ## Dependencies
 
@@ -75,21 +70,21 @@ Telemetry is a harness‑level egress. Because a harness can serve multiple clie
 
 1. Core traces: `telemetry.py`, the config and no‑op path, the turn span with usage attributes, session grouping.
 2. `traceparent` propagation across local and remote delegations, so sub‑agent turns nest.
-3. The redaction pass and the capture config.
+3. Optional prompt/completion body capture, routed through a maintained scrubbing library.
 4. Metrics (token counters, latency and cost histograms), optional.
 5. The Settings → Observability toggle.
 
 ## Testing
 
-Testing is deferred for now but planned. In CI we export against a local OTLP collector (deterministic, no SaaS) and assert the span tree shape, session grouping, and generation attributes. Redaction unit tests confirm that screenshots, file contents, and secrets never appear in exported spans at the default posture. A context‑propagation test confirms a delegated sub‑agent's spans nest under the parent turn rather than as orphan roots. A disabled‑path test confirms zero exporter calls and negligible overhead when telemetry is off. Optionally we verify manually against a self‑hosted Langfuse and against Phoenix, to prove the "any OTLP backend" claim.
+In CI we export against a local OTLP collector (deterministic, no SaaS) and assert the span tree shape, session grouping, and usage attributes. A context‑propagation test confirms a delegated sub‑agent's spans nest under the parent turn rather than as orphan roots. A disabled‑path test confirms zero exporter calls and negligible overhead when telemetry is off. Optionally we verify manually against a self‑hosted Langfuse and against Phoenix, to prove the "any OTLP backend" claim.
 
 ## Recommendation
 
-Do it, as vendor‑neutral OTLP, off by default, redacted by default. It fits the LangChain model layer and the A2A turn structure cleanly, serves the goal of letting users capture into their own backend with a single integration, and preserves the local‑first promise because nothing is emitted until the user opts in. Coupling directly to the Langfuse SDK would be the worse choice — more lock‑in, no benefit, since Langfuse ingests OTLP natively.
+Do it, as vendor‑neutral OTLP, off by default, structure‑and‑usage only (no bodies). It fits the LangChain model layer and the A2A turn structure cleanly, serves the goal of letting users capture into their own backend with a single integration, and preserves the local‑first promise because nothing is emitted until the user opts in. Coupling directly to the Langfuse SDK would be the worse choice — more lock‑in, no benefit, since Langfuse ingests OTLP natively.
 
 ## Open questions
 
 - Traces only for the first version, or ship metrics alongside.
 - Sampling: always on, or head sampling for heavy sessions.
 - Whether to also trace harness server operations (task store, artifact capture, MCP calls) or scope strictly to agent turns first (leaning: agent turns first).
-- Whether prompt and completion bodies default to redacted (strip secrets, keep text) or off (no bodies) for the most conservative first release.
+- Whether to add optional prompt/completion body capture at all, and if so which maintained scrubbing library to route it through.

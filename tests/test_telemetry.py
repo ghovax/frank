@@ -33,13 +33,6 @@ def test_disabled_is_noop():
     assert telemetry.context_from_traceparent("00-abc-def-01") is None
 
 
-def test_capture_posture():
-    telemetry._capture = {"prompts": "redacted", "completions": "full", "tool_io": "off", "screenshots": "off"}
-    assert telemetry.capture_text("here is api_key ABCDEFGHIJKLMNOP01", "prompts") == "here is api_key [redacted]"
-    assert telemetry.capture_text("kept verbatim", "completions") == "kept verbatim"
-    assert telemetry.capture_text("anything", "tool_io") is None
-
-
 def test_spans_are_produced_and_nest(in_memory_tracer):
     assert telemetry.is_enabled() is True
     with telemetry.span("agent.turn", {"session.id": "ctx-1"}) as turn:

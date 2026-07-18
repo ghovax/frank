@@ -1865,7 +1865,6 @@ def _configure_telemetry(configuration: GlobalConfiguration) -> None:
         enabled=telemetry_configuration.enabled,
         endpoint=telemetry_configuration.exporter.endpoint,
         headers=telemetry_configuration.resolved_headers(),
-        capture=telemetry_configuration.capture.model_dump(),
         sample_ratio=telemetry_configuration.sample_ratio,
     )
 

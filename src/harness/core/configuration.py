@@ -452,16 +452,6 @@ class A2AServerConfiguration(BaseModel):
         return (schemes or None, requirement or None)
 
 
-class TelemetryCaptureConfiguration(BaseModel):
-    """Per-payload capture posture: ``off`` (no body), ``redacted`` (strip detected
-    secrets), or ``full``."""
-
-    prompts: Literal["off", "redacted", "full"] = "redacted"
-    completions: Literal["off", "redacted", "full"] = "redacted"
-    tool_io: Literal["off", "redacted", "full"] = "redacted"
-    screenshots: Literal["off", "redacted", "full"] = "off"
-
-
 class TelemetryExporterConfiguration(BaseModel):
     endpoint: str = ""
     protocol: str = "http/protobuf"
@@ -470,11 +460,11 @@ class TelemetryExporterConfiguration(BaseModel):
 
 class TelemetryConfiguration(BaseModel):
     """OpenTelemetry export of agent traces to a user-chosen OTLP backend. Off until an
-    endpoint is set, so nothing leaves the machine by default."""
+    endpoint is set, so nothing leaves the machine by default. Only span structure and
+    usage/metadata are exported (no prompt or completion bodies)."""
 
     enabled: bool = False
     exporter: TelemetryExporterConfiguration = TelemetryExporterConfiguration()
-    capture: TelemetryCaptureConfiguration = TelemetryCaptureConfiguration()
     sample_ratio: float = 1.0
 
     def resolved_headers(self) -> dict[str, str]:

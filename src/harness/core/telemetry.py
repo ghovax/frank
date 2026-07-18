@@ -1,40 +1,23 @@
 """User-capturable telemetry: OpenTelemetry traces exported over OTLP.
 
 A process-wide facade. When disabled (the default) every helper is a cheap no-op; when the
-user configures an OTLP endpoint, turns become traces (session grouped by the A2A
-``context_id``), and model calls and tool calls become child spans following the GenAI
-semantic conventions. Trace context rides the A2A message metadata as a W3C ``traceparent``
-so a delegation nests under its parent turn and a shared backend can stitch Daisy's trace to
-a remote agent's.
+user configures an OTLP endpoint, a turn becomes a trace (session grouped by the A2A
+``context_id``) carrying ``gen_ai.*`` usage attributes. Trace context rides the A2A message
+metadata as a W3C ``traceparent`` so a delegation nests under its parent turn and a shared
+backend can stitch Daisy's trace to a remote agent's.
 
-Nothing is emitted until an endpoint is set, so the local-first default stays quiet.
+Only span structure and usage/metadata are emitted — no prompt or completion bodies — so
+there is nothing sensitive to redact. Nothing is emitted at all until an endpoint is set,
+so the local-first default stays quiet.
 """
 
 import logging
-import re
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
 _tracer: Any = None
-_capture: dict[str, str] = {"prompts": "redacted", "completions": "redacted", "tool_io": "redacted", "screenshots": "off"}
-
-_REDACTED = "[redacted]"
-
-# Coarse secret patterns stripped from captured text under the "redacted" posture: a
-# secret-ish keyword followed by its value, provider key prefixes, and JWTs.
-_SECRET_PATTERNS = [
-    (
-        re.compile(
-            r"(?i)\b(api[_-]?key|secret|token|password|bearer|access[_-]?token|client[_-]?secret)\b"
-            r"(['\"]?\s*[:=]\s*['\"]?|\s+)([A-Za-z0-9_\-\.]{12,})"
-        ),
-        lambda match: f"{match.group(1)}{match.group(2)}{_REDACTED}",
-    ),
-    (re.compile(r"\b(?:sk|pk|rk)-[A-Za-z0-9]{16,}\b"), lambda match: _REDACTED),
-    (re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"), lambda match: _REDACTED),
-]
 
 
 def configure(
@@ -42,12 +25,11 @@ def configure(
     enabled: bool,
     endpoint: str,
     headers: Optional[dict[str, str]] = None,
-    capture: Optional[dict[str, str]] = None,
     sample_ratio: float = 1.0,
     service_name: str = "daisy",
 ) -> None:
     """Install (or tear down) the exporter. With no endpoint, telemetry stays disabled."""
-    global _tracer, _capture
+    global _tracer
     if not enabled or not endpoint:
         _tracer = None
         return
@@ -63,28 +45,11 @@ def configure(
     )
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, headers=headers or None)))
     _tracer = provider.get_tracer("daisy")
-    if capture:
-        _capture = {**_capture, **capture}
     logger.info("Telemetry enabled; exporting traces to %s", endpoint)
 
 
 def is_enabled() -> bool:
     return _tracer is not None
-
-
-def _redact(text: str) -> str:
-    for pattern, replacement in _SECRET_PATTERNS:
-        text = pattern.sub(replacement, text)
-    return text
-
-
-def capture_text(value: str, kind: str) -> Optional[str]:
-    """Apply the configured capture posture for ``kind`` (prompts/completions/tool_io):
-    ``off`` drops the body, ``redacted`` strips detected secrets, ``full`` keeps it."""
-    mode = _capture.get(kind, "redacted")
-    if mode == "off" or not value:
-        return None
-    return value if mode == "full" else _redact(value)
 
 
 @contextmanager
