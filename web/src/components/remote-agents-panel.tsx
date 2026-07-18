@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Flex, Input, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Input, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import {
   deleteRemoteAgent,
@@ -11,6 +11,8 @@ import {
   type RemoteAgent,
   type RemoteAgentInput,
 } from "@/lib/api";
+import { Pill } from "./ui/pill";
+import { SimpleSelect } from "./ui/simple-select";
 import { toaster } from "./ui/toaster";
 
 type Draft = {
@@ -21,7 +23,7 @@ type Draft = {
   tokenUrl: string;
   clientId: string;
   clientSecret: string;
-  allowPrivate: boolean;
+  allowPrivate: string;
   allowedProfiles: string;
 };
 
@@ -33,15 +35,27 @@ const EMPTY_DRAFT: Draft = {
   tokenUrl: "",
   clientId: "",
   clientSecret: "",
-  allowPrivate: false,
+  allowPrivate: "no",
   allowedProfiles: "",
 };
 
-const HEALTH_COLOR: Record<string, string> = {
-  ok: "green.500",
-  unreachable: "orange.500",
-  untrusted: "red.500",
-  unresolved: "gray.500",
+const AUTH_ITEMS = [
+  { value: "none", label: "No auth" },
+  { value: "bearer", label: "Bearer token" },
+  { value: "api_key", label: "API key header" },
+  { value: "oauth2", label: "OAuth2 client credentials" },
+];
+
+const YES_NO = [
+  { value: "no", label: "No" },
+  { value: "yes", label: "Yes" },
+];
+
+const HEALTH_PALETTE: Record<string, string> = {
+  ok: "green",
+  unreachable: "orange",
+  untrusted: "red",
+  unresolved: "gray",
 };
 
 function draftToInput(draft: Draft): RemoteAgentInput {
@@ -56,7 +70,7 @@ function draftToInput(draft: Draft): RemoteAgentInput {
     cardUrl: draft.cardUrl.trim(),
     enabled: true,
     auth,
-    allowPrivate: draft.allowPrivate,
+    allowPrivate: draft.allowPrivate === "yes",
     allowedProfiles: draft.allowedProfiles
       .split(",")
       .map((value) => value.trim())
@@ -64,10 +78,9 @@ function draftToInput(draft: Draft): RemoteAgentInput {
   };
 }
 
-// The external-agent manager inside Settings. Lists registered remote A2A agents with a
-// live health dot, and an inline form to add one. Secrets are write-only (never returned
-// by the server) — re-enter a token when changing it. remote-agents.json is the source of
-// truth, so hand-editing that file works too.
+// External A2A agents this harness can delegate to. Lists the registered agents with a
+// live health pill and an inline form to add one. Secrets are write-only (never returned),
+// and remote-agents.json is the source of truth, so hand-editing that file works too.
 export function RemoteAgentsPanel() {
   const [agents, setAgents] = useState<RemoteAgent[]>([]);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
@@ -76,8 +89,8 @@ export function RemoteAgentsPanel() {
   const reload = useCallback(async () => {
     try {
       setAgents(await listRemoteAgents());
-    } catch (error) {
-      toaster.create({ title: "Could not load remote agents", type: "error" });
+    } catch {
+      toaster.create({ title: "Could not load external agents", type: "error" });
     }
   }, []);
 
@@ -100,8 +113,8 @@ export function RemoteAgentsPanel() {
       setDraft(EMPTY_DRAFT);
       await reload();
       toaster.create({ title: `Saved ${input.name}`, type: "success" });
-    } catch (error) {
-      toaster.create({ title: "Could not save remote agent", type: "error" });
+    } catch {
+      toaster.create({ title: "Could not save external agent", type: "error" });
     } finally {
       setSaving(false);
     }
@@ -112,8 +125,8 @@ export function RemoteAgentsPanel() {
       try {
         await deleteRemoteAgent(name);
         await reload();
-      } catch (error) {
-        toaster.create({ title: "Could not remove remote agent", type: "error" });
+      } catch {
+        toaster.create({ title: "Could not remove external agent", type: "error" });
       }
     },
     [reload],
@@ -123,10 +136,12 @@ export function RemoteAgentsPanel() {
     try {
       const result = await refreshRemoteAgent(name);
       toaster.create({ title: `${name}: ${result.health}`, type: result.health === "ok" ? "success" : "error" });
-    } catch (error) {
-      toaster.create({ title: "Could not refresh remote agent", type: "error" });
+    } catch {
+      toaster.create({ title: "Could not refresh external agent", type: "error" });
     }
   }, []);
+
+  const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
 
   return (
     <Flex direction="column" gap={4}>
@@ -137,32 +152,14 @@ export function RemoteAgentsPanel() {
           </Text>
         )}
         {agents.map((agent) => (
-          <Flex
-            key={agent.name}
-            align="center"
-            justify="space-between"
-            gap={3}
-            borderWidth="1px"
-            borderRadius="md"
-            px={3}
-            py={2}
-          >
-            <Flex direction="column" gap={0} minW={0}>
+          <Flex key={agent.name} align="center" justify="space-between" gap={3} borderWidth="1px" borderRadius="md" px={3} py={2}>
+            <Flex direction="column" gap={0.5} minW={0}>
               <Flex align="center" gap={2}>
-                <span
-                  title={agent.health + (agent.error ? `: ${agent.error}` : "")}
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: `var(--chakra-colors-${(HEALTH_COLOR[agent.health] ?? "gray.500").replace(".", "-")})`,
-                    flex: "0 0 auto",
-                  }}
-                />
+                <Pill colorPalette={HEALTH_PALETTE[agent.health] ?? "gray"}>{agent.health}</Pill>
                 <Text fontWeight="medium">{agent.name}</Text>
                 {agent.resolvedName && agent.resolvedName !== agent.name && (
                   <Text fontSize="xs" color="fg.muted">
-                    ({agent.resolvedName})
+                    {agent.resolvedName}
                   </Text>
                 )}
               </Flex>
@@ -170,7 +167,7 @@ export function RemoteAgentsPanel() {
                 {agent.cardUrl}
               </Text>
               {agent.error && (
-                <Text fontSize="xs" color="red.500" truncate>
+                <Text fontSize="xs" color="red.fg" truncate>
                   {agent.error}
                 </Text>
               )}
@@ -191,59 +188,42 @@ export function RemoteAgentsPanel() {
         <Text fontWeight="medium" fontSize="sm">
           Add external agent
         </Text>
+        <Input size="xs" placeholder="Local name (e.g. acme-researcher)" value={draft.name} onChange={(event) => update({ name: event.target.value })} />
         <Input
-          size="sm"
-          placeholder="Local name (e.g. acme-researcher)"
-          value={draft.name}
-          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-        />
-        <Input
-          size="sm"
+          size="xs"
           placeholder="Agent card URL (https://.../.well-known/agent-card.json)"
           value={draft.cardUrl}
-          onChange={(event) => setDraft({ ...draft, cardUrl: event.target.value })}
+          onChange={(event) => update({ cardUrl: event.target.value })}
         />
-        <select
-          value={draft.authType}
-          onChange={(event) => setDraft({ ...draft, authType: event.target.value })}
-          style={{ padding: "6px 8px", borderRadius: 6, borderWidth: 1, fontSize: 14 }}
-        >
-          <option value="none">No auth</option>
-          <option value="bearer">Bearer token</option>
-          <option value="api_key">API key header</option>
-          <option value="oauth2">OAuth2 client credentials</option>
-        </select>
+        <Box w="240px">
+          <SimpleSelect items={AUTH_ITEMS} value={draft.authType} onValueChange={(value) => update({ authType: value })} />
+        </Box>
         {(draft.authType === "bearer" || draft.authType === "api_key") && (
-          <Input
-            size="sm"
-            placeholder="Token (or ${ENV_VAR})"
-            value={draft.token}
-            onChange={(event) => setDraft({ ...draft, token: event.target.value })}
-          />
+          <Input size="xs" placeholder="Token (or ${ENV_VAR})" value={draft.token} onChange={(event) => update({ token: event.target.value })} />
         )}
         {draft.authType === "oauth2" && (
           <>
-            <Input size="sm" placeholder="Token URL" value={draft.tokenUrl} onChange={(event) => setDraft({ ...draft, tokenUrl: event.target.value })} />
-            <Input size="sm" placeholder="Client ID" value={draft.clientId} onChange={(event) => setDraft({ ...draft, clientId: event.target.value })} />
-            <Input size="sm" placeholder="Client secret (or ${ENV_VAR})" value={draft.clientSecret} onChange={(event) => setDraft({ ...draft, clientSecret: event.target.value })} />
+            <Input size="xs" placeholder="Token URL" value={draft.tokenUrl} onChange={(event) => update({ tokenUrl: event.target.value })} />
+            <Input size="xs" placeholder="Client ID" value={draft.clientId} onChange={(event) => update({ clientId: event.target.value })} />
+            <Input size="xs" placeholder="Client secret (or ${ENV_VAR})" value={draft.clientSecret} onChange={(event) => update({ clientSecret: event.target.value })} />
           </>
         )}
         <Input
-          size="sm"
+          size="xs"
           placeholder="Allowed profiles (comma-separated; blank = all)"
           value={draft.allowedProfiles}
-          onChange={(event) => setDraft({ ...draft, allowedProfiles: event.target.value })}
+          onChange={(event) => update({ allowedProfiles: event.target.value })}
         />
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-          <input
-            type="checkbox"
-            checked={draft.allowPrivate}
-            onChange={(event) => setDraft({ ...draft, allowPrivate: event.target.checked })}
-          />
-          Allow private/loopback address (e.g. localhost)
-        </label>
-        <Flex justify="flex-end">
-          <Button size="sm" onClick={() => void save()} loading={saving}>
+        <Flex align="center" justify="space-between" gap={3}>
+          <Flex align="center" gap={2}>
+            <Text fontSize="xs" color="fg.muted">
+              Allow private/loopback host
+            </Text>
+            <Box w="90px">
+              <SimpleSelect items={YES_NO} value={draft.allowPrivate} onValueChange={(value) => update({ allowPrivate: value })} />
+            </Box>
+          </Flex>
+          <Button size="xs" onClick={() => void save()} loading={saving}>
             Add agent
           </Button>
         </Flex>

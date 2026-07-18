@@ -63,7 +63,7 @@ The source of truth is a new `remote-agents.json`, a sibling to `mcp.json`, hot�
 }
 ```
 
-Secrets resolve from the environment like existing keys, never inlined in tracked files. On top of the file, we extend Settings → Connections (where remote harness and SSH connections already live) with a "Remote agents" section: add by card URL, choose auth, test/refresh the card (showing the resolved name, skills, transports, and health), and enable per profile. That UI is backed by new REST routes and DB rows, consistent with how the file‑plus‑UI split already works for other connections.
+Secrets resolve from the environment like existing keys, never inlined in tracked files. On top of the file, the Settings → Agents page gains an "External agents" section (a panel alongside the agent-profile editor, built from the shared UI components): add by card URL, choose auth, refresh the card (showing resolved name and health), remove, and scope per profile. That UI is backed by the REST routes, editing `remote-agents.json` as the source of truth.
 
 ## Inbound hardening
 
@@ -91,16 +91,9 @@ On the server side we construct `DefaultRequestHandler` with a real push‑confi
 
 We fill the gaps the audit flagged in `build_agent_card` (`a2a_executor.py:254`): advertise the `urn:daisy:ext:turn:v1` extension that we actually use, declare the JSON‑RPC interface in `additionalInterfaces`, set `provider`, and broaden `defaultOutputModes` beyond `text/plain`.
 
-## Data model
+## State
 
-New tables alongside those in `app.py`:
-
-- `remote_agents` — id, card URL, resolved name, auth kind and secret reference, cached card JSON, card fetch time, health, timestamps.
-- `remote_agent_grants` — (agent profile, remote agent) allow‑list rows.
-- `remote_contexts` — (session context id, remote agent) → remote context id mapping.
-- `push_notification_configs` — inbound client webhook configs backing the SDK store.
-
-The task store shape is unchanged: remote‑delegated children persist as related tasks exactly like local ones (`referenceTaskIds`), so replay and history keep working.
+No new database tables. `remote-agents.json` (agents, auth, allow-lists) is the source of truth, resolved cards and health live in the in-memory manager, and the (session context, remote agent) to remote-context mapping is held in memory on the registry. Inbound push notification configs live in the SDK's in-memory store. The task store shape is unchanged: remote-delegated children persist as related tasks exactly like local ones (`referenceTaskIds`), so replay and history keep working.
 
 ## Security model
 
@@ -112,7 +105,7 @@ Trusting a remote card needs its own care. A card's `url` and `additionalInterfa
 
 1. **Spike.** Minimal outbound: resolve one card, build a client, stream `message/stream`, and map the events into the relay. Prove a remote reply lands in the agents panel.
 2. **Outbound, productionized.** The `remote_agents` manager, card cache and TTL, auth (API key then OAuth2), locality‑aware `make_delegate`, per‑profile allow‑list, egress consent, remote‑context map.
-3. **Configuration.** `remote-agents.json` plus the watcher, then the Settings → Connections UI with its routes and tables.
+3. **Configuration.** `remote-agents.json` plus the watcher, then the Settings → Agents "External agents" section with its routes.
 4. **Files.** Emit and accept `FileWithUri`, the signed serving endpoint, and inbound ingest.
 5. **input-required.** The executor sets the `input-required` state and accepts `message/send` answers routed to the pending future, alongside the native resolution path.
 6. **Server auth and card completeness.**
