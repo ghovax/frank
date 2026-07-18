@@ -2307,7 +2307,7 @@ async def lifespan(application: FastAPI):
 
     _task_store = AppendOnlyTaskStore(_async_engine)
     await _task_store.initialize()
-    orphaned_task_ids = await _task_store.fail_orphaned_tasks()
+    orphaned_task_ids = await _task_store.reconcile_orphaned_turns()
     if orphaned_task_ids:
         logging.getLogger("harness.server").warning(
             "Marked %d A2A task(s) interrupted after server restart.",

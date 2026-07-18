@@ -180,6 +180,18 @@ _TERMINAL_TASK_STATES = {
 }
 
 
+# Turn control-state keys carried in a task's head ``metadata`` — the small, non-write-hot
+# part of the durable turn record (the large model-facing conversation lives in the
+# checkpoint table). The kind decides the restart policy; the inbox holds background
+# results a later turn of the context will fold into the conversation.
+TURN_KIND_KEY = "daisyTurnKind"
+TURN_KIND_USER = "user"
+TURN_KIND_AUTONOMOUS = "autonomous"
+TURN_KIND_COMPACTION = "compaction"
+TURN_KIND_DELEGATED = "delegated"
+BACKGROUND_INBOX_KEY = "daisyBackgroundInbox"
+
+
 def _task_state_value(task: Task) -> str:
     state = task.status.state
     return state.value if isinstance(state, TaskState) else str(state)
@@ -233,6 +245,26 @@ class AppendOnlyTaskStore(TaskStore):
             Column("artifact", Text),
             UniqueConstraint("task_id", "artifact_id", name="uq_task_artifact_id"),
         )
+        # The turn's durable resume checkpoint: the model-facing LangChain conversation,
+        # snapshotted (messages_to_dict) at each safe point of the running turn. One row
+        # per context — the running dialogue accumulates across a session's turns and
+        # compaction rewrites it in place (summarizing earlier turns), so a whole-snapshot
+        # is the only representation that stays correct; a per-turn append-only log cannot
+        # express an in-place rewrite. Distinct from ``history`` (the A2A wire view): the
+        # wire messages and the internal model-facing list are not losslessly
+        # interconvertible, so this snapshot is authoritative for resume. It lives in the
+        # task store (the single durable surface) rather than a separate conversations
+        # database, and NOT on the write-hot task head (which upserts per stream event) —
+        # it is written only at safe points, a few times per turn. ``task_id`` records
+        # which turn last wrote it, for reconciliation.
+        self._checkpoint = Table(
+            "turn_checkpoint",
+            self._metadata,
+            Column("context_id", String, primary_key=True),
+            Column("task_id", String),
+            Column("messages", Text),
+            Column("updated_at", String),
+        )
         # How many history rows are already persisted per task. Events for a given
         # task are processed sequentially by its TaskManager, so this needs no
         # locking; it lets the hot path skip a COUNT query.
@@ -278,28 +310,40 @@ class AppendOnlyTaskStore(TaskStore):
         if not self._initialized:
             await self.initialize()
 
-    async def fail_orphaned_tasks(self) -> list[str]:
-        """Fail tasks left nonterminal by a previous server process.
+    async def reconcile_orphaned_turns(self) -> list[str]:
+        """Restart reconciliation, driven by each turn's own durable record.
 
-        In-memory executors cannot be resumed after a restart. Persisting an explicit
-        interrupted failure prevents stale approvals, tools, and delegated-agent lanes
-        from replaying as if they were still active.
+        In-memory executors cannot be resumed after a restart, so the reconciliation
+        reads one field — the turn kind — and applies the policy it implies:
 
-        An ``input-required`` task is the exception: its resume checkpoint (the pending
-        interactions and the conversation) is durable, so it is preserved rather than
-        failed — a later answer rebuilds and resumes it from the database.
+        * a **top-level** ``input-required`` pause is durable (its checkpoint and pending
+          interactions survive) and is preserved for a later answer to resume;
+        * a **delegated** ``input-required`` pause is failed — its resume depends on the
+          parent's in-process driver, which a restart does not restore;
+        * every **other non-terminal** task was caught mid-execution and is failed —
+          resume is at-most-once, so its in-flight tools did not complete and there is
+          nothing safe to resume into.
+
+        Returns the ids that were failed. Failing an interrupted turn persists an explicit
+        error status so stale approvals, tools, and agent lanes cannot replay as active.
         """
         await self._ensure_initialized()
         write_lock = await acquire_sqlite_write_lock()
-        orphaned_task_ids: list[str] = []
-        preserved_states = _TERMINAL_TASK_STATES | {TaskState.input_required.value}
+        failed_task_ids: list[str] = []
+        input_required = TaskState.input_required.value
         try:
             async with self._engine.begin() as connection:
                 head_rows = (await connection.execute(select(self._head))).mappings().all()
                 for head_row in head_rows:
-                    current_status = json.loads(head_row["status"])
-                    current_state = str(current_status.get("state", ""))
-                    if current_state in preserved_states:
+                    current_state = str(json.loads(head_row["status"]).get("state", ""))
+                    if current_state in _TERMINAL_TASK_STATES:
+                        continue
+                    metadata = json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else {}
+                    turn_kind = str(metadata.get(TURN_KIND_KEY, "")) if isinstance(metadata, dict) else ""
+                    is_delegated = turn_kind == TURN_KIND_DELEGATED
+                    # Preserve only a durable top-level pause; fail delegated pauses and
+                    # any mid-execution turn.
+                    if current_state == input_required and not is_delegated:
                         continue
                     task_id = str(head_row["id"])
                     context_id = str(head_row["context_id"] or "")
@@ -324,10 +368,163 @@ class AppendOnlyTaskStore(TaskStore):
                         .where(self._head.c.id == task_id)
                         .values(status=_dump(interrupted_status))
                     )
-                    orphaned_task_ids.append(task_id)
+                    failed_task_ids.append(task_id)
         finally:
             release_sqlite_write_lock(write_lock)
-        return orphaned_task_ids
+        return failed_task_ids
+
+    async def save_checkpoint(self, context_id: str, task_id: str, messages: list) -> None:
+        """Snapshot a context's model-facing conversation (``messages_to_dict`` output)
+        at a safe point of the running turn. One row per context, upserted whole — the
+        conversation accumulates across turns and compaction rewrites it in place, so a
+        whole snapshot is the representation that stays correct. Written a few times per
+        turn (per safe point), never per stream event, so the whole-row write is cheap
+        relative to the turn."""
+        await self._ensure_initialized()
+        if not context_id:
+            return
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                values = {
+                    "context_id": context_id,
+                    "task_id": task_id,
+                    "messages": json.dumps(messages),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                insert = sqlite_insert(self._checkpoint).values(**values)
+                await connection.execute(
+                    insert.on_conflict_do_update(
+                        index_elements=[self._checkpoint.c.context_id],
+                        set_={
+                            "task_id": values["task_id"],
+                            "messages": values["messages"],
+                            "updated_at": values["updated_at"],
+                        },
+                    )
+                )
+        finally:
+            release_sqlite_write_lock(write_lock)
+
+    async def load_checkpoint(self, context_id: str) -> list:
+        """The context's model-facing conversation snapshot (``messages_to_dict`` form),
+        or ``[]`` when there is none. The caller rehydrates it with ``messages_from_dict``
+        and repairs any dangling tool-call left by a mid-execution interruption."""
+        await self._ensure_initialized()
+        if not context_id:
+            return []
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    select(self._checkpoint.c.messages).where(self._checkpoint.c.context_id == context_id)
+                )
+            ).scalar()
+        if not row:
+            return []
+        try:
+            data = json.loads(row)
+            return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    async def _head_metadata(self, connection, task_id: str) -> dict:
+        row = (
+            await connection.execute(select(self._head.c.task_metadata).where(self._head.c.id == task_id))
+        ).scalar()
+        if not row:
+            return {}
+        try:
+            data = json.loads(row)
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    async def append_background_result(self, task_id: str, entry: dict) -> None:
+        """Record a completed background result on its originating task's inbox (in the
+        head metadata), so a later turn of the context folds it into the conversation.
+        The originating turn is terminal by the time this runs, so its head is no longer
+        upserted by the stream and this update does not race the live save path."""
+        await self._ensure_initialized()
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                metadata = await self._head_metadata(connection, task_id)
+                inbox = list(metadata.get(BACKGROUND_INBOX_KEY, []) or [])
+                inbox.append({**entry, "delivered": False})
+                metadata[BACKGROUND_INBOX_KEY] = inbox
+                await connection.execute(
+                    update(self._head)
+                    .where(self._head.c.id == task_id)
+                    .values(task_metadata=json.dumps(metadata))
+                )
+        finally:
+            release_sqlite_write_lock(write_lock)
+
+    async def undelivered_background_results(self, context_id: str) -> list[dict]:
+        """Every not-yet-delivered background result across a context's tasks, each tagged
+        with the ``task_id`` whose inbox holds it, oldest task first."""
+        await self._ensure_initialized()
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    select(self._head.c.id, self._head.c.task_metadata)
+                    .where(self._head.c.context_id == context_id)
+                    .order_by(self._head.c.id)
+                )
+            ).all()
+        results: list[dict] = []
+        for task_id, task_metadata in rows:
+            if not task_metadata:
+                continue
+            try:
+                metadata = json.loads(task_metadata)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(metadata, dict):
+                continue
+            for entry in metadata.get(BACKGROUND_INBOX_KEY, []) or []:
+                if isinstance(entry, dict) and not entry.get("delivered"):
+                    results.append({**entry, "task_id": str(task_id)})
+        return results
+
+    async def mark_background_results_delivered(self, context_id: str) -> None:
+        """Flag every inbox entry across the context's tasks as delivered, once a turn has
+        folded them into its conversation."""
+        await self._ensure_initialized()
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                rows = (
+                    await connection.execute(
+                        select(self._head.c.id, self._head.c.task_metadata)
+                        .where(self._head.c.context_id == context_id)
+                    )
+                ).all()
+                for task_id, task_metadata in rows:
+                    if not task_metadata:
+                        continue
+                    try:
+                        metadata = json.loads(task_metadata)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    if not isinstance(metadata, dict):
+                        continue
+                    inbox = metadata.get(BACKGROUND_INBOX_KEY)
+                    if not inbox:
+                        continue
+                    changed = False
+                    for entry in inbox:
+                        if isinstance(entry, dict) and not entry.get("delivered"):
+                            entry["delivered"] = True
+                            changed = True
+                    if changed:
+                        await connection.execute(
+                            update(self._head)
+                            .where(self._head.c.id == str(task_id))
+                            .values(task_metadata=json.dumps(metadata))
+                        )
+        finally:
+            release_sqlite_write_lock(write_lock)
 
     async def _history_count(self, connection, task_id: str) -> int:
         cached = self._persisted_count.get(task_id)
@@ -668,6 +865,29 @@ class AppendOnlyTaskStore(TaskStore):
         finally:
             release_sqlite_write_lock(write_lock)
         self._persisted_count.pop(task_id, None)
+
+    async def delete_context(self, context_id: str) -> None:
+        """Drop every durable trace of a context — its tasks (head/history/artifacts) and
+        its conversation checkpoint — when a session is deleted. The single place that
+        knows the turn store's tables, so session deletion does not reach into them."""
+        await self._ensure_initialized()
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                task_ids = (
+                    await connection.execute(
+                        select(self._head.c.id).where(self._head.c.context_id == context_id)
+                    )
+                ).scalars().all()
+                for task_id in task_ids:
+                    await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
+                    await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
+                await connection.execute(delete(self._head).where(self._head.c.context_id == context_id))
+                await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.context_id == context_id))
+        finally:
+            release_sqlite_write_lock(write_lock)
+        for task_id in list(self._persisted_count):
+            self._persisted_count.pop(task_id, None)
 
     async def input_required_context_ids(self) -> list[str]:
         """Context ids whose persisted task is input-required, so the sidebar's
