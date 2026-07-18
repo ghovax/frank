@@ -93,12 +93,13 @@ The delegated in-process continuation and `background_store` are kept, for the r
 
 Implemented and committed as coherent, compiling increments: the checkpoint store; the conversation rewire onto it; safe-point `CHECKPOINT`; the data-driven reconciliation with turn-kind stamping; the `conversations`-table deletion; and the `SUSPENDED` unification (one suspend event and prompt path for every turn, deleting the `PERMISSION_REQUEST`/`QUESTION` machinery). The background-store fold from the original draft was evaluated and deliberately not done (a distinct subsystem, not a duplicate).
 
-Verified by a `tests/` suite (pytest; a scripted fake LLM drives the *real* runtime turn loop, no network):
+Verified by a `tests/` suite (pytest; a scripted fake LLM drives the *real* code, no network):
 
 - **Store** (`test_task_store.py`, real in-memory SQLite): checkpoint save/load and compaction-replace; the reconciliation policy matrix (top-level and unmarked preserved; delegated and mid-execution failed; terminal untouched); `delete_context`.
 - **Runtime suspend/resume** (`test_durable_turn.py`): a top-level turn hits an ask-by-default gate, yields the one `SUSPENDED` event and returns with the pending tool-call checkpoint; resuming `allow` runs the tool, fires `CHECKPOINT`, and completes; resuming `deny` records a valid denial ToolMessage; and a delegated turn emits the *same* single `SUSPENDED`, parks in place, and continues the *same* stream to completion once the shared resolver answers it.
+- **Executor ↔ a2a-sdk** (`test_executor_suspend_resume.py`): the real `HarnessAgentExecutor` driven through the real `DefaultRequestHandler` + `AppendOnlyTaskStore` — a top-level turn suspends as a durable `input-required` task with its pending record and conversation checkpoint persisted, and an `input_response` `message/send` rebuilds from the checkpoint and resumes to completion, clearing the pending record.
 
-What that leaves to a live run is only the executor↔SDK glue tying these verified layers together — the `SUSPENDED` handler's `save_checkpoint` + `input-required` `final=True` close, and the `input_response` `message/send` rebuild — which is compile-verified and built from the store and runtime pieces the suite covers. The recommended live smoke test remains: one session that hits a gate and is answered, and one interrupted mid-`input-required` and resumed.
+The full suspend→persist→`input-required`→`input_response`→rebuild→resume→complete path is thus exercised against the real SDK; only the model is faked. What a live run would add is real-model behavior in place of the scripted turns and the multi-process fan-out — not any unexercised mechanism. The recommended live smoke test remains: one session that hits a gate and is answered, and one interrupted mid-`input-required` and resumed.
 
 ## Testing
 
