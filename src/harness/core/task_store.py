@@ -180,16 +180,16 @@ _TERMINAL_TASK_STATES = {
 }
 
 
-# Turn control-state keys carried in a task's head ``metadata`` — the small, non-write-hot
-# part of the durable turn record (the large model-facing conversation lives in the
-# checkpoint table). The kind decides the restart policy; the inbox holds background
-# results a later turn of the context will fold into the conversation.
+# The turn kind carried in a task's head ``metadata`` — the field the restart
+# reconciliation reads to decide a non-terminal task's fate. (Background-result delivery
+# stays in ``background_store``, which is already results-durable / execution-ephemeral and
+# additionally reaps orphaned OS process groups and recovers running jobs — capabilities a
+# task-metadata inbox would not carry, so it is not folded in.)
 TURN_KIND_KEY = "daisyTurnKind"
 TURN_KIND_USER = "user"
 TURN_KIND_AUTONOMOUS = "autonomous"
 TURN_KIND_COMPACTION = "compaction"
 TURN_KIND_DELEGATED = "delegated"
-BACKGROUND_INBOX_KEY = "daisyBackgroundInbox"
 
 
 def _task_state_value(task: Task) -> str:
@@ -427,104 +427,6 @@ class AppendOnlyTaskStore(TaskStore):
         except (json.JSONDecodeError, TypeError):
             return []
 
-    async def _head_metadata(self, connection, task_id: str) -> dict:
-        row = (
-            await connection.execute(select(self._head.c.task_metadata).where(self._head.c.id == task_id))
-        ).scalar()
-        if not row:
-            return {}
-        try:
-            data = json.loads(row)
-            return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, TypeError):
-            return {}
-
-    async def append_background_result(self, task_id: str, entry: dict) -> None:
-        """Record a completed background result on its originating task's inbox (in the
-        head metadata), so a later turn of the context folds it into the conversation.
-        The originating turn is terminal by the time this runs, so its head is no longer
-        upserted by the stream and this update does not race the live save path."""
-        await self._ensure_initialized()
-        write_lock = await acquire_sqlite_write_lock()
-        try:
-            async with self._engine.begin() as connection:
-                metadata = await self._head_metadata(connection, task_id)
-                inbox = list(metadata.get(BACKGROUND_INBOX_KEY, []) or [])
-                inbox.append({**entry, "delivered": False})
-                metadata[BACKGROUND_INBOX_KEY] = inbox
-                await connection.execute(
-                    update(self._head)
-                    .where(self._head.c.id == task_id)
-                    .values(task_metadata=json.dumps(metadata))
-                )
-        finally:
-            release_sqlite_write_lock(write_lock)
-
-    async def undelivered_background_results(self, context_id: str) -> list[dict]:
-        """Every not-yet-delivered background result across a context's tasks, each tagged
-        with the ``task_id`` whose inbox holds it, oldest task first."""
-        await self._ensure_initialized()
-        async with self._engine.connect() as connection:
-            rows = (
-                await connection.execute(
-                    select(self._head.c.id, self._head.c.task_metadata)
-                    .where(self._head.c.context_id == context_id)
-                    .order_by(self._head.c.id)
-                )
-            ).all()
-        results: list[dict] = []
-        for task_id, task_metadata in rows:
-            if not task_metadata:
-                continue
-            try:
-                metadata = json.loads(task_metadata)
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if not isinstance(metadata, dict):
-                continue
-            for entry in metadata.get(BACKGROUND_INBOX_KEY, []) or []:
-                if isinstance(entry, dict) and not entry.get("delivered"):
-                    results.append({**entry, "task_id": str(task_id)})
-        return results
-
-    async def mark_background_results_delivered(self, context_id: str) -> None:
-        """Flag every inbox entry across the context's tasks as delivered, once a turn has
-        folded them into its conversation."""
-        await self._ensure_initialized()
-        write_lock = await acquire_sqlite_write_lock()
-        try:
-            async with self._engine.begin() as connection:
-                rows = (
-                    await connection.execute(
-                        select(self._head.c.id, self._head.c.task_metadata)
-                        .where(self._head.c.context_id == context_id)
-                    )
-                ).all()
-                for task_id, task_metadata in rows:
-                    if not task_metadata:
-                        continue
-                    try:
-                        metadata = json.loads(task_metadata)
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-                    if not isinstance(metadata, dict):
-                        continue
-                    inbox = metadata.get(BACKGROUND_INBOX_KEY)
-                    if not inbox:
-                        continue
-                    changed = False
-                    for entry in inbox:
-                        if isinstance(entry, dict) and not entry.get("delivered"):
-                            entry["delivered"] = True
-                            changed = True
-                    if changed:
-                        await connection.execute(
-                            update(self._head)
-                            .where(self._head.c.id == str(task_id))
-                            .values(task_metadata=json.dumps(metadata))
-                        )
-        finally:
-            release_sqlite_write_lock(write_lock)
 
     async def _history_count(self, connection, task_id: str) -> int:
         cached = self._persisted_count.get(task_id)

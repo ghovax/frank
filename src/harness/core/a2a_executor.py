@@ -67,6 +67,7 @@ from harness.core.configuration import (
     load_agent_configuration,
 )
 from harness.core.background_store import get_background_job_store
+from harness.core.task_store import TURN_KIND_KEY
 from harness.core.file_leases import FileLeaseManager
 from harness.core.models import find_model
 from harness.core import telemetry as _telemetry
@@ -1386,6 +1387,10 @@ class HarnessAgentExecutor(AgentExecutor):
         # The turn is one trace, grouped by the session (context_id); a delegation's
         # traceparent (in the message metadata) makes this turn nest under its parent.
         turn_kind = "autonomous" if autonomous else "compaction" if compaction else "delegated" if delegated else "user"
+        # Stamp the kind onto the task so the restart reconciliation reads a real field:
+        # a top-level input-required pause is preserved, a delegated one and any
+        # mid-execution turn are failed. Persisted with the head on the next save.
+        task.metadata = {**(task.metadata or {}), TURN_KIND_KEY: turn_kind}
         parent_context = _telemetry.context_from_traceparent((message.metadata or {}).get("traceparent", ""))
         turn_span_context = _telemetry.span("agent.turn", {
             "session.id": task.context_id,
