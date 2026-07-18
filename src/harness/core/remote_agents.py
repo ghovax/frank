@@ -327,6 +327,13 @@ class RemoteAgentManager:
         agent = self._agents.get(name)
         return await agent.resolve_card(force=True) if agent is not None else None
 
+    async def refresh_all(self) -> None:
+        """Force a fresh card resolution for every agent, updating health even while idle."""
+        await asyncio.gather(*(agent.resolve_card(force=True) for agent in self._agents.values()), return_exceptions=True)
+
+    def has_agents(self) -> bool:
+        return bool(self._agents)
+
     async def reconcile(self, configurations: dict[str, RemoteAgentConfiguration]) -> None:
         """Apply a new config set live: drop removed/changed agents (closing their
         clients), keep unchanged ones connected, resolve new/changed ones."""

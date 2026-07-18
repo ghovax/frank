@@ -1911,6 +1911,16 @@ async def _reload_remote_agents() -> None:
         _broadcaster.publish({"type": "remote_agents_changed"})
 
 
+async def _poll_remote_agent_health(interval_seconds: float = 300.0) -> None:
+    """Periodically re-resolve remote agent cards so their health stays current in the UI
+    even while idle, broadcasting on each pass so open panels refresh."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        if _remote_agent_manager is not None and _remote_agent_manager.has_agents():
+            await _remote_agent_manager.refresh_all()
+            _publish_broadcast({"type": "remote_agents_changed"})
+
+
 async def _ensure_mcp_servers_for(working_directory: str) -> None:
     """Additively grow the shared MCP server pool with the working directory's own
     ``mcp.json`` servers, so a folder's servers are running and listable once that
@@ -2270,6 +2280,7 @@ async def lifespan(application: FastAPI):
     watcher = asyncio.create_task(_watch_agents_and_skills(application))
     configuration_watcher = asyncio.create_task(_watch_configuration())
     ssh_hosts_watcher = asyncio.create_task(_watch_ssh_hosts())
+    remote_agent_health_poller = asyncio.create_task(_poll_remote_agent_health())
     # The artifact-capture worker drains write-ish tool calls and runs the shadow-git
     # capture off-loop, so it never blocks a turn (best-effort, see _run_capture).
     global _capture_queue
@@ -2281,6 +2292,7 @@ async def lifespan(application: FastAPI):
         watcher.cancel()
         configuration_watcher.cancel()
         ssh_hosts_watcher.cancel()
+        remote_agent_health_poller.cancel()
         capture_worker.cancel()
         if mcp_start_task is not None and not mcp_start_task.done():
             mcp_start_task.cancel()
