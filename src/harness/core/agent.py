@@ -901,6 +901,9 @@ class AgentRuntime:
         self._is_remote_agent: Callable[[str], bool] = lambda name: False
         # The current turn's file attachments, forwarded to a remote agent as FileParts.
         self._pending_attachments: list[dict] = []
+        # Remote agents the user has approved contacting for the rest of this session, so
+        # egress consent is asked once per agent, not on every call.
+        self._egress_approved_agents: set[str] = set()
         self._agent_messages: asyncio.Queue[AgentMessage] = asyncio.Queue()
         self._agent_message_available = asyncio.Event()
         self._pending_agent_questions: set[str] = set()
@@ -3446,6 +3449,31 @@ class AgentRuntime:
                 except FileNotFoundError as exception:
                     yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
                     return
+
+            # Contacting a remote agent sends the prompt and attachments off this machine,
+            # so it is gated by an egress permission — asked once per agent per session
+            # (skipped under bypass, like other permissions).
+            if is_remote_agent and not self._bypass_permissions and agent_name not in self._egress_approved_agents:
+                request_identifier = f"perm-{self._session_id}-{uuid.uuid4()}"
+                egress_future = asyncio.get_event_loop().create_future()
+                self._pending_permissions[request_identifier] = egress_future
+                yield StreamEvent(
+                    StreamEvent.Type.PERMISSION_REQUEST,
+                    id=tool_call_identifier,
+                    request_id=request_identifier,
+                    command=f"Contact external agent '{agent_name}'",
+                    justification=f"Send this task and any attachments to the external agent '{agent_name}'. Data will leave this machine.",
+                    risk="high",
+                )
+                try:
+                    egress_decision = await egress_future
+                finally:
+                    self._pending_permissions.pop(request_identifier, None)
+                if egress_decision == "deny":
+                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name, message=f"Contacting external agent '{agent_name}' was not approved.")
+                    return
+                if egress_decision == "allow_always":
+                    self._egress_approved_agents.add(agent_name)
 
             # Spawning is non-blocking: the agent runs as a background job (a
             # related A2A task) and the parent continues immediately. The agent's

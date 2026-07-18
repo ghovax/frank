@@ -265,6 +265,16 @@ class _RemoteAgent:
                 streaming=bool(card.capabilities and card.capabilities.streaming),
             )
             self._client = ClientFactory(config).create(card)
+            # If the agent offers an authenticated extended card, fetch the richer version
+            # now that the client carries auth — re-checking trust on every URL it names.
+            if getattr(card, "supports_authenticated_extended_card", False):
+                try:
+                    extended = await self._client.get_card()
+                    for url in _card_urls(extended):
+                        _assert_url_trusted(url, self.configuration)
+                    self.card = extended
+                except Exception:  # noqa: BLE001 — the extended card is optional
+                    pass
         return self._client
 
     async def aclose(self) -> None:
