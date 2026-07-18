@@ -1271,6 +1271,10 @@ class HarnessAgentExecutor(AgentExecutor):
             task.metadata = {key: value for key, value in (task.metadata or {}).items() if key != PENDING_INTERACTION_KEY}
             await self._task_store.save(task)
             is_resume = True
+        elif not delegated and not autonomous and not compaction and self._on_permission_state is not None:
+            # A fresh user turn supersedes any prior input-required pause for this context
+            # (the runtime closes the dangling checkpoint), so drop the awaiting-input marker.
+            self._on_permission_state(task.context_id, False)
 
         async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
             await updater.update_status(TaskState.working, updater.new_agent_message([part]))

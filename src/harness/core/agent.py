@@ -1953,6 +1953,21 @@ class AgentRuntime:
         raw error rides along as its JSON payload, intact."""
         return self._prompt_loader.load("artifact_render_error", {"payload": payload})
 
+    def _close_dangling_tool_calls(self) -> None:
+        """If the conversation ends with a tool-call AIMessage that has no ToolMessages —
+        a turn that suspended at input-required and was superseded by a new message rather
+        than answered — append a ToolMessage for each call so the history stays valid.
+        A later answer for that superseded pause then finds no checkpoint and is a no-op."""
+        if not self._conversation:
+            return
+        last = self._conversation[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            for tool_call in last.tool_calls:
+                self._conversation.append(ToolMessage(
+                    content="(superseded: a new message was sent before this was answered)",
+                    tool_call_id=tool_call["id"],
+                ))
+
     async def resume_stream(
         self, plans: dict[str, dict], answers: dict[str, Any]
     ) -> AsyncIterator[StreamEvent]:
@@ -1998,6 +2013,11 @@ class AgentRuntime:
                 yield event
             self._append_tool_results(response, resume_outcomes)
         else:
+            # A prior turn may have suspended at input-required and been superseded by
+            # this new message instead of answered. Close its dangling tool calls (an
+            # AIMessage carrying tool_calls with no ToolMessages) so appending this turn
+            # keeps the conversation valid for the provider.
+            self._close_dangling_tool_calls()
             # A turn's input is usually plain text, but an attachment turn carries a
             # multimodal content list (a text block plus one image_url block per
             # attached image) so a vision model actually sees the pixels. LangChain's
@@ -2713,6 +2733,21 @@ class AgentRuntime:
             plan = await self._classify_tool_permission(
                 tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
             )
+            # A delegated agent has no reliable interactive human, and its throwaway
+            # conversation is not persisted, so it cannot durably suspend and resume: a
+            # gate that would prompt becomes a hard denial (as the sandbox gate already is
+            # for agents). Interactive approval is for the top-level user turn; a sub-agent
+            # runs read-only or the parent performs the guarded action.
+            if self._is_agent and plan.gates:
+                gate = plan.gates[0]
+                plan.denial = {
+                    "code": "", "raw_command": gate.command, "denied_injection": False,
+                    "message": (
+                        "An autonomous agent cannot request interactive approval. "
+                        + (gate.deny_message or "This action was not approved.")
+                    ),
+                }
+                plan.gates = []
             plans[tool_call_data["id"]] = plan
             pending.extend(plan.gates)
         return plans, pending

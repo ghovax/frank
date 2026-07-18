@@ -36,6 +36,12 @@ An answer — whether an external `input_response` `message/send` referencing th
 
 Restart survival falls out of the same state. `fail_orphaned_tasks` is changed to exempt `input-required`: such a task is left intact, and its next answer rebuilds and resumes it from the database. Every other non-terminal state is still failed on restart, because only `input-required` has a durable, resumable checkpoint.
 
+## Superseding a pause, and delegated agents
+
+Because a suspended segment releases the per-context turn lock (nothing is parked), a new user message can arrive while a task is still input-required. Rather than answer, it supersedes the pause: the runtime closes the dangling checkpoint (an `AIMessage` with tool_calls and no `ToolMessage`s) by appending a "superseded" `ToolMessage` for each call, so the conversation stays valid, and the executor drops the awaiting-input marker. A late answer for the superseded pause then finds no checkpoint and is a no-op.
+
+Delegated sub-agents do not durably suspend. A delegated turn is a fresh, one-shot run whose throwaway conversation is not persisted, so it has no resumable checkpoint — and an autonomous agent has no reliable interactive human anyway. A gate that would prompt is therefore turned into a hard denial for an agent (as the sandbox gate already was), so a sub-agent runs read-only or the parent performs the guarded action. Interactive approval is for the top-level user turn.
+
 ## Security model
 
 The one security-sensitive move is relocating permission decisions from execution time to preflight. The mitigation is that the decision logic is moved verbatim and continues to flow through the same shared functions, so the set of things that auto-approve, hard-deny, or prompt is unchanged — only the timing moves earlier. `_execute_tool` becomes strictly less privileged: it can no longer approve anything, only carry out a decision made upstream or emit the denial the preflight recorded. Bypass mode, read-only enforcement, and explicit deny rules keep their current force, since they are computed by the same functions.
