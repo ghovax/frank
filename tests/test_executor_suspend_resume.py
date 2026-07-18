@@ -14,9 +14,14 @@ from langchain_core.messages import AIMessageChunk
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.types import Message, Role, Part, TextPart, DataPart, MessageSendParams, TaskState
 
+import asyncio
+
 import harness.core.agent as agentmod
 import harness.core.a2a_executor as execmod
-from harness.core.a2a_executor import HarnessAgentExecutor, PENDING_INTERACTION_KEY
+from harness.core.a2a_executor import (
+    HarnessAgentExecutor, AgentRegistry, PENDING_INTERACTION_KEY,
+    DAISY_METADATA_KEY, Metadata,
+)
 from harness.core.task_store import AppendOnlyTaskStore
 from harness.core.configuration import GlobalConfiguration, AgentConfiguration
 
@@ -104,3 +109,53 @@ async def test_executor_suspend_persists_and_resume_completes(monkeypatch):
     resumed = await store.get(task.id)
     assert resumed.status.state == TaskState.completed, "the answered turn resumes and completes"
     assert PENDING_INTERACTION_KEY not in (resumed.metadata or {}), "the pending record is cleared on resume"
+
+
+async def test_delegated_executor_parks_stays_working_and_completes(monkeypatch):
+    # A delegated turn goes through the executor's delegated branch: it does NOT close a
+    # segment (never input-required) — it parks in place, and the shared resolver's
+    # delegated routing answers it, after which the same run continues to completion.
+    script = [_bash_call("frobnicate --deleg"), _text("delegated done")]
+    monkeypatch.setattr(agentmod, "model_is_authorized", lambda *a, **k: True)
+    monkeypatch.setattr(agentmod, "build_chat_model", lambda *a, **k: _FakeLLM(script))
+    configuration = AgentConfiguration(identifier="default", provider="openai", model="gpt-x")
+    monkeypatch.setattr(execmod, "load_agent_configuration", lambda *a, **k: configuration)
+
+    store = AppendOnlyTaskStore(create_async_engine("sqlite+aiosqlite:///:memory:"))
+    await store.initialize()
+    registry = AgentRegistry(store)
+    executor = HarnessAgentExecutor(
+        agent_name="default", global_configuration=GlobalConfiguration(),
+        task_store=store, registry=registry,
+    )
+    handler = DefaultRequestHandler(agent_executor=executor, task_store=store)
+
+    context_id = "ctx-deleg"
+    message = _user_message("frob deleg", context_id)
+    message.metadata = {DAISY_METADATA_KEY: {
+        Metadata.DELEGATED: True,
+        Metadata.AGENT_LANE_GROUP_ID: "g1",
+        Metadata.AGENT_LANE_STEP_ID: "s1",
+    }}
+
+    driver = asyncio.ensure_future(_drain(handler, message))
+    # Wait until a participant runtime has parked on a gate future.
+    request_id = None
+    for _ in range(400):
+        await asyncio.sleep(0.005)
+        for participant in list(registry._participants.values()):
+            if participant.context_id == context_id and participant.runtime._agent_permission_futures:
+                request_id = next(iter(participant.runtime._agent_permission_futures))
+                break
+        if request_id:
+            break
+    assert request_id, "delegated turn should have parked on a gate"
+
+    assert await registry.resolve_pending_input(context_id, request_id, decision="allow") is True
+    await asyncio.wait_for(driver, timeout=10)
+
+    tasks = await store.tasks_for_context(context_id)
+    assert len(tasks) == 1
+    # It never became input-required (delegated parks, does not close a durable segment).
+    assert tasks[0].status.state == TaskState.completed
+    assert PENDING_INTERACTION_KEY not in (tasks[0].metadata or {})
