@@ -175,7 +175,7 @@ class LocationExecutor(abc.ABC):
         location's ``.gitignore`` unless ``include_ignored`` is set."""
 
     @abc.abstractmethod
-    def grep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
+    def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         """``path:line:content`` matches of regex ``pattern`` under the absolute
         ``target`` path, optionally filtered by an ``include`` filename glob. Honors
         the location's ``.gitignore`` unless ``include_ignored`` is set."""
@@ -280,15 +280,15 @@ class LocalExecutor(LocationExecutor):
         candidates.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
         return [str(match) for match in candidates[:limit]]
 
-    def grep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
+    def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         if shutil.which("rg"):
             try:
-                return self._grep_with_ripgrep(pattern, target, include, max_results, include_ignored)
+                return self._grep_with_ripgrep(pattern, target, include, maximum_results, include_ignored)
             except (subprocess.SubprocessError, FileNotFoundError):
                 pass
-        return self._grep_python(pattern, target, include, max_results, include_ignored)
+        return self._grep_python(pattern, target, include, maximum_results, include_ignored)
 
-    def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
+    def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         command = [
             "rg", "--line-number", "--no-heading", "--color=never",
             "--max-count", str(active_tuning().amount(Limit.GREP_PER_FILE)),
@@ -302,9 +302,9 @@ class LocalExecutor(LocationExecutor):
         # rg exits 1 on "no matches", 2 on a real error (bad pattern, IO failure).
         if result.returncode not in (0, 1):
             raise ValueError((result.stderr or "").strip() or "search failed")
-        return (result.stdout or "").splitlines()[:max_results]
+        return (result.stdout or "").splitlines()[:maximum_results]
 
-    def _grep_python(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
+    def _grep_python(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         """Fallback grep using a pure-Python walk (used when ripgrep is unavailable)."""
         per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
         try:
@@ -333,7 +333,7 @@ class LocalExecutor(LocationExecutor):
                 if regex.search(line):
                     results.append(f"{file}:{line_no}:{line}")
                     matches_in_file += 1
-                    if len(results) >= max_results:
+                    if len(results) >= maximum_results:
                         return results
                     if matches_in_file >= per_file_limit:
                         break
@@ -500,7 +500,7 @@ class SshExecutor(LocationExecutor):
         base = base_directory.rstrip("/")
         return [path if path.startswith("/") else f"{base}/{path}" for path in matched]
 
-    def grep(self, pattern: str, target: str, include: str | None, max_results: int, include_ignored: bool = False) -> list[str]:
+    def grep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         # Prefer ripgrep on the remote so the regex dialect matches the local tool and the
         # .gitignore chain is honored; otherwise fall back to POSIX ERE via `grep -E` (never
         # BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
@@ -527,7 +527,7 @@ class SshExecutor(LocationExecutor):
         if completed.returncode not in (0, 1):
             stderr = completed.stderr.decode("utf-8", errors="replace").strip()
             raise ValueError(stderr or "search failed")
-        return stdout.splitlines()[:max_results]
+        return stdout.splitlines()[:maximum_results]
 
     def connect(self, *, timeout: float = DEFAULT_CONNECT_TIMEOUT) -> CommandResult:
         """Establish (or reuse) the ControlMaster and confirm the host is reachable and

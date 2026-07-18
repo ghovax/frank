@@ -1,7 +1,6 @@
 """An append-only A2A :class:`TaskStore`.
 
-Why this exists
----------------
+Why this exists.
 A2A streams a turn as many small events (text-chunk flushes, thinking labels,
 tool calls/results, and — for the chat agent — every relayed agent event).
 The SDK's :class:`~a2a.server.tasks.TaskManager` appends each event's message to

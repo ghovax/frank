@@ -31,7 +31,7 @@ DEFAULT_URL_TTL_SECONDS = 600
 
 # A file at or below this size is emitted inline as bytes rather than a URL, so a small
 # attachment reaches the peer even if it cannot fetch back from this server.
-DEFAULT_INLINE_MAX_BYTES = 256 * 1024
+DEFAULT_INLINE_MAXIMUM_BYTES = 256 * 1024
 
 
 def _uploads_root(home_directory: Path) -> Path:
@@ -138,7 +138,7 @@ def build_file_part(
     signer: FileUrlSigner,
     *,
     ttl_seconds: int = DEFAULT_URL_TTL_SECONDS,
-    inline_max_bytes: int = DEFAULT_INLINE_MAX_BYTES,
+    inline_maximum_bytes: int = DEFAULT_INLINE_MAXIMUM_BYTES,
 ) -> Optional[Part]:
     """Turn a stored attachment into a ``FilePart``, or ``None`` if the file has no readable
     path. A small file is inlined as ``FileWithBytes``; a larger one is a ``FileWithUri``
@@ -153,7 +153,7 @@ def build_file_part(
         return None
     name = str(attachment.get("filename") or attachment.get("title") or file_path.name)
     mime_type = str(attachment.get("mime_type") or "application/octet-stream")
-    if size <= inline_max_bytes:
+    if size <= inline_maximum_bytes:
         try:
             encoded = base64.b64encode(file_path.read_bytes()).decode("ascii")
         except OSError:
