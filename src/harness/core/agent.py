@@ -49,6 +49,7 @@ from harness.tools.tools import (
     bash as bash_tool,
     web_search as web_search_tool,
     spawn_agent as spawn_tool,
+    call_remote_agent as call_remote_agent_tool,
     cancel_agent as cancel_agent_tool,
     ask_agent as ask_agent_tool,
     respond_agent as respond_agent_tool,
@@ -553,6 +554,14 @@ def _build_tools(
     if agent_configuration.tools.spawn_agent.enabled:
         available.append(spawn_tool)
         available.append(cancel_agent_tool)
+        # A distinct tool for external A2A agents, offered only when this profile is
+        # allowed at least one configured remote agent.
+        profile = agent_configuration.identifier
+        if any(
+            not remote.allowed_profiles or profile in remote.allowed_profiles
+            for remote in global_configuration.remote_agents.enabled_agents().values()
+        ):
+            available.append(call_remote_agent_tool)
     # The computer-use tool controls the whole machine, so it is opt-in: added only when
     # the user has enabled it in Settings (which also gates the Accessibility grant flow).
     if global_configuration.computer_control.enabled:
@@ -1447,9 +1456,10 @@ class AgentRuntime:
             available_agents = describe_available_agents(
                 self._global_configuration.agent_directories_for(self._project_directory)
             )
-            # External A2A agents are advertised alongside the on-disk ones so the model
-            # can address them by name; the spawn path routes them over the wire.
-            available_agents = [*available_agents, *self._remote_agent_roster()]
+            # External A2A agents are a distinct concept from local agents: they run on
+            # another server (no shared filesystem, their own model and cost, one-shot),
+            # so they are surfaced separately and reached with `call_remote_agent`.
+            remote_agents = self._remote_agent_roster()
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
@@ -1463,6 +1473,7 @@ class AgentRuntime:
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
                 "available_agents": available_agents,
+                "remote_agents": remote_agents,
                 "is_agent": self._is_agent,
                 # The project's locations. Filesystem/shell tools take a `location` (its
                 # URI); it is required when there is more than one, optional when one.
@@ -3388,7 +3399,7 @@ class AgentRuntime:
                 result=result,
             )
 
-        elif tool_name == "spawn_agent":
+        elif tool_name in ("spawn_agent", "call_remote_agent"):
             child_depth = self._delegation_depth + 1
             maximum_depth = self._global_configuration.maximum_delegation_depth
             if child_depth > maximum_depth:
@@ -3409,10 +3420,25 @@ class AgentRuntime:
             agent_prompt = self._build_agent_prompt(raw_agent_prompt, agent_read_only)
             spawn_step_id = new_id("agent")
 
+            # spawn_agent is local-only and call_remote_agent is remote-only — the two are
+            # distinct concepts, so a name for the wrong one is rejected with a pointer to
+            # the right tool.
+            is_remote_agent = self._is_remote_agent(agent_name)
+            if tool_name == "call_remote_agent" and not is_remote_agent:
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                    message=f"{agent_name!r} is not a known remote agent. Use spawn_agent for a local agent.",
+                )
+                return
+            if tool_name == "spawn_agent" and is_remote_agent:
+                yield StreamEvent(
+                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
+                    message=f"{agent_name!r} is a remote agent. Use call_remote_agent to reach it.",
+                )
+                return
             # A remote agent lives on another server, so there is no on-disk config to
             # load or validate — it is resolved over the wire by the delegate. A local
-            # agent must resolve to a real config file, or the spawn is rejected here.
-            is_remote_agent = self._is_remote_agent(agent_name)
+            # agent must resolve to a real config file, or the call is rejected here.
             sub_configuration = None
             if not is_remote_agent:
                 try:

@@ -420,6 +420,22 @@ def spawn_agent(prompt: str = "", agent: str = "", read_only: bool = False, just
 
 
 @tool
+def call_remote_agent(prompt: str = "", agent: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+    """Delegate a task to an **external** agent running on another server (an A2A peer).
+
+    A remote agent is not a local agent: it runs its **own model on its own credentials** (its cost is separate and opaque to you), it has **no access to this machine's filesystem** (so never reference local paths — attach any file the task needs), it is **one-shot** (a fresh context each time, no shared history), and it **cannot be reached with ``ask_agent``** (no mid-run mailbox). Data in your prompt and attachments **leaves this machine**, so send only what the task needs.
+
+    **Non-blocking**, like ``spawn_agent``: this returns a handle immediately, the remote agent's activity streams live, and its deliverable is injected when it finishes. Choose a peer from ``remote_agents`` in your context. Use ``spawn_agent`` for local agents instead.
+
+    Arguments:
+        prompt: The self-contained task for the remote agent — goal, all needed context (it shares none of yours), and the expected return shape.
+        agent: Name of the remote agent from ``remote_agents``.
+        justification: A concise, user-facing description of what this remote agent will do — shown as the label for this call.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+@tool
 def cancel_agent(task_identifier: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Cancel one spawned agent by the handle returned from ``spawn_agent``.
 

@@ -20,15 +20,23 @@ codebase, so connecting to an external agent is simply not possible yet.
 Everything upstream of `make_delegate()` — `spawn_agent`, the agents panel, task persistence, and the
 relayed‑child event vocabulary (`a2a_executor.py:1952`) — stays exactly as it is. We make
 `make_delegate()` **locality‑aware**: if the target is a local handler, take today's in‑process path;
-if it's a registered remote agent, reach it over the wire with an A2A client. A remote agent becomes
-"just another agent" to the model, and the whole panel/relay/persistence machinery is reused
-unchanged.
+if it's a registered remote agent, reach it over the wire with an A2A client. The panel/relay/persistence
+machinery is reused unchanged.
 
 ```
 delegate(agent_name, prompt, …)
    ├─ local  → handler.on_message_send_stream(…)          (in-process, unchanged)
    └─ remote → RemoteAgentClient.message_stream(…)        (a2a.client, over the wire)
 ```
+
+To the model, a remote agent is a **distinct concept**, not another local agent: it runs on another
+server (its own model and cost, no shared filesystem, one‑shot, no mailbox). So local agents keep
+`spawn_agent` and appear under `available_agents`, while remote agents are reached with a separate
+`call_remote_agent` tool and listed under `remote_agents`. `spawn_agent` rejects a remote name (and vice
+versa) with a pointer to the right tool; `call_remote_agent` is offered only to a profile allowed at
+least one remote agent. The delegation plumbing underneath is shared; only the model‑facing surface is
+split, so the model reasons correctly about latency, cost, files‑must‑be‑attached, and no mid‑run
+questions.
 
 ## Outbound: the A2A client
 
