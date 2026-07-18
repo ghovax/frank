@@ -1694,6 +1694,7 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
         ensure_mcp_servers=_ensure_mcp_servers_for,
         resolve_locations=_resolve_session_locations,
         capture_artifacts=_capture_artifacts,
+        persist_agent_allow_patterns=_persist_agent_allow_patterns,
     )
     handler = DefaultRequestHandler(
         agent_executor=executor,
@@ -1821,6 +1822,49 @@ def _apply_agent_configuration_update(sidecar: dict[str, Any], request: "AgentCo
         tools["spawnAgent"] = spawn_agent
     next_sidecar["tools"] = tools
     return next_sidecar
+
+
+async def _persist_agent_allow_patterns(agent_identifier: str, project_directory: str, patterns: list[str]) -> None:
+    """Durably add allow-patterns to a sub-agent profile's configured bash permissions,
+    so a sub-agent's 'always allow' outlives its ephemeral runtime and every future spawn
+    of the profile inherits it. Best effort; an existing decision for a pattern is never
+    overridden (a deliberate deny/ask is not silently flipped to allow)."""
+    if not patterns or _global_configuration is None:
+        return
+
+    def _write() -> bool:
+        try:
+            if project_directory:
+                _ensure_agents_for(project_directory)
+            agent_markdown_path, _configuration = _agent_configuration_for_request(agent_identifier, project_directory)
+        except FileNotFoundError:
+            return False
+        sidecar = _load_agent_sidecar(agent_markdown_path)
+        tools = _string_keyed_mapping(sidecar.get("tools"))
+        bash = _string_keyed_mapping(tools.get("bash"))
+        permissions = _string_keyed_mapping(bash.get("permissions"))
+        changed = False
+        for raw_pattern in patterns:
+            pattern = raw_pattern.strip()
+            if pattern and pattern not in permissions:
+                permissions[pattern] = "allow"
+                changed = True
+        if not changed:
+            return False
+        bash["permissions"] = permissions
+        tools["bash"] = bash
+        sidecar["tools"] = tools
+        _save_agent_sidecar(agent_markdown_path, sidecar)
+        return True
+
+    if not await asyncio.to_thread(_write):
+        return
+    # The current sub-agent already runs the command (its live session allowlist covers
+    # it); this makes the change take effect for future spawns and the discovery cards.
+    if agent_identifier in _executors:
+        _executors[agent_identifier].reset_runtimes()
+    await asyncio.to_thread(_reload_agent_cards)
+    _publish_broadcast({"type": "agents_changed"})
 
 
 def _reload_agent_cards() -> None:

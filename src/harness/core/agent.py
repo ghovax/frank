@@ -979,12 +979,13 @@ class AgentRuntime:
         self._read_only: bool = agent_configuration.permission_mode == "read_only"
         self._auto_permissions: bool = agent_configuration.permission_mode == "auto"
         self._session_permission_mode: str = "default"
-        # A sub-agent under the interactive policy asks (escalates to the user) for any
-        # command its card does not explicitly allow, rather than running it unattended.
-        self._sub_agent_ask_by_default: bool = False
         # A sub-agent parks on these while its human-in-the-loop request is escalated to
         # the user; the resolver (native REST or an A2A input_response) completes them.
         self._agent_permission_futures: dict[str, asyncio.Future] = {}
+        # Durably persists a sub-agent's 'always allow' as allow-patterns on its own agent
+        # profile's configuration: async (agent_identifier, project_directory, patterns).
+        # Injected by the executor; a sub-agent has no session to remember the rule in.
+        self._persist_agent_allow_patterns: Optional[Callable[..., Any]] = None
         # When set, agents (spawn_agent calls) are invoked
         # through this delegate — an A2A call to the target agent's served
         # endpoint — instead of being run in-process. Bound to the A2A context.
@@ -1358,7 +1359,6 @@ class AgentRuntime:
         self._bypass_permissions = False
         self._read_only = mode == "read_only"
         self._auto_permissions = mode == "auto"
-        self._sub_agent_ask_by_default = mode == "default"
 
     def set_delegate(self, delegate: Callable) -> None:
         """Install the A2A delegate used to invoke agents as related tasks."""
@@ -1367,6 +1367,11 @@ class AgentRuntime:
     def set_cancel_delegated(self, cancel_delegated: Callable) -> None:
         """Install the callback used by targeted spawned-agent cancellation."""
         self._cancel_delegated = cancel_delegated
+
+    def set_persist_agent_allow_patterns(self, persist: Callable[..., Any]) -> None:
+        """Install the callback that durably records a sub-agent's 'always allow' as
+        allow-patterns on its agent profile's configuration."""
+        self._persist_agent_allow_patterns = persist
 
     def set_remote_agents(
         self,
@@ -1459,11 +1464,20 @@ class AgentRuntime:
         to delegate past the configured maximum depth."""
         self._delegation_depth = depth
 
+    @property
+    def _interactive_manual_mode(self) -> bool:
+        """The interactive ("manual") permission policy: not auto-classifying, not
+        read-only, not bypass. Under it, a command the card does not explicitly allow is
+        asked (escalated to the user) rather than run — for the top-level agent and a
+        sub-agent alike. Auto self-classifies, read-only hard-blocks mutations, and bypass
+        allows everything, so none of those ask on an unmatched command."""
+        return not self._auto_permissions and not self._read_only and not self._bypass_permissions
+
     def _evaluate_bash_permission(self, command: str, *, bypass: bool | None = None) -> str:
         effective_bypass = self._bypass_permissions if bypass is None else bypass
         if effective_bypass:
             return "allow"
-        unmatched = "ask" if self._sub_agent_ask_by_default else "allow"
+        unmatched = "ask" if self._interactive_manual_mode else "allow"
         return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
 
     async def _classify_permission(
@@ -1527,10 +1541,16 @@ class AgentRuntime:
         except RuntimeError:
             pass
 
-    async def _remember_bash_allow_rule(self, command: str) -> None:
-        """Ask the model to distill an allow rule (one or more command patterns)
-        from the approved command, and add it to this session's allowlist. Best
-        effort — the one-time approval already ran the command regardless."""
+    def _schedule_persist_bash_allow_rule(self, command: str) -> None:
+        try:
+            asyncio.create_task(self._persist_bash_allow_rule(command))
+        except RuntimeError:
+            pass
+
+    async def _distill_bash_allow_patterns(self, command: str) -> list[str]:
+        """Ask the model to distill an allow rule (one or more command patterns) from the
+        approved command. Best effort — returns [] on any failure, since the one-time
+        approval already ran the command regardless."""
         try:
             prompt = self._prompt_loader.load("bash_allow_rule", {"command": command})
             # bind_tools + manual parse instead of with_structured_output: the
@@ -1539,14 +1559,38 @@ class AgentRuntime:
             model = self._llm.bind_tools([BashAllowRule], tool_choice="auto")
             response = await model.ainvoke(prompt)
             if not response.tool_calls:
-                return
+                return []
             rule = BashAllowRule.model_validate(response.tool_calls[0]["args"])
-            for pattern in (rule.patterns or []):
-                pattern = pattern.strip()
-                if pattern and pattern not in self._session_allow_patterns:
-                    self._session_allow_patterns.append(pattern)
+            return [pattern.strip() for pattern in (rule.patterns or []) if pattern.strip()]
         except Exception:
-            pass
+            return []
+
+    async def _remember_bash_allow_rule(self, command: str) -> None:
+        """A top-level 'always allow': add the distilled patterns to this session's
+        allowlist, so the rest of the session stops asking for the same command."""
+        for pattern in await self._distill_bash_allow_patterns(command):
+            if pattern not in self._session_allow_patterns:
+                self._session_allow_patterns.append(pattern)
+
+    async def _persist_bash_allow_rule(self, command: str) -> None:
+        """A sub-agent's 'always allow': a sub-agent has no durable session to remember
+        the rule in, so its authority is its card — persist the distilled patterns as
+        ``allow`` on this agent profile's configuration (best effort), so every future
+        spawn of the profile inherits them. Also add them to the live session allowlist so
+        the rest of this sub-agent's turn stops asking, without waiting for the reload."""
+        patterns = await self._distill_bash_allow_patterns(command)
+        if not patterns:
+            return
+        for pattern in patterns:
+            if pattern not in self._session_allow_patterns:
+                self._session_allow_patterns.append(pattern)
+        if self._persist_agent_allow_patterns is not None:
+            try:
+                await self._persist_agent_allow_patterns(
+                    self._agent_configuration.identifier, self._project_directory, patterns,
+                )
+            except Exception:
+                pass
 
     def _record_event(self, event_type: str, data: dict) -> None:
         record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}
@@ -2861,11 +2905,16 @@ class AgentRuntime:
         return decisions
 
     def _apply_allow_always(self, decisions: dict[str, _ResolvedToolDecision]) -> None:
-        """Apply the durable side effects of an 'always allow' answer: a session bash
-        allow-rule, or an egress agent added to the per-session approved set."""
+        """Apply the durable side effects of an 'always allow' answer: a bash allow-rule
+        (scoped to the session for a top-level turn, persisted to the profile's config for
+        a sub-agent, which has no durable session), or an egress agent added to the
+        per-session approved set."""
         for decision in decisions.values():
             if decision.allow_always_bash_command:
-                self._schedule_bash_allow_rule(decision.allow_always_bash_command)
+                if self._is_agent:
+                    self._schedule_persist_bash_allow_rule(decision.allow_always_bash_command)
+                else:
+                    self._schedule_bash_allow_rule(decision.allow_always_bash_command)
             if decision.egress_allow_always_agent:
                 self._egress_approved_agents.add(decision.egress_allow_always_agent)
 

@@ -689,6 +689,7 @@ class HarnessAgentExecutor(AgentExecutor):
         ensure_mcp_servers: Optional[Callable[..., Any]] = None,
         resolve_locations: Optional[Callable[..., Any]] = None,
         capture_artifacts: Optional[Callable[..., Any]] = None,
+        persist_agent_allow_patterns: Optional[Callable[..., Any]] = None,
     ):
         self._agent_name = agent_name
         self._global_configuration = global_configuration
@@ -726,6 +727,10 @@ class HarnessAgentExecutor(AgentExecutor):
         # best-effort — the server owns the queue, worker, and history.db, so the runtime
         # stays free of any direct database or git dependency.
         self._capture_artifacts = capture_artifacts
+        # Durably records a sub-agent's 'always allow' as allow-patterns on its agent
+        # profile's configuration (the server owns the on-disk config format), so a
+        # sub-agent's approval outlives its ephemeral runtime.
+        self._persist_agent_allow_patterns = persist_agent_allow_patterns
         # All per-context (per-session) state — runtime, turn lock, resume pump, and the
         # running/aborted/pending-reset flags — as one _ContextState each. Created lazily
         # by `_context`, dropped whole by `teardown_context` on session delete, so a
@@ -1087,6 +1092,8 @@ class HarnessAgentExecutor(AgentExecutor):
         runtime.set_task_reader(self._make_task_reader())
         if self._capture_artifacts is not None:
             runtime.set_artifact_capture(self._capture_artifacts)
+        if self._persist_agent_allow_patterns is not None:
+            runtime.set_persist_agent_allow_patterns(self._persist_agent_allow_patterns)
         return runtime
 
     def _make_task_reader(self):
