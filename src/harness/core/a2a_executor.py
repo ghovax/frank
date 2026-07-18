@@ -1679,21 +1679,13 @@ class HarnessAgentExecutor(AgentExecutor):
                     ))
                 elif kind == StreamEvent.Type.SUSPENDED:
                     # The turn needs one or more human decisions before it can run its tool
-                    # batch. The runtime has appended the tool-call AIMessage (the durable
-                    # checkpoint). Persist the pending-interaction record and the conversation
-                    # checkpoint, surface each gate as its native DataPart so the app renders
-                    # the prompt(s), and close this segment as input-required (final): a later
-                    # answer rebuilds and resumes from the checkpoint.
+                    # batch. Surface each gate as its native DataPart so the app renders the
+                    # prompt(s) — in the transcript for a top-level turn, relayed to the
+                    # agents panel for a delegated one. The continuation transport then
+                    # differs by turn kind (below).
                     await flush_stream_buffers()
                     interactions = data.get("interactions", []) or []
                     plans = data.get("plans", {}) or {}
-                    task.metadata = {
-                        **(task.metadata or {}),
-                        PENDING_INTERACTION_KEY: {
-                            "gates": interactions, "plans": plans, "answers": {},
-                            "agent": self._agent_name,
-                        },
-                    }
                     for gate in interactions:
                         if gate.get("kind") == "question":
                             await emit(_data_part(
@@ -1708,6 +1700,23 @@ class HarnessAgentExecutor(AgentExecutor):
                                 command=gate.get("command", ""), justification=gate.get("justification", ""),
                                 risk=gate.get("risk", ""),
                             ))
+                    if delegated:
+                        # A delegated turn parks in place: the prompt is relayed to the panel
+                        # and the runtime awaits the answer on its own stream. Nothing is
+                        # persisted as input-required and the segment stays open — the pause
+                        # is ephemeral (failed, not resumed, on restart), and its answer routes
+                        # through the shared resolver's delegated path. Keep consuming.
+                        continue
+                    # A top-level turn suspends durably: record the pending interactions and
+                    # the checkpoint, flag the session awaiting input, and close this segment
+                    # as input-required (final); a later answer rebuilds and resumes it.
+                    task.metadata = {
+                        **(task.metadata or {}),
+                        PENDING_INTERACTION_KEY: {
+                            "gates": interactions, "plans": plans, "answers": {},
+                            "agent": self._agent_name,
+                        },
+                    }
                     if self._on_permission_state is not None:
                         self._on_permission_state(task.context_id, True)
                     await save_runtime_conversation()
@@ -1718,29 +1727,6 @@ class HarnessAgentExecutor(AgentExecutor):
                         final=True,
                     )
                     return
-                elif kind == StreamEvent.Type.PERMISSION_REQUEST:
-                    # A delegated agent parked on a gate. Surface it as a permission_request part,
-                    # relayed to the parent's panel with this delegated agent's lane path, and the
-                    # runtime resumes in place once the user answers — so this same stream
-                    # carries the prompt and the resumed work. Deliberately NOT flagged into
-                    # the durable awaiting-input marker: that marker is coupled to the
-                    # durable input-required task lifecycle (set on SUSPENDED, cleared on
-                    # resolve, rehydrated from the database on restart), and a parked
-                    # delegated agent is ephemeral — it is failed, not preserved, on restart.
-                    await flush_stream_buffers()
-                    await emit(_data_part(
-                        "permission_request", request_id=data.get("request_id", ""),
-                        tool_call_id=data.get("id", ""),
-                        command=data.get("command", ""), justification=data.get("justification", ""),
-                        risk=data.get("risk", ""),
-                    ))
-                elif kind == StreamEvent.Type.QUESTION:
-                    await flush_stream_buffers()
-                    await emit(_data_part(
-                        "question", request_id=data.get("request_id", ""),
-                        tool_call_id=data.get("id", ""),
-                        questions=data.get("questions", []) or [],
-                    ))
                 elif kind == StreamEvent.Type.ERROR:
                     await flush_stream_buffers()
                     failed_message = data.get("message", "error")

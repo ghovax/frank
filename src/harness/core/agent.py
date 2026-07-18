@@ -224,20 +224,15 @@ class StreamEvent:
         USAGE = "usage"
         DONE = "done"
         BACKGROUND_STARTED = "background_started"
-        # A delegated agent's human-in-the-loop request. A delegated turn does not durably
-        # suspend (it is an ephemeral, in-process background job); instead it emits this,
-        # which the executor relays to the user through the agents panel, and parks in
-        # place awaiting the decision — so the same continuous stream carries the prompt
-        # and the resumed work. A top-level turn uses SUSPENDED instead.
-        PERMISSION_REQUEST = "permission_request"
-        QUESTION = "question"
         # A turn cannot proceed without a human decision (one or more permission
-        # prompts and/or an ask_user question). The runtime has appended the
-        # initiating tool-call AIMessage (the durable resume checkpoint: an
-        # AIMessage carrying tool_calls with no ToolMessages yet) and yields this,
-        # then returns — the executor persists the pending interactions, drives the
-        # A2A task to input-required, and closes the segment. A later answer resumes
-        # the turn from the checkpoint via ``AgentRuntime.resume_stream``.
+        # prompts and/or an ask_user question). The one suspend event for every turn:
+        # the runtime has appended the initiating tool-call AIMessage (the resume
+        # checkpoint) and yields this carrying the pending interactions and preflight
+        # plans. A top-level turn then returns — the executor persists the pending
+        # interactions, drives the A2A task to input-required, closes the segment, and a
+        # later answer resumes from the checkpoint via ``resume_stream``. A delegated
+        # turn instead parks in place (``_await_pending_answers``) and continues this same
+        # stream once answered, its prompt relayed to the agents panel meanwhile.
         SUSPENDED = "suspended"
         # The conversation is at a durable-safe point (a tool-result batch was just
         # appended, so no tool_call dangles). The executor snapshots the checkpoint here,
@@ -1354,6 +1349,40 @@ class AgentRuntime:
             return True
         return False
 
+    async def _await_pending_answers(self, pending: list["_ToolGate"]) -> dict[str, Any]:
+        """Park a delegated turn in place until the user answers each gate. The gates were
+        surfaced to the panel by the executor from the SUSPENDED event; here the turn awaits
+        the answers on per-gate futures (completed by the shared resolver's delegated
+        routing), racing an abort that ends any outstanding gate fail-safe — a question
+        declines, a permission denies. A top-level turn never reaches this: it returned at
+        SUSPENDED to become a durable segment."""
+        loop = asyncio.get_running_loop()
+        futures: dict[str, "asyncio.Future"] = {}
+        gate_by_request: dict[str, "_ToolGate"] = {}
+        for gate in pending:
+            future = loop.create_future()
+            self._agent_permission_futures[gate.request_id] = future
+            futures[gate.request_id] = future
+            gate_by_request[gate.request_id] = gate
+        answers: dict[str, Any] = {}
+        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+        try:
+            for request_id, future in futures.items():
+                await asyncio.wait({future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
+                if future.done():
+                    answers[request_id] = future.result()
+                else:
+                    answers[request_id] = (
+                        {"__declined__": True}
+                        if gate_by_request[request_id].kind == "question"
+                        else "deny"
+                    )
+        finally:
+            abort_waiter.cancel()
+            for request_id in futures:
+                self._agent_permission_futures.pop(request_id, None)
+        return answers
+
     def set_delegated_policy(self, mode: str) -> None:
         """Apply a delegated agent's effective permission policy. Unlike ``set_permission_mode``,
         "default" means the interactive (ask) policy — never the agent's own configured
@@ -2392,57 +2421,24 @@ class AgentRuntime:
             outcomes: dict[str, dict] = {}
             if not self._abort_event.is_set():
                 plans, pending = await self._preflight_permissions(tool_calls)
-                if pending and not self._is_agent:
-                    # A top-level turn suspends durably: the executor persists the
-                    # checkpoint and closes the segment, and a later answer resumes it.
+                if pending:
+                    # One suspend event for every turn. The executor renders the prompt from
+                    # it (the same DataParts, whether shown in the transcript or relayed to
+                    # the agents panel). Only the continuation transport differs, by turn kind:
+                    #  - a top-level turn returns here — the executor persists the checkpoint,
+                    #    closes the segment as input-required, and a later answer resumes it;
+                    #  - a delegated turn is an in-process, ephemeral continuation (it cannot
+                    #    be a durable segment that a restart would only discard), so it parks
+                    #    in place on the answer futures and continues this same stream — the
+                    #    executor relays the prompt to the panel while it waits.
                     yield StreamEvent(
                         StreamEvent.Type.SUSPENDED,
                         interactions=[gate.to_dict() for gate in pending],
                         plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
                     )
-                    return
-                if pending:
-                    # A delegated agent escalates each gate to the user and parks in place until
-                    # it is answered, so the parent's relay carries the prompt and the
-                    # resumed work to the panel on this one continuous stream.
-                    loop = asyncio.get_running_loop()
-                    futures: dict[str, "asyncio.Future"] = {}
-                    gate_by_request: dict[str, "_ToolGate"] = {}
-                    for gate in pending:
-                        future = loop.create_future()
-                        self._agent_permission_futures[gate.request_id] = future
-                        futures[gate.request_id] = future
-                        gate_by_request[gate.request_id] = gate
-                        if gate.kind == "question":
-                            yield StreamEvent(
-                                StreamEvent.Type.QUESTION, id=gate.tool_call_id,
-                                request_id=gate.request_id, questions=gate.questions,
-                            )
-                        else:
-                            yield StreamEvent(
-                                StreamEvent.Type.PERMISSION_REQUEST, id=gate.tool_call_id,
-                                request_id=gate.request_id, command=gate.command,
-                                justification=gate.justification, risk=gate.risk,
-                            )
-                    answers: dict[str, Any] = {}
-                    abort_waiter = asyncio.ensure_future(self._abort_event.wait())
-                    try:
-                        for request_id, future in futures.items():
-                            await asyncio.wait({future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
-                            if future.done():
-                                answers[request_id] = future.result()
-                            else:
-                                # A Stop while parked ends the outstanding gates fail-safe:
-                                # a question declines, a permission denies.
-                                answers[request_id] = (
-                                    {"__declined__": True}
-                                    if gate_by_request[request_id].kind == "question"
-                                    else "deny"
-                                )
-                    finally:
-                        abort_waiter.cancel()
-                        for request_id in futures:
-                            self._agent_permission_futures.pop(request_id, None)
+                    if not self._is_agent:
+                        return
+                    answers = await self._await_pending_answers(pending)
                     decisions = self._resolve_tool_decisions(plans, answers)
                 else:
                     decisions = self._resolve_tool_decisions(plans, {})
