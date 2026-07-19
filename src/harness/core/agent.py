@@ -77,6 +77,7 @@ from harness.tools.tools import (
     browser as browser_tool,
     ask_user as ask_user_tool,
     load_skill as load_skill_tool,
+    wait_for as wait_for_tool,
 )
 from harness.core.background import (
     BackgroundJobs,
@@ -520,6 +521,7 @@ def _build_tools(
         fetch_url_tool,
         download_file_tool,
         load_skill_tool,
+        wait_for_tool,
         web_search_tool,
         set_tasks_tool,
         update_tasks_tool,
@@ -645,9 +647,6 @@ class AgentRunner:
             state = TaskState.failed
         elif stop_reason == "cancelled":
             state = TaskState.canceled
-        elif stop_reason == "stuck" and not final_text.strip():
-            state = TaskState.failed
-            final_text = "Stopped after making no further progress."
         if not final_text.strip():
             final_text = "Agent produced no output."
             state = TaskState.failed
@@ -850,11 +849,6 @@ class _PhaseStep:
     directive: str = _PROCEED
 
 
-# Consecutive unproductive model rounds that mark a turn as stuck. This is a no-progress
-# detector threshold, not an iteration cap: any genuinely new action resets the streak, so
-# a productive turn runs unbounded and only a spinning one is stopped.
-_STUCK_THRESHOLD = 3
-
 # How long an expectedly-slow network tool (fetch_url, download_file) waits synchronously
 # before it auto-backgrounds: a fast call returns its result inline, a slow one backgrounds
 # and delivers on its own, so the turn is never blocked on the network. Scaled by the tuning
@@ -862,47 +856,13 @@ _STUCK_THRESHOLD = 3
 _SLOW_TOOL_SYNC_DEFAULT_SECONDS = 10.0
 
 
-def _tool_call_signatures(tool_calls: list[dict]) -> frozenset[str]:
-    """A content signature per tool call — its name plus canonicalized arguments — so a
-    round that repeats calls the turn has already issued is recognizable regardless of
-    ordering or object identity."""
-    return frozenset(
-        f"{call.get('name', '')}:{json.dumps(call.get('args', {}), sort_keys=True, ensure_ascii=False, default=str)}"
-        for call in tool_calls
-    )
-
-
-@dataclass
-class _TurnProgress:
-    """Detects a turn that has stopped making progress — the replacement for a fixed
-    tool-call ceiling. It remembers every distinct tool-call signature the turn has issued;
-    a round that introduces at least one new signature is progress and resets the streak,
-    while a round that only repeats already-seen calls (or issues none — e.g. a
-    malformed-call retry that never converges) advances a no-progress streak. The turn is
-    ``stuck`` once the streak reaches ``threshold``. A productive turn therefore runs
-    unbounded; only a spinning one is stopped."""
-
-    threshold: int = _STUCK_THRESHOLD
-    _seen: set[str] = field(default_factory=set)
-    _streak: int = 0
-
-    def note(self, tool_calls: list[dict]) -> None:
-        signatures = _tool_call_signatures(tool_calls)
-        if signatures and not signatures <= self._seen:
-            self._seen |= signatures
-            self._streak = 0
-        else:
-            self._streak += 1
-
-    @property
-    def stuck(self) -> bool:
-        return self._streak >= self.threshold
-
-
 class AgentRuntime:
-    # A turn runs until the model is done or the progress detector finds it stuck — there
-    # is no tool-call ceiling. Context compaction is Observational Memory (Observer/
-    # Reflector); its thresholds and on/off switch live in GlobalConfiguration.compaction.
+    # A turn runs until the model is done or the user interrupts it — there is no tool-call
+    # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
+    # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's
+    # ``output_file`` to see whether a repeated action changed anything. Context compaction is
+    # Observational Memory (Observer/Reflector); its thresholds and on/off switch live in
+    # GlobalConfiguration.compaction.
 
     # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
     # policy once (the shared preamble), then dispatches the call to its handler here.
@@ -918,6 +878,7 @@ class AgentRuntime:
         "edit_file": "_tool_edit_or_write",
         "write_file": "_tool_edit_or_write",
         "load_skill": "_tool_load_skill",
+        "wait_for": "_tool_wait_for",
         "ask_user": "_tool_ask_user",
         "call_mcp_tool": "_tool_call_mcp_tool",
         "list_mcp_tools": "_tool_mcp_query",
@@ -1032,7 +993,6 @@ class AgentRuntime:
         self._read_files: dict[tuple[str, str], str] = {}
         # How many delegation hops led to this runtime (0 = top-level chat agent).
         self._delegation_depth: int = 0
-        self._calls_this_turn: int = 0
         self._abort_event = asyncio.Event()
         # Running token totals for the session, summed from the real usage each
         # model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
@@ -1587,8 +1547,8 @@ class AgentRuntime:
 
     def set_delegation_depth(self, depth: int) -> None:
         """Record how many delegation hops led to this runtime, for context and telemetry
-        (there is no delegation-depth ceiling — a spawned agent's own progress detector
-        bounds unproductive recursion)."""
+        (there is no delegation-depth ceiling; recursion is governed by the model's own
+        judgment and the user's ability to interrupt)."""
         self._delegation_depth = depth
 
     def session_snapshot(self) -> dict:
@@ -2216,13 +2176,13 @@ class AgentRuntime:
         resume_answers: Optional[dict[str, Any]] = None,
     ) -> AsyncIterator[TurnEvent]:
         self._abort_event.clear()
-        self._calls_this_turn = 0
-        # The turn runs until it is done or stuck, not until a fixed count. The progress
-        # detector stops a spinning turn; the goal reconsideration flag lets an active goal
-        # nudge the model once each time it stops, without a nudge counter. Both are
-        # instance state so the no-tool-calls phase can advance them across iterations.
-        self._progress = _TurnProgress()
+        # The turn runs until the model is done or the user interrupts it — there is no
+        # iteration count and no stuck-detector. The goal reconsideration flag lets an active
+        # goal nudge the model once each time it stops, without a nudge counter; it is instance
+        # state so the no-tool-calls phase can advance it across iterations. Dynamic per-turn
+        # context is injected on the first model call only, tracked by a local below.
         self._awaiting_goal_reconsideration = False
+        first_turn_message = True
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -2277,7 +2237,6 @@ class AgentRuntime:
                     self._abort_event.clear()
                     for steering_event in await self._drain_steering_messages():
                         yield steering_event
-                    self._calls_this_turn += 1
                     continue
                 yield Done(text="", stop_reason="cancelled")
                 return
@@ -2293,7 +2252,6 @@ class AgentRuntime:
             if background_events:
                 for background_event in background_events:
                     yield background_event
-                self._calls_this_turn += 1
                 continue
 
             # In-flight background work no longer holds the turn open. Completed
@@ -2312,7 +2270,8 @@ class AgentRuntime:
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
 
-            messages = self._build_turn_messages()
+            messages = self._build_turn_messages(first_turn_message)
+            first_turn_message = False
 
             # Phase 1 — the model call. Yields the thinking/answer stream and hands back
             # the assembled response, or a terminal (cancelled) / steering condition.
@@ -2324,7 +2283,6 @@ class AgentRuntime:
             if call.aborted_for_steering:
                 for steering_event in await self._drain_steering_messages():
                     yield steering_event
-                self._calls_this_turn += 1
                 continue
             response = call.response
 
@@ -2344,9 +2302,7 @@ class AgentRuntime:
 
             # Phase 2 — no tool calls: retry a malformed batch, answer or await agents,
             # nudge an active goal, or finish the turn. Always ends the iteration
-            # (_CONTINUE to loop again, _STOP once a terminal event was yielded). A
-            # malformed-call retry advances the progress detector, so a model that cannot
-            # form a valid call does not loop forever.
+            # (_CONTINUE to loop again, _STOP once a terminal event was yielded).
             if not response.tool_calls:
                 step = _PhaseStep()
                 async for event in self._finalize_no_tool_calls(
@@ -2354,10 +2310,6 @@ class AgentRuntime:
                 ):
                     yield event
                 if step.directive == _STOP:
-                    return
-                if self._progress.stuck:
-                    self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
-                    yield Done(text="", stop_reason="stuck")
                     return
                 continue
 
@@ -2378,21 +2330,10 @@ class AgentRuntime:
             if step.directive == _CONTINUE:
                 continue
 
-            # A tool batch that only repeats calls the turn has already made — with no new
-            # action — advances the no-progress streak; once it is stuck, the turn stops
-            # instead of spinning indefinitely.
-            self._progress.note(cast(list[dict], response.tool_calls))
-            if self._progress.stuck:
-                self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
-                yield Done(text="", stop_reason="stuck")
-                return
-
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
-            self._calls_this_turn += 1
-
-    def _build_turn_messages(self) -> list:
+    def _build_turn_messages(self, first_iteration: bool) -> list:
         """The message list for this iteration's model call: the static system prompt,
         the conversation, and — only on the turn's first iteration — the dynamic context.
 
@@ -2406,7 +2347,7 @@ class AgentRuntime:
         note, everything before it still prefix-matches the provider cache."""
         dynamic_parts = (
             [self._harness_note_message(self._build_dynamic_context())]
-            if self._calls_this_turn == 0 else []
+            if first_iteration else []
         )
         return (
             [SystemMessage(content=self._build_static_system_prompt())]
@@ -2513,17 +2454,13 @@ class AgentRuntime:
             # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
             # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
             # "Messages with role 'tool' must follow a tool_calls message". Correct the
-            # model with a harness note and let it retry. Model-facing; not surfaced. A
-            # model that keeps emitting malformed calls makes no progress, so the retry
-            # advances the no-progress streak.
+            # model with a harness note and let it retry. Model-facing; not surfaced.
             if response.content:
                 self._conversation.append(response)
             for invalid in response.invalid_tool_calls:
                 self._conversation.append(self._harness_note_message(
                     self._invalid_tool_call_content(cast(dict, invalid)),
                 ))
-            self._calls_this_turn += 1
-            self._progress.note([])
             step.directive = _CONTINUE
             return
 
@@ -2534,21 +2471,18 @@ class AgentRuntime:
         final_text = message_text(response)
         self._conversation.append(response)
         if self._drain_agent_messages():
-            self._calls_this_turn += 1
             step.directive = _CONTINUE
             return
         steering_events = await self._drain_steering_messages()
         if steering_events:
             for steering_event in steering_events:
                 yield steering_event
-            self._calls_this_turn += 1
             step.directive = _CONTINUE
             return
         if self._pending_agent_questions:
             self._conversation.append(self._harness_note_message(
                 self._prompt_loader.load("agent_response_required", {})
             ))
-            self._calls_this_turn += 1
             step.directive = _CONTINUE
             return
         if self._outstanding_agent_questions:
@@ -2556,7 +2490,6 @@ class AgentRuntime:
             )
             if await self._wait_for_agent_message_or_abort():
                 self._drain_agent_messages()
-                self._calls_this_turn += 1
                 step.directive = _CONTINUE
                 return
             self._record_turn(
@@ -2577,14 +2510,12 @@ class AgentRuntime:
             # a model that keeps working is nudged fresh each time it next stops, with no
             # nudge counter and no ceiling.
             self._awaiting_goal_reconsideration = True
-            self._calls_this_turn += 1
             goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
             self._conversation.append(self._harness_note_message(goal_continuation))
             yield Status(code="goal_check",
             )
             step.directive = _CONTINUE
             return
-        self._calls_this_turn = 0
         self._record_turn(
             recorded_user_message, turn_tool_calls_log,
             turn_tool_results_log, final_text,
@@ -2642,7 +2573,6 @@ class AgentRuntime:
                 self._abort_event.clear()
                 for steering_event in await self._drain_steering_messages():
                     yield steering_event
-                self._calls_this_turn += 1
                 step.directive = _CONTINUE
                 return
             self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
@@ -3784,6 +3714,41 @@ class AgentRuntime:
         )
 
 
+    async def _tool_wait_for(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        """A cancellable inline wait: the model's own polling primitive. It sleeps up to
+        ``seconds`` but wakes the instant the turn is asked to stop, so a Stop is never
+        blocked. No model round-trip happens during the wait, so polling is cheap."""
+        raw_seconds = tool_arguments.get("seconds", 0)
+        try:
+            seconds = max(0.0, float(raw_seconds))
+        except (TypeError, ValueError):
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
+                "code": "invalid_arguments",
+                "status": ToolStatus.ERROR.value,
+                "message": "'seconds' must be a number.",
+            })
+            return
+        interrupted = False
+        if seconds > 0:
+            try:
+                await asyncio.wait_for(self._abort_event.wait(), timeout=seconds)
+                interrupted = True  # a Stop fired before the wait elapsed
+            except asyncio.TimeoutError:
+                interrupted = False  # the full wait elapsed normally
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result={
+            "code": "interrupted" if interrupted else "waited",
+            "seconds": seconds,
+            "message": (
+                "Wait interrupted by a stop request."
+                if interrupted else f"Waited {seconds:g}s; continue."
+            ),
+        })
+
+
     async def _tool_ask_user(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
@@ -3960,10 +3925,10 @@ class AgentRuntime:
         decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
         resolved_location: "ResolvedLocation | None",
     ) -> AsyncIterator[TurnEvent]:
-        # No delegation-depth ceiling: a spawned agent runs its own turn loop with its own
-        # progress detector, so a recursion that stops producing new work self-terminates,
-        # and genuine deep delegation that keeps producing deliverables is legitimate. The
-        # child's depth is still tracked, for context and telemetry.
+        # No delegation-depth ceiling: a spawned agent runs its own turn loop, governed by the
+        # model's own judgment of when it is done and the user's ability to interrupt, and
+        # genuine deep delegation that keeps producing deliverables is legitimate. The child's
+        # depth is still tracked, for context and telemetry.
         child_depth = self._delegation_depth + 1
 
         raw_agent_prompt = tool_arguments.get("prompt", "")

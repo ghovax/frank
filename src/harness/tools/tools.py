@@ -443,6 +443,24 @@ def call_remote_agent(prompt: str = "", agent: str = "", justification: str = Fi
 
 
 @tool
+async def wait_for(
+    seconds: float,
+    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
+) -> str:
+    """Pause for a fixed number of seconds, then continue — a cheap, intentional wait with no model round-trip while it runs.
+
+    Use this to POLL instead of hammering: when you are waiting on something to become ready (a server to come up, a file to appear, a background job you started), do the check, and if it is not ready, wait_for a few seconds and check again — rather than re-issuing the same call back-to-back and expecting a different result. To tell whether a repeated action changed anything, re-read the prior call's ``output_file``.
+
+    Prefer short waits and re-check over one long sleep; a Stop interrupts the wait immediately. Do NOT use wait_for to pass time when you have nothing to check — end your turn instead, and the harness re-engages you when background work completes.
+
+    Arguments:
+        seconds: How long to wait before continuing. Prefer small values (a few seconds) and re-check.
+        justification: A concise, user-facing reason for the wait.
+    """
+    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
+
+
+@tool
 def cancel_agent(task_identifier: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
     """Cancel one spawned agent by the handle returned from ``spawn_agent``.
 
