@@ -1,6 +1,12 @@
+---
+created: 2026-07-18T19:19:31Z
+updated: 2026-07-18T19:19:31Z
+commit: 6769b14
+---
+
 # Delegated-Agent Permissions and Propagated Human-in-the-Loop
 
-This is the plan for governing what a spawned agent may do and for surfacing its human-in-the-loop pauses to the user. It builds directly on [`input-required.md`](./input-required.md) — and revises the one decision made there that this supersedes: that a delegated agent hard-denies any gate. It builds on the findings in [`audit.md`](../audit.md).
+This is the plan for governing what a spawned agent may do and for surfacing its human-in-the-loop pauses to the user. It builds directly on [`input-required.md`](./input-required.md) — and revises the one decision made there that this supersedes: that a delegated agent hard-denies any gate. It builds on the findings in [`audit.md`](./audit.md).
 
 ## Where we are today
 

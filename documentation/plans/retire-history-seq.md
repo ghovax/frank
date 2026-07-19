@@ -1,3 +1,9 @@
+---
+created: 2026-07-19T18:15:04Z
+updated: 2026-07-19T18:28:50Z
+commit: fa3dce2
+---
+
 # Retire the Hand-Computed History `seq`
 
 This is a small correctness-and-simplicity plan. `AppendOnlyTaskStore.task_history` carries **two** ordering columns: a DB-native `row_id` (an autoincrement primary key the database assigns on every insert) and a hand-computed per-task `seq` (0-based, contiguous, assigned by the store as `MAX(seq) + 1`). The `seq` computation is a read-then-insert — read the current max, then insert at max+1 — which is exactly the shape that let two concurrent saves collide on the same position (the race the durable-goal work exposed and the [self-managing-turn plan](./self-managing-turn.md) fixed by reading the max authoritatively). But the deeper point is that `seq` is redundant: the database already assigns a monotonic position on every insert, atomically and without a read, in `row_id`. This plan retires `seq` entirely and makes `row_id` the single ordering key, so the "next position" is never computed in application code again and the collision is impossible by construction rather than merely avoided.

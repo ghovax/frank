@@ -12,6 +12,8 @@ Detailed guides for installing, configuring, understanding, and developing Daisy
 | [Screenshots](screenshots.md) | How the README screenshots are staged and captured (maintainers) |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
 
+Design plans for larger changes — the sequential, commit-associated record of how the harness evolved — live in [`plans/`](plans/README.md); those are proposals and design history, distinct from the current-state guides above.
+
 ## The shape of the project
 
 ```

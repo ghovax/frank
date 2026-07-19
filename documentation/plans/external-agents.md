@@ -1,6 +1,12 @@
+---
+created: 2026-07-18T08:48:57Z
+updated: 2026-07-18T14:16:50Z
+commit: 5859d9e
+---
+
 # Connecting Daisy to External A2A Agents
 
-This is the plan for making Daisy a full A2A participant in both directions: able to reach out to third‑party A2A agents, and able to serve external A2A clients properly. It builds on the findings in [`audit.md`](../audit.md) and shares a trace boundary with [`telemetry.md`](./telemetry.md). There is no backward‑compatibility constraint, so where a clean replacement beats a parallel path, we replace.
+This is the plan for making Daisy a full A2A participant in both directions: able to reach out to third‑party A2A agents, and able to serve external A2A clients properly. It builds on the findings in [`audit.md`](./audit.md) and shares a trace boundary with [`telemetry.md`](./telemetry.md). There is no backward‑compatibility constraint, so where a clean replacement beats a parallel path, we replace.
 
 ## Where we are today
 

@@ -1,3 +1,9 @@
+---
+created: 2026-07-18T08:48:57Z
+updated: 2026-07-18T19:19:31Z
+commit: 5859d9e
+---
+
 # A2A Specification Compliance Audit — Daisy Harness
 
 **Scope:** how the Daisy harness uses the Agent2Agent (A2A) protocol, measured against the A2A specification **v0.3.0** as implemented by `a2a-sdk==0.3.7` (the exact version pinned in `pyproject.toml`). Every claim is cited to `file:line`.

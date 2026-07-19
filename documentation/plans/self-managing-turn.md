@@ -1,3 +1,9 @@
+---
+created: 2026-07-19T16:49:03Z
+updated: 2026-07-19T17:52:23Z
+commit: 88a99ab
+---
+
 # A Self-Managing, Unblocked Turn
 
 This is a behavior plan, not a refactor. The harness works, but it governs the agent with a wall of fixed numbers — a per-turn tool-call ceiling, a goal-continuation counter, a delegation-depth cap, fixed sync/background timeouts — each an artificial limit that stops the agent on a *count* rather than on reality. That contradicts the harness's own intent: a self-managing agent that runs until it is genuinely done or genuinely stuck, and is never blocked waiting on slow work. This plan removes the artificial (agency) limits, replaces the one that truly needs a backstop — the iteration ceiling — with **progress detection**, makes unbounded turns viable by turning on the smart compaction that already exists, gives the agent's **goal and task state durable persistence** so a restart never erases its objective, and moves the sync-vs-background decision out of fixed constants and into the model plus a uniform tool contract. Physical, security, and protocol constants stay — they are not agency limits — but get relabeled so they stop reading as removable policy. It builds on [`typed-turn-core.md`](./typed-turn-core.md) (which made `execute()`/`stream()` thin drivers and `_execute_tool()` a dispatch over per-tool handlers — the seams this plan edits) and the persistence model in [`unified-durable-turn.md`](./unified-durable-turn.md).

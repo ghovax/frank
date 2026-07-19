@@ -1,6 +1,12 @@
+---
+created: 2026-07-18T12:44:32Z
+updated: 2026-07-18T19:19:31Z
+commit: 7036f6c
+---
+
 # Durable, Segment-Based input-required
 
-This is the plan for making Daisy's human-in-the-loop pauses — permission prompts and `ask_user` questions — a first-class, durable, A2A-idiomatic `input-required` flow. It supersedes the parked-coroutine approach sketched in [`external-agents.md`](./external-agents.md) under "Human-in-the-loop via input-required" and builds on the findings in [`audit.md`](../audit.md). There is no backward-compatibility constraint: the parked-coroutine model is removed rather than kept alongside.
+This is the plan for making Daisy's human-in-the-loop pauses — permission prompts and `ask_user` questions — a first-class, durable, A2A-idiomatic `input-required` flow. It supersedes the parked-coroutine approach sketched in [`external-agents.md`](./external-agents.md) under "Human-in-the-loop via input-required" and builds on the findings in [`audit.md`](./audit.md). There is no backward-compatibility constraint: the parked-coroutine model is removed rather than kept alongside.
 
 ## Where we are today
 

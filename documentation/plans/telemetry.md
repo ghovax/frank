@@ -1,3 +1,9 @@
+---
+created: 2026-07-18T08:48:57Z
+updated: 2026-07-18T19:19:31Z
+commit: 5859d9e
+---
+
 # User-Capturable Telemetry via OpenTelemetry
 
 This is the plan for letting people who run Daisy capture its telemetry in their own observability backend. The goal is a generic export, not a coupling to any one vendor — Langfuse is a valid target, not the design center. It shares a trace boundary with the external‑agent work in [`external-agents.md`](./external-agents.md).
