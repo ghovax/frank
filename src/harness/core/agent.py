@@ -1603,14 +1603,17 @@ class AgentRuntime:
         self._active_goal = str(snapshot.get("goal", ""))
         self._task_manager.restore(snapshot.get("tasks", {}) or {})
 
-    def take_dirty_session_snapshot(self) -> Optional[dict]:
-        """The session snapshot if the goal or tasks changed since the last call, else
-        ``None`` — so the executor persists durable session state on mutation only, not on
-        every safe point."""
-        if not self._session_dirty:
-            return None
+    def dirty_session_snapshot(self) -> Optional[dict]:
+        """The session snapshot if the goal or tasks changed since the last persist, else
+        ``None`` — so the executor writes durable session state on mutation only, not on every
+        safe point. This only *peeks*: the dirty flag is cleared by :meth:`clear_session_dirty`
+        after the write commits, so a failed or crashed write never loses the mutation."""
+        return self.session_snapshot() if self._session_dirty else None
+
+    def clear_session_dirty(self) -> None:
+        """Mark the durable session state as persisted — called only after the atomic
+        checkpoint+session-state write succeeds, so the dirty flag is a write-then-clear."""
         self._session_dirty = False
-        return self.session_snapshot()
 
     @property
     def _interactive_manual_mode(self) -> bool:

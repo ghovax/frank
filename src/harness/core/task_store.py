@@ -204,7 +204,7 @@ class AppendOnlyTaskStore(TaskStore):
 
     Charter: this is the single durable surface for a turn — its wire history/artifacts, its
     control-state (the :class:`~harness.core.turn_record.TurnRecord` on the task head), and its
-    conversation checkpoint (``save_checkpoint``/``load_checkpoint``). Background jobs are the one
+    conversation checkpoint (``save_turn_state``/``load_checkpoint``). Background jobs are the one
     thing it does NOT own; those live in the separate
     :class:`~harness.core.background_store.BackgroundJobStore`.
     """
@@ -292,6 +292,21 @@ class AppendOnlyTaskStore(TaskStore):
             Column("created_at", DateTime, server_default=func.now()),
         )
         self._initialized = False
+        # How many history rows are persisted for each task, maintained authoritatively in
+        # memory rather than re-counted from the database on every save. The store's write
+        # lock serializes all writers, so a lock-guarded counter is exact: seeded once (a
+        # single COUNT) the first time a task is saved in this process, incremented by the
+        # appended delta, and reset to the compacted length when a terminal save rewrites the
+        # rows. This keeps a save O(delta) — the module's whole reason to exist — instead of
+        # the O(rows) COUNT-per-event a per-save COUNT reintroduces (O(N²) over a long turn).
+        self._persisted_counts: dict[str, int] = {}
+        # Tasks whose history has been terminally compacted. Once a task goes terminal its
+        # persisted rows are the compacted merge of its whole history while the in-memory
+        # `task.history` is still the raw list, so a *later* non-terminal save would re-append
+        # already-merged messages and silently duplicate them. Terminal is the last save for a
+        # task (a new turn is a new task id), so a non-terminal save after it is a real bug and
+        # is rejected rather than corrupting the stored history.
+        self._terminal_tasks: set[str] = set()
 
     async def initialize(self) -> None:
         write_lock = await acquire_sqlite_write_lock()
@@ -382,36 +397,59 @@ class AppendOnlyTaskStore(TaskStore):
             release_sqlite_write_lock(write_lock)
         return failed_task_ids
 
-    async def save_checkpoint(self, context_id: str, task_id: str, messages: list) -> None:
-        """Snapshot a context's model-facing conversation (``messages_to_dict`` output)
-        at a safe point of the running turn. One row per context, upserted whole — the
-        conversation accumulates across turns and compaction rewrites it in place, so a
-        whole snapshot is the representation that stays correct. Written a few times per
-        turn (per safe point), never per stream event, so the whole-row write is cheap
-        relative to the turn."""
+    async def save_turn_state(
+        self,
+        context_id: str,
+        task_id: str,
+        messages: list,
+        session_state: dict | None = None,
+    ) -> None:
+        """Atomically snapshot a context's model-facing conversation checkpoint and — when it
+        changed this turn — its durable goal/task session state, in one transaction under one
+        write lock. Both ride the running turn's safe points (a few times per turn, never per
+        stream event), so the whole-row writes are cheap relative to the turn. Doing them
+        together is what keeps them consistent: a crash can never leave the conversation newer
+        than the objective, or lose one while writing the other. ``session_state`` is ``None``
+        when the goal/tasks did not change since the last save (dirty-gated by the caller), and
+        the caller clears its dirty flag only after this returns — so a failed write loses
+        nothing. The conversation snapshot is whole-row upserted per context: it accumulates
+        across turns and compaction rewrites it in place, so a whole snapshot is the only
+        representation that stays correct."""
         await self._ensure_initialized()
         if not context_id:
             return
+        now = datetime.now(timezone.utc).isoformat()
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
-                values = {
-                    "context_id": context_id,
-                    "task_id": task_id,
-                    "messages": json.dumps(messages),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-                insert = sqlite_insert(self._checkpoint).values(**values)
+                checkpoint_insert = sqlite_insert(self._checkpoint).values(
+                    context_id=context_id,
+                    task_id=task_id,
+                    messages=json.dumps(messages),
+                    updated_at=now,
+                )
                 await connection.execute(
-                    insert.on_conflict_do_update(
+                    checkpoint_insert.on_conflict_do_update(
                         index_elements=[self._checkpoint.c.context_id],
                         set_={
-                            "task_id": values["task_id"],
-                            "messages": values["messages"],
-                            "updated_at": values["updated_at"],
+                            "task_id": task_id,
+                            "messages": checkpoint_insert.excluded.messages,
+                            "updated_at": now,
                         },
                     )
                 )
+                if session_state is not None:
+                    state_insert = sqlite_insert(self._session_state).values(
+                        context_id=context_id,
+                        state=json.dumps(session_state),
+                        updated_at=now,
+                    )
+                    await connection.execute(
+                        state_insert.on_conflict_do_update(
+                            index_elements=[self._session_state.c.context_id],
+                            set_={"state": state_insert.excluded.state, "updated_at": now},
+                        )
+                    )
         finally:
             release_sqlite_write_lock(write_lock)
 
@@ -436,33 +474,8 @@ class AppendOnlyTaskStore(TaskStore):
         except (json.JSONDecodeError, TypeError):
             return []
 
-    async def save_session_state(self, context_id: str, state: dict) -> None:
-        """Persist a context's durable non-conversation state (the agent's goal and task
-        list) at a safe point, whole-row upserted per context — the same durability as the
-        conversation checkpoint, saved beside it so a restart restores the objective too."""
-        await self._ensure_initialized()
-        if not context_id:
-            return
-        write_lock = await acquire_sqlite_write_lock()
-        try:
-            async with self._engine.begin() as connection:
-                values = {
-                    "context_id": context_id,
-                    "state": json.dumps(state),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-                insert = sqlite_insert(self._session_state).values(**values)
-                await connection.execute(
-                    insert.on_conflict_do_update(
-                        index_elements=[self._session_state.c.context_id],
-                        set_={"state": values["state"], "updated_at": values["updated_at"]},
-                    )
-                )
-        finally:
-            release_sqlite_write_lock(write_lock)
-
     async def load_session_state(self, context_id: str) -> dict:
-        """The context's persisted goal/task state (:meth:`save_session_state` form), or an
+        """The context's persisted goal/task state (:meth:`save_turn_state` form), or an
         empty dict when there is none — a fresh context or a pre-persistence session."""
         await self._ensure_initialized()
         if not context_id:
@@ -482,43 +495,50 @@ class AppendOnlyTaskStore(TaskStore):
             return {}
 
 
-    async def _history_count(self, connection, task_id: str) -> int:
+    async def _persisted_count(self, connection, task_id: str) -> int:
         """How many history rows are already persisted for a task, so ``save`` appends only
-        the suffix of the (only-ever-growing) ``task.history`` not yet stored. A plain COUNT
-        read inside the caller's write transaction: it is *not* a position — the row's
-        position is the database's autoincrement ``row_id`` — and the store's write lock
-        serializes a task's saves, so the count is authoritative when the suffix is sliced."""
+        the suffix of the (only-ever-growing) ``task.history`` not yet stored. Authoritative
+        in memory (guarded by the store's write lock, which admits one writer at a time),
+        seeded once from a single COUNT the first time this process saves the task and kept
+        current by every write thereafter — so a save is O(delta), never a COUNT-per-event."""
+        cached = self._persisted_counts.get(task_id)
+        if cached is not None:
+            return cached
         result = await connection.execute(
             select(func.count()).select_from(self._history).where(self._history.c.task_id == task_id)
         )
-        return int(result.scalar() or 0)
+        seeded = int(result.scalar() or 0)
+        self._persisted_counts[task_id] = seeded
+        return seeded
 
-    async def _compact_persisted_history(self, connection, task_id: str, messages: list) -> int:
-        """Rewrite a task's stored history in place with its compacted form, ordered by
-        ``row_id``: overwrite the first M rows' messages (their row_ids, and so their order,
-        unchanged), append any surplus as new rows, and delete the tail rows the compaction
-        dropped — keyed on ``row_id``, so the compacted order is preserved by construction."""
-        compacted_messages = _compact_history(messages)
+    async def _compact_persisted_history(self, connection, task_id: str) -> int:
+        """Rewrite a task's *already-persisted* history in place with its compacted form,
+        ordered by ``row_id``: overwrite the first M rows' messages (their row_ids — and so
+        their global order — unchanged) and delete the tail rows the compaction dropped. It
+        never inserts: ``_compact_history`` only merges adjacent messages, so the compacted
+        count is always ≤ the persisted count, and minting fresh (higher) row_ids here would
+        reorder this task's tail after a concurrently-persisted task when a context is paged
+        by global ``row_id``. The caller appends any unpersisted suffix *before* calling this,
+        so ``task.history`` is already fully in the table and the compaction is pure
+        update-and-delete."""
         existing_rows = (
             await connection.execute(
-                select(self._history.c.row_id)
+                select(self._history.c.row_id, self._history.c.message)
                 .where(self._history.c.task_id == task_id)
                 .order_by(self._history.c.row_id)
             )
         ).all()
-
+        compacted_messages = _compact_history([json.loads(row.message) for row in existing_rows])
+        if len(compacted_messages) > len(existing_rows):  # pragma: no cover - invariant guard
+            raise AssertionError(
+                f"compaction grew history for {task_id}: {len(existing_rows)} -> {len(compacted_messages)}"
+            )
         for message_index, message in enumerate(compacted_messages):
-            if message_index < len(existing_rows):
-                await connection.execute(
-                    update(self._history)
-                    .where(self._history.c.row_id == existing_rows[message_index].row_id)
-                    .values(message=json.dumps(message))
-                )
-            else:
-                await connection.execute(
-                    self._history.insert().values(task_id=task_id, message=json.dumps(message))
-                )
-
+            await connection.execute(
+                update(self._history)
+                .where(self._history.c.row_id == existing_rows[message_index].row_id)
+                .values(message=json.dumps(message))
+            )
         surplus_row_ids = [row.row_id for row in existing_rows[len(compacted_messages):]]
         if surplus_row_ids:
             await connection.execute(
@@ -531,6 +551,13 @@ class AppendOnlyTaskStore(TaskStore):
         history = task.history or []
         artifacts = task.artifacts or []
         terminal = _is_terminal_task(task)
+        if task.id in self._terminal_tasks and not terminal:
+            # The persisted rows are the compacted merge of the whole history; re-appending the
+            # raw suffix on top would duplicate already-merged messages. Terminal is the last
+            # save for a task, so this is a wiring bug, not a state to tolerate.
+            raise ValueError(
+                f"non-terminal save for already-terminal task {task.id}: a terminal save must be the last save for a task"
+            )
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
@@ -555,34 +582,39 @@ class AppendOnlyTaskStore(TaskStore):
                     )
                 )
 
-                if terminal:
-                    await self._compact_persisted_history(
-                        connection,
-                        task.id,
-                        [message.model_dump(mode="json") for message in history],
+                # History: insert only the messages not yet persisted. The list only ever
+                # grows, so the already-stored prefix is never rewritten — an append is the
+                # suffix past the (in-memory, lock-guarded) persisted count.
+                persisted = await self._persisted_count(connection, task.id)
+                new_messages = history[persisted:]
+                if new_messages:
+                    await connection.execute(
+                        self._history.insert(),
+                        [{"task_id": task.id, "message": _dump(message)} for message in new_messages],
                     )
-                else:
-                    # History: insert only the messages not yet persisted. The list
-                    # only ever grows, so the already-stored prefix is never rewritten.
-                    persisted = await self._history_count(connection, task.id)
-                    new_messages = history[persisted:]
-                    if new_messages:
-                        await connection.execute(
-                            self._history.insert(),
-                            [{"task_id": task.id, "message": _dump(message)} for message in new_messages],
-                        )
+                    self._persisted_counts[task.id] = persisted + len(new_messages)
+
+                if terminal:
+                    # The whole history is now in the table (suffix appended above with natural
+                    # contiguous row_ids); compact it in place — pure update-and-delete, no new
+                    # row_ids — and record the terminal, compacted count so a stray later save
+                    # is caught rather than duplicating.
+                    compacted_count = await self._compact_persisted_history(connection, task.id)
+                    self._persisted_counts[task.id] = compacted_count
+                    self._terminal_tasks.add(task.id)
 
                 # Artifacts: upsert each by id (replace-in-place is safe and bounded).
                 for artifact in artifacts:
+                    artifact_json = _dump(artifact)
                     artifact_insert = sqlite_insert(self._artifacts).values(
                         task_id=task.id,
                         artifact_id=artifact.artifact_id,
-                        artifact=_dump(artifact),
+                        artifact=artifact_json,
                     )
                     await connection.execute(
                         artifact_insert.on_conflict_do_update(
                             index_elements=[self._artifacts.c.task_id, self._artifacts.c.artifact_id],
-                            set_={"artifact": _dump(artifact)},
+                            set_={"artifact": artifact_json},
                         )
                     )
         finally:
@@ -809,6 +841,8 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
                 await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
                 await connection.execute(delete(self._head).where(self._head.c.id == task_id))
+            self._persisted_counts.pop(task_id, None)
+            self._terminal_tasks.discard(task_id)
         finally:
             release_sqlite_write_lock(write_lock)
 
@@ -832,6 +866,9 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(delete(self._head).where(self._head.c.context_id == context_id))
                 await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.context_id == context_id))
                 await connection.execute(delete(self._session_state).where(self._session_state.c.context_id == context_id))
+            for task_id in task_ids:
+                self._persisted_counts.pop(str(task_id), None)
+                self._terminal_tasks.discard(str(task_id))
         finally:
             release_sqlite_write_lock(write_lock)
 

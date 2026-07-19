@@ -990,15 +990,17 @@ class _TurnRunner:
         # memory (their pause is ephemeral, and their conversation is not the context's),
         # so they never write the context checkpoint.
         if not self._delegated and self._runtime is not None:
-            await self._ex._task_store.save_checkpoint(
-                self._task.context_id, self._task.id, messages_to_dict(self._runtime.conversation)
+            # The agent's goal and task list ride the same safe points as the conversation and
+            # are written atomically with it (one transaction), persisted only when they changed
+            # so they are as durable as the transcript without a write on every checkpoint. The
+            # dirty flag is cleared only after the write commits — a failed write loses nothing.
+            session_state = self._runtime.dirty_session_snapshot()
+            await self._ex._task_store.save_turn_state(
+                self._task.context_id, self._task.id,
+                messages_to_dict(self._runtime.conversation), session_state,
             )
-            # The agent's goal and task list ride the same safe points as the conversation,
-            # persisted only when they changed, so they are as durable as the transcript
-            # without a write on every checkpoint.
-            session_state = self._runtime.take_dirty_session_snapshot()
             if session_state is not None:
-                await self._ex._task_store.save_session_state(self._task.context_id, session_state)
+                self._runtime.clear_session_dirty()
 
     async def _suspend_turn(self, interactions: list[dict], plans: dict) -> bool:
         # The continuation transport differs by turn kind. A delegated turn is an
@@ -1414,15 +1416,15 @@ class _TurnRunner:
             self._runtime is not None or task.context_id in self._ex._conversations
         ):
             messages = self._runtime.conversation if self._runtime is not None else self._ex._conversations.get(task.context_id, [])
-            await self._ex._task_store.save_checkpoint(
-                task.context_id, task.id, messages_to_dict(messages)
+            # Persist the agent's goal and task list atomically beside the end-of-turn
+            # checkpoint when they changed this turn, so a restart restores the objective too
+            # and the two can never drift apart. Clear the dirty flag only after the commit.
+            session_state = self._runtime.dirty_session_snapshot() if self._runtime is not None else None
+            await self._ex._task_store.save_turn_state(
+                task.context_id, task.id, messages_to_dict(messages), session_state,
             )
-            # Persist the agent's goal and task list beside the end-of-turn checkpoint when
-            # they changed this turn, so a restart restores the objective too.
-            if self._runtime is not None:
-                session_state = self._runtime.take_dirty_session_snapshot()
-                if session_state is not None:
-                    await self._ex._task_store.save_session_state(task.context_id, session_state)
+            if session_state is not None and self._runtime is not None:
+                self._runtime.clear_session_dirty()
         # Stop accepting steering for this context before draining the queue, then discard
         # anything that arrived too late to be honored (raced in after the loop's final
         # drain, or while the turn was ending/failing). Such messages were never applied to
