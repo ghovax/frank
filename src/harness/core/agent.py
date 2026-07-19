@@ -5,10 +5,9 @@ import platform
 import shlex
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from contextlib import suppress
 from datetime import datetime, timezone
-from enum import Enum
 import hashlib
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Literal, Optional, cast
@@ -81,7 +80,6 @@ from harness.tools.tools import (
 )
 from harness.core.background import (
     BackgroundJobs,
-    BackgroundCompletion,
     background_completion_event,
     background_include_result,
     bind_background_jobs,
@@ -102,14 +100,36 @@ from harness.core.tool_policy import (
     BashAllowRule,
     CallExecutionPolicy,
     PermissionDecision,
+    PermissionMode,
     ResolvedLocation,
     ToolLocationError,
     _LOCATION_TOOLS,
 )
+from harness.core.turn_events import (
+    Checkpoint,
+    CompactionDone,
+    CompactionStarted,
+    DeniedInjection,
+    Done,
+    Error,
+    GroupStarted,
+    McpEvent,
+    Relayed,
+    Status,
+    Steering,
+    Suspended,
+    TextChunk,
+    Thinking,
+    ThinkingDone,
+    ToolCall,
+    ToolResult,
+    TurnEvent,
+    Usage,
+)
 from harness.core.memories import load_memories, memories_payload
 from harness.core.skills import load_skills, enabled_skills, skills_for_agent, skills_payload
 from harness.core.instructions import load_instructions
-from harness.core.events import ModelToolResult, ToolMetadata, ToolStatus, TurnContext, tool_status_from_result
+from harness.core.events import ToolStatus, TurnContext, tool_status_from_result
 from harness.identifiers import new_id
 
 
@@ -209,62 +229,6 @@ def model_is_authorized(
     if provider_identifier == "custom":
         return True
     return bool(resolve_api_key(provider_identifier, global_configuration.configured_provider_keys()))
-
-
-class StreamEvent:
-    class Type(str, Enum):
-        SESSION = "session"
-        STATUS = "status"
-        THINKING = "thinking"
-        THINKING_DONE = "thinking_done"
-        TEXT_CHUNK = "text_chunk"
-        TOOL_CALL = "tool_call"
-        TOOL_RESULT = "tool_result"
-        MCP_EVENT = "mcp_event"
-        USAGE = "usage"
-        DONE = "done"
-        BACKGROUND_STARTED = "background_started"
-        # A turn cannot proceed without a human decision (one or more permission
-        # prompts and/or an ask_user question). The one suspend event for every turn:
-        # the runtime has appended the initiating tool-call AIMessage (the resume
-        # checkpoint) and yields this carrying the pending interactions and preflight
-        # plans. A top-level turn then returns — the executor persists the pending
-        # interactions, drives the A2A task to input-required, closes the segment, and a
-        # later answer resumes from the checkpoint via ``resume_stream``. A delegated
-        # turn instead parks in place (``_await_pending_answers``) and continues this same
-        # stream once answered, its prompt relayed to the agents panel meanwhile.
-        SUSPENDED = "suspended"
-        # The conversation is at a durable-safe point (a tool-result batch was just
-        # appended, so no tool_call dangles). The executor snapshots the checkpoint here,
-        # so a crash mid-turn leaves the record of already-completed side-effecting tools
-        # in the conversation — the next turn sees them and does not redo them. The runtime
-        # only signals the safe point; the executor owns persistence.
-        CHECKPOINT = "checkpoint"
-        ERROR = "error"
-        DENIED_INJECTION = "denied_injection"
-        # A spawn_agent invocation begins a child group. RELAYED carries a child's own
-        # (unified) event with its path already prefixed by this agent's segment — a
-        # agent is just an agent at a deeper path, so there is no separate
-        # agent event vocabulary to translate through.
-        GROUP_STARTED = "group_started"
-        RELAYED = "relayed"
-        STEERING = "steering"
-        COMPACTION_STARTED = "compaction_started"
-        COMPACTION_DONE = "compaction_done"
-
-    def __init__(self, event_type: Type, **data):
-        if event_type == self.Type.TOOL_RESULT:
-            data["status"] = ToolStatus(
-                data.get("status", tool_status_from_result(data.get("result")))
-            ).value
-        self.type = event_type
-        self.data = data
-
-    def to_dict(self) -> dict:
-        return {"type": self.type.value, "timestamp": datetime.now(timezone.utc).isoformat(), **self.data}
-
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict())
 
 
 def _maybe_json(value: str) -> Any:
@@ -624,7 +588,7 @@ class AgentRunner:
         if read_only_override is not None:
             self._runtime.set_read_only(read_only_override)
 
-    async def run_stream(self, always_yield_text: bool = False) -> AsyncIterator[StreamEvent]:
+    async def run_stream(self, always_yield_text: bool = False) -> AsyncIterator[TurnEvent]:
         """Yield each event as the agent produces it, guaranteeing the run
         ends with a non-empty final report.
 
@@ -642,32 +606,30 @@ class AgentRunner:
             async for event in self._drain(conclusion_prompt, always_yield_text, outcome):
                 yield event
 
-        done_event = StreamEvent(
-            StreamEvent.Type.DONE, text=outcome["text"], stop_reason=outcome["stop_reason"],
+        done_event = Done(text=outcome["text"], stop_reason=outcome["stop_reason"],
         )
         yield done_event
 
     async def _drain(
         self, prompt: str, always_yield_text: bool, outcome: dict,
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[TurnEvent]:
         """Stream one turn through the inner runtime, forwarding events and
         recording ``(text, stop_reason)`` into ``outcome``. DONE events are
         swallowed so :meth:`run_stream` can emit a single terminal DONE."""
         async for event in self._runtime.stream(prompt):
-            if event.type == StreamEvent.Type.DONE:
-                text = event.data.get("text", "")
-                if text.strip():
-                    outcome["text"] = text
-                outcome["stop_reason"] = event.data.get("stop_reason", outcome["stop_reason"])
+            if isinstance(event, Done):
+                if event.text.strip():
+                    outcome["text"] = event.text
+                outcome["stop_reason"] = event.stop_reason or outcome["stop_reason"]
                 continue
-            if event.type == StreamEvent.Type.TEXT_CHUNK:
+            if isinstance(event, TextChunk):
                 if self._stream_progress or always_yield_text:
                     yield event
                 continue
-            if event.type == StreamEvent.Type.ERROR:
+            if isinstance(event, Error):
                 outcome["stop_reason"] = "error"
                 if not outcome["text"]:
-                    outcome["text"] = event.data.get("message", "unknown")
+                    outcome["text"] = event.message or "unknown"
             yield event
 
     async def run_to_task(self) -> Task:
@@ -675,9 +637,9 @@ class AgentRunner:
         final_text = ""
         stop_reason = "completed"
         async for event in self.run_stream():
-            if event.type == StreamEvent.Type.DONE:
-                final_text = event.data.get("text", final_text)
-                stop_reason = event.data.get("stop_reason", stop_reason)
+            if isinstance(event, Done):
+                final_text = event.text or final_text
+                stop_reason = event.stop_reason or stop_reason
         state = TaskState.completed
         if stop_reason == "error":
             state = TaskState.failed
@@ -850,6 +812,34 @@ class _ResolvedToolDecision:
     egress_allow_always_agent: str = ""
 
 
+# How a turn-loop phase tells the driver what to do next. A phase is an async generator
+# (it yields wire events), so it cannot return a value through ``async for``; it writes
+# its directive into a small holder the driver inspects once the phase drains.
+_PROCEED = "proceed"    # fall through to the rest of the iteration
+_CONTINUE = "continue"  # the phase already advanced loop bookkeeping; loop again
+_STOP = "stop"          # the turn is over (a terminal event was already yielded); return
+
+
+@dataclass
+class _ModelCallOutcome:
+    """What one streamed model call produced: the assembled response, or a terminal
+    condition the turn loop must act on instead. ``cancelled`` means a Stop with nothing
+    queued (a ``Done`` was already yielded); ``aborted_for_steering`` means a Stop that
+    found queued steering, so the loop should drain it and iterate again; otherwise
+    ``response`` holds the assembled ``AIMessageChunk``."""
+
+    response: Optional[AIMessageChunk] = None
+    aborted_for_steering: bool = False
+    cancelled: bool = False
+
+
+@dataclass
+class _PhaseStep:
+    """The loop directive a turn phase hands back (see ``_PROCEED``/``_CONTINUE``/``_STOP``)."""
+
+    directive: str = _PROCEED
+
+
 class AgentRuntime:
     _GOAL_CONTINUATION_LIMIT = 8
     # Agents (delegation depth > 0) get a tighter iteration budget than the
@@ -858,6 +848,40 @@ class AgentRuntime:
     _AGENT_MAXIMUM_ITERATIONS = 512
     # Context compaction is Observational Memory (Observer/Reflector). Its thresholds
     # and on/off switch live in GlobalConfiguration.compaction, not as constants here.
+
+    # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
+    # policy once (the shared preamble), then dispatches the call to its handler here.
+    # Grouped tools (edit/write, spawn/remote, the MCP queries, computer/browser) share
+    # one handler; an unmapped name is the "unknown tool" error.
+    _TOOL_HANDLERS = {
+        "bash": "_tool_bash",
+        "read_file": "_tool_read_file",
+        "find_files": "_tool_find_files",
+        "search_content": "_tool_search_content",
+        "fetch_url": "_tool_fetch_url",
+        "download_file": "_tool_download_file",
+        "edit_file": "_tool_edit_or_write",
+        "write_file": "_tool_edit_or_write",
+        "load_skill": "_tool_load_skill",
+        "ask_user": "_tool_ask_user",
+        "call_mcp_tool": "_tool_call_mcp_tool",
+        "list_mcp_tools": "_tool_mcp_query",
+        "list_mcp_resources": "_tool_mcp_query",
+        "read_mcp_resource": "_tool_mcp_query",
+        "ask_agent": "_tool_ask_agent",
+        "respond_agent": "_tool_respond_agent",
+        "spawn_agent": "_tool_spawn_or_remote",
+        "call_remote_agent": "_tool_spawn_or_remote",
+        "cancel_agent": "_tool_cancel_agent",
+        "set_tasks": "_tool_set_tasks",
+        "update_tasks": "_tool_update_tasks",
+        "update_goal": "_tool_update_goal",
+        "open_artifact": "_tool_open_artifact",
+        "web_search": "_tool_web_search",
+        "read_task": "_tool_read_task",
+        "computer": "_tool_automation",
+        "browser": "_tool_automation",
+    }
 
     def __init__(
         self,
@@ -886,7 +910,9 @@ class AgentRuntime:
         # the working directory so the single-location default still works.
         self._locations: dict[str, ResolvedLocation] = {}
         self._locations_by_name: dict[str, ResolvedLocation] = {}
-        self._build_locations(locations, permission_mode_default=agent_configuration.permission_mode)
+        self._build_locations(
+            locations, permission_mode_default=agent_configuration.permission_policy
+        )
 
         effective_model = agent_configuration.model_identifier
         if not effective_model:
@@ -979,10 +1005,13 @@ class AgentRuntime:
         self._task_manager = TaskManager()
         self._active_goal: str = ""
         self._execution_history: list[dict] = []
-        self._bypass_permissions: bool = agent_configuration.permission_mode == "bypass"
-        self._read_only: bool = agent_configuration.permission_mode == "read_only"
-        self._auto_permissions: bool = agent_configuration.permission_mode == "auto"
-        self._session_permission_mode: str = "default"
+        # The runtime's effective permission policy is ONE typed value (the agent card's
+        # configured mode until a session or delegation override changes it); the read_only/
+        # bypass/auto booleans the call sites read are derived views of it, never separate
+        # state that could drift. `_session_permission_mode` records the live override so a
+        # location's own mode governs its calls only while the session is on the default.
+        self._permission_mode: PermissionMode = agent_configuration.permission_policy
+        self._session_permission_mode: PermissionMode = PermissionMode.DEFAULT
         # A delegated agent parks on these while its human-in-the-loop request is escalated to
         # the user; the resolver (native REST or an A2A input_response) completes them.
         self._agent_permission_futures: dict[str, asyncio.Future] = {}
@@ -1033,7 +1062,7 @@ class AgentRuntime:
         # streamed events land here and the turn loop drains them so the agents
         # panel updates while the parent keeps working. Whatever is still queued
         # when the parent goes idle drains on the next (wake) turn.
-        self._spawned_agent_events: "asyncio.Queue[StreamEvent]" = asyncio.Queue()
+        self._spawned_agent_events: "asyncio.Queue[TurnEvent]" = asyncio.Queue()
         self._agent_event_sink: Optional[Callable[[dict[str, Any]], None]] = None
         self._settled_agent_lanes: set[tuple[str, str]] = set()
         # The latest call's context occupancy (prompt + completion) and the model's
@@ -1042,7 +1071,7 @@ class AgentRuntime:
         self._latest_context_tokens: int = 0
         self._context_window: int = 0
 
-    def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: str) -> None:
+    def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: PermissionMode) -> None:
         """Build the resolved-location map from the project's location records. Each entry
         carries an executor (local subprocess or multiplexed SSH) and its effective policy."""
         entries = locations or []
@@ -1054,7 +1083,7 @@ class AgentRuntime:
                 "name": "local",
                 "kind": "local",
                 "base_directory": self._working_directory,
-                "permission_mode": permission_mode_default,
+                "permission_mode": str(permission_mode_default),
             }]
         for entry in entries:
             kind = entry.get("kind", "local")
@@ -1068,7 +1097,7 @@ class AgentRuntime:
                 kind=kind,
                 base_directory=base_directory,
                 executor=executor_for(address),
-                permission_mode=str(entry.get("permission_mode") or permission_mode_default),
+                permission_mode=PermissionMode.coerce(entry.get("permission_mode"), permission_mode_default),
             )
             self._locations[uri] = resolved
             self._locations_by_name[resolved.name] = resolved
@@ -1106,36 +1135,23 @@ class AgentRuntime:
         profile is the fallback. A runtime-level read-only override is always a floor.
         Returned as a value and threaded through the call, never written to shared state,
         so concurrent calls to different locations cannot cross policies."""
-        session_mode_is_explicit = self._session_permission_mode != "default"
-        if location is None or session_mode_is_explicit:
-            return CallExecutionPolicy(
-                location=location,
-                working_directory=(
-                    self._working_directory
-                    if location is None or location.is_remote
-                    else location.base_directory
-                ),
-                read_only=self._read_only,
-                bypass_permissions=self._bypass_permissions,
-                auto_permissions=self._auto_permissions,
-            )
-        mode = location.permission_mode
-        if mode == "default":
-            read_only = self._read_only
-            bypass = self._bypass_permissions and not read_only
-            auto = self._auto_permissions and not read_only
+        session_mode_is_explicit = self._session_permission_mode is not PermissionMode.DEFAULT
+        if location is None or session_mode_is_explicit or location.permission_mode is PermissionMode.DEFAULT:
+            # No location to govern the call, an explicit live session mode, or a location left
+            # on the default — the runtime's own mode applies.
+            mode = self._permission_mode
+        elif self._permission_mode is PermissionMode.READ_ONLY:
+            # A runtime-level read-only override is a floor no location mode can lift.
+            mode = PermissionMode.READ_ONLY
         else:
-            read_only = self._read_only or mode == "read_only"
-            bypass = not read_only and mode == "bypass"
-            auto = not read_only and mode == "auto"
-        working_directory = self._working_directory if location.is_remote else location.base_directory
-        return CallExecutionPolicy(
-            location=location,
-            working_directory=working_directory,
-            read_only=read_only,
-            bypass_permissions=bypass,
-            auto_permissions=auto,
+            # Otherwise the location's explicit mode governs its own calls.
+            mode = location.permission_mode
+        working_directory = (
+            self._working_directory
+            if location is None or location.is_remote
+            else location.base_directory
         )
+        return CallExecutionPolicy(location=location, working_directory=working_directory, mode=mode)
 
     def _canonical_working_directory(self, working_directory: str | None = None) -> str:
         return str(Path(working_directory or self._working_directory or Path.home()).expanduser().resolve(strict=False))
@@ -1193,7 +1209,7 @@ class AgentRuntime:
     def token_usage(self) -> dict[str, int]:
         return dict(self._token_usage)
 
-    def _accumulate_usage(self, response: AIMessage) -> "StreamEvent | None":
+    def _accumulate_usage(self, response: AIMessage) -> "TurnEvent | None":
         """Fold one model call's real token usage into the running session total
         and return a USAGE event carrying both the per-call and cumulative counts.
         Returns ``None`` when the provider reported no usage for this call."""
@@ -1221,9 +1237,7 @@ class AgentRuntime:
         context_window = model.context_window() if model is not None else 0
         self._latest_context_tokens = input_tokens + output_tokens
         self._context_window = context_window
-        return StreamEvent(
-            StreamEvent.Type.USAGE,
-            input_tokens=input_tokens,
+        return Usage(input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cache_read_tokens=cache_read,
@@ -1261,6 +1275,20 @@ class AgentRuntime:
     @property
     def is_read_only(self) -> bool:
         return self._read_only
+
+    # Derived views of the single `_permission_mode`, so the many call sites that ask a plain
+    # boolean keep working while there is exactly one source of truth behind them.
+    @property
+    def _read_only(self) -> bool:
+        return self._permission_mode.is_read_only
+
+    @property
+    def _bypass_permissions(self) -> bool:
+        return self._permission_mode.is_bypass
+
+    @property
+    def _auto_permissions(self) -> bool:
+        return self._permission_mode.is_auto
 
     def abort(self) -> None:
         # Stop tears down only the live turn: signal the loop to end and kill every
@@ -1315,29 +1343,33 @@ class AgentRuntime:
         return not self._steering_messages.empty()
 
     def set_read_only(self, read_only: bool) -> None:
-        self._read_only = read_only
+        """Force (or release) a read-only floor over the runtime's mode — the override a
+        spawning call/step applies. Turning it on makes the mode read-only outright; turning
+        it off drops a read-only floor back to the interactive default but leaves any other
+        mode untouched."""
         if read_only:
-            self._bypass_permissions = False
-            self._auto_permissions = False
+            self._permission_mode = PermissionMode.READ_ONLY
+        elif self._permission_mode is PermissionMode.READ_ONLY:
+            self._permission_mode = PermissionMode.DEFAULT
 
-    def set_permission_mode(self, mode: str) -> None:
-        if mode not in ("default", "read_only", "bypass", "auto"):
+    def set_permission_mode(self, mode: "str | PermissionMode") -> None:
+        """Apply a live session override. ``default`` restores the agent card's own configured
+        mode; any other known mode replaces it. An unknown value is ignored."""
+        parsed = PermissionMode.parse(mode)
+        if parsed is None:
             return
-        self._session_permission_mode = mode
-        if mode == "default":
-            self._bypass_permissions = self._agent_configuration.permission_mode == "bypass"
-            self._read_only = self._agent_configuration.permission_mode == "read_only"
-            self._auto_permissions = self._agent_configuration.permission_mode == "auto"
-            return
-        self._bypass_permissions = mode == "bypass"
-        self._read_only = mode == "read_only"
-        self._auto_permissions = mode == "auto"
+        self._session_permission_mode = parsed
+        self._permission_mode = (
+            self._agent_configuration.permission_policy
+            if parsed is PermissionMode.DEFAULT
+            else parsed
+        )
 
     @property
-    def configured_permission_mode(self) -> str:
+    def configured_permission_mode(self) -> PermissionMode:
         """The permission mode the agent's own card declares (its ceiling before a
         caller's grant tightens it)."""
-        return self._agent_configuration.permission_mode
+        return self._agent_configuration.permission_policy
 
     def resolve_agent_permission(self, request_id: str, value: Any) -> bool:
         """Complete a delegated agent's parked human-in-the-loop request with the user's answer
@@ -1388,11 +1420,13 @@ class AgentRuntime:
         "default" means the interactive (ask) policy — never the agent's own configured
         mode — and ``bypass`` is never applied: a delegated agent can never run unattended. Under
         the interactive policy an unmatched command asks (escalates to the user)."""
-        mode = mode if mode in ("default", "read_only", "auto") else "default"
-        self._session_permission_mode = mode
-        self._bypass_permissions = False
-        self._read_only = mode == "read_only"
-        self._auto_permissions = mode == "auto"
+        parsed = PermissionMode.parse(mode)
+        # bypass is never applied to a delegated agent, and "default" means the interactive
+        # policy here (never the agent's own configured mode).
+        if parsed not in (PermissionMode.READ_ONLY, PermissionMode.AUTO):
+            parsed = PermissionMode.DEFAULT
+        self._session_permission_mode = parsed
+        self._permission_mode = parsed
 
     def set_delegate(self, delegate: Callable) -> None:
         """Install the A2A delegate used to invoke agents as related tasks."""
@@ -1505,7 +1539,7 @@ class AgentRuntime:
         asked (escalated to the user) rather than run — for the top-level agent and a
         delegated agent alike. Auto self-classifies, read-only hard-blocks mutations, and bypass
         allows everything, so none of those ask on an unmatched command."""
-        return not self._auto_permissions and not self._read_only and not self._bypass_permissions
+        return self._permission_mode.is_interactive
 
     def _evaluate_bash_permission(self, command: str, *, bypass: bool | None = None) -> str:
         effective_bypass = self._bypass_permissions if bypass is None else bypass
@@ -1739,8 +1773,8 @@ class AgentRuntime:
         )
         return context.model_dump_json(exclude_defaults=True)
 
-    def _background_result_events(self) -> list[StreamEvent]:
-        events: list[StreamEvent] = []
+    def _background_result_events(self) -> list[TurnEvent]:
+        events: list[TurnEvent] = []
         for completion in self._background.drain_completed():
             capped_result = _cap_model_result_payload(
                 completion.result,
@@ -1774,9 +1808,7 @@ class AgentRuntime:
                     kind="background_result",
                 ),
             ))
-            events.append(StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=completion.tool_call_identifier,
+            events.append(ToolResult(id=completion.tool_call_identifier,
                 name=completion.kind,
                 result=_maybe_json(capped_result),
                 status=background_status,
@@ -1788,11 +1820,11 @@ class AgentRuntime:
             self._record_event(background_completion_event(completion.kind), completion_event_data)
         return events
 
-    def _drain_spawned_agent_events(self) -> list[StreamEvent]:
+    def _drain_spawned_agent_events(self) -> list[TurnEvent]:
         """Every live agent event queued since the last drain. Yielded by the
         turn loop so a non-blocking spawned agent's activity streams to the panel
         while the parent works, and any backlog flushes on the wake turn."""
-        events: list[StreamEvent] = []
+        events: list[TurnEvent] = []
         while not self._spawned_agent_events.empty():
             events.append(self._spawned_agent_events.get_nowait())
         return events
@@ -1893,7 +1925,7 @@ class AgentRuntime:
         ])
         return reflected or observations
 
-    async def compact(self, reason: str = "manual") -> AsyncIterator[StreamEvent]:
+    async def compact(self, reason: str = "manual") -> AsyncIterator[TurnEvent]:
         """Observational-memory compaction (replaces wholesale summarization). The
         Observer folds the older turns into the observation log — appended to what is
         already there, so the observation prefix stays cache-stable — and drops their raw
@@ -1911,18 +1943,14 @@ class AgentRuntime:
         recent = list(self._conversation[boundary:])
         tokens_before = self._latest_context_tokens
         messages_before = len(self._conversation)
-        yield StreamEvent(
-            StreamEvent.Type.COMPACTION_STARTED,
-            reason=reason,
+        yield CompactionStarted(reason=reason,
             messages_before=messages_before,
             tokens_before=tokens_before,
         )
         new_observations = await self._observe(older, existing)
         if not new_observations:
             # Produced nothing parseable — leave history untouched rather than drop it.
-            yield StreamEvent(
-                StreamEvent.Type.COMPACTION_DONE,
-                reason=reason, ok=False,
+            yield CompactionDone(reason=reason, ok=False,
                 messages_before=messages_before,
                 messages_after=messages_before,
                 tokens_before=tokens_before,
@@ -1939,9 +1967,7 @@ class AgentRuntime:
         # Occupancy no longer reflects the (smaller) context; reset so auto-compaction
         # does not immediately re-fire before the next real model call.
         self._latest_context_tokens = 0
-        yield StreamEvent(
-            StreamEvent.Type.COMPACTION_DONE,
-            reason=reason, ok=True,
+        yield CompactionDone(reason=reason, ok=True,
             observations_added=len(new_observations),
             messages_before=messages_before,
             messages_after=len(self._conversation),
@@ -1962,12 +1988,12 @@ class AgentRuntime:
             })
         self._record_message("ai", final_response)
 
-    async def _drain_steering_messages(self) -> list[StreamEvent]:
-        events: list[StreamEvent] = []
+    async def _drain_steering_messages(self) -> list[TurnEvent]:
+        events: list[TurnEvent] = []
         while not self._steering_messages.empty():
             message = self._steering_messages.get_nowait()
             self._conversation.append(HumanMessage(content=message))
-            events.append(StreamEvent(StreamEvent.Type.STEERING, text=message))
+            events.append(Steering(text=message))
         if self._steering_messages.empty():
             self._steering_available.clear()
         return events
@@ -2092,7 +2118,7 @@ class AgentRuntime:
 
     async def resume_stream(
         self, plans: dict[str, dict], answers: dict[str, Any]
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[TurnEvent]:
         """Resume a durably-suspended turn. The conversation was rebuilt from the DB and
         ends with the pending tool-call AIMessage (the checkpoint); ``plans`` are the
         persisted preflight plans and ``answers`` the human decisions keyed by request id.
@@ -2105,14 +2131,16 @@ class AgentRuntime:
         self, user_message: str | list, as_system_note: bool = False,
         resume_plans: Optional[dict[str, dict]] = None,
         resume_answers: Optional[dict[str, Any]] = None,
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[TurnEvent]:
         self._abort_event.clear()
         self._calls_this_turn = 0
+        # Per-turn counter for the active-goal self-continuation nudges; an instance
+        # attribute (like ``_calls_this_turn``) so the no-tool-calls phase can bump it
+        # across iterations without threading it back through the driver.
+        self._goal_continuations = 0
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
-        turn_final_response = ""
-        goal_continuations = 0
 
         if resume_plans is not None:
             # Resume: the checkpoint AIMessage is already at the tail of the rebuilt
@@ -2121,7 +2149,7 @@ class AgentRuntime:
             recorded_user_message = ""
             response = self._conversation[-1] if self._conversation else None
             if response is None or not getattr(response, "tool_calls", None):
-                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="completed")
+                yield Done(text="", stop_reason="completed")
                 return
             resolved = self._resolve_tool_decisions(
                 {tool_call_id: _ToolPlan.from_dict(plan) for tool_call_id, plan in resume_plans.items()},
@@ -2134,7 +2162,7 @@ class AgentRuntime:
             ):
                 yield event
             self._append_tool_results(response, resume_outcomes)
-            yield StreamEvent(StreamEvent.Type.CHECKPOINT)
+            yield Checkpoint()
         else:
             # A prior turn may have suspended at input-required and been superseded by
             # this new message instead of answered. Close its dangling tool calls (an
@@ -2172,7 +2200,7 @@ class AgentRuntime:
                         yield steering_event
                     self._calls_this_turn += 1
                     continue
-                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+                yield Done(text="", stop_reason="cancelled")
                 return
 
             # Flush any live activity from non-blocking spawned agents so the panel
@@ -2205,261 +2233,61 @@ class AgentRuntime:
                 async for compaction_event in self.compact(reason="auto"):
                     yield compaction_event
 
-            # Dynamic context (time, pwd, active goal, tasks, background) is injected
-            # only on the first iteration of a turn — when the user just sent a
-            # message. Subsequent iterations (after tool calls) skip it to avoid
-            # re-sending the same per-turn metadata on every LLM call within the turn.
-            # Delivered as a transient user-role harness note at the very tail of
-            # the request — never as a system message (LiteLLM would hoist it into
-            # Anthropic's top-level system param, whose fresh timestamp would then
-            # invalidate the ENTIRE conversation cache on every turn). As a tail
-            # note, everything before it still prefix-matches the provider cache.
-            dynamic_parts = (
-                [self._harness_note_message(self._build_dynamic_context())]
-                if self._calls_this_turn == 0 else []
-            )
-            messages = (
-                [SystemMessage(content=self._build_static_system_prompt())]
-                + self._conversation
-                + dynamic_parts
-            )
+            messages = self._build_turn_messages()
 
-            # Open a thinking step for this iteration. One channel (THINKING)
-            # drives the indicator: this bare ping marks "reasoning started" and
-            # reasoning_content fills the body — no labels, no separate status
-            # placeholder to reconcile downstream. We time the phase here and emit
-            # a matching THINKING_DONE the moment reasoning ends (the first answer
-            # token, or — for a tool-only turn — when the stream closes), so the UI
-            # can show "Thought for Ns". Measured server-side as wall-clock and
-            # carried in the event, so it is correct on live stream and on replay.
-            yield StreamEvent(StreamEvent.Type.THINKING)
-            thinking_started_at = time.monotonic()
-            thinking_done_emitted = False
-            response_chunks: list[AIMessageChunk] = []
-            aborted_for_steering = False
-            # Drive the model stream one read at a time, racing each read against the
-            # abort event, so a Stop interrupts the turn *immediately* — even while it
-            # is parked awaiting the next token from a slow or stalled provider. Only
-            # checking the flag between chunks (the previous behaviour) let a provider
-            # that had gone quiet swallow the cancel until it happened to emit again,
-            # which is why Stop "sometimes" appeared to do nothing.
-            # A generation span for this model call. Started (not made "current") so it is
-            # safe to hold open across this generator's yields; ended in the finally below.
-            generation_span = _telemetry.start_span(
-                "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
-            )
-            model_stream = self._bound_llm.astream(messages)
-            abort_waiter = asyncio.ensure_future(self._abort_event.wait())
-            try:
-                while True:
-                    chunk_future = asyncio.ensure_future(_stream_next(model_stream))
-                    await asyncio.wait(
-                        {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
-                    )
-                    if self._abort_event.is_set():
-                        # Stop won the race (or landed between chunks): drop the pending
-                        # read and stop consuming the stream (the `finally` closes it).
-                        chunk_future.cancel()
-                        with suppress(BaseException):
-                            await chunk_future
-                        if self._has_queued_steering():
-                            self._abort_event.clear()
-                            aborted_for_steering = True
-                            break
-                        yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
-                        return
-                    chunk = chunk_future.result()
-                    if chunk is _STREAM_EXHAUSTED:
-                        break
-                    response_chunks.append(chunk)
-                    for content_delta in message_content_deltas(chunk):
-                        if content_delta.kind == "text":
-                            if not thinking_done_emitted:
-                                thinking_done_emitted = True
-                                yield StreamEvent(
-                                    StreamEvent.Type.THINKING_DONE,
-                                    duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
-                                )
-                            if self._agent_configuration.stream_agent_progress:
-                                yield StreamEvent(
-                                    StreamEvent.Type.TEXT_CHUNK,
-                                    text=content_delta.text,
-                                    block_id=content_delta.block_identifier,
-                                )
-                        else:
-                            yield StreamEvent(
-                                StreamEvent.Type.THINKING,
-                                text=content_delta.text,
-                                block_id=content_delta.block_identifier,
-                            )
-            finally:
-                _telemetry.end_span(generation_span)
-                abort_waiter.cancel()
-                # Close the underlying HTTP stream so an aborted (or exhausted) turn
-                # never leaks a provider connection.
-                with suppress(BaseException):
-                    stream_closer = getattr(model_stream, "aclose", None)
-                    if stream_closer is not None:
-                        await stream_closer()
-            # A tool-only turn produces no answer text, so close the phase here.
-            if not thinking_done_emitted:
-                yield StreamEvent(
-                    StreamEvent.Type.THINKING_DONE,
-                    duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
-                )
-            if aborted_for_steering:
+            # Phase 1 — the model call. Yields the thinking/answer stream and hands back
+            # the assembled response, or a terminal (cancelled) / steering condition.
+            call = _ModelCallOutcome()
+            async for event in self._stream_model_call(messages, call):
+                yield event
+            if call.cancelled:
+                return
+            if call.aborted_for_steering:
                 for steering_event in await self._drain_steering_messages():
                     yield steering_event
                 self._calls_this_turn += 1
                 continue
-            response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
+            response = call.response
 
             usage_event = self._accumulate_usage(response)
             if usage_event is not None:
                 yield usage_event
 
             # Malformed tool calls (arguments that failed JSON parsing) land in
-            # `invalid_tool_calls` while `tool_calls` may be empty. LangChain
-            # still serializes invalid_tool_calls into the API payload as
-            # `tool_calls`, so each one MUST be followed by a tool message —
-            # otherwise the next provider call fails with "insufficient tool
-            # messages following tool_calls". Ensure every invalid call carries
-            # an id that matches the ToolMessage appended for it below.
+            # `invalid_tool_calls` while `tool_calls` may be empty. LangChain still
+            # serializes invalid_tool_calls into the API payload as `tool_calls`, so each
+            # one MUST be followed by a tool message — otherwise the next provider call
+            # fails with "insufficient tool messages following tool_calls". Ensure every
+            # invalid call carries an id that matches the ToolMessage appended for it.
             for invalid in response.invalid_tool_calls:
                 if not invalid.get("id"):
                     invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
 
+            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents,
+            # nudge an active goal, or finish the turn. Always ends the iteration
+            # (_CONTINUE to loop again, _STOP once a terminal event was yielded).
             if not response.tool_calls:
-                if response.invalid_tool_calls:
-                    # A response carrying only malformed tool calls (arguments that
-                    # failed to parse). These are NOT valid tool_calls — the LiteLLM
-                    # model serializes only message.tool_calls, never
-                    # invalid_tool_calls — so a ToolMessage response would be
-                    # orphaned, and strict providers (e.g. DeepSeek) reject that with
-                    # "Messages with role 'tool' must follow a tool_calls message".
-                    # Correct the model with a harness note and let it retry. This is
-                    # model-facing, so it is not surfaced to the user.
-                    if response.content:
-                        self._conversation.append(response)
-                    for invalid in response.invalid_tool_calls:
-                        self._conversation.append(self._harness_note_message(
-                            self._invalid_tool_call_content(cast(dict, invalid)),
-                        ))
-                    self._calls_this_turn += 1
-                    continue
-
-                # The model produced no tool calls. Any still-running background work
-                # does not hold the turn open: it ends here, and the executor's resume
-                # pump wakes the agent with an autonomous turn once the next result
-                # lands. Results that already completed were drained at the top of the
-                # loop, so nothing in hand is lost by finishing now.
-                final_text = message_text(response)
-                turn_final_response = final_text
-                self._conversation.append(response)
-                if self._drain_agent_messages():
-                    self._calls_this_turn += 1
-                    continue
-                steering_events = await self._drain_steering_messages()
-                if steering_events:
-                    for steering_event in steering_events:
-                        yield steering_event
-                    self._calls_this_turn += 1
-                    continue
-                if self._pending_agent_questions:
-                    self._conversation.append(self._harness_note_message(
-                        self._prompt_loader.load("agent_response_required", {})
-                    ))
-                    self._calls_this_turn += 1
-                    continue
-                if self._outstanding_agent_questions:
-                    yield StreamEvent(
-                        StreamEvent.Type.STATUS,
-                        code="waiting_for_agent_response",
-                    )
-                    if await self._wait_for_agent_message_or_abort():
-                        self._drain_agent_messages()
-                        self._calls_this_turn += 1
-                        continue
-                    self._record_turn(
-                        recorded_user_message,
-                        turn_tool_calls_log,
-                        turn_tool_results_log,
-                        "",
-                    )
-                    yield StreamEvent(
-                        StreamEvent.Type.DONE,
-                        text="",
-                        stop_reason="cancelled",
-                    )
-                    return
-                if self._active_goal and goal_continuations < self._GOAL_CONTINUATION_LIMIT:
-                    goal_continuations += 1
-                    self._calls_this_turn += 1
-                    goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
-                    self._conversation.append(self._harness_note_message(goal_continuation))
-                    yield StreamEvent(
-                        StreamEvent.Type.STATUS,
-                        code="goal_check",
-                    )
-                    continue
-                self._calls_this_turn = 0
-                self._record_turn(
-                    recorded_user_message, turn_tool_calls_log,
-                    turn_tool_results_log, turn_final_response,
-                )
-                yield StreamEvent(StreamEvent.Type.DONE, text=final_text, stop_reason="completed")
-                return
-
-            # Append the initiating AIMessage first — an AIMessage carrying tool_calls
-            # with no ToolMessages yet is the durable resume checkpoint. Then resolve the
-            # whole batch's permissions BEFORE any tool runs (concurrent tools cannot be
-            # re-run on resume without re-doing side effects). If a human is needed the
-            # turn suspends here, carrying the pending interactions and the plans the
-            # executor persists; otherwise it drains with every decision already in hand.
-            self._conversation.append(response)
-            tool_calls = cast(list[dict], response.tool_calls)
-            outcomes: dict[str, dict] = {}
-            if not self._abort_event.is_set():
-                plans, pending = await self._preflight_permissions(tool_calls)
-                if pending:
-                    # One suspend event for every turn. The executor renders the prompt from
-                    # it (the same DataParts, whether shown in the transcript or relayed to
-                    # the agents panel). Only the continuation transport differs, by turn kind:
-                    #  - a top-level turn returns here — the executor persists the checkpoint,
-                    #    closes the segment as input-required, and a later answer resumes it;
-                    #  - a delegated turn is an in-process, ephemeral continuation (it cannot
-                    #    be a durable segment that a restart would only discard), so it parks
-                    #    in place on the answer futures and continues this same stream — the
-                    #    executor relays the prompt to the panel while it waits.
-                    yield StreamEvent(
-                        StreamEvent.Type.SUSPENDED,
-                        interactions=[gate.to_dict() for gate in pending],
-                        plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
-                    )
-                    if not self._is_agent:
-                        return
-                    answers = await self._await_pending_answers(pending)
-                    decisions = self._resolve_tool_decisions(plans, answers)
-                else:
-                    decisions = self._resolve_tool_decisions(plans, {})
-                self._apply_allow_always(decisions)
-                async for event in self._drain_tools_concurrently(
-                    tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
+                step = _PhaseStep()
+                async for event in self._finalize_no_tool_calls(
+                    response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
                 ):
                     yield event
-            self._append_tool_results(response, outcomes)
-            yield StreamEvent(StreamEvent.Type.CHECKPOINT)
+                if step.directive == _STOP:
+                    return
+                continue
 
-            if self._abort_event.is_set():
-                if self._has_queued_steering():
-                    self._abort_event.clear()
-                    for steering_event in await self._drain_steering_messages():
-                        yield steering_event
-                    self._calls_this_turn += 1
-                    continue
-                self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
-                yield StreamEvent(StreamEvent.Type.DONE, text="", stop_reason="cancelled")
+            # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the
+            # whole batch's permissions, suspend if a human is needed, drain the tools,
+            # checkpoint), then honor a Stop that landed during it.
+            step = _PhaseStep()
+            async for event in self._run_tool_batch(
+                response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
+            ):
+                yield event
+            if step.directive == _STOP:
                 return
+            if step.directive == _CONTINUE:
+                continue
 
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
@@ -2470,11 +2298,258 @@ class AgentRuntime:
             recorded_user_message, turn_tool_calls_log,
             turn_tool_results_log, "",
         )
-        yield StreamEvent(
-            StreamEvent.Type.DONE,
-            text="Reached the tool-call limit without producing a final answer.",
+        yield Done(text="Reached the tool-call limit without producing a final answer.",
             stop_reason="maximum_iterations",
         )
+
+    def _build_turn_messages(self) -> list:
+        """The message list for this iteration's model call: the static system prompt,
+        the conversation, and — only on the turn's first iteration — the dynamic context.
+
+        Dynamic context (time, pwd, active goal, tasks, background) is injected only on
+        the first iteration of a turn, when the user just sent a message; subsequent
+        iterations (after tool calls) skip it to avoid re-sending the same per-turn
+        metadata on every LLM call within the turn. It rides as a transient user-role
+        harness note at the very tail of the request — never as a system message (LiteLLM
+        would hoist it into Anthropic's top-level system param, whose fresh timestamp
+        would then invalidate the ENTIRE conversation cache on every turn). As a tail
+        note, everything before it still prefix-matches the provider cache."""
+        dynamic_parts = (
+            [self._harness_note_message(self._build_dynamic_context())]
+            if self._calls_this_turn == 0 else []
+        )
+        return (
+            [SystemMessage(content=self._build_static_system_prompt())]
+            + self._conversation
+            + dynamic_parts
+        )
+
+    async def _stream_model_call(
+        self, messages: list, outcome: _ModelCallOutcome
+    ) -> AsyncIterator[TurnEvent]:
+        """One streamed model call. Yields the thinking/answer events and writes the
+        assembled response into ``outcome`` — or a terminal condition instead: ``cancelled``
+        (a Stop with nothing queued; a ``Done`` was already yielded) or
+        ``aborted_for_steering`` (a Stop that found queued steering, so the driver drains
+        it and iterates again).
+
+        Opens a thinking step for the iteration: one channel (THINKING) drives the
+        indicator — this bare ping marks "reasoning started" and reasoning_content fills
+        the body — and a matching THINKING_DONE fires the moment reasoning ends (the first
+        answer token, or, for a tool-only turn, when the stream closes), timed server-side
+        as wall-clock so "Thought for Ns" is correct live and on replay. Each read races
+        the abort event so a Stop interrupts *immediately*, even while parked awaiting the
+        next token from a slow or stalled provider — checking the flag only between chunks
+        let a provider that had gone quiet swallow the cancel until it happened to emit
+        again, which is why Stop "sometimes" appeared to do nothing."""
+        yield Thinking()
+        thinking_started_at = time.monotonic()
+        thinking_done_emitted = False
+        response_chunks: list[AIMessageChunk] = []
+        aborted_for_steering = False
+        # A generation span for this model call. Started (not made "current") so it is
+        # safe to hold open across this generator's yields; ended in the finally below.
+        generation_span = _telemetry.start_span(
+            "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
+        )
+        model_stream = self._bound_llm.astream(messages)
+        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+        try:
+            while True:
+                chunk_future = asyncio.ensure_future(_stream_next(model_stream))
+                await asyncio.wait(
+                    {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if self._abort_event.is_set():
+                    # Stop won the race (or landed between chunks): drop the pending
+                    # read and stop consuming the stream (the `finally` closes it).
+                    chunk_future.cancel()
+                    with suppress(BaseException):
+                        await chunk_future
+                    if self._has_queued_steering():
+                        self._abort_event.clear()
+                        aborted_for_steering = True
+                        break
+                    yield Done(text="", stop_reason="cancelled")
+                    outcome.cancelled = True
+                    return
+                chunk = chunk_future.result()
+                if chunk is _STREAM_EXHAUSTED:
+                    break
+                response_chunks.append(chunk)
+                for content_delta in message_content_deltas(chunk):
+                    if content_delta.kind == "text":
+                        if not thinking_done_emitted:
+                            thinking_done_emitted = True
+                            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                            )
+                        if self._agent_configuration.stream_agent_progress:
+                            yield TextChunk(text=content_delta.text,
+                                block_id=content_delta.block_identifier,
+                            )
+                    else:
+                        yield Thinking(text=content_delta.text,
+                            block_id=content_delta.block_identifier,
+                        )
+        finally:
+            _telemetry.end_span(generation_span)
+            abort_waiter.cancel()
+            # Close the underlying HTTP stream so an aborted (or exhausted) turn
+            # never leaks a provider connection.
+            with suppress(BaseException):
+                stream_closer = getattr(model_stream, "aclose", None)
+                if stream_closer is not None:
+                    await stream_closer()
+        # A tool-only turn produces no answer text, so close the phase here.
+        if not thinking_done_emitted:
+            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+            )
+        if aborted_for_steering:
+            outcome.aborted_for_steering = True
+            return
+        outcome.response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
+
+    async def _finalize_no_tool_calls(
+        self, response: AIMessageChunk, recorded_user_message: str,
+        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
+    ) -> AsyncIterator[TurnEvent]:
+        """Handle a model response that made no tool calls. Retries a malformed-only
+        batch, delivers or awaits agent messages, nudges an active goal to keep working,
+        or finishes the turn — advancing the loop bookkeeping and setting ``step`` to
+        ``_CONTINUE`` (iterate again) or ``_STOP`` (a terminal ``Done`` was yielded)."""
+        if response.invalid_tool_calls:
+            # A response carrying only malformed tool calls (arguments that failed to
+            # parse). These are NOT valid tool_calls — the LiteLLM model serializes only
+            # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
+            # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
+            # "Messages with role 'tool' must follow a tool_calls message". Correct the
+            # model with a harness note and let it retry. Model-facing; not surfaced.
+            if response.content:
+                self._conversation.append(response)
+            for invalid in response.invalid_tool_calls:
+                self._conversation.append(self._harness_note_message(
+                    self._invalid_tool_call_content(cast(dict, invalid)),
+                ))
+            self._calls_this_turn += 1
+            step.directive = _CONTINUE
+            return
+
+        # The model produced no tool calls. Any still-running background work does not
+        # hold the turn open: it ends here, and the executor's resume pump wakes the agent
+        # with an autonomous turn once the next result lands. Results that already
+        # completed were drained at the top of the loop, so nothing in hand is lost.
+        final_text = message_text(response)
+        self._conversation.append(response)
+        if self._drain_agent_messages():
+            self._calls_this_turn += 1
+            step.directive = _CONTINUE
+            return
+        steering_events = await self._drain_steering_messages()
+        if steering_events:
+            for steering_event in steering_events:
+                yield steering_event
+            self._calls_this_turn += 1
+            step.directive = _CONTINUE
+            return
+        if self._pending_agent_questions:
+            self._conversation.append(self._harness_note_message(
+                self._prompt_loader.load("agent_response_required", {})
+            ))
+            self._calls_this_turn += 1
+            step.directive = _CONTINUE
+            return
+        if self._outstanding_agent_questions:
+            yield Status(code="waiting_for_agent_response",
+            )
+            if await self._wait_for_agent_message_or_abort():
+                self._drain_agent_messages()
+                self._calls_this_turn += 1
+                step.directive = _CONTINUE
+                return
+            self._record_turn(
+                recorded_user_message,
+                turn_tool_calls_log,
+                turn_tool_results_log,
+                "",
+            )
+            yield Done(text="",
+                stop_reason="cancelled",
+            )
+            step.directive = _STOP
+            return
+        if self._active_goal and self._goal_continuations < self._GOAL_CONTINUATION_LIMIT:
+            self._goal_continuations += 1
+            self._calls_this_turn += 1
+            goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
+            self._conversation.append(self._harness_note_message(goal_continuation))
+            yield Status(code="goal_check",
+            )
+            step.directive = _CONTINUE
+            return
+        self._calls_this_turn = 0
+        self._record_turn(
+            recorded_user_message, turn_tool_calls_log,
+            turn_tool_results_log, final_text,
+        )
+        yield Done(text=final_text, stop_reason="completed")
+        step.directive = _STOP
+
+    async def _run_tool_batch(
+        self, response: AIMessageChunk, recorded_user_message: str,
+        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
+    ) -> AsyncIterator[TurnEvent]:
+        """Run the response's tool batch and checkpoint it. Appends the initiating
+        AIMessage first — an AIMessage carrying tool_calls with no ToolMessages yet is the
+        durable resume checkpoint — then resolves the whole batch's permissions BEFORE any
+        tool runs (concurrent tools cannot be re-run on resume without re-doing side
+        effects). If a human is needed the turn suspends here; otherwise it drains with
+        every decision already in hand. Sets ``step`` to ``_STOP`` (a top-level suspend
+        that returns, or a Stop with nothing queued) or ``_CONTINUE`` (a Stop that found
+        queued steering); leaves it ``_PROCEED`` for the normal end of the iteration."""
+        self._conversation.append(response)
+        tool_calls = cast(list[dict], response.tool_calls)
+        outcomes: dict[str, dict] = {}
+        if not self._abort_event.is_set():
+            plans, pending = await self._preflight_permissions(tool_calls)
+            if pending:
+                # One suspend event for every turn. The executor renders the prompt from
+                # it (the same DataParts, whether shown in the transcript or relayed to
+                # the agents panel). Only the continuation transport differs, by turn kind:
+                #  - a top-level turn returns here — the executor persists the checkpoint,
+                #    closes the segment as input-required, and a later answer resumes it;
+                #  - a delegated turn is an in-process, ephemeral continuation (it cannot
+                #    be a durable segment that a restart would only discard), so it parks
+                #    in place on the answer futures and continues this same stream — the
+                #    executor relays the prompt to the panel while it waits.
+                yield Suspended(interactions=[gate.to_dict() for gate in pending],
+                    plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
+                )
+                if not self._is_agent:
+                    step.directive = _STOP
+                    return
+                answers = await self._await_pending_answers(pending)
+                decisions = self._resolve_tool_decisions(plans, answers)
+            else:
+                decisions = self._resolve_tool_decisions(plans, {})
+            self._apply_allow_always(decisions)
+            async for event in self._drain_tools_concurrently(
+                tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
+            ):
+                yield event
+        self._append_tool_results(response, outcomes)
+        yield Checkpoint()
+
+        if self._abort_event.is_set():
+            if self._has_queued_steering():
+                self._abort_event.clear()
+                for steering_event in await self._drain_steering_messages():
+                    yield steering_event
+                self._calls_this_turn += 1
+                step.directive = _CONTINUE
+                return
+            self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
+            yield Done(text="", stop_reason="cancelled")
+            step.directive = _STOP
 
     def _load_agent(self, name: str) -> AgentConfiguration:
         return load_agent_configuration(
@@ -2503,7 +2578,7 @@ class AgentRuntime:
             "prompt": prompt,
         })
 
-    def _relay_child_event(self, delegated: dict, group_id: str, step_id: str) -> "StreamEvent | None":
+    def _relay_child_event(self, delegated: dict, group_id: str, step_id: str) -> "TurnEvent | None":
         """Wrap one relayed agent event for re-emission. The child already speaks
         the unified vocabulary; we only prefix this agent's path segment so it renders
         at the right depth. Non-event control signals (started/done) carry no panel
@@ -2514,10 +2589,10 @@ class AgentRuntime:
         segment = {"group_id": group_id, "step_id": step_id}
         child_event["path"] = [segment, *child_event.get("path", [])]
         child_event["event_id"] = child_event.get("event_id") or uuid.uuid4().hex
-        return StreamEvent(StreamEvent.Type.RELAYED, event=child_event)
+        return Relayed(event=child_event)
 
-    async def _publish_spawned_agent_event(self, event: StreamEvent) -> None:
-        agent_event = event.data["event"]
+    async def _publish_spawned_agent_event(self, event: Relayed) -> None:
+        agent_event = event.event
         if self._agent_event_sink is not None:
             self._agent_event_sink(agent_event)
         await self._spawned_agent_events.put(event)
@@ -2528,9 +2603,7 @@ class AgentRuntime:
         if lane_key in self._settled_agent_lanes:
             return
         self._settled_agent_lanes.add(lane_key)
-        event = StreamEvent(
-            StreamEvent.Type.RELAYED,
-            event={
+        event = Relayed(event={
                 "kind": "done",
                 "path": [{"group_id": group_id, "step_id": step_id}],
                 "state": state,
@@ -2546,7 +2619,7 @@ class AgentRuntime:
         turn_tool_results_log: list[dict],
         outcomes: dict[str, dict],
         decision: "_ResolvedToolDecision",
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[TurnEvent]:
         """Run a single tool call, yielding its events and recording its outcome
         in ``outcomes`` (keyed by tool_call_id). The caller appends ToolMessages
         afterward so the conversation stays consistent even on abort.
@@ -2562,9 +2635,7 @@ class AgentRuntime:
         started_at = datetime.now(timezone.utc)
         started_monotonic = time.monotonic()
 
-        yield StreamEvent(
-            StreamEvent.Type.TOOL_CALL,
-            name=tool_name,
+        yield ToolCall(name=tool_name,
             arguments=tool_arguments,
             id=tool_call_identifier,
         )
@@ -2587,18 +2658,21 @@ class AgentRuntime:
                 # An image read carries its pixels on a model-facing side channel;
                 # strip it here so the base64 never reaches the UI or the event
                 # log — the turn loop attaches it to the conversation instead.
-                if event.type == StreamEvent.Type.TOOL_RESULT and "model_image" in event.data:
-                    result_payload = event.data.get("result")
+                if isinstance(event, ToolResult) and "model_image" in event.extra:
+                    result_payload = event.result
                     image_followups.append({
                         "path": str((result_payload or {}).get("path", "")) if isinstance(result_payload, dict) else "",
-                        "data_uri": str(event.data.pop("model_image")),
+                        "data_uri": str(event.extra["model_image"]),
                     })
+                    # Strip the model-facing image off the event before it goes downstream, so the
+                    # base64 never reaches the UI or the event log.
+                    event = replace(event, extra={key: value for key, value in event.extra.items() if key != "model_image"})
                 yield event
-                if event.type == StreamEvent.Type.TOOL_RESULT:
-                    result_str = event.data.get("result", "")
+                if isinstance(event, ToolResult):
+                    result_str = event.result
                     if (
                         isinstance(result_str, dict)
-                        and event.data["status"] == ToolStatus.RUNNING.value
+                        and event.status == ToolStatus.RUNNING.value
                     ):
                         raw_task_identifier = result_str.get("task_identifier")
                         background_task_identifier = (
@@ -2613,7 +2687,7 @@ class AgentRuntime:
                         if isinstance(result_str, dict):
                             # A structured result that reports an error status marks the
                             # call failed for the model and the UI alike.
-                            if event.data["status"] == ToolStatus.ERROR.value:
+                            if event.status == ToolStatus.ERROR.value:
                                 tool_failed = True
                             # Minified for the model — no spaces, and non-ASCII kept verbatim
                             # (window titles, emoji) rather than \uXXXX-escaped. This is the one
@@ -2623,34 +2697,20 @@ class AgentRuntime:
                             result_str = json.dumps(result_str, ensure_ascii=False, separators=(",", ":"))
                         result_content = _cap_model_result_payload(str(result_str))
                         turn_tool_results_log.append({"name": tool_name, "result": result_content})
-                elif event.type == StreamEvent.Type.ERROR:
+                elif isinstance(event, Error):
                     tool_failed = True
-                    result_content = event.data.get("message", "unknown error")
+                    result_content = event.message
                     turn_tool_results_log.append({"name": tool_name, "result": result_content})
-                elif event.type == StreamEvent.Type.DENIED_INJECTION:
-                    denied_commands.append(event.data.get("command", ""))
-                elif event.type == StreamEvent.Type.BACKGROUND_STARTED:
-                    raw_task_identifier = event.data.get("task_id")
-                    background_task_identifier = (
-                        raw_task_identifier if isinstance(raw_task_identifier, str) else None
-                    )
-                    result_content = json.dumps({
-                        "code": "background_task_scheduled",
-                        "task_identifier": background_task_identifier,
-                    })
-                    turn_tool_results_log.append(
-                        {"name": tool_name, "result": event.data.get("result_message", "")}
-                    )
+                elif isinstance(event, DeniedInjection):
+                    denied_commands.append(event.command)
         except asyncio.CancelledError:
             result_content = "Tool call aborted."
-            yield StreamEvent(
-                StreamEvent.Type.ERROR, id=tool_call_identifier, message=result_content, tool=tool_name,
+            yield Error(id=tool_call_identifier, message=result_content, tool=tool_name,
             )
             turn_tool_results_log.append({"name": tool_name, "result": result_content})
         except Exception as exception:
             result_content = f"{exception}"
-            yield StreamEvent(
-                StreamEvent.Type.ERROR, id=tool_call_identifier, message=result_content, tool=tool_name,
+            yield Error(id=tool_call_identifier, message=result_content, tool=tool_name,
             )
             turn_tool_results_log.append({"name": tool_name, "result": result_content})
         finally:
@@ -2683,7 +2743,7 @@ class AgentRuntime:
         turn_tool_results_log: list[dict],
         outcomes: dict[str, dict],
         decisions: dict[str, "_ResolvedToolDecision"],
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[TurnEvent]:
         """Run independent tool calls concurrently, yielding their events as they
         arrive (interleaved). The model emits several tool calls in one response
         when work is parallel; they run concurrently so multiple spawned agents
@@ -2692,7 +2752,7 @@ class AgentRuntime:
         if not tool_calls:
             return
 
-        queue: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
+        queue: asyncio.Queue[TurnEvent | None] = asyncio.Queue()
         remaining = len(tool_calls)
 
         async def runner(tool_call_data: dict) -> None:
@@ -3172,7 +3232,7 @@ class AgentRuntime:
     async def _execute_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: "_ResolvedToolDecision",
-    ) -> AsyncIterator[StreamEvent]:
+    ) -> AsyncIterator[TurnEvent]:
         """Execute a single tool call, yielding events. The caller collects results from
         TOOL_RESULT, ERROR, and BACKGROUND_STARTED events.
 
@@ -3186,10 +3246,9 @@ class AgentRuntime:
             error_kwargs: dict[str, Any] = {"id": tool_call_identifier, "tool": tool_name, "message": decision.denial.get("message", "")}
             if decision.denial.get("code"):
                 error_kwargs["code"] = decision.denial["code"]
-            yield StreamEvent(StreamEvent.Type.ERROR, **error_kwargs)
+            yield Error(**error_kwargs)
             if decision.denial.get("denied_injection"):
-                yield StreamEvent(
-                    StreamEvent.Type.DENIED_INJECTION, id=tool_call_identifier,
+                yield DeniedInjection(id=tool_call_identifier,
                     command=decision.denial.get("raw_command", ""),
                 )
             return
@@ -3211,7 +3270,7 @@ class AgentRuntime:
         try:
             self._permissions.check_tool(tool_name, **tool_arguments)
         except PermissionError as exception:
-            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
+            yield Error(id=tool_call_identifier, message=str(exception), tool=tool_name)
             return
 
         validation_error = self._validate_tool_call(
@@ -3220,7 +3279,7 @@ class AgentRuntime:
         )
         if validation_error:
             error_code, error_message = validation_error
-            yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, code=error_code, message=error_message, tool=tool_name)
+            yield Error(id=tool_call_identifier, code=error_code, message=error_message, tool=tool_name)
             return
 
         # Filesystem/shell tools run against a specific project location. Resolve it
@@ -3236,973 +3295,1034 @@ class AgentRuntime:
             try:
                 resolved_location = self._resolve_location(location_value)
             except ToolLocationError as exception:
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, code="invalid_location", message=str(exception), tool=tool_name)
+                yield Error(id=tool_call_identifier, code="invalid_location", message=str(exception), tool=tool_name)
                 return
         policy = self._call_policy(resolved_location)
 
-        if tool_name == "bash":
-            raw_command = tool_arguments.get("command", "")
-            if policy.is_remote:
-                # A remote command runs as a local `ssh …` invocation over the
-                # location's multiplexed connection, so the ordinary bash machinery
-                # below — sync ceiling, backgrounding, output capping + overflow
-                # file, cancellation — drives it unchanged. All permission analysis
-                # (static read-only classification, allow rules, prompts) runs on
-                # the raw remote command, never on the ssh wrapper.
-                from harness.locations.executor import SshExecutor
+        handler_name = self._TOOL_HANDLERS.get(tool_name)
+        if handler_name is None:
+            yield Error(id=tool_call_identifier,
+                message=f"Unknown tool '{tool_name}'", tool=tool_name,
+            )
+            return
+        async for event in getattr(self, handler_name)(
+            tool_name, tool_arguments, tool_call_identifier, decision, policy, resolved_location,
+        ):
+            yield event
 
-                assert resolved_location is not None
-                executor = resolved_location.executor
-                # A remote policy always resolves to the ssh-backed executor.
-                assert isinstance(executor, SshExecutor)
-                tool_arguments = dict(tool_arguments)
-                tool_arguments["command"] = shlex.join(
-                    executor.ssh_argv(raw_command, resolved_location.base_directory)
-                )
-            else:
-                directory = policy.working_directory
-                if directory:
-                    directory_path = Path(directory).expanduser()
-                    if not directory_path.is_absolute():
-                        yield StreamEvent(
-                            StreamEvent.Type.ERROR,
-                            id=tool_call_identifier,
-                            code="invalid_working_directory",
-                            message=f"Working directory must be an absolute path: {directory}",
-                            tool=tool_name,
-                        )
-                        return
-                    if not directory_path.is_dir():
-                        yield StreamEvent(
-                            StreamEvent.Type.ERROR,
-                            id=tool_call_identifier,
-                            code="invalid_working_directory",
-                            message=f"Working directory does not exist: {directory}",
-                            tool=tool_name,
-                        )
-                        return
-                    tool_arguments = dict(tool_arguments)
-                    tool_arguments["command"] = f"cd {shlex.quote(str(directory_path))} && {raw_command}"
-            read_only = tool_arguments.get("read_only", False)
-            if isinstance(read_only, str):
-                read_only = read_only.lower() == "true"
+    async def _tool_bash(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        raw_command = tool_arguments.get("command", "")
+        if policy.is_remote:
+            # A remote command runs as a local `ssh …` invocation over the
+            # location's multiplexed connection, so the ordinary bash machinery
+            # below — sync ceiling, backgrounding, output capping + overflow
+            # file, cancellation — drives it unchanged. All permission analysis
+            # (static read-only classification, allow rules, prompts) runs on
+            # the raw remote command, never on the ssh wrapper.
+            from harness.locations.executor import SshExecutor
 
-            # Permission (sandbox reads, read-only enforcement, risk approval) was
-            # resolved by the preflight pass and applied above; an approved bash call
-            # reaches here and runs.
-            lease_token = ""
-            # Filesystem leases guard this machine's working trees; a remote command
-            # mutates the remote host, so no local lease applies.
-            if not read_only and not policy.is_remote:
-                try:
-                    lease_token = await self._acquire_filesystem_lease(
-                        scope="worktree",
-                        path=self._canonical_working_directory(policy.working_directory),
-                        description=f"mutating bash: {raw_command[:160]}",
-                        working_directory=policy.working_directory,
-                    )
-                except FileLeaseConflict as exception:
-                    yield StreamEvent(
-                        StreamEvent.Type.ERROR,
-                        id=tool_call_identifier,
-                        code="filesystem_lease_conflict",
-                        message=str(exception),
+            assert resolved_location is not None
+            executor = resolved_location.executor
+            # A remote policy always resolves to the ssh-backed executor.
+            assert isinstance(executor, SshExecutor)
+            tool_arguments = dict(tool_arguments)
+            tool_arguments["command"] = shlex.join(
+                executor.ssh_argv(raw_command, resolved_location.base_directory)
+            )
+        else:
+            directory = policy.working_directory
+            if directory:
+                directory_path = Path(directory).expanduser()
+                if not directory_path.is_absolute():
+                    yield Error(id=tool_call_identifier,
+                        code="invalid_working_directory",
+                        message=f"Working directory must be an absolute path: {directory}",
                         tool=tool_name,
                     )
                     return
-
-            try:
-                background_token = bind_background_jobs(self._background)
-                tool_call_token = bind_tool_call_id(tool_call_identifier)
-                try:
-                    result = await bash_tool.ainvoke(tool_arguments)
-                finally:
-                    unbind_tool_call_id(tool_call_token)
-                    unbind_background_jobs(background_token)
-                result_data = _maybe_json(result)
-                yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
-                is_background_command = isinstance(result_data, dict) and result_data.get("code") == "bash_started"
-                if resolved_location is not None and not read_only and not is_background_command:
-                    # A completed mutating command may have regenerated a file we already
-                    # track — restage only the tracked set (cheap; never surveys the folder).
-                    self._capture_written_artifacts(
-                        resolved_location, changed_absolute_paths=None, mode="recheck",
-                        tool_call_id=tool_call_identifier, message=f"bash: {raw_command[:80]}",
+                if not directory_path.is_dir():
+                    yield Error(id=tool_call_identifier,
+                        code="invalid_working_directory",
+                        message=f"Working directory does not exist: {directory}",
+                        tool=tool_name,
                     )
-                if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
-                    task_identifier = result_data.get("task_identifier", "")
-                    if task_identifier:
-                        self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": raw_command})
-                        if lease_token and self._background.add_done_callback(
-                            task_identifier,
-                            lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
-                        ):
-                            lease_token = ""
-            finally:
-                self._release_filesystem_lease(lease_token)
+                    return
+                tool_arguments = dict(tool_arguments)
+                tool_arguments["command"] = f"cd {shlex.quote(str(directory_path))} && {raw_command}"
+        read_only = tool_arguments.get("read_only", False)
+        if isinstance(read_only, str):
+            read_only = read_only.lower() == "true"
 
-        elif tool_name == "read_file":
-            assert resolved_location is not None
-            file_path = str(tool_arguments.get("file_path", ""))
-            # Image files are ingested natively: the tool result carries structured
-            # metadata (mime, dimensions, size), and when the model has vision the
-            # pixels ride along as a data URI on the event under `model_image` —
-            # a model-facing side channel _run_one_tool strips before the event
-            # reaches the UI, then attaches to the conversation after the tool
-            # block as an image-bearing harness note.
-            if Path(file_path).suffix.lower() in file_tools.IMAGE_FILE_SUFFIXES:
-                result, image_data_uri = await asyncio.to_thread(
-                    file_tools.read_image_file,
-                    resolved_location.executor,
-                    resolved_location.base_directory,
-                    file_path,
-                    attach_pixels=self._model_supports_vision(),
+        # Permission (sandbox reads, read-only enforcement, risk approval) was
+        # resolved by the preflight pass and applied above; an approved bash call
+        # reaches here and runs.
+        lease_token = ""
+        # Filesystem leases guard this machine's working trees; a remote command
+        # mutates the remote host, so no local lease applies.
+        if not read_only and not policy.is_remote:
+            try:
+                lease_token = await self._acquire_filesystem_lease(
+                    scope="worktree",
+                    path=self._canonical_working_directory(policy.working_directory),
+                    description=f"mutating bash: {raw_command[:160]}",
+                    working_directory=policy.working_directory,
                 )
-                extra = {"model_image": image_data_uri} if image_data_uri else {}
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT,
-                    id=tool_call_identifier, name=tool_name, result=_maybe_json(result), **extra,
+            except FileLeaseConflict as exception:
+                yield Error(id=tool_call_identifier,
+                    code="filesystem_lease_conflict",
+                    message=str(exception),
+                    tool=tool_name,
                 )
                 return
-            offset = tool_arguments.get("offset", 1) or 1
-            limit_raw = tool_arguments.get("limit")
-            limit = int(limit_raw) if limit_raw not in (None, "") else None
-            result = await asyncio.to_thread(
-                file_tools.read_file,
+
+        try:
+            background_token = bind_background_jobs(self._background)
+            tool_call_token = bind_tool_call_id(tool_call_identifier)
+            try:
+                result = await bash_tool.ainvoke(tool_arguments)
+            finally:
+                unbind_tool_call_id(tool_call_token)
+                unbind_background_jobs(background_token)
+            result_data = _maybe_json(result)
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
+            is_background_command = isinstance(result_data, dict) and result_data.get("code") == "bash_started"
+            if resolved_location is not None and not read_only and not is_background_command:
+                # A completed mutating command may have regenerated a file we already
+                # track — restage only the tracked set (cheap; never surveys the folder).
+                self._capture_written_artifacts(
+                    resolved_location, changed_absolute_paths=None, mode="recheck",
+                    tool_call_id=tool_call_identifier, message=f"bash: {raw_command[:80]}",
+                )
+            if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
+                task_identifier = result_data.get("task_identifier", "")
+                if task_identifier:
+                    self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": raw_command})
+                    if lease_token and self._background.add_done_callback(
+                        task_identifier,
+                        lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
+                    ):
+                        lease_token = ""
+        finally:
+            self._release_filesystem_lease(lease_token)
+
+
+    async def _tool_read_file(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        assert resolved_location is not None
+        file_path = str(tool_arguments.get("file_path", ""))
+        # Image files are ingested natively: the tool result carries structured
+        # metadata (mime, dimensions, size), and when the model has vision the
+        # pixels ride along as a data URI on the event under `model_image` —
+        # a model-facing side channel _run_one_tool strips before the event
+        # reaches the UI, then attaches to the conversation after the tool
+        # block as an image-bearing harness note.
+        if Path(file_path).suffix.lower() in file_tools.IMAGE_FILE_SUFFIXES:
+            result, image_data_uri = await asyncio.to_thread(
+                file_tools.read_image_file,
                 resolved_location.executor,
                 resolved_location.base_directory,
                 file_path,
-                int(offset),
-                limit,
+                attach_pixels=self._model_supports_vision(),
             )
-            result_data = _maybe_json(result)
-            # Record the resolved path and hash — keyed by location so the same
-            # path on two hosts never collides — so edit_file/write_file can
-            # reject stale edits.
-            if isinstance(result_data, dict):
-                sha256 = result_data.get("sha256")
-                resolved_path = result_data.get("path")
-                if isinstance(sha256, str) and isinstance(resolved_path, str):
-                    self._read_files[(resolved_location.uri, resolved_path)] = sha256
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
+            extra = {"model_image": image_data_uri} if image_data_uri else {}
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result), extra=extra,
             )
+            return
+        offset = tool_arguments.get("offset", 1) or 1
+        limit_raw = tool_arguments.get("limit")
+        limit = int(limit_raw) if limit_raw not in (None, "") else None
+        result = await asyncio.to_thread(
+            file_tools.read_file,
+            resolved_location.executor,
+            resolved_location.base_directory,
+            file_path,
+            int(offset),
+            limit,
+        )
+        result_data = _maybe_json(result)
+        # Record the resolved path and hash — keyed by location so the same
+        # path on two hosts never collides — so edit_file/write_file can
+        # reject stale edits.
+        if isinstance(result_data, dict):
+            sha256 = result_data.get("sha256")
+            resolved_path = result_data.get("path")
+            if isinstance(sha256, str) and isinstance(resolved_path, str):
+                self._read_files[(resolved_location.uri, resolved_path)] = sha256
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data,
+        )
 
-        elif tool_name == "find_files":
-            assert resolved_location is not None
-            pattern = str(tool_arguments.get("pattern", ""))
-            include_ignored = bool(tool_arguments.get("include_ignored", False))
-            result = await asyncio.to_thread(
-                file_tools.find_files,
-                resolved_location.executor,
-                resolved_location.base_directory,
-                pattern,
-                include_ignored,
-            )
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
 
-        elif tool_name == "search_content":
-            assert resolved_location is not None
-            pattern = str(tool_arguments.get("pattern", ""))
-            include = tool_arguments.get("include")
-            include = str(include) if include else None
-            search_path = tool_arguments.get("path")
-            search_path = str(search_path) if search_path else None
-            include_ignored = bool(tool_arguments.get("include_ignored", False))
-            result = await asyncio.to_thread(
-                file_tools.search_content,
-                resolved_location.executor,
-                resolved_location.base_directory,
-                pattern,
-                include,
-                search_path,
-                include_ignored,
-            )
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
+    async def _tool_find_files(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        assert resolved_location is not None
+        pattern = str(tool_arguments.get("pattern", ""))
+        include_ignored = bool(tool_arguments.get("include_ignored", False))
+        result = await asyncio.to_thread(
+            file_tools.find_files,
+            resolved_location.executor,
+            resolved_location.base_directory,
+            pattern,
+            include_ignored,
+        )
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        )
 
-        elif tool_name == "fetch_url":
-            url = str(tool_arguments.get("url", ""))
-            fmt = str(tool_arguments.get("format", "markdown") or "markdown")
-            timeout = int(tool_arguments.get("timeout", 30) or 30)
-            result = await file_tools.fetch_url(url, fmt, timeout)
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
 
-        elif tool_name == "download_file":
-            assert resolved_location is not None
-            if policy.read_only:
-                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file download"})
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name,
-                )
-                return
-            executor = resolved_location.executor
-            url = str(tool_arguments.get("url", ""))
-            destination = str(tool_arguments.get("path", ""))
-            timeout = int(tool_arguments.get("timeout", 120) or 120)
-            resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
-            result = await file_tools.download_file(executor, url, resolved, timeout)
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
+    async def _tool_search_content(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        assert resolved_location is not None
+        pattern = str(tool_arguments.get("pattern", ""))
+        include = tool_arguments.get("include")
+        include = str(include) if include else None
+        search_path = tool_arguments.get("path")
+        search_path = str(search_path) if search_path else None
+        include_ignored = bool(tool_arguments.get("include_ignored", False))
+        result = await asyncio.to_thread(
+            file_tools.search_content,
+            resolved_location.executor,
+            resolved_location.base_directory,
+            pattern,
+            include,
+            search_path,
+            include_ignored,
+        )
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        )
 
-        elif tool_name in ("edit_file", "write_file"):
-            assert resolved_location is not None
-            if policy.read_only:
-                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, message=deny_message, tool=tool_name,
-                )
-                return
-            executor = resolved_location.executor
-            file_path = str(tool_arguments.get("file_path", ""))
-            resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, file_path)
-            file_key = (resolved_location.uri, resolved)
-            lease_token = ""
-            # Filesystem leases guard this machine's files; a remote edit mutates
-            # the remote host, so no local lease applies there.
-            if not policy.is_remote:
-                try:
-                    lease_token = await self._acquire_filesystem_lease(
-                        scope="file",
-                        path=resolved,
-                        description=f"{tool_name}: {resolved}",
-                        working_directory=policy.working_directory,
-                    )
-                except FileLeaseConflict as exception:
-                    yield StreamEvent(
-                        StreamEvent.Type.ERROR,
-                        id=tool_call_identifier,
-                        code="filesystem_lease_conflict",
-                        message=str(exception),
-                        tool=tool_name,
-                    )
-                    return
+
+    async def _tool_fetch_url(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        url = str(tool_arguments.get("url", ""))
+        fmt = str(tool_arguments.get("format", "markdown") or "markdown")
+        timeout = int(tool_arguments.get("timeout", 30) or 30)
+        result = await file_tools.fetch_url(url, fmt, timeout)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        )
+
+
+    async def _tool_download_file(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        assert resolved_location is not None
+        if policy.read_only:
+            deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file download"})
+            yield Error(id=tool_call_identifier, message=deny_message, tool=tool_name,
+            )
+            return
+        executor = resolved_location.executor
+        url = str(tool_arguments.get("url", ""))
+        destination = str(tool_arguments.get("path", ""))
+        timeout = int(tool_arguments.get("timeout", 120) or 120)
+        resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
+        result = await file_tools.download_file(executor, url, resolved, timeout)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        )
+
+
+    async def _tool_edit_or_write(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        assert resolved_location is not None
+        if policy.read_only:
+            deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a file modification"})
+            yield Error(id=tool_call_identifier, message=deny_message, tool=tool_name,
+            )
+            return
+        executor = resolved_location.executor
+        file_path = str(tool_arguments.get("file_path", ""))
+        resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, file_path)
+        file_key = (resolved_location.uri, resolved)
+        lease_token = ""
+        # Filesystem leases guard this machine's files; a remote edit mutates
+        # the remote host, so no local lease applies there.
+        if not policy.is_remote:
             try:
-                expected_sha256 = self._read_files.get(file_key)
-                if tool_name == "edit_file":
-                    find = str(tool_arguments.get("find", ""))
-                    replace_with = str(tool_arguments.get("replace_with", ""))
-                    replace_all = bool(tool_arguments.get("replace_all", False))
-                    result = await asyncio.to_thread(
-                        file_tools.edit_file,
-                        executor,
-                        resolved_location.base_directory,
-                        file_path,
-                        find,
-                        replace_with,
-                        expected_sha256=expected_sha256,
-                        replace_all=replace_all,
-                    )
-                else:
-                    content = tool_arguments.get("content", "")
-                    if not isinstance(content, str):
-                        content = json.dumps(content)
-                    result = await asyncio.to_thread(
-                        file_tools.write_file,
-                        executor,
-                        resolved_location.base_directory,
-                        file_path,
-                        content,
-                        expected_sha256=expected_sha256,
-                    )
-                result_data = _maybe_json(result)
-                if isinstance(result_data, dict):
-                    result_code = result_data.get("code", "")
-                    if result_code == "edit_completed":
-                        sha256 = result_data.get("sha256")
-                        if isinstance(sha256, str):
-                            self._read_files[file_key] = sha256
-                        else:
-                            self._read_files.pop(file_key, None)
-                    elif result_code == "write_completed":
-                        content = tool_arguments.get("content", "")
-                        if isinstance(content, str):
-                            self._read_files[file_key] = file_tools.content_sha256(content)
-                    else:
-                        # edit_failed_validation or other non-commit codes:
-                        # discard stale hash so model must re-read before next edit
-                        self._read_files.pop(file_key, None)
-                    if result_code in ("edit_completed", "write_completed"):
-                        # Version exactly this file. For an edit of a pre-existing file, pass
-                        # its pre-edit bytes (the tool's "before") so the first version we
-                        # keep is the original — the file on disk is already the edited copy.
-                        original_contents = None
-                        before_content = result_data.get("before")
-                        if not result_data.get("created") and isinstance(before_content, str):
-                            original_contents = {resolved: before_content}
-                        self._capture_written_artifacts(
-                            resolved_location, changed_absolute_paths=[resolved],
-                            original_contents=original_contents,
-                            tool_call_id=tool_call_identifier, message=f"{tool_name} {Path(resolved).name}",
-                        )
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data,
+                lease_token = await self._acquire_filesystem_lease(
+                    scope="file",
+                    path=resolved,
+                    description=f"{tool_name}: {resolved}",
+                    working_directory=policy.working_directory,
                 )
-            finally:
-                self._release_filesystem_lease(lease_token)
-
-        elif tool_name == "load_skill":
-            skill_name = str(tool_arguments.get("name", ""))
-            all_skills = enabled_skills(
-                load_skills(self._global_configuration.skill_directories_for(self._project_directory))
-            )
-            match = next((skill for skill in all_skills if skill.identifier == skill_name), None)
-            if match is None:
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR,
-                    id=tool_call_identifier,
-                    message=f"No enabled skill named '{skill_name}'.",
+            except FileLeaseConflict as exception:
+                yield Error(id=tool_call_identifier,
+                    code="filesystem_lease_conflict",
+                    message=str(exception),
                     tool=tool_name,
                 )
                 return
-            result = json.dumps({
-                "code": "skill_loaded",
-                "name": match.identifier,
-                "title": match.display_title,
-                "path": match.path,
-                "content": match.body,
-            })
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
-
-        elif tool_name == "ask_user":
-            # ask_user's answers are the preflight "decision" — the question was
-            # surfaced as a gate before the batch ran, and the human answered it (or
-            # declined) as an input-required response.
-            answers = decision.answers
-            # The user dismissed the whole prompt without answering (the decline
-            # sentinel from resolve_question). Report it to the model and end the
-            # turn cleanly — do not proceed on a guess. Setting the abort event lets
-            # the tool finish recording its result first, then the stream loop stops
-            # the turn; background work the user chose to keep running is untouched.
-            if isinstance(answers, dict) and answers.get("__declined__"):
-                result = json.dumps({
-                    "code": "user_declined",
-                    "message": (
-                        "The user dismissed the question without answering and chose to stop here. "
-                        "Do not re-ask or proceed on a guess; wait for further direction."
-                    ),
-                })
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        try:
+            expected_sha256 = self._read_files.get(file_key)
+            if tool_name == "edit_file":
+                find = str(tool_arguments.get("find", ""))
+                replace_with = str(tool_arguments.get("replace_with", ""))
+                replace_all = bool(tool_arguments.get("replace_all", False))
+                result = await asyncio.to_thread(
+                    file_tools.edit_file,
+                    executor,
+                    resolved_location.base_directory,
+                    file_path,
+                    find,
+                    replace_with,
+                    expected_sha256=expected_sha256,
+                    replace_all=replace_all,
                 )
-                self._abort_event.set()
-                return
-            result = json.dumps({"code": "user_answered", "answers": answers})
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-            )
-
-        elif tool_name == "call_mcp_tool":
-            # Read-only enforcement and risk approval were resolved by the preflight
-            # pass and applied above; an approved MCP call reaches here and runs.
-            event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-
-            async def on_mcp_event(event: dict[str, Any]) -> None:
-                await event_queue.put(event)
-
-            call_task = asyncio.create_task(call_mcp_tool_with_events(
-                str(tool_arguments.get("server", "")),
-                str(tool_arguments.get("tool_name", "")),
-                _coerce_mcp_arguments(tool_arguments.get("arguments")),
-                on_mcp_event,
-            ))
-            try:
-                while True:
-                    # Once the MCP call has finished, flush any events still buffered
-                    # on the queue and stop. Draining synchronously with get_nowait()
-                    # — rather than racing a fresh getter against the already-done
-                    # call_task — is what avoids a busy-spin: asyncio.wait returns
-                    # instantly on the completed call_task, so a queued getter would be
-                    # cancelled before it could drain the item, leaving the queue
-                    # non-empty and the loop re-arming a getter forever, pinning a core.
-                    if call_task.done():
-                        while not event_queue.empty():
-                            yield StreamEvent(
-                                StreamEvent.Type.MCP_EVENT,
-                                id=tool_call_identifier,
-                                name="call_mcp_tool",
-                                server=tool_arguments.get("server", ""),
-                                tool=tool_arguments.get("tool_name", ""),
-                                event=event_queue.get_nowait(),
-                            )
-                        break
-                    get_task = asyncio.create_task(event_queue.get())
-                    done, pending = await asyncio.wait(
-                        {call_task, get_task},
-                        return_when=asyncio.FIRST_COMPLETED,
+            else:
+                content = tool_arguments.get("content", "")
+                if not isinstance(content, str):
+                    content = json.dumps(content)
+                result = await asyncio.to_thread(
+                    file_tools.write_file,
+                    executor,
+                    resolved_location.base_directory,
+                    file_path,
+                    content,
+                    expected_sha256=expected_sha256,
+                )
+            result_data = _maybe_json(result)
+            if isinstance(result_data, dict):
+                result_code = result_data.get("code", "")
+                if result_code == "edit_completed":
+                    sha256 = result_data.get("sha256")
+                    if isinstance(sha256, str):
+                        self._read_files[file_key] = sha256
+                    else:
+                        self._read_files.pop(file_key, None)
+                elif result_code == "write_completed":
+                    content = tool_arguments.get("content", "")
+                    if isinstance(content, str):
+                        self._read_files[file_key] = file_tools.content_sha256(content)
+                else:
+                    # edit_failed_validation or other non-commit codes:
+                    # discard stale hash so model must re-read before next edit
+                    self._read_files.pop(file_key, None)
+                if result_code in ("edit_completed", "write_completed"):
+                    # Version exactly this file. For an edit of a pre-existing file, pass
+                    # its pre-edit bytes (the tool's "before") so the first version we
+                    # keep is the original — the file on disk is already the edited copy.
+                    original_contents = None
+                    before_content = result_data.get("before")
+                    if not result_data.get("created") and isinstance(before_content, str):
+                        original_contents = {resolved: before_content}
+                    self._capture_written_artifacts(
+                        resolved_location, changed_absolute_paths=[resolved],
+                        original_contents=original_contents,
+                        tool_call_id=tool_call_identifier, message=f"{tool_name} {Path(resolved).name}",
                     )
-                    if get_task in done:
-                        yield StreamEvent(
-                            StreamEvent.Type.MCP_EVENT,
-                            id=tool_call_identifier,
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data,
+            )
+        finally:
+            self._release_filesystem_lease(lease_token)
+
+
+    async def _tool_load_skill(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        skill_name = str(tool_arguments.get("name", ""))
+        all_skills = enabled_skills(
+            load_skills(self._global_configuration.skill_directories_for(self._project_directory))
+        )
+        match = next((skill for skill in all_skills if skill.identifier == skill_name), None)
+        if match is None:
+            yield Error(id=tool_call_identifier,
+                message=f"No enabled skill named '{skill_name}'.",
+                tool=tool_name,
+            )
+            return
+        result = json.dumps({
+            "code": "skill_loaded",
+            "name": match.identifier,
+            "title": match.display_title,
+            "path": match.path,
+            "content": match.body,
+        })
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        )
+
+
+    async def _tool_ask_user(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        # ask_user's answers are the preflight "decision" — the question was
+        # surfaced as a gate before the batch ran, and the human answered it (or
+        # declined) as an input-required response.
+        answers = decision.answers
+        # The user dismissed the whole prompt without answering (the decline
+        # sentinel from resolve_question). Report it to the model and end the
+        # turn cleanly — do not proceed on a guess. Setting the abort event lets
+        # the tool finish recording its result first, then the stream loop stops
+        # the turn; background work the user chose to keep running is untouched.
+        if isinstance(answers, dict) and answers.get("__declined__"):
+            result = json.dumps({
+                "code": "user_declined",
+                "message": (
+                    "The user dismissed the question without answering and chose to stop here. "
+                    "Do not re-ask or proceed on a guess; wait for further direction."
+                ),
+            })
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+            )
+            self._abort_event.set()
+            return
+        result = json.dumps({"code": "user_answered", "answers": answers})
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
+        )
+
+
+    async def _tool_call_mcp_tool(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        # Read-only enforcement and risk approval were resolved by the preflight
+        # pass and applied above; an approved MCP call reaches here and runs.
+        event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+
+        async def on_mcp_event(event: dict[str, Any]) -> None:
+            await event_queue.put(event)
+
+        call_task = asyncio.create_task(call_mcp_tool_with_events(
+            str(tool_arguments.get("server", "")),
+            str(tool_arguments.get("tool_name", "")),
+            _coerce_mcp_arguments(tool_arguments.get("arguments")),
+            on_mcp_event,
+        ))
+        try:
+            while True:
+                # Once the MCP call has finished, flush any events still buffered
+                # on the queue and stop. Draining synchronously with get_nowait()
+                # — rather than racing a fresh getter against the already-done
+                # call_task — is what avoids a busy-spin: asyncio.wait returns
+                # instantly on the completed call_task, so a queued getter would be
+                # cancelled before it could drain the item, leaving the queue
+                # non-empty and the loop re-arming a getter forever, pinning a core.
+                if call_task.done():
+                    while not event_queue.empty():
+                        yield McpEvent(id=tool_call_identifier,
                             name="call_mcp_tool",
                             server=tool_arguments.get("server", ""),
                             tool=tool_arguments.get("tool_name", ""),
-                            event=get_task.result(),
+                            event=event_queue.get_nowait(),
                         )
-                    else:
-                        # get_task is still pending (call_task completed first); cancel
-                        # only the getter — never call_task, which the loop re-checks.
-                        get_task.cancel()
-                result_data = await call_task
-            except Exception as exception:
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
-                return
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
-
-        elif tool_name in ("list_mcp_tools", "list_mcp_resources", "read_mcp_resource"):
-            tool_map = {
-                "list_mcp_tools": list_mcp_tools_tool,
-                "list_mcp_resources": list_mcp_resources_tool,
-                "read_mcp_resource": read_mcp_resource_tool,
-            }
-            result = await tool_map[tool_name].ainvoke(tool_arguments)
-            result_data = _maybe_json(result)
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
-
-        elif tool_name == "ask_agent":
-            task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
-            question = str(tool_arguments.get("question", "")).strip()
-            if self._ask_agent is None or not self._a2a_task_id:
-                result = {
-                    "code": "agent_messaging_unavailable",
-                    "message": "Agent messaging is not available in this execution context.",
-                }
-            elif not task_identifier:
-                result = {
-                    "code": "invalid_agent_identifier",
-                    "message": "Pass an exact identifier from active_agents or spawn_agent.",
-                }
-            elif not question:
-                result = {
-                    "code": "empty_agent_question",
-                    "message": "Provide the question to send.",
-                }
-            else:
-                result = self._ask_agent(self._a2a_task_id, task_identifier, question)
-                if result.get("code") == "agent_question_queued":
-                    self._outstanding_agent_questions.add(str(result["message_identifier"]))
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result=result,
-            )
-
-        elif tool_name == "respond_agent":
-            message_identifier = str(tool_arguments.get("message_identifier", "")).strip()
-            response_text = str(tool_arguments.get("response", "")).strip()
-            if self._respond_agent is None or not self._a2a_task_id:
-                result = {
-                    "code": "agent_messaging_unavailable",
-                    "message": "Agent messaging is not available in this execution context.",
-                }
-            elif not response_text:
-                result = {
-                    "code": "empty_agent_response",
-                    "message": "Provide the response to send.",
-                }
-            else:
-                result = self._respond_agent(
-                    self._a2a_task_id,
-                    message_identifier,
-                    response_text,
+                    break
+                get_task = asyncio.create_task(event_queue.get())
+                done, pending = await asyncio.wait(
+                    {call_task, get_task},
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-                if result.get("code") in {
-                    "agent_response_delivered",
-                    "agent_question_withdrawn",
-                }:
-                    self._pending_agent_questions.discard(message_identifier)
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result=result,
-            )
-
-        elif tool_name in ("spawn_agent", "call_remote_agent"):
-            child_depth = self._delegation_depth + 1
-            maximum_depth = self._global_configuration.maximum_delegation_depth
-            if child_depth > maximum_depth:
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    message=f"Maximum delegation depth ({maximum_depth}) reached; cannot spawn another agent.",
-                )
-                return
-
-            raw_agent_prompt = tool_arguments.get("prompt", "")
-            # The agents panel heading is the model's user-facing justification (a
-            # concise "why this agent" clause), never the whole prompt.
-            agent_title = str(tool_arguments.get("justification", "")).strip()
-            agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
-            agent_read_only = tool_arguments.get("read_only", None)
-            if isinstance(agent_read_only, str):
-                agent_read_only = agent_read_only.lower() == "true"
-            # The caller's approval grant for this delegated agent; bypass is not accepted here,
-            # and the executor combines it with the delegated agent card and clamps it.
-            agent_permission_mode = str(tool_arguments.get("permission_mode", "") or "")
-            if agent_permission_mode not in ("default", "auto", "read_only"):
-                agent_permission_mode = ""
-            agent_prompt = self._build_agent_prompt(raw_agent_prompt, agent_read_only)
-            spawn_step_id = new_id("agent")
-
-            # spawn_agent is local-only and call_remote_agent is remote-only — the two are
-            # distinct concepts, so a name for the wrong one is rejected with a pointer to
-            # the right tool.
-            is_remote_agent = self._is_remote_agent(agent_name)
-            if tool_name == "call_remote_agent" and not is_remote_agent:
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    message=f"{agent_name!r} is not a known remote agent. Use spawn_agent for a local agent.",
-                )
-                return
-            if tool_name == "spawn_agent" and is_remote_agent:
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    message=f"{agent_name!r} is a remote agent. Use call_remote_agent to reach it.",
-                )
-                return
-            # A remote agent lives on another server, so there is no on-disk config to
-            # load or validate — it is resolved over the wire by the delegate. A local
-            # agent must resolve to a real config file, or the call is rejected here.
-            sub_configuration = None
-            if not is_remote_agent:
-                try:
-                    sub_configuration = self._load_agent(agent_name)
-                except FileNotFoundError as exception:
-                    yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, message=str(exception), tool=tool_name)
-                    return
-
-            # Contacting a remote agent sends the prompt and attachments off this machine.
-            # That egress consent was resolved by the preflight pass (asked once per agent
-            # per session; an "always allow" was applied to the approved set above), so an
-            # approved call reaches here and runs.
-
-            # Spawning is non-blocking: the agent runs as a background job (a
-            # related A2A task) and the parent continues immediately. The agent's
-            # activity streams live into the agents panel via the shared event queue,
-            # and its structured deliverable (the child task) is injected into the
-            # conversation and wakes the parent when it finishes — the same
-            # inject-and-wake path as a background bash command. So the parent never
-            # blocks on an agent: it can spawn several in parallel, keep working,
-            # and pick up each result as it lands.
-            group_id = f"agents-{self._a2a_task_id or self._session_id}"
-            yield StreamEvent(
-                StreamEvent.Type.GROUP_STARTED,
-                group_id=group_id,
-                step_id=spawn_step_id,
-                agent_name=agent_name,
-                title=agent_title,
-                tool_call_id=tool_call_identifier,
-            )
-            self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": agent_name, "prompt": raw_agent_prompt})
-            delegate = self._delegate
-            if delegate is not None:
-                if self._reserve_agent is not None:
-                    self._reserve_agent(spawn_step_id, self._session_id, agent_name)
-
-                async def _run_spawned_agent() -> str:
-                    child_task = None
-                    child_task_id = ""
-                    try:
-                        async for delegated in delegate(
-                            agent_name,
-                            agent_prompt,
-                            self._a2a_task_id,
-                            agent_read_only,
-                            child_depth,
-                            self._working_directory,
-                            self._project_directory,
-                            group_id,
-                            spawn_step_id,
-                            self._pending_attachments,
-                            agent_permission_mode,
-                        ):
-                            # The agent's streamed progress goes to the panel only,
-                            # never into the parent's model context.
-                            if delegated.get("type") == "started":
-                                child_task_id = delegated.get("child_task_id", "")
-                                continue
-                            if delegated.get("type") == "usage":
-                                usage = delegated["event"]
-                                self._add_agent_usage(
-                                    int(usage.get("input_tokens", 0) or 0),
-                                    int(usage.get("output_tokens", 0) or 0),
-                                )
-                                continue
-                            event = self._relay_child_event(delegated, group_id, spawn_step_id)
-                            if event is not None:
-                                await self._publish_spawned_agent_event(event)
-                            if delegated.get("type") == "done":
-                                child_task = delegated.get("task")
-                                # The child's turn is a control signal, not a relayed panel
-                                # event; synthesize a `done` at this step's path so the panel
-                                # marks it terminal.
-                                child_state = str(((child_task or {}).get("status") or {}).get("state") or "completed")
-                                await self._settle_agent_lane(group_id, spawn_step_id, child_state)
-                        # Inject ONLY the agent's final report (its deliverable
-                        # artifact) into the parent — not the whole task object, and not
-                        # any of the intermediate progress. The parent asked for a result,
-                        # not a transcript.
-                        return _spawned_agent_report(child_task, agent_name)
-                    except asyncio.CancelledError:
-                        if child_task_id and self._cancel_delegated is not None:
-                            await asyncio.shield(self._cancel_delegated(agent_name, child_task_id))
-                        await asyncio.shield(self._settle_agent_lane(
-                            group_id,
-                            spawn_step_id,
-                            TaskState.canceled.value,
-                        ))
-                        raise
-                    finally:
-                        if self._release_reserved_agent is not None:
-                            self._release_reserved_agent(spawn_step_id)
-
-                # Spawned agents own an independent lifecycle: stopping the parent turn
-                # leaves them running, while targeted cancellation still cancels this
-                # driver and, through its CancelledError handler, the child A2A task.
-                spawned_task_id = self._background.spawn(
-                    "spawn_agent",
-                    _run_spawned_agent(),
-                    identifier=spawn_step_id,
-                    tool_call_identifier=tool_call_identifier,
-                    arguments={
-                        "agent": agent_name,
-                        "prompt": raw_agent_prompt,
-                        "read_only": agent_read_only,
-                        "justification": agent_title,
-                    },
-                    detached=True,
-                )
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
-                    result={
-                        "code": "agent_started",
-                        "status": ToolStatus.RUNNING.value,
-                        "task_identifier": spawned_task_id,
-                        "agent": agent_name,
-                        "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
-                    },
-                )
-            elif is_remote_agent:
-                # A remote agent can only be reached through the delegate (the wire path).
-                # With no delegate installed there is nothing to run locally.
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    message=f"Remote agent {agent_name!r} requires the delegation runtime, which is not available here.",
-                )
-                return
-            else:
-                child_task = None
-                runner = AgentRunner(
-                    agent_configuration=sub_configuration,
-                    global_configuration=self._global_configuration,
-                    task_identifier=spawn_step_id,
-                    prompt=agent_prompt,
-                    stream_progress=self._agent_configuration.stream_agent_progress,
-                    read_only_override=agent_read_only,
-                    working_directory=self._working_directory,
-                    project_directory=self._project_directory,
-                )
-
-                # The standalone fallback uses the same background runner and public
-                # handle contract as an A2A delegation, so it can be canceled too.
-                async def _run_background() -> str:
-                    final_text = ""
-                    try:
-                        async for event in runner.run_stream(always_yield_text=True):
-                            if event.type == StreamEvent.Type.DONE:
-                                final_text = event.data.get("text", final_text)
-                        await self._settle_agent_lane(group_id, spawn_step_id, TaskState.completed.value)
-                        return final_text
-                    except asyncio.CancelledError:
-                        await asyncio.shield(self._settle_agent_lane(
-                            group_id,
-                            spawn_step_id,
-                            TaskState.canceled.value,
-                        ))
-                        raise
-
-                self._background.spawn(
-                    "spawn_agent",
-                    _run_background(),
-                    identifier=spawn_step_id,
-                    tool_call_identifier=tool_call_identifier,
-                    arguments={
-                        "agent": agent_name,
-                        "prompt": raw_agent_prompt,
-                        "read_only": agent_read_only,
-                        "justification": agent_title,
-                    },
-                    detached=True,
-                )
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name,
-                    result={
-                        "code": "agent_started",
-                        "status": ToolStatus.RUNNING.value,
-                        "task_identifier": spawn_step_id,
-                        "agent": agent_name,
-                        "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
-                    },
-                )
-
-        elif tool_name == "cancel_agent":
-            task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
-            if not task_identifier.startswith("agent-"):
-                result = {
-                    "code": "invalid_agent_handle",
-                    "task_identifier": task_identifier,
-                    "message": "Pass the agent-... task identifier returned by spawn_agent.",
-                }
-            elif self._background.cancel_by_identifier(task_identifier, kind="spawn_agent"):
-                result = {
-                    "code": "agent_cancellation_requested",
-                    "task_identifier": task_identifier,
-                    "message": "The spawned agent was canceled.",
-                }
-                self._record_event("agent_cancelled", {"task_identifier": task_identifier})
-            else:
-                result = {
-                    "code": "agent_not_running",
-                    "task_identifier": task_identifier,
-                    "message": "No running spawned agent has that identifier.",
-                }
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result=result,
-            )
-
-        elif tool_name == "set_tasks":
-            task_definitions = tool_arguments.get("tasks", [])
-            identifiers = self._task_manager.add_tasks(task_definitions)
-            result_message = f"Created {len(identifiers)} task{'s' if len(identifiers) != 1 else ''}."
-            # A normal tool_result — the task list is the model's own bookkeeping, so it
-            # completes through the one universal completion path like any other tool. The
-            # full task snapshot goes to both the model (it should see the authoritative
-            # plan inline) and the UI task panel.
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result={
-                    "code": "tasks_updated",
-                    "message": result_message,
-                    "tasks": self._task_manager.to_dict_list(),
-                },
-            )
-
-        elif tool_name == "update_tasks":
-            updates = tool_arguments.get("updates", [])
-            updated_ids = self._task_manager.update_tasks(updates)
-            if updated_ids:
-                result_message = f"Updated {len(updated_ids)} task{'s' if len(updated_ids) != 1 else ''}."
-            else:
-                result_message = "No matching tasks found."
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT,
-                id=tool_call_identifier,
-                name=tool_name,
-                result={
-                    "code": "tasks_updated",
-                    "message": result_message,
-                    "tasks": self._task_manager.to_dict_list(),
-                },
-            )
-
-        elif tool_name == "update_goal":
-            status = tool_arguments.get("status", "active")
-            goal = str(tool_arguments.get("goal", "")).strip()
-            if status == "active":
-                if not goal:
-                    result = {
-                        "code": "goal_update_error",
-                        "status": ToolStatus.ERROR.value,
-                        "message": "A non-empty goal is required when status is 'active'.",
-                    }
+                if get_task in done:
+                    yield McpEvent(id=tool_call_identifier,
+                        name="call_mcp_tool",
+                        server=tool_arguments.get("server", ""),
+                        tool=tool_arguments.get("tool_name", ""),
+                        event=get_task.result(),
+                    )
                 else:
-                    self._active_goal = goal
-                    result = {
-                        "code": "goal_active",
-                        "goal": self._active_goal,
-                    }
-                    self._record_event("goal_updated", result)
-            elif status in ("satisfied", "cleared"):
-                previous_goal = self._active_goal
-                self._active_goal = ""
-                result = {
-                    "code": f"goal_{status}",
-                    "previous_goal": previous_goal,
-                }
-                self._record_event("goal_updated", result)
-            else:
+                    # get_task is still pending (call_task completed first); cancel
+                    # only the getter — never call_task, which the loop re-checks.
+                    get_task.cancel()
+            result_data = await call_task
+        except Exception as exception:
+            yield Error(id=tool_call_identifier, message=str(exception), tool=tool_name)
+            return
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
+
+
+    async def _tool_mcp_query(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        tool_map = {
+            "list_mcp_tools": list_mcp_tools_tool,
+            "list_mcp_resources": list_mcp_resources_tool,
+            "read_mcp_resource": read_mcp_resource_tool,
+        }
+        result = await tool_map[tool_name].ainvoke(tool_arguments)
+        result_data = _maybe_json(result)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
+
+
+    async def _tool_ask_agent(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
+        question = str(tool_arguments.get("question", "")).strip()
+        if self._ask_agent is None or not self._a2a_task_id:
+            result = {
+                "code": "agent_messaging_unavailable",
+                "message": "Agent messaging is not available in this execution context.",
+            }
+        elif not task_identifier:
+            result = {
+                "code": "invalid_agent_identifier",
+                "message": "Pass an exact identifier from active_agents or spawn_agent.",
+            }
+        elif not question:
+            result = {
+                "code": "empty_agent_question",
+                "message": "Provide the question to send.",
+            }
+        else:
+            result = self._ask_agent(self._a2a_task_id, task_identifier, question)
+            if result.get("code") == "agent_question_queued":
+                self._outstanding_agent_questions.add(str(result["message_identifier"]))
+        yield ToolResult(id=tool_call_identifier,
+            name=tool_name,
+            result=result,
+        )
+
+
+    async def _tool_respond_agent(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        message_identifier = str(tool_arguments.get("message_identifier", "")).strip()
+        response_text = str(tool_arguments.get("response", "")).strip()
+        if self._respond_agent is None or not self._a2a_task_id:
+            result = {
+                "code": "agent_messaging_unavailable",
+                "message": "Agent messaging is not available in this execution context.",
+            }
+        elif not response_text:
+            result = {
+                "code": "empty_agent_response",
+                "message": "Provide the response to send.",
+            }
+        else:
+            result = self._respond_agent(
+                self._a2a_task_id,
+                message_identifier,
+                response_text,
+            )
+            if result.get("code") in {
+                "agent_response_delivered",
+                "agent_question_withdrawn",
+            }:
+                self._pending_agent_questions.discard(message_identifier)
+        yield ToolResult(id=tool_call_identifier,
+            name=tool_name,
+            result=result,
+        )
+
+
+    async def _tool_spawn_or_remote(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        child_depth = self._delegation_depth + 1
+        maximum_depth = self._global_configuration.maximum_delegation_depth
+        if child_depth > maximum_depth:
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                message=f"Maximum delegation depth ({maximum_depth}) reached; cannot spawn another agent.",
+            )
+            return
+
+        raw_agent_prompt = tool_arguments.get("prompt", "")
+        # The agents panel heading is the model's user-facing justification (a
+        # concise "why this agent" clause), never the whole prompt.
+        agent_title = str(tool_arguments.get("justification", "")).strip()
+        agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
+        agent_read_only = tool_arguments.get("read_only", None)
+        if isinstance(agent_read_only, str):
+            agent_read_only = agent_read_only.lower() == "true"
+        # The caller's approval grant for this delegated agent; bypass is not accepted here,
+        # and the executor combines it with the delegated agent card and clamps it.
+        agent_permission_mode = str(tool_arguments.get("permission_mode", "") or "")
+        if agent_permission_mode not in ("default", "auto", "read_only"):
+            agent_permission_mode = ""
+        agent_prompt = self._build_agent_prompt(raw_agent_prompt, agent_read_only)
+        spawn_step_id = new_id("agent")
+
+        # spawn_agent is local-only and call_remote_agent is remote-only — the two are
+        # distinct concepts, so a name for the wrong one is rejected with a pointer to
+        # the right tool.
+        is_remote_agent = self._is_remote_agent(agent_name)
+        if tool_name == "call_remote_agent" and not is_remote_agent:
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                message=f"{agent_name!r} is not a known remote agent. Use spawn_agent for a local agent.",
+            )
+            return
+        if tool_name == "spawn_agent" and is_remote_agent:
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                message=f"{agent_name!r} is a remote agent. Use call_remote_agent to reach it.",
+            )
+            return
+        # A remote agent lives on another server, so there is no on-disk config to
+        # load or validate — it is resolved over the wire by the delegate. A local
+        # agent must resolve to a real config file, or the call is rejected here.
+        sub_configuration = None
+        if not is_remote_agent:
+            try:
+                sub_configuration = self._load_agent(agent_name)
+            except FileNotFoundError as exception:
+                yield Error(id=tool_call_identifier, message=str(exception), tool=tool_name)
+                return
+
+        # Contacting a remote agent sends the prompt and attachments off this machine.
+        # That egress consent was resolved by the preflight pass (asked once per agent
+        # per session; an "always allow" was applied to the approved set above), so an
+        # approved call reaches here and runs.
+
+        # Spawning is non-blocking: the agent runs as a background job (a
+        # related A2A task) and the parent continues immediately. The agent's
+        # activity streams live into the agents panel via the shared event queue,
+        # and its structured deliverable (the child task) is injected into the
+        # conversation and wakes the parent when it finishes — the same
+        # inject-and-wake path as a background bash command. So the parent never
+        # blocks on an agent: it can spawn several in parallel, keep working,
+        # and pick up each result as it lands.
+        group_id = f"agents-{self._a2a_task_id or self._session_id}"
+        yield GroupStarted(group_id=group_id,
+            step_id=spawn_step_id,
+            agent_name=agent_name,
+            title=agent_title,
+            tool_call_id=tool_call_identifier,
+        )
+        self._record_event("agent_spawned", {"task_identifier": spawn_step_id, "agent": agent_name, "prompt": raw_agent_prompt})
+        delegate = self._delegate
+        if delegate is not None:
+            if self._reserve_agent is not None:
+                self._reserve_agent(spawn_step_id, self._session_id, agent_name)
+
+            async def _run_spawned_agent() -> str:
+                child_task = None
+                child_task_id = ""
+                try:
+                    async for delegated in delegate(
+                        agent_name,
+                        agent_prompt,
+                        self._a2a_task_id,
+                        agent_read_only,
+                        child_depth,
+                        self._working_directory,
+                        self._project_directory,
+                        group_id,
+                        spawn_step_id,
+                        self._pending_attachments,
+                        agent_permission_mode,
+                    ):
+                        # The agent's streamed progress goes to the panel only,
+                        # never into the parent's model context.
+                        if delegated.get("type") == "started":
+                            child_task_id = delegated.get("child_task_id", "")
+                            continue
+                        if delegated.get("type") == "usage":
+                            usage = delegated["event"]
+                            self._add_agent_usage(
+                                int(usage.get("input_tokens", 0) or 0),
+                                int(usage.get("output_tokens", 0) or 0),
+                            )
+                            continue
+                        event = self._relay_child_event(delegated, group_id, spawn_step_id)
+                        if event is not None:
+                            await self._publish_spawned_agent_event(event)
+                        if delegated.get("type") == "done":
+                            child_task = delegated.get("task")
+                            # The child's turn is a control signal, not a relayed panel
+                            # event; synthesize a `done` at this step's path so the panel
+                            # marks it terminal.
+                            child_state = str(((child_task or {}).get("status") or {}).get("state") or "completed")
+                            await self._settle_agent_lane(group_id, spawn_step_id, child_state)
+                    # Inject ONLY the agent's final report (its deliverable
+                    # artifact) into the parent — not the whole task object, and not
+                    # any of the intermediate progress. The parent asked for a result,
+                    # not a transcript.
+                    return _spawned_agent_report(child_task, agent_name)
+                except asyncio.CancelledError:
+                    if child_task_id and self._cancel_delegated is not None:
+                        await asyncio.shield(self._cancel_delegated(agent_name, child_task_id))
+                    await asyncio.shield(self._settle_agent_lane(
+                        group_id,
+                        spawn_step_id,
+                        TaskState.canceled.value,
+                    ))
+                    raise
+                finally:
+                    if self._release_reserved_agent is not None:
+                        self._release_reserved_agent(spawn_step_id)
+
+            # Spawned agents own an independent lifecycle: stopping the parent turn
+            # leaves them running, while targeted cancellation still cancels this
+            # driver and, through its CancelledError handler, the child A2A task.
+            spawned_task_id = self._background.spawn(
+                "spawn_agent",
+                _run_spawned_agent(),
+                identifier=spawn_step_id,
+                tool_call_identifier=tool_call_identifier,
+                arguments={
+                    "agent": agent_name,
+                    "prompt": raw_agent_prompt,
+                    "read_only": agent_read_only,
+                    "justification": agent_title,
+                },
+                detached=True,
+            )
+            yield ToolResult(id=tool_call_identifier, name=tool_name,
+                result={
+                    "code": "agent_started",
+                    "status": ToolStatus.RUNNING.value,
+                    "task_identifier": spawned_task_id,
+                    "agent": agent_name,
+                    "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
+                },
+            )
+        elif is_remote_agent:
+            # A remote agent can only be reached through the delegate (the wire path).
+            # With no delegate installed there is nothing to run locally.
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                message=f"Remote agent {agent_name!r} requires the delegation runtime, which is not available here.",
+            )
+            return
+        else:
+            runner = AgentRunner(
+                agent_configuration=sub_configuration,
+                global_configuration=self._global_configuration,
+                task_identifier=spawn_step_id,
+                prompt=agent_prompt,
+                stream_progress=self._agent_configuration.stream_agent_progress,
+                read_only_override=agent_read_only,
+                working_directory=self._working_directory,
+                project_directory=self._project_directory,
+            )
+
+            # The standalone fallback uses the same background runner and public
+            # handle contract as an A2A delegation, so it can be canceled too.
+            async def _run_background() -> str:
+                final_text = ""
+                try:
+                    async for event in runner.run_stream(always_yield_text=True):
+                        if isinstance(event, Done):
+                            final_text = event.text or final_text
+                    await self._settle_agent_lane(group_id, spawn_step_id, TaskState.completed.value)
+                    return final_text
+                except asyncio.CancelledError:
+                    await asyncio.shield(self._settle_agent_lane(
+                        group_id,
+                        spawn_step_id,
+                        TaskState.canceled.value,
+                    ))
+                    raise
+
+            self._background.spawn(
+                "spawn_agent",
+                _run_background(),
+                identifier=spawn_step_id,
+                tool_call_identifier=tool_call_identifier,
+                arguments={
+                    "agent": agent_name,
+                    "prompt": raw_agent_prompt,
+                    "read_only": agent_read_only,
+                    "justification": agent_title,
+                },
+                detached=True,
+            )
+            yield ToolResult(id=tool_call_identifier, name=tool_name,
+                result={
+                    "code": "agent_started",
+                    "status": ToolStatus.RUNNING.value,
+                    "task_identifier": spawn_step_id,
+                    "agent": agent_name,
+                    "message": self._prompt_loader.load("agent_started_note", {"agent": agent_name}).strip(),
+                },
+            )
+
+
+    async def _tool_cancel_agent(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
+        if not task_identifier.startswith("agent-"):
+            result = {
+                "code": "invalid_agent_handle",
+                "task_identifier": task_identifier,
+                "message": "Pass the agent-... task identifier returned by spawn_agent.",
+            }
+        elif self._background.cancel_by_identifier(task_identifier, kind="spawn_agent"):
+            result = {
+                "code": "agent_cancellation_requested",
+                "task_identifier": task_identifier,
+                "message": "The spawned agent was canceled.",
+            }
+            self._record_event("agent_cancelled", {"task_identifier": task_identifier})
+        else:
+            result = {
+                "code": "agent_not_running",
+                "task_identifier": task_identifier,
+                "message": "No running spawned agent has that identifier.",
+            }
+        yield ToolResult(id=tool_call_identifier,
+            name=tool_name,
+            result=result,
+        )
+
+
+    async def _tool_set_tasks(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        task_definitions = tool_arguments.get("tasks", [])
+        identifiers = self._task_manager.add_tasks(task_definitions)
+        result_message = f"Created {len(identifiers)} task{'s' if len(identifiers) != 1 else ''}."
+        # A normal tool_result — the task list is the model's own bookkeeping, so it
+        # completes through the one universal completion path like any other tool. The
+        # full task snapshot goes to both the model (it should see the authoritative
+        # plan inline) and the UI task panel.
+        yield ToolResult(id=tool_call_identifier,
+            name=tool_name,
+            result={
+                "code": "tasks_updated",
+                "message": result_message,
+                "tasks": self._task_manager.to_dict_list(),
+            },
+        )
+
+
+    async def _tool_update_tasks(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        updates = tool_arguments.get("updates", [])
+        updated_ids = self._task_manager.update_tasks(updates)
+        if updated_ids:
+            result_message = f"Updated {len(updated_ids)} task{'s' if len(updated_ids) != 1 else ''}."
+        else:
+            result_message = "No matching tasks found."
+        yield ToolResult(id=tool_call_identifier,
+            name=tool_name,
+            result={
+                "code": "tasks_updated",
+                "message": result_message,
+                "tasks": self._task_manager.to_dict_list(),
+            },
+        )
+
+
+    async def _tool_update_goal(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        status = tool_arguments.get("status", "active")
+        goal = str(tool_arguments.get("goal", "")).strip()
+        if status == "active":
+            if not goal:
                 result = {
                     "code": "goal_update_error",
                     "status": ToolStatus.ERROR.value,
-                    "message": "Status must be one of 'active', 'satisfied', or 'cleared'.",
+                    "message": "A non-empty goal is required when status is 'active'.",
                 }
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+            else:
+                self._active_goal = goal
+                result = {
+                    "code": "goal_active",
+                    "goal": self._active_goal,
+                }
+                self._record_event("goal_updated", result)
+        elif status in ("satisfied", "cleared"):
+            previous_goal = self._active_goal
+            self._active_goal = ""
+            result = {
+                "code": f"goal_{status}",
+                "previous_goal": previous_goal,
+            }
+            self._record_event("goal_updated", result)
+        else:
+            result = {
+                "code": "goal_update_error",
+                "status": ToolStatus.ERROR.value,
+                "message": "Status must be one of 'active', 'satisfied', or 'cleared'.",
+            }
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
-        elif tool_name == "open_artifact":
-            if self._is_agent:
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR,
-                    id=tool_call_identifier,
-                    tool=tool_name,
-                    code="agent_artifact_denied",
-                    message="Agents cannot open artifacts. Return findings only as text for the parent agent.",
-                )
-                return
-            raw_target = str(tool_arguments.get("url", "")).strip()
-            if not raw_target:
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    code="empty_artifact", message="A URL or file path is required to open an artifact.",
-                )
-                return
-            requested_artifact_id = str(tool_arguments.get("artifact_id", "")).strip()
-            requested_height = tool_arguments.get("height", 0)
-            lowered = raw_target.lower()
 
-            if lowered.startswith(("http://", "https://")):
-                # An external URL renders as a live iframe with no version history — only
-                # surface it (no capture). A stable id derived from the URL reuses one tab.
-                artifact_id = requested_artifact_id or self._artifact_surface_id(raw_target)
-                self._capture_written_artifacts(
-                    self._resolve_location(None), changed_absolute_paths=[],
-                    tool_call_id=tool_call_identifier, message="open_artifact",
-                    surface={"surface_id": artifact_id, "kind": "iframe", "title": raw_target, "source": raw_target, "absolute_path": ""},
-                )
-                result = build_open_artifact_result(
-                    artifact_id=artifact_id, kind="iframe", title=raw_target, source=raw_target,
-                    url=raw_target, height=requested_height,
-                )
-                yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
-                return
+    async def _tool_open_artifact(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        if self._is_agent:
+            yield Error(id=tool_call_identifier,
+                tool=tool_name,
+                code="agent_artifact_denied",
+                message="Agents cannot open artifacts. Return findings only as text for the parent agent.",
+            )
+            return
+        raw_target = str(tool_arguments.get("url", "")).strip()
+        if not raw_target:
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                code="empty_artifact", message="A URL or file path is required to open an artifact.",
+            )
+            return
+        requested_artifact_id = str(tool_arguments.get("artifact_id", "")).strip()
+        requested_height = tool_arguments.get("height", 0)
+        lowered = raw_target.lower()
 
-            # A local (or remote) file path, resolved against a location. Capture the file
-            # as a version and surface it as a tab; its history is served from the shadow repo.
-            location_value = tool_arguments.get("location", None) or None
-            try:
-                resolved_location = self._resolve_location(location_value)
-            except ToolLocationError as exception:
-                yield StreamEvent(StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name, code="invalid_location", message=str(exception))
-                return
-            candidate = raw_target[len("file://"):] if lowered.startswith("file://") else raw_target
-            resolved_path = await asyncio.to_thread(resolved_location.executor.resolve, resolved_location.base_directory, candidate)
-            if not await asyncio.to_thread(resolved_location.executor.exists, resolved_path):
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    code="artifact_file_not_found",
-                    message=f"No file to open at {resolved_path}. Write the file first, then open it.",
-                )
-                return
-            kind = artifact_kind_for(resolved_path)
-            if kind == "file":
-                # A code or text file has no visual form, so opening it as an artifact would just
-                # show an empty panel. The artifacts panel is a preview surface; keep it for
-                # things that render.
-                yield StreamEvent(
-                    StreamEvent.Type.ERROR, id=tool_call_identifier, tool=tool_name,
-                    code="artifact_not_previewable",
-                    message=self._prompt_loader.load(
-                        "artifact_not_previewable", {"file_name": Path(resolved_path).name},
-                    ).strip(),
-                )
-                return
-            display_title = Path(resolved_path).name or resolved_path
-            artifact_id = requested_artifact_id or self._artifact_surface_id(f"{resolved_location.uri}:{resolved_path}")
+        if lowered.startswith(("http://", "https://")):
+            # An external URL renders as a live iframe with no version history — only
+            # surface it (no capture). A stable id derived from the URL reuses one tab.
+            artifact_id = requested_artifact_id or self._artifact_surface_id(raw_target)
             self._capture_written_artifacts(
-                resolved_location, changed_absolute_paths=[resolved_path],
-                tool_call_id=tool_call_identifier, message=f"open_artifact {display_title}",
-                surface={"surface_id": artifact_id, "kind": kind, "title": display_title, "source": resolved_path, "absolute_path": resolved_path},
+                self._resolve_location(None), changed_absolute_paths=[],
+                tool_call_id=tool_call_identifier, message="open_artifact",
+                surface={"surface_id": artifact_id, "kind": "iframe", "title": raw_target, "source": raw_target, "absolute_path": ""},
             )
             result = build_open_artifact_result(
-                artifact_id=artifact_id, kind=kind, title=display_title, source=resolved_path,
-                location_uri=resolved_location.uri, absolute_path=resolved_path,
-                height=requested_height,
+                artifact_id=artifact_id, kind="iframe", title=raw_target, source=raw_target,
+                url=raw_target, height=requested_height,
             )
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
+            return
 
-        elif tool_name == "web_search":
-            background_token = bind_background_jobs(self._background)
-            try:
-                result = await web_search_tool.ainvoke(tool_arguments)
-            finally:
-                unbind_background_jobs(background_token)
-            result_data = _maybe_json(result)
-            if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
-                # Attach the "don't poll/read_task this" guidance from a prompt
-                # template, keeping user-facing wording out of the tool code.
-                result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result_data)
-
-        elif tool_name == "read_task":
-            requested_task_id = tool_arguments.get("task_id", "")
-            # A web_search/background-bash handle ("search-…"/"bg-…") is not an A2A
-            # task — its results are delivered automatically, never read. Catch the
-            # mistake with a redirect instead of a bare "task_not_found" that just
-            # invites the model to retry the same wrong poll.
-            background_kind = _background_handle_kind(requested_task_id)
-            if self._task_reader is None:
-                result = {"code": "read_task_unavailable", "message": "Reading tasks is not available in this context."}
-            elif background_kind is not None:
-                message = self._prompt_loader.load(
-                    "read_task_background_handle",
-                    {"task_id": requested_task_id, "kind": background_kind},
-                )
-                result = {"code": "not_a_readable_task", "task_id": requested_task_id, "message": message}
-            else:
-                task = await self._task_reader(requested_task_id)
-                if task is None:
-                    result = {"code": "task_not_found", "task_id": requested_task_id}
-                else:
-                    result = task
-            yield StreamEvent(StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result)
-
-        elif tool_name in ("computer", "browser"):
-            # The two automation tools share one contract (surface.py): a preflight gate, an
-            # action dispatch table, and the model-image side channel for screenshots. The tool
-            # name only selects which surface — native macOS or the user's Chrome.
-            from harness.computer import engine as native_surface, web as web_surface
-            surface = native_surface.SURFACE if tool_name == "computer" else web_surface.SURFACE
-            action = str(tool_arguments.get("action", ""))
-            blocked = surface.preflight(action)
-            if blocked is not None:
-                # A clear, actionable error (a missing permission) beats a silent empty result.
-                yield StreamEvent(
-                    StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=blocked,
-                )
-                return
-            result = await asyncio.to_thread(surface.dispatch, action, tool_arguments)
-            extra: dict[str, Any] = {}
-            # A screenshot's pixels ride the model_image side channel to a vision-capable model,
-            # exactly like read_file; the raw path never reaches the UI.
-            if action in surface.screenshot_actions and isinstance(result, dict) and result.get("image_path"):
-                if self._model_supports_vision():
-                    data_uri = await asyncio.to_thread(_screenshot_data_uri, result["image_path"])
-                    if data_uri:
-                        extra["model_image"] = data_uri
-                result.pop("image_path", None)
-            yield StreamEvent(
-                StreamEvent.Type.TOOL_RESULT, id=tool_call_identifier, name=tool_name, result=result, **extra,
+        # A local (or remote) file path, resolved against a location. Capture the file
+        # as a version and surface it as a tab; its history is served from the shadow repo.
+        location_value = tool_arguments.get("location", None) or None
+        try:
+            resolved_location = self._resolve_location(location_value)
+        except ToolLocationError as exception:
+            yield Error(id=tool_call_identifier, tool=tool_name, code="invalid_location", message=str(exception))
+            return
+        candidate = raw_target[len("file://"):] if lowered.startswith("file://") else raw_target
+        resolved_path = await asyncio.to_thread(resolved_location.executor.resolve, resolved_location.base_directory, candidate)
+        if not await asyncio.to_thread(resolved_location.executor.exists, resolved_path):
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                code="artifact_file_not_found",
+                message=f"No file to open at {resolved_path}. Write the file first, then open it.",
             )
+            return
+        kind = artifact_kind_for(resolved_path)
+        if kind == "file":
+            # A code or text file has no visual form, so opening it as an artifact would just
+            # show an empty panel. The artifacts panel is a preview surface; keep it for
+            # things that render.
+            yield Error(id=tool_call_identifier, tool=tool_name,
+                code="artifact_not_previewable",
+                message=self._prompt_loader.load(
+                    "artifact_not_previewable", {"file_name": Path(resolved_path).name},
+                ).strip(),
+            )
+            return
+        display_title = Path(resolved_path).name or resolved_path
+        artifact_id = requested_artifact_id or self._artifact_surface_id(f"{resolved_location.uri}:{resolved_path}")
+        self._capture_written_artifacts(
+            resolved_location, changed_absolute_paths=[resolved_path],
+            tool_call_id=tool_call_identifier, message=f"open_artifact {display_title}",
+            surface={"surface_id": artifact_id, "kind": kind, "title": display_title, "source": resolved_path, "absolute_path": resolved_path},
+        )
+        result = build_open_artifact_result(
+            artifact_id=artifact_id, kind=kind, title=display_title, source=resolved_path,
+            location_uri=resolved_location.uri, absolute_path=resolved_path,
+            height=requested_height,
+        )
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
+
+    async def _tool_web_search(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        background_token = bind_background_jobs(self._background)
+        try:
+            result = await web_search_tool.ainvoke(tool_arguments)
+        finally:
+            unbind_background_jobs(background_token)
+        result_data = _maybe_json(result)
+        if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
+            # Attach the "don't poll/read_task this" guidance from a prompt
+            # template, keeping user-facing wording out of the tool code.
+            result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
+
+
+    async def _tool_read_task(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        requested_task_id = tool_arguments.get("task_id", "")
+        # A web_search/background-bash handle ("search-…"/"bg-…") is not an A2A
+        # task — its results are delivered automatically, never read. Catch the
+        # mistake with a redirect instead of a bare "task_not_found" that just
+        # invites the model to retry the same wrong poll.
+        background_kind = _background_handle_kind(requested_task_id)
+        if self._task_reader is None:
+            result = {"code": "read_task_unavailable", "message": "Reading tasks is not available in this context."}
+        elif background_kind is not None:
+            message = self._prompt_loader.load(
+                "read_task_background_handle",
+                {"task_id": requested_task_id, "kind": background_kind},
+            )
+            result = {"code": "not_a_readable_task", "task_id": requested_task_id, "message": message}
         else:
-            yield StreamEvent(
-                StreamEvent.Type.ERROR, id=tool_call_identifier,
-                message=f"Unknown tool '{tool_name}'", tool=tool_name,
+            task = await self._task_reader(requested_task_id)
+            if task is None:
+                result = {"code": "task_not_found", "task_id": requested_task_id}
+            else:
+                result = task
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
+
+
+    async def _tool_automation(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
+        resolved_location: "ResolvedLocation | None",
+    ) -> AsyncIterator[TurnEvent]:
+        # The two automation tools share one contract (surface.py): a preflight gate, an
+        # action dispatch table, and the model-image side channel for screenshots. The tool
+        # name only selects which surface — native macOS or the user's Chrome.
+        from harness.computer import engine as native_surface, web as web_surface
+        surface = native_surface.SURFACE if tool_name == "computer" else web_surface.SURFACE
+        action = str(tool_arguments.get("action", ""))
+        blocked = surface.preflight(action)
+        if blocked is not None:
+            # A clear, actionable error (a missing permission) beats a silent empty result.
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=blocked,
             )
+            return
+        result = await asyncio.to_thread(surface.dispatch, action, tool_arguments)
+        extra: dict[str, Any] = {}
+        # A screenshot's pixels ride the model_image side channel to a vision-capable model,
+        # exactly like read_file; the raw path never reaches the UI.
+        if action in surface.screenshot_actions and isinstance(result, dict) and result.get("image_path"):
+            if self._model_supports_vision():
+                data_uri = await asyncio.to_thread(_screenshot_data_uri, result["image_path"])
+                if data_uri:
+                    extra["model_image"] = data_uri
+            result.pop("image_path", None)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result, extra=extra,
+        )
 
     def get_execution_history(self) -> list[dict]:
         return self._execution_history

@@ -84,6 +84,23 @@ def _readable_types(node: object) -> object:
     return cleaned
 
 
+def _require_discriminant(definition: object) -> object:
+    """Mark the ``kind`` discriminant required. Pydantic makes it optional (each ``Literal`` has a
+    default), which leaves the generated TS with ``kind?: "..."`` — so the union does not narrow
+    cleanly and a reducer cannot assert exhaustiveness. On the wire the discriminator is always
+    present, so requiring it is accurate and lets the client switch on it as a real discriminated
+    union."""
+    if not isinstance(definition, dict):
+        return definition
+    properties = definition.get("properties")
+    if isinstance(properties, dict) and "kind" in properties:
+        required = list(definition.get("required") or [])
+        if "kind" not in required:
+            required.append("kind")
+        definition["required"] = required
+    return definition
+
+
 def main() -> None:
     top_level = [
         *events.WIRE_EVENT_MODELS,
@@ -103,7 +120,7 @@ def main() -> None:
     definitions.update(wire.pop("$defs", {}))
     definitions["WireEvent"] = wire
 
-    cleaned = {name: _readable_types(_strip_titles(definition)) for name, definition in definitions.items()}
+    cleaned = {name: _require_discriminant(_readable_types(_strip_titles(definition))) for name, definition in definitions.items()}
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "DaisyEvents",

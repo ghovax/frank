@@ -54,6 +54,7 @@ from a2a.types import DataPart, Message, Part, Role, Task, TaskState, TaskStatus
 
 from harness.core.message_content import content_block_identifier
 from harness.core.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
+from harness.core.turn_record import ReconcileAction, TurnRecord, reconcile_action
 
 
 def _dump(model) -> str:
@@ -185,13 +186,6 @@ _TERMINAL_TASK_STATES = {
 # stays in ``background_store``, which is already results-durable / execution-ephemeral and
 # additionally reaps orphaned OS process groups and recovers running jobs — capabilities a
 # task-metadata inbox would not carry, so it is not folded in.)
-TURN_KIND_KEY = "daisyTurnKind"
-TURN_KIND_USER = "user"
-TURN_KIND_AUTONOMOUS = "autonomous"
-TURN_KIND_COMPACTION = "compaction"
-TURN_KIND_DELEGATED = "delegated"
-
-
 def _task_state_value(task: Task) -> str:
     state = task.status.state
     return state.value if isinstance(state, TaskState) else str(state)
@@ -207,6 +201,12 @@ class AppendOnlyTaskStore(TaskStore):
     Drop-in replacement for ``DatabaseTaskStore``: implements the same
     ``save``/``get``/``delete`` contract, but stores a task across three tables
     so a save is O(new messages) rather than O(whole history).
+
+    Charter: this is the single durable surface for a turn — its wire history/artifacts, its
+    control-state (the :class:`~harness.core.turn_record.TurnRecord` on the task head), and its
+    conversation checkpoint (``save_checkpoint``/``load_checkpoint``). Background jobs are the one
+    thing it does NOT own; those live in the separate
+    :class:`~harness.core.background_store.BackgroundJobStore`.
     """
 
     def __init__(self, engine: AsyncEngine):
@@ -339,11 +339,8 @@ class AppendOnlyTaskStore(TaskStore):
                     if current_state in _TERMINAL_TASK_STATES:
                         continue
                     metadata = json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else {}
-                    turn_kind = str(metadata.get(TURN_KIND_KEY, "")) if isinstance(metadata, dict) else ""
-                    is_delegated = turn_kind == TURN_KIND_DELEGATED
-                    # Preserve only a durable top-level pause; fail delegated pauses and
-                    # any mid-execution turn.
-                    if current_state == input_required and not is_delegated:
+                    kind = TurnRecord.from_metadata(metadata).kind
+                    if reconcile_action(kind, current_state, input_required=input_required) is ReconcileAction.PRESERVE:
                         continue
                     task_id = str(head_row["id"])
                     context_id = str(head_row["context_id"] or "")
@@ -666,7 +663,7 @@ class AppendOnlyTaskStore(TaskStore):
             related_head_rows: list = []
             for row in head_rows:
                 metadata = json.loads(row["task_metadata"]) if row["task_metadata"] else None
-                if isinstance(metadata, dict) and isinstance(metadata.get("referenceTaskIds"), list):
+                if TurnRecord.from_metadata(metadata).reference_task_ids:
                     related_head_rows.append(row)
                     continue
                 task_ids.append(str(row["id"]))

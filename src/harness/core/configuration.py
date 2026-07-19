@@ -6,10 +6,12 @@ import shlex
 import shutil
 import sys
 from pathlib import Path
-from typing import ClassVar, Literal, Optional
+from typing import Any, ClassVar, Literal, Optional
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from harness.core.tool_policy import PermissionMode
 
 
 # The harness keeps its mutable state — the configuration file and the chat
@@ -916,6 +918,13 @@ class AgentConfiguration(BaseModel):
             return None
         return f"{self.provider}/{self.model}"
 
+    @property
+    def permission_policy(self) -> PermissionMode:
+        """The card's configured permission mode as the typed value the runtime reasons about.
+        The stored ``permission_mode`` field is the validated wire/persistence string; this is the
+        one place logic reads it as a :class:`PermissionMode`."""
+        return PermissionMode.coerce(self.permission_mode)
+
     @classmethod
     def from_markdown(cls, path: str | Path) -> "AgentConfiguration":
         path = Path(path)
@@ -1133,38 +1142,170 @@ def describe_available_agents(
     return described
 
 
+class _SidecarPreset(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+    model: Optional[str] = None
+    provider: Optional[str] = None
+    reasoning_effort: Optional[str] = Field(default=None, alias="reasoningEffort")
+
+
+class _SidecarBash(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+    enabled: Optional[bool] = None
+    background_allowed: Optional[bool] = Field(default=None, alias="backgroundAllowed")
+    permissions: Optional[dict[str, str]] = None
+
+
+class _SidecarSpawnAgent(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+    enabled: Optional[bool] = None
+
+
+class _SidecarTools(BaseModel):
+    model_config = {"extra": "allow", "populate_by_name": True}
+    enabled_builtin_tools: Optional[list[str]] = Field(default=None, alias="enabledBuiltinTools")
+    bash: Optional[_SidecarBash] = None
+    spawn_agent: Optional[_SidecarSpawnAgent] = Field(default=None, alias="spawnAgent")
+
+
+class AgentSidecar(BaseModel):
+    """The per-agent ``configuration.json`` sidecar as one validated model.
+
+    The sidecar is a camelCase JSON overlay on the markdown agent profile — the model/provider
+    preset, the permission mode, and the tool toggles a human edits in the settings UI. It used to
+    be read and rewritten as a raw dict in three separate places (merge-on-load, apply-an-update,
+    grant-an-allow-pattern), each re-deriving the camelCase↔snake_case mapping by hand. This owns
+    that shape: :meth:`from_mapping` parses it (accepting both the camelCase alias and the
+    snake_case name, and preserving any keys it does not model via ``extra='allow'``),
+    :meth:`to_mapping` writes it back losslessly, :meth:`frontmatter_overrides` projects it onto the
+    agent-frontmatter fields, and the typed setters + :meth:`grant_bash_patterns` mutate it without
+    hand-keyed dict poking."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+    preset: Optional[_SidecarPreset] = None
+    permission_mode: Optional[str] = Field(default=None, alias="permissionMode")
+    stream_agent_progress: Optional[bool] = Field(default=None, alias="streamAgentProgress")
+    tools: Optional[_SidecarTools] = None
+
+    @classmethod
+    def from_mapping(cls, data: "dict[str, Any] | None") -> "AgentSidecar":
+        return cls.model_validate(data if isinstance(data, dict) else {})
+
+    def to_mapping(self) -> dict[str, Any]:
+        """The sidecar as a JSON-ready dict, camelCase and lossless (unmodelled keys included)."""
+        return self.model_dump(by_alias=True, exclude_none=True)
+
+    def frontmatter_overrides(self) -> dict[str, Any]:
+        """The snake_case agent-frontmatter fields this sidecar overrides, for a caller to merge
+        over the markdown frontmatter. ``tools_enabled`` sits at the top level; ``bash`` and
+        ``spawn_agent`` sit under a nested ``tools`` dict, mirroring ``AgentConfiguration``."""
+        overrides: dict[str, Any] = {}
+        if self.preset is not None:
+            if self.preset.model is not None:
+                overrides["model"] = self.preset.model
+            if self.preset.provider is not None:
+                overrides["provider"] = self.preset.provider
+            if self.preset.reasoning_effort is not None:
+                overrides["reasoning_effort"] = self.preset.reasoning_effort
+        if self.permission_mode is not None:
+            overrides["permission_mode"] = self.permission_mode
+        if self.stream_agent_progress is not None:
+            overrides["stream_agent_progress"] = self.stream_agent_progress
+        if self.tools is not None:
+            if self.tools.enabled_builtin_tools is not None:
+                overrides["tools_enabled"] = self.tools.enabled_builtin_tools
+            tools: dict[str, Any] = {}
+            if self.tools.bash is not None:
+                bash = {
+                    key: value
+                    for key, value in {
+                        "enabled": self.tools.bash.enabled,
+                        "background_allowed": self.tools.bash.background_allowed,
+                        "permissions": self.tools.bash.permissions,
+                    }.items()
+                    if value is not None
+                }
+                if bash:
+                    tools["bash"] = bash
+            if self.tools.spawn_agent is not None and self.tools.spawn_agent.enabled is not None:
+                tools["spawn_agent"] = {"enabled": self.tools.spawn_agent.enabled}
+            if tools:
+                overrides["tools"] = tools
+        return overrides
+
+    def _ensure_tools(self) -> _SidecarTools:
+        if self.tools is None:
+            self.tools = _SidecarTools()
+        return self.tools
+
+    def set_preset(self, *, model=..., provider=..., reasoning_effort=...) -> None:
+        preset = self.preset or _SidecarPreset()
+        if model is not ...:
+            preset.model = model
+        if provider is not ...:
+            preset.provider = provider
+        if reasoning_effort is not ...:
+            preset.reasoning_effort = reasoning_effort
+        self.preset = preset
+
+    def set_bash(self, *, enabled=..., background_allowed=..., permissions=...) -> None:
+        tools = self._ensure_tools()
+        bash = tools.bash or _SidecarBash()
+        if enabled is not ...:
+            bash.enabled = enabled
+        if background_allowed is not ...:
+            bash.background_allowed = background_allowed
+        if permissions is not ...:
+            bash.permissions = permissions
+        tools.bash = bash
+
+    def set_spawn_agent(self, *, enabled=...) -> None:
+        tools = self._ensure_tools()
+        spawn = tools.spawn_agent or _SidecarSpawnAgent()
+        if enabled is not ...:
+            spawn.enabled = enabled
+        tools.spawn_agent = spawn
+
+    def set_tools_enabled(self, tools_enabled: list[str]) -> None:
+        self._ensure_tools().enabled_builtin_tools = tools_enabled
+
+    def grant_bash_patterns(self, patterns: Iterable[str]) -> bool:
+        """Add each pattern to the bash allow-list as ``allow``, never overriding an existing
+        decision (a deliberate deny/ask is not silently flipped). Returns whether anything changed."""
+        additions = [pattern.strip() for pattern in patterns if pattern.strip()]
+        if not additions:
+            return False
+        tools = self._ensure_tools()
+        bash = tools.bash or _SidecarBash()
+        permissions = dict(bash.permissions or {})
+        changed = False
+        for pattern in additions:
+            if pattern not in permissions:
+                permissions[pattern] = "allow"
+                changed = True
+        if changed:
+            bash.permissions = permissions
+            tools.bash = bash
+        return changed
+
+    @staticmethod
+    def normalized_permissions(permissions: dict[str, str]) -> dict[str, str]:
+        """Bash permission rules with patterns/decisions trimmed and only valid decisions kept."""
+        return {
+            pattern.strip(): decision.strip().lower()
+            for pattern, decision in permissions.items()
+            if pattern.strip() and decision.strip().lower() in {"allow", "ask", "deny"}
+        }
+
+
 def _merge_agent_configuration(frontmatter: dict, configuration: dict) -> dict:
+    """Overlay a parsed sidecar's fields onto the markdown frontmatter for loading."""
     merged = dict(frontmatter)
-    # ``preset`` carries the model, provider, and reasoning effort; ``tools``
-    # carries the bash/spawn-agent/tool toggles.
-    model_configuration = configuration.get("preset", {})
-    if "model" in model_configuration:
-        merged["model"] = model_configuration["model"]
-    if "provider" in model_configuration:
-        merged["provider"] = model_configuration["provider"]
-    if "reasoningEffort" in model_configuration:
-        merged["reasoning_effort"] = model_configuration["reasoningEffort"]
-    if "reasoning_effort" in model_configuration:
-        merged["reasoning_effort"] = model_configuration["reasoning_effort"]
-    if "permissionMode" in configuration:
-        merged["permission_mode"] = configuration["permissionMode"]
-    if "permission_mode" in configuration:
-        merged["permission_mode"] = configuration["permission_mode"]
-    if "streamAgentProgress" in configuration:
-        merged["stream_agent_progress"] = configuration["streamAgentProgress"]
-    tool_configuration = configuration.get("tools", {})
-    if tool_configuration:
-        tools = dict(merged.get("tools", {}))
-        if "enabledBuiltinTools" in tool_configuration:
-            merged["tools_enabled"] = tool_configuration["enabledBuiltinTools"]
-        if "bash" in tool_configuration:
-            bash = dict(tool_configuration["bash"])
-            if "backgroundAllowed" in bash:
-                bash["background_allowed"] = bash.pop("backgroundAllowed")
-            tools["bash"] = bash
-        if "spawnAgent" in tool_configuration:
-            tools["spawn_agent"] = tool_configuration["spawnAgent"]
-        if "spawn_agent" in tool_configuration:
-            tools["spawn_agent"] = tool_configuration["spawn_agent"]
-        merged["tools"] = tools
+    overrides = AgentSidecar.from_mapping(configuration).frontmatter_overrides()
+    tools_override = overrides.pop("tools", None)
+    merged.update(overrides)
+    if tools_override is not None:
+        merged_tools = dict(merged.get("tools", {}))
+        merged_tools.update(tools_override)
+        merged["tools"] = merged_tools
     return merged

@@ -61,7 +61,14 @@ def _json_load(value: str | None, fallback: Any = None) -> Any:
 
 
 class BackgroundJobStore:
-    """SQLite-backed mirror of every background job's lifecycle."""
+    """SQLite-backed mirror of every background job's lifecycle.
+
+    Charter: this store owns background-job lifecycle and OS process-group reaping — it is NOT
+    turn state. A turn's durable control-state and conversation live in the
+    :class:`~harness.core.task_store.AppendOnlyTaskStore` (as a :class:`~harness.core.turn_record.TurnRecord`
+    and a checkpoint). This is a deliberately separate subsystem — results-durable and
+    execution-ephemeral, additionally recovering running jobs and reaping orphaned process groups
+    on restart — so it is not folded into the task store, and the two are never confused for one."""
 
     def __init__(self, database_path: Path | None = None):
         self.database_path = database_path or background_database_path()

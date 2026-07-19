@@ -55,7 +55,29 @@ from a2a.types import (
 from a2a.utils import new_task
 from langchain_core.messages import messages_from_dict, messages_to_dict
 
-from harness.core.agent import AgentRuntime, StreamEvent
+from harness.core.agent import AgentRuntime
+from harness.core.tool_policy import PermissionMode
+from harness.core.turn_events import (
+    Checkpoint,
+    CompactionDone,
+    CompactionStarted,
+    DeniedInjection,
+    Done,
+    Error,
+    GroupStarted,
+    McpEvent,
+    Relayed,
+    Status,
+    Steering,
+    Suspended,
+    TextChunk,
+    Thinking,
+    ThinkingDone,
+    ToolCall,
+    ToolResult,
+    TurnEvent,
+    Usage,
+)
 from harness.core.agent_messages import AgentMessage
 from harness.core.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
 from harness.core.events import ToolStatus
@@ -67,7 +89,13 @@ from harness.core.configuration import (
     load_agent_configuration,
 )
 from harness.core.background_store import get_background_job_store
-from harness.core.task_store import TURN_KIND_KEY
+from harness.core.turn_record import (
+    AgentLane,
+    PendingInteraction,
+    ToolGate,
+    TurnKind,
+    TurnRecord,
+)
 from harness.core.file_leases import FileLeaseManager
 from harness.core.models import find_model
 from harness.core import telemetry as _telemetry
@@ -124,21 +152,6 @@ def _harness_metadata_envelope(fields: dict) -> dict:
     """Wrap harness turn fields under the namespaced key for an outgoing message; drops
     keys whose value is ``None`` so the object only carries what was actually set."""
     return {DAISY_METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
-
-
-# Restrictiveness of a permission mode, lowest to highest. A delegated agent runs at the more
-# restrictive of its own card and the caller's grant, and never at bypass.
-_MODE_RESTRICTIVENESS = {"bypass": 0, "auto": 1, "default": 2, "read_only": 3}
-
-
-def _effective_delegated_mode(caller: str, card: str) -> str:
-    """A delegated agent's effective permission policy: the more restrictive of the caller's
-    grant and the delegated agent card's own mode, clamped so it can never be bypass (a
-    delegated agent never runs unattended). An unknown/empty input is ignored; with neither the
-    interactive ``default`` policy applies."""
-    candidates = [mode for mode in (caller, card) if mode in _MODE_RESTRICTIVENESS]
-    chosen = max(candidates, key=_MODE_RESTRICTIVENESS.get) if candidates else "default"
-    return "default" if chosen == "bypass" else chosen
 
 
 # DataPart discriminator: every structured part declares its kind in `data.kind`.
@@ -201,11 +214,11 @@ def _artifact_event_payload(message) -> Optional[dict]:
 # or question the spec-correct way rather than through the native REST side channel.
 INPUT_RESPONSE_KIND = "input_response"
 
-# The durable pending-interaction record lives under this key in the task's metadata while
-# the task is input-required: the gates awaiting a human, the full preflight plans, and the
-# answers gathered so far. It is the source of truth a resume rebuilds from, so an
-# input-required task survives a restart.
-PENDING_INTERACTION_KEY = "pendingInteraction"
+# The durable pending-interaction record (the gates awaiting a human, the preflight plans a
+# resume rebuilds the batch from, and the answers gathered so far) lives in the task's
+# ``TurnRecord`` under ``PENDING_INTERACTION_KEY`` — imported from ``turn_record`` where the
+# typed model lives, so an input-required task survives a restart and is read by name, not
+# reconstructed from raw dict indexing.
 
 
 def _input_response_payload(message) -> Optional[dict]:
@@ -348,7 +361,7 @@ def build_agent_card(
     display_name = configuration.display_name
     capability = (
         "Investigates and reports read-only — cannot modify the system."
-        if configuration.permission_mode == "read_only"
+        if configuration.permission_policy.is_read_only
         else "Can read and modify the system."
     )
     skills = [
@@ -632,6 +645,225 @@ class _TextPartBuffer:
         await self._emit(key, text)
 
 
+class _TurnEventSink:
+    """The consuming half of the one turn-event catalog.
+
+    Every :class:`TurnEvent` variant the runtime yields is translated to its A2A
+    wire part here — in a single exhaustive, typed dispatch — and nowhere else. The
+    sink owns the assistant-text buffer (so a structured part forces an ordered
+    flush) and the turn's telemetry span, and it accumulates the turn's terminal
+    text and stop reason for the orchestrator to read once the stream drains.
+
+    A suspension forks to the injected ``suspend`` strategy: a delegated turn parks
+    in place (an in-process park — returns ``False``, keep consuming), a top-level
+    turn closes its segment durably (a durable segment — returns ``True``, stop).
+    """
+
+    def __init__(
+        self,
+        *,
+        emit: Callable[..., Awaitable[None]],
+        save_conversation: Callable[[], Awaitable[None]],
+        suspend: Callable[[list[dict], dict], Awaitable[bool]],
+        telemetry_span: Any,
+        model_identifier: Callable[[], str],
+    ) -> None:
+        self._emit = emit
+        self._save_conversation = save_conversation
+        self._suspend = suspend
+        self._span = telemetry_span
+        self._model_identifier = model_identifier
+        self._text = _TextPartBuffer(self._emit_text)
+        self.final_text = ""
+        self.stop_reason = ""
+
+    async def _emit_text(self, key: tuple[str, ...], text: str) -> None:
+        if not key:
+            raise ValueError("Buffered assistant text is missing its content-block identity.")
+        await self._emit(_text_part(text, key[0]))
+
+    async def flush(self, force: bool = True) -> None:
+        await self._text.flush(force=force)
+
+    async def emit_compaction(self, event: "CompactionStarted | CompactionDone") -> None:
+        """Map a runtime compaction event to its ``compaction`` DataPart, so both the
+        manual pass and mid-turn auto-compaction render identically (a live
+        "compacting" indicator, then the separator)."""
+        if isinstance(event, CompactionStarted):
+            await self._emit(_data_part(
+                "compaction", status="started",
+                reason=event.reason,
+                messages_before=event.messages_before,
+                tokens_before=event.tokens_before,
+            ))
+        elif isinstance(event, CompactionDone):
+            await self._emit(_data_part(
+                "compaction", status="done",
+                reason=event.reason,
+                ok=event.ok,
+                messages_before=event.messages_before,
+                messages_after=event.messages_after,
+                tokens_before=event.tokens_before,
+            ))
+
+    async def handle(self, event: TurnEvent) -> bool:
+        """Consume one runtime event — emit its wire parts and advance turn state.
+        Returns True when the turn should stop consuming and return from ``execute`` (a
+        durable top-level suspension closed the segment), False to keep consuming."""
+        if isinstance(event, TextChunk):
+            content_block_identifier = str(event.block_id)
+            if not content_block_identifier:
+                raise ValueError("Assistant text events require a content-block identity.")
+            await self._text.push(
+                event.text,
+                (content_block_identifier,),
+            )
+        elif isinstance(event, Relayed):
+            # An agent's event, already in the unified vocabulary. Its `path`
+            # was extended with this agent's segment by the relay (see
+            # AgentRuntime._run_spawned_agent), so it renders in the agents panel;
+            # emit it verbatim — no per-kind re-encoding.
+            await self.flush()
+            await self._emit(
+                Part(root=DataPart(data=event.event)),
+                publish_stream_event=False,
+            )
+        elif isinstance(event, Thinking):
+            await self.flush()
+            await self._emit(_data_part(
+                "thinking",
+                text=event.text,
+                block_id=event.block_id,
+            ))
+        elif isinstance(event, ThinkingDone):
+            await self.flush()
+            await self._emit(_data_part("thinking_done", duration_ms=event.duration_ms))
+        elif isinstance(event, Status):
+            await self.flush()
+            await self._emit(_data_part("status", code=event.code))
+        elif isinstance(event, ToolCall):
+            await self.flush()
+            await self._emit(_data_part(
+                "tool_call", tool_name=event.name,
+                arguments=event.arguments if event.arguments is not None else {}, tool_call_id=event.id,
+            ))
+        elif isinstance(event, ToolResult):
+            await self.flush()
+            await self._emit(_tool_result_part(
+                event.name,
+                event.id,
+                event.result,
+                event.status,
+            ))
+        elif isinstance(event, Checkpoint):
+            # A durable-safe point: snapshot the conversation so a mid-turn crash
+            # leaves completed tools' results in the record (the next turn does not
+            # redo them). Not a panel event; not relayed.
+            await self._save_conversation()
+        elif isinstance(event, McpEvent):
+            await self.flush()
+            await self._emit(_data_part(
+                "mcp_event",
+                server=event.server,
+                tool=event.tool,
+                event=event.event if event.event is not None else {},
+                tool_call_id=event.id,
+            ))
+        elif isinstance(event, Usage):
+            await self.flush()
+            cumulative = event.cumulative or {}
+            agents = event.agents or {}
+            model_identifier = self._model_identifier()
+            _telemetry.set_attributes(self._span, {
+                "gen_ai.request.model": model_identifier or None,
+                "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
+                "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
+                "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
+                "gen_ai.model.calls": cumulative.get("model_calls", 0),
+            })
+            _telemetry.record_usage(model_identifier, event.input_tokens, event.output_tokens)
+            await self._emit(_data_part(
+                "token_usage",
+                input_tokens=event.input_tokens,
+                output_tokens=event.output_tokens,
+                context_window=event.context_window,
+                cumulative={
+                    "input_tokens": cumulative.get("input_tokens", 0),
+                    "output_tokens": cumulative.get("output_tokens", 0),
+                    "total_tokens": cumulative.get("total_tokens", 0),
+                    "cache_read_tokens": cumulative.get("cache_read_tokens", 0),
+                    "reasoning_tokens": cumulative.get("reasoning_tokens", 0),
+                    "model_calls": cumulative.get("model_calls", 0),
+                },
+                agents={
+                    "input_tokens": agents.get("input_tokens", 0),
+                    "output_tokens": agents.get("output_tokens", 0),
+                    "total_tokens": agents.get("total_tokens", 0),
+                    "model_calls": agents.get("model_calls", 0),
+                },
+            ))
+        elif isinstance(event, Suspended):
+            # The turn needs one or more human decisions before it can run its tool
+            # batch. Surface each gate as its native DataPart so the app renders the
+            # prompt(s) — in the transcript for a top-level turn, relayed to the
+            # agents panel for a delegated one. The continuation transport then
+            # differs by turn kind, forked to the injected suspend strategy.
+            await self.flush()
+            interactions = event.interactions or []
+            plans = event.plans or {}
+            for gate in interactions:
+                if gate.get("kind") == "question":
+                    await self._emit(_data_part(
+                        "question", request_id=gate.get("request_id", ""),
+                        tool_call_id=gate.get("tool_call_id", ""),
+                        questions=gate.get("questions", []) or [],
+                    ))
+                else:
+                    await self._emit(_data_part(
+                        "permission_request", request_id=gate.get("request_id", ""),
+                        tool_call_id=gate.get("tool_call_id", ""),
+                        command=gate.get("command", ""), justification=gate.get("justification", ""),
+                        risk=gate.get("risk", ""),
+                    ))
+            return await self._suspend(interactions, plans)
+        elif isinstance(event, Error):
+            await self.flush()
+            await self._emit(_data_part(
+                "error",
+                message=event.message or "error",
+                tool_call_id=event.id,
+                tool_name=event.tool,
+            ))
+        elif isinstance(event, GroupStarted):
+            await self.flush()
+            await self._emit(_data_part(
+                "group_started",
+                path=[{"group_id": event.group_id, "step_id": event.step_id}],
+                agent_name=event.agent_name,
+                title=event.title,
+                tool_call_id=event.tool_call_id,
+            ))
+        elif isinstance(event, Steering):
+            await self.flush()
+            await self._emit(_data_part("steering", text=event.text))
+        elif isinstance(event, (CompactionStarted, CompactionDone)):
+            await self.flush()
+            await self.emit_compaction(event)
+        elif isinstance(event, Done):
+            await self.flush()
+            self.final_text = event.text or self.final_text
+            self.stop_reason = event.stop_reason or self.stop_reason
+        elif isinstance(event, DeniedInjection):
+            # A denied-command marker the runtime tracks for its own bookkeeping; the
+            # executor does not surface it.
+            pass
+        else:
+            # A closed union: a new event kind that reaches here is a wiring bug, not a
+            # silently dropped elif.
+            raise AssertionError(f"unhandled turn event: {type(event).__name__}")
+        return False
+
+
 @dataclass
 class _ContextState:
     """All per-context (per-session) execution state one executor holds, with a single
@@ -665,6 +897,533 @@ class _ContextState:
     # A reset asked to drop the runtime but it still had background work in flight, so
     # the drop is deferred until the runtime goes idle (see ``_maybe_evict``).
     pending_reset: bool = False
+
+
+class _TurnRunner:
+    """One run of the executor's ``execute()`` — the per-turn state machine made explicit.
+
+    A turn threads roughly two dozen pieces of mutable state (the task, the updater,
+    the resume decisions, the built runtime, the telemetry span, a fistful of teardown
+    flags) through a fixed sequence of phases: ingest the request, resolve the task and
+    any resume answer, acknowledge work habits, serialize on the per-context lock, build
+    the runtime, compose the model input, stream, and finalize — with a single teardown
+    that always runs once the turn has taken the lock. Holding that state as instance
+    attributes, rather than threading it through deeply nested closures, lets each phase
+    be a named method and lets :meth:`run` read as the turn's spine.
+
+    The phases up to and including the lock acquisition can short-circuit the turn
+    before any teardown is owed (a stale resume answer, a partial answer, a failed
+    work-habits acknowledgement); they signal that by returning :data:`_DONE`. Once the
+    lock and span are taken, every exit — normal, early (an autonomous no-op wake, a
+    manual compaction), or failed — runs through the ``finally`` teardown exactly once.
+
+    Instances are single-use: ``execute()`` builds one per call and awaits ``run()``.
+    """
+
+    # A phase decided the turn is finished, so the spine should stop after any owed
+    # teardown runs.
+    _DONE = object()
+
+    def __init__(
+        self,
+        executor: "HarnessAgentExecutor",
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        self._ex = executor
+        self._request = context
+        self._event_queue = event_queue
+        # Teardown-visible state, initialized to safe defaults so the ``finally`` can run
+        # even if runtime setup throws before assigning them.
+        self._runtime: AgentRuntime | None = None
+        self._participant_registered = False
+        self._track_context_activity = False
+        self._track_steerable_turn = False
+        self._turn_has_images = False
+        self._context_serialization_lock: asyncio.Lock | None = None
+        self._on_turn_state = executor._on_turn_state
+        # Filled in by _ingest / _resolve_task / _open_turn_span / _compose_turn_input.
+        self._sink: _TurnEventSink | None = None
+
+    async def run(self) -> None:
+        await self._ingest()
+        if await self._resolve_task() is self._DONE:
+            return
+        if await self._acknowledge_work_habits() is self._DONE:
+            return
+        await self._acquire_serialization_lock()
+        # The runtime setup — building the agent runtime and its model client — runs
+        # inside the try so any failure (e.g. missing API credentials) is surfaced as a
+        # clean A2A `failed` status rather than escaping and tearing down the SSE stream
+        # mid-flight. From here the teardown is owed on every exit.
+        self._open_turn_span()
+        try:
+            if await self._prepare_runtime() is self._DONE:
+                return
+            if await self._run_compaction_turn() is self._DONE:
+                return
+            await self._compose_turn_input()
+            await self._stream_and_finalize()
+        except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
+            await self._fail(exception)
+        finally:
+            await self._teardown()
+
+    # -- collaborators shared across phases --------------------------------------
+
+    async def _emit(self, part: Part, *, publish_stream_event: bool = True) -> None:
+        await self._updater.update_status(TaskState.working, self._updater.new_agent_message([part]))
+        if self._ex._on_stream_event is not None and not self._delegated and publish_stream_event:
+            self._ex._on_stream_event(self._task.context_id, part)
+
+    async def _save_runtime_conversation(self) -> None:
+        # A safe-point (or end-of-turn) snapshot of the model-facing conversation to the
+        # per-context checkpoint. Delegated turns keep their throwaway conversation in
+        # memory (their pause is ephemeral, and their conversation is not the context's),
+        # so they never write the context checkpoint.
+        if not self._delegated and self._runtime is not None:
+            await self._ex._task_store.save_checkpoint(
+                self._task.context_id, self._task.id, messages_to_dict(self._runtime.conversation)
+            )
+
+    async def _suspend_turn(self, interactions: list[dict], plans: dict) -> bool:
+        # The continuation transport differs by turn kind. A delegated turn is an
+        # in-process park: it parks in place (the runtime awaits the answer on its own
+        # stream, the prompt relayed to the panel), nothing is persisted as input-required,
+        # and the segment stays open — the pause is ephemeral and its answer routes through
+        # the shared resolver's delegated path. A top-level turn is a durable segment:
+        # persist the pending interactions and the checkpoint, then close this A2A segment
+        # as input-required so a later answer rebuilds from the checkpoint and resumes.
+        if self._delegated:
+            return False
+        return await self._ex._suspend_durable_segment(
+            self._task, self._updater, interactions, plans, self._save_runtime_conversation
+        )
+
+    # -- phases ------------------------------------------------------------------
+
+    async def _ingest(self) -> None:
+        """Parse the request message into the turn's inputs and mode flags."""
+        message = self._request.message
+        if message is None:
+            raise ValueError("Request context message is required.")
+        self._message = message
+        self._user_text = self._request.get_user_input()
+        # An artifact interaction arrives as a structured DataPart. A normal interaction
+        # becomes the turn's JSON input; a render_error is reframed below (once the
+        # runtime's prompt loader exists) into a behind-the-scenes self-realization note
+        # the model repairs as its own output.
+        self._artifact_payload = _artifact_event_payload(message)
+        self._structured_payloads = _structured_data_payloads(message)
+        ingested_attachments = await _ingest_incoming_file_parts(message)
+        if ingested_attachments:
+            self._structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
+        self._metadata = _harness_metadata(message)
+        self._requested_working_directory = str(self._metadata.get(Metadata.WORKING_DIRECTORY, ""))
+        self._requested_workspace_strategy = str(self._metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
+        self._permission_mode = str(self._metadata.get(Metadata.PERMISSION_MODE, ""))
+        self._delegated = bool(self._metadata.get(Metadata.DELEGATED))
+        self._autonomous = bool(self._metadata.get(Metadata.AUTONOMOUS_RESUME))
+        self._compaction = bool(self._metadata.get(Metadata.COMPACTION))
+
+    async def _resolve_task(self) -> object | None:
+        """Materialize the task, then either record a resume answer or start a fresh
+        turn. Returns ``_DONE`` when the request is fully handled without streaming (a
+        stale or partial answer)."""
+        message, metadata = self._message, self._metadata
+        task = self._request.current_task
+        if task is None:
+            task = new_task(message)
+            # Link a delegated child to its parent task so the relationship is
+            # discoverable on the persisted A2A task. Its exact panel lane is persisted
+            # too, allowing replay to reconcile a child that reached a terminal state
+            # after the parent turn stopped streaming.
+            reference_task_ids = message.reference_task_ids
+            lane_group_id = str(metadata.get(Metadata.AGENT_LANE_GROUP_ID, ""))
+            lane_step_id = str(metadata.get(Metadata.AGENT_LANE_STEP_ID, ""))
+            if reference_task_ids or (lane_group_id and lane_step_id):
+                record = TurnRecord.from_metadata(task.metadata)
+                if reference_task_ids:
+                    record.reference_task_ids = list(reference_task_ids)
+                if lane_group_id and lane_step_id:
+                    record.lane = AgentLane(group_id=lane_group_id, step_id=lane_step_id)
+                task.metadata = record.apply_to(task.metadata)
+            await self._event_queue.enqueue_event(task)
+        self._task = task
+        self._updater = TaskUpdater(self._event_queue, task.id, task.context_id)
+
+        # An input-required answer is recorded against the task's pending-interaction
+        # record; once every gate is answered, the turn rebuilds the runtime from the
+        # persisted checkpoint and drives the next segment. A partial answer leaves the
+        # task input-required for the next one; an answer for a task that is not paused is
+        # a no-op acknowledgement.
+        input_response = _input_response_payload(message)
+        self._is_resume = False
+        self._resume_plans = {}
+        self._resume_answers = {}
+        if input_response is not None:
+            if TurnRecord.from_metadata(task.metadata).pending is None:
+                await self._updater.complete()
+                return self._DONE
+            ready = self._ex._record_pending_answer(task, input_response)
+            await self._ex._task_store.save(task)
+            if self._ex._on_permission_state is not None:
+                # Still awaiting while gates remain; cleared once this answer resumes.
+                self._ex._on_permission_state(task.context_id, ready is None)
+            if ready is None:
+                await self._updater.update_status(
+                    TaskState.input_required,
+                    self._updater.new_agent_message([_data_part("status", code="input_required")]),
+                    final=True,
+                )
+                return self._DONE
+            self._resume_plans, self._resume_answers = ready
+            cleared = TurnRecord.from_metadata(task.metadata)
+            cleared.pending = None
+            task.metadata = cleared.apply_to(task.metadata)
+            await self._ex._task_store.save(task)
+            self._is_resume = True
+        elif not self._delegated and not self._autonomous and not self._compaction and self._ex._on_permission_state is not None:
+            # A fresh user turn supersedes any prior input-required pause for this context
+            # (the runtime closes the dangling checkpoint), so drop the awaiting-input marker.
+            self._ex._on_permission_state(task.context_id, False)
+        return None
+
+    async def _acknowledge_work_habits(self) -> object | None:
+        """Emit the once-per-context work-habits acknowledgement. Returns ``_DONE`` if
+        the acknowledgement itself failed (the turn is reported failed)."""
+        self._context_state = self._ex._context(self._task.context_id)
+        should_acknowledge = await self._ex._claim_work_habits_acknowledgement(
+            self._task.context_id,
+            delegated=self._delegated,
+            autonomous=self._autonomous,
+            compaction=self._compaction,
+        )
+        if should_acknowledge:
+            try:
+                for acknowledgement_part in _work_habits_acknowledgement_parts(self._task.id):
+                    await self._emit(acknowledgement_part)
+            except Exception as exception:
+                logger.exception("Work-habits acknowledgement failed: %s", exception)
+                await self._updater.failed(self._updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
+                return self._DONE
+        return None
+
+    async def _acquire_serialization_lock(self) -> None:
+        # Serialize non-delegated turns per context so a user turn and an autonomous
+        # background wake never drive the shared runtime concurrently. Delegated agent
+        # turns share the parent's context and run inside it, so they must not take this
+        # lock (that would deadlock against the parent).
+        self._context_serialization_lock = None if self._delegated else self._context_state.lock
+        if self._context_serialization_lock is not None:
+            await self._context_serialization_lock.acquire()
+
+    def _open_turn_span(self) -> None:
+        # The turn is one trace, grouped by the session (context_id); a delegation's
+        # traceparent (in the message metadata) makes this turn nest under its parent.
+        self._turn_kind = (
+            TurnKind.AUTONOMOUS if self._autonomous
+            else TurnKind.COMPACTION if self._compaction
+            else TurnKind.DELEGATED if self._delegated
+            else TurnKind.USER
+        )
+        # Stamp the kind onto the task so the restart reconciliation reads a real field:
+        # a top-level input-required pause is preserved, a delegated one and any
+        # mid-execution turn are failed. Persisted with the head on the next save.
+        stamped = TurnRecord.from_metadata(self._task.metadata)
+        stamped.kind = self._turn_kind
+        self._task.metadata = stamped.apply_to(self._task.metadata)
+        parent_context = _telemetry.context_from_traceparent((self._message.metadata or {}).get("traceparent", ""))
+        self._turn_span_context = _telemetry.span("agent.turn", {
+            "session.id": self._task.context_id,
+            "daisy.task.id": self._task.id,
+            "daisy.agent.name": self._ex._agent_name,
+            "daisy.turn.kind": self._turn_kind,
+        }, parent_context)
+        self._turn_span = self._turn_span_context.__enter__()
+
+    async def _prepare_runtime(self) -> object | None:
+        """Build (or warm-fetch) the runtime, register it, and stand up the event sink.
+        Returns ``_DONE`` for an autonomous wake that has nothing left to deliver."""
+        task, metadata = self._task, self._metadata
+        # An autonomous wake with nothing left to deliver — a concurrent user turn already
+        # drained the result while this one waited on the lock — is a no-op: close the task
+        # without a model call rather than emit an empty turn. The finally still runs on
+        # this early return, releasing the lock.
+        if self._autonomous:
+            existing_state = self._ex._contexts.get(task.context_id)
+            existing_runtime = existing_state.runtime if existing_state is not None else None
+            has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
+            has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._ex._agent_name)
+            if not has_live_result and not has_stored_result:
+                await self._updater.complete()
+                return self._DONE
+
+        self._track_context_activity = self._on_turn_state is not None
+        self._track_steerable_turn = not self._delegated and self._on_turn_state is not None
+        # A real user turn (not an autonomous wake or a compaction) means the user wants
+        # the agent working again, so lift any prior Stop suppression — future background
+        # completions may once more arm a resume pump.
+        if not self._delegated and not self._autonomous and not self._compaction:
+            self._ex._context(task.context_id).aborted = False
+        if self._track_context_activity and self._on_turn_state is not None:
+            self._on_turn_state(task.context_id, True)
+        if self._track_steerable_turn:
+            self._ex._context(task.context_id).running = True
+
+        await self._updater.start_work()
+
+        workspace = await self._ex._workspace_for(
+            context_id=task.context_id,
+            requested_working_directory=self._requested_working_directory,
+            requested_workspace_strategy=self._requested_workspace_strategy,
+            requested_permission_mode=self._permission_mode,
+            first_message=self._user_text,
+            delegated=self._delegated,
+            metadata=metadata,
+        )
+        if self._ex._ensure_mcp_servers is not None and workspace.source_working_directory:
+            await self._ex._ensure_mcp_servers(workspace.source_working_directory)
+
+        if self._delegated:
+            # A delegated agent call is a fresh, one-shot run (no shared conversation
+            # state with the parent turn). It inherits the whole project — the same
+            # locations as the parent.
+            sub_locations = None
+            if self._ex._resolve_locations is not None:
+                sub_locations = await asyncio.to_thread(self._ex._resolve_locations, task.context_id) or None
+            runtime = self._ex._build_runtime(
+                task.context_id,
+                workspace.runtime_working_directory,
+                workspace.source_working_directory,
+                is_agent=True,
+                locations=sub_locations,
+            )
+            # A delegated agent's effective policy is the more restrictive of the caller's
+            # grant and its own card, clamped away from bypass, with the interactive policy
+            # asking for anything the card does not explicitly allow. Enforced here, the one
+            # place, so a delegated agent can never run looser than intended.
+            runtime.set_delegated_policy(
+                PermissionMode.more_restrictive(
+                    self._permission_mode, runtime.configured_permission_mode
+                ).clamped_for_delegation()
+            )
+            # The read_only spawn flag only ever adds read-only on top; it can never lift a
+            # read-only that the effective policy already mandated.
+            if bool(metadata.get(Metadata.READ_ONLY)):
+                runtime.set_read_only(True)
+        else:
+            existing_state = self._ex._contexts.get(task.context_id)
+            is_new_context = existing_state is None or existing_state.runtime is None
+            runtime = await self._ex._runtime_for(task.context_id, workspace)
+            if self._permission_mode:
+                runtime.set_permission_mode(self._permission_mode)
+            if is_new_context and self._ex._on_new_context is not None:
+                await asyncio.to_thread(self._ex._on_new_context, task.context_id)
+        self._runtime = runtime
+        self._ex._aborts[task.id] = runtime
+        runtime.set_a2a_task_id(task.id)
+        runtime.set_delegation_depth(int(metadata.get(Metadata.DEPTH, 0)))
+        if self._ex._registry is not None:
+            participant_task_identifier = (
+                str(metadata.get(Metadata.AGENT_LANE_STEP_ID, ""))
+                if self._delegated
+                else task.id
+            )
+            runtime.set_agent_messaging(
+                self._ex._registry.ask_agent,
+                self._ex._registry.respond_agent,
+                self._ex._registry.reserve_participant,
+                self._ex._registry.release_reserved_participant,
+                self._ex._registry.active_agents,
+            )
+            self._ex._registry.register_participant(
+                task_id=task.id,
+                task_identifier=participant_task_identifier,
+                context_id=task.context_id,
+                agent_name=self._ex._agent_name,
+                runtime=runtime,
+            )
+            self._participant_registered = True
+
+        # The consuming half of the one turn-event catalog: it owns the assistant-text
+        # buffer and the turn telemetry span, translates every runtime event to its wire
+        # part, and accumulates the turn's terminal text and stop reason.
+        self._sink = _TurnEventSink(
+            emit=self._emit,
+            save_conversation=self._save_runtime_conversation,
+            suspend=self._suspend_turn,
+            telemetry_span=self._turn_span,
+            model_identifier=lambda: self._runtime.effective_model_identifier if self._runtime is not None else "",
+        )
+        return None
+
+    async def _run_compaction_turn(self) -> object | None:
+        """A manual compaction turn runs no model turn: it summarizes the older history
+        in place and emits the compaction parts (the live indicator + the separator),
+        then completes. Persisted like any turn, so the separator replays; fanned out, so
+        viewers see it live. Returns ``_DONE`` when this was a compaction turn."""
+        if not self._compaction:
+            return None
+        async for compaction_event in self._runtime.compact(reason="manual"):
+            await self._sink.emit_compaction(compaction_event)
+        await self._save_runtime_conversation()
+        await self._updater.complete()
+        return self._DONE
+
+    async def _compose_turn_input(self) -> None:
+        """Build the model-facing input for this segment from the turn's payloads: an
+        autonomous framing note, an artifact event, structured attachments (with vision
+        blocks when the model supports them), or plain user text."""
+        runtime = self._runtime
+        # A render_error is injected as the model's own realization (a harness note
+        # delivered in a <systemReminder> block), never as user prose; every other
+        # artifact event is the turn's structured JSON input.
+        self._as_system_note = self._autonomous
+        if self._autonomous:
+            # The wake message carries no prose (only an `autonomous_resume` part); the
+            # framing note is supplied here and injected into the model as a
+            # <systemReminder> harness note — cache-safe user-role delivery (see
+            # AgentRuntime._harness_note_message) that never appears as user input in the
+            # transcript.
+            self._turn_input = _PROMPTS.load("background_resume_note", {})
+        elif self._artifact_payload is not None:
+            payload_json = json.dumps({"artifact_event": self._artifact_payload}, ensure_ascii=False)
+            if self._artifact_payload.get("event") == "render_error":
+                # The same JSON payload, wrapped in a self-realization note and injected as
+                # a harness note rather than user input.
+                self._turn_input = runtime.artifact_render_error_note(payload_json)
+                self._as_system_note = True
+            else:
+                self._turn_input = payload_json
+        elif self._structured_payloads:
+            # The structured metadata (attachment file paths and any per-attachment
+            # annotations) always rides along as a text block so the model can act on the
+            # attachments with its tools. Images are inlined only when the agent model
+            # advertises vision support; otherwise the model gets metadata/path access and
+            # the UI receives a non-fatal warning. The model-facing copy of the data parts
+            # keeps annotation positions on the normalized 0-999 grid documented in the
+            # system prompt.
+            text_payload = json.dumps({
+                "text": self._user_text,
+                "data_parts": normalize_annotation_payloads(self._structured_payloads),
+            }, ensure_ascii=False)
+            image_attachments = _image_attachments(self._structured_payloads)
+            model_identifier = runtime.effective_model_identifier if runtime is not None else ""
+            image_blocks = []
+            if image_attachments and _model_supports_vision(model_identifier):
+                image_blocks = [
+                    block
+                    for attachment in image_attachments
+                    if (block := _image_content_block(attachment)) is not None
+                ]
+            elif image_attachments:
+                await self._emit(_data_part(**_attachment_warning_payload(len(image_attachments), model_identifier)))
+            if _model_supports_vision(model_identifier):
+                # Artifact-image annotations: alongside the structured facts, a vision model
+                # also gets the image itself with numbered circle badges stamped at each
+                # annotation position (numbers match the payload's `sequence` values). Pure
+                # Pillow work — run off-loop.
+                image_blocks.extend(
+                    await asyncio.to_thread(annotation_image_blocks, self._structured_payloads)
+                )
+            if image_blocks:
+                self._turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
+                self._turn_has_images = True
+            else:
+                self._turn_input = text_payload
+        else:
+            self._turn_input = self._user_text
+        runtime.set_pending_attachments(_all_attachments(self._structured_payloads))
+
+    async def _stream_and_finalize(self) -> None:
+        """Drive the runtime's event stream through the sink, then close the task as
+        completed or canceled once it drains (a durable suspension returns early)."""
+        # A resume drives the turn from the durable checkpoint (the pending tool-call
+        # AIMessage the rebuilt runtime already holds) with the answered decisions; a fresh
+        # turn drives the model from this segment's input. Both feed the same event loop, so
+        # a re-suspension is handled identically.
+        event_source = (
+            self._runtime.resume_stream(self._resume_plans, self._resume_answers)
+            if self._is_resume
+            else self._runtime.stream(self._turn_input, as_system_note=self._as_system_note)
+        )
+        async for event in event_source:
+            if await self._sink.handle(event):
+                return
+
+        await self._sink.flush()
+
+        if self._sink.final_text.strip():
+            await self._updater.add_artifact(
+                [_text_part(self._sink.final_text, f"artifact-result:{self._task.id}")],
+                name="result",
+                last_chunk=True,
+            )
+        await self._save_runtime_conversation()
+        if self._sink.stop_reason == "cancelled":
+            # The user pressed Stop — end the task as canceled, not completed, so the
+            # transcript and replay read it honestly as a stopped turn.
+            await self._updater.cancel()
+        else:
+            await self._updater.complete()
+
+    async def _fail(self, exception: Exception) -> None:
+        await self._save_runtime_conversation()
+        # Log the real exception server-side for debugging, but show the user only a safe
+        # category — never the raw exception text.
+        logger.exception("Agent turn failed: %s", exception)
+        await self._updater.failed(self._updater.new_agent_message(
+            [_data_part("error", **_safe_turn_error(exception, had_images=self._turn_has_images))]
+        ))
+
+    async def _teardown(self) -> None:
+        task = self._task
+        with suppress(Exception):
+            self._turn_span_context.__exit__(None, None, None)
+        if self._participant_registered and self._ex._registry is not None:
+            self._ex._registry.unregister_participant(task.id)
+        self._ex._aborts.pop(task.id, None)
+        # The context's live state, or None if the session was deleted mid-turn
+        # (teardown_context popped it). A torn-down context must not be re-persisted or
+        # re-armed below — otherwise the aborted turn's teardown would resurrect the very
+        # rows the delete flow just removed.
+        state = self._ex._contexts.get(task.context_id)
+        # Persist the conversation after a top-level turn so a later restart can restore
+        # it. Delegated agent runs have their own throwaway history and don't touch the
+        # shared context, so they are not persisted. Only save when there is something to
+        # save (a built runtime, or an already-cached conversation) — an autonomous no-op
+        # wake has neither, and blindly saving an empty list would clobber the persisted
+        # history. Skip entirely once the session is deleted, so a stopped-and-deleted turn
+        # never re-orphans its row.
+        if state is not None and not self._delegated and (
+            self._runtime is not None or task.context_id in self._ex._conversations
+        ):
+            messages = self._runtime.conversation if self._runtime is not None else self._ex._conversations.get(task.context_id, [])
+            await self._ex._task_store.save_checkpoint(
+                task.context_id, task.id, messages_to_dict(messages)
+            )
+        # Stop accepting steering for this context before draining the queue, then discard
+        # anything that arrived too late to be honored (raced in after the loop's final
+        # drain, or while the turn was ending/failing). Such messages were never applied to
+        # the conversation; the client re-sends them as a fresh turn on stream close, so
+        # leaving them queued here would double-apply them when the next turn drains the
+        # runtime at its first boundary.
+        if self._track_steerable_turn and state is not None:
+            state.running = False
+        if state is not None and state.runtime is not None:
+            state.runtime.discard_pending_steering()
+        if self._track_context_activity and self._on_turn_state is not None:
+            self._on_turn_state(task.context_id, False)
+        if self._context_serialization_lock is not None:
+            self._context_serialization_lock.release()
+        # If background work is still in flight after this turn, make sure a resume pump is
+        # watching so the next completion wakes the agent on its own. Pass the runtime this
+        # turn used (not a cache lookup) so a reset that cleared the cache mid-turn cannot
+        # strand the pending work. Delegated turns don't own the context lifecycle, so they
+        # skip it.
+        if not self._delegated:
+            self._ex._arm_resume_pump(task.context_id, self._runtime)
 
 
 class HarnessAgentExecutor(AgentExecutor):
@@ -872,23 +1631,21 @@ class HarnessAgentExecutor(AgentExecutor):
         answer for a request this task is not waiting on). Mutates ``task.metadata`` in
         place; the caller persists it. This is the single resolution path an external
         ``input_response`` message and the native REST resolve both feed."""
-        pending = (task.metadata or {}).get(PENDING_INTERACTION_KEY)
-        if not isinstance(pending, dict):
+        record = TurnRecord.from_metadata(task.metadata)
+        pending = record.pending
+        if pending is None:
             return None
-        gates = pending.get("gates", []) or []
         request_id = str(payload.get("request_id", ""))
-        gate = next((candidate for candidate in gates if candidate.get("request_id") == request_id), None)
+        gate = pending.gate_for(request_id)
         if gate is None:
             return None
-        answers = dict(pending.get("answers", {}) or {})
-        if gate.get("kind") == "question":
-            answers[request_id] = {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
+        if gate.is_question:
+            pending.answers[request_id] = {"__declined__": True} if payload.get("declined") else payload.get("answers", [])
         else:
-            answers[request_id] = str(payload.get("decision", "deny"))
-        pending = {**pending, "answers": answers}
-        task.metadata = {**(task.metadata or {}), PENDING_INTERACTION_KEY: pending}
-        if all(candidate.get("request_id") in answers for candidate in gates):
-            return pending.get("plans", {}) or {}, answers
+            pending.answers[request_id] = str(payload.get("decision", "deny"))
+        task.metadata = record.apply_to(task.metadata)
+        if pending.fully_answered:
+            return pending.plans, pending.answers
         return None
 
     def set_permission_mode(self, context_id: str, mode: str) -> bool:
@@ -1227,606 +1984,44 @@ class HarnessAgentExecutor(AgentExecutor):
         )
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        user_text = context.get_user_input()
-        message = context.message
-        if message is None:
-            raise ValueError("Request context message is required.")
-        # An artifact interaction arrives as a structured DataPart. A normal
-        # interaction becomes the turn's JSON input; a render_error is reframed
-        # below (once the runtime's prompt loader exists) into a behind-the-scenes
-        # self-realization note the model repairs as its own output.
-        artifact_payload = _artifact_event_payload(message)
-        structured_payloads = _structured_data_payloads(message)
-        ingested_attachments = await _ingest_incoming_file_parts(message)
-        if ingested_attachments:
-            structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
-        metadata = _harness_metadata(message)
-        requested_working_directory = str(metadata.get(Metadata.WORKING_DIRECTORY, ""))
-        requested_workspace_strategy = str(metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
-        permission_mode = str(metadata.get(Metadata.PERMISSION_MODE, ""))
-        delegated = bool(metadata.get(Metadata.DELEGATED))
-        autonomous = bool(metadata.get(Metadata.AUTONOMOUS_RESUME))
-        compaction = bool(metadata.get(Metadata.COMPACTION))
+        """Run one turn. The whole per-turn state machine — ingest, resolve, build the
+        runtime, stream, finalize, tear down — lives in :class:`_TurnRunner`; each request
+        gets a fresh single-use instance."""
+        await _TurnRunner(self, context, event_queue).run()
 
-        task = context.current_task
-        if task is None:
-            task = new_task(message)
-            # Link a delegated child to its parent task so the relationship is
-            # discoverable on the persisted A2A task. Its exact panel lane is
-            # persisted too, allowing replay to reconcile a child that reached a
-            # terminal state after the parent turn stopped streaming.
-            reference_task_ids = message.reference_task_ids
-            if reference_task_ids:
-                task.metadata = {**(task.metadata or {}), "referenceTaskIds": reference_task_ids}
-            lane_group_id = str(metadata.get(Metadata.AGENT_LANE_GROUP_ID, ""))
-            lane_step_id = str(metadata.get(Metadata.AGENT_LANE_STEP_ID, ""))
-            if lane_group_id and lane_step_id:
-                task.metadata = {
-                    **(task.metadata or {}),
-                    "agentLane": {"groupId": lane_group_id, "stepId": lane_step_id},
-                }
-            await event_queue.enqueue_event(task)
-        updater = TaskUpdater(event_queue, task.id, task.context_id)
+    async def _suspend_durable_segment(
+        self,
+        task: Task,
+        updater: TaskUpdater,
+        interactions: list[dict],
+        plans: dict,
+        save_conversation: Callable[[], Awaitable[None]],
+    ) -> bool:
+        """Close a top-level turn's A2A segment as a durable suspend.
 
-        # An input-required answer is recorded against the task's pending-interaction
-        # record; once every gate is answered, this call rebuilds the runtime from the
-        # persisted checkpoint and drives the next segment (below). A partial answer leaves
-        # the task input-required for the next one; an answer for a task that is not paused
-        # is a no-op acknowledgement.
-        input_response = _input_response_payload(message)
-        is_resume = False
-        resume_plans: dict = {}
-        resume_answers: dict = {}
-        if input_response is not None:
-            if not isinstance((task.metadata or {}).get(PENDING_INTERACTION_KEY), dict):
-                await updater.complete()
-                return
-            ready = self._record_pending_answer(task, input_response)
-            await self._task_store.save(task)
-            if self._on_permission_state is not None:
-                # Still awaiting while gates remain; cleared once this answer resumes.
-                self._on_permission_state(task.context_id, ready is None)
-            if ready is None:
-                await updater.update_status(
-                    TaskState.input_required,
-                    updater.new_agent_message([_data_part("status", code="input_required")]),
-                    final=True,
-                )
-                return
-            resume_plans, resume_answers = ready
-            task.metadata = {key: value for key, value in (task.metadata or {}).items() if key != PENDING_INTERACTION_KEY}
-            await self._task_store.save(task)
-            is_resume = True
-        elif not delegated and not autonomous and not compaction and self._on_permission_state is not None:
-            # A fresh user turn supersedes any prior input-required pause for this context
-            # (the runtime closes the dangling checkpoint), so drop the awaiting-input marker.
-            self._on_permission_state(task.context_id, False)
-
-        async def emit(part: Part, *, publish_stream_event: bool = True) -> None:
-            await updater.update_status(TaskState.working, updater.new_agent_message([part]))
-            if self._on_stream_event is not None and not delegated and publish_stream_event:
-                self._on_stream_event(task.context_id, part)
-
-        context_state = self._context(task.context_id)
-        should_acknowledge_work_habits = await self._claim_work_habits_acknowledgement(
-            task.context_id,
-            delegated=delegated,
-            autonomous=autonomous,
-            compaction=compaction,
+        Records the pending interactions and the runtime checkpoint into task
+        metadata, flags the session as awaiting input, persists both the
+        conversation and the task, then reports ``input_required`` (final) so a
+        later answer rebuilds from the checkpoint and resumes. Returns ``True`` to
+        signal the stream loop to stop consuming this segment.
+        """
+        suspended = TurnRecord.from_metadata(task.metadata)
+        suspended.pending = PendingInteraction(
+            gates=[ToolGate.model_validate(gate) for gate in interactions],
+            plans=plans,
+            agent=self._agent_name,
         )
-        if should_acknowledge_work_habits:
-            try:
-                for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
-                    await emit(acknowledgement_part)
-            except Exception as exception:
-                logger.exception("Work-habits acknowledgement failed: %s", exception)
-                await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
-                return
-
-        # Serialize non-delegated turns per context so a user turn and an autonomous
-        # background wake never drive the shared runtime concurrently. Delegated
-        # agent turns share the parent's context and run inside it, so they must
-        # not take this lock (that would deadlock against the parent).
-        context_serialization_lock = None if delegated else context_state.lock
-        if context_serialization_lock is not None:
-            await context_serialization_lock.acquire()
-
-        final_text = ""
-        failed_message = ""
-        stop_reason = ""
-        # Whether this turn carried an inlined image, so a provider rejection can be
-        # reframed as the actionable "this model can't read images" case.
-        turn_has_images = False
-        runtime: AgentRuntime | None = None
-        participant_registered = False
-        track_context_activity = False
-        track_steerable_turn = False
-        on_turn_state = self._on_turn_state
-
-        async def emit_compaction(event) -> None:
-            """Map a runtime compaction event to its ``compaction`` DataPart, so both
-            the manual pass and mid-turn auto-compaction render identically (a live
-            "compacting" indicator, then the separator)."""
-            if event.type == StreamEvent.Type.COMPACTION_STARTED:
-                await emit(_data_part(
-                    "compaction", status="started",
-                    reason=event.data.get("reason", ""),
-                    messages_before=event.data.get("messages_before", 0),
-                    tokens_before=event.data.get("tokens_before", 0),
-                ))
-            elif event.type == StreamEvent.Type.COMPACTION_DONE:
-                await emit(_data_part(
-                    "compaction", status="done",
-                    reason=event.data.get("reason", ""),
-                    ok=event.data.get("ok", True),
-                    messages_before=event.data.get("messages_before", 0),
-                    messages_after=event.data.get("messages_after", 0),
-                    tokens_before=event.data.get("tokens_before", 0),
-                ))
-
-        async def emit_text_buffer(key: tuple[str, ...], text: str) -> None:
-            if not key:
-                raise ValueError("Buffered assistant text is missing its content-block identity.")
-            await emit(_text_part(text, key[0]))
-
-        text_buffer = _TextPartBuffer(emit_text_buffer)
-
-        async def flush_stream_buffers(force: bool = True) -> None:
-            await text_buffer.flush(force=force)
-
-        async def save_runtime_conversation() -> None:
-            # A safe-point (or end-of-turn) snapshot of the model-facing conversation to
-            # the per-context checkpoint. Delegated turns keep their throwaway conversation
-            # in memory (their pause is ephemeral, and their conversation is not the
-            # context's), so they never write the context checkpoint.
-            if not delegated and runtime is not None:
-                await self._task_store.save_checkpoint(
-                    task.context_id, task.id, messages_to_dict(runtime.conversation)
-                )
-
-        # The turn is one trace, grouped by the session (context_id); a delegation's
-        # traceparent (in the message metadata) makes this turn nest under its parent.
-        turn_kind = "autonomous" if autonomous else "compaction" if compaction else "delegated" if delegated else "user"
-        # Stamp the kind onto the task so the restart reconciliation reads a real field:
-        # a top-level input-required pause is preserved, a delegated one and any
-        # mid-execution turn are failed. Persisted with the head on the next save.
-        task.metadata = {**(task.metadata or {}), TURN_KIND_KEY: turn_kind}
-        parent_context = _telemetry.context_from_traceparent((message.metadata or {}).get("traceparent", ""))
-        turn_span_context = _telemetry.span("agent.turn", {
-            "session.id": task.context_id,
-            "daisy.task.id": task.id,
-            "daisy.agent.name": self._agent_name,
-            "daisy.turn.kind": turn_kind,
-        }, parent_context)
-        turn_span = turn_span_context.__enter__()
-
-        # The runtime setup — building the agent runtime and its model client —
-        # runs inside the try so any failure (e.g. missing API credentials) is
-        # surfaced as a clean A2A `failed` status rather than escaping and tearing
-        # down the SSE stream mid-flight.
-        try:
-            # An autonomous wake with nothing left to deliver — a concurrent user turn
-            # already drained the result while this one waited on the lock — is a no-op:
-            # close the task without a model call rather than emit an empty turn. The
-            # finally still runs on this early return, releasing the lock.
-            if autonomous:
-                existing_state = self._contexts.get(task.context_id)
-                existing_runtime = existing_state.runtime if existing_state is not None else None
-                has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
-                has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._agent_name)
-                if not has_live_result and not has_stored_result:
-                    await updater.complete()
-                    return
-
-            track_context_activity = on_turn_state is not None
-            track_steerable_turn = not delegated and on_turn_state is not None
-            # A real user turn (not an autonomous wake or a compaction) means the user
-            # wants the agent working again, so lift any prior Stop suppression — future
-            # background completions may once more arm a resume pump.
-            if not delegated and not autonomous and not compaction:
-                self._context(task.context_id).aborted = False
-            if track_context_activity and on_turn_state is not None:
-                on_turn_state(task.context_id, True)
-            if track_steerable_turn:
-                self._context(task.context_id).running = True
-
-            await updater.start_work()
-
-            workspace = await self._workspace_for(
-                context_id=task.context_id,
-                requested_working_directory=requested_working_directory,
-                requested_workspace_strategy=requested_workspace_strategy,
-                requested_permission_mode=permission_mode,
-                first_message=user_text,
-                delegated=delegated,
-                metadata=metadata,
-            )
-            if self._ensure_mcp_servers is not None and workspace.source_working_directory:
-                await self._ensure_mcp_servers(workspace.source_working_directory)
-
-            if delegated:
-                # A delegated agent call is a fresh, one-shot run (no shared
-                # conversation state with the parent turn). It inherits the whole
-                # project — the same locations as the parent.
-                sub_locations = None
-                if self._resolve_locations is not None:
-                    sub_locations = await asyncio.to_thread(self._resolve_locations, task.context_id) or None
-                runtime = self._build_runtime(
-                    task.context_id,
-                    workspace.runtime_working_directory,
-                    workspace.source_working_directory,
-                    is_agent=True,
-                    locations=sub_locations,
-                )
-                # A delegated agent's effective policy is the more restrictive of the caller's
-                # grant and its own card, clamped away from bypass, with the interactive
-                # policy asking for anything the card does not explicitly allow. Enforced
-                # here, the one place, so a delegated agent can never run looser than intended.
-                runtime.set_delegated_policy(
-                    _effective_delegated_mode(permission_mode, runtime.configured_permission_mode)
-                )
-                # The read_only spawn flag only ever adds read-only on top; it can never
-                # lift a read-only that the effective policy already mandated.
-                if bool(metadata.get(Metadata.READ_ONLY)):
-                    runtime.set_read_only(True)
-            else:
-                existing_state = self._contexts.get(task.context_id)
-                is_new_context = existing_state is None or existing_state.runtime is None
-                runtime = await self._runtime_for(task.context_id, workspace)
-                if permission_mode:
-                    runtime.set_permission_mode(permission_mode)
-                if is_new_context and self._on_new_context is not None:
-                    await asyncio.to_thread(self._on_new_context, task.context_id)
-            self._aborts[task.id] = runtime
-            runtime.set_a2a_task_id(task.id)
-            runtime.set_delegation_depth(int(metadata.get(Metadata.DEPTH, 0)))
-            if self._registry is not None:
-                participant_task_identifier = (
-                    str(metadata.get(Metadata.AGENT_LANE_STEP_ID, ""))
-                    if delegated
-                    else task.id
-                )
-                runtime.set_agent_messaging(
-                    self._registry.ask_agent,
-                    self._registry.respond_agent,
-                    self._registry.reserve_participant,
-                    self._registry.release_reserved_participant,
-                    self._registry.active_agents,
-                )
-                self._registry.register_participant(
-                    task_id=task.id,
-                    task_identifier=participant_task_identifier,
-                    context_id=task.context_id,
-                    agent_name=self._agent_name,
-                    runtime=runtime,
-                )
-                participant_registered = True
-
-            # A manual compaction turn runs no model turn: it summarizes the older
-            # history in place and emits the compaction parts (the live indicator +
-            # the separator), then completes. Persisted like any turn, so the
-            # separator replays; fanned out, so viewers see it live.
-            if compaction:
-                async for compaction_event in runtime.compact(reason="manual"):
-                    await emit_compaction(compaction_event)
-                await save_runtime_conversation()
-                await updater.complete()
-                return
-
-            # A render_error is injected as the model's own realization (a harness
-            # note delivered in a <systemReminder> block), never as user prose;
-            # every other artifact event is the turn's structured JSON input.
-            as_system_note = autonomous
-            if autonomous:
-                # The wake message carries no prose (only an `autonomous_resume`
-                # part); the framing note is supplied here and injected into the
-                # model as a <systemReminder> harness note — cache-safe user-role
-                # delivery (see AgentRuntime._harness_note_message) that never
-                # appears as user input in the transcript.
-                turn_input = _PROMPTS.load("background_resume_note", {})
-            elif artifact_payload is not None:
-                payload_json = json.dumps({"artifact_event": artifact_payload}, ensure_ascii=False)
-                if artifact_payload.get("event") == "render_error":
-                    # The same JSON payload, wrapped in a self-realization note and
-                    # injected as a harness note rather than user input.
-                    turn_input = runtime.artifact_render_error_note(payload_json)
-                    as_system_note = True
-                else:
-                    turn_input = payload_json
-            elif structured_payloads:
-                # The structured metadata (attachment file paths and any per-attachment
-                # annotations) always rides along as a text block so the model can act
-                # on the attachments with its tools. Images are inlined only when the
-                # agent model advertises vision support; otherwise the model gets
-                # metadata/path access and the UI receives a non-fatal warning.
-                # The model-facing copy of the data parts keeps annotation positions
-                # on the normalized 0-999 grid documented in the system prompt.
-                text_payload = json.dumps({
-                    "text": user_text,
-                    "data_parts": normalize_annotation_payloads(structured_payloads),
-                }, ensure_ascii=False)
-                image_attachments = _image_attachments(structured_payloads)
-                model_identifier = runtime.effective_model_identifier if runtime is not None else ""
-                image_blocks = []
-                if image_attachments and _model_supports_vision(model_identifier):
-                    image_blocks = [
-                        block
-                        for attachment in image_attachments
-                        if (block := _image_content_block(attachment)) is not None
-                    ]
-                elif image_attachments:
-                    await emit(_data_part(**_attachment_warning_payload(len(image_attachments), model_identifier)))
-                if _model_supports_vision(model_identifier):
-                    # Artifact-image annotations: alongside the structured facts, a
-                    # vision model also gets the image itself with numbered circle
-                    # badges stamped at each annotation position (numbers match the
-                    # payload's `sequence` values). Pure Pillow work — run off-loop.
-                    image_blocks.extend(
-                        await asyncio.to_thread(annotation_image_blocks, structured_payloads)
-                    )
-                if image_blocks:
-                    turn_input = [{"type": "text", "text": text_payload}, *image_blocks]
-                    turn_has_images = True
-                else:
-                    turn_input = text_payload
-            else:
-                turn_input = user_text
-
-            runtime.set_pending_attachments(_all_attachments(structured_payloads))
-            # A resume drives the turn from the durable checkpoint (the pending tool-call
-            # AIMessage the rebuilt runtime already holds) with the answered decisions; a
-            # fresh turn drives the model from this segment's input. Both feed the same
-            # event loop, so a re-suspension is handled identically.
-            event_source = (
-                runtime.resume_stream(resume_plans, resume_answers)
-                if is_resume
-                else runtime.stream(turn_input, as_system_note=as_system_note)
-            )
-            async for event in event_source:
-                kind = event.type
-                data = event.data
-                if kind == StreamEvent.Type.TEXT_CHUNK:
-                    content_block_identifier = str(data.get("block_id", ""))
-                    if not content_block_identifier:
-                        raise ValueError("Assistant text events require a content-block identity.")
-                    await text_buffer.push(
-                        data.get("text", ""),
-                        (content_block_identifier,),
-                    )
-                elif kind == StreamEvent.Type.RELAYED:
-                    # An agent's event, already in the unified vocabulary. Its `path`
-                    # was extended with this agent's segment by the relay (see
-                    # AgentRuntime._run_spawned_agent), so it renders in the agents panel;
-                    # emit it verbatim — no per-kind re-encoding.
-                    await flush_stream_buffers()
-                    await emit(
-                        Part(root=DataPart(data=data["event"])),
-                        publish_stream_event=False,
-                    )
-                elif kind == StreamEvent.Type.THINKING:
-                    await flush_stream_buffers()
-                    await emit(_data_part(
-                        "thinking",
-                        text=data.get("text", ""),
-                        block_id=data.get("block_id", ""),
-                    ))
-                elif kind == StreamEvent.Type.THINKING_DONE:
-                    await flush_stream_buffers()
-                    await emit(_data_part("thinking_done", duration_ms=data.get("duration_ms", 0)))
-                elif kind == StreamEvent.Type.STATUS:
-                    await flush_stream_buffers()
-                    await emit(_data_part("status", code=data.get("code", "")))
-                elif kind == StreamEvent.Type.TOOL_CALL:
-                    await flush_stream_buffers()
-                    await emit(_data_part(
-                        "tool_call", tool_name=data.get("name", ""),
-                        arguments=data.get("arguments", {}), tool_call_id=data.get("id", ""),
-                    ))
-                elif kind == StreamEvent.Type.TOOL_RESULT:
-                    await flush_stream_buffers()
-                    await emit(_tool_result_part(
-                        data.get("name", ""),
-                        data.get("id", ""),
-                        data.get("result"),
-                        data["status"],
-                    ))
-                elif kind == StreamEvent.Type.CHECKPOINT:
-                    # A durable-safe point: snapshot the conversation so a mid-turn crash
-                    # leaves completed tools' results in the record (the next turn does not
-                    # redo them). Not a panel event; not relayed.
-                    await save_runtime_conversation()
-                elif kind == StreamEvent.Type.MCP_EVENT:
-                    await flush_stream_buffers()
-                    await emit(_data_part(
-                        "mcp_event",
-                        server=data.get("server", ""),
-                        tool=data.get("tool", ""),
-                        event=data.get("event", {}),
-                        tool_call_id=data.get("id", ""),
-                    ))
-                elif kind == StreamEvent.Type.USAGE:
-                    await flush_stream_buffers()
-                    cumulative = data.get("cumulative", {})
-                    agents = data.get("agents", {}) or {}
-                    model_identifier = runtime.effective_model_identifier if runtime is not None else ""
-                    _telemetry.set_attributes(turn_span, {
-                        "gen_ai.request.model": model_identifier or None,
-                        "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
-                        "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
-                        "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
-                        "gen_ai.model.calls": cumulative.get("model_calls", 0),
-                    })
-                    _telemetry.record_usage(model_identifier, data.get("input_tokens", 0), data.get("output_tokens", 0))
-                    await emit(_data_part(
-                        "token_usage",
-                        input_tokens=data.get("input_tokens", 0),
-                        output_tokens=data.get("output_tokens", 0),
-                        context_window=data.get("context_window", 0),
-                        cumulative={
-                            "input_tokens": cumulative.get("input_tokens", 0),
-                            "output_tokens": cumulative.get("output_tokens", 0),
-                            "total_tokens": cumulative.get("total_tokens", 0),
-                            "cache_read_tokens": cumulative.get("cache_read_tokens", 0),
-                            "reasoning_tokens": cumulative.get("reasoning_tokens", 0),
-                            "model_calls": cumulative.get("model_calls", 0),
-                        },
-                        agents={
-                            "input_tokens": agents.get("input_tokens", 0),
-                            "output_tokens": agents.get("output_tokens", 0),
-                            "total_tokens": agents.get("total_tokens", 0),
-                            "model_calls": agents.get("model_calls", 0),
-                        },
-                    ))
-                elif kind == StreamEvent.Type.SUSPENDED:
-                    # The turn needs one or more human decisions before it can run its tool
-                    # batch. Surface each gate as its native DataPart so the app renders the
-                    # prompt(s) — in the transcript for a top-level turn, relayed to the
-                    # agents panel for a delegated one. The continuation transport then
-                    # differs by turn kind (below).
-                    await flush_stream_buffers()
-                    interactions = data.get("interactions", []) or []
-                    plans = data.get("plans", {}) or {}
-                    for gate in interactions:
-                        if gate.get("kind") == "question":
-                            await emit(_data_part(
-                                "question", request_id=gate.get("request_id", ""),
-                                tool_call_id=gate.get("tool_call_id", ""),
-                                questions=gate.get("questions", []) or [],
-                            ))
-                        else:
-                            await emit(_data_part(
-                                "permission_request", request_id=gate.get("request_id", ""),
-                                tool_call_id=gate.get("tool_call_id", ""),
-                                command=gate.get("command", ""), justification=gate.get("justification", ""),
-                                risk=gate.get("risk", ""),
-                            ))
-                    if delegated:
-                        # A delegated turn parks in place: the prompt is relayed to the panel
-                        # and the runtime awaits the answer on its own stream. Nothing is
-                        # persisted as input-required and the segment stays open — the pause
-                        # is ephemeral (failed, not resumed, on restart), and its answer routes
-                        # through the shared resolver's delegated path. Keep consuming.
-                        continue
-                    # A top-level turn suspends durably: record the pending interactions and
-                    # the checkpoint, flag the session awaiting input, and close this segment
-                    # as input-required (final); a later answer rebuilds and resumes it.
-                    task.metadata = {
-                        **(task.metadata or {}),
-                        PENDING_INTERACTION_KEY: {
-                            "gates": interactions, "plans": plans, "answers": {},
-                            "agent": self._agent_name,
-                        },
-                    }
-                    if self._on_permission_state is not None:
-                        self._on_permission_state(task.context_id, True)
-                    await save_runtime_conversation()
-                    await self._task_store.save(task)
-                    await updater.update_status(
-                        TaskState.input_required,
-                        updater.new_agent_message([_data_part("status", code="input_required")]),
-                        final=True,
-                    )
-                    return
-                elif kind == StreamEvent.Type.ERROR:
-                    await flush_stream_buffers()
-                    failed_message = data.get("message", "error")
-                    await emit(_data_part(
-                        "error",
-                        message=failed_message,
-                        tool_call_id=data.get("id", ""),
-                        tool_name=data.get("tool", ""),
-                    ))
-                elif kind == StreamEvent.Type.GROUP_STARTED:
-                    await flush_stream_buffers()
-                    await emit(_data_part(
-                        "group_started",
-                        path=[{"group_id": data.get("group_id", ""), "step_id": data.get("step_id", "")}],
-                        agent_name=data.get("agent_name", ""),
-                        title=data.get("title", ""),
-                        tool_call_id=data.get("tool_call_id", ""),
-                    ))
-                elif kind == StreamEvent.Type.STEERING:
-                    await flush_stream_buffers()
-                    await emit(_data_part("steering", text=data.get("text", "")))
-                elif kind in (StreamEvent.Type.COMPACTION_STARTED, StreamEvent.Type.COMPACTION_DONE):
-                    await flush_stream_buffers()
-                    await emit_compaction(event)
-                elif kind == StreamEvent.Type.DONE:
-                    await flush_stream_buffers()
-                    final_text = data.get("text", "") or final_text
-                    stop_reason = data.get("stop_reason", "") or stop_reason
-
-            await flush_stream_buffers()
-
-            if final_text.strip():
-                await updater.add_artifact(
-                    [_text_part(final_text, f"artifact-result:{task.id}")],
-                    name="result",
-                    last_chunk=True,
-                )
-            await save_runtime_conversation()
-            if stop_reason == "cancelled":
-                # The user pressed Stop — end the task as canceled, not completed, so the
-                # transcript and replay read it honestly as a stopped turn.
-                await updater.cancel()
-            elif failed_message and not final_text.strip():
-                # failed_message carries raw, model-facing error text (e.g. a tool
-                # exception) — never leak it to the user. Surface a safe category.
-                await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(failed_message))]))
-            else:
-                await updater.complete()
-        except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
-            await save_runtime_conversation()
-            # Log the real exception server-side for debugging, but show the user
-            # only a safe category — never the raw exception text.
-            logger.exception("Agent turn failed: %s", exception)
-            await updater.failed(updater.new_agent_message([_data_part("error", **_safe_turn_error(exception, had_images=turn_has_images))]))
-        finally:
-            with suppress(Exception):
-                turn_span_context.__exit__(None, None, None)
-            if participant_registered and self._registry is not None:
-                self._registry.unregister_participant(task.id)
-            self._aborts.pop(task.id, None)
-            # The context's live state, or None if the session was deleted mid-turn
-            # (teardown_context popped it). A torn-down context must not be re-persisted
-            # or re-armed below — otherwise the aborted turn's finally would resurrect
-            # the very rows the delete flow just removed.
-            state = self._contexts.get(task.context_id)
-            # Persist the conversation after a top-level turn so a later restart can
-            # restore it. Delegated agent runs have their own throwaway history
-            # and don't touch the shared context, so they are not persisted. Only save
-            # when there is something to save (a built runtime, or an already-cached
-            # conversation) — an autonomous no-op wake has neither, and blindly saving
-            # an empty list would clobber the persisted history. Skip entirely once the
-            # session is deleted, so a stopped-and-deleted turn never re-orphans its row.
-            if state is not None and not delegated and (
-                runtime is not None or task.context_id in self._conversations
-            ):
-                messages = runtime.conversation if runtime is not None else self._conversations.get(task.context_id, [])
-                await self._task_store.save_checkpoint(
-                    task.context_id, task.id, messages_to_dict(messages)
-                )
-            # Stop accepting steering for this context before draining the queue, then
-            # discard anything that arrived too late to be honored (raced in after the
-            # loop's final drain, or while the turn was ending/failing). Such messages
-            # were never applied to the conversation; the client re-sends them as a
-            # fresh turn on stream close, so leaving them queued here would double-
-            # apply them when the next turn drains the runtime at its first boundary.
-            if track_steerable_turn and state is not None:
-                state.running = False
-            if state is not None and state.runtime is not None:
-                state.runtime.discard_pending_steering()
-            if track_context_activity and on_turn_state is not None:
-                on_turn_state(task.context_id, False)
-            if context_serialization_lock is not None:
-                context_serialization_lock.release()
-            # If background work is still in flight after this turn, make sure a
-            # resume pump is watching so the next completion wakes the agent on its
-            # own. Pass the runtime this turn used (not a cache lookup) so a reset
-            # that cleared the cache mid-turn cannot strand the pending work.
-            # Delegated turns don't own the context lifecycle, so they skip it.
-            if not delegated:
-                self._arm_resume_pump(task.context_id, runtime)
+        task.metadata = suspended.apply_to(task.metadata)
+        if self._on_permission_state is not None:
+            self._on_permission_state(task.context_id, True)
+        await save_conversation()
+        await self._task_store.save(task)
+        await updater.update_status(
+            TaskState.input_required,
+            updater.new_agent_message([_data_part("status", code="input_required")]),
+            final=True,
+        )
+        return True
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or (context.current_task.id if context.current_task else "")
@@ -1939,13 +2134,10 @@ class AgentRegistry:
         records the answer and, once every gate is answered, rebuilds and resumes the turn."""
         tasks = await self._task_store.tasks_for_context(context_id)
         for task in tasks:
-            pending = (task.metadata or {}).get(PENDING_INTERACTION_KEY)
-            if not isinstance(pending, dict):
+            pending = TurnRecord.from_metadata(task.metadata).pending
+            if pending is None or pending.gate_for(request_id) is None:
                 continue
-            gates = pending.get("gates", []) or []
-            if not any(gate.get("request_id") == request_id for gate in gates):
-                continue
-            handler = self._handlers.get(str(pending.get("agent", "")))
+            handler = self._handlers.get(pending.agent)
             if handler is None:
                 return False
             data: dict[str, Any] = {"request_id": request_id}
@@ -1998,17 +2190,14 @@ class AgentRegistry:
         whether a pending task was found."""
         tasks = await self._task_store.tasks_for_context(context_id)
         for task in tasks:
-            pending = (task.metadata or {}).get(PENDING_INTERACTION_KEY)
-            if not isinstance(pending, dict):
+            pending = TurnRecord.from_metadata(task.metadata).pending
+            if pending is None or not pending.gates:
                 continue
-            gates = pending.get("gates", []) or []
-            if not gates:
-                continue
-            for gate in gates:
-                if gate.get("kind") == "question":
-                    await self.resolve_pending_input(context_id, str(gate.get("request_id", "")), declined=True)
+            for gate in pending.gates:
+                if gate.is_question:
+                    await self.resolve_pending_input(context_id, gate.request_id, declined=True)
                 else:
-                    await self.resolve_pending_input(context_id, str(gate.get("request_id", "")), decision="deny")
+                    await self.resolve_pending_input(context_id, gate.request_id, decision="deny")
             return True
         return False
 

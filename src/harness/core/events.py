@@ -91,6 +91,9 @@ class TextEvent(_EventBase):
 class ThinkingEvent(_EventBase):
     kind: Literal["thinking"] = "thinking"
     text: str = ""
+    # The reasoning content-block this chunk belongs to, so the client coalesces a
+    # streamed thinking block rather than appending each delta as its own line.
+    block_id: str = ""
 
 
 class ThinkingDoneEvent(_EventBase):
@@ -215,7 +218,18 @@ class PermissionRequestEvent(_EventBase):
 class QuestionEvent(_EventBase):
     kind: Literal["question"] = "question"
     request_id: str
+    # The tool call whose ask_user gate this question answers (empty for a bare question).
+    tool_call_id: str = ""
     questions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class WarningEvent(_EventBase):
+    kind: Literal["warning"] = "warning"
+    # A non-fatal notice surfaced to the user (e.g. an image attached to a non-vision model):
+    # a machine code plus a human title/message. The turn continues.
+    code: str = ""
+    title: str = ""
+    message: str = ""
 
 
 class ErrorEvent(_EventBase):
@@ -236,7 +250,8 @@ WireEvent = Annotated[
     Union[
         TextEvent, ThinkingEvent, ThinkingDoneEvent, ToolCallEvent, ToolResultEvent,
         McpEvent, StatusEvent, GroupStartedEvent, DoneEvent, CompactionEvent,
-        SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent, ErrorEvent,
+        SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent,
+        WarningEvent, ErrorEvent,
     ],
     Field(discriminator="kind"),
 ]
@@ -245,7 +260,8 @@ WireEvent = Annotated[
 WIRE_EVENT_MODELS: tuple[type[_EventBase], ...] = (
     TextEvent, ThinkingEvent, ThinkingDoneEvent, ToolCallEvent, ToolResultEvent,
     McpEvent, StatusEvent, GroupStartedEvent, DoneEvent, CompactionEvent,
-    SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent, ErrorEvent,
+    SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent,
+    WarningEvent, ErrorEvent,
 )
 
 

@@ -60,6 +60,7 @@ from harness.core.push_notification_store import PersistentPushNotificationConfi
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
+    AgentSidecar,
     GlobalConfiguration,
     PromptLoader,
     agent_configuration_path,
@@ -1724,49 +1725,35 @@ def _save_agent_sidecar(agent_markdown_path: Path, data: dict[str, Any]) -> None
     sidecar_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
-def _string_keyed_mapping(value: Any) -> dict[str, Any]:
-    return {str(key): item for key, item in value.items()} if isinstance(value, dict) else {}
-
-
 def _apply_agent_configuration_update(sidecar: dict[str, Any], request: "AgentConfigurationUpdateRequest") -> dict[str, Any]:
-    next_sidecar = dict(sidecar)
+    model = AgentSidecar.from_mapping(sidecar)
     if request.model is not None or request.provider is not None or request.reasoning_effort is not None:
-        preset = _string_keyed_mapping(next_sidecar.get("preset"))
-        if request.model is not None:
-            preset["model"] = request.model
-        if request.provider is not None:
-            preset["provider"] = request.provider
-        if request.reasoning_effort is not None:
-            preset["reasoningEffort"] = request.reasoning_effort
-        next_sidecar["preset"] = preset
+        model.set_preset(
+            model=request.model if request.model is not None else ...,
+            provider=request.provider if request.provider is not None else ...,
+            reasoning_effort=request.reasoning_effort if request.reasoning_effort is not None else ...,
+        )
     if request.permission_mode is not None:
-        next_sidecar["permissionMode"] = request.permission_mode
+        model.permission_mode = request.permission_mode
     if request.stream_agent_progress is not None:
-        next_sidecar["streamAgentProgress"] = request.stream_agent_progress
-
-    tools = _string_keyed_mapping(next_sidecar.get("tools"))
+        model.stream_agent_progress = request.stream_agent_progress
     if request.tools_enabled is not None:
-        tools["enabledBuiltinTools"] = request.tools_enabled
+        model.set_tools_enabled(request.tools_enabled)
     if request.bash is not None:
-        bash = _string_keyed_mapping(tools.get("bash"))
-        if request.bash.enabled is not None:
-            bash["enabled"] = request.bash.enabled
-        if request.bash.background_allowed is not None:
-            bash["backgroundAllowed"] = request.bash.background_allowed
-        if request.bash.permissions is not None:
-            bash["permissions"] = {
-                pattern.strip(): decision.strip().lower()
-                for pattern, decision in request.bash.permissions.items()
-                if pattern.strip() and decision.strip().lower() in {"allow", "ask", "deny"}
-            }
-        tools["bash"] = bash
+        model.set_bash(
+            enabled=request.bash.enabled if request.bash.enabled is not None else ...,
+            background_allowed=request.bash.background_allowed if request.bash.background_allowed is not None else ...,
+            permissions=(
+                AgentSidecar.normalized_permissions(request.bash.permissions)
+                if request.bash.permissions is not None
+                else ...
+            ),
+        )
     if request.spawn_agent is not None:
-        spawn_agent = _string_keyed_mapping(tools.get("spawnAgent"))
-        if request.spawn_agent.enabled is not None:
-            spawn_agent["enabled"] = request.spawn_agent.enabled
-        tools["spawnAgent"] = spawn_agent
-    next_sidecar["tools"] = tools
-    return next_sidecar
+        model.set_spawn_agent(
+            enabled=request.spawn_agent.enabled if request.spawn_agent.enabled is not None else ...,
+        )
+    return model.to_mapping()
 
 
 async def _persist_agent_allow_patterns(agent_identifier: str, project_directory: str, patterns: list[str]) -> None:
@@ -1784,22 +1771,10 @@ async def _persist_agent_allow_patterns(agent_identifier: str, project_directory
             agent_markdown_path, _configuration = _agent_configuration_for_request(agent_identifier, project_directory)
         except FileNotFoundError:
             return False
-        sidecar = _load_agent_sidecar(agent_markdown_path)
-        tools = _string_keyed_mapping(sidecar.get("tools"))
-        bash = _string_keyed_mapping(tools.get("bash"))
-        permissions = _string_keyed_mapping(bash.get("permissions"))
-        changed = False
-        for raw_pattern in patterns:
-            pattern = raw_pattern.strip()
-            if pattern and pattern not in permissions:
-                permissions[pattern] = "allow"
-                changed = True
-        if not changed:
+        sidecar = AgentSidecar.from_mapping(_load_agent_sidecar(agent_markdown_path))
+        if not sidecar.grant_bash_patterns(patterns):
             return False
-        bash["permissions"] = permissions
-        tools["bash"] = bash
-        sidecar["tools"] = tools
-        _save_agent_sidecar(agent_markdown_path, sidecar)
+        _save_agent_sidecar(agent_markdown_path, sidecar.to_mapping())
         return True
 
     if not await asyncio.to_thread(_write):
