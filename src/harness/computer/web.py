@@ -42,7 +42,7 @@ import tempfile
 from collections import deque
 from itertools import count
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from harness.computer.surface import (
     Element, ElementRegistry, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,

@@ -27,8 +27,6 @@ from typing import Any, Awaitable, Callable, Optional, assert_never
 
 from litellm import exceptions as litellm_exceptions
 
-logger = logging.getLogger(__name__)
-
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers.request_handler import RequestHandler
@@ -81,7 +79,6 @@ from harness.core.turn_events import (
     ThinkingDone,
     ToolCall,
     ToolResult,
-    TurnEvent,
     TurnEventUnion,
     Usage,
 )
@@ -117,6 +114,8 @@ from harness.core.message_content import content_block_identifier, content_block
 from harness.core.remote_agents import RemoteAgentManager
 from harness.core.session_workspaces import SessionWorkspace
 from harness.core.skills import Skill
+
+logger = logging.getLogger(__name__)
 
 # The A2A convention is that an extension places its custom attributes under a single
 # URI-namespaced key in the message `metadata` map, not as bare top-level keys — so they

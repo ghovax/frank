@@ -9,7 +9,6 @@ from langchain_core.language_models.chat_models import BaseChatModel
 # unconditionally — so let LiteLLM drop per-provider-unsupported parameters
 # silently rather than fail the call. This is what makes one model configuration
 # portable across providers.
-litellm.drop_params = True
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -19,7 +18,6 @@ from langchain_core.messages import (
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.messages.content import ContentBlock, ReasoningContentBlock
 from langchain_core.messages.tool import ToolCallChunk
-from langchain_core.messages.tool import tool_call as create_tool_call
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
@@ -31,6 +29,8 @@ from harness.core.message_content import (
     message_reasoning_text,
     message_text,
 )
+
+litellm.drop_params = True
 
 
 class ChatLiteLLMModel(BaseChatModel):

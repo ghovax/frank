@@ -13,14 +13,15 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.session import RequestResponder
 from pydantic import AnyUrl
 
-logger = logging.getLogger(__name__)
 
 # How long to wait for one MCP server to complete its connect + initialize handshake
 # on startup before giving up on it and booting without it. Bounds a hung spawn/endpoint
 # so a single unresponsive server can never freeze the whole harness boot.
-_MCP_CONNECT_TIMEOUT_SECONDS = 20.0
 
 from harness.core.configuration import MCPServerConfiguration
+
+logger = logging.getLogger(__name__)
+_MCP_CONNECT_TIMEOUT_SECONDS = 20.0
 
 MCPEventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
