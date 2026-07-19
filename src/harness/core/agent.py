@@ -3719,9 +3719,15 @@ class AgentRuntime:
         decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
         resolved_location: "ResolvedLocation | None",
     ) -> AsyncIterator[TurnEvent]:
-        """A cancellable inline wait: the model's own polling primitive. It sleeps up to
+        """A cancellable inline wait: the model's own polling primitive. It waits up to
         ``seconds`` but wakes the instant the turn is asked to stop, so a Stop is never
-        blocked. No model round-trip happens during the wait, so polling is cheap."""
+        blocked. No model round-trip happens during the wait, so polling is cheap.
+
+        Non-blocking by construction: it awaits *this runtime's own* ``_abort_event`` with a
+        timeout — a cooperative suspension that yields the event loop back to every other
+        session and background job. It must never become a blocking ``time.sleep`` (which
+        would freeze the whole server) or a threaded sleep: only this one session's turn
+        pauses; the harness and all other sessions keep running."""
         raw_seconds = tool_arguments.get("seconds", 0)
         try:
             seconds = max(0.0, float(raw_seconds))
