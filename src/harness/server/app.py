@@ -45,7 +45,7 @@ from pydantic import BaseModel, Field
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import BasePushNotificationSender
+from a2a.server.tasks import PushNotificationSender
 
 from harness.core.a2a_executor import (
     AgentRegistry,
@@ -57,7 +57,10 @@ from harness.core.agent import AgentRuntime, build_chat_model, model_is_authoriz
 from harness.core.remote_agents import RemoteAgentAuth, RemoteAgentConfiguration, RemoteAgentManager
 from harness.core.a2a_files import FileUrlSigner, load_or_create_secret
 from harness.core import telemetry as _telemetry
-from harness.core.push_notification_store import PersistentPushNotificationConfigurationStore
+from harness.core.push_notification_store import (
+    PersistentPushNotificationConfigurationStore,
+    PinnedPushNotificationSender,
+)
 from harness.core.task_store import AppendOnlyTaskStore
 import harness.core.configuration as _configuration
 from harness.core.configuration import (
@@ -372,7 +375,7 @@ _file_url_signer: Optional[FileUrlSigner] = None
 # Persisted push-notification configuration store and sender, shared by every mounted
 # agent's handler, so a registered webhook survives a restart.
 _push_configuration_store: Optional[PersistentPushNotificationConfigurationStore] = None
-_push_sender: Optional[BasePushNotificationSender] = None
+_push_sender: Optional[PushNotificationSender] = None
 _push_httpx_client: Optional[httpx.AsyncClient] = None
 _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
@@ -2252,8 +2255,12 @@ async def lifespan(application: FastAPI):
     _registry.set_file_url_signer(_file_url_signer)
     _push_configuration_store = PersistentPushNotificationConfigurationStore(_async_engine)
     await _push_configuration_store.initialize()
-    _push_httpx_client = httpx.AsyncClient(timeout=30.0)
-    _push_sender = BasePushNotificationSender(_push_httpx_client, _push_configuration_store)
+    _push_httpx_client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
+    _push_sender = PinnedPushNotificationSender(
+        _push_httpx_client,
+        _push_configuration_store,
+        allow_private=_push_configuration_store.allow_private_webhooks,
+    )
     for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
