@@ -70,6 +70,10 @@ from harness.core.turn_events import (
     Relayed,
     Status,
     Steering,
+    DelegateDone,
+    DelegateRelay,
+    DelegateStarted,
+    DelegateUsage,
     Suspended,
     SuspensionGate,
     TextChunk,
@@ -2530,9 +2534,9 @@ class AgentRegistry:
             # Remote text carries no harness content-block identity, so synthesize a
             # stable-per-chunk one — the parent relay requires a block id and merges
             # only adjacent chunks sharing it.
-            return {"type": "event", "event": {
+            return DelegateRelay(event={
                 PART_KIND: "text", "text": text, "block_id": f"remote:{agent_name}:{block_counter}",
-            }}
+            })
 
         try:
             async for event in self._remote_manager.send_message(agent_name, message):
@@ -2549,7 +2553,7 @@ class AgentRegistry:
                         child_task_id = task.id
                         if task.context_id:
                             self._remote_contexts[(context_id, agent_name)] = task.context_id
-                        yield {"type": "started", "child_task_id": child_task_id}
+                        yield DelegateStarted(child_task_id=child_task_id)
                 if isinstance(update, TaskStatusUpdateEvent) and update.status.message:
                     for part in update.status.message.parts:
                         root = part.root
@@ -2557,15 +2561,14 @@ class AgentRegistry:
                             yield _relay_text(root.text)
         except Exception as exception:  # noqa: BLE001 — a remote failure ends the lane, never the parent
             logger.warning("Remote delegation to %r failed: %s", agent_name, exception)
-            yield {"type": "event", "event": {
+            yield DelegateRelay(event={
                 PART_KIND: "error", "message": f"Remote agent {agent_name} could not be reached.",
                 "tool_name": "spawn_agent",
-            }}
-        yield {
-            "type": "done",
-            "child_task_id": child_task_id,
-            "task": final_task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if final_task else None,
-        }
+            })
+        yield DelegateDone(
+            child_task_id=child_task_id,
+            task=final_task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if final_task else None,
+        )
 
     def make_delegate(self, context_id: str):
         """Return a delegate bound to a context. Calling it invokes another agent
@@ -2592,7 +2595,7 @@ class AgentRegistry:
                 return
             handler = self._handlers.get(agent_name)
             if handler is None:
-                yield {"type": "done", "child_task_id": "", "task": None}
+                yield DelegateDone()
                 return
             turn_fields: dict = {Metadata.DELEGATED: True, Metadata.DEPTH: depth}
             if lane_group_id and lane_step_id:
@@ -2625,7 +2628,7 @@ class AgentRegistry:
             async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
                 if isinstance(event, Task):
                     child_task_id = event.id
-                    yield {"type": "started", "child_task_id": child_task_id}
+                    yield DelegateStarted(child_task_id=child_task_id)
                 elif isinstance(event, TaskStatusUpdateEvent):
                     child_task_id = event.task_id or child_task_id
                     if event.status.message:
@@ -2643,26 +2646,22 @@ class AgentRegistry:
                                     raise ValueError(
                                         "Relayed assistant text is missing its content-block identity."
                                     )
-                                yield {
-                                    "type": "event",
-                                    "event": {
-                                        PART_KIND: "text",
-                                        "text": root.text,
-                                        "block_id": block_identifier,
-                                    },
-                                }
+                                yield DelegateRelay(event={
+                                    PART_KIND: "text",
+                                    "text": root.text,
+                                    "block_id": block_identifier,
+                                })
                             elif isinstance(root, DataPart) and root.data.get(PART_KIND) == "token_usage":
                                 # Not a panel event — the parent folds the child's spend
                                 # into its separate agent token bucket.
-                                yield {"type": "usage", "event": dict(root.data)}
+                                yield DelegateUsage(event=dict(root.data))
                             elif isinstance(root, DataPart) and root.data.get(PART_KIND) in _RELAYABLE_CHILD_KINDS:
-                                yield {"type": "event", "event": dict(root.data)}
+                                yield DelegateRelay(event=dict(root.data))
                 elif isinstance(event, TaskArtifactUpdateEvent):
                     child_task_id = event.task_id or child_task_id
             final_task = await self._task_store.get(child_task_id) if child_task_id else None
-            yield {
-                "type": "done",
-                "child_task_id": child_task_id,
+            yield DelegateDone(
+                child_task_id=child_task_id,
                 # Hand back only the agent's deliverable (status + result artifact),
                 # never its `history`. The history holds every relayed event — including
                 # full web-search page text — and the parent serializes this task into
@@ -2670,7 +2669,7 @@ class AgentRegistry:
                 # transcript overflows the context window. The live agents panel is fed
                 # by the separate streamed events above, so it is unaffected, and the UI
                 # result card only reads the artifact.
-                "task": final_task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if final_task else None,
-            }
+                task=final_task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if final_task else None,
+            )
 
         return delegate

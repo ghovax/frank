@@ -1,9 +1,7 @@
-"""Shared runtime internals extracted from agent.py.
+"""The AgentRuntime compaction concern (a mixin composed into AgentRuntime).
 
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+Observational Memory: deciding when to compact, running the Observer/Reflector model calls, and
+rewriting the conversation into a dense observation log so an unbounded turn never overflows."""
 from __future__ import annotations
 
 from harness.core.agent_internals import ObservationBatch

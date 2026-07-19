@@ -1,9 +1,7 @@
-"""Shared runtime internals extracted from agent.py.
+"""The AgentRuntime permission concern (a mixin composed into AgentRuntime).
 
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+Classifying a tool call's permission, the bash "always allow" rule lifecycle (distill, remember,
+persist), preflighting a whole batch, resolving per-call decisions, and minting request ids."""
 from __future__ import annotations
 
 from harness.core.agent_internals import _ResolvedToolDecision

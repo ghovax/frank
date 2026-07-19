@@ -1,9 +1,8 @@
-"""Shared runtime internals extracted from agent.py.
+"""The AgentRuntime tool-execution concern (a mixin composed into AgentRuntime).
 
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+The ``_tool_*`` handlers, the ``_execute_tool`` permission/location/dispatch pipeline, concurrent
+batch draining, argument validation, and the backgroundable-tool runner. Imports its dependencies
+from the leaf ``agent_internals`` module and stable modules, so the graph stays a clean DAG."""
 from __future__ import annotations
 
 from a2a.types import TaskState
@@ -39,6 +38,9 @@ from harness.core.tool_policy import _LOCATION_TOOLS
 from harness.core.tuning import Limit
 from harness.core.tuning import active_tuning
 from harness.core.tuning import current_context_window
+from harness.core.turn_events import DelegateDone
+from harness.core.turn_events import DelegateStarted
+from harness.core.turn_events import DelegateUsage
 from harness.core.turn_events import DeniedInjection
 from harness.core.turn_events import Done
 from harness.core.turn_events import Error
@@ -1245,11 +1247,11 @@ class _ToolHandlersMixin:
                     ):
                         # The agent's streamed progress goes to the panel only,
                         # never into the parent's model context.
-                        if delegated.get("type") == "started":
-                            child_task_id = delegated.get("child_task_id", "")
+                        if isinstance(delegated, DelegateStarted):
+                            child_task_id = delegated.child_task_id
                             continue
-                        if delegated.get("type") == "usage":
-                            usage = delegated["event"]
+                        if isinstance(delegated, DelegateUsage):
+                            usage = delegated.event
                             self._add_agent_usage(
                                 int(usage.get("input_tokens", 0) or 0),
                                 int(usage.get("output_tokens", 0) or 0),
@@ -1258,8 +1260,8 @@ class _ToolHandlersMixin:
                         event = self._relay_child_event(delegated, group_id, spawn_step_id)
                         if event is not None:
                             await self._publish_spawned_agent_event(event)
-                        if delegated.get("type") == "done":
-                            child_task = delegated.get("task")
+                        if isinstance(delegated, DelegateDone):
+                            child_task = delegated.task
                             # The child's turn is a control signal, not a relayed panel
                             # event; synthesize a `done` at this step's path so the panel
                             # marks it terminal.

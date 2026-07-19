@@ -236,6 +236,41 @@ class CompactionDone(TurnEvent):
     observations_added: int = 0
 
 
+# The in-process protocol between the executor's delegate function (which drives a spawned or
+# remote agent's turn) and the runtime's spawn consumer. A closed typed union replacing the
+# stringly ``{"type": "started"/"event"/"usage"/"done", …}`` dicts the two sides used to hand-build
+# and read back with ``.get("type")``. In-process only (never on the wire), so plain dataclasses.
+
+@dataclass(frozen=True)
+class DelegateMessage:
+    """Base of the delegate protocol union."""
+
+
+@dataclass(frozen=True)
+class DelegateStarted(DelegateMessage):
+    """The child A2A task has been created; its id is now known."""
+    child_task_id: str = ""
+
+
+@dataclass(frozen=True)
+class DelegateRelay(DelegateMessage):
+    """A child wire event to relay into the parent's agents panel (a DataPart ``{kind, …}`` dict)."""
+    event: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DelegateUsage(DelegateMessage):
+    """A child token-usage wire event, accumulated into the parent's separate agent-spend bucket."""
+    event: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DelegateDone(DelegateMessage):
+    """The child turn finished; ``task`` is its terminal A2A task (serialized) when available."""
+    child_task_id: str = ""
+    task: "dict[str, Any] | None" = None
+
+
 # The closed union of every turn event, so a consumer can dispatch with ``match`` and prove
 # exhaustiveness with ``assert_never`` in the default case — a new variant that a consumer forgets
 # is then a static error, not a silently dropped branch.

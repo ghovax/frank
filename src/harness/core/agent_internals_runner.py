@@ -1,9 +1,7 @@
-"""Shared runtime internals extracted from agent.py.
+"""AgentRunner — drives one spawned sub-agent's turn to a serialized A2A Task.
 
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+In its own leaf module because it instantiates AgentRuntime (via a call-time import), so the tool
+mixin can import it without an import cycle back to the composed class."""
 from __future__ import annotations
 
 from a2a.types import Task

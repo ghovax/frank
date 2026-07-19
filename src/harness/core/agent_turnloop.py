@@ -1,9 +1,8 @@
-"""Shared runtime internals extracted from agent.py.
+"""The AgentRuntime turn-loop concern (a mixin composed into AgentRuntime).
 
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+The ``stream()`` driver and its phases — the model call, the no-tool-calls finalize (goal nudge,
+agent messaging, completion), and the tool batch — plus turn-message assembly, the static/dynamic
+system prompt, steering drain, and turn recording."""
 from __future__ import annotations
 
 from contextlib import suppress

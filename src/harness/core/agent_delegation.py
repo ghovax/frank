@@ -1,9 +1,7 @@
-"""Shared runtime internals extracted from agent.py.
+"""The AgentRuntime delegation concern (a mixin composed into AgentRuntime).
 
-The helper functions, small dataclasses, and support classes the AgentRuntime concern
-mixins reference. Kept in a leaf module (it imports only stable modules, never agent.py or
-the mixin files) so the dependency graph is a clean DAG — agent_internals -> mixin files ->
-agent.py — with no import cycle."""
+Loading and prompting sub-agents, relaying a child's events into the agents panel, the peer
+messaging mailbox, and awaiting a delegated (parked) turn's human answers on per-gate futures."""
 from __future__ import annotations
 
 from contextlib import suppress
@@ -12,6 +10,8 @@ from harness.core.agent_internals import model_is_authorized
 from harness.core.agent_messages import AgentMessage
 from harness.core.configuration import AgentConfiguration
 from harness.core.configuration import load_agent_configuration
+from harness.core.turn_events import DelegateMessage
+from harness.core.turn_events import DelegateRelay
 from harness.core.turn_events import Relayed
 from harness.core.turn_events import TurnEvent
 from typing import Any
@@ -149,14 +149,14 @@ class _DelegationMixin:
             "prompt": prompt,
         })
 
-    def _relay_child_event(self, delegated: dict, group_id: str, step_id: str) -> "TurnEvent | None":
+    def _relay_child_event(self, delegated: "DelegateMessage", group_id: str, step_id: str) -> "TurnEvent | None":
         """Wrap one relayed agent event for re-emission. The child already speaks
         the unified vocabulary; we only prefix this agent's path segment so it renders
-        at the right depth. Non-event control signals (started/done) carry no panel
+        at the right depth. Non-relay control messages (started/usage/done) carry no panel
         update and return ``None``."""
-        if delegated.get("type") != "event":
+        if not isinstance(delegated, DelegateRelay):
             return None
-        child_event = dict(delegated["event"])
+        child_event = dict(delegated.event)
         segment = {"group_id": group_id, "step_id": step_id}
         child_event["path"] = [segment, *child_event.get("path", [])]
         child_event["event_id"] = child_event.get("event_id") or uuid.uuid4().hex
