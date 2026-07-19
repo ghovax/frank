@@ -20,9 +20,10 @@ import json
 import logging
 import uuid
 from contextlib import suppress
+import dataclasses
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, assert_never
 
 from litellm import exceptions as litellm_exceptions
 
@@ -70,12 +71,14 @@ from harness.core.turn_events import (
     Status,
     Steering,
     Suspended,
+    SuspensionGate,
     TextChunk,
     Thinking,
     ThinkingDone,
     ToolCall,
     ToolResult,
     TurnEvent,
+    TurnEventUnion,
     Usage,
 )
 from harness.core.agent_messages import AgentMessage
@@ -677,7 +680,7 @@ class _TurnEventSink:
         *,
         emit: Callable[..., Awaitable[None]],
         save_conversation: Callable[[], Awaitable[None]],
-        suspend: Callable[[list[dict], dict], Awaitable[bool]],
+        suspend: Callable[[list[SuspensionGate], dict], Awaitable[bool]],
         telemetry_span: Any,
         model_identifier: Callable[[], str],
     ) -> None:
@@ -719,156 +722,139 @@ class _TurnEventSink:
                 tokens_before=event.tokens_before,
             )))
 
-    async def handle(self, event: TurnEvent) -> bool:
-        """Consume one runtime event — emit its wire parts and advance turn state.
-        Returns True when the turn should stop consuming and return from ``execute`` (a
-        durable top-level suspension closed the segment), False to keep consuming."""
-        if isinstance(event, TextChunk):
-            content_block_identifier = str(event.block_id)
-            if not content_block_identifier:
-                raise ValueError("Assistant text events require a content-block identity.")
-            await self._text.push(
-                event.text,
-                (content_block_identifier,),
-            )
-        elif isinstance(event, Relayed):
-            # An agent's event, already in the unified vocabulary. Its `path`
-            # was extended with this agent's segment by the relay (see
-            # AgentRuntime._run_spawned_agent), so it renders in the agents panel;
-            # emit it verbatim — no per-kind re-encoding.
-            await self.flush()
-            await self._emit(
-                Part(root=DataPart(data=event.event)),
-                publish_stream_event=False,
-            )
-        elif isinstance(event, Thinking):
-            await self.flush()
-            await self._emit(_event_part(ThinkingEvent(
-                text=event.text,
-                block_id=event.block_id,
-            )))
-        elif isinstance(event, ThinkingDone):
-            await self.flush()
-            await self._emit(_event_part(ThinkingDoneEvent(duration_ms=event.duration_ms)))
-        elif isinstance(event, Status):
-            await self.flush()
-            await self._emit(_event_part(StatusEvent(code=event.code)))
-        elif isinstance(event, ToolCall):
-            await self.flush()
-            await self._emit(_event_part(ToolCallEvent(
-                tool_name=event.name,
-                arguments=event.arguments if event.arguments is not None else {}, tool_call_id=event.id,
-            )))
-        elif isinstance(event, ToolResult):
-            await self.flush()
-            await self._emit(_tool_result_part(
-                event.name,
-                event.id,
-                event.result,
-                event.status,
-            ))
-        elif isinstance(event, Checkpoint):
-            # A durable-safe point: snapshot the conversation so a mid-turn crash
-            # leaves completed tools' results in the record (the next turn does not
-            # redo them). Not a panel event; not relayed.
-            await self._save_conversation()
-        elif isinstance(event, McpEvent):
-            await self.flush()
-            await self._emit(_event_part(McpWireEvent(
-                server=event.server,
-                tool=event.tool,
-                event=event.event if event.event is not None else {},
-                tool_call_id=event.id,
-            )))
-        elif isinstance(event, Usage):
-            await self.flush()
-            cumulative = event.cumulative or {}
-            agents = event.agents or {}
-            model_identifier = self._model_identifier()
-            _telemetry.set_attributes(self._span, {
-                "gen_ai.request.model": model_identifier or None,
-                "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
-                "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
-                "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
-                "gen_ai.model.calls": cumulative.get("model_calls", 0),
-            })
-            _telemetry.record_usage(model_identifier, event.input_tokens, event.output_tokens)
-            await self._emit(_event_part(TokenUsageEvent(
-                input_tokens=event.input_tokens,
-                output_tokens=event.output_tokens,
-                context_window=event.context_window,
-                cumulative=CumulativeUsage(
-                    input_tokens=cumulative.get("input_tokens", 0),
-                    output_tokens=cumulative.get("output_tokens", 0),
-                    total_tokens=cumulative.get("total_tokens", 0),
-                    cache_read_tokens=cumulative.get("cache_read_tokens", 0),
-                    reasoning_tokens=cumulative.get("reasoning_tokens", 0),
-                    model_calls=cumulative.get("model_calls", 0),
-                ),
-                agents=AgentUsage(
-                    input_tokens=agents.get("input_tokens", 0),
-                    output_tokens=agents.get("output_tokens", 0),
-                    total_tokens=agents.get("total_tokens", 0),
-                    model_calls=agents.get("model_calls", 0),
-                ),
-            )))
-        elif isinstance(event, Suspended):
-            # The turn needs one or more human decisions before it can run its tool
-            # batch. Surface each gate as its native DataPart so the app renders the
-            # prompt(s) — in the transcript for a top-level turn, relayed to the
-            # agents panel for a delegated one. The continuation transport then
-            # differs by turn kind, forked to the injected suspend strategy.
-            await self.flush()
-            interactions = event.interactions or []
-            plans = event.plans or {}
-            for gate in interactions:
-                if gate.get("kind") == "question":
-                    await self._emit(_event_part(QuestionEvent(
-                        request_id=gate.get("request_id", ""),
-                        tool_call_id=gate.get("tool_call_id", ""),
-                        questions=gate.get("questions", []) or [],
-                    )))
-                else:
-                    await self._emit(_event_part(PermissionRequestEvent(
-                        request_id=gate.get("request_id", ""),
-                        tool_call_id=gate.get("tool_call_id", ""),
-                        command=gate.get("command", ""), justification=gate.get("justification", ""),
-                        risk=gate.get("risk", ""),
-                    )))
-            return await self._suspend(interactions, plans)
-        elif isinstance(event, Error):
-            await self.flush()
-            await self._emit(_event_part(ErrorEvent(
-                message=event.message or "error",
-                tool_call_id=event.id,
-                tool_name=event.tool,
-            )))
-        elif isinstance(event, GroupStarted):
-            await self.flush()
-            await self._emit(_event_part(GroupStartedEvent(
-                path=[AgentPathSegment(group_id=event.group_id, step_id=event.step_id)],
-                agent_name=event.agent_name,
-                title=event.title,
-                tool_call_id=event.tool_call_id,
-            )))
-        elif isinstance(event, Steering):
-            await self.flush()
-            await self._emit(_event_part(SteeringEvent(text=event.text)))
-        elif isinstance(event, (CompactionStarted, CompactionDone)):
-            await self.flush()
-            await self.emit_compaction(event)
-        elif isinstance(event, Done):
-            await self.flush()
-            self.final_text = event.text or self.final_text
-            self.stop_reason = event.stop_reason or self.stop_reason
-        elif isinstance(event, DeniedInjection):
-            # A denied-command marker the runtime tracks for its own bookkeeping; the
-            # executor does not surface it.
-            pass
-        else:
-            # A closed union: a new event kind that reaches here is a wiring bug, not a
-            # silently dropped elif.
-            raise AssertionError(f"unhandled turn event: {type(event).__name__}")
+    async def handle(self, event: TurnEventUnion) -> bool:
+        """Consume one runtime event — emit its wire parts and advance turn state. Dispatch is
+        a ``match`` over the closed :data:`TurnEventUnion`; the ``case _`` calls
+        :func:`assert_never`, so a new variant a consumer forgets is a static exhaustiveness
+        error, not a silently dropped branch (and a wiring bug at runtime if one slips through).
+        Returns True when the turn should stop consuming and return from ``execute`` (a durable
+        top-level suspension closed the segment), False to keep consuming."""
+        match event:
+            case TextChunk():
+                content_block_identifier = str(event.block_id)
+                if not content_block_identifier:
+                    raise ValueError("Assistant text events require a content-block identity.")
+                await self._text.push(event.text, (content_block_identifier,))
+            case Relayed():
+                # An agent's event, already in the unified vocabulary. Its `path` was extended
+                # with this agent's segment by the relay (see AgentRuntime._run_spawned_agent),
+                # so it renders in the agents panel; emit it verbatim — no per-kind re-encoding.
+                await self.flush()
+                await self._emit(Part(root=DataPart(data=event.event)), publish_stream_event=False)
+            case Thinking():
+                await self.flush()
+                await self._emit(_event_part(ThinkingEvent(text=event.text, block_id=event.block_id)))
+            case ThinkingDone():
+                await self.flush()
+                await self._emit(_event_part(ThinkingDoneEvent(duration_ms=event.duration_ms)))
+            case Status():
+                await self.flush()
+                await self._emit(_event_part(StatusEvent(code=event.code)))
+            case ToolCall():
+                await self.flush()
+                await self._emit(_event_part(ToolCallEvent(
+                    tool_name=event.name,
+                    arguments=event.arguments if event.arguments is not None else {}, tool_call_id=event.id,
+                )))
+            case ToolResult():
+                await self.flush()
+                await self._emit(_tool_result_part(event.name, event.id, event.result, event.status))
+            case Checkpoint():
+                # A durable-safe point: snapshot the conversation so a mid-turn crash leaves
+                # completed tools' results in the record (the next turn does not redo them).
+                await self._save_conversation()
+            case McpEvent():
+                await self.flush()
+                await self._emit(_event_part(McpWireEvent(
+                    server=event.server,
+                    tool=event.tool,
+                    event=event.event if event.event is not None else {},
+                    tool_call_id=event.id,
+                )))
+            case Usage():
+                await self.flush()
+                cumulative = event.cumulative or {}
+                agents = event.agents or {}
+                model_identifier = self._model_identifier()
+                _telemetry.set_attributes(self._span, {
+                    "gen_ai.request.model": model_identifier or None,
+                    "gen_ai.usage.input_tokens": cumulative.get("input_tokens", 0),
+                    "gen_ai.usage.output_tokens": cumulative.get("output_tokens", 0),
+                    "gen_ai.usage.total_tokens": cumulative.get("total_tokens", 0),
+                    "gen_ai.model.calls": cumulative.get("model_calls", 0),
+                })
+                _telemetry.record_usage(model_identifier, event.input_tokens, event.output_tokens)
+                await self._emit(_event_part(TokenUsageEvent(
+                    input_tokens=event.input_tokens,
+                    output_tokens=event.output_tokens,
+                    context_window=event.context_window,
+                    cumulative=CumulativeUsage(
+                        input_tokens=cumulative.get("input_tokens", 0),
+                        output_tokens=cumulative.get("output_tokens", 0),
+                        total_tokens=cumulative.get("total_tokens", 0),
+                        cache_read_tokens=cumulative.get("cache_read_tokens", 0),
+                        reasoning_tokens=cumulative.get("reasoning_tokens", 0),
+                        model_calls=cumulative.get("model_calls", 0),
+                    ),
+                    agents=AgentUsage(
+                        input_tokens=agents.get("input_tokens", 0),
+                        output_tokens=agents.get("output_tokens", 0),
+                        total_tokens=agents.get("total_tokens", 0),
+                        model_calls=agents.get("model_calls", 0),
+                    ),
+                )))
+            case Suspended():
+                # The turn needs one or more human decisions before it can run its tool batch.
+                # Surface each gate as its native DataPart so the app renders the prompt(s) — in
+                # the transcript for a top-level turn, relayed to the agents panel for a delegated
+                # one. The continuation transport then forks to the injected suspend strategy.
+                await self.flush()
+                interactions = event.interactions or []
+                plans = event.plans or {}
+                for gate in interactions:
+                    if gate.kind == "question":
+                        await self._emit(_event_part(QuestionEvent(
+                            request_id=gate.request_id,
+                            tool_call_id=gate.tool_call_id,
+                            questions=gate.questions or [],
+                        )))
+                    else:
+                        await self._emit(_event_part(PermissionRequestEvent(
+                            request_id=gate.request_id,
+                            tool_call_id=gate.tool_call_id,
+                            command=gate.command, justification=gate.justification,
+                            risk=gate.risk,
+                        )))
+                return await self._suspend(interactions, plans)
+            case Error():
+                await self.flush()
+                await self._emit(_event_part(ErrorEvent(
+                    message=event.message or "error", tool_call_id=event.id, tool_name=event.tool,
+                )))
+            case GroupStarted():
+                await self.flush()
+                await self._emit(_event_part(GroupStartedEvent(
+                    path=[AgentPathSegment(group_id=event.group_id, step_id=event.step_id)],
+                    agent_name=event.agent_name,
+                    title=event.title,
+                    tool_call_id=event.tool_call_id,
+                )))
+            case Steering():
+                await self.flush()
+                await self._emit(_event_part(SteeringEvent(text=event.text)))
+            case CompactionStarted() | CompactionDone():
+                await self.flush()
+                await self.emit_compaction(event)
+            case Done():
+                await self.flush()
+                self.final_text = event.text or self.final_text
+                self.stop_reason = event.stop_reason or self.stop_reason
+            case DeniedInjection():
+                # A denied-command marker the runtime tracks for its own bookkeeping; the
+                # executor does not surface it.
+                pass
+            case _:
+                assert_never(event)
         return False
 
 
@@ -1002,7 +988,7 @@ class _TurnRunner:
             if session_state is not None:
                 self._runtime.clear_session_dirty()
 
-    async def _suspend_turn(self, interactions: list[dict], plans: dict) -> bool:
+    async def _suspend_turn(self, interactions: list[SuspensionGate], plans: dict) -> bool:
         # The continuation transport differs by turn kind. A delegated turn is an
         # in-process park: it parks in place (the runtime awaits the answer on its own
         # stream, the prompt relayed to the panel), nothing is persisted as input-required,
@@ -2022,7 +2008,7 @@ class HarnessAgentExecutor(AgentExecutor):
         self,
         task: Task,
         updater: TaskUpdater,
-        interactions: list[dict],
+        interactions: list[SuspensionGate],
         plans: dict,
         save_conversation: Callable[[], Awaitable[None]],
     ) -> bool:
@@ -2036,7 +2022,7 @@ class HarnessAgentExecutor(AgentExecutor):
         """
         suspended = TurnRecord.from_metadata(task.metadata)
         suspended.pending = PendingInteraction(
-            gates=[ToolGate.model_validate(gate) for gate in interactions],
+            gates=[ToolGate.model_validate(dataclasses.asdict(gate)) for gate in interactions],
             plans=plans,
             agent=self._agent_name,
         )

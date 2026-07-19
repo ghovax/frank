@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Union
 
 from harness.core.events import ToolStatus, tool_status_from_result
 
@@ -141,10 +141,34 @@ class Done(TurnEvent):
 
 
 @dataclass(frozen=True)
+class SuspensionGate:
+    """One human decision a suspended turn is blocked on — a permission prompt or an
+    ``ask_user`` question. ``kind`` discriminates (``"permission"`` | ``"question"``); the
+    permission fields (``command``/``justification``/``risk``) and the question field
+    (``questions``) are populated per kind. A typed carrier so the executor reads
+    ``gate.kind`` rather than an untyped ``gate.get("kind")`` off a bare dict."""
+
+    request_id: str = ""
+    tool_call_id: str = ""
+    kind: str = "permission"
+    command: str = ""
+    justification: str = ""
+    risk: str = ""
+    questions: list[dict[str, Any]] = field(default_factory=list)
+    is_bash: bool = False
+    deny_message: str = ""
+    egress_agent: str = ""
+
+
+@dataclass(frozen=True)
 class Suspended(TurnEvent):
     TYPE = EventType.SUSPENDED
-    interactions: list[Any] = field(default_factory=list)
-    plans: dict[str, Any] = field(default_factory=dict)
+    # The gates awaiting a human, typed. `plans` are the preflight tool-plan serializations a
+    # resume rebuilds the batch from — opaque to the sink/executor, which round-trip them
+    # through `_ToolPlan.from_dict`, so they stay a keyed map of plan dicts rather than a
+    # fully modelled shape.
+    interactions: list[SuspensionGate] = field(default_factory=list)
+    plans: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -182,7 +206,9 @@ class GroupStarted(TurnEvent):
 @dataclass(frozen=True)
 class Relayed(TurnEvent):
     TYPE = EventType.RELAYED
-    event: Any = None
+    # A child agent's wire event, already in the unified DataPart vocabulary ({kind, path, …}),
+    # relayed verbatim with this agent's path segment prepended.
+    event: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -208,3 +234,13 @@ class CompactionDone(TurnEvent):
     messages_after: int = 0
     tokens_before: int = 0
     observations_added: int = 0
+
+
+# The closed union of every turn event, so a consumer can dispatch with ``match`` and prove
+# exhaustiveness with ``assert_never`` in the default case — a new variant that a consumer forgets
+# is then a static error, not a silently dropped branch.
+TurnEventUnion = Union[
+    Status, Thinking, ThinkingDone, TextChunk, ToolCall, ToolResult, McpEvent, Usage, Done,
+    Suspended, Checkpoint, Error, DeniedInjection, GroupStarted, Relayed, Steering,
+    CompactionStarted, CompactionDone,
+]

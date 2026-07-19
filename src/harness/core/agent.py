@@ -119,6 +119,7 @@ from harness.core.turn_events import (
     Status,
     Steering,
     Suspended,
+    SuspensionGate,
     TextChunk,
     Thinking,
     ThinkingDone,
@@ -3686,7 +3687,7 @@ class _TurnLoopMixin:
                 #    be a durable segment that a restart would only discard), so it parks
                 #    in place on the answer futures and continues this same stream — the
                 #    executor relays the prompt to the panel while it waits.
-                yield Suspended(interactions=[gate.to_dict() for gate in pending],
+                yield Suspended(interactions=[SuspensionGate(**gate.to_dict()) for gate in pending],
                     plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
                 )
                 if not self._is_agent:
