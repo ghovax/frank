@@ -224,15 +224,19 @@ class AppendOnlyTaskStore(TaskStore):
             Column("status", Text),
             Column("task_metadata", Text),
         )
-        # Append-only history: one row per message, ordered by ``seq``.
+        # Append-only history: one row per message, ordered by ``row_id`` — the database's
+        # own autoincrement insert order. There is no hand-computed per-task position: an
+        # append is a bare insert and the database assigns the monotonic id atomically, so
+        # two concurrent saves of one task can never collide on a position. ``sqlite_auto
+        # increment`` makes the id strictly increasing and never reused, so it stays a valid
+        # ordering key even after compaction deletes the tail of a task's history.
         self._history = Table(
             "task_history",
             self._metadata,
             Column("row_id", Integer, primary_key=True, autoincrement=True),
             Column("task_id", String),
-            Column("seq", Integer),
             Column("message", Text),
-            UniqueConstraint("task_id", "seq", name="uq_task_history_seq"),
+            sqlite_autoincrement=True,
         )
         # Artifacts are few and may be revised in place, so they upsert by id
         # (bounded by artifact count, never by history length).
@@ -479,25 +483,27 @@ class AppendOnlyTaskStore(TaskStore):
 
 
     async def _history_count(self, connection, task_id: str) -> int:
-        """The number of history rows already persisted for a task — equivalently the next
-        seq to assign, since seqs are contiguous from 0. Read authoritatively as
-        ``MAX(seq) + 1`` inside the caller's write transaction, never from a cache: a cached
-        count desyncs from the DB across the terminal-compaction rewrite, and two saves
-        reading the same stale value would compute the same seq and collide on the unique
-        (task_id, seq) constraint."""
+        """How many history rows are already persisted for a task, so ``save`` appends only
+        the suffix of the (only-ever-growing) ``task.history`` not yet stored. A plain COUNT
+        read inside the caller's write transaction: it is *not* a position — the row's
+        position is the database's autoincrement ``row_id`` — and the store's write lock
+        serializes a task's saves, so the count is authoritative when the suffix is sliced."""
         result = await connection.execute(
-            select(func.max(self._history.c.seq)).where(self._history.c.task_id == task_id)
+            select(func.count()).select_from(self._history).where(self._history.c.task_id == task_id)
         )
-        top = result.scalar()
-        return int(top) + 1 if top is not None else 0
+        return int(result.scalar() or 0)
 
     async def _compact_persisted_history(self, connection, task_id: str, messages: list) -> int:
+        """Rewrite a task's stored history in place with its compacted form, ordered by
+        ``row_id``: overwrite the first M rows' messages (their row_ids, and so their order,
+        unchanged), append any surplus as new rows, and delete the tail rows the compaction
+        dropped — keyed on ``row_id``, so the compacted order is preserved by construction."""
         compacted_messages = _compact_history(messages)
         existing_rows = (
             await connection.execute(
                 select(self._history.c.row_id)
                 .where(self._history.c.task_id == task_id)
-                .order_by(self._history.c.seq)
+                .order_by(self._history.c.row_id)
             )
         ).all()
 
@@ -510,22 +516,14 @@ class AppendOnlyTaskStore(TaskStore):
                 )
             else:
                 await connection.execute(
-                    self._history.insert().values(
-                        task_id=task_id,
-                        seq=message_index,
-                        message=json.dumps(message),
-                    )
+                    self._history.insert().values(task_id=task_id, message=json.dumps(message))
                 )
 
-        if compacted_messages:
+        surplus_row_ids = [row.row_id for row in existing_rows[len(compacted_messages):]]
+        if surplus_row_ids:
             await connection.execute(
-                delete(self._history).where(
-                    self._history.c.task_id == task_id,
-                    self._history.c.seq >= len(compacted_messages),
-                )
+                delete(self._history).where(self._history.c.row_id.in_(surplus_row_ids))
             )
-        else:
-            await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
         return len(compacted_messages)
 
     async def save(self, task: Task, context: ServerCallContext | None = None) -> None:
@@ -571,10 +569,7 @@ class AppendOnlyTaskStore(TaskStore):
                     if new_messages:
                         await connection.execute(
                             self._history.insert(),
-                            [
-                                {"task_id": task.id, "seq": persisted + offset, "message": _dump(message)}
-                                for offset, message in enumerate(new_messages)
-                            ],
+                            [{"task_id": task.id, "message": _dump(message)} for message in new_messages],
                         )
 
                 # Artifacts: upsert each by id (replace-in-place is safe and bounded).
@@ -605,7 +600,7 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     select(self._history.c.message)
                     .where(self._history.c.task_id == task_id)
-                    .order_by(self._history.c.seq)
+                    .order_by(self._history.c.row_id)
                 )
             ).scalars().all()
             artifact_rows = (
@@ -650,7 +645,7 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     select(self._history.c.task_id, self._history.c.message)
                     .where(self._history.c.task_id.in_(task_ids))
-                    .order_by(self._history.c.task_id, self._history.c.seq)
+                    .order_by(self._history.c.task_id, self._history.c.row_id)
                 )
             ).all()
             artifact_rows = (
@@ -738,7 +733,7 @@ class AppendOnlyTaskStore(TaskStore):
                 return {"tasks": related_tasks, "next_before_row_id": None, "has_more": False}
 
             history_query = (
-                select(self._history.c.row_id, self._history.c.task_id, self._history.c.seq, self._history.c.message)
+                select(self._history.c.row_id, self._history.c.task_id, self._history.c.message)
                 .where(self._history.c.task_id.in_(task_ids))
                 .order_by(self._history.c.row_id.desc())
                 .limit(page_limit + 1)
@@ -756,14 +751,14 @@ class AppendOnlyTaskStore(TaskStore):
                 task_id = str(row.task_id)
                 first_row_by_task[task_id] = min(first_row_by_task.get(task_id, int(row.row_id)), int(row.row_id))
             page_task_ids = sorted(first_row_by_task, key=first_row_by_task.__getitem__)
-            maximum_seq_rows = (
+            maximum_row_rows = (
                 await connection.execute(
-                    select(self._history.c.task_id, func.max(self._history.c.seq))
+                    select(self._history.c.task_id, func.max(self._history.c.row_id))
                     .where(self._history.c.task_id.in_(page_task_ids))
                     .group_by(self._history.c.task_id)
                 )
             ).all()
-            maximum_seq_by_task = {str(task_id): int(maximum_seq) for task_id, maximum_seq in maximum_seq_rows if maximum_seq is not None}
+            maximum_row_by_task = {str(task_id): int(maximum_row) for task_id, maximum_row in maximum_row_rows if maximum_row is not None}
             artifact_rows = (
                 await connection.execute(
                     select(self._artifacts.c.task_id, self._artifacts.c.artifact)
@@ -777,7 +772,7 @@ class AppendOnlyTaskStore(TaskStore):
         for row in sorted(page_rows, key=lambda value: value.row_id):
             task_id = str(row.task_id)
             histories[task_id].append((int(row.row_id), row.message))
-            if int(row.seq) == maximum_seq_by_task.get(task_id):
+            if int(row.row_id) == maximum_row_by_task.get(task_id):
                 include_status_message[task_id] = True
 
         artifacts: dict[str, list[str]] = {task_id: [] for task_id in page_task_ids}
