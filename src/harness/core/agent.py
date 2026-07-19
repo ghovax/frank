@@ -849,1803 +849,7 @@ class _PhaseStep:
     directive: str = _PROCEED
 
 
-class AgentRuntime:
-    # A turn runs until the model is done or the user interrupts it — there is no tool-call
-    # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
-    # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's
-    # ``output_file`` to see whether a repeated action changed anything. Context compaction is
-    # Observational Memory (Observer/Reflector); its thresholds and on/off switch live in
-    # GlobalConfiguration.compaction.
-
-    # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
-    # policy once (the shared preamble), then dispatches the call to its handler here.
-    # Grouped tools (edit/write, spawn/remote, the MCP queries, computer/browser) share
-    # one handler; an unmapped name is the "unknown tool" error.
-    _TOOL_HANDLERS = {
-        "bash": "_tool_bash",
-        "read_file": "_tool_read_file",
-        "find_files": "_tool_find_files",
-        "search_content": "_tool_search_content",
-        "fetch_url": "_tool_fetch_url",
-        "download_file": "_tool_download_file",
-        "edit_file": "_tool_edit_or_write",
-        "write_file": "_tool_edit_or_write",
-        "load_skill": "_tool_load_skill",
-        "wait_for": "_tool_wait_for",
-        "ask_user": "_tool_ask_user",
-        "call_mcp_tool": "_tool_call_mcp_tool",
-        "list_mcp_tools": "_tool_mcp_query",
-        "list_mcp_resources": "_tool_mcp_query",
-        "read_mcp_resource": "_tool_mcp_query",
-        "ask_agent": "_tool_ask_agent",
-        "respond_agent": "_tool_respond_agent",
-        "spawn_agent": "_tool_spawn_or_remote",
-        "call_remote_agent": "_tool_spawn_or_remote",
-        "cancel_agent": "_tool_cancel_agent",
-        "set_tasks": "_tool_set_tasks",
-        "update_tasks": "_tool_update_tasks",
-        "update_goal": "_tool_update_goal",
-        "open_artifact": "_tool_open_artifact",
-        "web_search": "_tool_web_search",
-        "read_task": "_tool_read_task",
-        "computer": "_tool_automation",
-        "browser": "_tool_automation",
-    }
-
-    def __init__(
-        self,
-        agent_configuration: AgentConfiguration,
-        global_configuration: GlobalConfiguration,
-        on_record_event: Optional[Callable[..., Any]] = None,
-        on_record_message: Optional[Callable[..., Any]] = None,
-        session_id: str = "",
-        conversation: Optional[list] = None,
-        working_directory: str = "",
-        project_directory: str = "",
-        is_agent: bool = False,
-        file_lease_manager: FileLeaseManager | None = None,
-        locations: list[dict] | None = None,
-    ):
-        self._session_id = session_id
-        self._agent_configuration = agent_configuration
-        self._global_configuration = global_configuration
-        self._on_record_event = on_record_event
-        self._on_record_message = on_record_message
-        self._working_directory = working_directory or str(Path.home())
-        self._project_directory = project_directory or self._working_directory
-        # The project's locations the agent may address per tool call (keyed by URI, and
-        # by name for friendlier errors). When none are supplied (agents built without
-        # an explicit set, or a bare runtime), a single local location is synthesized from
-        # the working directory so the single-location default still works.
-        self._locations: dict[str, ResolvedLocation] = {}
-        self._locations_by_name: dict[str, ResolvedLocation] = {}
-        self._build_locations(
-            locations, permission_mode_default=agent_configuration.permission_policy
-        )
-
-        effective_model = agent_configuration.model_identifier
-        if not effective_model:
-            raise ValueError(
-                f"Agent '{agent_configuration.identifier}' must configure both provider and model."
-            )
-        # When this agent's own provider isn't authorized — the common case for a
-        # delegation-target profile still pinned to a provider the user never keyed
-        # (e.g. a shipped `opencode/*` default after the session switched to the
-        # ChatGPT subscription) — building its client anyway yields a model that
-        # 401s on its first call, so a spawned agent dies the instant it starts.
-        # Fall back to the default agent's authorized model so the delegated agent inherits
-        # the session's working model instead. This is a no-op for the default agent
-        # itself (its model is already what we'd fall back to).
-        if not model_is_authorized(effective_model, global_configuration):
-            fallback_model = self._authorized_default_model()
-            if fallback_model:
-                effective_model = fallback_model
-        self._effective_model_identifier = effective_model
-
-        self._llm = build_chat_model(
-            effective_model, global_configuration, agent_configuration
-        )
-
-        self._is_agent = is_agent
-        self._file_lease_manager = file_lease_manager
-        self._tools = _build_tools(
-            agent_configuration,
-            global_configuration,
-            is_agent=is_agent,
-        )
-        # Concrete tools are bound natively — the provider sees each tool's real
-        # JSON schema and can constrain argument decoding to it, and it emits
-        # several tool calls in one response when work is parallel. (The old
-        # single `query` dispatch envelope hid every schema behind `list[Any]`.)
-        # Parallel tool calls are the DEFAULT on every provider this harness
-        # routes to (OpenAI, Anthropic, Gemini, Mistral, the OpenAI-compatible
-        # family, …), so no `parallel_tool_calls` parameter is sent: LiteLLM
-        # forwards it verbatim to openai-compatible custom gateways — most of
-        # this harness's provider matrix — where a non-conforming server (or an
-        # o-series model) rejects it. What actually preserves parallelism is
-        # never forcing `tool_choice` and keeping each turn's tool results in
-        # one contiguous block (see the turn loop).
-        self._tool_schemas: dict[str, Any] = {tool.name: tool.args_schema for tool in self._tools}
-        self._bound_llm = self._llm.bind_tools(self._tools)
-        self._permissions = PermissionEvaluator(agent_configuration)
-        self._background = BackgroundJobs(
-            context_id=session_id,
-            agent_name=agent_configuration.identifier,
-        )
-        # Command patterns the user chose to "always allow" this session — matching
-        # bash commands then skip the sandbox/approval prompts. Scoped to this
-        # runtime (this context), populated on demand from an LLM-derived rule.
-        self._session_allow_patterns: list[str] = []
-
-        self._conversation: list = conversation if conversation is not None else []
-        self._system_prompt = agent_configuration.system_prompt
-        # Files the model has read this session, keyed by (location uri, resolved
-        # path) with the content hash from the last read — the uri disambiguates a
-        # same-named path on two hosts. Mutating tools compare against this so
-        # stale line numbers cannot overwrite externally changed content.
-        self._read_files: dict[tuple[str, str], str] = {}
-        # How many delegation hops led to this runtime (0 = top-level chat agent).
-        self._delegation_depth: int = 0
-        self._abort_event = asyncio.Event()
-        # Running token totals for the session, summed from the real usage each
-        # model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
-        self._token_usage: dict[str, int] = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "cache_read_tokens": 0,
-            "reasoning_tokens": 0,
-            "model_calls": 0,
-        }
-        # A separate bucket for the combined spend of agents this agent spawns. They
-        # run in their own context (only their deliverable returns here), so their tokens
-        # are a distinct cost surfaced separately, never mixed into the context fill.
-        self._agent_token_usage: dict[str, int] = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "model_calls": 0,
-        }
-
-        prompts_directory = Path(__file__).parent / "prompts"
-        self._prompt_loader = PromptLoader(prompts_directory)
-        self._cached_system_prompt: str | None = None
-        self._task_manager = TaskManager()
-        self._active_goal: str = ""
-        # Set when the goal or task list changes, so the executor persists the durable
-        # session state only on mutation rather than on every checkpoint.
-        self._session_dirty = False
-        self._execution_history: list[dict] = []
-        # The runtime's effective permission policy is ONE typed value (the agent card's
-        # configured mode until a session or delegation override changes it); the read_only/
-        # bypass/auto booleans the call sites read are derived views of it, never separate
-        # state that could drift. `_session_permission_mode` records the live override so a
-        # location's own mode governs its calls only while the session is on the default.
-        self._permission_mode: PermissionMode = agent_configuration.permission_policy
-        self._session_permission_mode: PermissionMode = PermissionMode.DEFAULT
-        # A delegated agent parks on these while its human-in-the-loop request is escalated to
-        # the user; the resolver (native REST or an A2A input_response) completes them.
-        self._agent_permission_futures: dict[str, asyncio.Future] = {}
-        # Durably persists a delegated agent's 'always allow' as allow-patterns on its own agent
-        # profile's configuration: async (agent_identifier, project_directory, patterns).
-        # Injected by the executor; a delegated agent has no session to remember the rule in.
-        self._persist_agent_allow_patterns: Optional[Callable[..., Any]] = None
-        # When set, agents (spawn_agent calls) are invoked
-        # through this delegate — an A2A call to the target agent's served
-        # endpoint — instead of being run in-process. Bound to the A2A context.
-        self._delegate: Optional[Callable] = None
-        # Cancels a running agent's own A2A task when its public agent handle is
-        # explicitly canceled. The executor injects the async callback.
-        self._cancel_delegated: Optional[Callable] = None
-        self._a2a_task_id: str = ""
-        self._ask_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
-        self._respond_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
-        self._reserve_agent: Optional[Callable[[str, str, str], None]] = None
-        self._release_reserved_agent: Optional[Callable[[str], None]] = None
-        self._active_agents: Optional[Callable[[str], list[dict[str, str]]]] = None
-        # External (over-the-wire) A2A agents the model may delegate to. The registry
-        # supplies a roster (so they appear in the system prompt alongside local agents)
-        # and a predicate (so the spawn path resolves a remote name over the wire via the
-        # delegate instead of trying to load an on-disk config that does not exist).
-        self._remote_agent_roster: Callable[[], list[dict[str, str]]] = lambda: []
-        self._is_remote_agent: Callable[[str], bool] = lambda name: False
-        # The current turn's file attachments, forwarded to a remote agent as FileParts.
-        self._pending_attachments: list[dict] = []
-        # Remote agents the user has approved contacting for the rest of this session, so
-        # egress consent is asked once per agent, not on every call.
-        self._egress_approved_agents: set[str] = set()
-        self._agent_messages: asyncio.Queue[AgentMessage] = asyncio.Queue()
-        self._agent_message_available = asyncio.Event()
-        self._pending_agent_questions: set[str] = set()
-        self._outstanding_agent_questions: set[str] = set()
-        # Reads another A2A task (sibling/agent) by id from the shared store,
-        # so context-aware agents can coordinate. Injected by the executor.
-        self._task_reader: Optional[Callable] = None
-        # Enqueues a shadow-git capture of what a write-ish tool call produced (called after
-        # edit/write/bash and on open_artifact). Injected by the executor; non-blocking and
-        # best-effort so the runtime never waits on git or touches the database directly.
-        self._artifact_capture: Optional[Callable] = None
-        self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
-        self._steering_available = asyncio.Event()
-        self._active_tool_tasks: dict[str, asyncio.Task] = {}
-        # Live activity from non-blocking spawned agents. spawn_agent returns
-        # immediately (the agent runs as a background job); the agent's
-        # streamed events land here and the turn loop drains them so the agents
-        # panel updates while the parent keeps working. Whatever is still queued
-        # when the parent goes idle drains on the next (wake) turn.
-        self._spawned_agent_events: "asyncio.Queue[TurnEvent]" = asyncio.Queue()
-        self._agent_event_sink: Optional[Callable[[dict[str, Any]], None]] = None
-        self._settled_agent_lanes: set[tuple[str, str]] = set()
-        # The latest call's context occupancy (prompt + completion) and the model's
-        # window, tracked from usage so auto-compaction can fire before the next call
-        # would overflow. Zero until the first call reports usage.
-        self._latest_context_tokens: int = 0
-        self._context_window: int = 0
-
-    def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: PermissionMode) -> None:
-        """Build the resolved-location map from the project's location records. Each entry
-        carries an executor (local subprocess or multiplexed SSH) and its effective policy."""
-        entries = locations or []
-        if not entries:
-            # No project locations supplied — synthesize a single local location at the
-            # working directory, so a bare/agent runtime still has exactly one location
-            # (and the single-location default applies).
-            entries = [{
-                "name": "local",
-                "kind": "local",
-                "base_directory": self._working_directory,
-                "permission_mode": str(permission_mode_default),
-            }]
-        for entry in entries:
-            kind = entry.get("kind", "local")
-            base_directory = str(entry.get("base_directory") or self._working_directory)
-            host_alias = str(entry.get("host_alias") or "")
-            address = LocationAddress(kind=kind, base_directory=base_directory, host_alias=host_alias)
-            uri = str(entry.get("uri") or location_uri_for(address))
-            resolved = ResolvedLocation(
-                uri=uri,
-                name=str(entry.get("name") or "location"),
-                kind=kind,
-                base_directory=base_directory,
-                executor=executor_for(address),
-                permission_mode=PermissionMode.coerce(entry.get("permission_mode"), permission_mode_default),
-            )
-            self._locations[uri] = resolved
-            self._locations_by_name[resolved.name] = resolved
-
-    def _resolve_location(self, location_value: str | None) -> ResolvedLocation:
-        """Resolve a tool call's ``location`` (a URI, or a location name) to its executor +
-        policy. Omitted defaults to the project's local filesystem — so a call never has to
-        repeat `location`, and an omission can never silently run on a remote host; the model
-        passes `location` only to target a non-default (remote) one. An unknown value errors."""
-        if not location_value:
-            if len(self._locations) == 1:
-                return next(iter(self._locations.values()))
-            # Default an omitted location to the local filesystem, so an omission is never
-            # accidentally executed on a remote host.
-            local = next((location for location in self._locations.values() if location.kind == "local"), None)
-            if local is not None:
-                return local
-            # No local location to fall back to (every location is remote) — require an
-            # explicit choice rather than picking a remote host on the model's behalf.
-            names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
-            raise ToolLocationError(
-                f"This project has only remote locations and no local default — specify `location` (one of: {names})."
-            )
-        if location_value in self._locations:
-            return self._locations[location_value]
-        if location_value in self._locations_by_name:
-            return self._locations_by_name[location_value]
-        names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
-        raise ToolLocationError(f"Unknown location {location_value!r}. Available: {names}.")
-
-    def _call_policy(self, location: "ResolvedLocation | None") -> CallExecutionPolicy:
-        """The execution policy for one tool call. In the projects model
-        an explicit live session mode governs every target immediately. While the session
-        remains on ``default``, a target's explicit mode governs its calls, then the agent
-        profile is the fallback. A runtime-level read-only override is always a floor.
-        Returned as a value and threaded through the call, never written to shared state,
-        so concurrent calls to different locations cannot cross policies."""
-        session_mode_is_explicit = self._session_permission_mode is not PermissionMode.DEFAULT
-        if location is None or session_mode_is_explicit or location.permission_mode is PermissionMode.DEFAULT:
-            # No location to govern the call, an explicit live session mode, or a location left
-            # on the default — the runtime's own mode applies.
-            mode = self._permission_mode
-        elif self._permission_mode is PermissionMode.READ_ONLY:
-            # A runtime-level read-only override is a floor no location mode can lift.
-            mode = PermissionMode.READ_ONLY
-        else:
-            # Otherwise the location's explicit mode governs its own calls.
-            mode = location.permission_mode
-        working_directory = (
-            self._working_directory
-            if location is None or location.is_remote
-            else location.base_directory
-        )
-        return CallExecutionPolicy(location=location, working_directory=working_directory, mode=mode)
-
-    def _canonical_working_directory(self, working_directory: str | None = None) -> str:
-        return str(Path(working_directory or self._working_directory or Path.home()).expanduser().resolve(strict=False))
-
-    async def _acquire_filesystem_lease(
-        self, *, scope: str, path: str, description: str, working_directory: str | None = None
-    ) -> str:
-        if self._file_lease_manager is None:
-            return ""
-        return await self._file_lease_manager.acquire(
-            owner_session_id=self._session_id,
-            scope=scope,
-            path=path,
-            working_directory=self._canonical_working_directory(working_directory),
-            description=description,
-        )
-
-    def _release_filesystem_lease(self, token: str) -> None:
-        if token and self._file_lease_manager is not None:
-            self._file_lease_manager.release(token)
-
-    @property
-    def conversation(self) -> list:
-        return self._conversation
-
-    @property
-    def background_jobs(self) -> "BackgroundJobs":
-        """This runtime's background-job runner. The executor's resume pump reads it
-        to know when in-flight work has completed."""
-        return self._background
-
-    def has_pending_jobs(self) -> bool:
-        """Whether any background job is still in flight — the scheduling predicate the
-        executor's resume pump reads, exposed here so it does not reach through into the
-        job runner's internals."""
-        return self._background.has_pending()
-
-    def has_completed_undelivered_jobs(self) -> bool:
-        """Whether a completed background result is waiting to be delivered to the model."""
-        return self._background.has_completed_undelivered()
-
-    async def wait_for_jobs(self) -> None:
-        """Await the next background-job completion (the resume pump's wait point)."""
-        await self._background.wait_for_completion()
-
-    def inject_stored_background_result(
-        self, *, kind: str, identifier: str, tool_call_identifier: str, result: str
-    ) -> None:
-        """Append a background result restored from the durable store as a
-        `background_result` message, so a runtime rebuilt after a restart replays it
-        to the model exactly like a live completion would."""
-        capped_result = _cap_model_result_payload(result, code=f"{kind}_result_truncated")
-        metadata = _tool_timing_metadata(
-            tool_name=kind,
-            tool_call_identifier=tool_call_identifier,
-            started_at=datetime.now(timezone.utc),
-            completed_at=datetime.now(timezone.utc),
-            duration_milliseconds=0,
-            background_task_identifier=identifier,
-        )
-        status, code = _model_result_status(capped_result, ok=True, backgrounded=False)
-        self._conversation.append(self._harness_note_message(
-            _model_visible_tool_result(
-                capped_result, metadata, status, code, kind="background_result",
-            ),
-        ))
-
-    @property
-    def token_usage(self) -> dict[str, int]:
-        return dict(self._token_usage)
-
-    def _accumulate_usage(self, response: AIMessage) -> "TurnEvent | None":
-        """Fold one model call's real token usage into the running session total
-        and return a USAGE event carrying both the per-call and cumulative counts.
-        Returns ``None`` when the provider reported no usage for this call."""
-        usage = getattr(response, "usage_metadata", None)
-        if not usage:
-            return None
-        input_tokens = int(usage.get("input_tokens", 0) or 0)
-        output_tokens = int(usage.get("output_tokens", 0) or 0)
-        total_tokens = int(usage.get("total_tokens", 0) or 0) or (input_tokens + output_tokens)
-        cache_read = int((usage.get("input_token_details") or {}).get("cache_read", 0) or 0)
-        reasoning = int((usage.get("output_token_details") or {}).get("reasoning", 0) or 0)
-        if not (input_tokens or output_tokens or total_tokens):
-            return None
-        self._token_usage["input_tokens"] += input_tokens
-        self._token_usage["output_tokens"] += output_tokens
-        self._token_usage["total_tokens"] += total_tokens
-        self._token_usage["cache_read_tokens"] += cache_read
-        self._token_usage["reasoning_tokens"] += reasoning
-        self._token_usage["model_calls"] += 1
-        # input_tokens for this (latest) call is the whole prompt — system, history,
-        # and the new turn — so it reflects how full the context currently is. Paired
-        # with the model's context window, it drives the context-fill indicator and
-        # the auto-compaction check (see _should_compact).
-        model = getattr(self, "_llm", None)
-        context_window = model.context_window() if model is not None else 0
-        self._latest_context_tokens = input_tokens + output_tokens
-        self._context_window = context_window
-        return Usage(input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            total_tokens=total_tokens,
-            cache_read_tokens=cache_read,
-            reasoning_tokens=reasoning,
-            context_window=context_window,
-            cumulative=dict(self._token_usage),
-            agents=dict(self._agent_token_usage),
-        )
-
-    def _add_agent_usage(self, input_tokens: int, output_tokens: int) -> None:
-        """Fold one agent model call's spend into the separate agent bucket. Each
-        relayed child USAGE reports its per-call figures, so summing them totals every
-        agent's usage without double-counting cumulative snapshots."""
-        self._agent_token_usage["input_tokens"] += input_tokens
-        self._agent_token_usage["output_tokens"] += output_tokens
-        self._agent_token_usage["total_tokens"] += input_tokens + output_tokens
-        self._agent_token_usage["model_calls"] += 1
-
-    @property
-    def agent_name(self) -> str:
-        return self._agent_configuration.identifier
-
-    @property
-    def effective_model_identifier(self) -> str:
-        return self._effective_model_identifier
-
-    @property
-    def working_directory(self) -> str:
-        return self._working_directory
-
-    @property
-    def project_directory(self) -> str:
-        return self._project_directory
-
-    @property
-    def is_read_only(self) -> bool:
-        return self._read_only
-
-    # Derived views of the single `_permission_mode`, so the many call sites that ask a plain
-    # boolean keep working while there is exactly one source of truth behind them.
-    @property
-    def _read_only(self) -> bool:
-        return self._permission_mode.is_read_only
-
-    @property
-    def _bypass_permissions(self) -> bool:
-        return self._permission_mode.is_bypass
-
-    @property
-    def _auto_permissions(self) -> bool:
-        return self._permission_mode.is_auto
-
-    def abort(self) -> None:
-        # Stop tears down only the live turn: signal the loop to end and kill every
-        # foreground tool still running. Detached background work and spawned agents
-        # have independent lifecycles and must not become collateral of steering the
-        # main flow; each can be canceled through its own targeted control.
-        self._abort_event.set()
-        self._background.cancel_foreground()
-        for task in list(self._active_tool_tasks.values()):
-            task.cancel()
-
-    def abort_tool(self, tool_call_identifier: str) -> bool:
-        task = self._active_tool_tasks.get(tool_call_identifier)
-        aborted = False
-        if task is not None and not task.done():
-            task.cancel()
-            aborted = True
-        return self._background.cancel_by_tool_call(tool_call_identifier) or aborted
-
-    def cancel_agent(self, task_identifier: str) -> bool:
-        """Cancel one spawned agent by its public agent handle."""
-        return self._background.cancel_by_identifier(task_identifier, kind="spawn_agent")
-
-    def background_snapshots(self) -> list[dict[str, Any]]:
-        return self._background.active_snapshots()
-
-    def send_tool_to_background(self, tool_call_identifier: str) -> bool:
-        """Push a still-blocking foreground shell command to the background on the
-        user's behalf: it keeps running detached and the turn continues with a
-        "started" placeholder, exactly as if the model had backgrounded it."""
-        return self._background.request_background(tool_call_identifier)
-
-    def enqueue_steering(self, message: str) -> bool:
-        text = message.strip()
-        if not text:
-            return False
-        self._steering_messages.put_nowait(text)
-        self._steering_available.set()
-        return True
-
-    def discard_pending_steering(self) -> None:
-        """Drop any steering that was accepted but never drained into the turn — it
-        arrived too late to be honored (after the loop's last drain, or while the turn
-        was ending/failing). The client re-delivers such messages as a fresh turn on
-        stream close, so they must not linger here and get double-applied when the
-        next turn drains the runtime at its first model-call boundary."""
-        while not self._steering_messages.empty():
-            self._steering_messages.get_nowait()
-        self._steering_available.clear()
-
-    def _has_queued_steering(self) -> bool:
-        return not self._steering_messages.empty()
-
-    def set_read_only(self, read_only: bool) -> None:
-        """Force (or release) a read-only floor over the runtime's mode — the override a
-        spawning call/step applies. Turning it on makes the mode read-only outright; turning
-        it off drops a read-only floor back to the interactive default but leaves any other
-        mode untouched."""
-        if read_only:
-            self._permission_mode = PermissionMode.READ_ONLY
-        elif self._permission_mode is PermissionMode.READ_ONLY:
-            self._permission_mode = PermissionMode.DEFAULT
-
-    def set_permission_mode(self, mode: "str | PermissionMode") -> None:
-        """Apply a live session override. ``default`` restores the agent card's own configured
-        mode; any other known mode replaces it. An unknown value is ignored."""
-        parsed = PermissionMode.parse(mode)
-        if parsed is None:
-            return
-        self._session_permission_mode = parsed
-        self._permission_mode = (
-            self._agent_configuration.permission_policy
-            if parsed is PermissionMode.DEFAULT
-            else parsed
-        )
-
-    @property
-    def configured_permission_mode(self) -> PermissionMode:
-        """The permission mode the agent's own card declares (its ceiling before a
-        caller's grant tightens it)."""
-        return self._agent_configuration.permission_policy
-
-    def resolve_agent_permission(self, request_id: str, value: Any) -> bool:
-        """Complete a delegated agent's parked human-in-the-loop request with the user's answer
-        (a decision string for a permission, or the answers / decline for a question).
-        Returns whether a matching pending request was found."""
-        future = self._agent_permission_futures.get(request_id)
-        if future is not None and not future.done():
-            future.set_result(value)
-            return True
-        return False
-
-    async def _await_pending_answers(self, pending: list["_ToolGate"]) -> dict[str, Any]:
-        """Park a delegated turn in place until the user answers each gate. The gates were
-        surfaced to the panel by the executor from the SUSPENDED event; here the turn awaits
-        the answers on per-gate futures (completed by the shared resolver's delegated
-        routing), racing an abort that ends any outstanding gate fail-safe — a question
-        declines, a permission denies. A top-level turn never reaches this: it returned at
-        SUSPENDED to become a durable segment."""
-        loop = asyncio.get_running_loop()
-        futures: dict[str, "asyncio.Future"] = {}
-        gate_by_request: dict[str, "_ToolGate"] = {}
-        for gate in pending:
-            future = loop.create_future()
-            self._agent_permission_futures[gate.request_id] = future
-            futures[gate.request_id] = future
-            gate_by_request[gate.request_id] = gate
-        answers: dict[str, Any] = {}
-        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
-        try:
-            for request_id, future in futures.items():
-                await asyncio.wait({future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
-                if future.done():
-                    answers[request_id] = future.result()
-                else:
-                    answers[request_id] = (
-                        {"__declined__": True}
-                        if gate_by_request[request_id].kind == "question"
-                        else "deny"
-                    )
-        finally:
-            abort_waiter.cancel()
-            for request_id in futures:
-                self._agent_permission_futures.pop(request_id, None)
-        return answers
-
-    def set_delegated_policy(self, mode: str) -> None:
-        """Apply a delegated agent's effective permission policy. Unlike ``set_permission_mode``,
-        "default" means the interactive (ask) policy — never the agent's own configured
-        mode — and ``bypass`` is never applied: a delegated agent can never run unattended. Under
-        the interactive policy an unmatched command asks (escalates to the user)."""
-        parsed = PermissionMode.parse(mode)
-        # bypass is never applied to a delegated agent, and "default" means the interactive
-        # policy here (never the agent's own configured mode).
-        if parsed not in (PermissionMode.READ_ONLY, PermissionMode.AUTO):
-            parsed = PermissionMode.DEFAULT
-        self._session_permission_mode = parsed
-        self._permission_mode = parsed
-
-    def set_delegate(self, delegate: Callable) -> None:
-        """Install the A2A delegate used to invoke agents as related tasks."""
-        self._delegate = delegate
-
-    def set_cancel_delegated(self, cancel_delegated: Callable) -> None:
-        """Install the callback used by targeted spawned-agent cancellation."""
-        self._cancel_delegated = cancel_delegated
-
-    def set_persist_agent_allow_patterns(self, persist: Callable[..., Any]) -> None:
-        """Install the callback that durably records a delegated agent's 'always allow' as
-        allow-patterns on its agent profile's configuration."""
-        self._persist_agent_allow_patterns = persist
-
-    def set_remote_agents(
-        self,
-        roster: Callable[[], list[dict[str, str]]],
-        is_remote: Callable[[str], bool],
-    ) -> None:
-        """Install the external A2A agent roster and predicate. Remote agents appear in
-        the model's roster like local ones, but the spawn path resolves them over the wire
-        (through the delegate) rather than loading an on-disk agent config."""
-        self._remote_agent_roster = roster
-        self._is_remote_agent = is_remote
-
-    def set_pending_attachments(self, attachments: list[dict]) -> None:
-        """Record the current turn's file attachments so a delegation to a remote agent can
-        forward them as FileParts."""
-        self._pending_attachments = attachments or []
-
-    def set_agent_event_sink(self, agent_event_sink: Callable[[dict[str, Any]], None]) -> None:
-        """Install the immediate delivery path for path-tagged agent activity."""
-        self._agent_event_sink = agent_event_sink
-
-    def set_agent_messaging(
-        self,
-        ask_agent: Callable[[str, str, str], dict[str, Any]],
-        respond_agent: Callable[[str, str, str], dict[str, Any]],
-        reserve_agent: Callable[[str, str, str], None],
-        release_reserved_agent: Callable[[str], None],
-        active_agents: Callable[[str], list[dict[str, str]]],
-    ) -> None:
-        """Install the active-task mailbox operations owned by the agent registry."""
-        self._ask_agent = ask_agent
-        self._respond_agent = respond_agent
-        self._reserve_agent = reserve_agent
-        self._release_reserved_agent = release_reserved_agent
-        self._active_agents = active_agents
-
-    def enqueue_agent_message(self, message: AgentMessage) -> None:
-        """Queue a peer delivery for the next safe model boundary."""
-        self._agent_messages.put_nowait(message)
-        self._agent_message_available.set()
-
-    def set_a2a_task_id(self, task_id: str) -> None:
-        """Record the A2A task id of the current turn so delegated agent
-        tasks can reference it as their parent."""
-        self._a2a_task_id = task_id
-
-    def set_task_reader(self, task_reader: Callable) -> None:
-        """Install the reader used by the read_task tool to fetch sibling/agent
-        A2A tasks from the shared store."""
-        self._task_reader = task_reader
-
-    def set_artifact_capture(self, artifact_capture: Callable) -> None:
-        """Install the callback that enqueues a shadow-git capture after a write-ish tool
-        call (edit/write/bash) and on open_artifact. Non-blocking and best-effort."""
-        self._artifact_capture = artifact_capture
-
-    def _capture_written_artifacts(
-        self, resolved_location: "ResolvedLocation", *, changed_absolute_paths: list[str] | None,
-        tool_call_id: str, message: str, mode: str = "track",
-        original_contents: dict[str, str] | None = None, surface: dict | None = None,
-    ) -> None:
-        """Fire-and-forget a capture for what a tool call wrote. ``mode="track"`` versions
-        the named paths; ``mode="recheck"`` (after bash) restages only already-tracked files.
-        Swallows all errors — a versioning hiccup must never break the agent's turn."""
-        if self._artifact_capture is None or self._is_agent:
-            return
-        try:
-            self._artifact_capture(
-                context_id=self._session_id,
-                location_uri=resolved_location.uri,
-                executor=resolved_location.executor,
-                base_directory=resolved_location.base_directory,
-                changed_absolute_paths=changed_absolute_paths,
-                mode=mode,
-                original_contents=original_contents,
-                tool_call_id=tool_call_id,
-                message=message,
-                surface=surface,
-            )
-        except Exception:
-            pass
-
-    def _artifact_surface_id(self, key: str) -> str:
-        """A stable surface id derived from the session + a key (a file path or URL), so
-        re-opening the same target reuses one tab without any database lookup."""
-        return "artifact-" + hashlib.sha256(f"{self._session_id}:{key}".encode("utf-8")).hexdigest()[:16]
-
-    def set_delegation_depth(self, depth: int) -> None:
-        """Record how many delegation hops led to this runtime, for context and telemetry
-        (there is no delegation-depth ceiling; recursion is governed by the model's own
-        judgment and the user's ability to interrupt)."""
-        self._delegation_depth = depth
-
-    def session_snapshot(self) -> dict:
-        """The context's durable non-conversation state — the active goal and the task
-        list — persisted alongside the conversation checkpoint so a restart restores the
-        agent's objective, not just its transcript."""
-        return {"goal": self._active_goal, "tasks": self._task_manager.snapshot()}
-
-    def restore_session(self, snapshot: dict) -> None:
-        """Rehydrate goal and tasks from :meth:`session_snapshot` when a context is rebuilt
-        (e.g. a session reopened after a restart). A missing snapshot leaves both empty."""
-        self._active_goal = str(snapshot.get("goal", ""))
-        self._task_manager.restore(snapshot.get("tasks", {}) or {})
-
-    def dirty_session_snapshot(self) -> Optional[dict]:
-        """The session snapshot if the goal or tasks changed since the last persist, else
-        ``None`` — so the executor writes durable session state on mutation only, not on every
-        safe point. This only *peeks*: the dirty flag is cleared by :meth:`clear_session_dirty`
-        after the write commits, so a failed or crashed write never loses the mutation."""
-        return self.session_snapshot() if self._session_dirty else None
-
-    def clear_session_dirty(self) -> None:
-        """Mark the durable session state as persisted — called only after the atomic
-        checkpoint+session-state write succeeds, so the dirty flag is a write-then-clear."""
-        self._session_dirty = False
-
-    @property
-    def _interactive_manual_mode(self) -> bool:
-        """The interactive ("manual") permission policy: not auto-classifying, not
-        read-only, not bypass. Under it, a command the card does not explicitly allow is
-        asked (escalated to the user) rather than run — for the top-level agent and a
-        delegated agent alike. Auto self-classifies, read-only hard-blocks mutations, and bypass
-        allows everything, so none of those ask on an unmatched command."""
-        return self._permission_mode.is_interactive
-
-    def _evaluate_bash_permission(self, command: str, *, bypass: bool | None = None) -> str:
-        effective_bypass = self._bypass_permissions if bypass is None else bypass
-        if effective_bypass:
-            return "allow"
-        unmatched = "ask" if self._interactive_manual_mode else "allow"
-        return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
-
-    async def _classify_permission(
-        self,
-        *,
-        tool_kind: str,
-        command: str,
-        raw_command: str,
-        default_decision: str,
-        read_only: bool,
-        risk: str,
-        justification: str,
-        static_classification: str = "",
-        static_detail: str = "",
-        outside_reads: Optional[list[str]] = None,
-    ) -> PermissionDecision:
-        context = json.dumps(
-            {
-                "tool_kind": tool_kind,
-                "working_directory": self._working_directory,
-                "command": command,
-                "raw_command": raw_command,
-                "default_permission_decision": default_decision,
-                "model_declared_read_only": read_only,
-                "model_declared_risk": risk,
-                "model_justification": justification,
-                "static_read_only_classification": static_classification,
-                "static_detail": static_detail,
-                "outside_working_directory_reads": outside_reads or [],
-                "allowed_actions": ["auto_approve", "escalate"],
-            },
-            ensure_ascii=False,
-        )
-        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
-        try:
-            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
-            response = await model.ainvoke([
-                SystemMessage(content=prompt),
-            ])
-            if not response.tool_calls:
-                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
-            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
-            if default_decision == "deny" and decision.action == "auto_approve":
-                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
-            if not decision.justification.strip():
-                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
-            return decision
-        except Exception as exception:
-            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
-
-    def _command_session_allowed(self, command: str) -> bool:
-        """Whether a prior 'always allow' in this session covers this command, so
-        it skips the sandbox/approval prompts."""
-        if not self._session_allow_patterns:
-            return False
-        return self._agent_configuration.tools.bash.command_matches(command, self._session_allow_patterns)
-
-    def _schedule_bash_allow_rule(self, command: str) -> None:
-        try:
-            asyncio.create_task(self._remember_bash_allow_rule(command))
-        except RuntimeError:
-            pass
-
-    def _schedule_persist_bash_allow_rule(self, command: str) -> None:
-        try:
-            asyncio.create_task(self._persist_bash_allow_rule(command))
-        except RuntimeError:
-            pass
-
-    async def _distill_bash_allow_patterns(self, command: str) -> list[str]:
-        """Ask the model to distill an allow rule (one or more command patterns) from the
-        approved command. Best effort — returns [] on any failure, since the one-time
-        approval already ran the command regardless."""
-        try:
-            prompt = self._prompt_loader.load("bash_allow_rule", {"command": command})
-            # bind_tools + manual parse instead of with_structured_output: the
-            # configured reasoning model rejects response_format/forced tool_choice
-            # that structured output relies on, but accepts a regular tool call.
-            model = self._llm.bind_tools([BashAllowRule], tool_choice="auto")
-            response = await model.ainvoke(prompt)
-            if not response.tool_calls:
-                return []
-            rule = BashAllowRule.model_validate(response.tool_calls[0]["args"])
-            return [pattern.strip() for pattern in (rule.patterns or []) if pattern.strip()]
-        except Exception:
-            return []
-
-    async def _remember_bash_allow_rule(self, command: str) -> None:
-        """A top-level 'always allow': add the distilled patterns to this session's
-        allowlist, so the rest of the session stops asking for the same command."""
-        for pattern in await self._distill_bash_allow_patterns(command):
-            if pattern not in self._session_allow_patterns:
-                self._session_allow_patterns.append(pattern)
-
-    async def _persist_bash_allow_rule(self, command: str) -> None:
-        """A delegated agent's 'always allow': a delegated agent has no durable session to remember
-        the rule in, so its authority is its card — persist the distilled patterns as
-        ``allow`` on this agent profile's configuration (best effort), so every future
-        spawn of the profile inherits them. Also add them to the live session allowlist so
-        the rest of this delegated agent's turn stops asking, without waiting for the reload."""
-        patterns = await self._distill_bash_allow_patterns(command)
-        if not patterns:
-            return
-        for pattern in patterns:
-            if pattern not in self._session_allow_patterns:
-                self._session_allow_patterns.append(pattern)
-        if self._persist_agent_allow_patterns is not None:
-            try:
-                await self._persist_agent_allow_patterns(
-                    self._agent_configuration.identifier, self._project_directory, patterns,
-                )
-            except Exception:
-                pass
-
-    def _record_event(self, event_type: str, data: dict) -> None:
-        record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}
-        self._execution_history.append(record)
-        if self._on_record_event:
-            self._on_record_event(event_type, data)
-
-    def _record_message(self, role: str, content: str, tool_call_id: str = "") -> None:
-        if self._on_record_message:
-            self._on_record_message(role, content, tool_call_id)
-
-    def _locations_summary(self) -> list[dict]:
-        """The project's locations as the model sees them: the `location` URI to pass,
-        plus name/kind/base_directory/permission so it can choose the right one per tool call."""
-        return [
-            {
-                "location": resolved.uri,
-                "name": resolved.name,
-                "kind": resolved.kind,
-                "base_directory": resolved.base_directory,
-                "permission_mode": resolved.permission_mode,
-            }
-            for resolved in self._locations.values()
-        ]
-
-    def _build_static_system_prompt(self) -> str:
-        """Build the static portion of the system prompt (cached across calls).
-
-        Every agent — main or spawned — is built through this same path, so they
-        all share the baseline system prompt, the working-directory/agents
-        context, and the available-skills awareness.
-        """
-        if self._cached_system_prompt is None:
-            available_agents = describe_available_agents(
-                self._global_configuration.agent_directories_for(self._project_directory)
-            )
-            # External A2A agents are a distinct concept from local agents: they run on
-            # another server (no shared filesystem, their own model and cost, one-shot),
-            # so they are surfaced separately and reached with `call_remote_agent`.
-            remote_agents = self._remote_agent_roster()
-            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
-            agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
-            memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
-            workspace_root, is_git_repo = _detect_workspace(self._working_directory)
-            context_json = json.dumps({
-                "working_directory": self._working_directory,
-                "project_directory": self._project_directory,
-                "workspace_root": workspace_root,
-                "is_git_repo": is_git_repo,
-                "session_workspace_strategy": self._global_configuration.workspace.strategy,
-                "platform": platform.system(),
-                "today_date": datetime.now().strftime("%Y-%m-%d"),
-                "available_agents": available_agents,
-                "remote_agents": remote_agents,
-                "is_agent": self._is_agent,
-                # The project's locations. Filesystem/shell tools take a `location` (its
-                # URI); it is required when there is more than one, optional when one.
-                "locations": self._locations_summary(),
-            })
-            agent_context = "This agent is initialized as the main orchestrator agent."
-            if self._is_agent:
-                agent_context = self._prompt_loader.load("agent_context", {})
-            # The opt-in user-context section is its own template, rendered into the prompt's
-            # `user_environment` slot only when enabled and the probe found something — so the
-            # section (heading and all) simply is not there when off.
-            user_environment = ""
-            user_context = getattr(self._global_configuration, "user_context", None)
-            if user_context is not None and user_context.enabled:
-                user_context_snapshot = probe_user_context()
-                if user_context_snapshot not in ("", "{}"):
-                    user_environment = self._prompt_loader.load(
-                        "user_context", {"user_context_snapshot": user_context_snapshot}
-                    )
-            # The computer/browser tools are opt-in, so their guidance (what each is for, and
-            # to pick the right one rather than force one) only enters the prompt when they do.
-            computer_control_guidance = ""
-            if self._global_configuration.computer_control.enabled:
-                computer_control_guidance = self._prompt_loader.load("computer_control_guidance", {})
-            self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
-                "system_prompt": self._system_prompt,
-                "context": context_json,
-                "system_environment": probe_local_environment(),
-                "user_environment": user_environment,
-                "instructions": load_instructions(self._project_directory),
-                "skills": json.dumps(skills_payload(agent_skills)),
-                "memories": json.dumps(memories_payload(memories)),
-                "agent_context": agent_context,
-                "computer_control_guidance": computer_control_guidance,
-            })
-        return self._cached_system_prompt
-
-    def _build_dynamic_context(self) -> str:
-        """The structured per-turn context injected at the end of the message list: the current
-        time, where the agent is, its goal, its tasks, and its background work. Empty goal/tasks
-        are omitted so the model isn't fed noise. Standing behavioural guidance lives once in the
-        system prompt, not re-injected here."""
-        context = TurnContext(
-            now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            pwd=self._working_directory or str(Path.cwd()),
-            active_goal=self._active_goal,
-            tasks=self._task_manager.to_dict_list(),
-            background={
-                "running": self._background.active_by_context_key(),
-                "active_count": self._background.active_count(),
-                "recent_events": self._execution_history[-20:],
-            },
-            active_agents=(
-                self._active_agents(self._a2a_task_id)
-                if self._active_agents is not None and self._a2a_task_id
-                else []
-            ),
-        )
-        return context.model_dump_json(exclude_defaults=True)
-
-    def _background_result_events(self) -> list[TurnEvent]:
-        events: list[TurnEvent] = []
-        for completion in self._background.drain_completed():
-            capped_result = _cap_model_result_payload(
-                completion.result,
-                code=f"{completion.kind}_result_truncated",
-            )
-            duration_milliseconds = int((completion.completed_at - completion.started_at).total_seconds() * 1000)
-            background_metadata = _tool_timing_metadata(
-                tool_name=completion.kind,
-                tool_call_identifier=completion.tool_call_identifier,
-                started_at=completion.started_at,
-                completed_at=completion.completed_at,
-                duration_milliseconds=duration_milliseconds,
-                background_task_identifier=completion.identifier,
-            )
-            # Append-only: the scheduled placeholder ToolMessage stays put and the
-            # result lands as a *new* message (a user-role harness note — a system
-            # role here would be hoisted into Anthropic's top-level system param and
-            # bust the whole prefix; see _harness_note_message). Rewriting the
-            # placeholder in place would change the conversation mid-stream and
-            # invalidate the provider's prompt cache from that point on — re-billing
-            # the whole suffix. The placeholder already satisfies its tool_call, so
-            # appending keeps the prefix monotonic (always cacheable) while the model
-            # still sees the result. Same canonical envelope as an inline tool
-            # result, wrapped so the model reads it as a background delivery.
-            background_status, background_code = _model_result_status(
-                capped_result, ok=True, backgrounded=False,
-            )
-            self._conversation.append(self._harness_note_message(
-                _model_visible_tool_result(
-                    capped_result, background_metadata, background_status, background_code,
-                    kind="background_result",
-                ),
-            ))
-            events.append(ToolResult(id=completion.tool_call_identifier,
-                name=completion.kind,
-                result=_maybe_json(capped_result),
-                status=background_status,
-                task_id=completion.identifier,
-            ))
-            completion_event_data: dict[str, Any] = {"task_identifier": completion.identifier}
-            if background_include_result(completion.kind):
-                completion_event_data["result"] = capped_result
-            self._record_event(background_completion_event(completion.kind), completion_event_data)
-        return events
-
-    def _drain_spawned_agent_events(self) -> list[TurnEvent]:
-        """Every live agent event queued since the last drain. Yielded by the
-        turn loop so a non-blocking spawned agent's activity streams to the panel
-        while the parent works, and any backlog flushes on the wake turn."""
-        events: list[TurnEvent] = []
-        while not self._spawned_agent_events.empty():
-            events.append(self._spawned_agent_events.get_nowait())
-        return events
-
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        """Fast local token estimate (~4 chars/token) for sizing the observation log,
-        which has no provider usage figure of its own."""
-        return len(text) // 4
-
-    def _observation_message(self) -> "SystemMessage | None":
-        """The observation-log system message (the folded conversation memory), if one
-        exists. Tagged in ``additional_kwargs`` so it survives persistence + reload and
-        can be found and appended to."""
-        for message in self._conversation:
-            if isinstance(message, SystemMessage) and message.additional_kwargs.get("observation_log"):
-                return message
-        return None
-
-    async def _emit_observations(self, request: list) -> list[dict]:
-        """Run one Observer/Reflector call and read its structured output from the
-        model's ``ObservationBatch`` tool call — the shape is guaranteed by tool-calling,
-        not scraped from free text (same pattern as PermissionDecision). Returns []
-        when the model emits no tool call, so a miss simply changes nothing."""
-        model = self._llm.bind_tools([ObservationBatch], tool_choice="auto")
-        response = await model.ainvoke(request)
-        if response is None or not response.tool_calls:
-            return []
-        try:
-            batch = ObservationBatch.model_validate(response.tool_calls[0]["args"])
-        except ValidationError:
-            return []
-        return [observation.model_dump() for observation in batch.observations]
-
-    def _observations_of(self, message: "SystemMessage | None") -> list[dict]:
-        raw = message.additional_kwargs.get("observations") if message else None
-        return list(raw) if isinstance(raw, list) else []
-
-    def _build_observation_message(self, observations: list[dict]) -> SystemMessage:
-        """The observation log the main agent passively reads: the structured entries
-        dumped as JSON into the render template. The list itself rides in
-        ``additional_kwargs`` so a later pass appends to structured data, not to prose."""
-        rendered = json.dumps(observations, ensure_ascii=False, separators=(",", ":"))
-        return SystemMessage(
-            content=self._prompt_loader.load("observation_log", {"observations": rendered}),
-            additional_kwargs={"observation_log": True, "observations": observations},
-        )
-
-    def _observer_boundary(self) -> int:
-        """Index splitting the conversation into ``[older to fold] | [recent kept
-        verbatim]``. Cuts at a user-turn boundary (a HumanMessage) so tool_call/
-        tool_result pairing stays intact and the kept tail is a whole number of recent
-        turns. Returns 0 when nothing is old enough to fold."""
-        keep = max(1, self._global_configuration.compaction.keep_recent_turns)
-        human_indices = [
-            index for index, message in enumerate(self._conversation)
-            if isinstance(message, HumanMessage)
-            # Harness notes ride in user-role messages for cache reasons but are
-            # not user turns — they must not shift the keep-recent boundary.
-            and not message.additional_kwargs.get("harness_note")
-        ]
-        if len(human_indices) <= keep:
-            return 0
-        return human_indices[-keep]
-
-    def _should_compact(self) -> bool:
-        """Auto-compaction trigger: enabled in config, live context past the observer
-        fraction of the window, and something old enough to fold. Manual compaction
-        ignores this and always runs a pass."""
-        compaction = self._global_configuration.compaction
-        if not compaction.auto or self._context_window <= 0:
-            return False
-        if self._latest_context_tokens < compaction.observer_context_fraction * self._context_window:
-            return False
-        return self._observer_boundary() > 0
-
-    async def _observe(self, older: list, existing: list[dict]) -> list[dict]:
-        """Fold the older messages into new structured observations to append. The
-        messages are handed to the model as-is; the existing memory is shown so it does
-        not duplicate what is already recorded."""
-        existing_json = json.dumps(existing, ensure_ascii=False, separators=(",", ":")) if existing else "[]"
-        instructions = self._prompt_loader.load("observer", {"existing_observations": existing_json})
-        return await self._emit_observations([
-            SystemMessage(content=instructions),
-            *older,
-            HumanMessage(content="Record the observations now."),
-        ])
-
-    async def _reflect(self, observations: list[dict]) -> list[dict]:
-        """Merge and condense the structured memory. Keeps the original entries if
-        reflection returns nothing, so it never loses memory."""
-        instructions = self._prompt_loader.load(
-            "reflector", {"observations": json.dumps(observations, ensure_ascii=False, separators=(",", ":"))}
-        )
-        reflected = await self._emit_observations([
-            SystemMessage(content=instructions),
-            HumanMessage(content="Record the condensed memory now."),
-        ])
-        return reflected or observations
-
-    async def compact(self, reason: str = "manual") -> AsyncIterator[TurnEvent]:
-        """Observational-memory compaction (replaces wholesale summarization). The
-        Observer folds the older turns into the observation log — appended to what is
-        already there, so the observation prefix stays cache-stable — and drops their raw
-        messages; the Reflector condenses the log when it grows past its fraction of the
-        window. Recent turns stay verbatim. Yields COMPACTION_STARTED/DONE for the UI. A
-        no-op yields nothing. Manual calls force a pass; the auto trigger is gated by
-        :meth:`_should_compact`."""
-        boundary = self._observer_boundary()
-        if boundary <= 0:
-            return
-        observation_message = self._observation_message()
-        existing = self._observations_of(observation_message)
-        # Fold every older message except the existing observation block (it is rebuilt).
-        older = [message for message in self._conversation[:boundary] if message is not observation_message]
-        recent = list(self._conversation[boundary:])
-        tokens_before = self._latest_context_tokens
-        messages_before = len(self._conversation)
-        yield CompactionStarted(reason=reason,
-            messages_before=messages_before,
-            tokens_before=tokens_before,
-        )
-        new_observations = await self._observe(older, existing)
-        if not new_observations:
-            # Produced nothing parseable — leave history untouched rather than drop it.
-            yield CompactionDone(reason=reason, ok=False,
-                messages_before=messages_before,
-                messages_after=messages_before,
-                tokens_before=tokens_before,
-            )
-            return
-        merged = [*existing, *new_observations]
-        compaction = self._global_configuration.compaction
-        merged_tokens = self._estimate_tokens(json.dumps(merged, ensure_ascii=False))
-        if self._context_window > 0 and merged_tokens > compaction.reflector_observation_fraction * self._context_window:
-            merged = await self._reflect(merged)
-        # Replace in place: the conversation list object is shared with the executor's
-        # per-context store, so mutating the same object keeps that binding.
-        self._conversation[:] = [self._build_observation_message(merged), *recent]
-        # Occupancy no longer reflects the (smaller) context; reset so auto-compaction
-        # does not immediately re-fire before the next real model call.
-        self._latest_context_tokens = 0
-        yield CompactionDone(reason=reason, ok=True,
-            observations_added=len(new_observations),
-            messages_before=messages_before,
-            messages_after=len(self._conversation),
-            tokens_before=tokens_before,
-        )
-
-    def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
-        self._record_message("human", user_message)
-        for tool_call_entry in tool_calls:
-            self._record_message("tool", json.dumps(tool_call_entry.get("args", {})), tool_call_entry.get("name", ""))
-        for tool_result_entry in tool_results:
-            self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
-        if final_response:
-            self._record_event("assistant_response_completed", {
-                "content_characters": len(final_response),
-                "tool_call_count": len(tool_calls),
-                "tool_result_count": len(tool_results),
-            })
-        self._record_message("ai", final_response)
-
-    async def _drain_steering_messages(self) -> list[TurnEvent]:
-        events: list[TurnEvent] = []
-        while not self._steering_messages.empty():
-            message = self._steering_messages.get_nowait()
-            self._conversation.append(HumanMessage(content=message))
-            events.append(Steering(text=message))
-        if self._steering_messages.empty():
-            self._steering_available.clear()
-        return events
-
-    def _drain_agent_messages(self) -> bool:
-        """Deliver queued peer messages into the model conversation at a safe boundary."""
-        delivered = False
-        while not self._agent_messages.empty():
-            message = self._agent_messages.get_nowait()
-            delivered = True
-            variables = {
-                "message_identifier": message.question_identifier,
-                "sender_agent_name": message.sender_agent_name,
-                "sender_task_identifier": message.sender_task_identifier,
-                "recipient_agent_name": message.recipient_agent_name,
-                "recipient_task_identifier": message.recipient_task_identifier,
-                "content": message.content,
-            }
-            if message.kind == "question":
-                self._pending_agent_questions.add(message.question_identifier)
-                template_name = "agent_question_received"
-            elif message.kind == "response":
-                self._outstanding_agent_questions.discard(message.question_identifier)
-                template_name = "agent_response_received"
-            elif message.kind == "failed":
-                self._outstanding_agent_questions.discard(message.question_identifier)
-                template_name = "agent_message_failed"
-            else:
-                self._pending_agent_questions.discard(message.question_identifier)
-                template_name = "agent_question_withdrawn"
-            self._conversation.append(
-                self._harness_note_message(self._prompt_loader.load(template_name, variables))
-            )
-        if self._agent_messages.empty():
-            self._agent_message_available.clear()
-        return delivered
-
-    async def _wait_for_agent_message_or_abort(self) -> bool:
-        """Wait for an outstanding reply while keeping Stop immediately responsive."""
-        message_waiter = asyncio.create_task(self._agent_message_available.wait())
-        abort_waiter = asyncio.create_task(self._abort_event.wait())
-        try:
-            completed, _pending = await asyncio.wait(
-                {message_waiter, abort_waiter},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            return message_waiter in completed and self._agent_message_available.is_set()
-        finally:
-            message_waiter.cancel()
-            abort_waiter.cancel()
-            with suppress(BaseException):
-                await message_waiter
-            with suppress(BaseException):
-                await abort_waiter
-
-    def _model_supports_vision(self) -> bool:
-        """Whether the agent's model advertises image input. Unknown models (a
-        custom endpoint not in the catalog) are assumed vision-capable — the
-        same permissive default the attachment-inlining path uses."""
-        model = find_model(self._effective_model_identifier)
-        return True if model is None else model.vision
-
-    def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
-        """Wrap a harness-injected note in a user-role message carrying a
-        ``<systemReminder>`` block.
-
-        The role is deliberate — this is what keeps the conversation strictly
-        append-only for the provider's prompt cache. A mid-conversation
-        ``role:"system"`` message is HOISTED by LiteLLM into Anthropic's top-level
-        ``system`` parameter, which renders before the entire message history; every
-        such note therefore rewrites the prompt prefix and invalidates the cache for
-        the whole conversation. A user-role note stays exactly where it was appended,
-        so the prefix never changes — only grows — on every provider. The wrapper
-        itself lives in the ``harness_note`` prompt template (wording stays in
-        files, not code); it tells the model this is authoritative harness
-        guidance, not user input (see the Harness Guidance section of the system
-        prompt). The ``harness_note`` marker keeps these notes from counting as
-        user turns in the compaction boundary. ``image_blocks`` (OpenAI-shaped
-        ``image_url`` blocks) turn the note multimodal — the user role is the one
-        role every provider accepts images on, which is how a read image reaches
-        a vision model."""
-        text = self._prompt_loader.load("harness_note", {"content": content.strip()}).strip()
-        if image_blocks:
-            return HumanMessage(
-                content=[{"type": "text", "text": text}, *image_blocks],
-                additional_kwargs={"harness_note": True},
-            )
-        return HumanMessage(content=text, additional_kwargs={"harness_note": True})
-
-    def _invalid_tool_call_content(self, invalid: dict) -> str:
-        """Build the message for a malformed tool call — used both as the tool
-        result the model sees and the error surfaced to the user. The wording
-        lives in the loaded ``invalid_tool_call`` prompt template so it stays
-        out of code; a missing template degrades to an empty string, which still
-        pairs the tool_call_id with a (blank) tool message and keeps the
-        conversation valid."""
-        return self._prompt_loader.load("invalid_tool_call", {
-            "name": invalid.get("name") or "unknown",
-            "error": invalid.get("error") or "arguments could not be parsed",
-        })
-
-    def artifact_render_error_note(self, payload: str) -> str:
-        """Frame an artifact render failure as a behind-the-scenes self-realization
-        note (injected as a harness note, not user input) the model repairs. The
-        raw error rides along as its JSON payload, intact."""
-        return self._prompt_loader.load("artifact_render_error", {"payload": payload})
-
-    def _close_dangling_tool_calls(self) -> None:
-        """If the conversation ends with a tool-call AIMessage that has no ToolMessages —
-        a turn that suspended at input-required and was superseded by a new message rather
-        than answered — append a ToolMessage for each call so the history stays valid.
-        A later answer for that superseded pause then finds no checkpoint and is a no-op."""
-        if not self._conversation:
-            return
-        last = self._conversation[-1]
-        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
-            for tool_call in last.tool_calls:
-                self._conversation.append(ToolMessage(
-                    content="(superseded: a new message was sent before this was answered)",
-                    tool_call_id=tool_call["id"],
-                ))
-
-    async def resume_stream(
-        self, plans: dict[str, dict], answers: dict[str, Any]
-    ) -> AsyncIterator[TurnEvent]:
-        """Resume a durably-suspended turn. The conversation was rebuilt from the DB and
-        ends with the pending tool-call AIMessage (the checkpoint); ``plans`` are the
-        persisted preflight plans and ``answers`` the human decisions keyed by request id.
-        Runs the pending batch with those decisions, then continues the turn normally —
-        into the next model call, or a fresh suspension if it needs another decision."""
-        async for event in self.stream("", resume_plans=plans, resume_answers=answers):
-            yield event
-
-    async def stream(
-        self, user_message: str | list, as_system_note: bool = False,
-        resume_plans: Optional[dict[str, dict]] = None,
-        resume_answers: Optional[dict[str, Any]] = None,
-    ) -> AsyncIterator[TurnEvent]:
-        self._abort_event.clear()
-        # The turn runs until the model is done or the user interrupts it — there is no
-        # iteration count and no stuck-detector. The goal reconsideration flag lets an active
-        # goal nudge the model once each time it stops, without a nudge counter; it is instance
-        # state so the no-tool-calls phase can advance it across iterations. Dynamic per-turn
-        # context is injected on the first model call only, tracked by a local below.
-        self._awaiting_goal_reconsideration = False
-        first_turn_message = True
-
-        turn_tool_calls_log: list[dict] = []
-        turn_tool_results_log: list[dict] = []
-
-        if resume_plans is not None:
-            # Resume: the checkpoint AIMessage is already at the tail of the rebuilt
-            # conversation. Run its batch with the resolved decisions, then fall into the
-            # loop for the next model call. No new user message is appended.
-            recorded_user_message = ""
-            response = self._conversation[-1] if self._conversation else None
-            if response is None or not getattr(response, "tool_calls", None):
-                yield Done(text="", stop_reason="completed")
-                return
-            resolved = self._resolve_tool_decisions(
-                {tool_call_id: _ToolPlan.from_dict(plan) for tool_call_id, plan in resume_plans.items()},
-                resume_answers or {},
-            )
-            self._apply_allow_always(resolved)
-            resume_outcomes: dict[str, dict] = {}
-            async for event in self._drain_tools_concurrently(
-                cast(list[dict], response.tool_calls), turn_tool_calls_log, turn_tool_results_log, resume_outcomes, resolved,
-            ):
-                yield event
-            self._append_tool_results(response, resume_outcomes)
-            yield Checkpoint()
-        else:
-            # A prior turn may have suspended at input-required and been superseded by
-            # this new message instead of answered. Close its dangling tool calls (an
-            # AIMessage carrying tool_calls with no ToolMessages) so appending this turn
-            # keeps the conversation valid for the provider.
-            self._close_dangling_tool_calls()
-            # A turn's input is usually plain text, but an attachment turn carries a
-            # multimodal content list (a text block plus one image_url block per
-            # attached image) so a vision model actually sees the pixels. LangChain's
-            # HumanMessage accepts either, and the model adapter passes the content
-            # straight through to the provider. A self-realization note (e.g. an artifact
-            # render error) enters as a <systemReminder> harness note so the model
-            # treats it as its own observation, not as something the user said — in a
-            # user-role message so the append stays cache-safe (_harness_note_message).
-            turn_message = (
-                self._harness_note_message(user_message)
-                if as_system_note and isinstance(user_message, str)
-                else HumanMessage(content=user_message)
-            )
-            self._conversation.append(turn_message)
-            # The event-log recorder only wants prose from LangChain's standard blocks.
-            recorded_user_message = message_text(turn_message)
-
-        while True:
-            if self._abort_event.is_set():
-                if self._has_queued_steering():
-                    self._abort_event.clear()
-                    for steering_event in await self._drain_steering_messages():
-                        yield steering_event
-                    continue
-                yield Done(text="", stop_reason="cancelled")
-                return
-
-            # Flush any live activity from non-blocking spawned agents so the panel
-            # tracks them while the parent works through its own iterations.
-            for agent_event in self._drain_spawned_agent_events():
-                yield agent_event
-
-            self._drain_agent_messages()
-
-            background_events = self._background_result_events()
-            if background_events:
-                for background_event in background_events:
-                    yield background_event
-                continue
-
-            # In-flight background work no longer holds the turn open. Completed
-            # results are drained above and delivered mid-turn while the model is
-            # still working; if the model goes idle with work still pending, the turn
-            # simply ends and the executor's resume pump wakes the agent with an
-            # autonomous turn the moment the next result lands.
-            for steering_event in await self._drain_steering_messages():
-                yield steering_event
-
-            # Auto-compaction: if the last call left the context near the window,
-            # summarize the older history before making another call that could
-            # overflow. The reserved buffer guarantees room to run the compaction
-            # itself; compact() resets the occupancy so this cannot re-fire in a loop.
-            if self._should_compact():
-                async for compaction_event in self.compact(reason="auto"):
-                    yield compaction_event
-
-            messages = self._build_turn_messages(first_turn_message)
-            first_turn_message = False
-
-            # Phase 1 — the model call. Yields the thinking/answer stream and hands back
-            # the assembled response, or a terminal (cancelled) / steering condition.
-            call = _ModelCallOutcome()
-            async for event in self._stream_model_call(messages, call):
-                yield event
-            if call.cancelled:
-                return
-            if call.aborted_for_steering:
-                for steering_event in await self._drain_steering_messages():
-                    yield steering_event
-                continue
-            response = call.response
-
-            usage_event = self._accumulate_usage(response)
-            if usage_event is not None:
-                yield usage_event
-
-            # Malformed tool calls (arguments that failed JSON parsing) land in
-            # `invalid_tool_calls` while `tool_calls` may be empty. LangChain still
-            # serializes invalid_tool_calls into the API payload as `tool_calls`, so each
-            # one MUST be followed by a tool message — otherwise the next provider call
-            # fails with "insufficient tool messages following tool_calls". Ensure every
-            # invalid call carries an id that matches the ToolMessage appended for it.
-            for invalid in response.invalid_tool_calls:
-                if not invalid.get("id"):
-                    invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
-
-            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents,
-            # nudge an active goal, or finish the turn. Always ends the iteration
-            # (_CONTINUE to loop again, _STOP once a terminal event was yielded).
-            if not response.tool_calls:
-                step = _PhaseStep()
-                async for event in self._finalize_no_tool_calls(
-                    response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
-                ):
-                    yield event
-                if step.directive == _STOP:
-                    return
-                continue
-
-            # A tool batch means the model is acting again, so a prior goal nudge is
-            # answered — the next time it stops, it will be re-nudged fresh.
-            self._awaiting_goal_reconsideration = False
-
-            # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the
-            # whole batch's permissions, suspend if a human is needed, drain the tools,
-            # checkpoint), then honor a Stop that landed during it.
-            step = _PhaseStep()
-            async for event in self._run_tool_batch(
-                response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
-            ):
-                yield event
-            if step.directive == _STOP:
-                return
-            if step.directive == _CONTINUE:
-                continue
-
-            for steering_event in await self._drain_steering_messages():
-                yield steering_event
-
-    def _build_turn_messages(self, first_iteration: bool) -> list:
-        """The message list for this iteration's model call: the static system prompt,
-        the conversation, and — only on the turn's first iteration — the dynamic context.
-
-        Dynamic context (time, pwd, active goal, tasks, background) is injected only on
-        the first iteration of a turn, when the user just sent a message; subsequent
-        iterations (after tool calls) skip it to avoid re-sending the same per-turn
-        metadata on every LLM call within the turn. It rides as a transient user-role
-        harness note at the very tail of the request — never as a system message (LiteLLM
-        would hoist it into Anthropic's top-level system param, whose fresh timestamp
-        would then invalidate the ENTIRE conversation cache on every turn). As a tail
-        note, everything before it still prefix-matches the provider cache."""
-        dynamic_parts = (
-            [self._harness_note_message(self._build_dynamic_context())]
-            if first_iteration else []
-        )
-        return (
-            [SystemMessage(content=self._build_static_system_prompt())]
-            + self._conversation
-            + dynamic_parts
-        )
-
-    async def _stream_model_call(
-        self, messages: list, outcome: _ModelCallOutcome
-    ) -> AsyncIterator[TurnEvent]:
-        """One streamed model call. Yields the thinking/answer events and writes the
-        assembled response into ``outcome`` — or a terminal condition instead: ``cancelled``
-        (a Stop with nothing queued; a ``Done`` was already yielded) or
-        ``aborted_for_steering`` (a Stop that found queued steering, so the driver drains
-        it and iterates again).
-
-        Opens a thinking step for the iteration: one channel (THINKING) drives the
-        indicator — this bare ping marks "reasoning started" and reasoning_content fills
-        the body — and a matching THINKING_DONE fires the moment reasoning ends (the first
-        answer token, or, for a tool-only turn, when the stream closes), timed server-side
-        as wall-clock so "Thought for Ns" is correct live and on replay. Each read races
-        the abort event so a Stop interrupts *immediately*, even while parked awaiting the
-        next token from a slow or stalled provider — checking the flag only between chunks
-        let a provider that had gone quiet swallow the cancel until it happened to emit
-        again, which is why Stop "sometimes" appeared to do nothing."""
-        yield Thinking()
-        thinking_started_at = time.monotonic()
-        thinking_done_emitted = False
-        response_chunks: list[AIMessageChunk] = []
-        aborted_for_steering = False
-        # A generation span for this model call. Started (not made "current") so it is
-        # safe to hold open across this generator's yields; ended in the finally below.
-        generation_span = _telemetry.start_span(
-            "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
-        )
-        model_stream = self._bound_llm.astream(messages)
-        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
-        try:
-            while True:
-                chunk_future = asyncio.ensure_future(_stream_next(model_stream))
-                await asyncio.wait(
-                    {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
-                )
-                if self._abort_event.is_set():
-                    # Stop won the race (or landed between chunks): drop the pending
-                    # read and stop consuming the stream (the `finally` closes it).
-                    chunk_future.cancel()
-                    with suppress(BaseException):
-                        await chunk_future
-                    if self._has_queued_steering():
-                        self._abort_event.clear()
-                        aborted_for_steering = True
-                        break
-                    yield Done(text="", stop_reason="cancelled")
-                    outcome.cancelled = True
-                    return
-                chunk = chunk_future.result()
-                if chunk is _STREAM_EXHAUSTED:
-                    break
-                response_chunks.append(chunk)
-                for content_delta in message_content_deltas(chunk):
-                    if content_delta.kind == "text":
-                        if not thinking_done_emitted:
-                            thinking_done_emitted = True
-                            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
-                            )
-                        if self._agent_configuration.stream_agent_progress:
-                            yield TextChunk(text=content_delta.text,
-                                block_id=content_delta.block_identifier,
-                            )
-                    else:
-                        yield Thinking(text=content_delta.text,
-                            block_id=content_delta.block_identifier,
-                        )
-        finally:
-            _telemetry.end_span(generation_span)
-            abort_waiter.cancel()
-            # Close the underlying HTTP stream so an aborted (or exhausted) turn
-            # never leaks a provider connection.
-            with suppress(BaseException):
-                stream_closer = getattr(model_stream, "aclose", None)
-                if stream_closer is not None:
-                    await stream_closer()
-        # A tool-only turn produces no answer text, so close the phase here.
-        if not thinking_done_emitted:
-            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
-            )
-        if aborted_for_steering:
-            outcome.aborted_for_steering = True
-            return
-        outcome.response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
-
-    async def _finalize_no_tool_calls(
-        self, response: AIMessageChunk, recorded_user_message: str,
-        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
-    ) -> AsyncIterator[TurnEvent]:
-        """Handle a model response that made no tool calls. Retries a malformed-only
-        batch, delivers or awaits agent messages, nudges an active goal once to keep
-        working, or finishes the turn — advancing the loop bookkeeping and setting ``step``
-        to ``_CONTINUE`` (iterate again) or ``_STOP`` (a terminal ``Done`` was yielded)."""
-        if response.invalid_tool_calls:
-            # A response carrying only malformed tool calls (arguments that failed to
-            # parse). These are NOT valid tool_calls — the LiteLLM model serializes only
-            # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
-            # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
-            # "Messages with role 'tool' must follow a tool_calls message". Correct the
-            # model with a harness note and let it retry. Model-facing; not surfaced.
-            if response.content:
-                self._conversation.append(response)
-            for invalid in response.invalid_tool_calls:
-                self._conversation.append(self._harness_note_message(
-                    self._invalid_tool_call_content(cast(dict, invalid)),
-                ))
-            step.directive = _CONTINUE
-            return
-
-        # The model produced no tool calls. Any still-running background work does not
-        # hold the turn open: it ends here, and the executor's resume pump wakes the agent
-        # with an autonomous turn once the next result lands. Results that already
-        # completed were drained at the top of the loop, so nothing in hand is lost.
-        final_text = message_text(response)
-        self._conversation.append(response)
-        if self._drain_agent_messages():
-            step.directive = _CONTINUE
-            return
-        steering_events = await self._drain_steering_messages()
-        if steering_events:
-            for steering_event in steering_events:
-                yield steering_event
-            step.directive = _CONTINUE
-            return
-        if self._pending_agent_questions:
-            self._conversation.append(self._harness_note_message(
-                self._prompt_loader.load("agent_response_required", {})
-            ))
-            step.directive = _CONTINUE
-            return
-        if self._outstanding_agent_questions:
-            yield Status(code="waiting_for_agent_response",
-            )
-            if await self._wait_for_agent_message_or_abort():
-                self._drain_agent_messages()
-                step.directive = _CONTINUE
-                return
-            self._record_turn(
-                recorded_user_message,
-                turn_tool_calls_log,
-                turn_tool_results_log,
-                "",
-            )
-            yield Done(text="",
-                stop_reason="cancelled",
-            )
-            step.directive = _STOP
-            return
-        if self._active_goal and not self._awaiting_goal_reconsideration:
-            # The model stopped while a goal is active. Nudge it once to reconsider — but
-            # only once per stop: if it produces no tool calls again (it reaffirms it is
-            # done), the turn completes below. Any tool call in between clears the flag, so
-            # a model that keeps working is nudged fresh each time it next stops, with no
-            # nudge counter and no ceiling.
-            self._awaiting_goal_reconsideration = True
-            goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
-            self._conversation.append(self._harness_note_message(goal_continuation))
-            yield Status(code="goal_check",
-            )
-            step.directive = _CONTINUE
-            return
-        self._record_turn(
-            recorded_user_message, turn_tool_calls_log,
-            turn_tool_results_log, final_text,
-        )
-        yield Done(text=final_text, stop_reason="completed")
-        step.directive = _STOP
-
-    async def _run_tool_batch(
-        self, response: AIMessageChunk, recorded_user_message: str,
-        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
-    ) -> AsyncIterator[TurnEvent]:
-        """Run the response's tool batch and checkpoint it. Appends the initiating
-        AIMessage first — an AIMessage carrying tool_calls with no ToolMessages yet is the
-        durable resume checkpoint — then resolves the whole batch's permissions BEFORE any
-        tool runs (concurrent tools cannot be re-run on resume without re-doing side
-        effects). If a human is needed the turn suspends here; otherwise it drains with
-        every decision already in hand. Sets ``step`` to ``_STOP`` (a top-level suspend
-        that returns, or a Stop with nothing queued) or ``_CONTINUE`` (a Stop that found
-        queued steering); leaves it ``_PROCEED`` for the normal end of the iteration."""
-        self._conversation.append(response)
-        tool_calls = cast(list[dict], response.tool_calls)
-        outcomes: dict[str, dict] = {}
-        if not self._abort_event.is_set():
-            plans, pending = await self._preflight_permissions(tool_calls)
-            if pending:
-                # One suspend event for every turn. The executor renders the prompt from
-                # it (the same DataParts, whether shown in the transcript or relayed to
-                # the agents panel). Only the continuation transport differs, by turn kind:
-                #  - a top-level turn returns here — the executor persists the checkpoint,
-                #    closes the segment as input-required, and a later answer resumes it;
-                #  - a delegated turn is an in-process, ephemeral continuation (it cannot
-                #    be a durable segment that a restart would only discard), so it parks
-                #    in place on the answer futures and continues this same stream — the
-                #    executor relays the prompt to the panel while it waits.
-                yield Suspended(interactions=[gate.to_dict() for gate in pending],
-                    plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
-                )
-                if not self._is_agent:
-                    step.directive = _STOP
-                    return
-                answers = await self._await_pending_answers(pending)
-                decisions = self._resolve_tool_decisions(plans, answers)
-            else:
-                decisions = self._resolve_tool_decisions(plans, {})
-            self._apply_allow_always(decisions)
-            async for event in self._drain_tools_concurrently(
-                tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
-            ):
-                yield event
-        self._append_tool_results(response, outcomes)
-        yield Checkpoint()
-
-        if self._abort_event.is_set():
-            if self._has_queued_steering():
-                self._abort_event.clear()
-                for steering_event in await self._drain_steering_messages():
-                    yield steering_event
-                step.directive = _CONTINUE
-                return
-            self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
-            yield Done(text="", stop_reason="cancelled")
-            step.directive = _STOP
-
-    def _load_agent(self, name: str) -> AgentConfiguration:
-        return load_agent_configuration(
-            name,
-            self._global_configuration.agent_directories_for(self._project_directory),
-        )
-
-    def _authorized_default_model(self) -> str:
-        """The default agent's model when we hold credentials for it — the fallback a
-        delegated agent uses when its own configured provider isn't authorized. Returns ""
-        when even the default isn't authorized (nothing better to offer), leaving the
-        original model in place."""
-        try:
-            default_configuration = self._load_agent(self._global_configuration.default_agent)
-        except Exception:  # noqa: BLE001 — a missing/broken default just means no fallback
-            return ""
-        candidate = default_configuration.model_identifier
-        if candidate and model_is_authorized(candidate, self._global_configuration):
-            return candidate
-        return ""
-
-    def _build_agent_prompt(self, prompt: str, read_only: bool | None) -> str:
-        mode = "read-only investigation" if read_only else "delegated task"
-        return self._prompt_loader.load("agent_task", {
-            "mode": mode,
-            "prompt": prompt,
-        })
-
-    def _relay_child_event(self, delegated: dict, group_id: str, step_id: str) -> "TurnEvent | None":
-        """Wrap one relayed agent event for re-emission. The child already speaks
-        the unified vocabulary; we only prefix this agent's path segment so it renders
-        at the right depth. Non-event control signals (started/done) carry no panel
-        update and return ``None``."""
-        if delegated.get("type") != "event":
-            return None
-        child_event = dict(delegated["event"])
-        segment = {"group_id": group_id, "step_id": step_id}
-        child_event["path"] = [segment, *child_event.get("path", [])]
-        child_event["event_id"] = child_event.get("event_id") or uuid.uuid4().hex
-        return Relayed(event=child_event)
-
-    async def _publish_spawned_agent_event(self, event: Relayed) -> None:
-        agent_event = event.event
-        if self._agent_event_sink is not None:
-            self._agent_event_sink(agent_event)
-        await self._spawned_agent_events.put(event)
-
-    async def _settle_agent_lane(self, group_id: str, step_id: str, state: str) -> None:
-        """Publish exactly one terminal event for an agents-panel lane."""
-        lane_key = (group_id, step_id)
-        if lane_key in self._settled_agent_lanes:
-            return
-        self._settled_agent_lanes.add(lane_key)
-        event = Relayed(event={
-                "kind": "done",
-                "path": [{"group_id": group_id, "step_id": step_id}],
-                "state": state,
-                "event_id": uuid.uuid4().hex,
-            },
-        )
-        await self._publish_spawned_agent_event(event)
+class _ToolHandlersMixin:
 
     async def _run_one_tool(
         self,
@@ -2944,78 +1148,6 @@ class AgentRuntime:
                     outside.append(display)
         return outside
 
-    def _new_permission_request_id(self) -> str:
-        return f"perm-{self._session_id}-{uuid.uuid4()}"
-
-    def _new_question_request_id(self) -> str:
-        return f"q-{self._session_id}-{uuid.uuid4()}"
-
-    async def _preflight_permissions(
-        self, tool_calls: list[dict]
-    ) -> tuple[dict[str, _ToolPlan], list[_ToolGate]]:
-        """Resolve the human-in-the-loop verdict for every tool call in a batch BEFORE
-        any tool runs, so a pause can be checkpointed durably (concurrent tools cannot
-        be re-run on resume without re-doing their side effects). Returns the per-call
-        plans keyed by tool_call_id and the flat list of gates that need a human. When
-        that list is non-empty the turn suspends; otherwise the batch executes with
-        every decision already in hand."""
-        plans: dict[str, _ToolPlan] = {}
-        pending: list[_ToolGate] = []
-        for tool_call_data in tool_calls:
-            plan = await self._classify_tool_permission(
-                tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
-            )
-            plans[tool_call_data["id"]] = plan
-            pending.extend(plan.gates)
-        return plans, pending
-
-    def _resolve_tool_decisions(
-        self, plans: dict[str, _ToolPlan], answers: dict[str, Any]
-    ) -> dict[str, _ResolvedToolDecision]:
-        """Collapse the preflight plans plus any human answers into one verdict per tool.
-        Used on both paths: the fresh path passes empty ``answers`` (plans with no gates),
-        and the resumed path passes the answers keyed by ``request_id``. A tool runs only
-        if every one of its gates was approved; any deny turns it into that gate's denial."""
-        decisions: dict[str, _ResolvedToolDecision] = {}
-        for tool_call_id, plan in plans.items():
-            decision = _ResolvedToolDecision(tool_call_id=tool_call_id)
-            if plan.denial is not None:
-                decision.approved = False
-                decision.denial = plan.denial
-                decisions[tool_call_id] = decision
-                continue
-            for gate in plan.gates:
-                answer = answers.get(gate.request_id)
-                if gate.kind == "question":
-                    # ask_user: the answers list, or the decline sentinel from the resolver.
-                    decision.answers = answer
-                    continue
-                decision_value = str(answer) if answer is not None else "deny"
-                if decision_value == "deny":
-                    decision.approved = False
-                    decision.denial = {"code": "", "message": gate.deny_message, "denied_injection": False, "raw_command": gate.command}
-                    break
-                if gate.is_bash and decision_value == "allow_always":
-                    decision.allow_always_bash_command = gate.command
-                if gate.egress_agent and decision_value == "allow_always":
-                    decision.egress_allow_always_agent = gate.egress_agent
-            decisions[tool_call_id] = decision
-        return decisions
-
-    def _apply_allow_always(self, decisions: dict[str, _ResolvedToolDecision]) -> None:
-        """Apply the durable side effects of an 'always allow' answer: a bash allow-rule
-        (scoped to the session for a top-level turn, persisted to the profile's config for
-        a delegated agent, which has no durable session), or an egress agent added to the
-        per-session approved set."""
-        for decision in decisions.values():
-            if decision.allow_always_bash_command:
-                if self._is_agent:
-                    self._schedule_persist_bash_allow_rule(decision.allow_always_bash_command)
-                else:
-                    self._schedule_bash_allow_rule(decision.allow_always_bash_command)
-            if decision.egress_allow_always_agent:
-                self._egress_approved_agents.add(decision.egress_allow_always_agent)
-
     def _append_tool_results(self, response, outcomes: dict[str, dict]) -> None:
         """Append a ToolMessage for every tool_call of ``response`` (the AIMessage is
         already at the tail of the conversation), plus the image/denied harness notes.
@@ -3083,186 +1215,6 @@ class AgentRuntime:
             self._conversation.append(self._harness_note_message(
                 self._invalid_tool_call_content(cast(dict, invalid)),
             ))
-
-    async def _classify_tool_permission(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-    ) -> _ToolPlan:
-        """The preflight verdict for one tool call: a hard denial, one or more pending
-        gates, or auto-approved. This is the single place permission is decided — it
-        reuses the same functions the inline gates used, so nothing that used to prompt
-        or block silently becomes auto-approved. Setup errors (bad location, failed
-        validation) are left to ``_execute_tool`` to surface; here a tool that cannot be
-        set up simply yields no gate and is 'approved' to run, where the error is raised."""
-        plan = _ToolPlan(tool_call_id=tool_call_identifier)
-        schema = self._tool_schemas.get(tool_name)
-        if schema is not None:
-            tool_arguments = _coerce_structured_arguments(schema, tool_arguments)
-
-        resolved_location: ResolvedLocation | None = None
-        if tool_name in _LOCATION_TOOLS:
-            tool_arguments = dict(tool_arguments)
-            location_value = tool_arguments.pop("location", None) or None
-            try:
-                resolved_location = self._resolve_location(location_value)
-            except ToolLocationError:
-                # A bad location is an execution error, surfaced by _execute_tool; there
-                # is no permission decision to make, so the batch runs and errors there.
-                return plan
-        policy = self._call_policy(resolved_location)
-
-        if tool_name == "bash":
-            raw_command = tool_arguments.get("command", "")
-            justification = tool_arguments.get("justification", "")
-            risk = tool_arguments.get("risk", "")
-            read_only = tool_arguments.get("read_only", False)
-            if isinstance(read_only, str):
-                read_only = read_only.lower() == "true"
-            session_allowed = self._command_session_allowed(raw_command)
-            static_classification, static_detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
-            outside_reads = (
-                []
-                if policy.is_remote
-                else self._outside_working_directory_reads(raw_command, policy.working_directory)
-            )
-            # Sandbox read approval (reads outside the working directory).
-            if outside_reads and not session_allowed and not policy.bypass_permissions:
-                paths = ", ".join(outside_reads)
-                sandbox_message = (
-                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
-                )
-                # A delegated agent escalates a sandbox read to the user like any other gate
-                # (it parks in place and resumes on the answer), rather than hard-denying:
-                # every human-in-the-loop interrupt a delegated agent raises reaches the user.
-                permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
-                if policy.auto_permissions and permission_decision != "deny":
-                    decision = await self._classify_permission(
-                        tool_kind="bash", command=raw_command, raw_command=raw_command,
-                        default_decision=permission_decision, read_only=read_only,
-                        risk=risk or "medium", justification=justification or sandbox_message,
-                        static_classification=static_classification, static_detail=static_detail,
-                        outside_reads=outside_reads,
-                    )
-                    if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
-                    else:
-                        plan.gates.append(_ToolGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                            kind="permission", command=raw_command,
-                            justification=decision.justification or sandbox_message, risk=decision.risk, is_bash=True,
-                            deny_message="Sandbox read was not approved by the user.",
-                        ))
-                else:
-                    if permission_decision == "deny":
-                        plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
-                        return plan
-                    plan.gates.append(_ToolGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command=raw_command, justification=sandbox_message, risk="medium", is_bash=True,
-                        deny_message="Sandbox read was not approved by the user.",
-                    ))
-            # Read-only enforcement is a hard block (no human in the loop).
-            if policy.read_only:
-                violation = None
-                if static_classification == "mutating":
-                    violation = static_detail
-                elif static_classification == "unknown" and not read_only:
-                    violation = "a command not recognized as read-only that you marked as modifying state"
-                if violation:
-                    deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
-                    plan.denial = {"code": "", "message": deny_message, "denied_injection": True, "raw_command": raw_command}
-                    return plan
-            # Main command approval.
-            permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
-            if permission_decision == "deny":
-                plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
-                return plan
-            elif (
-                not session_allowed
-                and not policy.bypass_permissions
-                and (permission_decision == "ask" or risk in ("medium", "high"))
-            ):
-                if policy.auto_permissions:
-                    decision = await self._classify_permission(
-                        tool_kind="bash", command=raw_command, raw_command=raw_command,
-                        default_decision=permission_decision, read_only=read_only,
-                        risk=risk or "medium", justification=justification,
-                        static_classification=static_classification, static_detail=static_detail,
-                        outside_reads=outside_reads,
-                    )
-                    if decision.action == "auto_approve":
-                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
-                    else:
-                        plan.gates.append(_ToolGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                            kind="permission", command=raw_command,
-                            justification=decision.justification or justification, risk=decision.risk, is_bash=True,
-                            deny_message="Command was not approved by the user.",
-                        ))
-                else:
-                    plan.gates.append(_ToolGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command=raw_command, justification=justification, risk=risk, is_bash=True,
-                        deny_message="Command was not approved by the user.",
-                    ))
-            return plan
-
-        if tool_name == "call_mcp_tool":
-            read_only = tool_arguments.get("read_only", False)
-            risk = tool_arguments.get("risk", "low")
-            if policy.read_only and not read_only:
-                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
-                plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
-                return plan
-            if not policy.bypass_permissions and not read_only and risk in ("medium", "high"):
-                action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
-                justification = tool_arguments.get("justification", "")
-                if policy.auto_permissions:
-                    decision = await self._classify_permission(
-                        tool_kind="mcp", command=action,
-                        raw_command=json.dumps(tool_arguments.get("arguments") or {}, ensure_ascii=False),
-                        default_decision="ask", read_only=False, risk=risk, justification=justification,
-                    )
-                    if decision.action == "auto_approve":
-                        self._record_event("mcp_auto_approved", {
-                            "server": tool_arguments.get("server", ""), "tool": tool_arguments.get("tool_name", ""),
-                            "reason": decision.justification, "risk": decision.risk,
-                        })
-                    else:
-                        plan.gates.append(_ToolGate(
-                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                            kind="permission", command=action,
-                            justification=decision.justification or justification, risk=decision.risk,
-                            deny_message="MCP tool call not approved by user",
-                        ))
-                else:
-                    plan.gates.append(_ToolGate(
-                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                        kind="permission", command=action, justification=justification, risk=risk,
-                        deny_message="MCP tool call not approved by user",
-                    ))
-            return plan
-
-        if tool_name in ("spawn_agent", "call_remote_agent"):
-            agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
-            if self._is_remote_agent(agent_name) and not self._bypass_permissions and agent_name not in self._egress_approved_agents:
-                plan.gates.append(_ToolGate(
-                    request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
-                    kind="permission", command=f"Contact external agent '{agent_name}'",
-                    justification=f"Send this task and any attachments to the external agent '{agent_name}'. Data will leave this machine.",
-                    risk="high",
-                    deny_message=f"Contacting external agent '{agent_name}' was not approved.",
-                    egress_agent=agent_name,
-                ))
-            return plan
-
-        if tool_name == "ask_user":
-            plan.gates.append(_ToolGate(
-                request_id=self._new_question_request_id(), tool_call_id=tool_call_identifier,
-                kind="question", questions=tool_arguments.get("questions", []) or [],
-            ))
-            return plan
-
-        return plan
 
     async def _execute_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
@@ -4467,6 +2419,2069 @@ class AgentRuntime:
             result.pop("image_path", None)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result, extra=extra,
         )
+
+
+class _PermissionsMixin:
+
+    def _evaluate_bash_permission(self, command: str, *, bypass: bool | None = None) -> str:
+        effective_bypass = self._bypass_permissions if bypass is None else bypass
+        if effective_bypass:
+            return "allow"
+        unmatched = "ask" if self._interactive_manual_mode else "allow"
+        return self._permissions.evaluate_bash_permission(command, unmatched=unmatched)
+
+    async def _classify_permission(
+        self,
+        *,
+        tool_kind: str,
+        command: str,
+        raw_command: str,
+        default_decision: str,
+        read_only: bool,
+        risk: str,
+        justification: str,
+        static_classification: str = "",
+        static_detail: str = "",
+        outside_reads: Optional[list[str]] = None,
+    ) -> PermissionDecision:
+        context = json.dumps(
+            {
+                "tool_kind": tool_kind,
+                "working_directory": self._working_directory,
+                "command": command,
+                "raw_command": raw_command,
+                "default_permission_decision": default_decision,
+                "model_declared_read_only": read_only,
+                "model_declared_risk": risk,
+                "model_justification": justification,
+                "static_read_only_classification": static_classification,
+                "static_detail": static_detail,
+                "outside_working_directory_reads": outside_reads or [],
+                "allowed_actions": ["auto_approve", "escalate"],
+            },
+            ensure_ascii=False,
+        )
+        prompt = self._prompt_loader.load("permission_classifier", {"context": context})
+        try:
+            model = self._llm.bind_tools([PermissionDecision], tool_choice="auto")
+            response = await model.ainvoke([
+                SystemMessage(content=prompt),
+            ])
+            if not response.tool_calls:
+                return PermissionDecision(action="escalate", justification="Classifier returned no structured decision.", risk="medium")
+            decision = PermissionDecision.model_validate(response.tool_calls[0]["args"])
+            if default_decision == "deny" and decision.action == "auto_approve":
+                return PermissionDecision(action="escalate", justification="User-configured permissions deny this action.", risk="high")
+            if not decision.justification.strip():
+                return PermissionDecision(action="escalate", justification="Classifier did not provide a justification.", risk="medium")
+            return decision
+        except Exception as exception:
+            return PermissionDecision(action="escalate", justification=f"{exception}", risk="medium")
+
+    def _command_session_allowed(self, command: str) -> bool:
+        """Whether a prior 'always allow' in this session covers this command, so
+        it skips the sandbox/approval prompts."""
+        if not self._session_allow_patterns:
+            return False
+        return self._agent_configuration.tools.bash.command_matches(command, self._session_allow_patterns)
+
+    def _schedule_bash_allow_rule(self, command: str) -> None:
+        try:
+            asyncio.create_task(self._remember_bash_allow_rule(command))
+        except RuntimeError:
+            pass
+
+    def _schedule_persist_bash_allow_rule(self, command: str) -> None:
+        try:
+            asyncio.create_task(self._persist_bash_allow_rule(command))
+        except RuntimeError:
+            pass
+
+    async def _distill_bash_allow_patterns(self, command: str) -> list[str]:
+        """Ask the model to distill an allow rule (one or more command patterns) from the
+        approved command. Best effort — returns [] on any failure, since the one-time
+        approval already ran the command regardless."""
+        try:
+            prompt = self._prompt_loader.load("bash_allow_rule", {"command": command})
+            # bind_tools + manual parse instead of with_structured_output: the
+            # configured reasoning model rejects response_format/forced tool_choice
+            # that structured output relies on, but accepts a regular tool call.
+            model = self._llm.bind_tools([BashAllowRule], tool_choice="auto")
+            response = await model.ainvoke(prompt)
+            if not response.tool_calls:
+                return []
+            rule = BashAllowRule.model_validate(response.tool_calls[0]["args"])
+            return [pattern.strip() for pattern in (rule.patterns or []) if pattern.strip()]
+        except Exception:
+            return []
+
+    async def _remember_bash_allow_rule(self, command: str) -> None:
+        """A top-level 'always allow': add the distilled patterns to this session's
+        allowlist, so the rest of the session stops asking for the same command."""
+        for pattern in await self._distill_bash_allow_patterns(command):
+            if pattern not in self._session_allow_patterns:
+                self._session_allow_patterns.append(pattern)
+
+    async def _persist_bash_allow_rule(self, command: str) -> None:
+        """A delegated agent's 'always allow': a delegated agent has no durable session to remember
+        the rule in, so its authority is its card — persist the distilled patterns as
+        ``allow`` on this agent profile's configuration (best effort), so every future
+        spawn of the profile inherits them. Also add them to the live session allowlist so
+        the rest of this delegated agent's turn stops asking, without waiting for the reload."""
+        patterns = await self._distill_bash_allow_patterns(command)
+        if not patterns:
+            return
+        for pattern in patterns:
+            if pattern not in self._session_allow_patterns:
+                self._session_allow_patterns.append(pattern)
+        if self._persist_agent_allow_patterns is not None:
+            try:
+                await self._persist_agent_allow_patterns(
+                    self._agent_configuration.identifier, self._project_directory, patterns,
+                )
+            except Exception:
+                pass
+
+    def _new_permission_request_id(self) -> str:
+        return f"perm-{self._session_id}-{uuid.uuid4()}"
+
+    def _new_question_request_id(self) -> str:
+        return f"q-{self._session_id}-{uuid.uuid4()}"
+
+    async def _preflight_permissions(
+        self, tool_calls: list[dict]
+    ) -> tuple[dict[str, _ToolPlan], list[_ToolGate]]:
+        """Resolve the human-in-the-loop verdict for every tool call in a batch BEFORE
+        any tool runs, so a pause can be checkpointed durably (concurrent tools cannot
+        be re-run on resume without re-doing their side effects). Returns the per-call
+        plans keyed by tool_call_id and the flat list of gates that need a human. When
+        that list is non-empty the turn suspends; otherwise the batch executes with
+        every decision already in hand."""
+        plans: dict[str, _ToolPlan] = {}
+        pending: list[_ToolGate] = []
+        for tool_call_data in tool_calls:
+            plan = await self._classify_tool_permission(
+                tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
+            )
+            plans[tool_call_data["id"]] = plan
+            pending.extend(plan.gates)
+        return plans, pending
+
+    def _resolve_tool_decisions(
+        self, plans: dict[str, _ToolPlan], answers: dict[str, Any]
+    ) -> dict[str, _ResolvedToolDecision]:
+        """Collapse the preflight plans plus any human answers into one verdict per tool.
+        Used on both paths: the fresh path passes empty ``answers`` (plans with no gates),
+        and the resumed path passes the answers keyed by ``request_id``. A tool runs only
+        if every one of its gates was approved; any deny turns it into that gate's denial."""
+        decisions: dict[str, _ResolvedToolDecision] = {}
+        for tool_call_id, plan in plans.items():
+            decision = _ResolvedToolDecision(tool_call_id=tool_call_id)
+            if plan.denial is not None:
+                decision.approved = False
+                decision.denial = plan.denial
+                decisions[tool_call_id] = decision
+                continue
+            for gate in plan.gates:
+                answer = answers.get(gate.request_id)
+                if gate.kind == "question":
+                    # ask_user: the answers list, or the decline sentinel from the resolver.
+                    decision.answers = answer
+                    continue
+                decision_value = str(answer) if answer is not None else "deny"
+                if decision_value == "deny":
+                    decision.approved = False
+                    decision.denial = {"code": "", "message": gate.deny_message, "denied_injection": False, "raw_command": gate.command}
+                    break
+                if gate.is_bash and decision_value == "allow_always":
+                    decision.allow_always_bash_command = gate.command
+                if gate.egress_agent and decision_value == "allow_always":
+                    decision.egress_allow_always_agent = gate.egress_agent
+            decisions[tool_call_id] = decision
+        return decisions
+
+    def _apply_allow_always(self, decisions: dict[str, _ResolvedToolDecision]) -> None:
+        """Apply the durable side effects of an 'always allow' answer: a bash allow-rule
+        (scoped to the session for a top-level turn, persisted to the profile's config for
+        a delegated agent, which has no durable session), or an egress agent added to the
+        per-session approved set."""
+        for decision in decisions.values():
+            if decision.allow_always_bash_command:
+                if self._is_agent:
+                    self._schedule_persist_bash_allow_rule(decision.allow_always_bash_command)
+                else:
+                    self._schedule_bash_allow_rule(decision.allow_always_bash_command)
+            if decision.egress_allow_always_agent:
+                self._egress_approved_agents.add(decision.egress_allow_always_agent)
+
+    async def _classify_tool_permission(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+    ) -> _ToolPlan:
+        """The preflight verdict for one tool call: a hard denial, one or more pending
+        gates, or auto-approved. This is the single place permission is decided — it
+        reuses the same functions the inline gates used, so nothing that used to prompt
+        or block silently becomes auto-approved. Setup errors (bad location, failed
+        validation) are left to ``_execute_tool`` to surface; here a tool that cannot be
+        set up simply yields no gate and is 'approved' to run, where the error is raised."""
+        plan = _ToolPlan(tool_call_id=tool_call_identifier)
+        schema = self._tool_schemas.get(tool_name)
+        if schema is not None:
+            tool_arguments = _coerce_structured_arguments(schema, tool_arguments)
+
+        resolved_location: ResolvedLocation | None = None
+        if tool_name in _LOCATION_TOOLS:
+            tool_arguments = dict(tool_arguments)
+            location_value = tool_arguments.pop("location", None) or None
+            try:
+                resolved_location = self._resolve_location(location_value)
+            except ToolLocationError:
+                # A bad location is an execution error, surfaced by _execute_tool; there
+                # is no permission decision to make, so the batch runs and errors there.
+                return plan
+        policy = self._call_policy(resolved_location)
+
+        if tool_name == "bash":
+            raw_command = tool_arguments.get("command", "")
+            justification = tool_arguments.get("justification", "")
+            risk = tool_arguments.get("risk", "")
+            read_only = tool_arguments.get("read_only", False)
+            if isinstance(read_only, str):
+                read_only = read_only.lower() == "true"
+            session_allowed = self._command_session_allowed(raw_command)
+            static_classification, static_detail = self._agent_configuration.tools.bash.read_only_assessment(raw_command)
+            outside_reads = (
+                []
+                if policy.is_remote
+                else self._outside_working_directory_reads(raw_command, policy.working_directory)
+            )
+            # Sandbox read approval (reads outside the working directory).
+            if outside_reads and not session_allowed and not policy.bypass_permissions:
+                paths = ", ".join(outside_reads)
+                sandbox_message = (
+                    f"Sandbox approval required: this command reads outside the working directory ({paths})."
+                )
+                # A delegated agent escalates a sandbox read to the user like any other gate
+                # (it parks in place and resumes on the answer), rather than hard-denying:
+                # every human-in-the-loop interrupt a delegated agent raises reaches the user.
+                permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
+                if policy.auto_permissions and permission_decision != "deny":
+                    decision = await self._classify_permission(
+                        tool_kind="bash", command=raw_command, raw_command=raw_command,
+                        default_decision=permission_decision, read_only=read_only,
+                        risk=risk or "medium", justification=justification or sandbox_message,
+                        static_classification=static_classification, static_detail=static_detail,
+                        outside_reads=outside_reads,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
+                    else:
+                        plan.gates.append(_ToolGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command=raw_command,
+                            justification=decision.justification or sandbox_message, risk=decision.risk, is_bash=True,
+                            deny_message="Sandbox read was not approved by the user.",
+                        ))
+                else:
+                    if permission_decision == "deny":
+                        plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
+                        return plan
+                    plan.gates.append(_ToolGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command=raw_command, justification=sandbox_message, risk="medium", is_bash=True,
+                        deny_message="Sandbox read was not approved by the user.",
+                    ))
+            # Read-only enforcement is a hard block (no human in the loop).
+            if policy.read_only:
+                violation = None
+                if static_classification == "mutating":
+                    violation = static_detail
+                elif static_classification == "unknown" and not read_only:
+                    violation = "a command not recognized as read-only that you marked as modifying state"
+                if violation:
+                    deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
+                    plan.denial = {"code": "", "message": deny_message, "denied_injection": True, "raw_command": raw_command}
+                    return plan
+            # Main command approval.
+            permission_decision = self._evaluate_bash_permission(raw_command, bypass=policy.bypass_permissions)
+            if permission_decision == "deny":
+                plan.denial = {"code": "", "message": f"Command '{raw_command}' is not permitted.", "denied_injection": True, "raw_command": raw_command}
+                return plan
+            elif (
+                not session_allowed
+                and not policy.bypass_permissions
+                and (permission_decision == "ask" or risk in ("medium", "high"))
+            ):
+                if policy.auto_permissions:
+                    decision = await self._classify_permission(
+                        tool_kind="bash", command=raw_command, raw_command=raw_command,
+                        default_decision=permission_decision, read_only=read_only,
+                        risk=risk or "medium", justification=justification,
+                        static_classification=static_classification, static_detail=static_detail,
+                        outside_reads=outside_reads,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
+                    else:
+                        plan.gates.append(_ToolGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command=raw_command,
+                            justification=decision.justification or justification, risk=decision.risk, is_bash=True,
+                            deny_message="Command was not approved by the user.",
+                        ))
+                else:
+                    plan.gates.append(_ToolGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command=raw_command, justification=justification, risk=risk, is_bash=True,
+                        deny_message="Command was not approved by the user.",
+                    ))
+            return plan
+
+        if tool_name == "call_mcp_tool":
+            read_only = tool_arguments.get("read_only", False)
+            risk = tool_arguments.get("risk", "low")
+            if policy.read_only and not read_only:
+                deny_message = self._prompt_loader.load("read_only_denied", {"violation": "a mutating MCP tool call"})
+                plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
+                return plan
+            if not policy.bypass_permissions and not read_only and risk in ("medium", "high"):
+                action = f"MCP {tool_arguments.get('server', '')}.{tool_arguments.get('tool_name', '')}"
+                justification = tool_arguments.get("justification", "")
+                if policy.auto_permissions:
+                    decision = await self._classify_permission(
+                        tool_kind="mcp", command=action,
+                        raw_command=json.dumps(tool_arguments.get("arguments") or {}, ensure_ascii=False),
+                        default_decision="ask", read_only=False, risk=risk, justification=justification,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("mcp_auto_approved", {
+                            "server": tool_arguments.get("server", ""), "tool": tool_arguments.get("tool_name", ""),
+                            "reason": decision.justification, "risk": decision.risk,
+                        })
+                    else:
+                        plan.gates.append(_ToolGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command=action,
+                            justification=decision.justification or justification, risk=decision.risk,
+                            deny_message="MCP tool call not approved by user",
+                        ))
+                else:
+                    plan.gates.append(_ToolGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command=action, justification=justification, risk=risk,
+                        deny_message="MCP tool call not approved by user",
+                    ))
+            return plan
+
+        if tool_name in ("spawn_agent", "call_remote_agent"):
+            agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
+            if self._is_remote_agent(agent_name) and not self._bypass_permissions and agent_name not in self._egress_approved_agents:
+                plan.gates.append(_ToolGate(
+                    request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                    kind="permission", command=f"Contact external agent '{agent_name}'",
+                    justification=f"Send this task and any attachments to the external agent '{agent_name}'. Data will leave this machine.",
+                    risk="high",
+                    deny_message=f"Contacting external agent '{agent_name}' was not approved.",
+                    egress_agent=agent_name,
+                ))
+            return plan
+
+        if tool_name == "ask_user":
+            plan.gates.append(_ToolGate(
+                request_id=self._new_question_request_id(), tool_call_id=tool_call_identifier,
+                kind="question", questions=tool_arguments.get("questions", []) or [],
+            ))
+            return plan
+
+        return plan
+
+
+class _CompactionMixin:
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Fast local token estimate (~4 chars/token) for sizing the observation log,
+        which has no provider usage figure of its own."""
+        return len(text) // 4
+
+    def _observation_message(self) -> "SystemMessage | None":
+        """The observation-log system message (the folded conversation memory), if one
+        exists. Tagged in ``additional_kwargs`` so it survives persistence + reload and
+        can be found and appended to."""
+        for message in self._conversation:
+            if isinstance(message, SystemMessage) and message.additional_kwargs.get("observation_log"):
+                return message
+        return None
+
+    async def _emit_observations(self, request: list) -> list[dict]:
+        """Run one Observer/Reflector call and read its structured output from the
+        model's ``ObservationBatch`` tool call — the shape is guaranteed by tool-calling,
+        not scraped from free text (same pattern as PermissionDecision). Returns []
+        when the model emits no tool call, so a miss simply changes nothing."""
+        model = self._llm.bind_tools([ObservationBatch], tool_choice="auto")
+        response = await model.ainvoke(request)
+        if response is None or not response.tool_calls:
+            return []
+        try:
+            batch = ObservationBatch.model_validate(response.tool_calls[0]["args"])
+        except ValidationError:
+            return []
+        return [observation.model_dump() for observation in batch.observations]
+
+    def _observations_of(self, message: "SystemMessage | None") -> list[dict]:
+        raw = message.additional_kwargs.get("observations") if message else None
+        return list(raw) if isinstance(raw, list) else []
+
+    def _build_observation_message(self, observations: list[dict]) -> SystemMessage:
+        """The observation log the main agent passively reads: the structured entries
+        dumped as JSON into the render template. The list itself rides in
+        ``additional_kwargs`` so a later pass appends to structured data, not to prose."""
+        rendered = json.dumps(observations, ensure_ascii=False, separators=(",", ":"))
+        return SystemMessage(
+            content=self._prompt_loader.load("observation_log", {"observations": rendered}),
+            additional_kwargs={"observation_log": True, "observations": observations},
+        )
+
+    def _observer_boundary(self) -> int:
+        """Index splitting the conversation into ``[older to fold] | [recent kept
+        verbatim]``. Cuts at a user-turn boundary (a HumanMessage) so tool_call/
+        tool_result pairing stays intact and the kept tail is a whole number of recent
+        turns. Returns 0 when nothing is old enough to fold."""
+        keep = max(1, self._global_configuration.compaction.keep_recent_turns)
+        human_indices = [
+            index for index, message in enumerate(self._conversation)
+            if isinstance(message, HumanMessage)
+            # Harness notes ride in user-role messages for cache reasons but are
+            # not user turns — they must not shift the keep-recent boundary.
+            and not message.additional_kwargs.get("harness_note")
+        ]
+        if len(human_indices) <= keep:
+            return 0
+        return human_indices[-keep]
+
+    def _should_compact(self) -> bool:
+        """Auto-compaction trigger: enabled in config, live context past the observer
+        fraction of the window, and something old enough to fold. Manual compaction
+        ignores this and always runs a pass."""
+        compaction = self._global_configuration.compaction
+        if not compaction.auto or self._context_window <= 0:
+            return False
+        if self._latest_context_tokens < compaction.observer_context_fraction * self._context_window:
+            return False
+        return self._observer_boundary() > 0
+
+    async def _observe(self, older: list, existing: list[dict]) -> list[dict]:
+        """Fold the older messages into new structured observations to append. The
+        messages are handed to the model as-is; the existing memory is shown so it does
+        not duplicate what is already recorded."""
+        existing_json = json.dumps(existing, ensure_ascii=False, separators=(",", ":")) if existing else "[]"
+        instructions = self._prompt_loader.load("observer", {"existing_observations": existing_json})
+        return await self._emit_observations([
+            SystemMessage(content=instructions),
+            *older,
+            HumanMessage(content="Record the observations now."),
+        ])
+
+    async def _reflect(self, observations: list[dict]) -> list[dict]:
+        """Merge and condense the structured memory. Keeps the original entries if
+        reflection returns nothing, so it never loses memory."""
+        instructions = self._prompt_loader.load(
+            "reflector", {"observations": json.dumps(observations, ensure_ascii=False, separators=(",", ":"))}
+        )
+        reflected = await self._emit_observations([
+            SystemMessage(content=instructions),
+            HumanMessage(content="Record the condensed memory now."),
+        ])
+        return reflected or observations
+
+    async def compact(self, reason: str = "manual") -> AsyncIterator[TurnEvent]:
+        """Observational-memory compaction (replaces wholesale summarization). The
+        Observer folds the older turns into the observation log — appended to what is
+        already there, so the observation prefix stays cache-stable — and drops their raw
+        messages; the Reflector condenses the log when it grows past its fraction of the
+        window. Recent turns stay verbatim. Yields COMPACTION_STARTED/DONE for the UI. A
+        no-op yields nothing. Manual calls force a pass; the auto trigger is gated by
+        :meth:`_should_compact`."""
+        boundary = self._observer_boundary()
+        if boundary <= 0:
+            return
+        observation_message = self._observation_message()
+        existing = self._observations_of(observation_message)
+        # Fold every older message except the existing observation block (it is rebuilt).
+        older = [message for message in self._conversation[:boundary] if message is not observation_message]
+        recent = list(self._conversation[boundary:])
+        tokens_before = self._latest_context_tokens
+        messages_before = len(self._conversation)
+        yield CompactionStarted(reason=reason,
+            messages_before=messages_before,
+            tokens_before=tokens_before,
+        )
+        new_observations = await self._observe(older, existing)
+        if not new_observations:
+            # Produced nothing parseable — leave history untouched rather than drop it.
+            yield CompactionDone(reason=reason, ok=False,
+                messages_before=messages_before,
+                messages_after=messages_before,
+                tokens_before=tokens_before,
+            )
+            return
+        merged = [*existing, *new_observations]
+        compaction = self._global_configuration.compaction
+        merged_tokens = self._estimate_tokens(json.dumps(merged, ensure_ascii=False))
+        if self._context_window > 0 and merged_tokens > compaction.reflector_observation_fraction * self._context_window:
+            merged = await self._reflect(merged)
+        # Replace in place: the conversation list object is shared with the executor's
+        # per-context store, so mutating the same object keeps that binding.
+        self._conversation[:] = [self._build_observation_message(merged), *recent]
+        # Occupancy no longer reflects the (smaller) context; reset so auto-compaction
+        # does not immediately re-fire before the next real model call.
+        self._latest_context_tokens = 0
+        yield CompactionDone(reason=reason, ok=True,
+            observations_added=len(new_observations),
+            messages_before=messages_before,
+            messages_after=len(self._conversation),
+            tokens_before=tokens_before,
+        )
+
+
+class _DelegationMixin:
+
+    async def _await_pending_answers(self, pending: list["_ToolGate"]) -> dict[str, Any]:
+        """Park a delegated turn in place until the user answers each gate. The gates were
+        surfaced to the panel by the executor from the SUSPENDED event; here the turn awaits
+        the answers on per-gate futures (completed by the shared resolver's delegated
+        routing), racing an abort that ends any outstanding gate fail-safe — a question
+        declines, a permission denies. A top-level turn never reaches this: it returned at
+        SUSPENDED to become a durable segment."""
+        loop = asyncio.get_running_loop()
+        futures: dict[str, "asyncio.Future"] = {}
+        gate_by_request: dict[str, "_ToolGate"] = {}
+        for gate in pending:
+            future = loop.create_future()
+            self._agent_permission_futures[gate.request_id] = future
+            futures[gate.request_id] = future
+            gate_by_request[gate.request_id] = gate
+        answers: dict[str, Any] = {}
+        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+        try:
+            for request_id, future in futures.items():
+                await asyncio.wait({future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED)
+                if future.done():
+                    answers[request_id] = future.result()
+                else:
+                    answers[request_id] = (
+                        {"__declined__": True}
+                        if gate_by_request[request_id].kind == "question"
+                        else "deny"
+                    )
+        finally:
+            abort_waiter.cancel()
+            for request_id in futures:
+                self._agent_permission_futures.pop(request_id, None)
+        return answers
+
+    def enqueue_agent_message(self, message: AgentMessage) -> None:
+        """Queue a peer delivery for the next safe model boundary."""
+        self._agent_messages.put_nowait(message)
+        self._agent_message_available.set()
+
+    def _drain_spawned_agent_events(self) -> list[TurnEvent]:
+        """Every live agent event queued since the last drain. Yielded by the
+        turn loop so a non-blocking spawned agent's activity streams to the panel
+        while the parent works, and any backlog flushes on the wake turn."""
+        events: list[TurnEvent] = []
+        while not self._spawned_agent_events.empty():
+            events.append(self._spawned_agent_events.get_nowait())
+        return events
+
+    def _drain_agent_messages(self) -> bool:
+        """Deliver queued peer messages into the model conversation at a safe boundary."""
+        delivered = False
+        while not self._agent_messages.empty():
+            message = self._agent_messages.get_nowait()
+            delivered = True
+            variables = {
+                "message_identifier": message.question_identifier,
+                "sender_agent_name": message.sender_agent_name,
+                "sender_task_identifier": message.sender_task_identifier,
+                "recipient_agent_name": message.recipient_agent_name,
+                "recipient_task_identifier": message.recipient_task_identifier,
+                "content": message.content,
+            }
+            if message.kind == "question":
+                self._pending_agent_questions.add(message.question_identifier)
+                template_name = "agent_question_received"
+            elif message.kind == "response":
+                self._outstanding_agent_questions.discard(message.question_identifier)
+                template_name = "agent_response_received"
+            elif message.kind == "failed":
+                self._outstanding_agent_questions.discard(message.question_identifier)
+                template_name = "agent_message_failed"
+            else:
+                self._pending_agent_questions.discard(message.question_identifier)
+                template_name = "agent_question_withdrawn"
+            self._conversation.append(
+                self._harness_note_message(self._prompt_loader.load(template_name, variables))
+            )
+        if self._agent_messages.empty():
+            self._agent_message_available.clear()
+        return delivered
+
+    async def _wait_for_agent_message_or_abort(self) -> bool:
+        """Wait for an outstanding reply while keeping Stop immediately responsive."""
+        message_waiter = asyncio.create_task(self._agent_message_available.wait())
+        abort_waiter = asyncio.create_task(self._abort_event.wait())
+        try:
+            completed, _pending = await asyncio.wait(
+                {message_waiter, abort_waiter},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            return message_waiter in completed and self._agent_message_available.is_set()
+        finally:
+            message_waiter.cancel()
+            abort_waiter.cancel()
+            with suppress(BaseException):
+                await message_waiter
+            with suppress(BaseException):
+                await abort_waiter
+
+    def _load_agent(self, name: str) -> AgentConfiguration:
+        return load_agent_configuration(
+            name,
+            self._global_configuration.agent_directories_for(self._project_directory),
+        )
+
+    def _authorized_default_model(self) -> str:
+        """The default agent's model when we hold credentials for it — the fallback a
+        delegated agent uses when its own configured provider isn't authorized. Returns ""
+        when even the default isn't authorized (nothing better to offer), leaving the
+        original model in place."""
+        try:
+            default_configuration = self._load_agent(self._global_configuration.default_agent)
+        except Exception:  # noqa: BLE001 — a missing/broken default just means no fallback
+            return ""
+        candidate = default_configuration.model_identifier
+        if candidate and model_is_authorized(candidate, self._global_configuration):
+            return candidate
+        return ""
+
+    def _build_agent_prompt(self, prompt: str, read_only: bool | None) -> str:
+        mode = "read-only investigation" if read_only else "delegated task"
+        return self._prompt_loader.load("agent_task", {
+            "mode": mode,
+            "prompt": prompt,
+        })
+
+    def _relay_child_event(self, delegated: dict, group_id: str, step_id: str) -> "TurnEvent | None":
+        """Wrap one relayed agent event for re-emission. The child already speaks
+        the unified vocabulary; we only prefix this agent's path segment so it renders
+        at the right depth. Non-event control signals (started/done) carry no panel
+        update and return ``None``."""
+        if delegated.get("type") != "event":
+            return None
+        child_event = dict(delegated["event"])
+        segment = {"group_id": group_id, "step_id": step_id}
+        child_event["path"] = [segment, *child_event.get("path", [])]
+        child_event["event_id"] = child_event.get("event_id") or uuid.uuid4().hex
+        return Relayed(event=child_event)
+
+    async def _publish_spawned_agent_event(self, event: Relayed) -> None:
+        agent_event = event.event
+        if self._agent_event_sink is not None:
+            self._agent_event_sink(agent_event)
+        await self._spawned_agent_events.put(event)
+
+    async def _settle_agent_lane(self, group_id: str, step_id: str, state: str) -> None:
+        """Publish exactly one terminal event for an agents-panel lane."""
+        lane_key = (group_id, step_id)
+        if lane_key in self._settled_agent_lanes:
+            return
+        self._settled_agent_lanes.add(lane_key)
+        event = Relayed(event={
+                "kind": "done",
+                "path": [{"group_id": group_id, "step_id": step_id}],
+                "state": state,
+                "event_id": uuid.uuid4().hex,
+            },
+        )
+        await self._publish_spawned_agent_event(event)
+
+
+class _TurnLoopMixin:
+
+    def _locations_summary(self) -> list[dict]:
+        """The project's locations as the model sees them: the `location` URI to pass,
+        plus name/kind/base_directory/permission so it can choose the right one per tool call."""
+        return [
+            {
+                "location": resolved.uri,
+                "name": resolved.name,
+                "kind": resolved.kind,
+                "base_directory": resolved.base_directory,
+                "permission_mode": resolved.permission_mode,
+            }
+            for resolved in self._locations.values()
+        ]
+
+    def _build_static_system_prompt(self) -> str:
+        """Build the static portion of the system prompt (cached across calls).
+
+        Every agent — main or spawned — is built through this same path, so they
+        all share the baseline system prompt, the working-directory/agents
+        context, and the available-skills awareness.
+        """
+        if self._cached_system_prompt is None:
+            available_agents = describe_available_agents(
+                self._global_configuration.agent_directories_for(self._project_directory)
+            )
+            # External A2A agents are a distinct concept from local agents: they run on
+            # another server (no shared filesystem, their own model and cost, one-shot),
+            # so they are surfaced separately and reached with `call_remote_agent`.
+            remote_agents = self._remote_agent_roster()
+            all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
+            agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
+            memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
+            workspace_root, is_git_repo = _detect_workspace(self._working_directory)
+            context_json = json.dumps({
+                "working_directory": self._working_directory,
+                "project_directory": self._project_directory,
+                "workspace_root": workspace_root,
+                "is_git_repo": is_git_repo,
+                "session_workspace_strategy": self._global_configuration.workspace.strategy,
+                "platform": platform.system(),
+                "today_date": datetime.now().strftime("%Y-%m-%d"),
+                "available_agents": available_agents,
+                "remote_agents": remote_agents,
+                "is_agent": self._is_agent,
+                # The project's locations. Filesystem/shell tools take a `location` (its
+                # URI); it is required when there is more than one, optional when one.
+                "locations": self._locations_summary(),
+            })
+            agent_context = "This agent is initialized as the main orchestrator agent."
+            if self._is_agent:
+                agent_context = self._prompt_loader.load("agent_context", {})
+            # The opt-in user-context section is its own template, rendered into the prompt's
+            # `user_environment` slot only when enabled and the probe found something — so the
+            # section (heading and all) simply is not there when off.
+            user_environment = ""
+            user_context = getattr(self._global_configuration, "user_context", None)
+            if user_context is not None and user_context.enabled:
+                user_context_snapshot = probe_user_context()
+                if user_context_snapshot not in ("", "{}"):
+                    user_environment = self._prompt_loader.load(
+                        "user_context", {"user_context_snapshot": user_context_snapshot}
+                    )
+            # The computer/browser tools are opt-in, so their guidance (what each is for, and
+            # to pick the right one rather than force one) only enters the prompt when they do.
+            computer_control_guidance = ""
+            if self._global_configuration.computer_control.enabled:
+                computer_control_guidance = self._prompt_loader.load("computer_control_guidance", {})
+            self._cached_system_prompt = self._prompt_loader.load("system_prompt", {
+                "system_prompt": self._system_prompt,
+                "context": context_json,
+                "system_environment": probe_local_environment(),
+                "user_environment": user_environment,
+                "instructions": load_instructions(self._project_directory),
+                "skills": json.dumps(skills_payload(agent_skills)),
+                "memories": json.dumps(memories_payload(memories)),
+                "agent_context": agent_context,
+                "computer_control_guidance": computer_control_guidance,
+            })
+        return self._cached_system_prompt
+
+    def _build_dynamic_context(self) -> str:
+        """The structured per-turn context injected at the end of the message list: the current
+        time, where the agent is, its goal, its tasks, and its background work. Empty goal/tasks
+        are omitted so the model isn't fed noise. Standing behavioural guidance lives once in the
+        system prompt, not re-injected here."""
+        context = TurnContext(
+            now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            pwd=self._working_directory or str(Path.cwd()),
+            active_goal=self._active_goal,
+            tasks=self._task_manager.to_dict_list(),
+            background={
+                "running": self._background.active_by_context_key(),
+                "active_count": self._background.active_count(),
+                "recent_events": self._execution_history[-20:],
+            },
+            active_agents=(
+                self._active_agents(self._a2a_task_id)
+                if self._active_agents is not None and self._a2a_task_id
+                else []
+            ),
+        )
+        return context.model_dump_json(exclude_defaults=True)
+
+    def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
+        self._record_message("human", user_message)
+        for tool_call_entry in tool_calls:
+            self._record_message("tool", json.dumps(tool_call_entry.get("args", {})), tool_call_entry.get("name", ""))
+        for tool_result_entry in tool_results:
+            self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
+        if final_response:
+            self._record_event("assistant_response_completed", {
+                "content_characters": len(final_response),
+                "tool_call_count": len(tool_calls),
+                "tool_result_count": len(tool_results),
+            })
+        self._record_message("ai", final_response)
+
+    async def _drain_steering_messages(self) -> list[TurnEvent]:
+        events: list[TurnEvent] = []
+        while not self._steering_messages.empty():
+            message = self._steering_messages.get_nowait()
+            self._conversation.append(HumanMessage(content=message))
+            events.append(Steering(text=message))
+        if self._steering_messages.empty():
+            self._steering_available.clear()
+        return events
+
+    def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
+        """Wrap a harness-injected note in a user-role message carrying a
+        ``<systemReminder>`` block.
+
+        The role is deliberate — this is what keeps the conversation strictly
+        append-only for the provider's prompt cache. A mid-conversation
+        ``role:"system"`` message is HOISTED by LiteLLM into Anthropic's top-level
+        ``system`` parameter, which renders before the entire message history; every
+        such note therefore rewrites the prompt prefix and invalidates the cache for
+        the whole conversation. A user-role note stays exactly where it was appended,
+        so the prefix never changes — only grows — on every provider. The wrapper
+        itself lives in the ``harness_note`` prompt template (wording stays in
+        files, not code); it tells the model this is authoritative harness
+        guidance, not user input (see the Harness Guidance section of the system
+        prompt). The ``harness_note`` marker keeps these notes from counting as
+        user turns in the compaction boundary. ``image_blocks`` (OpenAI-shaped
+        ``image_url`` blocks) turn the note multimodal — the user role is the one
+        role every provider accepts images on, which is how a read image reaches
+        a vision model."""
+        text = self._prompt_loader.load("harness_note", {"content": content.strip()}).strip()
+        if image_blocks:
+            return HumanMessage(
+                content=[{"type": "text", "text": text}, *image_blocks],
+                additional_kwargs={"harness_note": True},
+            )
+        return HumanMessage(content=text, additional_kwargs={"harness_note": True})
+
+    def _invalid_tool_call_content(self, invalid: dict) -> str:
+        """Build the message for a malformed tool call — used both as the tool
+        result the model sees and the error surfaced to the user. The wording
+        lives in the loaded ``invalid_tool_call`` prompt template so it stays
+        out of code; a missing template degrades to an empty string, which still
+        pairs the tool_call_id with a (blank) tool message and keeps the
+        conversation valid."""
+        return self._prompt_loader.load("invalid_tool_call", {
+            "name": invalid.get("name") or "unknown",
+            "error": invalid.get("error") or "arguments could not be parsed",
+        })
+
+    def artifact_render_error_note(self, payload: str) -> str:
+        """Frame an artifact render failure as a behind-the-scenes self-realization
+        note (injected as a harness note, not user input) the model repairs. The
+        raw error rides along as its JSON payload, intact."""
+        return self._prompt_loader.load("artifact_render_error", {"payload": payload})
+
+    def _close_dangling_tool_calls(self) -> None:
+        """If the conversation ends with a tool-call AIMessage that has no ToolMessages —
+        a turn that suspended at input-required and was superseded by a new message rather
+        than answered — append a ToolMessage for each call so the history stays valid.
+        A later answer for that superseded pause then finds no checkpoint and is a no-op."""
+        if not self._conversation:
+            return
+        last = self._conversation[-1]
+        if isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            for tool_call in last.tool_calls:
+                self._conversation.append(ToolMessage(
+                    content="(superseded: a new message was sent before this was answered)",
+                    tool_call_id=tool_call["id"],
+                ))
+
+    async def resume_stream(
+        self, plans: dict[str, dict], answers: dict[str, Any]
+    ) -> AsyncIterator[TurnEvent]:
+        """Resume a durably-suspended turn. The conversation was rebuilt from the DB and
+        ends with the pending tool-call AIMessage (the checkpoint); ``plans`` are the
+        persisted preflight plans and ``answers`` the human decisions keyed by request id.
+        Runs the pending batch with those decisions, then continues the turn normally —
+        into the next model call, or a fresh suspension if it needs another decision."""
+        async for event in self.stream("", resume_plans=plans, resume_answers=answers):
+            yield event
+
+    async def stream(
+        self, user_message: str | list, as_system_note: bool = False,
+        resume_plans: Optional[dict[str, dict]] = None,
+        resume_answers: Optional[dict[str, Any]] = None,
+    ) -> AsyncIterator[TurnEvent]:
+        self._abort_event.clear()
+        # The turn runs until the model is done or the user interrupts it — there is no
+        # iteration count and no stuck-detector. The goal reconsideration flag lets an active
+        # goal nudge the model once each time it stops, without a nudge counter; it is instance
+        # state so the no-tool-calls phase can advance it across iterations. Dynamic per-turn
+        # context is injected on the first model call only, tracked by a local below.
+        self._awaiting_goal_reconsideration = False
+        first_turn_message = True
+
+        turn_tool_calls_log: list[dict] = []
+        turn_tool_results_log: list[dict] = []
+
+        if resume_plans is not None:
+            # Resume: the checkpoint AIMessage is already at the tail of the rebuilt
+            # conversation. Run its batch with the resolved decisions, then fall into the
+            # loop for the next model call. No new user message is appended.
+            recorded_user_message = ""
+            response = self._conversation[-1] if self._conversation else None
+            if response is None or not getattr(response, "tool_calls", None):
+                yield Done(text="", stop_reason="completed")
+                return
+            resolved = self._resolve_tool_decisions(
+                {tool_call_id: _ToolPlan.from_dict(plan) for tool_call_id, plan in resume_plans.items()},
+                resume_answers or {},
+            )
+            self._apply_allow_always(resolved)
+            resume_outcomes: dict[str, dict] = {}
+            async for event in self._drain_tools_concurrently(
+                cast(list[dict], response.tool_calls), turn_tool_calls_log, turn_tool_results_log, resume_outcomes, resolved,
+            ):
+                yield event
+            self._append_tool_results(response, resume_outcomes)
+            yield Checkpoint()
+        else:
+            # A prior turn may have suspended at input-required and been superseded by
+            # this new message instead of answered. Close its dangling tool calls (an
+            # AIMessage carrying tool_calls with no ToolMessages) so appending this turn
+            # keeps the conversation valid for the provider.
+            self._close_dangling_tool_calls()
+            # A turn's input is usually plain text, but an attachment turn carries a
+            # multimodal content list (a text block plus one image_url block per
+            # attached image) so a vision model actually sees the pixels. LangChain's
+            # HumanMessage accepts either, and the model adapter passes the content
+            # straight through to the provider. A self-realization note (e.g. an artifact
+            # render error) enters as a <systemReminder> harness note so the model
+            # treats it as its own observation, not as something the user said — in a
+            # user-role message so the append stays cache-safe (_harness_note_message).
+            turn_message = (
+                self._harness_note_message(user_message)
+                if as_system_note and isinstance(user_message, str)
+                else HumanMessage(content=user_message)
+            )
+            self._conversation.append(turn_message)
+            # The event-log recorder only wants prose from LangChain's standard blocks.
+            recorded_user_message = message_text(turn_message)
+
+        while True:
+            if self._abort_event.is_set():
+                if self._has_queued_steering():
+                    self._abort_event.clear()
+                    for steering_event in await self._drain_steering_messages():
+                        yield steering_event
+                    continue
+                yield Done(text="", stop_reason="cancelled")
+                return
+
+            # Flush any live activity from non-blocking spawned agents so the panel
+            # tracks them while the parent works through its own iterations.
+            for agent_event in self._drain_spawned_agent_events():
+                yield agent_event
+
+            self._drain_agent_messages()
+
+            background_events = self._background_result_events()
+            if background_events:
+                for background_event in background_events:
+                    yield background_event
+                continue
+
+            # In-flight background work no longer holds the turn open. Completed
+            # results are drained above and delivered mid-turn while the model is
+            # still working; if the model goes idle with work still pending, the turn
+            # simply ends and the executor's resume pump wakes the agent with an
+            # autonomous turn the moment the next result lands.
+            for steering_event in await self._drain_steering_messages():
+                yield steering_event
+
+            # Auto-compaction: if the last call left the context near the window,
+            # summarize the older history before making another call that could
+            # overflow. The reserved buffer guarantees room to run the compaction
+            # itself; compact() resets the occupancy so this cannot re-fire in a loop.
+            if self._should_compact():
+                async for compaction_event in self.compact(reason="auto"):
+                    yield compaction_event
+
+            messages = self._build_turn_messages(first_turn_message)
+            first_turn_message = False
+
+            # Phase 1 — the model call. Yields the thinking/answer stream and hands back
+            # the assembled response, or a terminal (cancelled) / steering condition.
+            call = _ModelCallOutcome()
+            async for event in self._stream_model_call(messages, call):
+                yield event
+            if call.cancelled:
+                return
+            if call.aborted_for_steering:
+                for steering_event in await self._drain_steering_messages():
+                    yield steering_event
+                continue
+            response = call.response
+
+            usage_event = self._accumulate_usage(response)
+            if usage_event is not None:
+                yield usage_event
+
+            # Malformed tool calls (arguments that failed JSON parsing) land in
+            # `invalid_tool_calls` while `tool_calls` may be empty. LangChain still
+            # serializes invalid_tool_calls into the API payload as `tool_calls`, so each
+            # one MUST be followed by a tool message — otherwise the next provider call
+            # fails with "insufficient tool messages following tool_calls". Ensure every
+            # invalid call carries an id that matches the ToolMessage appended for it.
+            for invalid in response.invalid_tool_calls:
+                if not invalid.get("id"):
+                    invalid["id"] = f"call_invalid_{uuid.uuid4().hex[:24]}"
+
+            # Phase 2 — no tool calls: retry a malformed batch, answer or await agents,
+            # nudge an active goal, or finish the turn. Always ends the iteration
+            # (_CONTINUE to loop again, _STOP once a terminal event was yielded).
+            if not response.tool_calls:
+                step = _PhaseStep()
+                async for event in self._finalize_no_tool_calls(
+                    response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
+                ):
+                    yield event
+                if step.directive == _STOP:
+                    return
+                continue
+
+            # A tool batch means the model is acting again, so a prior goal nudge is
+            # answered — the next time it stops, it will be re-nudged fresh.
+            self._awaiting_goal_reconsideration = False
+
+            # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the
+            # whole batch's permissions, suspend if a human is needed, drain the tools,
+            # checkpoint), then honor a Stop that landed during it.
+            step = _PhaseStep()
+            async for event in self._run_tool_batch(
+                response, recorded_user_message, turn_tool_calls_log, turn_tool_results_log, step,
+            ):
+                yield event
+            if step.directive == _STOP:
+                return
+            if step.directive == _CONTINUE:
+                continue
+
+            for steering_event in await self._drain_steering_messages():
+                yield steering_event
+
+    def _build_turn_messages(self, first_iteration: bool) -> list:
+        """The message list for this iteration's model call: the static system prompt,
+        the conversation, and — only on the turn's first iteration — the dynamic context.
+
+        Dynamic context (time, pwd, active goal, tasks, background) is injected only on
+        the first iteration of a turn, when the user just sent a message; subsequent
+        iterations (after tool calls) skip it to avoid re-sending the same per-turn
+        metadata on every LLM call within the turn. It rides as a transient user-role
+        harness note at the very tail of the request — never as a system message (LiteLLM
+        would hoist it into Anthropic's top-level system param, whose fresh timestamp
+        would then invalidate the ENTIRE conversation cache on every turn). As a tail
+        note, everything before it still prefix-matches the provider cache."""
+        dynamic_parts = (
+            [self._harness_note_message(self._build_dynamic_context())]
+            if first_iteration else []
+        )
+        return (
+            [SystemMessage(content=self._build_static_system_prompt())]
+            + self._conversation
+            + dynamic_parts
+        )
+
+    async def _stream_model_call(
+        self, messages: list, outcome: _ModelCallOutcome
+    ) -> AsyncIterator[TurnEvent]:
+        """One streamed model call. Yields the thinking/answer events and writes the
+        assembled response into ``outcome`` — or a terminal condition instead: ``cancelled``
+        (a Stop with nothing queued; a ``Done`` was already yielded) or
+        ``aborted_for_steering`` (a Stop that found queued steering, so the driver drains
+        it and iterates again).
+
+        Opens a thinking step for the iteration: one channel (THINKING) drives the
+        indicator — this bare ping marks "reasoning started" and reasoning_content fills
+        the body — and a matching THINKING_DONE fires the moment reasoning ends (the first
+        answer token, or, for a tool-only turn, when the stream closes), timed server-side
+        as wall-clock so "Thought for Ns" is correct live and on replay. Each read races
+        the abort event so a Stop interrupts *immediately*, even while parked awaiting the
+        next token from a slow or stalled provider — checking the flag only between chunks
+        let a provider that had gone quiet swallow the cancel until it happened to emit
+        again, which is why Stop "sometimes" appeared to do nothing."""
+        yield Thinking()
+        thinking_started_at = time.monotonic()
+        thinking_done_emitted = False
+        response_chunks: list[AIMessageChunk] = []
+        aborted_for_steering = False
+        # A generation span for this model call. Started (not made "current") so it is
+        # safe to hold open across this generator's yields; ended in the finally below.
+        generation_span = _telemetry.start_span(
+            "gen_ai.generation", {"gen_ai.request.model": self.effective_model_identifier}
+        )
+        model_stream = self._bound_llm.astream(messages)
+        abort_waiter = asyncio.ensure_future(self._abort_event.wait())
+        try:
+            while True:
+                chunk_future = asyncio.ensure_future(_stream_next(model_stream))
+                await asyncio.wait(
+                    {chunk_future, abort_waiter}, return_when=asyncio.FIRST_COMPLETED
+                )
+                if self._abort_event.is_set():
+                    # Stop won the race (or landed between chunks): drop the pending
+                    # read and stop consuming the stream (the `finally` closes it).
+                    chunk_future.cancel()
+                    with suppress(BaseException):
+                        await chunk_future
+                    if self._has_queued_steering():
+                        self._abort_event.clear()
+                        aborted_for_steering = True
+                        break
+                    yield Done(text="", stop_reason="cancelled")
+                    outcome.cancelled = True
+                    return
+                chunk = chunk_future.result()
+                if chunk is _STREAM_EXHAUSTED:
+                    break
+                response_chunks.append(chunk)
+                for content_delta in message_content_deltas(chunk):
+                    if content_delta.kind == "text":
+                        if not thinking_done_emitted:
+                            thinking_done_emitted = True
+                            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+                            )
+                        if self._agent_configuration.stream_agent_progress:
+                            yield TextChunk(text=content_delta.text,
+                                block_id=content_delta.block_identifier,
+                            )
+                    else:
+                        yield Thinking(text=content_delta.text,
+                            block_id=content_delta.block_identifier,
+                        )
+        finally:
+            _telemetry.end_span(generation_span)
+            abort_waiter.cancel()
+            # Close the underlying HTTP stream so an aborted (or exhausted) turn
+            # never leaks a provider connection.
+            with suppress(BaseException):
+                stream_closer = getattr(model_stream, "aclose", None)
+                if stream_closer is not None:
+                    await stream_closer()
+        # A tool-only turn produces no answer text, so close the phase here.
+        if not thinking_done_emitted:
+            yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
+            )
+        if aborted_for_steering:
+            outcome.aborted_for_steering = True
+            return
+        outcome.response = add_ai_message_chunks(response_chunks[0], *response_chunks[1:]) if response_chunks else AIMessageChunk(content="")
+
+    async def _finalize_no_tool_calls(
+        self, response: AIMessageChunk, recorded_user_message: str,
+        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
+    ) -> AsyncIterator[TurnEvent]:
+        """Handle a model response that made no tool calls. Retries a malformed-only
+        batch, delivers or awaits agent messages, nudges an active goal once to keep
+        working, or finishes the turn — advancing the loop bookkeeping and setting ``step``
+        to ``_CONTINUE`` (iterate again) or ``_STOP`` (a terminal ``Done`` was yielded)."""
+        if response.invalid_tool_calls:
+            # A response carrying only malformed tool calls (arguments that failed to
+            # parse). These are NOT valid tool_calls — the LiteLLM model serializes only
+            # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
+            # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
+            # "Messages with role 'tool' must follow a tool_calls message". Correct the
+            # model with a harness note and let it retry. Model-facing; not surfaced.
+            if response.content:
+                self._conversation.append(response)
+            for invalid in response.invalid_tool_calls:
+                self._conversation.append(self._harness_note_message(
+                    self._invalid_tool_call_content(cast(dict, invalid)),
+                ))
+            step.directive = _CONTINUE
+            return
+
+        # The model produced no tool calls. Any still-running background work does not
+        # hold the turn open: it ends here, and the executor's resume pump wakes the agent
+        # with an autonomous turn once the next result lands. Results that already
+        # completed were drained at the top of the loop, so nothing in hand is lost.
+        final_text = message_text(response)
+        self._conversation.append(response)
+        if self._drain_agent_messages():
+            step.directive = _CONTINUE
+            return
+        steering_events = await self._drain_steering_messages()
+        if steering_events:
+            for steering_event in steering_events:
+                yield steering_event
+            step.directive = _CONTINUE
+            return
+        if self._pending_agent_questions:
+            self._conversation.append(self._harness_note_message(
+                self._prompt_loader.load("agent_response_required", {})
+            ))
+            step.directive = _CONTINUE
+            return
+        if self._outstanding_agent_questions:
+            yield Status(code="waiting_for_agent_response",
+            )
+            if await self._wait_for_agent_message_or_abort():
+                self._drain_agent_messages()
+                step.directive = _CONTINUE
+                return
+            self._record_turn(
+                recorded_user_message,
+                turn_tool_calls_log,
+                turn_tool_results_log,
+                "",
+            )
+            yield Done(text="",
+                stop_reason="cancelled",
+            )
+            step.directive = _STOP
+            return
+        if self._active_goal and not self._awaiting_goal_reconsideration:
+            # The model stopped while a goal is active. Nudge it once to reconsider — but
+            # only once per stop: if it produces no tool calls again (it reaffirms it is
+            # done), the turn completes below. Any tool call in between clears the flag, so
+            # a model that keeps working is nudged fresh each time it next stops, with no
+            # nudge counter and no ceiling.
+            self._awaiting_goal_reconsideration = True
+            goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
+            self._conversation.append(self._harness_note_message(goal_continuation))
+            yield Status(code="goal_check",
+            )
+            step.directive = _CONTINUE
+            return
+        self._record_turn(
+            recorded_user_message, turn_tool_calls_log,
+            turn_tool_results_log, final_text,
+        )
+        yield Done(text=final_text, stop_reason="completed")
+        step.directive = _STOP
+
+    async def _run_tool_batch(
+        self, response: AIMessageChunk, recorded_user_message: str,
+        turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
+    ) -> AsyncIterator[TurnEvent]:
+        """Run the response's tool batch and checkpoint it. Appends the initiating
+        AIMessage first — an AIMessage carrying tool_calls with no ToolMessages yet is the
+        durable resume checkpoint — then resolves the whole batch's permissions BEFORE any
+        tool runs (concurrent tools cannot be re-run on resume without re-doing side
+        effects). If a human is needed the turn suspends here; otherwise it drains with
+        every decision already in hand. Sets ``step`` to ``_STOP`` (a top-level suspend
+        that returns, or a Stop with nothing queued) or ``_CONTINUE`` (a Stop that found
+        queued steering); leaves it ``_PROCEED`` for the normal end of the iteration."""
+        self._conversation.append(response)
+        tool_calls = cast(list[dict], response.tool_calls)
+        outcomes: dict[str, dict] = {}
+        if not self._abort_event.is_set():
+            plans, pending = await self._preflight_permissions(tool_calls)
+            if pending:
+                # One suspend event for every turn. The executor renders the prompt from
+                # it (the same DataParts, whether shown in the transcript or relayed to
+                # the agents panel). Only the continuation transport differs, by turn kind:
+                #  - a top-level turn returns here — the executor persists the checkpoint,
+                #    closes the segment as input-required, and a later answer resumes it;
+                #  - a delegated turn is an in-process, ephemeral continuation (it cannot
+                #    be a durable segment that a restart would only discard), so it parks
+                #    in place on the answer futures and continues this same stream — the
+                #    executor relays the prompt to the panel while it waits.
+                yield Suspended(interactions=[gate.to_dict() for gate in pending],
+                    plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
+                )
+                if not self._is_agent:
+                    step.directive = _STOP
+                    return
+                answers = await self._await_pending_answers(pending)
+                decisions = self._resolve_tool_decisions(plans, answers)
+            else:
+                decisions = self._resolve_tool_decisions(plans, {})
+            self._apply_allow_always(decisions)
+            async for event in self._drain_tools_concurrently(
+                tool_calls, turn_tool_calls_log, turn_tool_results_log, outcomes, decisions,
+            ):
+                yield event
+        self._append_tool_results(response, outcomes)
+        yield Checkpoint()
+
+        if self._abort_event.is_set():
+            if self._has_queued_steering():
+                self._abort_event.clear()
+                for steering_event in await self._drain_steering_messages():
+                    yield steering_event
+                step.directive = _CONTINUE
+                return
+            self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
+            yield Done(text="", stop_reason="cancelled")
+            step.directive = _STOP
+
+
+class AgentRuntime(_ToolHandlersMixin, _PermissionsMixin, _CompactionMixin, _DelegationMixin, _TurnLoopMixin):
+    # A turn runs until the model is done or the user interrupts it — there is no tool-call
+    # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
+    # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's
+    # ``output_file`` to see whether a repeated action changed anything. Context compaction is
+    # Observational Memory (Observer/Reflector); its thresholds and on/off switch live in
+    # GlobalConfiguration.compaction.
+
+    # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
+    # policy once (the shared preamble), then dispatches the call to its handler here.
+    # Grouped tools (edit/write, spawn/remote, the MCP queries, computer/browser) share
+    # one handler; an unmapped name is the "unknown tool" error.
+    _TOOL_HANDLERS = {
+        "bash": "_tool_bash",
+        "read_file": "_tool_read_file",
+        "find_files": "_tool_find_files",
+        "search_content": "_tool_search_content",
+        "fetch_url": "_tool_fetch_url",
+        "download_file": "_tool_download_file",
+        "edit_file": "_tool_edit_or_write",
+        "write_file": "_tool_edit_or_write",
+        "load_skill": "_tool_load_skill",
+        "wait_for": "_tool_wait_for",
+        "ask_user": "_tool_ask_user",
+        "call_mcp_tool": "_tool_call_mcp_tool",
+        "list_mcp_tools": "_tool_mcp_query",
+        "list_mcp_resources": "_tool_mcp_query",
+        "read_mcp_resource": "_tool_mcp_query",
+        "ask_agent": "_tool_ask_agent",
+        "respond_agent": "_tool_respond_agent",
+        "spawn_agent": "_tool_spawn_or_remote",
+        "call_remote_agent": "_tool_spawn_or_remote",
+        "cancel_agent": "_tool_cancel_agent",
+        "set_tasks": "_tool_set_tasks",
+        "update_tasks": "_tool_update_tasks",
+        "update_goal": "_tool_update_goal",
+        "open_artifact": "_tool_open_artifact",
+        "web_search": "_tool_web_search",
+        "read_task": "_tool_read_task",
+        "computer": "_tool_automation",
+        "browser": "_tool_automation",
+    }
+
+    def __init__(
+        self,
+        agent_configuration: AgentConfiguration,
+        global_configuration: GlobalConfiguration,
+        on_record_event: Optional[Callable[..., Any]] = None,
+        on_record_message: Optional[Callable[..., Any]] = None,
+        session_id: str = "",
+        conversation: Optional[list] = None,
+        working_directory: str = "",
+        project_directory: str = "",
+        is_agent: bool = False,
+        file_lease_manager: FileLeaseManager | None = None,
+        locations: list[dict] | None = None,
+    ):
+        self._session_id = session_id
+        self._agent_configuration = agent_configuration
+        self._global_configuration = global_configuration
+        self._on_record_event = on_record_event
+        self._on_record_message = on_record_message
+        self._working_directory = working_directory or str(Path.home())
+        self._project_directory = project_directory or self._working_directory
+        # The project's locations the agent may address per tool call (keyed by URI, and
+        # by name for friendlier errors). When none are supplied (agents built without
+        # an explicit set, or a bare runtime), a single local location is synthesized from
+        # the working directory so the single-location default still works.
+        self._locations: dict[str, ResolvedLocation] = {}
+        self._locations_by_name: dict[str, ResolvedLocation] = {}
+        self._build_locations(
+            locations, permission_mode_default=agent_configuration.permission_policy
+        )
+
+        effective_model = agent_configuration.model_identifier
+        if not effective_model:
+            raise ValueError(
+                f"Agent '{agent_configuration.identifier}' must configure both provider and model."
+            )
+        # When this agent's own provider isn't authorized — the common case for a
+        # delegation-target profile still pinned to a provider the user never keyed
+        # (e.g. a shipped `opencode/*` default after the session switched to the
+        # ChatGPT subscription) — building its client anyway yields a model that
+        # 401s on its first call, so a spawned agent dies the instant it starts.
+        # Fall back to the default agent's authorized model so the delegated agent inherits
+        # the session's working model instead. This is a no-op for the default agent
+        # itself (its model is already what we'd fall back to).
+        if not model_is_authorized(effective_model, global_configuration):
+            fallback_model = self._authorized_default_model()
+            if fallback_model:
+                effective_model = fallback_model
+        self._effective_model_identifier = effective_model
+
+        self._llm = build_chat_model(
+            effective_model, global_configuration, agent_configuration
+        )
+
+        self._is_agent = is_agent
+        self._file_lease_manager = file_lease_manager
+        self._tools = _build_tools(
+            agent_configuration,
+            global_configuration,
+            is_agent=is_agent,
+        )
+        # Concrete tools are bound natively — the provider sees each tool's real
+        # JSON schema and can constrain argument decoding to it, and it emits
+        # several tool calls in one response when work is parallel. (The old
+        # single `query` dispatch envelope hid every schema behind `list[Any]`.)
+        # Parallel tool calls are the DEFAULT on every provider this harness
+        # routes to (OpenAI, Anthropic, Gemini, Mistral, the OpenAI-compatible
+        # family, …), so no `parallel_tool_calls` parameter is sent: LiteLLM
+        # forwards it verbatim to openai-compatible custom gateways — most of
+        # this harness's provider matrix — where a non-conforming server (or an
+        # o-series model) rejects it. What actually preserves parallelism is
+        # never forcing `tool_choice` and keeping each turn's tool results in
+        # one contiguous block (see the turn loop).
+        self._tool_schemas: dict[str, Any] = {tool.name: tool.args_schema for tool in self._tools}
+        self._bound_llm = self._llm.bind_tools(self._tools)
+        self._permissions = PermissionEvaluator(agent_configuration)
+        self._background = BackgroundJobs(
+            context_id=session_id,
+            agent_name=agent_configuration.identifier,
+        )
+        # Command patterns the user chose to "always allow" this session — matching
+        # bash commands then skip the sandbox/approval prompts. Scoped to this
+        # runtime (this context), populated on demand from an LLM-derived rule.
+        self._session_allow_patterns: list[str] = []
+
+        self._conversation: list = conversation if conversation is not None else []
+        self._system_prompt = agent_configuration.system_prompt
+        # Files the model has read this session, keyed by (location uri, resolved
+        # path) with the content hash from the last read — the uri disambiguates a
+        # same-named path on two hosts. Mutating tools compare against this so
+        # stale line numbers cannot overwrite externally changed content.
+        self._read_files: dict[tuple[str, str], str] = {}
+        # How many delegation hops led to this runtime (0 = top-level chat agent).
+        self._delegation_depth: int = 0
+        self._abort_event = asyncio.Event()
+        # Running token totals for the session, summed from the real usage each
+        # model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
+        self._token_usage: dict[str, int] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cache_read_tokens": 0,
+            "reasoning_tokens": 0,
+            "model_calls": 0,
+        }
+        # A separate bucket for the combined spend of agents this agent spawns. They
+        # run in their own context (only their deliverable returns here), so their tokens
+        # are a distinct cost surfaced separately, never mixed into the context fill.
+        self._agent_token_usage: dict[str, int] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "model_calls": 0,
+        }
+
+        prompts_directory = Path(__file__).parent / "prompts"
+        self._prompt_loader = PromptLoader(prompts_directory)
+        self._cached_system_prompt: str | None = None
+        self._task_manager = TaskManager()
+        self._active_goal: str = ""
+        # Set when the goal or task list changes, so the executor persists the durable
+        # session state only on mutation rather than on every checkpoint.
+        self._session_dirty = False
+        self._execution_history: list[dict] = []
+        # The runtime's effective permission policy is ONE typed value (the agent card's
+        # configured mode until a session or delegation override changes it); the read_only/
+        # bypass/auto booleans the call sites read are derived views of it, never separate
+        # state that could drift. `_session_permission_mode` records the live override so a
+        # location's own mode governs its calls only while the session is on the default.
+        self._permission_mode: PermissionMode = agent_configuration.permission_policy
+        self._session_permission_mode: PermissionMode = PermissionMode.DEFAULT
+        # A delegated agent parks on these while its human-in-the-loop request is escalated to
+        # the user; the resolver (native REST or an A2A input_response) completes them.
+        self._agent_permission_futures: dict[str, asyncio.Future] = {}
+        # Durably persists a delegated agent's 'always allow' as allow-patterns on its own agent
+        # profile's configuration: async (agent_identifier, project_directory, patterns).
+        # Injected by the executor; a delegated agent has no session to remember the rule in.
+        self._persist_agent_allow_patterns: Optional[Callable[..., Any]] = None
+        # When set, agents (spawn_agent calls) are invoked
+        # through this delegate — an A2A call to the target agent's served
+        # endpoint — instead of being run in-process. Bound to the A2A context.
+        self._delegate: Optional[Callable] = None
+        # Cancels a running agent's own A2A task when its public agent handle is
+        # explicitly canceled. The executor injects the async callback.
+        self._cancel_delegated: Optional[Callable] = None
+        self._a2a_task_id: str = ""
+        self._ask_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
+        self._respond_agent: Optional[Callable[[str, str, str], dict[str, Any]]] = None
+        self._reserve_agent: Optional[Callable[[str, str, str], None]] = None
+        self._release_reserved_agent: Optional[Callable[[str], None]] = None
+        self._active_agents: Optional[Callable[[str], list[dict[str, str]]]] = None
+        # External (over-the-wire) A2A agents the model may delegate to. The registry
+        # supplies a roster (so they appear in the system prompt alongside local agents)
+        # and a predicate (so the spawn path resolves a remote name over the wire via the
+        # delegate instead of trying to load an on-disk config that does not exist).
+        self._remote_agent_roster: Callable[[], list[dict[str, str]]] = lambda: []
+        self._is_remote_agent: Callable[[str], bool] = lambda name: False
+        # The current turn's file attachments, forwarded to a remote agent as FileParts.
+        self._pending_attachments: list[dict] = []
+        # Remote agents the user has approved contacting for the rest of this session, so
+        # egress consent is asked once per agent, not on every call.
+        self._egress_approved_agents: set[str] = set()
+        self._agent_messages: asyncio.Queue[AgentMessage] = asyncio.Queue()
+        self._agent_message_available = asyncio.Event()
+        self._pending_agent_questions: set[str] = set()
+        self._outstanding_agent_questions: set[str] = set()
+        # Reads another A2A task (sibling/agent) by id from the shared store,
+        # so context-aware agents can coordinate. Injected by the executor.
+        self._task_reader: Optional[Callable] = None
+        # Enqueues a shadow-git capture of what a write-ish tool call produced (called after
+        # edit/write/bash and on open_artifact). Injected by the executor; non-blocking and
+        # best-effort so the runtime never waits on git or touches the database directly.
+        self._artifact_capture: Optional[Callable] = None
+        self._steering_messages: asyncio.Queue[str] = asyncio.Queue()
+        self._steering_available = asyncio.Event()
+        self._active_tool_tasks: dict[str, asyncio.Task] = {}
+        # Live activity from non-blocking spawned agents. spawn_agent returns
+        # immediately (the agent runs as a background job); the agent's
+        # streamed events land here and the turn loop drains them so the agents
+        # panel updates while the parent keeps working. Whatever is still queued
+        # when the parent goes idle drains on the next (wake) turn.
+        self._spawned_agent_events: "asyncio.Queue[TurnEvent]" = asyncio.Queue()
+        self._agent_event_sink: Optional[Callable[[dict[str, Any]], None]] = None
+        self._settled_agent_lanes: set[tuple[str, str]] = set()
+        # The latest call's context occupancy (prompt + completion) and the model's
+        # window, tracked from usage so auto-compaction can fire before the next call
+        # would overflow. Zero until the first call reports usage.
+        self._latest_context_tokens: int = 0
+        self._context_window: int = 0
+
+    def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: PermissionMode) -> None:
+        """Build the resolved-location map from the project's location records. Each entry
+        carries an executor (local subprocess or multiplexed SSH) and its effective policy."""
+        entries = locations or []
+        if not entries:
+            # No project locations supplied — synthesize a single local location at the
+            # working directory, so a bare/agent runtime still has exactly one location
+            # (and the single-location default applies).
+            entries = [{
+                "name": "local",
+                "kind": "local",
+                "base_directory": self._working_directory,
+                "permission_mode": str(permission_mode_default),
+            }]
+        for entry in entries:
+            kind = entry.get("kind", "local")
+            base_directory = str(entry.get("base_directory") or self._working_directory)
+            host_alias = str(entry.get("host_alias") or "")
+            address = LocationAddress(kind=kind, base_directory=base_directory, host_alias=host_alias)
+            uri = str(entry.get("uri") or location_uri_for(address))
+            resolved = ResolvedLocation(
+                uri=uri,
+                name=str(entry.get("name") or "location"),
+                kind=kind,
+                base_directory=base_directory,
+                executor=executor_for(address),
+                permission_mode=PermissionMode.coerce(entry.get("permission_mode"), permission_mode_default),
+            )
+            self._locations[uri] = resolved
+            self._locations_by_name[resolved.name] = resolved
+
+    def _resolve_location(self, location_value: str | None) -> ResolvedLocation:
+        """Resolve a tool call's ``location`` (a URI, or a location name) to its executor +
+        policy. Omitted defaults to the project's local filesystem — so a call never has to
+        repeat `location`, and an omission can never silently run on a remote host; the model
+        passes `location` only to target a non-default (remote) one. An unknown value errors."""
+        if not location_value:
+            if len(self._locations) == 1:
+                return next(iter(self._locations.values()))
+            # Default an omitted location to the local filesystem, so an omission is never
+            # accidentally executed on a remote host.
+            local = next((location for location in self._locations.values() if location.kind == "local"), None)
+            if local is not None:
+                return local
+            # No local location to fall back to (every location is remote) — require an
+            # explicit choice rather than picking a remote host on the model's behalf.
+            names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
+            raise ToolLocationError(
+                f"This project has only remote locations and no local default — specify `location` (one of: {names})."
+            )
+        if location_value in self._locations:
+            return self._locations[location_value]
+        if location_value in self._locations_by_name:
+            return self._locations_by_name[location_value]
+        names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
+        raise ToolLocationError(f"Unknown location {location_value!r}. Available: {names}.")
+
+    def _call_policy(self, location: "ResolvedLocation | None") -> CallExecutionPolicy:
+        """The execution policy for one tool call. In the projects model
+        an explicit live session mode governs every target immediately. While the session
+        remains on ``default``, a target's explicit mode governs its calls, then the agent
+        profile is the fallback. A runtime-level read-only override is always a floor.
+        Returned as a value and threaded through the call, never written to shared state,
+        so concurrent calls to different locations cannot cross policies."""
+        session_mode_is_explicit = self._session_permission_mode is not PermissionMode.DEFAULT
+        if location is None or session_mode_is_explicit or location.permission_mode is PermissionMode.DEFAULT:
+            # No location to govern the call, an explicit live session mode, or a location left
+            # on the default — the runtime's own mode applies.
+            mode = self._permission_mode
+        elif self._permission_mode is PermissionMode.READ_ONLY:
+            # A runtime-level read-only override is a floor no location mode can lift.
+            mode = PermissionMode.READ_ONLY
+        else:
+            # Otherwise the location's explicit mode governs its own calls.
+            mode = location.permission_mode
+        working_directory = (
+            self._working_directory
+            if location is None or location.is_remote
+            else location.base_directory
+        )
+        return CallExecutionPolicy(location=location, working_directory=working_directory, mode=mode)
+
+    def _canonical_working_directory(self, working_directory: str | None = None) -> str:
+        return str(Path(working_directory or self._working_directory or Path.home()).expanduser().resolve(strict=False))
+
+    async def _acquire_filesystem_lease(
+        self, *, scope: str, path: str, description: str, working_directory: str | None = None
+    ) -> str:
+        if self._file_lease_manager is None:
+            return ""
+        return await self._file_lease_manager.acquire(
+            owner_session_id=self._session_id,
+            scope=scope,
+            path=path,
+            working_directory=self._canonical_working_directory(working_directory),
+            description=description,
+        )
+
+    def _release_filesystem_lease(self, token: str) -> None:
+        if token and self._file_lease_manager is not None:
+            self._file_lease_manager.release(token)
+
+    @property
+    def conversation(self) -> list:
+        return self._conversation
+
+    @property
+    def background_jobs(self) -> "BackgroundJobs":
+        """This runtime's background-job runner. The executor's resume pump reads it
+        to know when in-flight work has completed."""
+        return self._background
+
+    def has_pending_jobs(self) -> bool:
+        """Whether any background job is still in flight — the scheduling predicate the
+        executor's resume pump reads, exposed here so it does not reach through into the
+        job runner's internals."""
+        return self._background.has_pending()
+
+    def has_completed_undelivered_jobs(self) -> bool:
+        """Whether a completed background result is waiting to be delivered to the model."""
+        return self._background.has_completed_undelivered()
+
+    async def wait_for_jobs(self) -> None:
+        """Await the next background-job completion (the resume pump's wait point)."""
+        await self._background.wait_for_completion()
+
+    def inject_stored_background_result(
+        self, *, kind: str, identifier: str, tool_call_identifier: str, result: str
+    ) -> None:
+        """Append a background result restored from the durable store as a
+        `background_result` message, so a runtime rebuilt after a restart replays it
+        to the model exactly like a live completion would."""
+        capped_result = _cap_model_result_payload(result, code=f"{kind}_result_truncated")
+        metadata = _tool_timing_metadata(
+            tool_name=kind,
+            tool_call_identifier=tool_call_identifier,
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
+            duration_milliseconds=0,
+            background_task_identifier=identifier,
+        )
+        status, code = _model_result_status(capped_result, ok=True, backgrounded=False)
+        self._conversation.append(self._harness_note_message(
+            _model_visible_tool_result(
+                capped_result, metadata, status, code, kind="background_result",
+            ),
+        ))
+
+    @property
+    def token_usage(self) -> dict[str, int]:
+        return dict(self._token_usage)
+
+    def _accumulate_usage(self, response: AIMessage) -> "TurnEvent | None":
+        """Fold one model call's real token usage into the running session total
+        and return a USAGE event carrying both the per-call and cumulative counts.
+        Returns ``None`` when the provider reported no usage for this call."""
+        usage = getattr(response, "usage_metadata", None)
+        if not usage:
+            return None
+        input_tokens = int(usage.get("input_tokens", 0) or 0)
+        output_tokens = int(usage.get("output_tokens", 0) or 0)
+        total_tokens = int(usage.get("total_tokens", 0) or 0) or (input_tokens + output_tokens)
+        cache_read = int((usage.get("input_token_details") or {}).get("cache_read", 0) or 0)
+        reasoning = int((usage.get("output_token_details") or {}).get("reasoning", 0) or 0)
+        if not (input_tokens or output_tokens or total_tokens):
+            return None
+        self._token_usage["input_tokens"] += input_tokens
+        self._token_usage["output_tokens"] += output_tokens
+        self._token_usage["total_tokens"] += total_tokens
+        self._token_usage["cache_read_tokens"] += cache_read
+        self._token_usage["reasoning_tokens"] += reasoning
+        self._token_usage["model_calls"] += 1
+        # input_tokens for this (latest) call is the whole prompt — system, history,
+        # and the new turn — so it reflects how full the context currently is. Paired
+        # with the model's context window, it drives the context-fill indicator and
+        # the auto-compaction check (see _should_compact).
+        model = getattr(self, "_llm", None)
+        context_window = model.context_window() if model is not None else 0
+        self._latest_context_tokens = input_tokens + output_tokens
+        self._context_window = context_window
+        return Usage(input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            cache_read_tokens=cache_read,
+            reasoning_tokens=reasoning,
+            context_window=context_window,
+            cumulative=dict(self._token_usage),
+            agents=dict(self._agent_token_usage),
+        )
+
+    def _add_agent_usage(self, input_tokens: int, output_tokens: int) -> None:
+        """Fold one agent model call's spend into the separate agent bucket. Each
+        relayed child USAGE reports its per-call figures, so summing them totals every
+        agent's usage without double-counting cumulative snapshots."""
+        self._agent_token_usage["input_tokens"] += input_tokens
+        self._agent_token_usage["output_tokens"] += output_tokens
+        self._agent_token_usage["total_tokens"] += input_tokens + output_tokens
+        self._agent_token_usage["model_calls"] += 1
+
+    @property
+    def agent_name(self) -> str:
+        return self._agent_configuration.identifier
+
+    @property
+    def effective_model_identifier(self) -> str:
+        return self._effective_model_identifier
+
+    @property
+    def working_directory(self) -> str:
+        return self._working_directory
+
+    @property
+    def project_directory(self) -> str:
+        return self._project_directory
+
+    @property
+    def is_read_only(self) -> bool:
+        return self._read_only
+
+    # Derived views of the single `_permission_mode`, so the many call sites that ask a plain
+    # boolean keep working while there is exactly one source of truth behind them.
+    @property
+    def _read_only(self) -> bool:
+        return self._permission_mode.is_read_only
+
+    @property
+    def _bypass_permissions(self) -> bool:
+        return self._permission_mode.is_bypass
+
+    @property
+    def _auto_permissions(self) -> bool:
+        return self._permission_mode.is_auto
+
+    def abort(self) -> None:
+        # Stop tears down only the live turn: signal the loop to end and kill every
+        # foreground tool still running. Detached background work and spawned agents
+        # have independent lifecycles and must not become collateral of steering the
+        # main flow; each can be canceled through its own targeted control.
+        self._abort_event.set()
+        self._background.cancel_foreground()
+        for task in list(self._active_tool_tasks.values()):
+            task.cancel()
+
+    def abort_tool(self, tool_call_identifier: str) -> bool:
+        task = self._active_tool_tasks.get(tool_call_identifier)
+        aborted = False
+        if task is not None and not task.done():
+            task.cancel()
+            aborted = True
+        return self._background.cancel_by_tool_call(tool_call_identifier) or aborted
+
+    def cancel_agent(self, task_identifier: str) -> bool:
+        """Cancel one spawned agent by its public agent handle."""
+        return self._background.cancel_by_identifier(task_identifier, kind="spawn_agent")
+
+    def background_snapshots(self) -> list[dict[str, Any]]:
+        return self._background.active_snapshots()
+
+    def send_tool_to_background(self, tool_call_identifier: str) -> bool:
+        """Push a still-blocking foreground shell command to the background on the
+        user's behalf: it keeps running detached and the turn continues with a
+        "started" placeholder, exactly as if the model had backgrounded it."""
+        return self._background.request_background(tool_call_identifier)
+
+    def enqueue_steering(self, message: str) -> bool:
+        text = message.strip()
+        if not text:
+            return False
+        self._steering_messages.put_nowait(text)
+        self._steering_available.set()
+        return True
+
+    def discard_pending_steering(self) -> None:
+        """Drop any steering that was accepted but never drained into the turn — it
+        arrived too late to be honored (after the loop's last drain, or while the turn
+        was ending/failing). The client re-delivers such messages as a fresh turn on
+        stream close, so they must not linger here and get double-applied when the
+        next turn drains the runtime at its first model-call boundary."""
+        while not self._steering_messages.empty():
+            self._steering_messages.get_nowait()
+        self._steering_available.clear()
+
+    def _has_queued_steering(self) -> bool:
+        return not self._steering_messages.empty()
+
+    def set_read_only(self, read_only: bool) -> None:
+        """Force (or release) a read-only floor over the runtime's mode — the override a
+        spawning call/step applies. Turning it on makes the mode read-only outright; turning
+        it off drops a read-only floor back to the interactive default but leaves any other
+        mode untouched."""
+        if read_only:
+            self._permission_mode = PermissionMode.READ_ONLY
+        elif self._permission_mode is PermissionMode.READ_ONLY:
+            self._permission_mode = PermissionMode.DEFAULT
+
+    def set_permission_mode(self, mode: "str | PermissionMode") -> None:
+        """Apply a live session override. ``default`` restores the agent card's own configured
+        mode; any other known mode replaces it. An unknown value is ignored."""
+        parsed = PermissionMode.parse(mode)
+        if parsed is None:
+            return
+        self._session_permission_mode = parsed
+        self._permission_mode = (
+            self._agent_configuration.permission_policy
+            if parsed is PermissionMode.DEFAULT
+            else parsed
+        )
+
+    @property
+    def configured_permission_mode(self) -> PermissionMode:
+        """The permission mode the agent's own card declares (its ceiling before a
+        caller's grant tightens it)."""
+        return self._agent_configuration.permission_policy
+
+    def resolve_agent_permission(self, request_id: str, value: Any) -> bool:
+        """Complete a delegated agent's parked human-in-the-loop request with the user's answer
+        (a decision string for a permission, or the answers / decline for a question).
+        Returns whether a matching pending request was found."""
+        future = self._agent_permission_futures.get(request_id)
+        if future is not None and not future.done():
+            future.set_result(value)
+            return True
+        return False
+
+    def set_delegated_policy(self, mode: str) -> None:
+        """Apply a delegated agent's effective permission policy. Unlike ``set_permission_mode``,
+        "default" means the interactive (ask) policy — never the agent's own configured
+        mode — and ``bypass`` is never applied: a delegated agent can never run unattended. Under
+        the interactive policy an unmatched command asks (escalates to the user)."""
+        parsed = PermissionMode.parse(mode)
+        # bypass is never applied to a delegated agent, and "default" means the interactive
+        # policy here (never the agent's own configured mode).
+        if parsed not in (PermissionMode.READ_ONLY, PermissionMode.AUTO):
+            parsed = PermissionMode.DEFAULT
+        self._session_permission_mode = parsed
+        self._permission_mode = parsed
+
+    def set_delegate(self, delegate: Callable) -> None:
+        """Install the A2A delegate used to invoke agents as related tasks."""
+        self._delegate = delegate
+
+    def set_cancel_delegated(self, cancel_delegated: Callable) -> None:
+        """Install the callback used by targeted spawned-agent cancellation."""
+        self._cancel_delegated = cancel_delegated
+
+    def set_persist_agent_allow_patterns(self, persist: Callable[..., Any]) -> None:
+        """Install the callback that durably records a delegated agent's 'always allow' as
+        allow-patterns on its agent profile's configuration."""
+        self._persist_agent_allow_patterns = persist
+
+    def set_remote_agents(
+        self,
+        roster: Callable[[], list[dict[str, str]]],
+        is_remote: Callable[[str], bool],
+    ) -> None:
+        """Install the external A2A agent roster and predicate. Remote agents appear in
+        the model's roster like local ones, but the spawn path resolves them over the wire
+        (through the delegate) rather than loading an on-disk agent config."""
+        self._remote_agent_roster = roster
+        self._is_remote_agent = is_remote
+
+    def set_pending_attachments(self, attachments: list[dict]) -> None:
+        """Record the current turn's file attachments so a delegation to a remote agent can
+        forward them as FileParts."""
+        self._pending_attachments = attachments or []
+
+    def set_agent_event_sink(self, agent_event_sink: Callable[[dict[str, Any]], None]) -> None:
+        """Install the immediate delivery path for path-tagged agent activity."""
+        self._agent_event_sink = agent_event_sink
+
+    def set_agent_messaging(
+        self,
+        ask_agent: Callable[[str, str, str], dict[str, Any]],
+        respond_agent: Callable[[str, str, str], dict[str, Any]],
+        reserve_agent: Callable[[str, str, str], None],
+        release_reserved_agent: Callable[[str], None],
+        active_agents: Callable[[str], list[dict[str, str]]],
+    ) -> None:
+        """Install the active-task mailbox operations owned by the agent registry."""
+        self._ask_agent = ask_agent
+        self._respond_agent = respond_agent
+        self._reserve_agent = reserve_agent
+        self._release_reserved_agent = release_reserved_agent
+        self._active_agents = active_agents
+
+    def set_a2a_task_id(self, task_id: str) -> None:
+        """Record the A2A task id of the current turn so delegated agent
+        tasks can reference it as their parent."""
+        self._a2a_task_id = task_id
+
+    def set_task_reader(self, task_reader: Callable) -> None:
+        """Install the reader used by the read_task tool to fetch sibling/agent
+        A2A tasks from the shared store."""
+        self._task_reader = task_reader
+
+    def set_artifact_capture(self, artifact_capture: Callable) -> None:
+        """Install the callback that enqueues a shadow-git capture after a write-ish tool
+        call (edit/write/bash) and on open_artifact. Non-blocking and best-effort."""
+        self._artifact_capture = artifact_capture
+
+    def _capture_written_artifacts(
+        self, resolved_location: "ResolvedLocation", *, changed_absolute_paths: list[str] | None,
+        tool_call_id: str, message: str, mode: str = "track",
+        original_contents: dict[str, str] | None = None, surface: dict | None = None,
+    ) -> None:
+        """Fire-and-forget a capture for what a tool call wrote. ``mode="track"`` versions
+        the named paths; ``mode="recheck"`` (after bash) restages only already-tracked files.
+        Swallows all errors — a versioning hiccup must never break the agent's turn."""
+        if self._artifact_capture is None or self._is_agent:
+            return
+        try:
+            self._artifact_capture(
+                context_id=self._session_id,
+                location_uri=resolved_location.uri,
+                executor=resolved_location.executor,
+                base_directory=resolved_location.base_directory,
+                changed_absolute_paths=changed_absolute_paths,
+                mode=mode,
+                original_contents=original_contents,
+                tool_call_id=tool_call_id,
+                message=message,
+                surface=surface,
+            )
+        except Exception:
+            pass
+
+    def _artifact_surface_id(self, key: str) -> str:
+        """A stable surface id derived from the session + a key (a file path or URL), so
+        re-opening the same target reuses one tab without any database lookup."""
+        return "artifact-" + hashlib.sha256(f"{self._session_id}:{key}".encode("utf-8")).hexdigest()[:16]
+
+    def set_delegation_depth(self, depth: int) -> None:
+        """Record how many delegation hops led to this runtime, for context and telemetry
+        (there is no delegation-depth ceiling; recursion is governed by the model's own
+        judgment and the user's ability to interrupt)."""
+        self._delegation_depth = depth
+
+    def session_snapshot(self) -> dict:
+        """The context's durable non-conversation state — the active goal and the task
+        list — persisted alongside the conversation checkpoint so a restart restores the
+        agent's objective, not just its transcript."""
+        return {"goal": self._active_goal, "tasks": self._task_manager.snapshot()}
+
+    def restore_session(self, snapshot: dict) -> None:
+        """Rehydrate goal and tasks from :meth:`session_snapshot` when a context is rebuilt
+        (e.g. a session reopened after a restart). A missing snapshot leaves both empty."""
+        self._active_goal = str(snapshot.get("goal", ""))
+        self._task_manager.restore(snapshot.get("tasks", {}) or {})
+
+    def dirty_session_snapshot(self) -> Optional[dict]:
+        """The session snapshot if the goal or tasks changed since the last persist, else
+        ``None`` — so the executor writes durable session state on mutation only, not on every
+        safe point. This only *peeks*: the dirty flag is cleared by :meth:`clear_session_dirty`
+        after the write commits, so a failed or crashed write never loses the mutation."""
+        return self.session_snapshot() if self._session_dirty else None
+
+    def clear_session_dirty(self) -> None:
+        """Mark the durable session state as persisted — called only after the atomic
+        checkpoint+session-state write succeeds, so the dirty flag is a write-then-clear."""
+        self._session_dirty = False
+
+    @property
+    def _interactive_manual_mode(self) -> bool:
+        """The interactive ("manual") permission policy: not auto-classifying, not
+        read-only, not bypass. Under it, a command the card does not explicitly allow is
+        asked (escalated to the user) rather than run — for the top-level agent and a
+        delegated agent alike. Auto self-classifies, read-only hard-blocks mutations, and bypass
+        allows everything, so none of those ask on an unmatched command."""
+        return self._permission_mode.is_interactive
+
+    def _record_event(self, event_type: str, data: dict) -> None:
+        record = {"type": event_type, "timestamp": _utc_timestamp(datetime.now(timezone.utc)), **data}
+        self._execution_history.append(record)
+        if self._on_record_event:
+            self._on_record_event(event_type, data)
+
+    def _record_message(self, role: str, content: str, tool_call_id: str = "") -> None:
+        if self._on_record_message:
+            self._on_record_message(role, content, tool_call_id)
+
+    def _background_result_events(self) -> list[TurnEvent]:
+        events: list[TurnEvent] = []
+        for completion in self._background.drain_completed():
+            capped_result = _cap_model_result_payload(
+                completion.result,
+                code=f"{completion.kind}_result_truncated",
+            )
+            duration_milliseconds = int((completion.completed_at - completion.started_at).total_seconds() * 1000)
+            background_metadata = _tool_timing_metadata(
+                tool_name=completion.kind,
+                tool_call_identifier=completion.tool_call_identifier,
+                started_at=completion.started_at,
+                completed_at=completion.completed_at,
+                duration_milliseconds=duration_milliseconds,
+                background_task_identifier=completion.identifier,
+            )
+            # Append-only: the scheduled placeholder ToolMessage stays put and the
+            # result lands as a *new* message (a user-role harness note — a system
+            # role here would be hoisted into Anthropic's top-level system param and
+            # bust the whole prefix; see _harness_note_message). Rewriting the
+            # placeholder in place would change the conversation mid-stream and
+            # invalidate the provider's prompt cache from that point on — re-billing
+            # the whole suffix. The placeholder already satisfies its tool_call, so
+            # appending keeps the prefix monotonic (always cacheable) while the model
+            # still sees the result. Same canonical envelope as an inline tool
+            # result, wrapped so the model reads it as a background delivery.
+            background_status, background_code = _model_result_status(
+                capped_result, ok=True, backgrounded=False,
+            )
+            self._conversation.append(self._harness_note_message(
+                _model_visible_tool_result(
+                    capped_result, background_metadata, background_status, background_code,
+                    kind="background_result",
+                ),
+            ))
+            events.append(ToolResult(id=completion.tool_call_identifier,
+                name=completion.kind,
+                result=_maybe_json(capped_result),
+                status=background_status,
+                task_id=completion.identifier,
+            ))
+            completion_event_data: dict[str, Any] = {"task_identifier": completion.identifier}
+            if background_include_result(completion.kind):
+                completion_event_data["result"] = capped_result
+            self._record_event(background_completion_event(completion.kind), completion_event_data)
+        return events
+
+    def _model_supports_vision(self) -> bool:
+        """Whether the agent's model advertises image input. Unknown models (a
+        custom endpoint not in the catalog) are assumed vision-capable — the
+        same permissive default the attachment-inlining path uses."""
+        model = find_model(self._effective_model_identifier)
+        return True if model is None else model.vision
 
     def get_execution_history(self) -> list[dict]:
         return self._execution_history
