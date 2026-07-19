@@ -3,6 +3,7 @@ import base64
 import fcntl
 import hashlib
 import hmac
+import ipaddress
 import jwt
 import uuid
 import json
@@ -354,6 +355,9 @@ class Broadcaster:
 
 
 _global_configuration: Optional[GlobalConfiguration] = None
+# The host the server was told to bind to (set by run_server). Used at startup to fail closed
+# when exposed on a non-loopback interface without inbound auth.
+_BIND_HOST = "127.0.0.1"
 _session_factory: Optional[sessionmaker] = None
 _async_engine = None
 _task_store: Optional[AppendOnlyTaskStore] = None
@@ -2137,6 +2141,7 @@ async def lifespan(application: FastAPI):
     _workspace_manager = SessionWorkspaceManager()
     _terminal_manager = TerminalSessionManager()
     _global_configuration = GlobalConfiguration.load()
+    _assert_exposure_authenticated(_global_configuration)
     _configure_telemetry(_global_configuration)
     # Seed the home layer (~/.agents) with editable copies of the server-shipped
     # agents/skills, non-destructively. This is what makes the desktop app's bundled
@@ -2239,7 +2244,11 @@ async def lifespan(application: FastAPI):
     _awaiting_input_contexts.update(await _task_store.input_required_context_ids())
 
     _registry = AgentRegistry(_task_store)
-    _file_url_signer = FileUrlSigner(load_or_create_secret(harness_home_directory()), PUBLIC_BASE_URL)
+    _file_url_signer = FileUrlSigner(
+        load_or_create_secret(harness_home_directory()),
+        PUBLIC_BASE_URL,
+        allowed_root=harness_home_directory() / "uploads",
+    )
     _registry.set_file_url_signer(_file_url_signer)
     _push_configuration_store = PersistentPushNotificationConfigurationStore(_async_engine)
     await _push_configuration_store.initialize()
@@ -4196,7 +4205,38 @@ for _route_name in ("agents", "artifacts", "chat", "filesystem", "mcp", "project
     app.include_router(_importlib.import_module(f"harness.server.routes.{_route_name}").router)
 
 
+def _is_loopback_bind(host: str) -> bool:
+    """Whether a bind host keeps the server off the network (loopback only). ``0.0.0.0`` /
+    ``::`` (all interfaces) and any concrete LAN address are *not* loopback — they expose it."""
+    normalized = (host or "").strip().lower()
+    if normalized in {"localhost", ""}:
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _assert_exposure_authenticated(configuration: "GlobalConfiguration") -> None:
+    """Fail closed on exposure: the only inbound auth the server has is the A2A config, and
+    the REST + A2A surfaces execute tools. Binding to anything but loopback without that auth
+    configured would serve tool execution to an unauthenticated network by omission, so refuse
+    to start rather than silently exposing it. Loopback (the desktop app's default) is
+    unaffected."""
+    if _is_loopback_bind(_BIND_HOST):
+        return
+    a2a = getattr(configuration, "a2a", None)
+    if a2a is None or not a2a.enabled():
+        raise RuntimeError(
+            f"Refusing to start: bound to non-loopback host {_BIND_HOST!r} without inbound auth. "
+            "Configure the [a2a] api_key or oauth2_jwks_url before exposing the server, or bind to "
+            "127.0.0.1."
+        )
+
+
 def run_server(host: str = "127.0.0.1", port: int = 8822):
+    global _BIND_HOST
+    _BIND_HOST = host
     import uvicorn
     uvicorn.run(app, host=host, port=port)
 

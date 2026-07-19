@@ -22,7 +22,6 @@ transport-focused and returns the raw A2A client stream.
 """
 
 import asyncio
-import ipaddress
 import logging
 import time
 from dataclasses import dataclass, field
@@ -30,6 +29,8 @@ from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
 import httpx
+
+from harness.core.net_trust import UntrustedHostError, assert_public_host
 
 from a2a.client import Client, ClientConfig, ClientEvent, ClientFactory
 from a2a.client.card_resolver import A2ACardResolver
@@ -132,7 +133,9 @@ class _OAuth2ClientCredentials(httpx.Auth):
             data = {"grant_type": "client_credentials"}
             if self._auth.scopes:
                 data["scope"] = " ".join(self._auth.scopes)
-            async with httpx.AsyncClient(timeout=_CARD_RESOLVE_TIMEOUT_SECONDS) as client:
+            # No redirects on the token endpoint either — a redirect could replay the
+            # client_id/secret HTTP-Basic credentials to a host the config did not name.
+            async with httpx.AsyncClient(timeout=_CARD_RESOLVE_TIMEOUT_SECONDS, follow_redirects=False) as client:
                 response = await client.post(
                     self._auth.token_url,
                     data=data,
@@ -149,24 +152,13 @@ def _host_of(url: str) -> str:
     return (urlparse(url).hostname or "").lower()
 
 
-def _is_private_host(host: str) -> bool:
-    """Whether a host literal is loopback/private/link-local. Hostnames that are not IP
-    literals are treated as non-private here (full DNS-resolution SSRF protection, incl.
-    rebinding, is not attempted — the origin check below is the primary guard)."""
-    if host in {"localhost", "localhost.localdomain"}:
-        return True
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return address.is_loopback or address.is_private or address.is_link_local or address.is_reserved
-
-
 def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> None:
-    """Refuse a URL that leaves the registered origin or targets a private range.
+    """Refuse a URL that leaves the registered origin or resolves into a private range.
 
     The card's ``url`` and every ``additionalInterfaces`` URL flow through here before the
-    client is built, so a card cannot point the harness anywhere the user did not vet."""
+    client is built, so a card cannot point the harness anywhere the user did not vet. The
+    private-range check resolves the host and inspects the resolved IPs (not just an IP
+    literal), so a hostname pointing at an internal address is caught too."""
     host = _host_of(url)
     if not host:
         raise RemoteAgentTrustError(f"Remote agent {configuration.name!r}: malformed URL {url!r}.")
@@ -176,11 +168,12 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
             f"Remote agent {configuration.name!r}: card URL host {host!r} is not the registered "
             f"origin {_host_of(configuration.card_url)!r} (and not in allowed_hosts)."
         )
-    if _is_private_host(host) and not configuration.allow_private:
+    try:
+        assert_public_host(host, allow_private=configuration.allow_private)
+    except UntrustedHostError as exception:
         raise RemoteAgentTrustError(
-            f"Remote agent {configuration.name!r}: host {host!r} is a private/loopback address; "
-            "set allow_private to permit it."
-        )
+            f"Remote agent {configuration.name!r}: {exception}; set allow_private to permit it."
+        ) from exception
 
 
 def _card_urls(card: AgentCard) -> list[str]:
@@ -273,7 +266,12 @@ class _RemoteAgent:
                     for url in _card_urls(extended):
                         _assert_url_trusted(url, self.configuration)
                     self.card = extended
-                except Exception:  # noqa: BLE001 — the extended card is optional
+                except RemoteAgentTrustError as exception:
+                    # A trust violation on the extended card is a real signal, not an optional
+                    # miss — surface it as untrusted rather than silently keeping the base card.
+                    self.health, self.error = "untrusted", str(exception)
+                    logger.warning("Remote agent %r extended card untrusted: %s", self.configuration.name, exception)
+                except Exception:  # noqa: BLE001 — a non-trust extended-card fetch failure is optional
                     pass
         return self._client
 
@@ -307,12 +305,14 @@ class RemoteAgentManager:
 
     def is_allowed_for(self, name: str, profile: str) -> bool:
         """Whether a local ``profile`` may delegate to remote agent ``name``. An empty
-        allow-list (or an empty profile, e.g. a delegated agent) permits all."""
+        allow-list permits all; a non-empty one is the containment boundary — a profile not
+        on it (including the empty profile a delegated sub-agent carries) is denied, so a
+        sub-agent cannot evade an allow-list its parent is bound by."""
         agent = self._agents.get(name)
         if agent is None:
             return False
         allowed = agent.configuration.allowed_profiles
-        return not allowed or not profile or profile in allowed
+        return not allowed or profile in allowed
 
     def configuration(self, name: str) -> Optional[RemoteAgentConfiguration]:
         agent = self._agents.get(name)

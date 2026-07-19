@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from a2a.server.tasks.push_notification_config_store import PushNotificationConfigStore
 from a2a.types import PushNotificationConfig
 
+from harness.core.net_trust import UntrustedHostError, assert_public_url
 from harness.core.sqlite_lock import acquire_sqlite_write_lock, release_sqlite_write_lock
 
 
@@ -24,8 +25,13 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
     """Persists push-notification configurations so a registered webhook survives a
     restart. One row per (task, configuration), upserted by that pair."""
 
-    def __init__(self, engine: AsyncEngine):
+    def __init__(self, engine: AsyncEngine, *, allow_private_webhooks: bool = False):
         self._engine = engine
+        # A client registers the URL the server will POST task updates to. Without a guard a
+        # peer could register an internal/loopback webhook and turn the server into a blind
+        # SSRF + task-data exfiltration channel, durable across restarts. Registration is
+        # refused for a non-public host unless the operator explicitly opts in.
+        self._allow_private_webhooks = allow_private_webhooks
         self._metadata = MetaData()
         self._table = Table(
             "push_notification_configurations",
@@ -51,6 +57,12 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     async def set_info(self, task_id: str, notification_config: PushNotificationConfig) -> None:
         await self._ensure_initialized()
+        # Refuse a webhook the server must not be pointed at (internal/loopback) before it is
+        # ever persisted or POSTed — the anti-SSRF guard on inbound-influenced fetch targets.
+        try:
+            assert_public_url(notification_config.url, allow_private=self._allow_private_webhooks)
+        except UntrustedHostError as exception:
+            raise ValueError(f"push notification webhook refused: {exception}") from exception
         # The SDK defaults an unset configuration id to the task id.
         if notification_config.id is None:
             notification_config.id = task_id

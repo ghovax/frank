@@ -14,12 +14,14 @@ import os
 import time
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import httpx
 import jwt
 
 from a2a.types import FilePart, FileWithBytes, FileWithUri, Part
+
+from harness.core.net_trust import UntrustedHostError, assert_public_url
 
 # Ceiling on a single ingested file so a hostile or buggy peer cannot exhaust disk with one
 # part; larger files are refused.
@@ -64,11 +66,15 @@ async def ingest_file_part(
     home_directory: Path,
     *,
     maximum_bytes: int = DEFAULT_MAXIMUM_FILE_BYTES,
+    allow_private: bool = False,
     client: Optional[httpx.AsyncClient] = None,
 ) -> Optional[dict[str, Any]]:
     """Materialize an inbound ``FilePart`` into the upload store and return its attachment
     dict, or ``None`` if it is too large or unfetchable. Bytes are decoded; a URI is fetched
-    over http(s) only."""
+    over http(s) only, and only after its host passes the anti-SSRF trust guard — a peer
+    cannot make the server fetch an internal/loopback address. The body is streamed against
+    the size ceiling and aborted the moment it is exceeded, so a hostile multi-GB response
+    cannot exhaust memory before the cap is seen."""
     file = part.root.file if hasattr(part, "root") else part.file
     name = file.name or "file"
     suffix = Path(name).suffix
@@ -84,53 +90,93 @@ async def ingest_file_part(
         return _attachment(_store_bytes(raw, suffix, home_directory), name, mime_type, len(raw))
 
     if isinstance(file, FileWithUri):
-        if urlparse(file.uri).scheme not in {"http", "https"}:
+        try:
+            assert_public_url(file.uri, allow_private=allow_private)
+        except UntrustedHostError:
             return None
         owns_client = client is None
         client = client or httpx.AsyncClient(timeout=30.0, follow_redirects=False)
         try:
-            response = await client.get(file.uri)
-            response.raise_for_status()
-            raw = response.content
+            raw = bytearray()
+            async with client.stream("GET", file.uri) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    raw.extend(chunk)
+                    if len(raw) > maximum_bytes:
+                        return None  # abort mid-stream; never buffer the whole hostile body
         except Exception:
             return None
         finally:
             if owns_client:
                 await client.aclose()
-        if len(raw) > maximum_bytes:
-            return None
-        return _attachment(_store_bytes(raw, suffix, home_directory), name, mime_type, len(raw))
+        return _attachment(_store_bytes(bytes(raw), suffix, home_directory), name, mime_type, len(raw))
 
     return None
 
 
+class PathNotServableError(Exception):
+    """A path outside the servable root was handed to the signer — it will not be minted
+    into a fetchable URL."""
+
+
+_FILE_TOKEN_AUDIENCE = "daisy-a2a-file"
+
+
 class FileUrlSigner:
     """Mints and verifies short-lived signed URLs for the file-serving endpoint. The JWT
-    binds the absolute file path and an expiry, so a link cannot be altered to reach a
-    different file or outlive its window."""
+    binds the absolute file path, an audience, and an expiry, so a link cannot be altered to
+    reach a different file or outlive its window. Signing is *scoped*: only paths under the
+    servable root (the content-addressed upload store) can be minted into a URL, so an
+    arbitrary absolute path (``/etc/passwd``, a user's in-place-referenced local file) can
+    never be handed out — even though egress consent already gates the send, the signer
+    imposes the boundary structurally. ``verify`` re-checks the root, so a token can never
+    authorize a path outside it regardless of how it was produced."""
 
-    def __init__(self, secret: bytes | str, base_url: str, route: str = "/a2a/files"):
+    def __init__(self, secret: bytes | str, base_url: str, allowed_root: Path | str | None = None, route: str = "/a2a/files"):
         self._secret = secret
         self._base_url = base_url.rstrip("/")
         self._route = route
+        self._allowed_root = Path(allowed_root).resolve() if allowed_root is not None else None
+
+    def _within_root(self, file_path: str) -> bool:
+        if self._allowed_root is None:
+            return True
+        try:
+            Path(file_path).resolve().relative_to(self._allowed_root)
+            return True
+        except (ValueError, OSError):
+            return False
+
+    def can_sign(self, file_path: str) -> bool:
+        """Whether ``file_path`` is under the servable root and can be URL-served."""
+        return self._within_root(file_path)
 
     def sign(self, file_path: str, *, ttl_seconds: int = DEFAULT_URL_TTL_SECONDS) -> str:
+        if not self._within_root(file_path):
+            raise PathNotServableError(f"{file_path!r} is outside the servable file root")
         token = jwt.encode(
-            {"path": file_path, "exp": int(time.time()) + max(1, ttl_seconds)},
+            {
+                "path": file_path,
+                "aud": _FILE_TOKEN_AUDIENCE,
+                "jti": os.urandom(8).hex(),
+                "exp": int(time.time()) + max(1, ttl_seconds),
+            },
             self._secret,
             algorithm="HS256",
         )
         return f"{self._base_url}{self._route}/{quote(token, safe='')}"
 
     def verify(self, token: str) -> Optional[str]:
-        """The file path a token authorizes, or ``None`` if it is malformed, tampered, or
-        expired."""
+        """The file path a token authorizes, or ``None`` if it is malformed, tampered,
+        expired, wrong-audience, or names a path outside the servable root."""
         try:
-            payload = jwt.decode(token, self._secret, algorithms=["HS256"])
+            payload = jwt.decode(token, self._secret, algorithms=["HS256"], audience=_FILE_TOKEN_AUDIENCE)
         except jwt.InvalidTokenError:
             return None
         path = payload.get("path")
-        return path if isinstance(path, str) else None
+        if not isinstance(path, str) or not self._within_root(path):
+            return None
+        return path
 
 
 def build_file_part(
@@ -159,7 +205,13 @@ def build_file_part(
         except OSError:
             return None
         return Part(root=FilePart(file=FileWithBytes(bytes=encoded, name=name, mime_type=mime_type)))
-    uri = signer.sign(path, ttl_seconds=ttl_seconds)
+    # Larger files are served by signed URL — but only from the content-addressed upload
+    # store. A file outside it (an in-place-referenced local path) is not URL-served: the
+    # signer refuses it, so an arbitrary filesystem path can never be handed to a peer.
+    try:
+        uri = signer.sign(path, ttl_seconds=ttl_seconds)
+    except PathNotServableError:
+        return None
     return Part(root=FilePart(file=FileWithUri(uri=uri, name=name, mime_type=mime_type)))
 
 
