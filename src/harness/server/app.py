@@ -2309,10 +2309,17 @@ async def lifespan(application: FastAPI):
             await _proxy_client.aclose()
 
 
+# The only browsers that legitimately call this API are the desktop app's own webview (Tauri,
+# whose origin is tauri://localhost / http://tauri.localhost by platform) and the local dev
+# server — never an arbitrary internet page. Reflecting `*` let any site the user visited script
+# the localhost, tool-executing API; scope CORS to the app's own origins instead.
+_APP_ORIGIN_REGEX = r"^(tauri://localhost|https?://tauri\.localhost|https?://localhost(:\d+)?|https?://127\.0\.0\.1(:\d+)?)$"
+_app_origin_matcher = re.compile(_APP_ORIGIN_REGEX)
+
 app = FastAPI(title="harness", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=_APP_ORIGIN_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
@@ -2380,11 +2387,11 @@ async def _cors_exception_handler(request: Request, exc: Exception):
     least sees the error code."""
     import logging as _logging
     _logging.getLogger("harness.server").exception("Unhandled error in %s %s", request.method, request.url.path)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
-        headers={"Access-Control-Allow-Origin": "*"},
-    )
+    # Reflect the request origin only when it is one of the app's own (matching the CORS policy),
+    # so the client still sees the error code without opening the response to arbitrary origins.
+    origin = request.headers.get("origin", "")
+    headers = {"Access-Control-Allow-Origin": origin} if origin and _app_origin_matcher.match(origin) else {}
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
 
 
 class AgentInfo(BaseModel):

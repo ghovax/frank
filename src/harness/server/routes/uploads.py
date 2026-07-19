@@ -21,14 +21,15 @@ router = APIRouter()
 
 @router.get("/a2a/files/{token}")
 async def serve_a2a_file(token: str):
-    """Stream a file authorized by a signed A2A file URL. The token binds the path and an
-    expiry, so only a currently-valid link issued by this server resolves."""
+    """Stream a file authorized by a signed A2A file URL. The token binds the path, an
+    audience, and an expiry, and is single-use — a valid link issued by this server resolves
+    exactly once (``consume=True``), so it cannot be replayed."""
     signer = _app._file_url_signer
     if signer is None:
         raise HTTPException(status_code=404, detail="File serving is unavailable.")
-    file_path = signer.verify(token)
+    file_path = signer.verify(token, consume=True)
     if not file_path or not Path(file_path).exists():
-        raise HTTPException(status_code=404, detail="File not found or link expired.")
+        raise HTTPException(status_code=404, detail="File not found, link expired, or already used.")
     return FileResponse(file_path)
 
 @router.post("/uploads")

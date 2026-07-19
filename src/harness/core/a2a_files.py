@@ -21,7 +21,7 @@ import jwt
 
 from a2a.types import FilePart, FileWithBytes, FileWithUri, Part
 
-from harness.core.net_trust import UntrustedHostError, assert_public_url
+from harness.core.net_trust import UntrustedHostError, pin_to_ip, resolve_public_ips
 
 # Ceiling on a single ingested file so a hostile or buggy peer cannot exhaust disk with one
 # part; larger files are refused.
@@ -91,14 +91,24 @@ async def ingest_file_part(
 
     if isinstance(file, FileWithUri):
         try:
-            assert_public_url(file.uri, allow_private=allow_private)
+            hostname, ips = resolve_public_ips(file.uri, allow_private=allow_private)
         except UntrustedHostError:
             return None
+        # Pin the connection to the verified IP so a rebind between the check above and the
+        # socket connect cannot swap in a private target — unless an egress proxy is configured,
+        # which does its own DNS/connect, so pinning to an IP would be wrong (and the resolve
+        # check already ran). No proxy (the desktop app's normal case): pin.
+        proxied = bool(os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+                       or os.environ.get("ALL_PROXY") or os.environ.get("all_proxy"))
+        if proxied or not ips:
+            fetch_url, headers, extensions = file.uri, {}, {}
+        else:
+            fetch_url, headers, extensions = pin_to_ip(file.uri, ips[0], hostname)
         owns_client = client is None
         client = client or httpx.AsyncClient(timeout=30.0, follow_redirects=False)
         try:
             raw = bytearray()
-            async with client.stream("GET", file.uri) as response:
+            async with client.stream("GET", fetch_url, headers=headers, extensions=extensions) as response:
                 response.raise_for_status()
                 async for chunk in response.aiter_bytes():
                     raw.extend(chunk)
@@ -137,6 +147,11 @@ class FileUrlSigner:
         self._base_url = base_url.rstrip("/")
         self._route = route
         self._allowed_root = Path(allowed_root).resolve() if allowed_root is not None else None
+        # jti -> expiry of tokens already redeemed, so a token is single-use within its window:
+        # once a peer fetches the file, that link is spent and a replay 404s. Pruned by expiry, so
+        # the set is bounded by the number of live (unexpired) tokens. (A retry after a dropped
+        # connection must re-request a fresh link — acceptable for the one-shot A2A file handoff.)
+        self._redeemed: dict[str, float] = {}
 
     def _within_root(self, file_path: str) -> bool:
         if self._allowed_root is None:
@@ -166,9 +181,11 @@ class FileUrlSigner:
         )
         return f"{self._base_url}{self._route}/{quote(token, safe='')}"
 
-    def verify(self, token: str) -> Optional[str]:
-        """The file path a token authorizes, or ``None`` if it is malformed, tampered,
-        expired, wrong-audience, or names a path outside the servable root."""
+    def verify(self, token: str, *, consume: bool = False) -> Optional[str]:
+        """The file path a token authorizes, or ``None`` if it is malformed, tampered, expired,
+        wrong-audience, names a path outside the servable root, or (when ``consume``) has already
+        been redeemed. ``consume=True`` marks the token spent, making the link single-use — the
+        file-serving route passes it so a signed URL cannot be replayed."""
         try:
             payload = jwt.decode(token, self._secret, algorithms=["HS256"], audience=_FILE_TOKEN_AUDIENCE)
         except jwt.InvalidTokenError:
@@ -176,6 +193,14 @@ class FileUrlSigner:
         path = payload.get("path")
         if not isinstance(path, str) or not self._within_root(path):
             return None
+        if consume:
+            now = time.time()
+            self._redeemed = {jti: exp for jti, exp in self._redeemed.items() if exp > now}
+            jti = payload.get("jti")
+            expiry = float(payload.get("exp", now))
+            if not isinstance(jti, str) or jti in self._redeemed:
+                return None
+            self._redeemed[jti] = expiry
         return path
 
 

@@ -88,3 +88,40 @@ def assert_public_url(url: str, *, allow_private: bool = False, schemes: frozens
     if parsed.scheme not in schemes:
         raise UntrustedHostError(f"unsupported scheme {parsed.scheme!r} in {url!r}")
     assert_public_host(parsed.hostname or "", allow_private=allow_private)
+
+
+def resolve_public_ips(url: str, *, allow_private: bool = False) -> tuple[str, list[str]]:
+    """Assert ``url``'s host resolves entirely to public addresses (or ``allow_private``), and
+    return ``(hostname, [ip strings])``. The caller pins the connection to one of the returned
+    IPs so a rebind between this check and the socket connect cannot swap in a private target."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise UntrustedHostError(f"unsupported scheme {parsed.scheme!r} in {url!r}")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise UntrustedHostError("missing host")
+    if host in _LOOPBACK_NAMES:
+        if not allow_private:
+            raise UntrustedHostError(f"host {host!r} is loopback; set allow_private to permit it")
+        return host, ["127.0.0.1"]
+    addresses = _resolved_addresses(host)
+    for address in addresses:
+        if _is_blocked(address) and not allow_private:
+            raise UntrustedHostError(f"host {host!r} resolves to non-public address {address}")
+    return host, [str(a) for a in addresses]
+
+
+def pin_to_ip(url: str, ip: str, hostname: str) -> tuple[str, dict, dict]:
+    """Rewrite ``url`` to connect to the already-verified ``ip`` while keeping the real
+    ``hostname`` for routing and TLS. Returns ``(pinned_url, headers, extensions)`` to pass to
+    httpx: the URL's host becomes the IP (so the socket goes to the checked address, defeating a
+    rebind), a ``Host`` header preserves virtual-host routing, and the ``sni_hostname`` extension
+    makes TLS present and validate the certificate against the real hostname, not the IP."""
+    parsed = urlparse(url)
+    netloc_ip = f"[{ip}]" if ":" in ip else ip
+    if parsed.port:
+        netloc_ip += f":{parsed.port}"
+    pinned_url = parsed._replace(netloc=netloc_ip).geturl()
+    headers = {"Host": parsed.netloc}
+    extensions = {"sni_hostname": hostname} if parsed.scheme == "https" else {}
+    return pinned_url, headers, extensions
