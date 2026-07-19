@@ -21,7 +21,7 @@ keyed by context — so a ``TurnRecord`` is small and cheap to rewrite on every 
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -69,20 +69,24 @@ def reconcile_action(kind: "Optional[TurnKind]", state: str, *, input_required: 
 
 class ToolGate(BaseModel):
     """One human decision a turn is blocked on: a permission request for a tool call, or a
-    question posed to the user. The ``kind`` discriminates; the permission fields
-    (``command``/``justification``/``risk``) and the question field (``questions``) are populated
-    per kind. A closed typed union for the two shapes is a later step (TurnEvent); this keeps the
-    persisted fields addressable by name in the meantime."""
-
-    model_config = {"extra": "allow"}
+    question posed to the user. ``kind`` discriminates (``"permission"`` | ``"question"``); the
+    permission fields (``command``/``justification``/``risk``) and the question field
+    (``questions``) are populated per kind. Every field is declared and typed — the durable
+    twin of the in-process :class:`~harness.core.turn_events.SuspensionGate`, so a suspend
+    round-trips through it with no ``extra="allow"`` catch-all."""
 
     request_id: str = ""
-    kind: str = ""
+    kind: Literal["permission", "question"] = "permission"
     tool_call_id: str = ""
     command: str = ""
     justification: str = ""
     risk: str = ""
     questions: list[Any] = Field(default_factory=list)
+    # Permission-gate detail carried through a suspend so a resume can re-apply an
+    # "always allow" (a bash session rule / an egress approval) and a denial message.
+    is_bash: bool = False
+    deny_message: str = ""
+    egress_agent: str = ""
 
     @property
     def is_question(self) -> bool:
