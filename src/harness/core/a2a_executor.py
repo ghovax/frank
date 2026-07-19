@@ -897,17 +897,68 @@ class _ContextState:
     pending_reset: bool = False
 
 
+@dataclass(frozen=True)
+class _Ingested:
+    """The parsed request — the turn's inputs and mode flags — produced by ``_ingest``. Each
+    later phase takes the result of the phase before it as a required argument, so the ordering
+    is a type constraint (a phase literally cannot be called without its predecessor's output)
+    rather than the unwritten rule that a shared instance-var machine leaves implicit."""
+    message: "Message"
+    user_text: str
+    metadata: dict
+    delegated: bool
+    autonomous: bool
+    compaction: bool
+    permission_mode: str
+    requested_working_directory: str
+    requested_workspace_strategy: str
+    artifact_payload: "Optional[dict]"
+    structured_payloads: list
+
+
+@dataclass(frozen=True)
+class _Resolved:
+    """The materialized task and the resume decision, produced by ``_resolve_task``."""
+    ingested: _Ingested
+    task: "Task"
+    updater: "TaskUpdater"
+    is_resume: bool
+    resume_plans: dict
+    resume_answers: dict
+
+
+@dataclass(frozen=True)
+class _Prepared:
+    """The stood-up runtime and event sink, produced by ``_prepare_runtime``."""
+    resolved: _Resolved
+    runtime: "AgentRuntime"
+    sink: "_TurnEventSink"
+
+
+@dataclass(frozen=True)
+class _ComposedTurn:
+    """The model-facing input for this segment, produced by ``_compose_turn_input``."""
+    prepared: _Prepared
+    turn_input: Any
+    as_system_note: bool
+
+
 class _TurnRunner:
     """One run of the executor's ``execute()`` — the per-turn state machine made explicit.
 
-    A turn threads roughly two dozen pieces of mutable state (the task, the updater,
-    the resume decisions, the built runtime, the telemetry span, a fistful of teardown
-    flags) through a fixed sequence of phases: ingest the request, resolve the task and
-    any resume answer, acknowledge work habits, serialize on the per-context lock, build
-    the runtime, compose the model input, stream, and finalize — with a single teardown
-    that always runs once the turn has taken the lock. Holding that state as instance
-    attributes, rather than threading it through deeply nested closures, lets each phase
-    be a named method and lets :meth:`run` read as the turn's spine.
+    The phases form a **typed pipeline**: each takes the previous phase's typed result and
+    returns its own — ``_ingest`` → :class:`_Ingested`, ``_resolve_task`` → :class:`_Resolved`,
+    ``_prepare_runtime`` → :class:`_Prepared`, ``_compose_turn_input`` → :class:`_ComposedTurn` —
+    so the ordering is a type constraint (``_prepare_runtime`` cannot be called before
+    ``_resolve_task`` because it *requires* a ``_Resolved``), not the unwritten rule a shared
+    instance-var machine leaves implicit. The data that flows phase→phase rides those results;
+    the *lifecycle* state that the shared collaborators (``_emit``/``_suspend_turn``/
+    ``_save_runtime_conversation``) and the single ``finally`` teardown read — the task, updater,
+    runtime, sink, telemetry span, and a fistful of teardown flags — stays as instance
+    attributes, because teardown must run on a *partial* completion, reading whatever was set so
+    far. The sequence: ingest the request, resolve the task and any resume answer, acknowledge
+    work habits, serialize on the per-context lock, build the runtime, compose the model input,
+    stream, and finalize — with one teardown that always runs once the turn has taken the lock.
 
     The phases up to and including the lock acquisition can short-circuit the turn
     before any teardown is owed (a stale resume answer, a partial answer, a failed
@@ -944,24 +995,34 @@ class _TurnRunner:
         self._sink: _TurnEventSink | None = None
 
     async def run(self) -> None:
-        await self._ingest()
-        if await self._resolve_task() is self._DONE:
+        # A typed pipeline: each phase takes the previous phase's typed result and returns its
+        # own, so the ordering is enforced by the signatures — ``_prepare_runtime`` cannot be
+        # called before ``_resolve_task`` because it requires a ``_Resolved``. The phases still
+        # populate the lifecycle instance vars the shared collaborators and the ``finally``
+        # teardown read (the task, updater, runtime, sink, flags), because teardown must run on
+        # a *partial* completion; the typed results carry the data that flows phase→phase.
+        ingested = await self._ingest()
+        resolved = await self._resolve_task(ingested)
+        if resolved is self._DONE:
             return
-        if await self._acknowledge_work_habits() is self._DONE:
+        assert isinstance(resolved, _Resolved)
+        if await self._acknowledge_work_habits(resolved) is self._DONE:
             return
-        await self._acquire_serialization_lock()
+        await self._acquire_serialization_lock(resolved)
         # The runtime setup — building the agent runtime and its model client — runs
         # inside the try so any failure (e.g. missing API credentials) is surfaced as a
         # clean A2A `failed` status rather than escaping and tearing down the SSE stream
         # mid-flight. From here the teardown is owed on every exit.
-        self._open_turn_span()
+        self._open_turn_span(resolved)
         try:
-            if await self._prepare_runtime() is self._DONE:
+            prepared = await self._prepare_runtime(resolved)
+            if prepared is self._DONE:
                 return
-            if await self._run_compaction_turn() is self._DONE:
+            assert isinstance(prepared, _Prepared)
+            if await self._run_compaction_turn(prepared) is self._DONE:
                 return
-            await self._compose_turn_input()
-            await self._stream_and_finalize()
+            composed = await self._compose_turn_input(prepared)
+            await self._stream_and_finalize(composed)
         except Exception as exception:  # noqa: BLE001 — surface any failure as A2A failed
             await self._fail(exception)
         finally:
@@ -1008,8 +1069,10 @@ class _TurnRunner:
 
     # -- phases ------------------------------------------------------------------
 
-    async def _ingest(self) -> None:
-        """Parse the request message into the turn's inputs and mode flags."""
+    async def _ingest(self) -> _Ingested:
+        """Parse the request message into the turn's inputs and mode flags. Returns them as a
+        typed ``_Ingested`` (threaded into the next phase) and also stores the lifecycle bits
+        (``_delegated``, `_message`, …) the shared collaborators and teardown read."""
         message = self._request.message
         if message is None:
             raise ValueError("Request context message is required.")
@@ -1031,12 +1094,25 @@ class _TurnRunner:
         self._delegated = bool(self._metadata.get(Metadata.DELEGATED))
         self._autonomous = bool(self._metadata.get(Metadata.AUTONOMOUS_RESUME))
         self._compaction = bool(self._metadata.get(Metadata.COMPACTION))
+        return _Ingested(
+            message=message,
+            user_text=self._user_text,
+            metadata=self._metadata,
+            delegated=self._delegated,
+            autonomous=self._autonomous,
+            compaction=self._compaction,
+            permission_mode=self._permission_mode,
+            requested_working_directory=self._requested_working_directory,
+            requested_workspace_strategy=self._requested_workspace_strategy,
+            artifact_payload=self._artifact_payload,
+            structured_payloads=self._structured_payloads,
+        )
 
-    async def _resolve_task(self) -> object | None:
+    async def _resolve_task(self, ingested: _Ingested) -> "_Resolved | object":
         """Materialize the task, then either record a resume answer or start a fresh
         turn. Returns ``_DONE`` when the request is fully handled without streaming (a
-        stale or partial answer)."""
-        message, metadata = self._message, self._metadata
+        stale or partial answer), else the :class:`_Resolved` the next phases thread."""
+        message, metadata = ingested.message, ingested.metadata
         task = self._request.current_task
         if task is None:
             task = new_task(message)
@@ -1089,25 +1165,33 @@ class _TurnRunner:
             task.metadata = cleared.apply_to(task.metadata)
             await self._ex._task_store.save(task)
             self._is_resume = True
-        elif not self._delegated and not self._autonomous and not self._compaction and self._ex._on_permission_state is not None:
+        elif not ingested.delegated and not ingested.autonomous and not ingested.compaction and self._ex._on_permission_state is not None:
             # A fresh user turn supersedes any prior input-required pause for this context
             # (the runtime closes the dangling checkpoint), so drop the awaiting-input marker.
             self._ex._on_permission_state(task.context_id, False)
-        return None
+        return _Resolved(
+            ingested=ingested,
+            task=self._task,
+            updater=self._updater,
+            is_resume=self._is_resume,
+            resume_plans=self._resume_plans,
+            resume_answers=self._resume_answers,
+        )
 
-    async def _acknowledge_work_habits(self) -> object | None:
+    async def _acknowledge_work_habits(self, resolved: _Resolved) -> object | None:
         """Emit the once-per-context work-habits acknowledgement. Returns ``_DONE`` if
         the acknowledgement itself failed (the turn is reported failed)."""
-        self._context_state = self._ex._context(self._task.context_id)
+        task, ingested = resolved.task, resolved.ingested
+        self._context_state = self._ex._context(task.context_id)
         should_acknowledge = await self._ex._claim_work_habits_acknowledgement(
-            self._task.context_id,
-            delegated=self._delegated,
-            autonomous=self._autonomous,
-            compaction=self._compaction,
+            task.context_id,
+            delegated=ingested.delegated,
+            autonomous=ingested.autonomous,
+            compaction=ingested.compaction,
         )
         if should_acknowledge:
             try:
-                for acknowledgement_part in _work_habits_acknowledgement_parts(self._task.id):
+                for acknowledgement_part in _work_habits_acknowledgement_parts(task.id):
                     await self._emit(acknowledgement_part)
             except Exception as exception:
                 logger.exception("Work-habits acknowledgement failed: %s", exception)
@@ -1115,43 +1199,45 @@ class _TurnRunner:
                 return self._DONE
         return None
 
-    async def _acquire_serialization_lock(self) -> None:
+    async def _acquire_serialization_lock(self, resolved: _Resolved) -> None:
         # Serialize non-delegated turns per context so a user turn and an autonomous
         # background wake never drive the shared runtime concurrently. Delegated agent
         # turns share the parent's context and run inside it, so they must not take this
         # lock (that would deadlock against the parent).
-        self._context_serialization_lock = None if self._delegated else self._context_state.lock
+        self._context_serialization_lock = None if resolved.ingested.delegated else self._context_state.lock
         if self._context_serialization_lock is not None:
             await self._context_serialization_lock.acquire()
 
-    def _open_turn_span(self) -> None:
+    def _open_turn_span(self, resolved: _Resolved) -> None:
         # The turn is one trace, grouped by the session (context_id); a delegation's
         # traceparent (in the message metadata) makes this turn nest under its parent.
+        task, ingested = resolved.task, resolved.ingested
         self._turn_kind = (
-            TurnKind.AUTONOMOUS if self._autonomous
-            else TurnKind.COMPACTION if self._compaction
-            else TurnKind.DELEGATED if self._delegated
+            TurnKind.AUTONOMOUS if ingested.autonomous
+            else TurnKind.COMPACTION if ingested.compaction
+            else TurnKind.DELEGATED if ingested.delegated
             else TurnKind.USER
         )
         # Stamp the kind onto the task so the restart reconciliation reads a real field:
         # a top-level input-required pause is preserved, a delegated one and any
         # mid-execution turn are failed. Persisted with the head on the next save.
-        stamped = TurnRecord.from_metadata(self._task.metadata)
+        stamped = TurnRecord.from_metadata(task.metadata)
         stamped.kind = self._turn_kind
-        self._task.metadata = stamped.apply_to(self._task.metadata)
-        parent_context = _telemetry.context_from_traceparent((self._message.metadata or {}).get("traceparent", ""))
+        task.metadata = stamped.apply_to(task.metadata)
+        parent_context = _telemetry.context_from_traceparent((ingested.message.metadata or {}).get("traceparent", ""))
         self._turn_span_context = _telemetry.span("agent.turn", {
-            "session.id": self._task.context_id,
-            "daisy.task.id": self._task.id,
+            "session.id": task.context_id,
+            "daisy.task.id": task.id,
             "daisy.agent.name": self._ex._agent_name,
             "daisy.turn.kind": self._turn_kind,
         }, parent_context)
         self._turn_span = self._turn_span_context.__enter__()
 
-    async def _prepare_runtime(self) -> object | None:
+    async def _prepare_runtime(self, resolved: _Resolved) -> "_Prepared | object":
         """Build (or warm-fetch) the runtime, register it, and stand up the event sink.
-        Returns ``_DONE`` for an autonomous wake that has nothing left to deliver."""
-        task, metadata = self._task, self._metadata
+        Returns ``_DONE`` for an autonomous wake that has nothing left to deliver, else the
+        :class:`_Prepared` the streaming phases thread."""
+        task, metadata = resolved.task, resolved.ingested.metadata
         # An autonomous wake with nothing left to deliver — a concurrent user turn already
         # drained the result while this one waited on the lock — is a no-op: close the task
         # without a model call rather than emit an empty turn. The finally still runs on
@@ -1262,26 +1348,26 @@ class _TurnRunner:
             telemetry_span=self._turn_span,
             model_identifier=lambda: self._runtime.effective_model_identifier if self._runtime is not None else "",
         )
-        return None
+        return _Prepared(resolved=resolved, runtime=runtime, sink=self._sink)
 
-    async def _run_compaction_turn(self) -> object | None:
+    async def _run_compaction_turn(self, prepared: _Prepared) -> object | None:
         """A manual compaction turn runs no model turn: it summarizes the older history
         in place and emits the compaction parts (the live indicator + the separator),
         then completes. Persisted like any turn, so the separator replays; fanned out, so
         viewers see it live. Returns ``_DONE`` when this was a compaction turn."""
-        if not self._compaction:
+        if not prepared.resolved.ingested.compaction:
             return None
-        async for compaction_event in self._runtime.compact(reason="manual"):
-            await self._sink.emit_compaction(compaction_event)
+        async for compaction_event in prepared.runtime.compact(reason="manual"):
+            await prepared.sink.emit_compaction(compaction_event)
         await self._save_runtime_conversation()
         await self._updater.complete()
         return self._DONE
 
-    async def _compose_turn_input(self) -> None:
+    async def _compose_turn_input(self, prepared: _Prepared) -> _ComposedTurn:
         """Build the model-facing input for this segment from the turn's payloads: an
         autonomous framing note, an artifact event, structured attachments (with vision
         blocks when the model supports them), or plain user text."""
-        runtime = self._runtime
+        runtime = prepared.runtime
         # A render_error is injected as the model's own realization (a harness note
         # delivered in a <systemReminder> block), never as user prose; every other
         # artifact event is the turn's structured JSON input.
@@ -1341,18 +1427,24 @@ class _TurnRunner:
         else:
             self._turn_input = self._user_text
         runtime.set_pending_attachments(_all_attachments(self._structured_payloads))
+        return _ComposedTurn(
+            prepared=prepared,
+            turn_input=self._turn_input,
+            as_system_note=self._as_system_note,
+        )
 
-    async def _stream_and_finalize(self) -> None:
+    async def _stream_and_finalize(self, composed: _ComposedTurn) -> None:
         """Drive the runtime's event stream through the sink, then close the task as
         completed or canceled once it drains (a durable suspension returns early)."""
+        resolved = composed.prepared.resolved
         # A resume drives the turn from the durable checkpoint (the pending tool-call
         # AIMessage the rebuilt runtime already holds) with the answered decisions; a fresh
         # turn drives the model from this segment's input. Both feed the same event loop, so
         # a re-suspension is handled identically.
         event_source = (
-            self._runtime.resume_stream(self._resume_plans, self._resume_answers)
-            if self._is_resume
-            else self._runtime.stream(self._turn_input, as_system_note=self._as_system_note)
+            composed.prepared.runtime.resume_stream(resolved.resume_plans, resolved.resume_answers)
+            if resolved.is_resume
+            else composed.prepared.runtime.stream(composed.turn_input, as_system_note=composed.as_system_note)
         )
         async for event in event_source:
             if await self._sink.handle(event):
