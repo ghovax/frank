@@ -112,8 +112,6 @@ class Limit(Enum):
     SCREENSHOT_TIMEOUT_MS = (20_000, _Scale.TIMEOUT)
     READ_TEXT_TIMEOUT_MS = (10_000, _Scale.TIMEOUT)
     EXPECTATION_TIMEOUT_MS = (8_000, _Scale.TIMEOUT)  # waiting for a model-stated outcome to appear
-    BASH_SYNC_CEILING_SECONDS = (60.0, _Scale.TIMEOUT)       # bash blocks in-turn before backgrounding
-    WEB_SEARCH_SYNC_CEILING_SECONDS = (10.0, _Scale.TIMEOUT)  # the same for web_search
     SIGTERM_GRACE_SECONDS = (2.0, _Scale.TIMEOUT)            # after SIGTERM, before SIGKILL, on cancel
     RIPGREP_SECONDS = (30.0, _Scale.TIMEOUT)
     AX_MESSAGING_SECONDS = (2.0, _Scale.TIMEOUT)             # per-AX-message ceiling against a hung app

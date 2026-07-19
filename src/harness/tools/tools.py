@@ -22,15 +22,19 @@ _mcp_client_manager: Any | None = None
 
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
-# A synchronous command blocks and returns its real output up to a ceiling; the ceiling
-# only trips for a command that runs unexpectedly long without being backgrounded, at
-# which point it falls through to the background path as a safety net rather than holding
-# the turn open forever. Ordinary git/network/package commands finish well within it and
-# return real output — the old 2s auto-background window is exactly what surprised the
-# model into re-running mutating commands (a `gh pr merge` that crossed the threshold
-# looked unfinished and got issued twice). Genuinely long work is the model's cue to pass
-# background=true. The ceiling (and web_search's shorter one) live in the central tuning
-# policy, scaled by the timeout knob, read at the settle_inline call sites below.
+# A synchronous command blocks and returns its real output up to its ``timeout`` (a
+# per-call window, defaulting to the value below); the timeout only trips for a command
+# that runs unexpectedly long without being backgrounded, at which point it falls through
+# to the background path as a safety net rather than holding the turn open forever.
+# Ordinary git/network/package commands finish well within it and return real output — the
+# old 2s auto-background window is exactly what surprised the model into re-running
+# mutating commands (a `gh pr merge` that crossed the threshold looked unfinished and got
+# issued twice). Genuinely long work is the model's cue to pass background=true or raise
+# timeout. The default window is scaled by the tuning timeout knob at the call site.
+_BASH_SYNC_DEFAULT_SECONDS = 60.0
+# web_search's default sync window is shorter — most searches are quick, and a slow one
+# backgrounds and delivers on its own; it is a background-by-default tool.
+_WEB_SEARCH_SYNC_DEFAULT_SECONDS = 10.0
 
 
 def set_exa_client(client: Exa | None) -> None:
@@ -57,6 +61,7 @@ async def bash(
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
+    timeout: float = _BASH_SYNC_DEFAULT_SECONDS,
 ) -> str:
     """Execute a bash command and return its output.
 
@@ -77,6 +82,7 @@ async def bash(
         justification: Explain why this command is needed for the task.
         risk: One of "low", "medium", "high" — assess the potential damage. Low for read-only commands, medium for modifications, high for destructive operations.
         background: Run the command in the background instead of waiting for it. Use for long-running work whose result is not needed immediately.
+        timeout: How many seconds to wait synchronously for the command before it auto-backgrounds (its result is then delivered when it finishes). Raise it for a command you want to wait longer for; it does not kill the command.
     """
     output_path = Path("/tmp") / f"{new_id('bash')}.log"
     process_holder: dict[str, Any] = {}
@@ -210,7 +216,7 @@ async def bash(
         # The ceiling only trips for a command that runs unexpectedly long without
         # being backgrounded; it then falls through to the background path below as
         # a safety net rather than holding the turn open indefinitely.
-        settled = await jobs.settle_inline(task_identifier, active_tuning().duration(Limit.BASH_SYNC_CEILING_SECONDS))
+        settled = await jobs.settle_inline(task_identifier, active_tuning().scale_timeout(timeout))
         if settled is not None:
             return settled.result
     return json.dumps({
@@ -293,7 +299,7 @@ async def web_search(
     )
     # Give the search a short window to finish inline. The common case returns the
     # real results directly, so the model never juggles a pending handle at all.
-    settled = await jobs.settle_inline(task_identifier, active_tuning().duration(Limit.WEB_SEARCH_SYNC_CEILING_SECONDS))
+    settled = await jobs.settle_inline(task_identifier, active_tuning().scale_timeout(_WEB_SEARCH_SYNC_DEFAULT_SECONDS))
     if settled is not None:
         return settled.result
     # The started acknowledgement intentionally omits any file path or other

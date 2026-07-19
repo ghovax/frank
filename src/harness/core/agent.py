@@ -645,10 +645,9 @@ class AgentRunner:
             state = TaskState.failed
         elif stop_reason == "cancelled":
             state = TaskState.canceled
-        elif stop_reason == "maximum_iterations":
+        elif stop_reason == "stuck" and not final_text.strip():
             state = TaskState.failed
-            if not final_text.strip():
-                final_text = "Reached the tool-call cap without producing a final answer."
+            final_text = "Stopped after making no further progress."
         if not final_text.strip():
             final_text = "Agent produced no output."
             state = TaskState.failed
@@ -662,7 +661,7 @@ class AgentRunner:
         return json.dumps(serialize_task(task))
 
 
-class TodoTask(BaseModel):
+class TaskItem(BaseModel):
     identifier: str = ""
     description: str
     status: str = "pending"
@@ -671,7 +670,7 @@ class TodoTask(BaseModel):
 
 class TaskManager:
     def __init__(self):
-        self._tasks: list[TodoTask] = []
+        self._tasks: list[TaskItem] = []
         self._next_identifier: int = 1
 
     def add_tasks(self, task_definitions: list[dict]) -> list[str]:
@@ -679,7 +678,7 @@ class TaskManager:
         for definition in task_definitions:
             identifier = f"task-{self._next_identifier}"
             self._next_identifier += 1
-            task = TodoTask(
+            task = TaskItem(
                 identifier=identifier,
                 description=definition.get("description", ""),
                 dependencies=definition.get("dependencies", []),
@@ -722,6 +721,17 @@ class TaskManager:
 
     def to_dict_list(self) -> list[dict]:
         return [task.model_dump() for task in self._tasks]
+
+    def snapshot(self) -> dict:
+        """The manager's full durable state — the task list plus the id counter — so a
+        rebuilt runtime restores identical tasks and keeps minting non-colliding ids."""
+        return {"tasks": self.to_dict_list(), "next_identifier": self._next_identifier}
+
+    def restore(self, snapshot: dict) -> None:
+        """Rehydrate from :meth:`snapshot`. Tolerates a missing or partial snapshot (a
+        session that never set tasks) by leaving the manager empty."""
+        self._tasks = [TaskItem.model_validate(task) for task in snapshot.get("tasks", [])]
+        self._next_identifier = int(snapshot.get("next_identifier", len(self._tasks) + 1))
 
 
 @dataclass
@@ -840,14 +850,59 @@ class _PhaseStep:
     directive: str = _PROCEED
 
 
+# Consecutive unproductive model rounds that mark a turn as stuck. This is a no-progress
+# detector threshold, not an iteration cap: any genuinely new action resets the streak, so
+# a productive turn runs unbounded and only a spinning one is stopped.
+_STUCK_THRESHOLD = 3
+
+# How long an expectedly-slow network tool (fetch_url, download_file) waits synchronously
+# before it auto-backgrounds: a fast call returns its result inline, a slow one backgrounds
+# and delivers on its own, so the turn is never blocked on the network. Scaled by the tuning
+# timeout knob at the call site.
+_SLOW_TOOL_SYNC_DEFAULT_SECONDS = 10.0
+
+
+def _tool_call_signatures(tool_calls: list[dict]) -> frozenset[str]:
+    """A content signature per tool call — its name plus canonicalized arguments — so a
+    round that repeats calls the turn has already issued is recognizable regardless of
+    ordering or object identity."""
+    return frozenset(
+        f"{call.get('name', '')}:{json.dumps(call.get('args', {}), sort_keys=True, ensure_ascii=False, default=str)}"
+        for call in tool_calls
+    )
+
+
+@dataclass
+class _TurnProgress:
+    """Detects a turn that has stopped making progress — the replacement for a fixed
+    tool-call ceiling. It remembers every distinct tool-call signature the turn has issued;
+    a round that introduces at least one new signature is progress and resets the streak,
+    while a round that only repeats already-seen calls (or issues none — e.g. a
+    malformed-call retry that never converges) advances a no-progress streak. The turn is
+    ``stuck`` once the streak reaches ``threshold``. A productive turn therefore runs
+    unbounded; only a spinning one is stopped."""
+
+    threshold: int = _STUCK_THRESHOLD
+    _seen: set[str] = field(default_factory=set)
+    _streak: int = 0
+
+    def note(self, tool_calls: list[dict]) -> None:
+        signatures = _tool_call_signatures(tool_calls)
+        if signatures and not signatures <= self._seen:
+            self._seen |= signatures
+            self._streak = 0
+        else:
+            self._streak += 1
+
+    @property
+    def stuck(self) -> bool:
+        return self._streak >= self.threshold
+
+
 class AgentRuntime:
-    _GOAL_CONTINUATION_LIMIT = 8
-    # Agents (delegation depth > 0) get a tighter iteration budget than the
-    # top-level chat agent so a looping agent fails fast instead of burning
-    # the full budget on redundant calls.
-    _AGENT_MAXIMUM_ITERATIONS = 512
-    # Context compaction is Observational Memory (Observer/Reflector). Its thresholds
-    # and on/off switch live in GlobalConfiguration.compaction, not as constants here.
+    # A turn runs until the model is done or the progress detector finds it stuck — there
+    # is no tool-call ceiling. Context compaction is Observational Memory (Observer/
+    # Reflector); its thresholds and on/off switch live in GlobalConfiguration.compaction.
 
     # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
     # policy once (the shared preamble), then dispatches the call to its handler here.
@@ -1004,6 +1059,9 @@ class AgentRuntime:
         self._cached_system_prompt: str | None = None
         self._task_manager = TaskManager()
         self._active_goal: str = ""
+        # Set when the goal or task list changes, so the executor persists the durable
+        # session state only on mutation rather than on every checkpoint.
+        self._session_dirty = False
         self._execution_history: list[dict] = []
         # The runtime's effective permission policy is ONE typed value (the agent card's
         # configured mode until a session or delegation override changes it); the read_only/
@@ -1528,9 +1586,31 @@ class AgentRuntime:
         return "artifact-" + hashlib.sha256(f"{self._session_id}:{key}".encode("utf-8")).hexdigest()[:16]
 
     def set_delegation_depth(self, depth: int) -> None:
-        """Record how many delegation hops led to this runtime, so it can refuse
-        to delegate past the configured maximum depth."""
+        """Record how many delegation hops led to this runtime, for context and telemetry
+        (there is no delegation-depth ceiling — a spawned agent's own progress detector
+        bounds unproductive recursion)."""
         self._delegation_depth = depth
+
+    def session_snapshot(self) -> dict:
+        """The context's durable non-conversation state — the active goal and the task
+        list — persisted alongside the conversation checkpoint so a restart restores the
+        agent's objective, not just its transcript."""
+        return {"goal": self._active_goal, "tasks": self._task_manager.snapshot()}
+
+    def restore_session(self, snapshot: dict) -> None:
+        """Rehydrate goal and tasks from :meth:`session_snapshot` when a context is rebuilt
+        (e.g. a session reopened after a restart). A missing snapshot leaves both empty."""
+        self._active_goal = str(snapshot.get("goal", ""))
+        self._task_manager.restore(snapshot.get("tasks", {}) or {})
+
+    def take_dirty_session_snapshot(self) -> Optional[dict]:
+        """The session snapshot if the goal or tasks changed since the last call, else
+        ``None`` — so the executor persists durable session state on mutation only, not on
+        every safe point."""
+        if not self._session_dirty:
+            return None
+        self._session_dirty = False
+        return self.session_snapshot()
 
     @property
     def _interactive_manual_mode(self) -> bool:
@@ -2134,10 +2214,12 @@ class AgentRuntime:
     ) -> AsyncIterator[TurnEvent]:
         self._abort_event.clear()
         self._calls_this_turn = 0
-        # Per-turn counter for the active-goal self-continuation nudges; an instance
-        # attribute (like ``_calls_this_turn``) so the no-tool-calls phase can bump it
-        # across iterations without threading it back through the driver.
-        self._goal_continuations = 0
+        # The turn runs until it is done or stuck, not until a fixed count. The progress
+        # detector stops a spinning turn; the goal reconsideration flag lets an active goal
+        # nudge the model once each time it stops, without a nudge counter. Both are
+        # instance state so the no-tool-calls phase can advance them across iterations.
+        self._progress = _TurnProgress()
+        self._awaiting_goal_reconsideration = False
 
         turn_tool_calls_log: list[dict] = []
         turn_tool_results_log: list[dict] = []
@@ -2186,13 +2268,7 @@ class AgentRuntime:
             # The event-log recorder only wants prose from LangChain's standard blocks.
             recorded_user_message = message_text(turn_message)
 
-        effective_maximum_iterations = self._agent_configuration.maximum_iterations
-        if self._delegation_depth > 0:
-            effective_maximum_iterations = min(
-                effective_maximum_iterations, self._AGENT_MAXIMUM_ITERATIONS
-            )
-
-        while self._calls_this_turn < effective_maximum_iterations:
+        while True:
             if self._abort_event.is_set():
                 if self._has_queued_steering():
                     self._abort_event.clear()
@@ -2265,7 +2341,9 @@ class AgentRuntime:
 
             # Phase 2 — no tool calls: retry a malformed batch, answer or await agents,
             # nudge an active goal, or finish the turn. Always ends the iteration
-            # (_CONTINUE to loop again, _STOP once a terminal event was yielded).
+            # (_CONTINUE to loop again, _STOP once a terminal event was yielded). A
+            # malformed-call retry advances the progress detector, so a model that cannot
+            # form a valid call does not loop forever.
             if not response.tool_calls:
                 step = _PhaseStep()
                 async for event in self._finalize_no_tool_calls(
@@ -2274,7 +2352,15 @@ class AgentRuntime:
                     yield event
                 if step.directive == _STOP:
                     return
+                if self._progress.stuck:
+                    self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
+                    yield Done(text="", stop_reason="stuck")
+                    return
                 continue
+
+            # A tool batch means the model is acting again, so a prior goal nudge is
+            # answered — the next time it stops, it will be re-nudged fresh.
+            self._awaiting_goal_reconsideration = False
 
             # Phase 3 — run the tool batch (append the checkpoint AIMessage, preflight the
             # whole batch's permissions, suspend if a human is needed, drain the tools,
@@ -2289,18 +2375,19 @@ class AgentRuntime:
             if step.directive == _CONTINUE:
                 continue
 
+            # A tool batch that only repeats calls the turn has already made — with no new
+            # action — advances the no-progress streak; once it is stuck, the turn stops
+            # instead of spinning indefinitely.
+            self._progress.note(cast(list[dict], response.tool_calls))
+            if self._progress.stuck:
+                self._record_turn(recorded_user_message, turn_tool_calls_log, turn_tool_results_log, "")
+                yield Done(text="", stop_reason="stuck")
+                return
+
             for steering_event in await self._drain_steering_messages():
                 yield steering_event
 
             self._calls_this_turn += 1
-
-        self._record_turn(
-            recorded_user_message, turn_tool_calls_log,
-            turn_tool_results_log, "",
-        )
-        yield Done(text="Reached the tool-call limit without producing a final answer.",
-            stop_reason="maximum_iterations",
-        )
 
     def _build_turn_messages(self) -> list:
         """The message list for this iteration's model call: the static system prompt,
@@ -2414,16 +2501,18 @@ class AgentRuntime:
         turn_tool_calls_log: list[dict], turn_tool_results_log: list[dict], step: _PhaseStep,
     ) -> AsyncIterator[TurnEvent]:
         """Handle a model response that made no tool calls. Retries a malformed-only
-        batch, delivers or awaits agent messages, nudges an active goal to keep working,
-        or finishes the turn — advancing the loop bookkeeping and setting ``step`` to
-        ``_CONTINUE`` (iterate again) or ``_STOP`` (a terminal ``Done`` was yielded)."""
+        batch, delivers or awaits agent messages, nudges an active goal once to keep
+        working, or finishes the turn — advancing the loop bookkeeping and setting ``step``
+        to ``_CONTINUE`` (iterate again) or ``_STOP`` (a terminal ``Done`` was yielded)."""
         if response.invalid_tool_calls:
             # A response carrying only malformed tool calls (arguments that failed to
             # parse). These are NOT valid tool_calls — the LiteLLM model serializes only
             # message.tool_calls, never invalid_tool_calls — so a ToolMessage response
             # would be orphaned, and strict providers (e.g. DeepSeek) reject that with
             # "Messages with role 'tool' must follow a tool_calls message". Correct the
-            # model with a harness note and let it retry. Model-facing; not surfaced.
+            # model with a harness note and let it retry. Model-facing; not surfaced. A
+            # model that keeps emitting malformed calls makes no progress, so the retry
+            # advances the no-progress streak.
             if response.content:
                 self._conversation.append(response)
             for invalid in response.invalid_tool_calls:
@@ -2431,6 +2520,7 @@ class AgentRuntime:
                     self._invalid_tool_call_content(cast(dict, invalid)),
                 ))
             self._calls_this_turn += 1
+            self._progress.note([])
             step.directive = _CONTINUE
             return
 
@@ -2477,8 +2567,13 @@ class AgentRuntime:
             )
             step.directive = _STOP
             return
-        if self._active_goal and self._goal_continuations < self._GOAL_CONTINUATION_LIMIT:
-            self._goal_continuations += 1
+        if self._active_goal and not self._awaiting_goal_reconsideration:
+            # The model stopped while a goal is active. Nudge it once to reconsider — but
+            # only once per stop: if it produces no tool calls again (it reaffirms it is
+            # done), the turn completes below. Any tool call in between clears the flag, so
+            # a model that keeps working is nudged fresh each time it next stops, with no
+            # nudge counter and no ceiling.
+            self._awaiting_goal_reconsideration = True
             self._calls_this_turn += 1
             goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
             self._conversation.append(self._harness_note_message(goal_continuation))
@@ -3503,6 +3598,27 @@ class AgentRuntime:
         )
 
 
+    async def _run_backgroundable_tool(
+        self, tool_name: str, tool_call_identifier: str, coroutine, *, started_code: str,
+    ) -> AsyncIterator[TurnEvent]:
+        """Run an expectedly-slow tool's work as a background job with a short synchronous
+        window (the proven bash/web_search pattern). A call that finishes within the window
+        returns its result inline — the common, fast case; a slow one backgrounds and its
+        result is delivered later via the resume pump, so the turn is never blocked. The
+        coroutine must return the tool-result payload as a string (JSON or plain text)."""
+        task_identifier = self._background.spawn(
+            tool_name, coroutine, tool_call_identifier=tool_call_identifier,
+        )
+        settled = await self._background.settle_inline(
+            task_identifier, active_tuning().scale_timeout(_SLOW_TOOL_SYNC_DEFAULT_SECONDS)
+        )
+        if settled is not None:
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(settled.result))
+        else:
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result={
+                "code": started_code, "status": "running", "task_identifier": task_identifier,
+            })
+
     async def _tool_fetch_url(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
@@ -3511,9 +3627,11 @@ class AgentRuntime:
         url = str(tool_arguments.get("url", ""))
         fmt = str(tool_arguments.get("format", "markdown") or "markdown")
         timeout = int(tool_arguments.get("timeout", 30) or 30)
-        result = await file_tools.fetch_url(url, fmt, timeout)
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-        )
+        async for event in self._run_backgroundable_tool(
+            tool_name, tool_call_identifier, file_tools.fetch_url(url, fmt, timeout),
+            started_code="fetch_url_started",
+        ):
+            yield event
 
 
     async def _tool_download_file(
@@ -3532,9 +3650,11 @@ class AgentRuntime:
         destination = str(tool_arguments.get("path", ""))
         timeout = int(tool_arguments.get("timeout", 120) or 120)
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
-        result = await file_tools.download_file(executor, url, resolved, timeout)
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-        )
+        async for event in self._run_backgroundable_tool(
+            tool_name, tool_call_identifier, file_tools.download_file(executor, url, resolved, timeout),
+            started_code="download_file_started",
+        ):
+            yield event
 
 
     async def _tool_edit_or_write(
@@ -3837,13 +3957,11 @@ class AgentRuntime:
         decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
         resolved_location: "ResolvedLocation | None",
     ) -> AsyncIterator[TurnEvent]:
+        # No delegation-depth ceiling: a spawned agent runs its own turn loop with its own
+        # progress detector, so a recursion that stops producing new work self-terminates,
+        # and genuine deep delegation that keeps producing deliverables is legitimate. The
+        # child's depth is still tracked, for context and telemetry.
         child_depth = self._delegation_depth + 1
-        maximum_depth = self._global_configuration.maximum_delegation_depth
-        if child_depth > maximum_depth:
-            yield Error(id=tool_call_identifier, tool=tool_name,
-                message=f"Maximum delegation depth ({maximum_depth}) reached; cannot spawn another agent.",
-            )
-            return
 
         raw_agent_prompt = tool_arguments.get("prompt", "")
         # The agents panel heading is the model's user-facing justification (a
@@ -4093,6 +4211,7 @@ class AgentRuntime:
     ) -> AsyncIterator[TurnEvent]:
         task_definitions = tool_arguments.get("tasks", [])
         identifiers = self._task_manager.add_tasks(task_definitions)
+        self._session_dirty = True
         result_message = f"Created {len(identifiers)} task{'s' if len(identifiers) != 1 else ''}."
         # A normal tool_result — the task list is the model's own bookkeeping, so it
         # completes through the one universal completion path like any other tool. The
@@ -4116,6 +4235,7 @@ class AgentRuntime:
         updates = tool_arguments.get("updates", [])
         updated_ids = self._task_manager.update_tasks(updates)
         if updated_ids:
+            self._session_dirty = True
             result_message = f"Updated {len(updated_ids)} task{'s' if len(updated_ids) != 1 else ''}."
         else:
             result_message = "No matching tasks found."
@@ -4145,6 +4265,7 @@ class AgentRuntime:
                 }
             else:
                 self._active_goal = goal
+                self._session_dirty = True
                 result = {
                     "code": "goal_active",
                     "goal": self._active_goal,
@@ -4153,6 +4274,7 @@ class AgentRuntime:
         elif status in ("satisfied", "cleared"):
             previous_goal = self._active_goal
             self._active_goal = ""
+            self._session_dirty = True
             result = {
                 "code": f"goal_{status}",
                 "previous_goal": previous_goal,

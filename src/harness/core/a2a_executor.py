@@ -985,6 +985,12 @@ class _TurnRunner:
             await self._ex._task_store.save_checkpoint(
                 self._task.context_id, self._task.id, messages_to_dict(self._runtime.conversation)
             )
+            # The agent's goal and task list ride the same safe points as the conversation,
+            # persisted only when they changed, so they are as durable as the transcript
+            # without a write on every checkpoint.
+            session_state = self._runtime.take_dirty_session_snapshot()
+            if session_state is not None:
+                await self._ex._task_store.save_session_state(self._task.context_id, session_state)
 
     async def _suspend_turn(self, interactions: list[dict], plans: dict) -> bool:
         # The continuation transport differs by turn kind. A delegated turn is an
@@ -1403,6 +1409,12 @@ class _TurnRunner:
             await self._ex._task_store.save_checkpoint(
                 task.context_id, task.id, messages_to_dict(messages)
             )
+            # Persist the agent's goal and task list beside the end-of-turn checkpoint when
+            # they changed this turn, so a restart restores the objective too.
+            if self._runtime is not None:
+                session_state = self._runtime.take_dirty_session_snapshot()
+                if session_state is not None:
+                    await self._ex._task_store.save_session_state(task.context_id, session_state)
         # Stop accepting steering for this context before draining the queue, then discard
         # anything that arrived too late to be honored (raced in after the loop's final
         # drain, or while the turn was ending/failing). Such messages were never applied to
@@ -1895,6 +1907,13 @@ class HarnessAgentExecutor(AgentExecutor):
             )
             if self._session_permission_mode_for is not None:
                 runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, context_id))
+            # Restore the agent's durable objective — its goal and task list — the first
+            # time this process builds a runtime for the context (e.g. a session reopened
+            # after a restart), alongside the conversation restored above, so a marathon run
+            # never loses what it was working toward.
+            session_state = await self._task_store.load_session_state(context_id)
+            if session_state:
+                runtime.restore_session(session_state)
             state.runtime = runtime
             # First time this process builds a runtime for the context: replay any
             # background results the durable store holds but never delivered (e.g.

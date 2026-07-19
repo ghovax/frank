@@ -236,11 +236,11 @@ class CompactionConfiguration(BaseModel):
     log kept at the front of the context; a Reflector condenses that log when it grows
     large. Fractions are of the model's context window.
 
-    ``auto`` is off by default — some users want one long session with only manual
-    (button-triggered) compaction; others opt into automatic. Manual compaction always
-    works regardless of ``auto``."""
+    ``auto`` is on by default: a self-managing turn runs unbounded, so its context must be
+    kept within the window automatically rather than relying on a tool-call ceiling to stop
+    it first. Manual (button-triggered) compaction always works regardless of ``auto``."""
 
-    auto: bool = False
+    auto: bool = True
     # Run the Observer when live context exceeds this fraction of the window.
     observer_context_fraction: float = 0.6
     # Run the Reflector when the observation log itself exceeds this fraction.
@@ -505,9 +505,6 @@ class GlobalConfiguration(BaseModel):
     a2a: A2AServerConfiguration = A2AServerConfiguration()
     telemetry: TelemetryConfiguration = TelemetryConfiguration()
     default_agent: str = "general-assistant"
-    # How deep a chain of agents delegating to other agents may go, to bound
-    # runaway delegation (agent A spawns B spawns C ...).
-    maximum_delegation_depth: int = 8
     maximum_history_age_days: int = 30
 
     @classmethod
@@ -891,9 +888,6 @@ class AgentConfiguration(BaseModel):
     model: Optional[str] = None
     provider: Optional[str] = None
     reasoning_effort: str = "high"
-    # Safety bound on the per-turn tool-calling loop. A runtime detail, defaulted
-    # here rather than restated in every agent file.
-    maximum_iterations: int = 256
     # default: per-command permission rules. auto: use the default rules plus an
     # LLM classifier to auto-approve safe bash calls and escalate the rest.
     # read_only: hard-block all writes (investigation agents). bypass: allow everything.

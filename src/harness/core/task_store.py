@@ -265,10 +265,18 @@ class AppendOnlyTaskStore(TaskStore):
             Column("messages", Text),
             Column("updated_at", String),
         )
-        # How many history rows are already persisted per task. Events for a given
-        # task are processed sequentially by its TaskManager, so this needs no
-        # locking; it lets the hot path skip a COUNT query.
-        self._persisted_count: dict[str, int] = {}
+        # A context's durable non-conversation state — the agent's active goal and task
+        # list — kept beside the conversation checkpoint so a restart restores the agent's
+        # objective, not just its transcript. One row per context, whole-row upsert at the
+        # same safe points as the checkpoint. Compaction rewrites the conversation but never
+        # touches this, so goal and tasks are never folded away.
+        self._session_state = Table(
+            "session_state",
+            self._metadata,
+            Column("context_id", String, primary_key=True),
+            Column("state", Text),
+            Column("updated_at", String),
+        )
         # User message history, scoped to the working directory. Used for
         # up/down arrow recall of previously sent messages within a project.
         self._user_messages = Table(
@@ -424,17 +432,64 @@ class AppendOnlyTaskStore(TaskStore):
         except (json.JSONDecodeError, TypeError):
             return []
 
+    async def save_session_state(self, context_id: str, state: dict) -> None:
+        """Persist a context's durable non-conversation state (the agent's goal and task
+        list) at a safe point, whole-row upserted per context — the same durability as the
+        conversation checkpoint, saved beside it so a restart restores the objective too."""
+        await self._ensure_initialized()
+        if not context_id:
+            return
+        write_lock = await acquire_sqlite_write_lock()
+        try:
+            async with self._engine.begin() as connection:
+                values = {
+                    "context_id": context_id,
+                    "state": json.dumps(state),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+                insert = sqlite_insert(self._session_state).values(**values)
+                await connection.execute(
+                    insert.on_conflict_do_update(
+                        index_elements=[self._session_state.c.context_id],
+                        set_={"state": values["state"], "updated_at": values["updated_at"]},
+                    )
+                )
+        finally:
+            release_sqlite_write_lock(write_lock)
+
+    async def load_session_state(self, context_id: str) -> dict:
+        """The context's persisted goal/task state (:meth:`save_session_state` form), or an
+        empty dict when there is none — a fresh context or a pre-persistence session."""
+        await self._ensure_initialized()
+        if not context_id:
+            return {}
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    select(self._session_state.c.state).where(self._session_state.c.context_id == context_id)
+                )
+            ).scalar()
+        if not row:
+            return {}
+        try:
+            data = json.loads(row)
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
 
     async def _history_count(self, connection, task_id: str) -> int:
-        cached = self._persisted_count.get(task_id)
-        if cached is not None:
-            return cached
+        """The number of history rows already persisted for a task — equivalently the next
+        seq to assign, since seqs are contiguous from 0. Read authoritatively as
+        ``MAX(seq) + 1`` inside the caller's write transaction, never from a cache: a cached
+        count desyncs from the DB across the terminal-compaction rewrite, and two saves
+        reading the same stale value would compute the same seq and collide on the unique
+        (task_id, seq) constraint."""
         result = await connection.execute(
-            select(func.count()).select_from(self._history).where(self._history.c.task_id == task_id)
+            select(func.max(self._history.c.seq)).where(self._history.c.task_id == task_id)
         )
-        count = int(result.scalar() or 0)
-        self._persisted_count[task_id] = count
-        return count
+        top = result.scalar()
+        return int(top) + 1 if top is not None else 0
 
     async def _compact_persisted_history(self, connection, task_id: str, messages: list) -> int:
         compacted_messages = _compact_history(messages)
@@ -503,12 +558,11 @@ class AppendOnlyTaskStore(TaskStore):
                 )
 
                 if terminal:
-                    compacted_count = await self._compact_persisted_history(
+                    await self._compact_persisted_history(
                         connection,
                         task.id,
                         [message.model_dump(mode="json") for message in history],
                     )
-                    self._persisted_count[task.id] = compacted_count
                 else:
                     # History: insert only the messages not yet persisted. The list
                     # only ever grows, so the already-stored prefix is never rewritten.
@@ -522,7 +576,6 @@ class AppendOnlyTaskStore(TaskStore):
                                 for offset, message in enumerate(new_messages)
                             ],
                         )
-                        self._persisted_count[task.id] = persisted + len(new_messages)
 
                 # Artifacts: upsert each by id (replace-in-place is safe and bounded).
                 for artifact in artifacts:
@@ -763,12 +816,12 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(delete(self._head).where(self._head.c.id == task_id))
         finally:
             release_sqlite_write_lock(write_lock)
-        self._persisted_count.pop(task_id, None)
 
     async def delete_context(self, context_id: str) -> None:
-        """Drop every durable trace of a context — its tasks (head/history/artifacts) and
-        its conversation checkpoint — when a session is deleted. The single place that
-        knows the turn store's tables, so session deletion does not reach into them."""
+        """Drop every durable trace of a context — its tasks (head/history/artifacts), its
+        conversation checkpoint, and its goal/task session state — when a session is
+        deleted. The single place that knows the turn store's tables, so session deletion
+        does not reach into them."""
         await self._ensure_initialized()
         write_lock = await acquire_sqlite_write_lock()
         try:
@@ -783,10 +836,9 @@ class AppendOnlyTaskStore(TaskStore):
                     await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
                 await connection.execute(delete(self._head).where(self._head.c.context_id == context_id))
                 await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.context_id == context_id))
+                await connection.execute(delete(self._session_state).where(self._session_state.c.context_id == context_id))
         finally:
             release_sqlite_write_lock(write_lock)
-        for task_id in list(self._persisted_count):
-            self._persisted_count.pop(task_id, None)
 
     async def input_required_context_ids(self) -> list[str]:
         """Context ids whose persisted task is input-required, so the sidebar's
