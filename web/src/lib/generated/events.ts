@@ -29,6 +29,7 @@ export type WireEvent =
   | TokenUsageEvent
   | PermissionRequestEvent
   | QuestionEvent
+  | WarningEvent
   | ErrorEvent;
 
 export interface DaisyEvents {}
@@ -64,7 +65,7 @@ export interface AgentUsage {
  * via the `definition` "CompactionEvent".
  */
 export interface CompactionEvent {
-  kind?: "compaction";
+  kind: "compaction";
   messages_after?: number;
   messages_before?: number;
   ok?: boolean;
@@ -93,7 +94,7 @@ export interface CumulativeUsage {
  * via the `definition` "DoneEvent".
  */
 export interface DoneEvent {
-  kind?: "done";
+  kind: "done";
   path?: AgentPathSegment[];
   state?: string;
 }
@@ -103,7 +104,7 @@ export interface DoneEvent {
  */
 export interface ErrorEvent {
   code?: string;
-  kind?: "error";
+  kind: "error";
   message?: string;
   path?: AgentPathSegment[];
   status?: number | null;
@@ -120,7 +121,7 @@ export interface ErrorEvent {
  */
 export interface GroupStartedEvent {
   agent_name: string;
-  kind?: "group_started";
+  kind: "group_started";
   path?: AgentPathSegment[];
   tool_call_id?: string;
 }
@@ -130,7 +131,7 @@ export interface GroupStartedEvent {
  */
 export interface McpEvent {
   event?: Record<string, unknown>;
-  kind?: "mcp_event";
+  kind: "mcp_event";
   path?: AgentPathSegment[];
   server?: string;
   tool?: string;
@@ -151,7 +152,7 @@ export interface ModelToolResult {
   code?: string | null;
   completed_at?: string | null;
   duration_ms?: number | null;
-  kind?: "tool_result" | "background_result";
+  kind: "tool_result" | "background_result";
   started_at?: string | null;
   status: ToolStatus;
   tool_call_id: string;
@@ -164,7 +165,7 @@ export interface ModelToolResult {
 export interface PermissionRequestEvent {
   command?: string;
   justification?: string;
-  kind?: "permission_request";
+  kind: "permission_request";
   path?: AgentPathSegment[];
   request_id: string;
   risk?: string;
@@ -175,10 +176,11 @@ export interface PermissionRequestEvent {
  * via the `definition` "QuestionEvent".
  */
 export interface QuestionEvent {
-  kind?: "question";
+  kind: "question";
   path?: AgentPathSegment[];
   questions?: Record<string, unknown>[];
   request_id: string;
+  tool_call_id?: string;
 }
 /**
  * This interface was referenced by `DaisyEvents`'s JSON-Schema
@@ -186,7 +188,7 @@ export interface QuestionEvent {
  */
 export interface StatusEvent {
   code?: string;
-  kind?: "status";
+  kind: "status";
   path?: AgentPathSegment[];
 }
 /**
@@ -194,7 +196,7 @@ export interface StatusEvent {
  * via the `definition` "SteeringEvent".
  */
 export interface SteeringEvent {
-  kind?: "steering";
+  kind: "steering";
   path?: AgentPathSegment[];
   text?: string;
 }
@@ -203,7 +205,7 @@ export interface SteeringEvent {
  * via the `definition` "TextEvent".
  */
 export interface TextEvent {
-  kind?: "text";
+  kind: "text";
   path?: AgentPathSegment[];
   text: string;
 }
@@ -213,7 +215,7 @@ export interface TextEvent {
  */
 export interface ThinkingDoneEvent {
   duration_ms?: number;
-  kind?: "thinking_done";
+  kind: "thinking_done";
   path?: AgentPathSegment[];
 }
 /**
@@ -221,7 +223,8 @@ export interface ThinkingDoneEvent {
  * via the `definition` "ThinkingEvent".
  */
 export interface ThinkingEvent {
-  kind?: "thinking";
+  block_id?: string;
+  kind: "thinking";
   path?: AgentPathSegment[];
   text?: string;
 }
@@ -234,7 +237,7 @@ export interface TokenUsageEvent {
   context_window?: number;
   cumulative?: CumulativeUsage;
   input_tokens?: number;
-  kind?: "token_usage";
+  kind: "token_usage";
   output_tokens?: number;
   path?: AgentPathSegment[];
 }
@@ -244,7 +247,7 @@ export interface TokenUsageEvent {
  */
 export interface ToolCallEvent {
   arguments?: Record<string, unknown>;
-  kind?: "tool_call";
+  kind: "tool_call";
   path?: AgentPathSegment[];
   tool_call_id: string;
   tool_name: string;
@@ -272,7 +275,7 @@ export interface ToolMetadata {
 export interface ToolResultEvent {
   code?: string | null;
   display?: unknown;
-  kind?: "tool_result";
+  kind: "tool_result";
   metadata: ToolMetadata;
   path?: AgentPathSegment[];
   status: ToolStatus;
@@ -295,4 +298,14 @@ export interface TurnContext {
   now?: string;
   pwd?: string;
   tasks?: Record<string, unknown>[];
+}
+/**
+ * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * via the `definition` "WarningEvent".
+ */
+export interface WarningEvent {
+  code?: string;
+  kind: "warning";
+  message?: string;
+  path?: AgentPathSegment[];
 }

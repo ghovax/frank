@@ -6,7 +6,7 @@ import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ArtifactAnnotationRecord } from "@/lib/artifact-annotations";
-import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
 import { toolStatus } from "@/lib/tool-event";
 import { AttachmentChips, ArtifactAnnotationChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
@@ -16,8 +16,6 @@ import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 
 interface ChatMessageProps {
   message: ChatMessage;
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   agents?: { id: string; name: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
@@ -124,7 +122,7 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact }: ChatMessageProps) {
+function ToolMessageCard({ message, agents = [], activeArtifactId, onActivateArtifact }: ChatMessageProps) {
   return (
     <ToolCall
       name={message.content}
@@ -135,8 +133,6 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
       question={message.meta?.question as ToolQuestion | undefined}
       toolCallId={message.meta?.toolCallId as string | undefined}
       agents={agents}
-      onPermission={onPermission}
-      onQuestion={onQuestion}
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
     />
@@ -207,7 +203,7 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
+export const ChatMessageItem = memo(function ChatMessageItem({ message, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
   const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
@@ -245,7 +241,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     case "tool_call": {
       return (
         <Box alignSelf="flex-start" w="100%">
-          <ToolMessageCard message={message} onPermission={onPermission} onQuestion={onQuestion} agents={agents} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
+          <ToolMessageCard message={message} agents={agents} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
         </Box>
       );
     }
@@ -304,15 +300,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
 
 interface ChatToolGroupProps {
   messages: ChatMessage[];
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   agents?: { id: string; name: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
   keepOpen?: boolean;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, agents = [], activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
   // ToolGroup renders, so the chat timeline and the agents panel stay in lockstep.
   const tools: ToolEvent[] = messages.map((message) => ({
@@ -328,8 +322,6 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermissio
     <ToolGroup
       tools={tools}
       agents={agents}
-      onPermission={onPermission}
-      onQuestion={onQuestion}
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
       keepOpen={keepOpen}

@@ -112,127 +112,135 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
   }
 }
 
-function fallbackLabel(name: string, args?: Record<string, unknown>): string {
+// A translator scoped to the "ToolDisplay" message namespace (from next-intl's useTranslations).
+// Typed loosely here so the pure label helpers stay decoupled from the generated message types;
+// callers pass their own `t`.
+export type ToolDisplayTranslator = (key: string, values?: Record<string, string | number>) => string;
+
+function fallbackLabel(name: string, args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
   switch (name) {
     case "web_search":
-      return args?.query ? `Browsing for "${String(args.query)}"` : "Browsing the web";
+      return args?.query ? t("webSearch", { query: String(args.query) }) : t("webSearchBare");
     case "bash":
-      return args?.command ? stripCdPrefix(String(args.command)) : "Running command";
+      return args?.command ? stripCdPrefix(String(args.command)) : t("bashBare");
     case "spawn_agent":
-      return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
+      return args?.agent ? t("spawnAgent", { agent: String(args.agent) }) : t("spawnAgentBare");
     case "cancel_agent":
-      return "Canceling spawned agent";
+      return t("cancelAgent");
     case "ask_agent":
-      return "Asking an agent";
+      return t("askAgent");
     case "respond_agent":
-      return "Responding to an agent";
+      return t("respondAgent");
     case "read_task":
-      return "Reading a related task";
+      return t("readTask");
     case "read_file":
-      return args?.file_path ? `Reading the file ${fileName(String(args.file_path))}${readFileRange(args)}` : "Reading file";
+      return args?.file_path ? readFileLabel(String(args.file_path), args, t) : t("readFileBare");
     case "find_files":
-      return args?.pattern ? `Finding files matching "${String(args.pattern)}"` : "Finding files";
+      return args?.pattern ? t("findFiles", { pattern: String(args.pattern) }) : t("findFilesBare");
     case "search_content":
-      return args?.pattern ? `Searching for "${String(args.pattern)}"` : "Searching content";
+      return args?.pattern ? t("searchContent", { pattern: String(args.pattern) }) : t("searchContentBare");
     case "edit_file":
-      return args?.file_path ? `Editing ${shortPath(String(args.file_path))}` : "Editing file";
+      return args?.file_path ? t("editFile", { path: shortPath(String(args.file_path)) }) : t("editFileBare");
     case "write_file":
-      return args?.file_path ? `Writing ${shortPath(String(args.file_path))}` : "Writing file";
+      return args?.file_path ? t("writeFile", { path: shortPath(String(args.file_path)) }) : t("writeFileBare");
     case "fetch_url":
-      return args?.url ? `Fetching ${String(args.url)}` : "Fetching URL";
+      return args?.url ? t("fetchUrl", { url: String(args.url) }) : t("fetchUrlBare");
     case "ask_user":
-      return "Asking the user";
+      return t("askUser");
     case "load_skill":
-      return args?.name ? `Loading "${String(args.name)}" skill` : "Loading skill";
+      return args?.name ? t("loadSkill", { name: String(args.name) }) : t("loadSkillBare");
     case "set_tasks":
-      return "Setting task list";
+      return t("setTasks");
     case "update_tasks":
-      return "Updating task list";
+      return t("updateTasks");
     case "update_goal":
-      return "Updating goal";
+      return t("updateGoal");
     case "open_artifact":
-      return args?.title ? `Opening "${String(args.title)}"` : "Opening an artifact";
+      return args?.title ? t("openArtifact", { title: String(args.title) }) : t("openArtifactBare");
     case "computer":
-      return computerLabel(args);
+      return computerLabel(args, t);
     case "browser":
-      return browserLabel(args);
+      return browserLabel(args, t);
     case "work_habits":
-      return "Loading your work habits…";
+      return t("workHabits");
     case "call_mcp_tool":
-      return args?.tool_name ? `Calling MCP tool "${String(args.tool_name)}"` : "Calling MCP tool";
+      return args?.tool_name ? t("callMcpTool", { tool: String(args.tool_name) }) : t("callMcpToolBare");
     case "list_mcp_tools":
-      return "Listing MCP tools";
+      return t("listMcpTools");
     case "list_mcp_resources":
-      return "Listing MCP resources";
+      return t("listMcpResources");
     case "read_mcp_resource":
-      return args?.uri ? `Reading MCP resource "${String(args.uri)}"` : "Reading MCP resource";
+      return args?.uri ? t("readMcpResource", { uri: String(args.uri) }) : t("readMcpResourceBare");
     default:
       return name;
   }
 }
 
+// read_file with an optional line range — a complete sentence per case, so the range is not an
+// English-word-order suffix a translator would have to reassemble.
+function readFileLabel(filePath: string, args: Record<string, unknown>, t: ToolDisplayTranslator): string {
+  const file = fileName(filePath);
+  const offset = Number(args.offset ?? 1);
+  const limit = args.limit == null ? 0 : Number(args.limit);
+  const defaultLimit = 2000;
+  const hasSpecificOffset = Number.isFinite(offset) && offset > 1;
+  const hasSpecificLimit = Number.isFinite(limit) && limit > 0 && limit !== defaultLimit;
+  if (!hasSpecificOffset && !hasSpecificLimit) return t("readFile", { file });
+  if (!Number.isFinite(limit) || limit <= 0) return t("readFileFromLine", { file, line: offset });
+  return t("readFileLines", { file, start: offset, end: offset + limit - 1 });
+}
+
 // A computer-control call with no justification: describe it from its action + target.
-// The verb map keeps the wording consistent with the tool's own action names.
-function computerLabel(args?: Record<string, unknown>): string {
+function computerLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
   const action = args?.action ? String(args.action) : "";
   const app = args?.app ? String(args.app) : "";
-  const verbs: Record<string, string> = {
-    observe: "Looking at",
-    find: "Searching in",
-    click: "Clicking in",
-    type: "Typing in",
-    press: "Pressing a key in",
-    menu: "Choosing a menu in",
-    scroll: "Scrolling",
-    screenshot: "Capturing",
-  };
-  const verb = verbs[action];
-  if (!verb) return app ? `Controlling ${app}` : "Controlling this Mac";
-  return app ? `${verb} ${app}` : verb;
+  const verbActions = new Set(["observe", "find", "click", "type", "press", "menu", "scroll", "screenshot"]);
+  if (!verbActions.has(action)) return app ? t("computerControlling", { app }) : t("computerControllingMac");
+  return app ? t(`computer_${action}_app`, { app }) : t(`computer_${action}`);
 }
 
 // A browser call with no justification: describe it from its action and target.
-function browserLabel(args?: Record<string, unknown>): string {
+function browserLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
   const action = args?.action ? String(args.action) : "";
   switch (action) {
     case "navigate":
-      return args?.url ? `Opening ${String(args.url)}` : "Opening a page";
+      return args?.url ? t("browserNavigate", { url: String(args.url) }) : t("browserNavigateBare");
     case "observe":
-      return "Reading the page";
+      return t("browserObserve");
     case "find":
-      return "Searching the page";
+      return t("browserFind");
     case "click":
-      return "Clicking in the page";
+      return t("browserClick");
     case "type":
-      return "Typing in the page";
+      return t("browserType");
     case "read":
-      return "Reading the page text";
+      return t("browserRead");
     case "evaluate":
-      return "Running JavaScript";
+      return t("browserEvaluate");
     case "network":
-      return "Reading network activity";
+      return t("browserNetwork");
     case "press":
-      return args?.key ? `Pressing ${String(args.key)}` : "Pressing a key";
+      return args?.key ? t("browserPress", { key: String(args.key) }) : t("browserPressBare");
     case "hover":
-      return "Hovering in the page";
+      return t("browserHover");
     case "scroll":
-      return "Scrolling the page";
+      return t("browserScroll");
     case "back":
-      return "Going back";
+      return t("browserBack");
     case "forward":
-      return "Going forward";
+      return t("browserForward");
     case "reload":
-      return "Reloading the page";
+      return t("browserReload");
     case "tabs":
-      return "Listing tabs";
+      return t("browserTabs");
     case "new_tab":
-      return args?.url ? `Opening ${String(args.url)} in a new tab` : "Opening a new tab";
+      return args?.url ? t("browserNewTab", { url: String(args.url) }) : t("browserNewTabBare");
     case "switch_tab":
-      return "Switching tab";
+      return t("browserSwitchTab");
     case "close_tab":
-      return "Closing a tab";
+      return t("browserCloseTab");
     default:
-      return "Using the browser";
+      return t("browserDefault");
   }
 }
 
@@ -245,26 +253,16 @@ function fileName(path: string): string {
   return path.split("/").filter(Boolean).at(-1) ?? path;
 }
 
-function readFileRange(args: Record<string, unknown>): string {
-  const offset = Number(args.offset ?? 1);
-  const limit = args.limit == null ? 0 : Number(args.limit);
-  const defaultLimit = 2000;
-  const hasSpecificOffset = Number.isFinite(offset) && offset > 1;
-  const hasSpecificLimit = Number.isFinite(limit) && limit > 0 && limit !== defaultLimit;
-  if (!hasSpecificOffset && !hasSpecificLimit) return "";
-  if (!Number.isFinite(limit) || limit <= 0) return ` around line ${offset}`;
-  return ` around lines ${offset}–${offset + limit - 1}`;
-}
-
 export function getToolCallDisplay(
   name: string,
-  args?: Record<string, unknown>
+  args: Record<string, unknown> | undefined,
+  t: ToolDisplayTranslator,
 ): ToolDisplayInfo {
   const known = KNOWN_TOOL_NAMES.has(name);
   const justification = args?.justification ? String(args.justification) : "";
   return {
     ...iconForTool(name),
-    label: justification || fallbackLabel(name, args),
+    label: justification || fallbackLabel(name, args, t),
     known,
     // A bare, unrecognized tool name reads as code (it *is* an identifier).
     mono: !known && !justification,

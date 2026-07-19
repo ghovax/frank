@@ -3,9 +3,9 @@
 import { Box, Flex } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { getToolCallDisplay } from "@/lib/tool-display";
+import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
-import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
+import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
 import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
 import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { Pill } from "./ui/pill";
@@ -79,8 +79,6 @@ export { ToolLocationBadge };
 interface ToolCallProps extends ToolEvent {
   agents?: { id: string; name: string; title?: string }[];
   actions?: ReactNode;
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   // The single live artifact id (owned by ChatPanel). Only the matching
   // iframe-type artifact mounts its frame; the rest collapse to a placeholder.
   activeArtifactId?: string | null;
@@ -166,7 +164,8 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A running call whose interim result says the work moved to the background.
   const background = status === "running" && hasBackgroundTaskIdentifier(result);
-  const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments);
+  const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
+  const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments, tDisplay);
 
   return (
     <DisclosureRow

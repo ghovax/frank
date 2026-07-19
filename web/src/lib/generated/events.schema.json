@@ -83,7 +83,8 @@
         }
       },
       "required": [
-        "status"
+        "status",
+        "kind"
       ],
       "type": "object"
     },
@@ -137,6 +138,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "ErrorEvent": {
@@ -181,6 +185,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "GroupStartedEvent": {
@@ -207,7 +214,8 @@
         }
       },
       "required": [
-        "agent_name"
+        "agent_name",
+        "kind"
       ],
       "type": "object"
     },
@@ -241,7 +249,8 @@
         }
       },
       "required": [
-        "tool_call_id"
+        "tool_call_id",
+        "kind"
       ],
       "type": "object"
     },
@@ -325,7 +334,8 @@
       "required": [
         "tool_name",
         "tool_call_id",
-        "status"
+        "status",
+        "kind"
       ],
       "type": "object"
     },
@@ -364,7 +374,8 @@
         }
       },
       "required": [
-        "request_id"
+        "request_id",
+        "kind"
       ],
       "type": "object"
     },
@@ -390,10 +401,15 @@
         },
         "request_id": {
           "type": "string"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
         }
       },
       "required": [
-        "request_id"
+        "request_id",
+        "kind"
       ],
       "type": "object"
     },
@@ -416,6 +432,9 @@
           "type": "array"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "SteeringEvent": {
@@ -437,6 +456,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "TextEvent": {
@@ -458,7 +480,8 @@
         }
       },
       "required": [
-        "text"
+        "text",
+        "kind"
       ],
       "type": "object"
     },
@@ -481,11 +504,18 @@
           "type": "array"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "ThinkingEvent": {
       "additionalProperties": false,
       "properties": {
+        "block_id": {
+          "default": "",
+          "type": "string"
+        },
         "kind": {
           "const": "thinking",
           "default": "thinking",
@@ -502,6 +532,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "TokenUsageEvent": {
@@ -537,6 +570,9 @@
           "type": "array"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "ToolCallEvent": {
@@ -565,7 +601,8 @@
       },
       "required": [
         "tool_call_id",
-        "tool_name"
+        "tool_name",
+        "kind"
       ],
       "type": "object"
     },
@@ -676,7 +713,8 @@
         "tool_call_id",
         "tool_name",
         "status",
-        "metadata"
+        "metadata",
+        "kind"
       ],
       "type": "object"
     },
@@ -725,6 +763,34 @@
       },
       "type": "object"
     },
+    "WarningEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "warning",
+          "default": "warning",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
     "WireEvent": {
       "discriminator": {
         "mapping": {
@@ -742,7 +808,8 @@
           "thinking_done": "#/$defs/ThinkingDoneEvent",
           "token_usage": "#/$defs/TokenUsageEvent",
           "tool_call": "#/$defs/ToolCallEvent",
-          "tool_result": "#/$defs/ToolResultEvent"
+          "tool_result": "#/$defs/ToolResultEvent",
+          "warning": "#/$defs/WarningEvent"
         },
         "propertyName": "kind"
       },
@@ -788,6 +855,9 @@
         },
         {
           "$ref": "#/$defs/QuestionEvent"
+        },
+        {
+          "$ref": "#/$defs/WarningEvent"
         },
         {
           "$ref": "#/$defs/ErrorEvent"

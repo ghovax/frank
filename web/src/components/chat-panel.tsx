@@ -43,7 +43,7 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { getToolCallDisplay } from "@/lib/tool-display";
+import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, setPermissionMode, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
@@ -380,6 +380,7 @@ export function ChatPanel({
   compactionKeepRecentTurns,
 }: ChatPanelProps) {
   const translation = useTranslations("ChatPanel");
+  const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendArtifactEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
@@ -1236,7 +1237,7 @@ export function ChatPanel({
         pendingPrompt = {
           kind: "permission",
           permission,
-          title: getToolCallDisplay(name, args).label,
+          title: getToolCallDisplay(name, args, tToolDisplay).label,
           command: command || undefined,
           arguments: args,
         };
@@ -1260,7 +1261,7 @@ export function ChatPanel({
           }
           if (part.permission) {
             const command = part.name === "bash" && part.arguments?.command ? String(part.arguments.command) : "";
-            const label = getToolCallDisplay(part.name, part.arguments).label;
+            const label = getToolCallDisplay(part.name, part.arguments, tToolDisplay).label;
             pendingPrompt = {
               kind: "permission",
               permission: part.permission,
@@ -1525,8 +1526,6 @@ export function ChatPanel({
                         const inner = item.kind === "tool_group" ? (
                           <ChatToolGroup
                             messages={item.messages}
-                            onPermission={handlePermission}
-                            onQuestion={handleQuestion}
                             agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
@@ -1535,8 +1534,6 @@ export function ChatPanel({
                         ) : (
                           <ChatMessageItem
                             message={enrichAnnotationVersions(item.message)}
-                            onPermission={handlePermission}
-                            onQuestion={handleQuestion}
                             agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
