@@ -108,6 +108,7 @@ export interface ErrorEvent {
   message?: string;
   path?: AgentPathSegment[];
   status?: number | null;
+  title?: string;
   tool_call_id?: string;
   tool_name?: string;
 }
@@ -123,6 +124,7 @@ export interface GroupStartedEvent {
   agent_name: string;
   kind: "group_started";
   path?: AgentPathSegment[];
+  title?: string;
   tool_call_id?: string;
 }
 /**
@@ -308,4 +310,5 @@ export interface WarningEvent {
   kind: "warning";
   message?: string;
   path?: AgentPathSegment[];
+  title?: string;
 }

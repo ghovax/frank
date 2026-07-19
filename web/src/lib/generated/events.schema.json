@@ -176,6 +176,10 @@
           ],
           "default": null
         },
+        "title": {
+          "default": "",
+          "type": "string"
+        },
         "tool_call_id": {
           "default": "",
           "type": "string"
@@ -207,6 +211,10 @@
             "$ref": "#/$defs/AgentPathSegment"
           },
           "type": "array"
+        },
+        "title": {
+          "default": "",
+          "type": "string"
         },
         "tool_call_id": {
           "default": "",
@@ -784,6 +792,10 @@
             "$ref": "#/$defs/AgentPathSegment"
           },
           "type": "array"
+        },
+        "title": {
+          "default": "",
+          "type": "string"
         }
       },
       "required": [

@@ -33,14 +33,32 @@ REFERENCE_TEMPLATE = "#/$defs/{model}"
 
 
 def _strip_titles(node: object) -> object:
-    """Drop Pydantic's per-field ``title`` keys. They cause json-schema-to-typescript
-    to promote every field into its own throwaway alias (Kind1, Path4, …); the type
-    names we want come from the ``$defs`` keys, not titles."""
-    if isinstance(node, dict):
-        return {key: _strip_titles(value) for key, value in node.items() if key != "title"}
+    """Drop Pydantic's injected ``title`` *metadata* (which makes json-schema-to-typescript
+    promote every field into its own throwaway alias — Kind1, Path4, …); the type names we
+    want come from the ``$defs`` keys, not titles. A ``title`` that is a *field name* — a key
+    inside a ``properties``/``$defs`` map — is real data and is preserved; only a ``title``
+    keyword sitting directly on a schema node is metadata and stripped. (The naive "drop every
+    key named title" deletes a modelled field literally named ``title``, e.g.
+    ``GroupStartedEvent.title`` / ``WarningEvent.title``, silently erasing it from the wire.)"""
     if isinstance(node, list):
         return [_strip_titles(item) for item in node]
-    return node
+    if not isinstance(node, dict):
+        return node
+    cleaned: dict = {}
+    for key, value in node.items():
+        if key == "title":
+            # Metadata on this schema node — never a field name (field names are reached
+            # only as map keys in the branches below), so this is always Pydantic's title.
+            continue
+        if key in _SCHEMA_MAP_KEYS and isinstance(value, dict):
+            cleaned[key] = {name: _strip_titles(sub) for name, sub in value.items()}
+        elif key in _SCHEMA_LIST_KEYS and isinstance(value, list):
+            cleaned[key] = [_strip_titles(sub) for sub in value]
+        elif key in _SCHEMA_NODE_KEYS and isinstance(value, dict):
+            cleaned[key] = _strip_titles(value)
+        else:
+            cleaned[key] = _strip_titles(value)
+    return cleaned
 
 
 _STRUCTURAL = {"type", "$ref", "enum", "const", "anyOf", "oneOf", "allOf", "items", "properties", "tsType"}
