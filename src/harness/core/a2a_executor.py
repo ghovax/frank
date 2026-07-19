@@ -1169,7 +1169,7 @@ class _TurnRunner:
         if self._autonomous:
             existing_state = self._ex._contexts.get(task.context_id)
             existing_runtime = existing_state.runtime if existing_state is not None else None
-            has_live_result = existing_runtime is not None and existing_runtime.background_jobs.has_completed_undelivered()
+            has_live_result = existing_runtime is not None and existing_runtime.has_completed_undelivered_jobs()
             has_stored_result = get_background_job_store().has_undelivered_jobs(task.context_id, self._ex._agent_name)
             if not has_live_result and not has_stored_result:
                 await self._updater.complete()
@@ -1540,30 +1540,42 @@ class HarnessAgentExecutor(AgentExecutor):
         a session reopened after a restart compacts without a warm-up message. The
         caller is responsible for routing to the owning agent's executor. Returns
         False only when there is no handler to drive the turn."""
-        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
-        if handler is None:
+        if self._agent_handler() is None:
             return False
         task = asyncio.create_task(self._run_compaction_turn(context_id))
         self._compaction_tasks.add(task)
         task.add_done_callback(self._compaction_tasks.discard)
         return True
 
-    async def _run_compaction_turn(self, context_id: str) -> None:
-        """Drive one manual-compaction turn via a self-sent agent-role message
-        carrying only the prose-less compaction part, so it is a real, persisted,
-        replayable task streamed to viewers like any other turn."""
-        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
+    def _agent_handler(self) -> "Optional[RequestHandler]":
+        """The request handler that drives this executor's agent, via the registry's public
+        accessor (never its private handler map)."""
+        return self._registry.handler_for(self._agent_name) if self._registry is not None else None
+
+    async def _drive_self_sent_turn(
+        self, context_id: str, envelope_kind: str, *, metadata_flags: dict,
+    ) -> None:
+        """Drive one harness-initiated turn through the ordinary turn path via a self-sent
+        agent-role message carrying only a prose-less envelope part, so it is a real,
+        persisted, replayable task streamed to viewers like any other turn. The single shared
+        driver behind the compaction and autonomous-wake turns — same shape, one place."""
+        handler = self._agent_handler()
         if handler is None:
             return
         message = Message(
             role=Role.agent,
-            parts=[_envelope_part(COMPACTION_KIND)],
+            parts=[_envelope_part(envelope_kind)],
             message_id=uuid.uuid4().hex,
             context_id=context_id,
-            metadata=_harness_metadata_envelope({Metadata.COMPACTION: True}),
+            metadata=_harness_metadata_envelope(metadata_flags),
         )
         async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
             pass
+
+    async def _run_compaction_turn(self, context_id: str) -> None:
+        """Drive one manual-compaction turn (a self-sent agent-role compaction message), so
+        it is a real, persisted, replayable task streamed to viewers like any other turn."""
+        await self._drive_self_sent_turn(context_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True})
 
     def abort_context(self, context_id: str) -> bool:
         # Stop is broadcast to every executor (chat.py), but only the one that actually
@@ -1706,7 +1718,7 @@ class HarnessAgentExecutor(AgentExecutor):
         state = self._contexts.get(context_id)
         if state is None or not state.pending_reset:
             return
-        if state.runtime is not None and state.runtime.background_jobs.has_pending():
+        if state.runtime is not None and state.runtime.has_pending_jobs():
             return  # still delivering — keep the runtime (and its pump) alive
         state.runtime = None
         state.pending_reset = False
@@ -1754,7 +1766,7 @@ class HarnessAgentExecutor(AgentExecutor):
         if state is None or state.aborted:
             return
         runtime = runtime or state.runtime
-        if runtime is None or not runtime.background_jobs.has_pending():
+        if runtime is None or not runtime.has_pending_jobs():
             return
         if state.runtime is None:
             state.runtime = runtime
@@ -1771,9 +1783,9 @@ class HarnessAgentExecutor(AgentExecutor):
             while True:
                 state = self._contexts.get(context_id)
                 runtime = state.runtime if state is not None else None
-                if runtime is None or not runtime.background_jobs.has_pending():
+                if runtime is None or not runtime.has_pending_jobs():
                     return
-                await runtime.background_jobs.wait_for_completion()
+                await runtime.wait_for_jobs()
                 # A result landed — drive an autonomous turn to deliver it. If a
                 # concurrent user turn already drained it, that turn no-ops.
                 await self._run_autonomous_turn(context_id)
@@ -1796,8 +1808,7 @@ class HarnessAgentExecutor(AgentExecutor):
         result. It reuses the ordinary turn path via a self-sent A2A message, so the
         wake is a real, persisted, replayable task streamed to viewers like any other
         turn — the agent genuinely picks the work back up on its own."""
-        handler = self._registry._handlers.get(self._agent_name) if self._registry is not None else None
-        if handler is None:
+        if self._agent_handler() is None:
             return
         # Nothing left to deliver — a concurrent user turn already drained the result
         # while the pump was scheduling this wake — so don't even mint a task. The
@@ -1806,27 +1817,16 @@ class HarnessAgentExecutor(AgentExecutor):
         # invisible wake task in the common case.
         state = self._contexts.get(context_id)
         runtime = state.runtime if state is not None else None
-        has_live_result = runtime is not None and runtime.background_jobs.has_completed_undelivered()
+        has_live_result = runtime is not None and runtime.has_completed_undelivered_jobs()
         has_stored_result = get_background_job_store().has_undelivered_jobs(context_id, self._agent_name)
         if not has_live_result and not has_stored_result:
             return
-        # An agent-authored message (the agent resumed itself), carrying only the
-        # prose-less `autonomous_resume` part. Modelling it as `agent` rather than
-        # `user` keeps the persisted A2A task honest — no consumer, ours or an
-        # external one, sees a user message the user never sent — and the part renders
-        # as nothing. The framing note reaches only the model, injected as a system
-        # note in `execute`. It is still a real, replayable task streamed to viewers.
-        message = Message(
-            role=Role.agent,
-            parts=[_envelope_part(AUTONOMOUS_RESUME_KIND)],
-            message_id=uuid.uuid4().hex,
-            context_id=context_id,
-            metadata=_harness_metadata_envelope({Metadata.AUTONOMOUS_RESUME: True}),
-        )
-        async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
-            # Drive to completion; viewers receive the turn through the stream-event
-            # fan-out and the persisted task, so the yielded events are not needed here.
-            pass
+        # An agent-authored message (the agent resumed itself), carrying only the prose-less
+        # `autonomous_resume` part. Modelling it as `agent` rather than `user` keeps the
+        # persisted A2A task honest — no consumer sees a user message the user never sent —
+        # and the part renders as nothing. The framing note reaches only the model, injected
+        # as a system note in `execute`. Driven through the shared self-sent-turn path.
+        await self._drive_self_sent_turn(context_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True})
 
     def _build_runtime(
         self,
@@ -2151,6 +2151,12 @@ class AgentRegistry:
     def register(self, name: str, handler: RequestHandler, card: AgentCard) -> None:
         self._handlers[name] = handler
         self._cards[name] = card
+
+    def handler_for(self, name: str) -> Optional[RequestHandler]:
+        """The request handler that drives ``name``'s turns, or ``None`` if unregistered —
+        the public accessor an executor uses to drive a self-sent turn, so it never reaches
+        into the registry's private handler map."""
+        return self._handlers.get(name)
 
     async def resolve_pending_input(
         self, context_id: str, request_id: str, *,

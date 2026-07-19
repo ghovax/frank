@@ -1194,6 +1194,20 @@ class AgentRuntime:
         to know when in-flight work has completed."""
         return self._background
 
+    def has_pending_jobs(self) -> bool:
+        """Whether any background job is still in flight — the scheduling predicate the
+        executor's resume pump reads, exposed here so it does not reach through into the
+        job runner's internals."""
+        return self._background.has_pending()
+
+    def has_completed_undelivered_jobs(self) -> bool:
+        """Whether a completed background result is waiting to be delivered to the model."""
+        return self._background.has_completed_undelivered()
+
+    async def wait_for_jobs(self) -> None:
+        """Await the next background-job completion (the resume pump's wait point)."""
+        await self._background.wait_for_completion()
+
     def inject_stored_background_result(
         self, *, kind: str, identifier: str, tool_call_identifier: str, result: str
     ) -> None:
