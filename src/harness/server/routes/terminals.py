@@ -1,20 +1,19 @@
 """Terminals routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from contextlib import suppress
+from fastapi import HTTPException
+from fastapi import WebSocket
+from fastapi import WebSocketDisconnect
+from pathlib import Path
+import asyncio
+import json
 from harness.server import app as _app
 from harness.server.app import (
-    HTTPException,
-    Path,
     TerminalSession,
-    WebSocket,
-    WebSocketDisconnect,
     _delete_terminal_state,
     _list_terminal_states,
     _terminal_context_for_request,
     _terminal_directory,
-    asyncio,
-    event,
-    json,
-    suppress,
 )
 
 router = APIRouter()

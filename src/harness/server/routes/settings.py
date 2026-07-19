@@ -1,5 +1,19 @@
 """Settings routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi import HTTPException
+from harness.core.chatgpt_oauth import ChatGPTLoginFlow
+from harness.core.chatgpt_oauth import clear_tokens
+from harness.core.chatgpt_oauth import load_tokens
+from harness.core.codex_model import clear_subscription_models_cache
+from harness.core.codex_model import clear_usage_snapshot
+from harness.core.codex_model import fetch_subscription_models
+from harness.core.codex_model import get_usage_snapshot
+from harness.core.configuration import load_agent_configuration
+from harness.core.models import MODELS
+from harness.core.models import ModelDefinition
+from harness.core.models import available_models
+from harness.core.providers import PROVIDERS
+import asyncio
 from harness.server.models import (
     CompactionUpdateRequest,
     ComputerControlUpdateRequest,
@@ -9,11 +23,6 @@ from harness.server.models import (
 )
 from harness.server import app as _app
 from harness.server.app import (
-    ChatGPTLoginFlow,
-    HTTPException,
-    MODELS,
-    ModelDefinition,
-    PROVIDERS,
     _agent_configuration_for_request,
     _apply_live_credentials,
     _configuration,
@@ -27,15 +36,6 @@ from harness.server.app import (
     _recent_models,
     _reset_all_runtimes,
     _reset_work_habits_acknowledgements,
-    asyncio,
-    available_models,
-    clear_subscription_models_cache,
-    clear_tokens,
-    clear_usage_snapshot,
-    fetch_subscription_models,
-    get_usage_snapshot,
-    load_agent_configuration,
-    load_tokens,
 )
 
 router = APIRouter()

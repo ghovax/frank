@@ -1,5 +1,9 @@
 """Chat routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi import HTTPException
+from sse_starlette.sse import EventSourceResponse
+import asyncio
+import json
 from harness.server.models import (
     PermissionModeRequest,
     PermissionRequest,
@@ -7,8 +11,6 @@ from harness.server.models import (
     SteeringRequest,
 )
 from harness.server.app import (
-    EventSourceResponse,
-    HTTPException,
     _abort_pending_input,
     _broadcaster,
     _executor_for_context,
@@ -16,9 +18,6 @@ from harness.server.app import (
     _normalize_permission_mode,
     _resolve_pending_input,
     _set_session_permission_mode,
-    asyncio,
-    event,
-    json,
 )
 
 router = APIRouter()

@@ -1,17 +1,23 @@
 """Artifacts routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi import HTTPException
+from fastapi import Request
+from fastapi import WebSocket
+from fastapi import WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
+from harness.core import artifact_versioning as artifacts
+from pathlib import Path
+import asyncio
+import httpx
+import mimetypes
+import websockets
 from harness.server.models import (
     ArtifactAnnotationSaveRequest,
     ArtifactRestoreRequest,
 )
 from harness.server.app import (
-    FileResponse,
-    HTMLResponse,
-    HTTPException,
-    Path,
-    Response,
-    WebSocket,
-    WebSocketDisconnect,
     _ARTIFACT_CONTEXT_PREFIX,
     _artifact_annotation_records,
     _artifact_index,
@@ -24,14 +30,8 @@ from harness.server.app import (
     _restore_artifact,
     _save_artifact_annotation_record,
     _surface_records,
-    artifacts,
-    asyncio,
-    mimetypes,
-    websockets,
 )
 from harness.server.app import (
-    Request,
-    httpx,
     _PROXY_DROP_HEADERS,
     _get_proxy_client,
     _proxy_forward_headers,

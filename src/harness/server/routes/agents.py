@@ -1,5 +1,9 @@
 """Agents routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi import HTTPException
+from harness.core.configuration import list_agents
+from harness.core.skills import load_skills
+import asyncio
 from harness.server.models import (
     AgentConfigurationUpdateRequest,
     AgentInfo,
@@ -8,7 +12,6 @@ from harness.server.models import (
 from harness.server import app as _app
 from harness.server.app import (
     AGENT_CARD_PATH,
-    HTTPException,
     _agent_configuration_for_request,
     _agent_configuration_payload,
     _apply_agent_configuration_update,
@@ -21,9 +24,6 @@ from harness.server.app import (
     _record_model_selection,
     _reload_agent_cards,
     _save_agent_sidecar,
-    asyncio,
-    list_agents,
-    load_skills,
 )
 
 router = APIRouter()

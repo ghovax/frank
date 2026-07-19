@@ -1,25 +1,25 @@
 """Filesystem routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi import HTTPException
+from fastapi import Request
+from sse_starlette.sse import EventSourceResponse
+from typing import cast
+from watchfiles import awatch
+import asyncio
+import json
+import subprocess
 from harness.server.models import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
 )
 from harness.server import app as _app
 from harness.server.app import (
-    EventSourceResponse,
-    HTTPException,
-    Request,
     _GIT_STATUS_WATCH_FILTER,
     _git_status_changes_relevant,
     _git_status_key,
     _git_status_watch_paths,
     _open_folder_picker,
     _validate_directory_payload,
-    asyncio,
-    awatch,
-    cast,
-    json,
-    subprocess,
 )
 
 router = APIRouter()

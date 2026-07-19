@@ -1,15 +1,18 @@
 """Projects routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from fastapi import HTTPException
+from harness.locations.executor import SshExecutor
+from harness.locations.resolver import host_is_defined
+from pathlib import Path
+from typing import cast
+import asyncio
 from harness.server.models import (
     LocationInput,
     ProjectCreateRequest,
 )
 from harness.server import app as _app
 from harness.server.app import (
-    HTTPException,
-    Path,
     SessionRecord,
-    SshExecutor,
     _create_location,
     _create_project,
     _delete_location,
@@ -21,9 +24,6 @@ from harness.server.app import (
     _prune_session_artifacts,
     _publish_broadcast,
     _update_location,
-    asyncio,
-    cast,
-    host_is_defined,
 )
 
 router = APIRouter()
