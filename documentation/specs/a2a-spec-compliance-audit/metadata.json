@@ -53,6 +53,13 @@
       "kind": "plan",
       "created": "2026-07-18T20:44:28Z",
       "updated": "2026-07-19T05:39:31Z"
+    },
+    {
+      "path": "plans/typed-turn-core.md",
+      "title": "A Typed Turn Core",
+      "kind": "plan",
+      "created": "2026-07-19T05:53:18Z",
+      "updated": "2026-07-19T05:53:18Z"
     }
   ],
   "generatedAt": "2026-07-18T14:27:02Z"
