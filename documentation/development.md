@@ -37,7 +37,7 @@ Useful scripts (in `web/`):
 
 - `bun run lint` — lint the UI.
 - `bun run build` — production static export (to `web/out`).
-- `bun run gen:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
+- `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
 ## Running the desktop app in dev
 

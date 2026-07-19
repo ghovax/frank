@@ -4,10 +4,10 @@
 Pydantic is the source of truth (``harness.core.events``); this uses Pydantic's own
 ``models_json_schema`` — no hand-written Python->TS type mapping — to produce
 ``web/src/lib/generated/events.schema.json``. The TypeScript is then generated from
-that schema by ``json-schema-to-typescript`` (see the web ``gen:events`` script), so
+that schema by ``json-schema-to-typescript`` (see the web ``build:events`` script), so
 the whole pipeline is two authoritative libraries and zero bespoke type-walking.
 
-Run the full pipeline with ``bun run gen:events`` in ``web/`` (which invokes this and
+Run the full pipeline with ``bun run build:events`` in ``web/`` (which invokes this and
 then ``json2ts``); this file alone only refreshes the schema.
 """
 
