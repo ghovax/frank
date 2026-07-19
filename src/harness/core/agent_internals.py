@@ -6,11 +6,11 @@ the mixin files) so the dependency graph is a clean DAG — agent_internals -> m
 agent.py — with no import cycle."""
 from __future__ import annotations
 
-from contextlib import suppress
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
 from harness.core.chatgpt_oauth import is_signed_in
+from harness.core.configuration import GlobalConfiguration
 from harness.core.configuration import PromptLoader
 from harness.core.events import ToolStatus
 from harness.core.events import tool_status_from_result
