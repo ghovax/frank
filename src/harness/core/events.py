@@ -2,7 +2,7 @@
 
 Everything the harness streams to a client, and everything it feeds back to the
 model, is described here as a Pydantic model. The TypeScript the web client consumes
-is *generated* from these models by ``scripts/generate_event_types.py`` — so the two
+is *generated* from these models by ``scripts/generate_event_schema.py`` — so the two
 sides can never silently drift the way a hand-mirrored ``switch`` used to.
 
 Two design rules make this small instead of sprawling:

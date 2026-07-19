@@ -13,6 +13,7 @@ then ``json2ts``); this file alone only refreshes the schema.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -119,7 +120,7 @@ def _require_discriminant(definition: object) -> object:
     return definition
 
 
-def main() -> None:
+def _render_schema() -> str:
     top_level = [
         *events.WIRE_EVENT_MODELS,
         events.ModelToolResult,
@@ -148,11 +149,36 @@ def main() -> None:
         "additionalProperties": False,
         "$defs": cleaned,
     }
+    return json.dumps(schema, indent=2, sort_keys=True) + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Verify the committed schema matches the Python models; exit 1 on drift instead of writing.",
+    )
+    arguments = parser.parse_args()
+    rendered = _render_schema()
+
+    if arguments.check:
+        current = OUTPUT.read_text() if OUTPUT.exists() else ""
+        if current != rendered:
+            logger.error(
+                "%s is stale — the Pydantic event models changed but the schema was not regenerated. "
+                "Run `bun run build:events` and commit the result.",
+                OUTPUT.relative_to(ROOT),
+            )
+            return 1
+        logger.info("%s is up to date with the event models.", OUTPUT.relative_to(ROOT))
+        return 0
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n")
-    logger.info("wrote %s (%d definitions)", OUTPUT.relative_to(ROOT), len(definitions))
+    OUTPUT.write_text(rendered)
+    logger.info("wrote %s", OUTPUT.relative_to(ROOT))
+    return 0
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    main()
+    sys.exit(main())

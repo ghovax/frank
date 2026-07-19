@@ -80,7 +80,13 @@ from harness.core.turn_events import (
 )
 from harness.core.agent_messages import AgentMessage
 from harness.core.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
-from harness.core.events import ToolStatus
+from harness.core.events import (
+    ToolStatus, AgentPathSegment, ToolMetadata, CumulativeUsage, AgentUsage,
+    ThinkingEvent, ThinkingDoneEvent, ToolCallEvent, ToolResultEvent,
+    McpEvent as McpWireEvent, StatusEvent, GroupStartedEvent, CompactionEvent,
+    SteeringEvent, TokenUsageEvent, PermissionRequestEvent, QuestionEvent,
+    WarningEvent, ErrorEvent, _EventBase,
+)
 from harness.core.configuration import (
     AgentConfiguration,
     GlobalConfiguration,
@@ -302,18 +308,17 @@ def _model_supports_vision(model_identifier: str) -> bool:
     return model.vision
 
 
-def _attachment_warning_payload(image_count: int, model_identifier: str) -> dict[str, str]:
+def _attachment_warning_event(image_count: int, model_identifier: str) -> WarningEvent:
     plural = "s" if image_count != 1 else ""
-    return {
-        "kind": "warning",
-        "code": "image_metadata_only",
-        "title": "Image attached as metadata only",
-        "message": (
+    return WarningEvent(
+        code="image_metadata_only",
+        title="Image attached as metadata only",
+        message=(
             f"{image_count} image{plural} attached, but {model_identifier or 'the agent model'} "
             "does not advertise vision support. The file metadata and path were provided to the model, "
             "but the image pixels were not inlined. Configure a vision-capable model for this agent if it needs to inspect the image directly."
         ),
-    }
+    )
 
 
 def _image_content_block(attachment: dict) -> Optional[dict]:
@@ -418,7 +423,18 @@ def _text_part(text: str, block_identifier: str) -> Part:
     ))
 
 
-def _data_part(kind: str, **fields) -> Part:
+def _event_part(event: _EventBase) -> Part:
+    """A validated wire-event ``Part``. Every client-facing event is constructed as its
+    Pydantic model here, so a misnamed or missing field is a ``ValidationError`` at the emit
+    site rather than an invisible wire drift the schema/TypeScript generation can never see
+    (the emitter→contract edge, which raw-dict ``{kind, **fields}`` construction left on faith)."""
+    return Part(root=DataPart(data=event.model_dump(mode="json")))
+
+
+def _envelope_part(kind: str, **fields) -> Part:
+    """An internal harness-message marker part (compaction/autonomous-resume/input-response
+    envelopes the harness sends to *itself* — never a client-facing wire event). These do not
+    belong to the ``events`` wire vocabulary, so they stay a bare ``{kind, **fields}`` dict."""
     return Part(root=DataPart(data={PART_KIND: kind, **fields}))
 
 
@@ -429,20 +445,18 @@ def _work_habits_acknowledgement_parts(task_identifier: str) -> tuple[Part, Part
         "tool_call_id": acknowledgement_identifier,
     }
     return (
-        _data_part(
-            "tool_call",
+        _event_part(ToolCallEvent(
             tool_name="work_habits",
             tool_call_id=acknowledgement_identifier,
             arguments={"justification": "Loading your work habits"},
-        ),
-        _data_part(
-            "tool_result",
+        )),
+        _event_part(ToolResultEvent(
             tool_name="work_habits",
             tool_call_id=acknowledgement_identifier,
-            status=ToolStatus.OK.value,
+            status=ToolStatus.OK,
             display=None,
-            metadata=metadata,
-        ),
+            metadata=ToolMetadata(**metadata),
+        )),
     )
 
 
@@ -476,15 +490,14 @@ def _tool_result_part(tool_name: str, tool_call_id: str, result: object, status:
     model-facing view travels only in the conversation). ``metadata`` here is the minimal
     display correlation — full timing rides the model envelope."""
     record = result if isinstance(result, dict) else {}
-    return _data_part(
-        "tool_result",
+    return _event_part(ToolResultEvent(
         tool_name=tool_name,
         tool_call_id=tool_call_id,
-        status=ToolStatus(status).value,
+        status=ToolStatus(status),
         code=record.get("code"),
         display=_project_display(tool_name, result),
-        metadata={"tool_name": tool_name, "tool_call_id": tool_call_id},
-    )
+        metadata=ToolMetadata(tool_name=tool_name, tool_call_id=tool_call_id),
+    ))
 
 
 def _provider_error_body(error: object) -> dict:
@@ -530,8 +543,8 @@ def _safe_turn_error(error: object, had_images: bool = False) -> dict[str, objec
     fields: dict[str, object] = {}
     if status_code is not None:
         fields["status"] = status_code
-    if provider_code:
-        fields["providerCode"] = provider_code
+    # `provider_code` classifies the failure below (e.g. context-length) but is not part
+    # of the wire ErrorEvent — the client keys off `code`/`status`, never the raw provider code.
 
     # A turn with an image that the provider rejects almost always means the
     # agent model is text-only — the most common, most actionable cause, and one
@@ -690,21 +703,21 @@ class _TurnEventSink:
         manual pass and mid-turn auto-compaction render identically (a live
         "compacting" indicator, then the separator)."""
         if isinstance(event, CompactionStarted):
-            await self._emit(_data_part(
-                "compaction", status="started",
+            await self._emit(_event_part(CompactionEvent(
+                status="started",
                 reason=event.reason,
                 messages_before=event.messages_before,
                 tokens_before=event.tokens_before,
-            ))
+            )))
         elif isinstance(event, CompactionDone):
-            await self._emit(_data_part(
-                "compaction", status="done",
+            await self._emit(_event_part(CompactionEvent(
+                status="done",
                 reason=event.reason,
                 ok=event.ok,
                 messages_before=event.messages_before,
                 messages_after=event.messages_after,
                 tokens_before=event.tokens_before,
-            ))
+            )))
 
     async def handle(self, event: TurnEvent) -> bool:
         """Consume one runtime event — emit its wire parts and advance turn state.
@@ -730,23 +743,22 @@ class _TurnEventSink:
             )
         elif isinstance(event, Thinking):
             await self.flush()
-            await self._emit(_data_part(
-                "thinking",
+            await self._emit(_event_part(ThinkingEvent(
                 text=event.text,
                 block_id=event.block_id,
-            ))
+            )))
         elif isinstance(event, ThinkingDone):
             await self.flush()
-            await self._emit(_data_part("thinking_done", duration_ms=event.duration_ms))
+            await self._emit(_event_part(ThinkingDoneEvent(duration_ms=event.duration_ms)))
         elif isinstance(event, Status):
             await self.flush()
-            await self._emit(_data_part("status", code=event.code))
+            await self._emit(_event_part(StatusEvent(code=event.code)))
         elif isinstance(event, ToolCall):
             await self.flush()
-            await self._emit(_data_part(
-                "tool_call", tool_name=event.name,
+            await self._emit(_event_part(ToolCallEvent(
+                tool_name=event.name,
                 arguments=event.arguments if event.arguments is not None else {}, tool_call_id=event.id,
-            ))
+            )))
         elif isinstance(event, ToolResult):
             await self.flush()
             await self._emit(_tool_result_part(
@@ -762,13 +774,12 @@ class _TurnEventSink:
             await self._save_conversation()
         elif isinstance(event, McpEvent):
             await self.flush()
-            await self._emit(_data_part(
-                "mcp_event",
+            await self._emit(_event_part(McpWireEvent(
                 server=event.server,
                 tool=event.tool,
                 event=event.event if event.event is not None else {},
                 tool_call_id=event.id,
-            ))
+            )))
         elif isinstance(event, Usage):
             await self.flush()
             cumulative = event.cumulative or {}
@@ -782,26 +793,25 @@ class _TurnEventSink:
                 "gen_ai.model.calls": cumulative.get("model_calls", 0),
             })
             _telemetry.record_usage(model_identifier, event.input_tokens, event.output_tokens)
-            await self._emit(_data_part(
-                "token_usage",
+            await self._emit(_event_part(TokenUsageEvent(
                 input_tokens=event.input_tokens,
                 output_tokens=event.output_tokens,
                 context_window=event.context_window,
-                cumulative={
-                    "input_tokens": cumulative.get("input_tokens", 0),
-                    "output_tokens": cumulative.get("output_tokens", 0),
-                    "total_tokens": cumulative.get("total_tokens", 0),
-                    "cache_read_tokens": cumulative.get("cache_read_tokens", 0),
-                    "reasoning_tokens": cumulative.get("reasoning_tokens", 0),
-                    "model_calls": cumulative.get("model_calls", 0),
-                },
-                agents={
-                    "input_tokens": agents.get("input_tokens", 0),
-                    "output_tokens": agents.get("output_tokens", 0),
-                    "total_tokens": agents.get("total_tokens", 0),
-                    "model_calls": agents.get("model_calls", 0),
-                },
-            ))
+                cumulative=CumulativeUsage(
+                    input_tokens=cumulative.get("input_tokens", 0),
+                    output_tokens=cumulative.get("output_tokens", 0),
+                    total_tokens=cumulative.get("total_tokens", 0),
+                    cache_read_tokens=cumulative.get("cache_read_tokens", 0),
+                    reasoning_tokens=cumulative.get("reasoning_tokens", 0),
+                    model_calls=cumulative.get("model_calls", 0),
+                ),
+                agents=AgentUsage(
+                    input_tokens=agents.get("input_tokens", 0),
+                    output_tokens=agents.get("output_tokens", 0),
+                    total_tokens=agents.get("total_tokens", 0),
+                    model_calls=agents.get("model_calls", 0),
+                ),
+            )))
         elif isinstance(event, Suspended):
             # The turn needs one or more human decisions before it can run its tool
             # batch. Surface each gate as its native DataPart so the app renders the
@@ -813,39 +823,37 @@ class _TurnEventSink:
             plans = event.plans or {}
             for gate in interactions:
                 if gate.get("kind") == "question":
-                    await self._emit(_data_part(
-                        "question", request_id=gate.get("request_id", ""),
+                    await self._emit(_event_part(QuestionEvent(
+                        request_id=gate.get("request_id", ""),
                         tool_call_id=gate.get("tool_call_id", ""),
                         questions=gate.get("questions", []) or [],
-                    ))
+                    )))
                 else:
-                    await self._emit(_data_part(
-                        "permission_request", request_id=gate.get("request_id", ""),
+                    await self._emit(_event_part(PermissionRequestEvent(
+                        request_id=gate.get("request_id", ""),
                         tool_call_id=gate.get("tool_call_id", ""),
                         command=gate.get("command", ""), justification=gate.get("justification", ""),
                         risk=gate.get("risk", ""),
-                    ))
+                    )))
             return await self._suspend(interactions, plans)
         elif isinstance(event, Error):
             await self.flush()
-            await self._emit(_data_part(
-                "error",
+            await self._emit(_event_part(ErrorEvent(
                 message=event.message or "error",
                 tool_call_id=event.id,
                 tool_name=event.tool,
-            ))
+            )))
         elif isinstance(event, GroupStarted):
             await self.flush()
-            await self._emit(_data_part(
-                "group_started",
-                path=[{"group_id": event.group_id, "step_id": event.step_id}],
+            await self._emit(_event_part(GroupStartedEvent(
+                path=[AgentPathSegment(group_id=event.group_id, step_id=event.step_id)],
                 agent_name=event.agent_name,
                 title=event.title,
                 tool_call_id=event.tool_call_id,
-            ))
+            )))
         elif isinstance(event, Steering):
             await self.flush()
-            await self._emit(_data_part("steering", text=event.text))
+            await self._emit(_event_part(SteeringEvent(text=event.text)))
         elif isinstance(event, (CompactionStarted, CompactionDone)):
             await self.flush()
             await self.emit_compaction(event)
@@ -1079,7 +1087,7 @@ class _TurnRunner:
             if ready is None:
                 await self._updater.update_status(
                     TaskState.input_required,
-                    self._updater.new_agent_message([_data_part("status", code="input_required")]),
+                    self._updater.new_agent_message([_event_part(StatusEvent(code="input_required"))]),
                     final=True,
                 )
                 return self._DONE
@@ -1111,7 +1119,7 @@ class _TurnRunner:
                     await self._emit(acknowledgement_part)
             except Exception as exception:
                 logger.exception("Work-habits acknowledgement failed: %s", exception)
-                await self._updater.failed(self._updater.new_agent_message([_data_part("error", **_safe_turn_error(exception))]))
+                await self._updater.failed(self._updater.new_agent_message([_event_part(ErrorEvent(**_safe_turn_error(exception)))]))
                 return self._DONE
         return None
 
@@ -1324,7 +1332,7 @@ class _TurnRunner:
                     if (block := _image_content_block(attachment)) is not None
                 ]
             elif image_attachments:
-                await self._emit(_data_part(**_attachment_warning_payload(len(image_attachments), model_identifier)))
+                await self._emit(_event_part(_attachment_warning_event(len(image_attachments), model_identifier)))
             if _model_supports_vision(model_identifier):
                 # Artifact-image annotations: alongside the structured facts, a vision model
                 # also gets the image itself with numbered circle badges stamped at each
@@ -1380,7 +1388,7 @@ class _TurnRunner:
         # category — never the raw exception text.
         logger.exception("Agent turn failed: %s", exception)
         await self._updater.failed(self._updater.new_agent_message(
-            [_data_part("error", **_safe_turn_error(exception, had_images=self._turn_has_images))]
+            [_event_part(ErrorEvent(**_safe_turn_error(exception, had_images=self._turn_has_images)))]
         ))
 
     async def _teardown(self) -> None:
@@ -1547,7 +1555,7 @@ class HarnessAgentExecutor(AgentExecutor):
             return
         message = Message(
             role=Role.agent,
-            parts=[_data_part(COMPACTION_KIND)],
+            parts=[_envelope_part(COMPACTION_KIND)],
             message_id=uuid.uuid4().hex,
             context_id=context_id,
             metadata=_harness_metadata_envelope({Metadata.COMPACTION: True}),
@@ -1808,7 +1816,7 @@ class HarnessAgentExecutor(AgentExecutor):
         # note in `execute`. It is still a real, replayable task streamed to viewers.
         message = Message(
             role=Role.agent,
-            parts=[_data_part(AUTONOMOUS_RESUME_KIND)],
+            parts=[_envelope_part(AUTONOMOUS_RESUME_KIND)],
             message_id=uuid.uuid4().hex,
             context_id=context_id,
             metadata=_harness_metadata_envelope({Metadata.AUTONOMOUS_RESUME: True}),
@@ -2037,7 +2045,7 @@ class HarnessAgentExecutor(AgentExecutor):
         await self._task_store.save(task)
         await updater.update_status(
             TaskState.input_required,
-            updater.new_agent_message([_data_part("status", code="input_required")]),
+            updater.new_agent_message([_event_part(StatusEvent(code="input_required"))]),
             final=True,
         )
         return True
@@ -2168,7 +2176,7 @@ class AgentRegistry:
                 data["decision"] = decision
             message = Message(
                 role=Role.user,
-                parts=[_data_part(INPUT_RESPONSE_KIND, **data)],
+                parts=[_envelope_part(INPUT_RESPONSE_KIND, **data)],
                 message_id=uuid.uuid4().hex,
                 task_id=task.id,
                 context_id=context_id,

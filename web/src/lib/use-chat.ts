@@ -997,12 +997,12 @@ function reduceAgentLaneEvent(state: ReduceState, data: Record<string, unknown>)
     state.agentGroups = withStep(state.agentGroups, groupId, stepId, updater);
   };
   // Typed against the same generated union as the root reducer; `data` stays in scope for the
-  // few helpers that take a raw record and for two fields the codegen doesn't surface on their
-  // model (`title` is stripped by the schema generator; `block_id` rides a relayed text event).
+  // few helpers that take a raw record and for `block_id`, which rides a relayed text event and
+  // is not on the text model.
   const event = data as unknown as WireEvent;
   switch (event.kind) {
     case "group_started":
-      ensureLaneGroup(state, groupId, stepId, event.agent_name ?? "", String(data.title ?? ""), event.tool_call_id ?? "");
+      ensureLaneGroup(state, groupId, stepId, event.agent_name ?? "", event.title ?? "", event.tool_call_id ?? "");
       break;
     case "text":
       ensureLaneGroup(state, groupId, stepId);
@@ -1329,7 +1329,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "warning": {
       finishRunningThinking(state);
       state.lane = null;
-      const title = String(data.title ?? "Warning");
+      const title = event.title ?? "Warning";
       const message = event.message ?? "";
       state.messages = [
         ...state.messages,
