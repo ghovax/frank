@@ -114,6 +114,13 @@ class Limit(Enum):
     EXPECTATION_TIMEOUT_MS = (8_000, _Scale.TIMEOUT)  # waiting for a model-stated outcome to appear
     SIGTERM_GRACE_SECONDS = (2.0, _Scale.TIMEOUT)            # after SIGTERM, before SIGKILL, on cancel
     RIPGREP_SECONDS = (30.0, _Scale.TIMEOUT)
+    # How long a backgroundable tool waits inline before it hands the work to the background
+    # runner (a non-killing wait window, the model-overridable `timeout` tool parameter's
+    # default — NOT a network deadline). Central so the three tools' defaults live in one place
+    # rather than as scattered private module constants.
+    BASH_SYNC_WINDOW_SECONDS = (60.0, _Scale.TIMEOUT)        # bash: sync by default, long window
+    SLOW_TOOL_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)   # fetch_url / download_file: short window
+    WEB_SEARCH_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)  # web_search: short window
     AX_MESSAGING_SECONDS = (2.0, _Scale.TIMEOUT)             # per-AX-message ceiling against a hung app
     SCREENCAPTURE_SECONDS = (15.0, _Scale.TIMEOUT)
     OPEN_URL_SECONDS = (5.0, _Scale.TIMEOUT)

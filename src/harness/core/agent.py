@@ -849,13 +849,6 @@ class _PhaseStep:
     directive: str = _PROCEED
 
 
-# How long an expectedly-slow network tool (fetch_url, download_file) waits synchronously
-# before it auto-backgrounds: a fast call returns its result inline, a slow one backgrounds
-# and delivers on its own, so the turn is never blocked on the network. Scaled by the tuning
-# timeout knob at the call site.
-_SLOW_TOOL_SYNC_DEFAULT_SECONDS = 10.0
-
-
 class AgentRuntime:
     # A turn runs until the model is done or the user interrupts it — there is no tool-call
     # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
@@ -3533,18 +3526,24 @@ class AgentRuntime:
 
     async def _run_backgroundable_tool(
         self, tool_name: str, tool_call_identifier: str, coroutine, *, started_code: str,
+        sync_window: float, background: bool,
     ) -> AsyncIterator[TurnEvent]:
-        """Run an expectedly-slow tool's work as a background job with a short synchronous
-        window (the proven bash/web_search pattern). A call that finishes within the window
-        returns its result inline — the common, fast case; a slow one backgrounds and its
-        result is delivered later via the resume pump, so the turn is never blocked. The
-        coroutine must return the tool-result payload as a string (JSON or plain text)."""
+        """Run an expectedly-slow tool's work as a background job with a synchronous window
+        (the proven bash/web_search pattern). A call that finishes within ``sync_window``
+        seconds returns its result inline — the common, fast case; one still running past it
+        (or ``background=True``, which skips the wait entirely) backgrounds and its result is
+        delivered later via the resume pump, so the turn is never blocked. ``sync_window`` is
+        the model's ``timeout`` tool parameter — a non-killing inline-wait window, the same
+        meaning bash gives ``timeout`` — scaled by the tuning knob here. The coroutine must
+        return the tool-result payload as a string (JSON or plain text)."""
         task_identifier = self._background.spawn(
             tool_name, coroutine, tool_call_identifier=tool_call_identifier,
         )
-        settled = await self._background.settle_inline(
-            task_identifier, active_tuning().scale_timeout(_SLOW_TOOL_SYNC_DEFAULT_SECONDS)
-        )
+        settled = None
+        if not background:
+            settled = await self._background.settle_inline(
+                task_identifier, active_tuning().scale_timeout(sync_window)
+            )
         if settled is not None:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(settled.result))
         else:
@@ -3559,10 +3558,12 @@ class AgentRuntime:
     ) -> AsyncIterator[TurnEvent]:
         url = str(tool_arguments.get("url", ""))
         fmt = str(tool_arguments.get("format", "markdown") or "markdown")
-        timeout = int(tool_arguments.get("timeout", 30) or 30)
+        sync_window = float(tool_arguments.get("timeout", Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline) or Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline)
+        hard_deadline = int(tool_arguments.get("hard_deadline", 30) or 30)
+        background = bool(tool_arguments.get("background", False))
         async for event in self._run_backgroundable_tool(
-            tool_name, tool_call_identifier, file_tools.fetch_url(url, fmt, timeout),
-            started_code="fetch_url_started",
+            tool_name, tool_call_identifier, file_tools.fetch_url(url, fmt, hard_deadline),
+            started_code="fetch_url_started", sync_window=sync_window, background=background,
         ):
             yield event
 
@@ -3581,13 +3582,46 @@ class AgentRuntime:
         executor = resolved_location.executor
         url = str(tool_arguments.get("url", ""))
         destination = str(tool_arguments.get("path", ""))
-        timeout = int(tool_arguments.get("timeout", 120) or 120)
+        sync_window = float(tool_arguments.get("timeout", Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline) or Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline)
+        hard_deadline = int(tool_arguments.get("hard_deadline", 120) or 120)
+        background = bool(tool_arguments.get("background", False))
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)
-        async for event in self._run_backgroundable_tool(
-            tool_name, tool_call_identifier, file_tools.download_file(executor, url, resolved, timeout),
-            started_code="download_file_started",
-        ):
-            yield event
+        # A download is a tracked-tree write, so it takes the same filesystem lease as an
+        # edit — even when it backgrounds. The lease is held until the write completes: on an
+        # inline finish the `finally` releases it; on a background finish it is transferred to
+        # the job's done-callback (the local token is cleared so `finally` does not double
+        # release). A remote destination mutates the remote host, so no local lease applies.
+        lease_token = ""
+        if not policy.is_remote:
+            try:
+                lease_token = await self._acquire_filesystem_lease(
+                    scope="file", path=resolved,
+                    description=f"{tool_name}: {resolved}",
+                    working_directory=policy.working_directory,
+                )
+            except FileLeaseConflict as exception:
+                yield Error(id=tool_call_identifier, code="filesystem_lease_conflict",
+                    message=str(exception), tool=tool_name)
+                return
+        try:
+            backgrounded_task_id = ""
+            async for event in self._run_backgroundable_tool(
+                tool_name, tool_call_identifier, file_tools.download_file(executor, url, resolved, hard_deadline),
+                started_code="download_file_started", sync_window=sync_window, background=background,
+            ):
+                if (
+                    isinstance(event, ToolResult) and isinstance(event.result, dict)
+                    and event.result.get("code") == "download_file_started"
+                ):
+                    backgrounded_task_id = str(event.result.get("task_identifier", ""))
+                yield event
+            if lease_token and backgrounded_task_id and self._background.add_done_callback(
+                backgrounded_task_id,
+                lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
+            ):
+                lease_token = ""
+        finally:
+            self._release_filesystem_lease(lease_token)
 
 
     async def _tool_edit_or_write(

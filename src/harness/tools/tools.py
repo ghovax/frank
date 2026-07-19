@@ -30,11 +30,8 @@ _mcp_client_manager: Any | None = None
 # old 2s auto-background window is exactly what surprised the model into re-running
 # mutating commands (a `gh pr merge` that crossed the threshold looked unfinished and got
 # issued twice). Genuinely long work is the model's cue to pass background=true or raise
-# timeout. The default window is scaled by the tuning timeout knob at the call site.
-_BASH_SYNC_DEFAULT_SECONDS = 60.0
-# web_search's default sync window is shorter — most searches are quick, and a slow one
-# backgrounds and delivers on its own; it is a background-by-default tool.
-_WEB_SEARCH_SYNC_DEFAULT_SECONDS = 10.0
+# timeout. The default windows live centrally in Limit (BASH_/SLOW_TOOL_/WEB_SEARCH_SYNC_
+# WINDOW_SECONDS) and are scaled by the tuning timeout knob at each call site.
 
 
 def set_exa_client(client: Exa | None) -> None:
@@ -61,7 +58,7 @@ async def bash(
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
-    timeout: float = _BASH_SYNC_DEFAULT_SECONDS,
+    timeout: float = Limit.BASH_SYNC_WINDOW_SECONDS.baseline,
 ) -> str:
     """Execute a bash command and return its output.
 
@@ -299,7 +296,7 @@ async def web_search(
     )
     # Give the search a short window to finish inline. The common case returns the
     # real results directly, so the model never juggles a pending handle at all.
-    settled = await jobs.settle_inline(task_identifier, active_tuning().scale_timeout(_WEB_SEARCH_SYNC_DEFAULT_SECONDS))
+    settled = await jobs.settle_inline(task_identifier, active_tuning().duration(Limit.WEB_SEARCH_SYNC_WINDOW_SECONDS))
     if settled is not None:
         return settled.result
     # The started acknowledgement intentionally omits any file path or other
@@ -805,17 +802,23 @@ def write_file(
 async def fetch_url(
     url: str,
     format: Literal["markdown", "text", "html"] = "markdown",
-    timeout: int = 30,
+    timeout: float = Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline,
+    hard_deadline: float = 30,
+    background: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Fetch content from a URL and convert it to the requested format.
 
     Use this for a specific URL already known; use ``web_search`` to discover one. It returns page text and handles JavaScript-rendered pages and common anti-bot walls through rendering fallbacks. Very large responses are truncated inline and include an ``output_file`` containing the full conversion. Use ``download_file`` for raw binary files. This tool is read-only.
 
+    Sync-if-fast: it waits up to ``timeout`` seconds for the fetch inline and returns the content directly; a fetch still running past ``timeout`` moves to the background and its result is injected when it lands, so a slow page never blocks your turn. ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``) — raise it to wait longer, or set ``background=true`` to background immediately. ``hard_deadline`` is the separate network cutoff that actually aborts the request.
+
     Arguments:
         url: Fully-formed https URL (http is upgraded to https automatically).
         format: "markdown" (default), "text", or "html".
-        timeout: Request timeout in seconds.
+        timeout: Inline-wait window in seconds before the fetch backgrounds (does not abort it).
+        hard_deadline: Network deadline in seconds that aborts the request itself.
+        background: Skip the inline wait and background the fetch immediately.
         justification: A concise, user-facing reason for this fetch.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -826,18 +829,24 @@ async def download_file(
     url: str,
     path: str,
     location: str = "",
-    timeout: int = 120,
+    timeout: float = Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline,
+    hard_deadline: float = 120,
+    background: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
     """Download a file from a URL to a path, defeating typical bot/TLS blocks.
 
     Uses full browser TLS/HTTP2 fingerprint impersonation (and the configured proxy), so files that a plain download gets blocked from still come through. For reading a page's text, use fetch_url instead — this saves raw bytes (PDFs, archives, data). It cannot pass an interactive JavaScript challenge or CAPTCHA. This tool writes a file and is unavailable to read-only agents.
 
+    Sync-if-fast: it waits up to ``timeout`` seconds for the download inline; one still running past ``timeout`` moves to the background and completes on its own (the destination path is held against concurrent edits until it finishes). ``timeout`` is that inline-wait window (the same meaning as bash's ``timeout``); ``hard_deadline`` is the separate network cutoff that aborts the transfer; ``background=true`` backgrounds immediately.
+
     Arguments:
         url: Fully-formed http(s) URL of the file to download.
         path: Destination path (relative to the working directory, or absolute).
         location: The project location to save into — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        timeout: Request timeout in seconds.
+        timeout: Inline-wait window in seconds before the download backgrounds (does not abort it).
+        hard_deadline: Network deadline in seconds that aborts the transfer itself.
+        background: Skip the inline wait and background the download immediately.
         justification: A concise, user-facing reason for this download.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
