@@ -1,11 +1,13 @@
 """Projects routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from harness.server.models import (
+    LocationInput,
+    ProjectCreateRequest,
+)
 from harness.server import app as _app
 from harness.server.app import (
     HTTPException,
-    LocationInput,
     Path,
-    ProjectCreateRequest,
     SessionRecord,
     SshExecutor,
     _create_location,

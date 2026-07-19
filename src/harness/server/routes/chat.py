@@ -1,12 +1,14 @@
 """Chat routes (split from harness.server.app)."""
 from fastapi import APIRouter
-from harness.server.app import (
-    EventSourceResponse,
-    HTTPException,
+from harness.server.models import (
     PermissionModeRequest,
     PermissionRequest,
     QuestionRequest,
     SteeringRequest,
+)
+from harness.server.app import (
+    EventSourceResponse,
+    HTTPException,
     _abort_pending_input,
     _broadcaster,
     _executor_for_context,

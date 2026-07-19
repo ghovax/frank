@@ -1,11 +1,13 @@
 """Agents routes (split from harness.server.app)."""
 from fastapi import APIRouter
-from harness.server import app as _app
-from harness.server.app import (
-    AGENT_CARD_PATH,
+from harness.server.models import (
     AgentConfigurationUpdateRequest,
     AgentInfo,
     AgentsList,
+)
+from harness.server import app as _app
+from harness.server.app import (
+    AGENT_CARD_PATH,
     HTTPException,
     _agent_configuration_for_request,
     _agent_configuration_payload,

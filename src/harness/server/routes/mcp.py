@@ -1,9 +1,11 @@
 """Mcp routes (split from harness.server.app)."""
 from fastapi import APIRouter
-from harness.server import app as _app
-from harness.server.app import (
+from harness.server.models import (
     MCPResourceReadRequest,
     MCPToolCallRequest,
+)
+from harness.server import app as _app
+from harness.server.app import (
     _configuration,
     _ensure_mcp_servers_for,
 )

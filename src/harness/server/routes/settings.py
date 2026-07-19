@@ -1,17 +1,19 @@
 """Settings routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from harness.server.models import (
+    CompactionUpdateRequest,
+    ComputerControlUpdateRequest,
+    SandboxUpdateRequest,
+    SettingsUpdateRequest,
+    UserContextUpdateRequest,
+)
 from harness.server import app as _app
 from harness.server.app import (
     ChatGPTLoginFlow,
-    CompactionUpdateRequest,
-    ComputerControlUpdateRequest,
     HTTPException,
     MODELS,
     ModelDefinition,
     PROVIDERS,
-    SandboxUpdateRequest,
-    SettingsUpdateRequest,
-    UserContextUpdateRequest,
     _agent_configuration_for_request,
     _apply_live_credentials,
     _configuration,

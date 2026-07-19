@@ -1,9 +1,11 @@
 """Uploads routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from harness.server.models import (
+    AttachmentReference,
+)
 from fastapi.responses import FileResponse
 from harness.server import app as _app
 from harness.server.app import (
-    AttachmentReference,
     File,
     HTTPException,
     Path,

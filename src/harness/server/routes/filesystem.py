@@ -1,9 +1,11 @@
 """Filesystem routes (split from harness.server.app)."""
 from fastapi import APIRouter
-from harness.server import app as _app
-from harness.server.app import (
+from harness.server.models import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
+)
+from harness.server import app as _app
+from harness.server.app import (
     EventSourceResponse,
     HTTPException,
     Request,

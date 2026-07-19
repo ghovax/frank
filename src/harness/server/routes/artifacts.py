@@ -1,5 +1,9 @@
 """Artifacts routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from harness.server.models import (
+    ArtifactAnnotationSaveRequest,
+    ArtifactRestoreRequest,
+)
 from harness.server.app import (
     FileResponse,
     HTMLResponse,

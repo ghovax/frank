@@ -1,10 +1,12 @@
 """Sessions routes (split from harness.server.app)."""
 from fastapi import APIRouter
+from harness.server.models import (
+    SessionDraftRequest,
+)
 from harness.server import app as _app
 from harness.server.app import (
     EventSourceResponse,
     Request,
-    SessionDraftRequest,
     SessionRecord,
     _ContextEventBus,
     _abort_pending_input,
