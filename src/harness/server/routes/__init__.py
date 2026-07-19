@@ -1,3 +1,4 @@
-"""FastAPI route modules, split out of harness.server.app by concern. Each exposes a
-``router`` that app.py registers; handlers reach shared runtime state through the
-``harness.server.app`` module and pull stable helpers/models from it by name."""
+"""FastAPI route modules, split by concern. Each exposes a ``router`` that
+:mod:`harness.server.app` registers; handlers reach shared runtime state through the
+:mod:`harness.server.runtime` module and pull stable helpers by name, and request/response
+DTOs from :mod:`harness.server.models` — never from the entry module, so there is no cycle."""

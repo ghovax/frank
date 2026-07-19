@@ -1,4 +1,4 @@
-"""Terminals routes (split from harness.server.app)."""
+"""Terminals routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
 from contextlib import suppress
 from fastapi import HTTPException
@@ -7,8 +7,8 @@ from fastapi import WebSocketDisconnect
 from pathlib import Path
 import asyncio
 import json
-from harness.server import app as _app
-from harness.server.app import (
+from harness.server import runtime as _app
+from harness.server.runtime import (
     TerminalSession,
     _delete_terminal_state,
     _list_terminal_states,

@@ -12,8 +12,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from harness.server import app as _app
-from harness.server.app import _reload_remote_agents, _publish_broadcast
+from harness.server import runtime as _app
+from harness.server.runtime import _reload_remote_agents, _publish_broadcast
 
 router = APIRouter()
 

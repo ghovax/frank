@@ -1,4 +1,4 @@
-"""Uploads routes (split from harness.server.app)."""
+"""Uploads routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
 from datetime import datetime
 from datetime import timezone
@@ -14,7 +14,7 @@ from harness.server.models import (
     AttachmentReference,
 )
 from fastapi.responses import FileResponse
-from harness.server import app as _app
+from harness.server import runtime as _app
 
 router = APIRouter()
 

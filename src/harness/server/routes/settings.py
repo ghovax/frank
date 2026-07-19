@@ -1,5 +1,6 @@
-"""Settings routes (split from harness.server.app)."""
+"""Settings routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
+import harness.core.configuration as _configuration
 from fastapi import HTTPException
 from harness.core.chatgpt_oauth import ChatGPTLoginFlow
 from harness.core.chatgpt_oauth import clear_tokens
@@ -21,11 +22,10 @@ from harness.server.models import (
     SettingsUpdateRequest,
     UserContextUpdateRequest,
 )
-from harness.server import app as _app
-from harness.server.app import (
+from harness.server import runtime as _app
+from harness.server.runtime import (
     _agent_configuration_for_request,
     _apply_live_credentials,
-    _configuration,
     _configuration_lock,
     _executors,
     _load_agent_sidecar,

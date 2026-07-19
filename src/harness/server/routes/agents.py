@@ -1,4 +1,4 @@
-"""Agents routes (split from harness.server.app)."""
+"""Agents routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from harness.core.configuration import list_agents
@@ -9,8 +9,8 @@ from harness.server.models import (
     AgentInfo,
     AgentsList,
 )
-from harness.server import app as _app
-from harness.server.app import (
+from harness.server import runtime as _app
+from harness.server.runtime import (
     AGENT_CARD_PATH,
     _agent_configuration_for_request,
     _agent_configuration_payload,

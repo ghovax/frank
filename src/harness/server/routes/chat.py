@@ -1,4 +1,4 @@
-"""Chat routes (split from harness.server.app)."""
+"""Chat routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from sse_starlette.sse import EventSourceResponse
@@ -10,7 +10,7 @@ from harness.server.models import (
     QuestionRequest,
     SteeringRequest,
 )
-from harness.server.app import (
+from harness.server.runtime import (
     _abort_pending_input,
     _broadcaster,
     _executor_for_context,

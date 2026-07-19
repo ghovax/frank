@@ -1,4 +1,4 @@
-"""Filesystem routes (split from harness.server.app)."""
+"""Filesystem routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request
@@ -12,8 +12,8 @@ from harness.server.models import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
 )
-from harness.server import app as _app
-from harness.server.app import (
+from harness.server import runtime as _app
+from harness.server.runtime import (
     _GIT_STATUS_WATCH_FILTER,
     _git_status_changes_relevant,
     _git_status_key,

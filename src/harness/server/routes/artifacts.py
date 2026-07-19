@@ -1,4 +1,4 @@
-"""Artifacts routes (split from harness.server.app)."""
+"""Artifacts routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request
@@ -17,7 +17,8 @@ from harness.server.models import (
     ArtifactAnnotationSaveRequest,
     ArtifactRestoreRequest,
 )
-from harness.server.app import (
+from harness.tools.tools import _inject_artifact_runtime
+from harness.server.runtime import (
     _ARTIFACT_CONTEXT_PREFIX,
     _artifact_annotation_records,
     _artifact_index,
@@ -25,13 +26,12 @@ from harness.server.app import (
     _decode_artifact_context,
     _delete_artifact_annotation_record,
     _executor_for_location_uri,
-    _inject_artifact_runtime,
     _publish_broadcast,
     _restore_artifact,
     _save_artifact_annotation_record,
     _surface_records,
 )
-from harness.server.app import (
+from harness.server.runtime import (
     _PROXY_DROP_HEADERS,
     _get_proxy_client,
     _proxy_forward_headers,
