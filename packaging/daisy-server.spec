@@ -1,4 +1,4 @@
-# PyInstaller spec that freezes the harness FastAPI server (server.py) into a
+# PyInstaller spec that freezes the daisy FastAPI server (server.py) into a
 # self-contained binary the Daisy desktop app bundles and spawns for local mode.
 #
 # The dependency tree is heavy and full of *dynamic* imports (litellm loads
@@ -14,7 +14,7 @@ hiddenimports = []
 
 # Packages whose submodules/data must be collected wholesale.
 _collect = [
-    "harness",
+    "daisy",
     "litellm",
     "langchain",
     "langchain_core",
@@ -61,7 +61,7 @@ for package in _collect:
         print(f"[daisy-server.spec] skipping {package}: {error}")
 
 # The shipped agents/skills/MCP defaults live in the repo-root `.agents/` — a SIBLING of
-# the `harness` package, so `collect_all("harness")` never sees them. Bundle them at the
+# the `harness` package, so `collect_all("daisy")` never sees them. Bundle them at the
 # frozen root as `.agents/...` so `_bundled_dotagents_root()` (frozen-aware, sys._MEIPASS)
 # finds them: this is the server-shipped base layer of agents the app always has, and the
 # source the app seeds editable copies from on first run. `memories` is user data — not shipped.
@@ -106,12 +106,12 @@ if _os.path.isfile(_mcp):
 # surface (messages/browser, messages/computer), and the browser selection script (scripts/*.js).
 # The tools degrade without them, so bundle every file, preserving its folder, to be certain.
 for _asset_subdir in ("messages", "scripts"):
-    _asset_source = _os.path.join(_repo_root, "src", "harness", "computer", _asset_subdir)
+    _asset_source = _os.path.join(_repo_root, "src", "daisy", "computer", _asset_subdir)
     for _dirpath, _dirnames, _filenames in _os.walk(_asset_source):
         for _asset_name in _filenames:
             if _asset_name.endswith((".md", ".js")):
                 _relative = _os.path.relpath(_dirpath, _asset_source)
-                _destination = _os.path.join("harness", "computer", _asset_subdir, _relative)
+                _destination = _os.path.join("daisy", "computer", _asset_subdir, _relative)
                 datas.append((_os.path.join(_dirpath, _asset_name), _destination))
 
 # Distributions whose runtime version is read via importlib.metadata.
