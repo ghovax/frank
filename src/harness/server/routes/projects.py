@@ -22,10 +22,10 @@ from harness.server.runtime import (
     _project_name,
     _project_payload,
     _projects_payload,
-    _prune_session_artifacts,
     _update_location,
 )
 from harness.server.services.broadcast import _publish_broadcast
+from harness.server.services.artifacts import _prune_session_artifacts
 
 router = APIRouter()
 
