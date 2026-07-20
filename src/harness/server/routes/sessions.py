@@ -1,4 +1,4 @@
-"""Sessions routes (split from harness.server.runtime)."""
+"""Sessions routes (split from harness.server.boot)."""
 from fastapi import APIRouter
 from harness.server.database import SessionRecord
 from fastapi import Request

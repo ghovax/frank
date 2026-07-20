@@ -1,7 +1,7 @@
 """ASGI entry point for the harness server.
 
 The server runtime — the FastAPI ``app``, its shared state, and every operation the routes
-call — lives in :mod:`harness.server.runtime`, which imports no route module. This entry
+call — lives in :mod:`harness.server.boot`, which imports no route module. This entry
 sits on top: it takes that ``app``, mounts the split route routers onto it, and exposes
 ``run_server``. Keeping the router mounting here (the one place that imports the route
 modules) is what breaks the old ``app -> routes -> app`` import cycle: the routes import the
@@ -11,7 +11,7 @@ runtime, never this module.
 import importlib
 
 from harness.server import state
-from harness.server.runtime import app
+from harness.server.boot import app
 
 # Register the split route modules WITHOUT binding their names into this module's namespace:
 # several of them (notably `artifacts`) collide with module-level aliases used at runtime —

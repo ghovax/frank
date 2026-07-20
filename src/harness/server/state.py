@@ -30,7 +30,8 @@ if TYPE_CHECKING:
     from harness.core.file_leases import FileLeaseManager
     from harness.core.session_workspaces import SessionWorkspaceManager
     from harness.core.chatgpt_oauth import ChatGPTLoginFlow
-    from harness.server.runtime import TerminalSessionManager, _CaptureRequest
+    from harness.server.services.terminals import TerminalSessionManager
+    from harness.server.services.artifacts import _CaptureRequest
 
 
 class Broadcaster:

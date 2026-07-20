@@ -1,4 +1,4 @@
-"""Terminals routes (split from harness.server.runtime)."""
+"""Terminals routes (split from harness.server.boot)."""
 from harness.server.services.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
 from fastapi import APIRouter
 from contextlib import suppress

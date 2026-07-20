@@ -1,4 +1,4 @@
-"""Projects routes (split from harness.server.runtime)."""
+"""Projects routes (split from harness.server.boot)."""
 from fastapi import APIRouter
 from harness.server.database import SessionRecord
 from fastapi import HTTPException
@@ -11,7 +11,7 @@ from harness.server.models import (
     LocationInput,
     ProjectCreateRequest,
 )
-from harness.server import runtime as _app
+from harness.server import boot as _boot
 from harness.server import state
 from harness.server.services.broadcast import _publish_broadcast
 from harness.server.services.artifacts import _prune_session_artifacts
@@ -77,7 +77,7 @@ async def get_project(project_id: str):
 async def delete_project(project_id: str):
     # There is always exactly one active project in the UI, so the last one can't be
     # deleted — that would leave an empty state the redesigned app no longer has.
-    if await asyncio.to_thread(_app._project_count) <= 1:
+    if await asyncio.to_thread(_boot._project_count) <= 1:
         raise HTTPException(status_code=400, detail="Can't delete the only project.")
     # Prune each session's artifact versions (shadow-git branches + index rows) while its
     # locations are still resolvable, then delete the project and its rows.

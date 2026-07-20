@@ -1,12 +1,13 @@
-"""The harness server runtime: the FastAPI ``app``, its shared singleton state, the
-database/ORM models, and every operation the route modules call.
+"""The server's composition root: it builds the FastAPI ``app``, wires the auth
+middleware and CORS handler, mounts each configured agent's A2A sub-app, drives the
+startup/shutdown lifespan, and runs the config/agent/host watchers.
 
-This module owns the runtime — it imports no route module, so a route handler can import
-the ``app``, the shared singletons, and the helper operations from here without the
-import cycle that used to run ``app -> routes -> app``. The thin :mod:`harness.server.app`
-sits on top: it takes this ``app``, mounts the split routers onto it, and exposes
-``run_server``. Per-agent A2A sub-apps are still mounted onto ``app`` here (see
-``_mount_agent``); only the REST/route routers are mounted by the entry module.
+The domain logic it orchestrates lives in :mod:`harness.server.services` (per concern),
+the shared singletons in :mod:`harness.server.state`, the ORM in
+:mod:`harness.server.database`, and the DTOs in :mod:`harness.server.models` — this module
+imports those, never a route module, so there is no ``app -> routes -> app`` cycle. The
+thin :mod:`harness.server.app` sits on top: it takes this ``app``, mounts the REST route
+routers onto it, and exposes ``run_server``.
 """
 
 import asyncio

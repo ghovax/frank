@@ -1,4 +1,4 @@
-"""Settings routes (split from harness.server.runtime)."""
+"""Settings routes (split from harness.server.boot)."""
 from fastapi import APIRouter
 import harness.core.configuration as _configuration
 from fastapi import HTTPException
@@ -22,7 +22,7 @@ from harness.server.models import (
     SettingsUpdateRequest,
     UserContextUpdateRequest,
 )
-from harness.server import runtime as _app
+from harness.server import boot as _boot
 from harness.server import state
 from harness.server.services.broadcast import _publish_broadcast
 from harness.server.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
@@ -37,13 +37,13 @@ router = APIRouter()
 async def full_disk_access_status():
     """Whether the server process can read Full-Disk-Access-protected data (Screen Time,
     Safari history). Drives the Settings banner + button for the user-context feature."""
-    return {"granted": await asyncio.to_thread(_app._full_disk_access_granted)}
+    return {"granted": await asyncio.to_thread(_boot._full_disk_access_granted)}
 
 
 @router.post("/system/full-disk-access/open")
 async def open_full_disk_access_settings():
     """Open System Settings to the Full Disk Access pane so the user can add Daisy."""
-    await asyncio.to_thread(_app._open_full_disk_access_settings)
+    await asyncio.to_thread(_boot._open_full_disk_access_settings)
     return {"ok": True}
 
 
@@ -51,22 +51,22 @@ async def open_full_disk_access_settings():
 async def accessibility_status():
     """Whether the server can control other apps (read the AX tree, synthesize input) —
     the permission the computer-use tool needs. Drives the Settings banner/button."""
-    return {"granted": await asyncio.to_thread(_app._accessibility_granted)}
+    return {"granted": await asyncio.to_thread(_boot._accessibility_granted)}
 
 
 @router.post("/system/accessibility/open")
 async def open_accessibility_settings():
     """Trigger the system Accessibility prompt and open the pane so the user can grant Daisy."""
-    await asyncio.to_thread(_app._request_accessibility)
-    await asyncio.to_thread(_app._open_accessibility_settings)
+    await asyncio.to_thread(_boot._request_accessibility)
+    await asyncio.to_thread(_boot._open_accessibility_settings)
     return {"ok": True}
 
 
 @router.post("/system/screen-recording/open")
 async def open_screen_recording_settings():
     """Trigger the system Screen Recording prompt and open the pane so the user can grant Daisy."""
-    await asyncio.to_thread(_app._request_screen_recording)
-    await asyncio.to_thread(_app._open_screen_recording_settings)
+    await asyncio.to_thread(_boot._request_screen_recording)
+    await asyncio.to_thread(_boot._open_screen_recording_settings)
     return {"ok": True}
 
 

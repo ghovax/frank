@@ -1,4 +1,4 @@
-"""Filesystem routes (split from harness.server.runtime)."""
+"""Filesystem routes (split from harness.server.boot)."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request

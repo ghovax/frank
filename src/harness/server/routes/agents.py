@@ -1,4 +1,4 @@
-"""Agents routes (split from harness.server.runtime)."""
+"""Agents routes (split from harness.server.boot)."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from harness.core.configuration import list_agents
@@ -10,7 +10,7 @@ from harness.server.models import (
     AgentsList,
 )
 from harness.server import state
-from harness.server.runtime import (
+from harness.server.boot import (
     _ensure_agents_for,
 )
 from harness.server.services.broadcast import _publish_broadcast
