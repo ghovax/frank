@@ -10,19 +10,15 @@ sits on top: it takes this ``app``, mounts the split routers onto it, and expose
 """
 
 import asyncio
-import hashlib
 import hmac
 import ipaddress
 import jwt
-import uuid
 import logging
 import re
-import subprocess
 
 import httpx
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +27,18 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from harness.server import state
+from harness.server.services.projects import (
+    _ensure_default_project,
+)
+from harness.server.services.settings import (
+    _configuration_digest,
+    _rebuild_web_fetch_clients,
+    _reload_configuration_from_disk,
+)
+from harness.server.services.mcp import (
+    _ensure_mcp_servers_for,
+    _reload_mcp,
+)
 from harness.server.services.agents import (
     AGENT_CARD_PATH,
     PUBLIC_BASE_URL,
@@ -44,7 +52,6 @@ from harness.server.services.sessions import (
     _claim_work_habits_acknowledgement,
     _ensure_session_workspace,
     _record_session_visible,
-    _reset_work_habits_acknowledgements,
     _session_permission_mode_for,
 )
 from harness.server.services.artifacts import (
@@ -52,14 +59,7 @@ from harness.server.services.artifacts import (
     _capture_worker,
 )
 from harness.server.services.locations import (
-    _add_location_row,
-    _derive_location_name,
-    _existing_location_entries,
-    _iso_now,
-    _locations_conflict_message,
     _resolve_session_locations,
-    _serialize_location,
-    _serialize_project,
 )
 from harness.server.services.broadcast import (
     _notify_filesystem_lease_state,
@@ -72,17 +72,10 @@ from harness.server.services.terminals import (
     TerminalSessionManager,
 )
 from harness.server.database import (
-    SessionRecord,
-    ProjectRecord,
-    LocationRecord,
     _apply_history_schema,
 )
 from watchfiles import awatch
 from dotenv import load_dotenv
-from harness.server.models import (
-    LocationInput,
-    ProjectCreateRequest,
-)
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
@@ -108,7 +101,6 @@ from harness.core.configuration import (
     database_file_path,
     harness_home_directory,
     list_agent_route_names,
-    save_api_keys,
     seed_home_agents,
 )
 from harness.core.composio_router import composio_mcp_servers
@@ -117,13 +109,11 @@ from harness.core.background import reap_orphaned_processes
 from harness.core.file_leases import FileLeaseManager
 from harness.core.session_workspaces import SessionWorkspaceManager
 from harness.core.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
-from harness.locations import ssh_hosts as _ssh_hosts
 from harness.tools.tools import (
     cancel_all_background_tasks,
     set_exa_client,
     set_mcp_client_manager,
 )
-from harness.tools.file_tools import set_firecrawl_client, set_jina_api_key, set_proxy_url
 from harness.core.tuning import set_tuning, tuning_from_policy
 
 # Load .env (gitignored) so API keys are available via the environment without
@@ -223,9 +213,6 @@ load_dotenv()
 
 
 
-def _project_name(path: str) -> str:
-    normalized = path.rstrip("/\\")
-    return Path(normalized).name or normalized or path
 
 
 
@@ -432,29 +419,6 @@ def _watched_a2a_paths() -> list[str]:
     return watched
 
 
-async def _reload_mcp() -> None:
-    """Re-read mcp.json and apply the server set live: reconcile the client manager
-    (start new servers, stop removed/disabled ones, keep unchanged ones connected)
-    and drop cached runtimes so the next turn rebuilds its tools with the new set.
-    No server restart required."""
-    assert state._global_configuration is not None
-    # Serialize with the settings endpoints and the configuration watcher: they all
-    # rebuild the shared `_mcp_manager`, so overlapping runs would clobber it.
-    async with state._configuration_lock:
-        state._global_configuration.mcp = GlobalConfiguration.load().mcp
-        # Re-fold the startup-provisioned Composio server back in so a live mcp.json
-        # edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
-        state._global_configuration.mcp.servers.update(state._composio_servers)
-        enabled = state._global_configuration.mcp.enabled_servers()
-        if state._mcp_manager is None:
-            if enabled:
-                state._mcp_manager = MCPClientManager(enabled)
-                await state._mcp_manager.start()
-                set_mcp_client_manager(state._mcp_manager)
-        else:
-            await state._mcp_manager.reconcile(enabled)
-        for executor in state._executors.values():
-            executor.reset_runtimes()
 
 
 def _configure_telemetry(configuration: GlobalConfiguration) -> None:
@@ -518,36 +482,6 @@ async def _poll_remote_agent_health(interval_seconds: float = 300.0) -> None:
             _publish_broadcast({"type": "remote_agents_changed"})
 
 
-async def _ensure_mcp_servers_for(working_directory: str) -> None:
-    """Additively grow the shared MCP server pool with the working directory's own
-    ``mcp.json`` servers, so a folder's servers are running and listable once that
-    folder is selected. The pool is a union — servers are only added or updated,
-    never removed — so no other session loses its servers."""
-    assert state._global_configuration is not None
-    if not working_directory:
-        return
-    # Serialize with every other `_mcp_manager` mutator (settings save, config/mcp.json
-    # watchers) so concurrent reconciles never clobber the shared manager.
-    async with state._configuration_lock:
-        folder_servers = state._global_configuration.mcp_configuration_for(working_directory).servers
-        new_servers = {
-            name: configuration
-            for name, configuration in folder_servers.items()
-            if state._global_configuration.mcp.servers.get(name) != configuration
-        }
-        if not new_servers:
-            return
-        state._global_configuration.mcp.servers.update(new_servers)
-        enabled = state._global_configuration.mcp.enabled_servers()
-        if state._mcp_manager is None:
-            if enabled:
-                state._mcp_manager = MCPClientManager(enabled)
-                await state._mcp_manager.start()
-                set_mcp_client_manager(state._mcp_manager)
-        else:
-            await state._mcp_manager.reconcile(enabled)
-        for executor in state._executors.values():
-            executor.reset_runtimes()
 
 
 async def _watch_agents_and_skills(application: FastAPI) -> None:
@@ -574,59 +508,8 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
         pass
 
 
-def _rebuild_web_fetch_clients(configuration: "GlobalConfiguration") -> None:
-    """Point the web-fetch tool's engines at the current config: the Jina Reader key
-    (default engine; empty means keyless), a live Firecrawl client when a key is present
-    (else none), and the optional proxy for the direct/download tiers."""
-    set_jina_api_key(configuration.jina.effective_api_key)
-    set_proxy_url(configuration.web_fetch.effective_proxy_url)
-    firecrawl_key = configuration.firecrawl.effective_api_key
-    if firecrawl_key:
-        from firecrawl import AsyncFirecrawl
-        api_url = configuration.firecrawl.effective_api_url
-        set_firecrawl_client(
-            AsyncFirecrawl(api_key=firecrawl_key, api_url=api_url)
-            if api_url
-            else AsyncFirecrawl(api_key=firecrawl_key)
-        )
-    else:
-        set_firecrawl_client(None)
 
 
-async def _apply_live_credentials() -> None:
-    """Rebuild every credential-dependent live client from the current in-memory
-    configuration: the Exa client, the web-fetch (Jina/Firecrawl) engines, the
-    Composio/MCP server set and its client manager, and drop cached agent runtimes so
-    the next turn is built with the new credentials. Shared by the settings endpoint
-    and the on-disk configuration watcher."""
-    assert state._global_configuration is not None
-    configuration = state._global_configuration
-    # Push the tool tuning policy process-wide so every window-scaled cap, timeout, and settlement
-    # knob tracks the current configuration (mirrors the Exa/web-fetch client rebuild below).
-    set_tuning(tuning_from_policy(configuration.tuning))
-    exa_key = configuration.exa.effective_api_key
-    if exa_key:
-        from exa_py import Exa
-        set_exa_client(Exa(api_key=exa_key))
-    else:
-        set_exa_client(None)
-    _rebuild_web_fetch_clients(configuration)
-    # Re-provision Composio: rebuild its server config, fold it into (or remove it from)
-    # the MCP set, and restart the client manager so Composio tools track its key.
-    state._composio_servers = composio_mcp_servers(configuration.composio)
-    if state._composio_servers:
-        configuration.mcp.servers.update(state._composio_servers)
-    else:
-        configuration.mcp.servers.pop(configuration.composio.server_name, None)
-    if state._mcp_manager is not None:
-        await state._mcp_manager.aclose()
-    mcp_servers = configuration.mcp.enabled_servers()
-    state._mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
-    if state._mcp_manager is not None:
-        await state._mcp_manager.start()
-    set_mcp_client_manager(state._mcp_manager)
-    for executor in state._executors.values():
-        executor.reset_runtimes()
 
 
 # The content digest of the last configuration.yaml this process wrote, so the on-disk
@@ -643,48 +526,10 @@ async def _apply_live_credentials() -> None:
 # any stale flow. Held only between /auth/chatgpt/start and the browser redirect.
 
 
-def _configuration_digest() -> Optional[str]:
-    """A content hash of ~/.daisy/configuration.yaml, or ``None`` if it is absent."""
-    try:
-        return hashlib.sha256(configuration_file_path().read_bytes()).hexdigest()
-    except OSError:
-        return None
 
 
-async def _persist_configuration(**changes) -> None:
-    """Write configuration changes to disk and remember the resulting content digest so
-    the on-disk watcher does not treat our own save as an external edit."""
-    await asyncio.to_thread(save_api_keys, **changes)
-    state._last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
 
 
-async def _reload_configuration_from_disk() -> None:
-    """Re-read ~/.daisy/configuration.yaml after a manual on-disk edit and apply it live:
-    refresh the in-memory credentials/settings, rebuild the credential-dependent clients,
-    and broadcast so every connected client refetches. The MCP server *set* (mcp.json plus
-    any folder-added servers) is left to its own watcher — only the credential-derived
-    Composio server is re-provisioned here."""
-    assert state._global_configuration is not None
-    fresh = await asyncio.to_thread(GlobalConfiguration.load)
-    configuration = state._global_configuration
-    user_context_setting_changed = configuration.user_context.enabled != fresh.user_context.enabled
-    configuration.exa = fresh.exa
-    configuration.jina = fresh.jina
-    configuration.firecrawl = fresh.firecrawl
-    configuration.web_fetch = fresh.web_fetch
-    configuration.composio = fresh.composio
-    configuration.sandbox = fresh.sandbox
-    configuration.workspace = fresh.workspace
-    configuration.compaction = fresh.compaction
-    configuration.user_context = fresh.user_context
-    configuration.computer_control = fresh.computer_control
-    configuration.tuning = fresh.tuning
-    configuration.providers = fresh.providers
-    configuration.default_agent = fresh.default_agent
-    await _apply_live_credentials()
-    if user_context_setting_changed:
-        await asyncio.to_thread(_reset_work_habits_acknowledgements)
-    state._broadcaster.publish({"type": "settings_changed"})
 
 
 async def _watch_configuration() -> None:
@@ -1069,275 +914,42 @@ async def _cors_exception_handler(request: Request, exc: Exception):
 
 
 
-def _projects_payload() -> dict[str, list[dict[str, Any]]]:
-    assert state._session_factory is not None
-    database_session = state._session_factory()
-    try:
-        rows = database_session.query(ProjectRecord).order_by(ProjectRecord.updated_at.desc()).all()
-        return {"projects": [_serialize_project(row, database_session) for row in rows]}
-    finally:
-        database_session.close()
-
-
-def _project_payload(project_id: str) -> dict[str, Any] | None:
-    assert state._session_factory is not None
-    database_session = state._session_factory()
-    try:
-        record = database_session.get(ProjectRecord, project_id)
-        return _serialize_project(record, database_session) if record is not None else None
-    finally:
-        database_session.close()
-
-
-def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
-    assert state._session_factory is not None
-    conflict = _locations_conflict_message([(location.kind, location.host_alias, location.base_directory) for location in request.locations])
-    if conflict:
-        raise ValueError(conflict)
-    with sqlite_write_lock():
-        database_session = state._session_factory()
-        try:
-            now = _iso_now()
-            project = ProjectRecord(
-                id=str(uuid.uuid4()),
-                created_at=now,
-                updated_at=now,
-            )
-            database_session.add(project)
-            for location in request.locations:
-                _add_location_row(database_session, project.id, location)
-            database_session.commit()
-            return _serialize_project(project, database_session)
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
-
-
-def _ensure_default_project() -> None:
-    """Guarantee the app has a location-backed grouping on a fresh install.
-
-    The initial location targets the server user's home directory. This is a no-op once any
-    project exists, so it never changes user-created groupings.
-    """
-    assert state._session_factory is not None
-    with sqlite_write_lock():
-        database_session = state._session_factory()
-        try:
-            if database_session.query(ProjectRecord).count() > 0:
-                return
-            now = _iso_now()
-            project = ProjectRecord(
-                id=str(uuid.uuid4()),
-                created_at=now,
-                updated_at=now,
-            )
-            database_session.add(project)
-            _add_location_row(
-                database_session, project.id,
-                LocationInput(kind="local", base_directory=str(Path.home())),
-            )
-            database_session.commit()
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
-
-
-def _project_count() -> int:
-    assert state._session_factory is not None
-    database_session = state._session_factory()
-    try:
-        return database_session.query(ProjectRecord).count()
-    finally:
-        database_session.close()
-
-
-def _full_disk_access_granted() -> bool:
-    """Whether *this* process can read Full-Disk-Access-protected data, tested by trying to
-    read a byte of the user's TCC database (a canonical FDA-gated file). Reflects the reality
-    the user-context probe faces: in the packaged app FDA is attributed to Daisy.app (the
-    responsible parent of the server), so this flips true once the user grants it. Any
-    permission/OS error means no access."""
-    protected = Path.home() / "Library" / "Application Support" / "com.apple.TCC" / "TCC.db"
-    try:
-        with open(protected, "rb") as handle:
-            handle.read(1)
-        return True
-    except OSError:
-        return False
-
-
-def _open_full_disk_access_settings() -> None:
-    """Open System Settings straight to the Full Disk Access pane so the user can add Daisy in
-    one hop. Best-effort; a non-macOS or failed ``open`` is simply a no-op."""
-    with suppress(OSError, subprocess.SubprocessError):
-        subprocess.run(
-            ["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"],
-            check=False, timeout=5,
-        )
-
-
-def _accessibility_granted() -> bool:
-    """Whether this process may read the AX tree and control other apps — the permission
-    the computer-use tool needs. In the packaged app it attaches to Daisy.app (the
-    responsible parent of the server), like Full Disk Access."""
-    try:
-        from harness.computer import permissions
-        return permissions.accessibility_granted()
-    except Exception:
-        return False
-
-
-def _request_accessibility() -> None:
-    """Surface the system Accessibility prompt (deep-links to the pane) if not yet trusted."""
-    with suppress(Exception):
-        from harness.computer import permissions
-        permissions.request_accessibility()
-
-
-def _open_accessibility_settings() -> None:
-    with suppress(Exception):
-        from harness.computer import permissions
-        permissions.open_accessibility_settings()
-
-
-def _request_screen_recording() -> None:
-    """Surface the system Screen Recording prompt if not yet granted."""
-    with suppress(Exception):
-        from harness.computer import permissions
-        permissions.request_screen_recording()
-
-
-def _open_screen_recording_settings() -> None:
-    with suppress(Exception):
-        from harness.computer import permissions
-        permissions.open_screen_recording_settings()
-
-
-def _delete_project(project_id: str) -> bool:
-    """Delete a project and everything under it: its locations, its sessions, and the
-    per-(session, location) worktree records. (Remote worktree teardown over SSH is a
-    follow-up — the DB rows go now.)"""
-    assert state._session_factory is not None
-    with sqlite_write_lock():
-        database_session = state._session_factory()
-        try:
-            project = database_session.get(ProjectRecord, project_id)
-            if project is None:
-                return False
-            database_session.query(LocationRecord).filter(LocationRecord.project_id == project_id).delete()
-            database_session.query(SessionRecord).filter(SessionRecord.project_id == project_id).delete()
-            database_session.delete(project)
-            database_session.commit()
-            return True
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
-
-
-def _create_location(project_id: str, request: LocationInput) -> dict[str, Any] | None:
-    assert state._session_factory is not None
-    with sqlite_write_lock():
-        database_session = state._session_factory()
-        try:
-            project = database_session.get(ProjectRecord, project_id)
-            if project is None:
-                return None
-            conflict = _locations_conflict_message(
-                _existing_location_entries(database_session, project_id) + [(request.kind, request.host_alias, request.base_directory)]
-            )
-            if conflict:
-                raise ValueError(conflict)
-            record = _add_location_row(database_session, project_id, request)
-            project.updated_at = _iso_now()
-            database_session.commit()
-            return _serialize_location(record)
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
-
-
-def _update_location(location_id: str, request: LocationInput) -> dict[str, Any] | None:
-    assert state._session_factory is not None
-    with sqlite_write_lock():
-        database_session = state._session_factory()
-        try:
-            record = database_session.get(LocationRecord, location_id)
-            if record is None:
-                return None
-            next_kind = request.kind if request.kind in ("local", "remote") else record.kind
-            next_base_directory = request.base_directory.strip() or record.base_directory
-            next_host_alias = (request.host_alias or "").strip()
-            conflict = _locations_conflict_message(
-                _existing_location_entries(database_session, record.project_id, exclude_id=location_id)
-                + [(next_kind, next_host_alias, next_base_directory)]
-            )
-            if conflict:
-                raise ValueError(conflict)
-            record.kind = next_kind
-            record.host_alias = next_host_alias
-            record.base_directory = next_base_directory
-            record.permission_mode = request.permission_mode or "default"
-            # The name follows the connection, so re-derive it (deduped, excluding this row)
-            # whenever the connection changes.
-            record.name = _derive_location_name(
-                database_session, record.project_id, record.kind, record.base_directory, record.host_alias, exclude_id=record.id
-            )
-            project = database_session.get(ProjectRecord, record.project_id)
-            if project is not None:
-                project.updated_at = _iso_now()
-            database_session.commit()
-            return _serialize_location(record) if project is not None else None
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
-
-
-def _delete_location(location_id: str) -> bool:
-    assert state._session_factory is not None
-    with sqlite_write_lock():
-        database_session = state._session_factory()
-        try:
-            record = database_session.get(LocationRecord, location_id)
-            if record is None:
-                return False
-            database_session.delete(record)
-            database_session.commit()
-            return True
-        except Exception:
-            database_session.rollback()
-            raise
-        finally:
-            database_session.close()
 
 
 
 
-def _hosts_payload() -> dict[str, list[dict[str, Any]]]:
-    hosts = _ssh_hosts.list_ssh_hosts()
-    return {
-        "hosts": [
-            {"alias": host.alias, "hostname": host.hostname, "user": host.user, "port": host.port, "identity_files": list(host.identity_files)}
-            for host in hosts
-        ]
-    }
 
 
-def _reset_all_runtimes() -> None:
-    """Drop cached agent runtimes so the next turn rebuilds its chat model. Used
-    when the ChatGPT sign-in state changes (which lives in a token file, not the
-    configuration, so the config watcher never fires for it)."""
-    for executor in state._executors.values():
-        executor.reset_runtimes()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

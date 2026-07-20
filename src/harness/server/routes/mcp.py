@@ -6,9 +6,7 @@ from harness.server.models import (
     MCPToolCallRequest,
 )
 from harness.server import state
-from harness.server.runtime import (
-    _ensure_mcp_servers_for,
-)
+from harness.server.services.mcp import _ensure_mcp_servers_for
 
 router = APIRouter()
 

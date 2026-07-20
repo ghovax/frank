@@ -13,19 +13,9 @@ from harness.server.models import (
 )
 from harness.server import runtime as _app
 from harness.server import state
-from harness.server.runtime import (
-    _create_location,
-    _create_project,
-    _delete_location,
-    _delete_project,
-    _hosts_payload,
-    _project_name,
-    _project_payload,
-    _projects_payload,
-    _update_location,
-)
 from harness.server.services.broadcast import _publish_broadcast
 from harness.server.services.artifacts import _prune_session_artifacts
+from harness.server.services.projects import _create_location, _create_project, _delete_location, _delete_project, _hosts_payload, _project_name, _project_payload, _projects_payload, _update_location
 
 router = APIRouter()
 
