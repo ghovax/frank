@@ -30,15 +30,8 @@ from harness.server.runtime import (
     _save_artifact_annotation_record,
     _surface_records,
 )
-from harness.server.runtime import (
-    _PROXY_DROP_HEADERS,
-    _get_proxy_client,
-    _proxy_forward_headers,
-    _rewrite_proxy_css,
-    _rewrite_proxy_html,
-    _rewrite_proxy_js,
-)
 from harness.server.services.broadcast import _publish_broadcast
+from harness.server.services.proxy import _PROXY_DROP_HEADERS, _get_proxy_client, _proxy_forward_headers, _rewrite_proxy_css, _rewrite_proxy_html, _rewrite_proxy_js
 
 router = APIRouter()
 
