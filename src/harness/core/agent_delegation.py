@@ -1,6 +1,6 @@
 """The AgentRuntime delegation concern (a mixin composed into AgentRuntime).
 
-Loading and prompting sub-agents, relaying a child's events into the agents panel, the peer
+Loading and prompting spawned agents, relaying a child's events into the agents panel, the peer
 messaging mailbox, and awaiting a delegated (parked) turn's human answers on per-gate futures."""
 from __future__ import annotations
 

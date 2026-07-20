@@ -27,7 +27,7 @@ Because the two halves talk over HTTP, **the server does not have to run on your
 - **A real tool surface.** Shell, file read/edit/write/search, web search, tiered URL fetching, file downloads, MCP tools and resources, tasks and goals, skills, and rendered artifacts.
 - **Controls your Mac.** A computer-use tool drives native apps through the macOS accessibility tree, and a browser tool drives *your own* Chrome — real logins, real sessions.
 - **Permissions in front of everything.** Every risky action can pause for approval, with per-action risk levels and modes from ask-always to fully autonomous. Bash runs sandboxed to the workspace by default.
-- **Multiple agents, delegation, and skills.** Ship-with profiles for research and coding, sub-agent delegation, reusable `SKILL.md` capabilities, and persistent per-project memory — all plain Markdown you can edit.
+- **Multiple agents, delegation, and skills.** Ship-with profiles for research and coding, agent-to-agent delegation, reusable `SKILL.md` capabilities, and persistent per-project memory — all plain Markdown you can edit.
 - **MCP-native.** Add any [Model Context Protocol](https://modelcontextprotocol.io) server; hosted integrations like Composio are first-class.
 - **Local-first.** State lives in `~/.daisy`. Your keys, your history, your machine.
 

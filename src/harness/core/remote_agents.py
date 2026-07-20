@@ -306,8 +306,8 @@ class RemoteAgentManager:
     def is_allowed_for(self, name: str, profile: str) -> bool:
         """Whether a local ``profile`` may delegate to remote agent ``name``. An empty
         allow-list permits all; a non-empty one is the containment boundary — a profile not
-        on it (including the empty profile a delegated sub-agent carries) is denied, so a
-        sub-agent cannot evade an allow-list its parent is bound by."""
+        on it (including the empty profile a delegated agent carries) is denied, so a
+        delegated agent cannot evade an allow-list its parent is bound by."""
         agent = self._agents.get(name)
         if agent is None:
             return False

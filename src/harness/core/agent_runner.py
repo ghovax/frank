@@ -1,4 +1,4 @@
-"""AgentRunner — drives one spawned sub-agent's turn to a serialized A2A Task.
+"""AgentRunner — drives one spawned agent's turn to a serialized A2A Task.
 
 In its own module because it instantiates the composed ``AgentRuntime`` (via a call-time
 import): keeping it out of the mixin files and the shared ``agent_internals`` leaf lets the

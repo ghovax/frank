@@ -1,6 +1,6 @@
 ---
 created: 2026-07-19T16:49:03Z
-updated: 2026-07-19T17:52:23Z
+updated: 2026-07-20T07:04:08Z
 commit: 88a99ab
 ---
 
@@ -32,7 +32,7 @@ A per-turn detector answers "is this turn still advancing, or spinning?" — the
 
 ### Remove the agency limits
 
-Delete `_GOAL_CONTINUATION_LIMIT` (the goal self-nudge just continues; the model decides when the goal is met), `maximum_iterations` / `_AGENT_MAXIMUM_ITERATIONS` (→ progress detector), and `maximum_delegation_depth` (each spawned agent runs its own turn loop with its own detector, so a spinning sub-agent self-terminates; genuine deep recursion that keeps producing new deliverables is legitimate). Remove the `goal_continuation` nudge scaffolding and the dead constants.
+Delete `_GOAL_CONTINUATION_LIMIT` (the goal self-nudge just continues; the model decides when the goal is met), `maximum_iterations` / `_AGENT_MAXIMUM_ITERATIONS` (→ progress detector), and `maximum_delegation_depth` (each spawned agent runs its own turn loop with its own detector, so a spinning delegated agent self-terminates; genuine deep recursion that keeps producing new deliverables is legitimate). Remove the `goal_continuation` nudge scaffolding and the dead constants.
 
 ### Smart compaction on by default
 
