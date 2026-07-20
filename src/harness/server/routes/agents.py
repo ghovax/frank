@@ -11,19 +11,10 @@ from harness.server.models import (
 )
 from harness.server import state
 from harness.server.runtime import (
-    AGENT_CARD_PATH,
-    _agent_configuration_for_request,
-    _agent_configuration_payload,
-    _apply_agent_configuration_update,
-    _card_for,
     _ensure_agents_for,
-    _load_agent_sidecar,
-    _path_scope,
-    _record_model_selection,
-    _reload_agent_cards,
-    _save_agent_sidecar,
 )
 from harness.server.services.broadcast import _publish_broadcast
+from harness.server.services.agents import AGENT_CARD_PATH, _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
 
 router = APIRouter()
 
