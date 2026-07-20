@@ -8,6 +8,7 @@ from harness.core.agent_internals import _ResolvedToolDecision
 from harness.core.agent_internals import _ToolGate
 from harness.core.agent_internals import _ToolPlan
 from harness.core.agent_internals import _coerce_structured_arguments
+from harness.core.background_tasks import spawn_background_task
 from harness.core.tool_policy import BashAllowRule
 from harness.core.tool_policy import PermissionDecision
 from harness.core.tool_policy import ResolvedLocation
@@ -16,7 +17,6 @@ from harness.core.tool_policy import _LOCATION_TOOLS
 from langchain_core.messages import SystemMessage
 from typing import Any
 from typing import Optional
-import asyncio
 import json
 import uuid
 
@@ -89,13 +89,13 @@ class _PermissionsMixin:
 
     def _schedule_bash_allow_rule(self, command: str) -> None:
         try:
-            asyncio.create_task(self._remember_bash_allow_rule(command))
+            spawn_background_task(self._remember_bash_allow_rule(command))
         except RuntimeError:
             pass
 
     def _schedule_persist_bash_allow_rule(self, command: str) -> None:
         try:
-            asyncio.create_task(self._persist_bash_allow_rule(command))
+            spawn_background_task(self._persist_bash_allow_rule(command))
         except RuntimeError:
             pass
 

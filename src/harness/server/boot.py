@@ -6,7 +6,7 @@ The domain logic it orchestrates lives in :mod:`harness.server.services` (per co
 the shared singletons in :mod:`harness.server.state`, the ORM in
 :mod:`harness.server.database`, and the DTOs in :mod:`harness.server.models` — this module
 imports those, never a route module, so there is no ``app -> routes -> app`` cycle. The
-thin :mod:`harness.server.app` sits on top: it takes this ``app``, mounts the REST route
+thin :mod:`harness.server.asgi` sits on top: it takes this ``app``, mounts the REST route
 routers onto it, and exposes ``run_server``.
 """
 
@@ -28,6 +28,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
 from harness.server import state
+from harness.core.background_tasks import spawn_background_task
 from harness.server.services.remote_agents import (
     _poll_remote_agent_health,
     _reload_remote_agents,
@@ -128,177 +129,6 @@ from harness.core.tuning import set_tuning, tuning_from_policy
 load_dotenv()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# The host the server was told to bind to (set by run_server). Used at startup to fail closed
-# when exposed on a non-loopback interface without inbound auth.
-# Outbound A2A client manager (external agents this harness may delegate to). None until
-# startup builds it from remote-agents.json; installed on the registry so make_delegate
-# can branch a delegation over the wire.
-# Signs short-lived URLs for the A2A file-serving endpoint. Built at startup.
-# Persisted push-notification configuration store and sender, shared by every mounted
-# agent's handler, so a registered webhook survives a restart.
-# Composio Tool Router server(s), provisioned once at startup. Kept separate from
-# the mcp.json-derived servers so the file watcher's live reload re-merges them
-# instead of dropping Composio whenever mcp.json changes.
-# Dialogue history per A2A context, shared across every agent executor so that
-# switching the active agent continues the same conversation (the persona is
-# applied per-turn on top of this shared history).
-# How many executions are running per context, including delegated agents. Drives
-# session-stream lifetime and the sidebar spinner; a count handles overlapping work.
-
-
-
-
-
-
-
-
-
-
-
-
-# Contexts whose latest turn is paused at input-required (durably; also populated on
-# startup from persisted input-required tasks, so the marker survives a restart).
-
-
-
-# Keeps references to in-flight session-title generation tasks so they are not
-# garbage-collected before completing.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Artifact versioning — shadow-git capture of the specific files the agent touches (never a
-# folder survey). Capture is silent and best-effort: a write-ish tool call enqueues a request
-# and returns immediately; a single background worker drains the queue and runs the git
-# plumbing (``core/artifact_versioning``) off-loop against the write's location — local or
-# remote — then records the DB index rows and broadcasts so open panels refresh. Failures are
-# logged, never fatal (a versioning hiccup must not break the agent's turn).
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Loads the title prompt from the shared prompts directory next to the
-# harness.core package, mirroring how AgentRuntime resolves its prompt loader.
-
-
-
-
-
-
-
-
-
-
-
-
 def _mount_agent(application: FastAPI, agent_name: str) -> None:
     """Serve one agent profile as its own A2A endpoint: its own executor, request
     handler, and AgentCard, mounted at a per-agent path. Idempotent."""
@@ -358,18 +188,6 @@ def _ensure_agents_for(working_directory: str) -> None:
             _mount_agent(app, agent_name)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 async def _persist_agent_allow_patterns(agent_identifier: str, project_directory: str, patterns: list[str]) -> None:
     """Durably add allow-patterns to a delegated agent profile's configured bash permissions,
     so a delegated agent's 'always allow' outlives its ephemeral runtime and every future spawn
@@ -401,8 +219,6 @@ async def _persist_agent_allow_patterns(agent_identifier: str, project_directory
     _publish_broadcast({"type": "agents_changed"})
 
 
-
-
 def _watched_a2a_paths() -> list[str]:
     assert state._global_configuration is not None
     directories = [
@@ -425,8 +241,6 @@ def _watched_a2a_paths() -> list[str]:
     return watched
 
 
-
-
 def _configure_telemetry(configuration: GlobalConfiguration) -> None:
     telemetry_configuration = configuration.telemetry
     _telemetry.configure(
@@ -435,14 +249,6 @@ def _configure_telemetry(configuration: GlobalConfiguration) -> None:
         headers=telemetry_configuration.resolved_headers(),
         sample_ratio=telemetry_configuration.sample_ratio,
     )
-
-
-
-
-
-
-
-
 
 
 async def _watch_agents_and_skills(application: FastAPI) -> None:
@@ -469,10 +275,6 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
         pass
 
 
-
-
-
-
 # The content digest of the last configuration.yaml this process wrote, so the on-disk
 # watcher can tell our own saves (skip — already applied in-process) apart from a manual
 # user edit (apply). Set by every server-side configuration write via _persist_configuration.
@@ -485,12 +287,6 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
 # The in-flight ChatGPT sign-in, if any. A sign-in owns a loopback server on port
 # 1455 for its lifetime, so at most one runs at a time; starting a new one supersedes
 # any stale flow. Held only between /auth/chatgpt/start and the browser redirect.
-
-
-
-
-
-
 
 
 async def _watch_configuration() -> None:
@@ -672,7 +468,7 @@ async def lifespan(application: FastAPI):
     if _remote_agent_configurations:
         state._remote_agent_manager = RemoteAgentManager(_remote_agent_configurations)
         state._registry.set_remote_manager(state._remote_agent_manager)
-        asyncio.create_task(state._remote_agent_manager.start())
+        spawn_background_task(state._remote_agent_manager.start())
 
     # Kill any process groups orphaned by a previous unclean shutdown (a SIGKILL or
     # crash could not run the teardown handlers) so a background shell subtree — a
@@ -799,152 +595,11 @@ async def _cors_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # Projects, locations, and the SSH host registry.
 #
 # A project is the internal grouping key for locations (local + SSH remotes) and sessions.
 # Locations are the user-facing targets. These are server-owned domain data in history.db.
 # Hosts are read from ~/.ssh/config (the OS source of truth) via the system ssh.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # A real login session (a console getty, sshd, `login(1)`) never inherits a parent
@@ -964,36 +619,12 @@ async def _cors_exception_handler(request: Request, exc: Exception):
 # someone else's machine, `getpwuid` returns *that* system's HOME/SHELL, not a guess.
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # A file served for an ``open_artifact`` preview may live on a REMOTE location, so the
 # session + location ride in a sentinel first path segment (``@ctx=<base64url json>``)
 # rather than a query string: a page's relative sibling assets (``style.css``,
 # ``app.js``) inherit the path prefix automatically but would drop a query string, so
 # the query-param form would break multi-file remote pages. A local file carries no such
 # prefix and is read straight off disk (the common, fast path).
-
-
-
-
 
 
 # A rewriting pass-through proxy for `open_artifact` of external URLs. It serves
@@ -1016,13 +647,8 @@ async def _cors_exception_handler(request: Request, exc: Exception):
 # different opened sites never share them. Created lazily on the running loop.
 
 
-
 # Tags/attributes that would fight the proxy: an inline CSP, a <base> that would
 # re-point relative URLs, and SRI/crossorigin hints that fail once same-origin.
-
-
-
-
 
 
 # ES-module specifiers the browser resolves itself (static import/export-from and
@@ -1031,28 +657,6 @@ async def _cors_exception_handler(request: Request, exc: Exception):
 # specifier is rewritten to an absolute, proxied URL. Computed specifiers in a
 # dynamic import() cannot be rewritten statically (the runtime shim cannot patch the
 # import operator either); those remain a known gap.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _is_loopback_bind(host: str) -> bool:

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional, assert_never
 
 from litellm import exceptions as litellm_exceptions
+from harness.core.background_tasks import spawn_background_task
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -2283,7 +2284,7 @@ class AgentRegistry:
                 except Exception:
                     logger.exception("Durable input resume failed for context %s", context_id)
 
-            asyncio.create_task(drive())
+            spawn_background_task(drive())
             return True
         # No durable (top-level) record owns this request: it is a delegated agent parked in
         # place awaiting the user. Resolve its in-memory future on the delegated agent's runtime,

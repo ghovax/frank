@@ -1,5 +1,6 @@
 """Settings routes (split from harness.server.boot)."""
 from fastapi import APIRouter
+from harness.core.background_tasks import spawn_background_task
 import harness.core.configuration as _configuration
 from fastapi import HTTPException
 from harness.core.chatgpt_oauth import ChatGPTLoginFlow
@@ -191,7 +192,7 @@ async def chatgpt_auth_start():
             if state._chatgpt_login_flow is flow:
                 state._chatgpt_login_flow = None
 
-    asyncio.create_task(_await_completion())
+    spawn_background_task(_await_completion())
     return {"authorize_url": flow.authorize_url}
 
 
