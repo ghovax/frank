@@ -275,20 +275,6 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
         pass
 
 
-# The content digest of the last configuration.yaml this process wrote, so the on-disk
-# watcher can tell our own saves (skip — already applied in-process) apart from a manual
-# user edit (apply). Set by every server-side configuration write via _persist_configuration.
-
-# Serializes every configuration mutation-and-apply (settings endpoints + the on-disk
-# watcher) so they never interleave at an await point. Without it, a UI save and a
-# concurrent disk-edit reload could both rebuild the MCP client manager, clobbering the
-# `_mcp_manager` global and leaking a half-started manager.
-
-# The in-flight ChatGPT sign-in, if any. A sign-in owns a loopback server on port
-# 1455 for its lifetime, so at most one runs at a time; starting a new one supersedes
-# any stale flow. Held only between /auth/chatgpt/start and the browser redirect.
-
-
 async def _watch_configuration() -> None:
     """Watch ~/.daisy/configuration.yaml and mirror manual on-disk edits into the running
     server and every connected client — so editing an API key (or any setting) directly in
@@ -593,70 +579,6 @@ async def _cors_exception_handler(request: Request, exc: Exception):
     origin = request.headers.get("origin", "")
     headers = {"Access-Control-Allow-Origin": origin} if origin and _app_origin_matcher.match(origin) else {}
     return JSONResponse(status_code=500, content={"detail": "Internal server error"}, headers=headers)
-
-
-# Projects, locations, and the SSH host registry.
-#
-# A project is the internal grouping key for locations (local + SSH remotes) and sessions.
-# Locations are the user-facing targets. These are server-owned domain data in history.db.
-# Hosts are read from ~/.ssh/config (the OS source of truth) via the system ssh.
-
-
-# A real login session (a console getty, sshd, `login(1)`) never inherits a parent
-# process's environment — it builds a fresh one from the OS user database and lets the
-# login shell rebuild the rest from the system/user rc files. This server, by contrast,
-# is frequently started from an already-mutated parent (a dev shell, a nix/direnv
-# project, a virtualenv, `load_dotenv()` injecting secrets), so handing `pty.fork()` the
-# server's own `os.environ` would leak that process state — stale DIRENV_* diffs,
-# IN_NIX_SHELL, VIRTUAL_ENV, .env secrets — into every terminal, and it would never
-# behave like a freshly spawned shell.
-#
-# We therefore replicate what `login` does instead of curating an allowlist (curating is
-# both leaky — it forwards whatever pollution happens to sit in those names — and
-# fragile across machines). We seed only the identity variables that the login layer,
-# not the rc files, is responsible for, reading them from the passwd entry of the uid we
-# are running as. This is portable by construction: on a Linux box, a remote host, or
-# someone else's machine, `getpwuid` returns *that* system's HOME/SHELL, not a guess.
-
-
-# A file served for an ``open_artifact`` preview may live on a REMOTE location, so the
-# session + location ride in a sentinel first path segment (``@ctx=<base64url json>``)
-# rather than a query string: a page's relative sibling assets (``style.css``,
-# ``app.js``) inherit the path prefix automatically but would drop a query string, so
-# the query-param form would break multi-file remote pages. A local file carries no such
-# prefix and is read straight off disk (the common, fast path).
-
-
-# A rewriting pass-through proxy for `open_artifact` of external URLs. It serves
-# the page — and *every* asset and request it makes — back through this one route,
-# so to the framed page everything looks same-origin (our localhost). That is what
-# lets sites that refuse direct framing (`X-Frame-Options`/`frame-ancestors`) render,
-# and avoids the cross-origin CORS/history errors a naive `<base>` proxy hits.
-
-# URL schemes that must never be rewritten through the proxy.
-# Response headers dropped when re-serving (framing blockers + hop-by-hop/encoding
-# headers that no longer match the rewritten body). set-cookie is dropped from the
-# BROWSER response (its cookies would be scoped to our localhost origin, useless)
-# but the cookies are still stored server-side by the shared cookie-jar client and
-# replayed upstream, so login/consent/session flows survive across proxied requests.
-# Request headers never forwarded upstream — hop-by-hop, or ones httpx/the target
-# must recompute for the real origin rather than inherit from our localhost frame.
-
-# One long-lived client so the upstream cookie jar (session, consent, CSRF cookies)
-# persists across every proxied request. Cookies are domain-scoped by httpx, so
-# different opened sites never share them. Created lazily on the running loop.
-
-
-# Tags/attributes that would fight the proxy: an inline CSP, a <base> that would
-# re-point relative URLs, and SRI/crossorigin hints that fail once same-origin.
-
-
-# ES-module specifiers the browser resolves itself (static import/export-from and
-# string-literal dynamic import). Served from our /artifact-proxy path, relative
-# specifiers would otherwise resolve against localhost and 404 — so every literal
-# specifier is rewritten to an absolute, proxied URL. Computed specifiers in a
-# dynamic import() cannot be rewritten statically (the runtime shim cannot patch the
-# import operator either); those remain a known gap.
 
 
 def _is_loopback_bind(host: str) -> bool:

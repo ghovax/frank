@@ -1,12 +1,11 @@
-"""The server's shared runtime state: the singletons the request handlers and the boot
-sequence read and write, plus the two small pub/sub primitives they are built on.
+"""The server's shared runtime state: the singletons the boot sequence, the services, and the
+route handlers read and write, plus the two small pub/sub primitives they are built on.
 
-Extracted from the runtime so the state lives in one leaf module that the runtime, the boot
-sequence, and the route handlers all import — the single source of truth for "the task store",
-"the registry", "the live executors", and so on. The lifespan populates these on startup
-(``state._task_store = ...``); everything else reads them through this module so a rebind is
-seen everywhere. Type-only imports stay under ``TYPE_CHECKING`` so this module imports nothing
-that would import it back.
+Extracted into one leaf module so the state is the single source of truth for "the task
+store", "the registry", "the live executors", and so on — imported by ``boot``, the services,
+and the routes alike. The lifespan populates these on startup (``state._task_store = ...``);
+everything else reads them through this module so a rebind is seen everywhere. Type-only
+imports stay under ``TYPE_CHECKING`` so this module imports nothing that would import it back.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ if TYPE_CHECKING:
     from harness.core.session_workspaces import SessionWorkspaceManager
     from harness.core.chatgpt_oauth import ChatGPTLoginFlow
     from harness.server.services.terminals import TerminalSessionManager
-    from harness.server.services.artifacts import _CaptureRequest
+    from harness.server.services.artifacts import CaptureRequest
 
 
 class Broadcaster:
@@ -54,7 +53,7 @@ class Broadcaster:
             queue.put_nowait(event)
 
 
-class _ContextEventBus:
+class ContextEventBus:
     """Per-context fan-out of the structured A2A parts a turn emits.
 
     A non-driving viewer (e.g. the sidebar re-opened on a running session) follows
@@ -156,7 +155,7 @@ _conversations: dict[str, list] = {}
 # How many executions are running per context, including delegated agents. Drives
 # session-stream lifetime and the sidebar spinner; a count handles overlapping work.
 _running_contexts: dict[str, int] = {}
-_event_bus = _ContextEventBus()
+_event_bus = ContextEventBus()
 # Contexts whose latest turn is paused at input-required (durably; also populated on startup
 # from persisted input-required tasks, so the marker survives a restart).
 _awaiting_input_contexts: set[str] = set()
@@ -164,9 +163,19 @@ _broadcaster = Broadcaster()
 # Strong references to in-flight session-title generation tasks so they are not
 # garbage-collected before completing.
 _title_tasks: set[Any] = set()
-_capture_queue: "asyncio.Queue[_CaptureRequest] | None" = None
+_capture_queue: "asyncio.Queue[CaptureRequest] | None" = None
+# The content digest of the last configuration.yaml this process wrote, so the on-disk
+# watcher can tell our own saves (skip — already applied in-process) apart from a manual user
+# edit (apply). Set by every server-side configuration write.
 _last_written_configuration_digest: Optional[str] = None
+# Serializes every configuration mutation-and-apply (settings endpoints + the on-disk watcher)
+# so they never interleave at an await point. Without it a UI save and a concurrent disk-edit
+# reload could both rebuild the MCP client manager, clobbering _mcp_manager and leaking a
+# half-started manager.
 _configuration_lock = asyncio.Lock()
+# The in-flight ChatGPT sign-in, if any. A sign-in owns a loopback server on port 1455 for its
+# lifetime, so at most one runs at a time; starting a new one supersedes any stale flow. Held
+# only between /auth/chatgpt/start and the browser redirect.
 _chatgpt_login_flow: Optional[ChatGPTLoginFlow] = None
 _jwks_clients: dict[str, "jwt.PyJWKClient"] = {}
 _proxy_client: Optional[httpx.AsyncClient] = None

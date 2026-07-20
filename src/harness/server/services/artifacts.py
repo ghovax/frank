@@ -1,4 +1,5 @@
-"""Artifacts service: helpers split out of the server runtime."""
+"""Artifact versioning domain: the shadow-git capture pipeline, the file-history index,
+per-version image annotations, restore, pruning, and the ``@ctx=`` preview-path codec."""
 from harness.server.models import ArtifactAnnotationSaveRequest
 
 from datetime import datetime
@@ -25,7 +26,7 @@ from harness.server.services.locations import _resolve_session_locations
 _artifact_logger = logging.getLogger("harness.artifacts")
 
 
-class _CaptureRequest:
+class CaptureRequest:
     """One capture unit handed from the agent runtime to the background worker.
 
     ``mode`` is ``"track"`` to version specific paths (structured writes / ``open_artifact``)
@@ -71,7 +72,7 @@ def _capture_artifacts(
     the server's internal request type."""
     if state._capture_queue is None:
         return
-    request = _CaptureRequest(
+    request = CaptureRequest(
         context_id=context_id, location_uri=location_uri, executor=executor,
         base_directory=base_directory, changed_absolute_paths=changed_absolute_paths,
         mode=mode, original_contents=original_contents,
@@ -126,7 +127,7 @@ def _group_work_trees(base_directory: str, changed_absolute_paths: list[str]) ->
     return groups
 
 
-def _run_capture(request: "_CaptureRequest") -> None:
+def _run_capture(request: "CaptureRequest") -> None:
     """Off-loop: version exactly the files this request names (never a folder survey),
     record the index rows, upsert any surface, and broadcast if anything changed."""
     project_id = _project_id_for_context(request.context_id)
@@ -181,7 +182,7 @@ def _run_capture(request: "_CaptureRequest") -> None:
         _publish_broadcast({"type": "artifact_captured", "session_id": request.context_id})
 
 
-def _record_capture(request: "_CaptureRequest", project_id: str, git_directory: str, work_tree: str, result: "artifacts.CommitResult") -> None:
+def _record_capture(request: "CaptureRequest", project_id: str, git_directory: str, work_tree: str, result: "artifacts.CommitResult") -> None:
     assert state._session_factory is not None
     now = datetime.now(timezone.utc).isoformat()
     version_id = str(uuid.uuid4())
@@ -211,7 +212,7 @@ def _record_capture(request: "_CaptureRequest", project_id: str, git_directory: 
             session.close()
 
 
-def _upsert_surface(request: "_CaptureRequest", project_id: str, location_home: str) -> None:
+def _upsert_surface(request: "CaptureRequest", project_id: str, location_home: str) -> None:
     """Create/refresh the surface (tab) for an ``open_artifact``. Reuses an existing surface
     for the same ``(context, absolute_path)`` so re-opening a file updates one tab. For an
     external-URL artifact (no ``absolute_path``) there is no git history — only the live source."""
@@ -451,7 +452,7 @@ def _restore_artifact(context_id: str, location_uri: str, git_directory: str, wo
         executor, git_directory, work_tree, context_id, relative_path, commit_sha,
         maximum_bytes=maximum_bytes,
     )
-    request = _CaptureRequest(
+    request = CaptureRequest(
         context_id=context_id, location_uri=location_uri, executor=executor,
         base_directory=work_tree, changed_absolute_paths=[posixpath.join(work_tree, relative_path)],
         message=f"restore {relative_path}",

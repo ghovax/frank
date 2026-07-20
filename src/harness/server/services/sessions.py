@@ -1,4 +1,5 @@
-"""Sessions service: helpers split out of the server runtime."""
+"""Session domain: session listing and drafts, permission-mode resolution, pending-input
+handling, title generation, and workspace setup."""
 from harness.core.a2a_executor import HarnessAgentExecutor
 
 from datetime import datetime

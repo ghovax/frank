@@ -2,8 +2,9 @@
 history database's tables, and the lightweight additive schema-reconciliation applied on
 startup.
 
-Split out of the server runtime so the persistence schema is one self-contained module the
-runtime and the routes both depend on, rather than living amongst the request handlers.
+Split into its own leaf module so the persistence schema is one self-contained thing that
+``boot``, the services, and the routes depend on, rather than living amongst the request
+handlers.
 """
 
 from sqlalchemy import Boolean, Index, Integer, String, Text, inspect, text

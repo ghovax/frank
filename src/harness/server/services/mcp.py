@@ -1,4 +1,5 @@
-"""Mcp service: helpers split out of the server runtime."""
+"""MCP domain: per-request resolution of an agent's MCP servers, and the live reload that
+re-merges mcp.json with the Composio-provisioned servers."""
 
 from harness.core.configuration import GlobalConfiguration
 from harness.core.mcp_client import MCPClientManager

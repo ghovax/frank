@@ -1,4 +1,5 @@
-"""Projects service: helpers split out of the server runtime."""
+"""Project domain: project and location CRUD, the SSH host registry, and the macOS
+permission probes (full-disk-access, accessibility, screen-recording)."""
 
 from contextlib import suppress
 from harness.core.sqlite_lock import sqlite_write_lock

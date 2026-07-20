@@ -1,9 +1,9 @@
-"""HTTP request/response models for the Daisy server.
+"""HTTP request/response models for the harness server.
 
-The Pydantic DTOs the FastAPI routes accept and return. Extracted from the server
-application module so a route module depends on the request/response contract directly,
-without importing from ``harness.server.asgi`` (which imports the routes — the cycle that
-left these models referenced only as unresolved string annotations before).
+The Pydantic DTOs the FastAPI routes accept and return. Extracted into their own leaf module
+so a route depends on the request/response contract directly rather than importing it from the
+old ``app.py`` monolith — the back-import that once left these models referenced only as
+unresolved string annotations, crashing the routes that used them.
 """
 
 from typing import Any, Literal
@@ -28,8 +28,8 @@ class AgentInfo(BaseModel):
     title: str = ""
     # What the agent is for — shown as the subtitle in the UI's agent picker.
     description: str = ""
-    # The agent's resolved ``provider/model`` identifier, or empty when it falls
-    # Empty means the agent is misconfigured; runtime model selection is per-agent.
+    # The agent's resolved ``provider/model`` identifier, or empty when it has none.
+    # Empty means the agent is misconfigured; per-turn model selection is per-agent.
     model: str = ""
 
 

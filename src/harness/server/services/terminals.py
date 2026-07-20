@@ -1,4 +1,5 @@
-"""Terminals service: helpers split out of the server runtime."""
+"""Terminal domain: the PTY-backed TerminalSession and its manager, plus terminal-state
+persistence."""
 
 from collections import deque
 from contextlib import suppress

@@ -107,7 +107,7 @@ async def session_stream(context_id: str, request: Request):
             done = False
             while not queue.empty():
                 item = queue.get_nowait()
-                if item is state._ContextEventBus._DONE:
+                if item is state.ContextEventBus._DONE:
                     done = True
                     break
                 seq, part = item
@@ -128,7 +128,7 @@ async def session_stream(context_id: str, request: Request):
                     item = await asyncio.wait_for(queue.get(), timeout=5.0)
                 except asyncio.TimeoutError:
                     continue
-                if item is state._ContextEventBus._DONE:
+                if item is state.ContextEventBus._DONE:
                     yield {"data": json.dumps({"kind": "done"})}
                     break
                 seq, part = item

@@ -1,4 +1,5 @@
-"""Remote_agents service: helpers split out of the server runtime."""
+"""Remote-agent domain: loading the remote-agents configuration, reloading it, and polling
+remote-agent health."""
 
 from harness.core.configuration import GlobalConfiguration
 from harness.core.remote_agents import RemoteAgentAuth

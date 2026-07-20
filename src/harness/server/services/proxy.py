@@ -1,4 +1,15 @@
-"""Proxy service: helpers split out of the server runtime."""
+"""A rewriting pass-through proxy for ``open_artifact`` of external URLs.
+
+It serves the page — and *every* asset and request it makes — back through one route, so to the
+framed page everything looks same-origin (our localhost). That is what lets sites that refuse
+direct framing (``X-Frame-Options`` / ``frame-ancestors``) render, and avoids the cross-origin
+CORS/history errors a naive ``<base>`` proxy hits. ES-module specifiers the browser resolves
+itself (static import/export-from and string-literal dynamic import) are rewritten to absolute
+proxied URLs, since relative ones would resolve against localhost and 404; a computed dynamic
+``import()`` specifier cannot be rewritten statically and remains a known gap. One long-lived
+client keeps the upstream cookie jar (session/consent/CSRF cookies, domain-scoped by httpx so
+opened sites never share them) across proxied requests; framing-blocker and hop-by-hop
+response headers are dropped when re-serving."""
 
 from fastapi import Request
 from harness.tools.tools import ASSETS_DIRECTORY

@@ -1,4 +1,5 @@
-"""Agents service: helpers split out of the server runtime."""
+"""Agent domain: card building, per-request configuration resolution, sidecar
+read/write, configuration updates, and model-selection history."""
 from harness.server.models import AgentConfigurationUpdateRequest
 
 from datetime import datetime

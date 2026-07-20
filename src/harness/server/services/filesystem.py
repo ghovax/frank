@@ -1,4 +1,5 @@
-"""Filesystem service: helpers split out of the server runtime."""
+"""Filesystem domain: git-status probing and change-watching, directory validation, and the
+native folder picker."""
 
 from datetime import datetime
 from datetime import timedelta

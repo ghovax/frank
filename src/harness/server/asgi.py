@@ -1,6 +1,6 @@
 """The ASGI entry point: the fully-assembled ``app`` an ASGI server imports and serves.
 
-:mod:`harness.server.boot` builds the FastAPI ``app`` and owns the runtime; this module
+:mod:`harness.server.boot` builds the FastAPI ``app`` and drives its lifespan; this module
 takes that ``app``, mounts the split route routers onto it, and exposes ``run_server``.
 Mounting the routers here — the one and only module that imports the route modules — is what
 breaks the old ``app -> routes -> app`` cycle: the routes import the boot module and the

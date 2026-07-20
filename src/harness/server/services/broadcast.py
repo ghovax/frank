@@ -1,4 +1,5 @@
-"""Broadcast service: helpers split out of the server runtime."""
+"""The SSE broadcast and turn-state notification helpers — thin wrappers over the shared
+Broadcaster and context event bus in :mod:`harness.server.state`."""
 
 from harness.server import state
 

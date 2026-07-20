@@ -1,4 +1,5 @@
-"""Settings service: helpers split out of the server runtime."""
+"""Settings domain: applying live credentials to the running clients, and persisting and
+reloading the configuration file."""
 
 from harness.core.composio_router import composio_mcp_servers
 from harness.core.configuration import GlobalConfiguration

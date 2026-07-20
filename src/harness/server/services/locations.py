@@ -1,4 +1,5 @@
-"""Locations service: helpers split out of the server runtime."""
+"""Location domain: the location/project serialization and session-location resolution
+primitives shared by the artifacts and projects services."""
 
 from datetime import datetime
 from datetime import timezone
