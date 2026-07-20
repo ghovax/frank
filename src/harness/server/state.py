@@ -142,7 +142,7 @@ _push_httpx_client: Optional[httpx.AsyncClient] = None
 _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
 _workspace_manager: SessionWorkspaceManager | None = None
-_terminal_manager: "TerminalSessionManager | None" = None
+_terminal_manager: TerminalSessionManager | None = None
 # Composio Tool Router server(s), provisioned once at startup. Kept separate from the
 # mcp.json-derived servers so the file watcher's live reload re-merges them instead of
 # dropping Composio whenever mcp.json changes.
@@ -163,7 +163,7 @@ _broadcaster = Broadcaster()
 # Strong references to in-flight session-title generation tasks so they are not
 # garbage-collected before completing.
 _title_tasks: set[Any] = set()
-_capture_queue: "asyncio.Queue[CaptureRequest] | None" = None
+_capture_queue: asyncio.Queue[CaptureRequest] | None = None
 # The content digest of the last configuration.yaml this process wrote, so the on-disk
 # watcher can tell our own saves (skip — already applied in-process) apart from a manual user
 # edit (apply). Set by every server-side configuration write.
@@ -177,5 +177,5 @@ _configuration_lock = asyncio.Lock()
 # lifetime, so at most one runs at a time; starting a new one supersedes any stale flow. Held
 # only between /auth/chatgpt/start and the browser redirect.
 _chatgpt_login_flow: Optional[ChatGPTLoginFlow] = None
-_jwks_clients: dict[str, "jwt.PyJWKClient"] = {}
+_jwks_clients: dict[str, jwt.PyJWKClient] = {}
 _proxy_client: Optional[httpx.AsyncClient] = None

@@ -51,7 +51,7 @@ class ReconcileAction(StrEnum):
     FAIL = "fail"          # interrupted; mark it failed so nothing stale replays as active
 
 
-def reconcile_action(kind: "Optional[TurnKind]", state: str, *, input_required: str) -> ReconcileAction:
+def reconcile_action(kind: Optional[TurnKind], state: str, *, input_required: str) -> ReconcileAction:
     """The reconciliation policy as one total function. In-memory executors cannot be resumed
     after a restart, so:
 
@@ -103,7 +103,7 @@ class PendingInteraction(BaseModel):
     answers: dict[str, Any] = Field(default_factory=dict)
     agent: str = ""
 
-    def gate_for(self, request_id: str) -> "Optional[ToolGate]":
+    def gate_for(self, request_id: str) -> Optional[ToolGate]:
         return next((gate for gate in self.gates if gate.request_id == request_id), None)
 
     @property
@@ -133,7 +133,7 @@ class TurnRecord(BaseModel):
     lane: Optional[AgentLane] = None
 
     @classmethod
-    def from_metadata(cls, metadata: "dict[str, Any] | None") -> "TurnRecord":
+    def from_metadata(cls, metadata: dict[str, Any] | None) -> TurnRecord:
         """Read the turn-state out of a task's metadata. Absent or malformed pieces yield an empty
         record rather than raising, so a task written before any state was stamped still loads."""
         data = metadata or {}
@@ -152,7 +152,7 @@ class TurnRecord(BaseModel):
         lane = AgentLane.model_validate(raw_lane) if isinstance(raw_lane, dict) else None
         return cls(kind=kind, pending=pending, reference_task_ids=reference_task_ids, lane=lane)
 
-    def apply_to(self, metadata: "dict[str, Any] | None") -> "dict[str, Any]":
+    def apply_to(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
         """A new metadata dict: a copy of ``metadata`` with the turn-state keys set to this record's
         contents and any turn-state key this record does not carry removed. Non-turn keys pass
         through untouched, so this owns exactly the turn-state slice of the task's metadata."""
