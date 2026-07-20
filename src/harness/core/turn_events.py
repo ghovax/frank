@@ -111,7 +111,7 @@ class ToolResult(TurnEvent):
 
 
 @dataclass(frozen=True)
-class McpEvent(TurnEvent):
+class Mcp(TurnEvent):
     TYPE = EventType.MCP_EVENT
     id: str = ""
     name: str = ""
@@ -275,7 +275,7 @@ class DelegateDone(DelegateMessage):
 # exhaustiveness with ``assert_never`` in the default case — a new variant that a consumer forgets
 # is then a static error, not a silently dropped branch.
 TurnEventUnion = Union[
-    Status, Thinking, ThinkingDone, TextChunk, ToolCall, ToolResult, McpEvent, Usage, Done,
+    Status, Thinking, ThinkingDone, TextChunk, ToolCall, ToolResult, Mcp, Usage, Done,
     Suspended, Checkpoint, Error, DeniedInjection, GroupStarted, Relayed, Steering,
     CompactionStarted, CompactionDone,
 ]

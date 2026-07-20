@@ -618,7 +618,7 @@
       "additionalProperties": false,
       "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
       "properties": {
-        "background_task_id": {
+        "background_task_identifier": {
           "anyOf": [
             {
               "type": "string"

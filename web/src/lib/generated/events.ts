@@ -263,7 +263,7 @@ export interface ToolCallEvent {
  * via the `definition` "ToolMetadata".
  */
 export interface ToolMetadata {
-  background_task_id?: string | null;
+  background_task_identifier?: string | null;
   completed_at?: string | null;
   duration_ms?: number | null;
   started_at?: string | null;

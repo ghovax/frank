@@ -370,7 +370,7 @@ def _screenshot_data_uri(path: str) -> str:
 
 
 @dataclass
-class _ToolGate:
+class _PreflightGate:
     """One human-in-the-loop interaction a tool call needs before it can run: a
     permission prompt or an ``ask_user`` question. Surfaced by the preflight pass
     and carried in a ``SUSPENDED`` event; the durable pending-interaction record the
@@ -400,7 +400,7 @@ class _ToolGate:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "_ToolGate":
+    def from_dict(cls, data: dict) -> "_PreflightGate":
         return cls(
             request_id=str(data.get("request_id", "")), tool_call_id=str(data.get("tool_call_id", "")),
             kind=str(data.get("kind", "permission")), command=str(data.get("command", "")),
@@ -420,7 +420,7 @@ class _ToolPlan:
 
     tool_call_id: str
     denial: Optional[dict] = None  # {"code", "message", "denied_injection", "raw_command"}
-    gates: list[_ToolGate] = field(default_factory=list)
+    gates: list[_PreflightGate] = field(default_factory=list)
 
     @property
     def needs_human(self) -> bool:
@@ -438,7 +438,7 @@ class _ToolPlan:
         return cls(
             tool_call_id=str(data.get("tool_call_id", "")),
             denial=data.get("denial"),
-            gates=[_ToolGate.from_dict(g) for g in (data.get("gates") or [])],
+            gates=[_PreflightGate.from_dict(g) for g in (data.get("gates") or [])],
         )
 
 

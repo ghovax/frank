@@ -5,7 +5,7 @@ persist), preflighting a whole batch, resolving per-call decisions, and minting 
 from __future__ import annotations
 
 from harness.core.agent_internals import _ResolvedToolDecision
-from harness.core.agent_internals import _ToolGate
+from harness.core.agent_internals import _PreflightGate
 from harness.core.agent_internals import _ToolPlan
 from harness.core.agent_internals import _coerce_structured_arguments
 from harness.core.background_tasks import spawn_background_task
@@ -152,7 +152,7 @@ class _PermissionsMixin:
 
     async def _preflight_permissions(
         self, tool_calls: list[dict]
-    ) -> tuple[dict[str, _ToolPlan], list[_ToolGate]]:
+    ) -> tuple[dict[str, _ToolPlan], list[_PreflightGate]]:
         """Resolve the human-in-the-loop verdict for every tool call in a batch BEFORE
         any tool runs, so a pause can be checkpointed durably (concurrent tools cannot
         be re-run on resume without re-doing their side effects). Returns the per-call
@@ -160,7 +160,7 @@ class _PermissionsMixin:
         that list is non-empty the turn suspends; otherwise the batch executes with
         every decision already in hand."""
         plans: dict[str, _ToolPlan] = {}
-        pending: list[_ToolGate] = []
+        pending: list[_PreflightGate] = []
         for tool_call_data in tool_calls:
             plan = await self._classify_tool_permission(
                 tool_call_data["name"], tool_call_data["args"], tool_call_data["id"],
@@ -277,7 +277,7 @@ class _PermissionsMixin:
                     if decision.action == "auto_approve":
                         self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
                     else:
-                        plan.gates.append(_ToolGate(
+                        plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
                             justification=decision.justification or sandbox_message, risk=decision.risk, is_bash=True,
@@ -287,7 +287,7 @@ class _PermissionsMixin:
                     if permission_decision == "deny":
                         plan.denial = {"code": "", "message": "Sandbox read denied by the default permission policy.", "denied_injection": False, "raw_command": raw_command}
                         return plan
-                    plan.gates.append(_ToolGate(
+                    plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                         kind="permission", command=raw_command, justification=sandbox_message, risk="medium", is_bash=True,
                         deny_message="Sandbox read was not approved by the user.",
@@ -324,14 +324,14 @@ class _PermissionsMixin:
                     if decision.action == "auto_approve":
                         self._record_event("bash_auto_approved", {"command": raw_command, "reason": decision.justification, "risk": decision.risk})
                     else:
-                        plan.gates.append(_ToolGate(
+                        plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command=raw_command,
                             justification=decision.justification or justification, risk=decision.risk, is_bash=True,
                             deny_message="Command was not approved by the user.",
                         ))
                 else:
-                    plan.gates.append(_ToolGate(
+                    plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                         kind="permission", command=raw_command, justification=justification, risk=risk, is_bash=True,
                         deny_message="Command was not approved by the user.",
@@ -360,14 +360,14 @@ class _PermissionsMixin:
                             "reason": decision.justification, "risk": decision.risk,
                         })
                     else:
-                        plan.gates.append(_ToolGate(
+                        plan.gates.append(_PreflightGate(
                             request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                             kind="permission", command=action,
                             justification=decision.justification or justification, risk=decision.risk,
                             deny_message="MCP tool call not approved by user",
                         ))
                 else:
-                    plan.gates.append(_ToolGate(
+                    plan.gates.append(_PreflightGate(
                         request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                         kind="permission", command=action, justification=justification, risk=risk,
                         deny_message="MCP tool call not approved by user",
@@ -377,7 +377,7 @@ class _PermissionsMixin:
         if tool_name in ("spawn_agent", "call_remote_agent"):
             agent_name = tool_arguments.get("agent") or self._global_configuration.default_agent
             if self._is_remote_agent(agent_name) and not self._bypass_permissions and agent_name not in self._egress_approved_agents:
-                plan.gates.append(_ToolGate(
+                plan.gates.append(_PreflightGate(
                     request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
                     kind="permission", command=f"Contact external agent '{agent_name}'",
                     justification=f"Send this task and any attachments to the external agent '{agent_name}'. Data will leave this machine.",
@@ -388,7 +388,7 @@ class _PermissionsMixin:
             return plan
 
         if tool_name == "ask_user":
-            plan.gates.append(_ToolGate(
+            plan.gates.append(_PreflightGate(
                 request_id=self._new_question_request_id(), tool_call_id=tool_call_identifier,
                 kind="question", questions=tool_arguments.get("questions", []) or [],
             ))

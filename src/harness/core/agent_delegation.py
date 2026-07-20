@@ -5,7 +5,7 @@ messaging mailbox, and awaiting a delegated (parked) turn's human answers on per
 from __future__ import annotations
 
 from contextlib import suppress
-from harness.core.agent_internals import _ToolGate
+from harness.core.agent_internals import _PreflightGate
 from harness.core.agent_internals import model_is_authorized
 from harness.core.agent_messages import AgentMessage
 from harness.core.configuration import AgentConfiguration
@@ -23,7 +23,7 @@ import uuid
 
 class _DelegationMixin:
 
-    async def _await_pending_answers(self, pending: list["_ToolGate"]) -> dict[str, Any]:
+    async def _await_pending_answers(self, pending: list["_PreflightGate"]) -> dict[str, Any]:
         """Park a delegated turn in place until the user answers each gate. The gates were
         surfaced to the panel by the executor from the SUSPENDED event; here the turn awaits
         the answers on per-gate futures (completed by the shared resolver's delegated
@@ -32,7 +32,7 @@ class _DelegationMixin:
         SUSPENDED to become a durable segment."""
         loop = asyncio.get_running_loop()
         futures: dict[str, "asyncio.Future"] = {}
-        gate_by_request: dict[str, "_ToolGate"] = {}
+        gate_by_request: dict[str, "_PreflightGate"] = {}
         for gate in pending:
             future = loop.create_future()
             self._agent_permission_futures[gate.request_id] = future

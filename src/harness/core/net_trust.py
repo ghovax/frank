@@ -10,11 +10,13 @@ string — a DNS name pointing at ``169.254.169.254`` is exactly the bypass a st
 misses. IP literals are checked directly. Callers that legitimately need a private target
 (a Daisy-to-Daisy loopback test) opt in explicitly with ``allow_private``.
 
-Residual: a name that passes the check and then rebinds to a private IP before the socket
-connects (DNS rebinding) is not fully prevented here — pinning the connection to the
-resolved IP is incompatible with the environment's forward proxy. Resolving and rejecting
-*every* returned address shrinks the window to a same-request rebind, and the origin check
-in the remote-agent path is an independent second guard.
+Against a DNS rebind — a name that passes the check and then rebinds to a private IP before
+the socket connects — :func:`resolve_public_ips` plus :func:`pin_to_ip` let a caller pin the
+connection to the exact address it verified (rewriting the URL host to the IP while preserving
+the ``Host`` header and TLS SNI), closing the window entirely. Pinning is skipped only when an
+egress proxy is configured (the proxy does its own DNS/connect), where resolving and rejecting
+*every* returned address plus the independent origin check in the remote-agent path remain the
+guards.
 """
 
 import ipaddress

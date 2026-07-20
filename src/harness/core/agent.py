@@ -76,7 +76,7 @@ from harness.core.turn_events import (
 )
 
 from harness.core.agent_tools import (
-    _ToolHandlersMixin,
+    _ToolsMixin,
 )
 
 from harness.core.agent_delegation import (
@@ -272,7 +272,7 @@ class TaskManager:
         self._next_identifier = int(snapshot.get("next_identifier", len(self._tasks) + 1))
 
 
-class AgentRuntime(_ToolHandlersMixin, _PermissionsMixin, _CompactionMixin, _DelegationMixin, _TurnLoopMixin):
+class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _DelegationMixin, _TurnLoopMixin):
     # A turn runs until the model is done or the user interrupts it — there is no tool-call
     # ceiling and no heuristic stuck-detector. The model owns progress: it ends its own turn
     # when finished, uses ``wait_for`` to poll rather than spinning, and re-reads a tool's

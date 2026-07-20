@@ -71,7 +71,7 @@ class ToolMetadata(BaseModel):
     completed_at: str | None = None
     duration_ms: int | None = None
     # Present only for work that was handed to the background runner (bash/search).
-    background_task_id: str | None = None
+    background_task_identifier: str | None = None
 
 
 # Streamed events (API -> client)

@@ -22,7 +22,7 @@ from harness.core.agent_internals import _screenshot_data_uri
 from harness.core.agent_internals import _spawned_agent_report
 from harness.core.agent_internals import _tool_timing_metadata
 from harness.core.agent_internals import _utc_timestamp
-from harness.core.agent_internals_runner import AgentRunner
+from harness.core.agent_runner import AgentRunner
 from harness.core.background import bind_background_jobs
 from harness.core.background import bind_tool_call_id
 from harness.core.background import unbind_background_jobs
@@ -45,7 +45,7 @@ from harness.core.turn_events import DeniedInjection
 from harness.core.turn_events import Done
 from harness.core.turn_events import Error
 from harness.core.turn_events import GroupStarted
-from harness.core.turn_events import McpEvent
+from harness.core.turn_events import Mcp
 from harness.core.turn_events import ToolCall
 from harness.core.turn_events import ToolResult
 from harness.core.turn_events import TurnEvent
@@ -73,7 +73,7 @@ import time
 
 
 
-class _ToolHandlersMixin:
+class _ToolsMixin:
 
     async def _run_one_tool(
         self,
@@ -1039,7 +1039,7 @@ class _ToolHandlersMixin:
                 # non-empty and the loop re-arming a getter forever, pinning a core.
                 if call_task.done():
                     while not event_queue.empty():
-                        yield McpEvent(id=tool_call_identifier,
+                        yield Mcp(id=tool_call_identifier,
                             name="call_mcp_tool",
                             server=tool_arguments.get("server", ""),
                             tool=tool_arguments.get("tool_name", ""),
@@ -1052,7 +1052,7 @@ class _ToolHandlersMixin:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if get_task in done:
-                    yield McpEvent(id=tool_call_identifier,
+                    yield Mcp(id=tool_call_identifier,
                         name="call_mcp_tool",
                         server=tool_arguments.get("server", ""),
                         tool=tool_arguments.get("tool_name", ""),

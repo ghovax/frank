@@ -10,7 +10,7 @@ and replayable via ``tasks/get``.
 
 The harness's own event vocabulary (text/thinking/tool calls/agent activity)
 is carried as typed ``Part``s — ``TextPart`` for prose, ``DataPart`` for
-everything structured (tool calls/results, sub-task lifecycle, permission
+everything structured (tool calls/results, agent activity, permission
 prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 """
 
@@ -65,7 +65,7 @@ from harness.core.turn_events import (
     Done,
     Error,
     GroupStarted,
-    McpEvent,
+    Mcp,
     Relayed,
     Status,
     Steering,
@@ -767,7 +767,7 @@ class _TurnEventSink:
                 # A durable-safe point: snapshot the conversation so a mid-turn crash leaves
                 # completed tools' results in the record (the next turn does not redo them).
                 await self._save_conversation()
-            case McpEvent():
+            case Mcp():
                 await self.flush()
                 await self._emit(_event_part(McpWireEvent(
                     server=event.server,

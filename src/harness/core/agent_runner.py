@@ -1,7 +1,8 @@
 """AgentRunner — drives one spawned sub-agent's turn to a serialized A2A Task.
 
-In its own leaf module because it instantiates AgentRuntime (via a call-time import), so the tool
-mixin can import it without an import cycle back to the composed class."""
+In its own module because it instantiates the composed ``AgentRuntime`` (via a call-time
+import): keeping it out of the mixin files and the shared ``agent_internals`` leaf lets the
+tool mixin import ``AgentRunner`` without an import cycle back to ``AgentRuntime``."""
 from __future__ import annotations
 
 from a2a.types import Task
@@ -37,8 +38,8 @@ class AgentRunner:
         self.prompt = prompt
         self._stream_progress = stream_progress
         self._agent_name = agent_configuration.identifier
-        # Imported at call time (not module scope) so AgentRunner can live in the leaf
-        # agent_internals module without an import cycle back to the composed AgentRuntime.
+        # Imported at call time (not module scope) so this module can late-bind AgentRuntime
+        # without an import cycle back to the composed class.
         from harness.core.agent import AgentRuntime
         self._runtime = AgentRuntime(
             agent_configuration=agent_configuration,
