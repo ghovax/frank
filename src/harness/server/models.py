@@ -2,7 +2,7 @@
 
 The Pydantic DTOs the FastAPI routes accept and return. Extracted from the server
 application module so a route module depends on the request/response contract directly,
-without importing from ``harness.server.app`` (which imports the routes — the cycle that
+without importing from ``harness.server.asgi`` (which imports the routes — the cycle that
 left these models referenced only as unresolved string annotations before).
 """
 

@@ -1,11 +1,10 @@
-"""ASGI entry point for the harness server.
+"""The ASGI entry point: the fully-assembled ``app`` an ASGI server imports and serves.
 
-The server runtime — the FastAPI ``app``, its shared state, and every operation the routes
-call — lives in :mod:`harness.server.boot`, which imports no route module. This entry
-sits on top: it takes that ``app``, mounts the split route routers onto it, and exposes
-``run_server``. Keeping the router mounting here (the one place that imports the route
-modules) is what breaks the old ``app -> routes -> app`` import cycle: the routes import the
-runtime, never this module.
+:mod:`harness.server.boot` builds the FastAPI ``app`` and owns the runtime; this module
+takes that ``app``, mounts the split route routers onto it, and exposes ``run_server``.
+Mounting the routers here — the one and only module that imports the route modules — is what
+breaks the old ``app -> routes -> app`` cycle: the routes import the boot module and the
+services, never this entry. Import target for a server: ``harness.server.asgi:app``.
 """
 
 import importlib

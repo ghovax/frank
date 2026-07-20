@@ -121,14 +121,22 @@ class _ContextEventBus:
 
 # --- shared runtime singletons (populated by the boot lifespan) ---
 _global_configuration: Optional[GlobalConfiguration] = None
+# The host the server was told to bind to (set by run_server). Read at startup to fail
+# closed when exposed on a non-loopback interface without inbound auth.
 _BIND_HOST = "127.0.0.1"
 _session_factory: Optional[sessionmaker] = None
 _async_engine = None
 _task_store: Optional[AppendOnlyTaskStore] = None
 _registry: Optional[AgentRegistry] = None
 _mcp_manager: Optional[MCPClientManager] = None
+# Outbound A2A client manager (external agents this harness may delegate to). None until
+# startup builds it from remote-agents.json; installed on the registry so make_delegate can
+# branch a delegation over the wire.
 _remote_agent_manager: Optional[RemoteAgentManager] = None
+# Signs short-lived URLs for the A2A file-serving endpoint. Built at startup.
 _file_url_signer: Optional[FileUrlSigner] = None
+# Persisted push-notification configuration store and sender, shared by every mounted
+# agent's handler, so a registered webhook survives a restart.
 _push_configuration_store: Optional[PersistentPushNotificationConfigurationStore] = None
 _push_sender: Optional[PushNotificationSender] = None
 _push_httpx_client: Optional[httpx.AsyncClient] = None
@@ -136,14 +144,25 @@ _main_loop: asyncio.AbstractEventLoop | None = None
 _file_lease_manager: FileLeaseManager | None = None
 _workspace_manager: SessionWorkspaceManager | None = None
 _terminal_manager: "TerminalSessionManager | None" = None
+# Composio Tool Router server(s), provisioned once at startup. Kept separate from the
+# mcp.json-derived servers so the file watcher's live reload re-merges them instead of
+# dropping Composio whenever mcp.json changes.
 _composio_servers: dict[str, _configuration.MCPServerConfiguration] = {}
 _executors: dict[str, HarnessAgentExecutor] = {}
 _mounted_agents: set[str] = set()
+# Dialogue history per A2A context, shared across every agent executor so switching the
+# active agent continues the same conversation (the persona is applied per-turn on top).
 _conversations: dict[str, list] = {}
+# How many executions are running per context, including delegated agents. Drives
+# session-stream lifetime and the sidebar spinner; a count handles overlapping work.
 _running_contexts: dict[str, int] = {}
 _event_bus = _ContextEventBus()
+# Contexts whose latest turn is paused at input-required (durably; also populated on startup
+# from persisted input-required tasks, so the marker survives a restart).
 _awaiting_input_contexts: set[str] = set()
 _broadcaster = Broadcaster()
+# Strong references to in-flight session-title generation tasks so they are not
+# garbage-collected before completing.
 _title_tasks: set[Any] = set()
 _capture_queue: "asyncio.Queue[_CaptureRequest] | None" = None
 _last_written_configuration_digest: Optional[str] = None
