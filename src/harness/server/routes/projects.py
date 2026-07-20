@@ -1,5 +1,6 @@
 """Projects routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
+from harness.server.database import SessionRecord
 from fastapi import HTTPException
 from harness.locations.executor import SshExecutor
 from harness.locations.resolver import host_is_defined
@@ -12,7 +13,6 @@ from harness.server.models import (
 )
 from harness.server import runtime as _app
 from harness.server.runtime import (
-    SessionRecord,
     _create_location,
     _create_project,
     _delete_location,

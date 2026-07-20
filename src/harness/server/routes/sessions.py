@@ -1,5 +1,6 @@
 """Sessions routes (split from harness.server.runtime)."""
 from fastapi import APIRouter
+from harness.server.database import SessionRecord
 from fastapi import Request
 from harness.core.configuration import harness_home_directory
 from sse_starlette.sse import EventSourceResponse
@@ -11,7 +12,6 @@ from harness.server.models import (
 )
 from harness.server import runtime as _app
 from harness.server.runtime import (
-    SessionRecord,
     _ContextEventBus,
     _abort_pending_input,
     _awaiting_input_contexts,
