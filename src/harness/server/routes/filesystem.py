@@ -12,7 +12,7 @@ from harness.server.models import (
     DirectoryRevealRequest,
     DirectoryValidationRequest,
 )
-from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
     _GIT_STATUS_WATCH_FILTER,
     _git_status_changes_relevant,
@@ -29,16 +29,16 @@ async def get_message_history(working_directory: str = ""):
     """Return the last 100 user messages sent in this project, newest first."""
     if not working_directory:
         return {"messages": []}
-    assert _app._task_store is not None
-    messages = await _app._task_store.get_user_messages(working_directory)
+    assert state._task_store is not None
+    messages = await state._task_store.get_user_messages(working_directory)
     return {"messages": messages}
 
 
 @router.post("/messages/history")
 async def save_message_history(body: dict):
     """Persist a user message for up/down arrow recall within the project."""
-    assert _app._task_store is not None
-    await _app._task_store.add_user_message(body["working_directory"], body["message"])
+    assert state._task_store is not None
+    await state._task_store.add_user_message(body["working_directory"], body["message"])
     return {"ok": True}
 
 
@@ -130,4 +130,4 @@ async def browse_directory():
 @router.get("/filesystem/leases")
 async def filesystem_leases():
     """Active filesystem mutation leases across all sessions in this backend."""
-    return {"leases": _app._file_lease_manager.active() if _app._file_lease_manager is not None else []}
+    return {"leases": state._file_lease_manager.active() if state._file_lease_manager is not None else []}

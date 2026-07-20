@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import _reload_remote_agents, _publish_broadcast
 
 router = APIRouter()
@@ -41,8 +41,8 @@ class RemoteAgentInput(BaseModel):
 
 
 def _home_remote_agents_path() -> Path:
-    assert _app._global_configuration is not None
-    root = _app._global_configuration.home_agents_root()
+    assert state._global_configuration is not None
+    root = state._global_configuration.home_agents_root()
     root.mkdir(parents=True, exist_ok=True)
     return root / "remote-agents.json"
 
@@ -92,9 +92,9 @@ def _entry_from_input(payload: RemoteAgentInput) -> dict:
 @router.get("/remote-agents")
 async def list_remote_agents():
     """The registered external agents with their config (never secrets) and live health."""
-    assert _app._global_configuration is not None
-    configuration = _app._global_configuration.remote_agents
-    manager = _app._remote_agent_manager
+    assert state._global_configuration is not None
+    configuration = state._global_configuration.remote_agents
+    manager = state._remote_agent_manager
     agents = []
     for name, agent in configuration.agents.items():
         health = manager.health(name) if manager is not None else {"health": "unconfigured", "error": ""}
@@ -144,7 +144,7 @@ async def delete_remote_agent(name: str):
 @router.post("/remote-agents/{name}/refresh")
 async def refresh_remote_agent(name: str):
     """Force a fresh card resolution for one agent and return its new health."""
-    manager = _app._remote_agent_manager
+    manager = state._remote_agent_manager
     if manager is None or not manager.is_remote(name):
         raise HTTPException(status_code=404, detail="No such remote agent.")
     await manager.refresh(name)

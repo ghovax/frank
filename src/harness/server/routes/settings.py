@@ -23,11 +23,10 @@ from harness.server.models import (
     UserContextUpdateRequest,
 )
 from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
     _agent_configuration_for_request,
     _apply_live_credentials,
-    _configuration_lock,
-    _executors,
     _load_agent_sidecar,
     _normalize_permission_mode,
     _persist_configuration,
@@ -84,8 +83,8 @@ async def list_models_endpoint():
     whether its provider has a resolvable credential (available), plus the provider
     registry. Available models are fronted in the
     picker; locked ones stay listed (greyed) so the user sees what a key unlocks."""
-    assert _app._global_configuration is not None
-    configured_keys = _app._global_configuration.configured_provider_keys()
+    assert state._global_configuration is not None
+    configured_keys = state._global_configuration.configured_provider_keys()
     available_identifiers = {model.identifier for model in available_models(configured_keys)}
     # The chatgpt provider lists the models.dev-derived superset but is only
     # *available* per-model against the account's live subscription catalog, so the
@@ -172,7 +171,7 @@ async def chatgpt_auth_start():
     localhost:1455, tokens are persisted, and runtimes are reset in the background
     task below; the UI learns of completion via the ``settings_changed`` broadcast
     (or by polling GET /auth/chatgpt)."""
-    previous = _app._chatgpt_login_flow
+    previous = state._chatgpt_login_flow
     if previous is not None:
         await previous.close()
     flow = ChatGPTLoginFlow()
@@ -184,7 +183,7 @@ async def chatgpt_auth_start():
             status_code=409,
             detail=f"Could not start sign-in — the callback port 1455 is in use ({error}).",
         ) from error
-    _app._chatgpt_login_flow = flow
+    state._chatgpt_login_flow = flow
 
     async def _await_completion() -> None:
         try:
@@ -196,8 +195,8 @@ async def chatgpt_auth_start():
         except Exception:  # noqa: BLE001 — timeout/denial just leaves us signed out
             pass
         finally:
-            if _app._chatgpt_login_flow is flow:
-                _app._chatgpt_login_flow = None
+            if state._chatgpt_login_flow is flow:
+                state._chatgpt_login_flow = None
 
     asyncio.create_task(_await_completion())
     return {"authorize_url": flow.authorize_url}
@@ -207,9 +206,9 @@ async def chatgpt_auth_start():
 async def chatgpt_auth_signout():
     """Sign out: clear the stored tokens and reset runtimes so the ``chatgpt``
     provider re-locks immediately."""
-    if _app._chatgpt_login_flow is not None:
-        await _app._chatgpt_login_flow.close()
-        _app._chatgpt_login_flow = None
+    if state._chatgpt_login_flow is not None:
+        await state._chatgpt_login_flow.close()
+        state._chatgpt_login_flow = None
     await asyncio.to_thread(clear_tokens)
     clear_subscription_models_cache()
     clear_usage_snapshot()
@@ -222,11 +221,11 @@ async def chatgpt_auth_signout():
 async def get_settings():
     """Return the API credentials stored in ~/.daisy/configuration.yaml so the
     settings dialog can pre-fill them, including per-provider keys."""
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     try:
         default_agent_configuration = load_agent_configuration(
-            _app._global_configuration.default_agent,
-            _app._global_configuration.agent_directories(),
+            state._global_configuration.default_agent,
+            state._global_configuration.agent_directories(),
         )
         permission_mode = _normalize_permission_mode(default_agent_configuration.permission_mode)
     except FileNotFoundError:
@@ -236,19 +235,19 @@ async def get_settings():
         permission_mode = _normalize_permission_mode("")
     return {
         "permission_mode": permission_mode,
-        "exa_api_key": _app._global_configuration.exa.api_key,
-        "composio_api_key": _app._global_configuration.composio.api_key,
-        "jina_api_key": _app._global_configuration.jina.api_key,
-        "firecrawl_api_key": _app._global_configuration.firecrawl.api_key,
-        "web_fetch_proxy_url": _app._global_configuration.web_fetch.proxy_url,
-        "sandbox_enabled": _app._global_configuration.sandbox.enabled,
-        "workspace_strategy": _app._global_configuration.workspace.strategy,
-        "compaction": _app._global_configuration.compaction.model_dump(),
-        "user_context_enabled": _app._global_configuration.user_context.enabled,
-        "computer_control_enabled": _app._global_configuration.computer_control.enabled,
+        "exa_api_key": state._global_configuration.exa.api_key,
+        "composio_api_key": state._global_configuration.composio.api_key,
+        "jina_api_key": state._global_configuration.jina.api_key,
+        "firecrawl_api_key": state._global_configuration.firecrawl.api_key,
+        "web_fetch_proxy_url": state._global_configuration.web_fetch.proxy_url,
+        "sandbox_enabled": state._global_configuration.sandbox.enabled,
+        "workspace_strategy": state._global_configuration.workspace.strategy,
+        "compaction": state._global_configuration.compaction.model_dump(),
+        "user_context_enabled": state._global_configuration.user_context.enabled,
+        "computer_control_enabled": state._global_configuration.computer_control.enabled,
         "providers": {
             identifier: {"api_key": credential.api_key, "base_url": credential.base_url}
-            for identifier, credential in _app._global_configuration.providers.items()
+            for identifier, credential in state._global_configuration.providers.items()
         },
     }
 
@@ -259,9 +258,9 @@ async def update_settings(request: SettingsUpdateRequest):
     live: refresh the in-memory configuration, the Exa client, restart the MCP
     client manager so Composio tools appear/disappear with its key, and drop
     cached agent runtimes so the next turn rebuilds with the new credentials."""
-    assert _app._global_configuration is not None
-    configuration = _app._global_configuration
-    async with _configuration_lock:
+    assert state._global_configuration is not None
+    configuration = state._global_configuration
+    async with state._configuration_lock:
         await _persist_configuration(
             exa_api_key=request.exa_api_key,
             composio_api_key=request.composio_api_key,
@@ -289,8 +288,8 @@ async def update_settings(request: SettingsUpdateRequest):
                 sidecar = _load_agent_sidecar(agent_markdown_path)
                 sidecar["permissionMode"] = _normalize_permission_mode(request.permission_mode)
                 _save_agent_sidecar(agent_markdown_path, sidecar)
-                if configuration.default_agent in _executors:
-                    _executors[configuration.default_agent].reset_runtimes()
+                if configuration.default_agent in state._executors:
+                    state._executors[configuration.default_agent].reset_runtimes()
         if request.exa_api_key is not None:
             configuration.exa.api_key = request.exa_api_key
         if request.composio_api_key is not None:
@@ -328,45 +327,45 @@ async def update_settings(request: SettingsUpdateRequest):
 @router.post("/settings/sandbox")
 async def update_sandbox(request: SandboxUpdateRequest):
     """Persist and apply the sandbox toggle independently from credentials."""
-    assert _app._global_configuration is not None
-    async with _configuration_lock:
+    assert state._global_configuration is not None
+    async with state._configuration_lock:
         await _persist_configuration(sandbox_enabled=request.enabled)
-        _app._global_configuration.sandbox.enabled = request.enabled
-        for executor in _executors.values():
+        state._global_configuration.sandbox.enabled = request.enabled
+        for executor in state._executors.values():
             executor.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "sandbox_enabled": _app._global_configuration.sandbox.enabled}
+    return {"status": "saved", "sandbox_enabled": state._global_configuration.sandbox.enabled}
 
 
 @router.post("/settings/user-context")
 async def update_user_context(request: UserContextUpdateRequest):
     """Persist and apply the opt-in user-context toggle. The snapshot is built into the
     static system prompt, so cached runtimes are dropped to rebuild it on the next turn."""
-    assert _app._global_configuration is not None
-    async with _configuration_lock:
-        setting_changed = _app._global_configuration.user_context.enabled != request.enabled
+    assert state._global_configuration is not None
+    async with state._configuration_lock:
+        setting_changed = state._global_configuration.user_context.enabled != request.enabled
         await _persist_configuration(user_context_enabled=request.enabled)
-        _app._global_configuration.user_context.enabled = request.enabled
+        state._global_configuration.user_context.enabled = request.enabled
         if setting_changed:
             await asyncio.to_thread(_reset_work_habits_acknowledgements)
-            for executor in _executors.values():
+            for executor in state._executors.values():
                 executor.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "user_context_enabled": _app._global_configuration.user_context.enabled}
+    return {"status": "saved", "user_context_enabled": state._global_configuration.user_context.enabled}
 
 
 @router.post("/settings/computer-control")
 async def update_computer_control(request: ComputerControlUpdateRequest):
     """Persist and apply the opt-in computer-use toggle. The tool set is built per turn,
     so cached runtimes are dropped to add or remove the `computer` tool on the next turn."""
-    assert _app._global_configuration is not None
-    async with _configuration_lock:
+    assert state._global_configuration is not None
+    async with state._configuration_lock:
         await _persist_configuration(computer_control_enabled=request.enabled)
-        _app._global_configuration.computer_control.enabled = request.enabled
-        for executor in _executors.values():
+        state._global_configuration.computer_control.enabled = request.enabled
+        for executor in state._executors.values():
             executor.reset_runtimes()
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "computer_control_enabled": _app._global_configuration.computer_control.enabled}
+    return {"status": "saved", "computer_control_enabled": state._global_configuration.computer_control.enabled}
 
 
 @router.post("/settings/compaction")
@@ -374,11 +373,11 @@ async def update_compaction(request: CompactionUpdateRequest):
     """Persist and apply the Observational-Memory compaction settings (the auto on/off
     trigger and thresholds), independently from credentials. The runtime reads the live
     config each turn, so no runtime reset is needed for the trigger to take effect."""
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     changes = request.model_dump(exclude_none=True)
     if changes:
-        async with _configuration_lock:
+        async with state._configuration_lock:
             await _persist_configuration(compaction=changes)
-            _app._global_configuration.compaction = _app._global_configuration.compaction.model_copy(update=changes)
+            state._global_configuration.compaction = state._global_configuration.compaction.model_copy(update=changes)
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "compaction": _app._global_configuration.compaction.model_dump()}
+    return {"status": "saved", "compaction": state._global_configuration.compaction.model_dump()}

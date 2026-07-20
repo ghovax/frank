@@ -14,7 +14,7 @@ from harness.server.models import (
     AttachmentReference,
 )
 from fastapi.responses import FileResponse
-from harness.server import runtime as _app
+from harness.server import state
 
 router = APIRouter()
 
@@ -24,7 +24,7 @@ async def serve_a2a_file(token: str):
     """Stream a file authorized by a signed A2A file URL. The token binds the path, an
     audience, and an expiry, and is single-use — a valid link issued by this server resolves
     exactly once (``consume=True``), so it cannot be replayed."""
-    signer = _app._file_url_signer
+    signer = state._file_url_signer
     if signer is None:
         raise HTTPException(status_code=404, detail="File serving is unavailable.")
     file_path = signer.verify(token, consume=True)

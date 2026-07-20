@@ -7,7 +7,7 @@ from fastapi import WebSocketDisconnect
 from pathlib import Path
 import asyncio
 import json
-from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
     TerminalSession,
     _delete_terminal_state,
@@ -22,7 +22,7 @@ router = APIRouter()
 async def list_terminals(context_id: str = "", working_directory: str = ""):
     context_identifier = await _terminal_context_for_request(context_id, working_directory)
     persisted = await asyncio.to_thread(_list_terminal_states, context_identifier)
-    live_keys = _app._terminal_manager.live_keys(context_identifier) if _app._terminal_manager is not None else set()
+    live_keys = state._terminal_manager.live_keys(context_identifier) if state._terminal_manager is not None else set()
     terminals = [
         {"terminal_key": entry["terminal_key"], "cwd": entry["working_directory"], "running": entry["terminal_key"] in live_keys}
         for entry in persisted
@@ -41,8 +41,8 @@ async def delete_terminal(terminal_key: str, context_id: str = "", working_direc
     if not terminal_key:
         raise HTTPException(status_code=400, detail="A terminal key is required.")
     context_identifier = await _terminal_context_for_request(context_id, working_directory)
-    if _app._terminal_manager is not None:
-        await _app._terminal_manager.close_one(context_identifier, terminal_key)
+    if state._terminal_manager is not None:
+        await state._terminal_manager.close_one(context_identifier, terminal_key)
     await asyncio.to_thread(_delete_terminal_state, context_identifier, terminal_key)
     return {"ok": True}
 
@@ -63,7 +63,7 @@ async def terminal_websocket(
 ):
     terminal_key = (terminal_key or "main").strip()[:128] or "main"
     await websocket.accept()
-    if _app._terminal_manager is None:
+    if state._terminal_manager is None:
         await websocket.send_json({
             "type": "error",
             "code": "terminal_unavailable",
@@ -84,7 +84,7 @@ async def terminal_websocket(
             directory = Path(location_base_directory.strip()).expanduser()
         else:
             directory = _terminal_directory(context_id, working_directory)
-        session = await _app._terminal_manager.get_or_create(context_id, directory, rows, columns, terminal_key=terminal_key, remote_host_alias=remote_alias)
+        session = await state._terminal_manager.get_or_create(context_id, directory, rows, columns, terminal_key=terminal_key, remote_host_alias=remote_alias)
         subscriber = session.subscribe()
         await websocket.send_json({
             "type": "ready",

@@ -9,7 +9,7 @@ from harness.server.models import (
     AgentInfo,
     AgentsList,
 )
-from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
     AGENT_CARD_PATH,
     _agent_configuration_for_request,
@@ -17,7 +17,6 @@ from harness.server.runtime import (
     _apply_agent_configuration_update,
     _card_for,
     _ensure_agents_for,
-    _executors,
     _load_agent_sidecar,
     _path_scope,
     _publish_broadcast,
@@ -34,25 +33,25 @@ async def agents(working_directory: str = ""):
     the home globals plus that folder's own ``.agents/agents`` (deduped), never
     the directory the server was launched in. Passing ``working_directory`` is
     what makes the list track the chosen folder."""
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     if working_directory:
         _ensure_agents_for(working_directory)
-        directories = _app._global_configuration.agent_directories_for(working_directory)
+        directories = state._global_configuration.agent_directories_for(working_directory)
     else:
-        directories = _app._global_configuration.agent_directories()
+        directories = state._global_configuration.agent_directories()
     agent_data = list_agents(directories)
     # The bundled agents are always present, so a folder with no ``.agents`` of
     # its own still sees the shipped profiles. The configured default agent is
     # only offered as the selection fallback when it is actually available in
     # this folder's resolved set.
     available_ids = {agent["id"] for agent in agent_data}
-    default_agent = _app._global_configuration.default_agent if _app._global_configuration.default_agent in available_ids else (agent_data[0]["id"] if agent_data else "")
+    default_agent = state._global_configuration.default_agent if state._global_configuration.default_agent in available_ids else (agent_data[0]["id"] if agent_data else "")
     return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), description=agent.get("description", ""), model=agent.get("model", "")) for agent in agent_data], defaultAgent=default_agent)
 
 
 @router.get("/agents/{agent_name}/configuration")
 async def agent_configuration(agent_name: str, working_directory: str = ""):
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     try:
         if working_directory:
             _ensure_agents_for(working_directory)
@@ -63,7 +62,7 @@ async def agent_configuration(agent_name: str, working_directory: str = ""):
 
 @router.put("/agents/{agent_name}/configuration")
 async def update_agent_configuration(agent_name: str, request: AgentConfigurationUpdateRequest, working_directory: str = ""):
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     try:
         if working_directory:
             _ensure_agents_for(working_directory)
@@ -73,8 +72,8 @@ async def update_agent_configuration(agent_name: str, request: AgentConfiguratio
         saved_configuration = _agent_configuration_payload(agent_name, working_directory)
         if saved_configuration.provider and saved_configuration.model:
             await asyncio.to_thread(_record_model_selection, f"{saved_configuration.provider}/{saved_configuration.model}")
-        if agent_name in _executors:
-            _executors[agent_name].reset_runtimes()
+        if agent_name in state._executors:
+            state._executors[agent_name].reset_runtimes()
         _reload_agent_cards()
         _publish_broadcast({"type": "agents_changed"})
         return saved_configuration
@@ -92,11 +91,11 @@ async def agent_cards(working_directory: str = ""):
     the directory the server happens to have been launched in. The UI passes the
     selected project path so the advertised skills match what a session there can
     actually find, refreshing whenever the user picks a different folder."""
-    assert _app._registry is not None and _app._global_configuration is not None
+    assert state._registry is not None and state._global_configuration is not None
     skill_roots = (
-        _app._global_configuration.skill_directories_for(working_directory)
+        state._global_configuration.skill_directories_for(working_directory)
         if working_directory
-        else _app._global_configuration.skill_directories()
+        else state._global_configuration.skill_directories()
     )
     all_skills = load_skills(skill_roots)
     skill_titles = {skill.identifier: skill.display_title for skill in all_skills}
@@ -109,10 +108,10 @@ async def agent_cards(working_directory: str = ""):
         _ensure_agents_for(working_directory)
         allowed_agents = {
             agent["id"]
-            for agent in list_agents(_app._global_configuration.agent_directories_for(working_directory))
+            for agent in list_agents(state._global_configuration.agent_directories_for(working_directory))
         }
     cards: list[dict] = []
-    for existing in _app._registry.cards():
+    for existing in state._registry.cards():
         agent_name = str(existing.name or "")
         if allowed_agents is not None and agent_name not in allowed_agents:
             continue
@@ -138,14 +137,14 @@ async def skills(working_directory: str = ""):
     folder's own ``.agents/skills`` (deduped), never the launch directory. This is
     independent of any agent, so the UI can show a folder's skills even when it has
     no agents. Disabled skills are returned (flagged) so the UI greys them out."""
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     roots = (
-        _app._global_configuration.skill_directories_for(working_directory)
+        state._global_configuration.skill_directories_for(working_directory)
         if working_directory
-        else _app._global_configuration.skill_directories()
+        else state._global_configuration.skill_directories()
     )
     all_skills = load_skills(roots)
-    home_root = _app._global_configuration.home_agents_root().resolve()
+    home_root = state._global_configuration.home_agents_root().resolve()
     return {
         "skills": [
             {
@@ -164,9 +163,9 @@ async def skills(working_directory: str = ""):
 @router.get(AGENT_CARD_PATH)
 async def default_agent_card():
     """Serve the default agent's card at the well-known path for spec compliance."""
-    assert _app._registry is not None and _app._global_configuration is not None
-    card = _app._registry.card(_app._global_configuration.default_agent) or (
-        _app._registry.cards()[0] if _app._registry.cards() else None
+    assert state._registry is not None and state._global_configuration is not None
+    card = state._registry.card(state._global_configuration.default_agent) or (
+        state._registry.cards()[0] if state._registry.cards() else None
     )
     if card is None:
         return {}

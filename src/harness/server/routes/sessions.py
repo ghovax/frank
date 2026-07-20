@@ -10,17 +10,12 @@ import re
 from harness.server.models import (
     SessionDraftRequest,
 )
-from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
-    _ContextEventBus,
     _abort_pending_input,
-    _awaiting_input_contexts,
-    _event_bus,
-    _executors,
     _prune_session_artifacts,
     _publish_broadcast,
     _remove_upload_file,
-    _running_contexts,
     _session_draft,
     _sessions_payload,
     _update_session_draft,
@@ -48,8 +43,8 @@ async def update_session_draft(context_id: str, request: SessionDraftRequest):
 async def session_tasks(context_id: str):
     """All A2A tasks for a context — the main turn tasks (with history and
     artifacts) plus related agent tasks — for replaying a session."""
-    assert _app._task_store is not None
-    tasks = await _app._task_store.tasks_for_context(context_id)
+    assert state._task_store is not None
+    tasks = await state._task_store.tasks_for_context(context_id)
     return {
         "tasks": [
             task.model_dump(by_alias=True, exclude_none=True, mode="json")
@@ -67,8 +62,8 @@ async def session_task_page(context_id: str, before_row_id: int | None = None, l
     keeps long conversations interactive without waiting for the complete task
     history to deserialize and cross the local HTTP boundary.
     """
-    assert _app._task_store is not None
-    page = await _app._task_store.task_page_for_context(context_id, before_row_id=before_row_id, limit=limit)
+    assert state._task_store is not None
+    page = await state._task_store.task_page_for_context(context_id, before_row_id=before_row_id, limit=limit)
     return {
         "tasks": [
             task.model_dump(by_alias=True, exclude_none=True, mode="json")
@@ -91,14 +86,14 @@ async def session_stream(context_id: str, request: Request):
 
     A ``done`` frame ends the stream when the turn completes (or if it already had
     by the time the viewer connected)."""
-    assert _app._task_store is not None
-    task_store = _app._task_store
+    assert state._task_store is not None
+    task_store = state._task_store
 
     async def generate():
         # Subscribe before reading the baseline so every part published from here on
         # lands on our queue; the snapshot then covers everything up to the baseline.
-        queue = _event_bus.subscribe(context_id)
-        baseline = _event_bus.high_seq(context_id)
+        queue = state._event_bus.subscribe(context_id)
+        baseline = state._event_bus.high_seq(context_id)
         try:
             tasks = await task_store.tasks_for_context(context_id)
             yield {"data": json.dumps({
@@ -106,7 +101,7 @@ async def session_stream(context_id: str, request: Request):
                 "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
             })}
 
-            for sequence, part in _event_bus.agent_events_through(context_id, baseline):
+            for sequence, part in state._event_bus.agent_events_through(context_id, baseline):
                 yield {"data": json.dumps({
                     "kind": "live",
                     "seq": sequence,
@@ -118,7 +113,7 @@ async def session_stream(context_id: str, request: Request):
             done = False
             while not queue.empty():
                 item = queue.get_nowait()
-                if item is _ContextEventBus._DONE:
+                if item is state._ContextEventBus._DONE:
                     done = True
                     break
                 seq, part = item
@@ -126,7 +121,7 @@ async def session_stream(context_id: str, request: Request):
                     continue
                 yield {"data": json.dumps({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
 
-            if done or _running_contexts.get(context_id, 0) == 0:
+            if done or state._running_contexts.get(context_id, 0) == 0:
                 yield {"data": json.dumps({"kind": "done"})}
                 return
 
@@ -139,7 +134,7 @@ async def session_stream(context_id: str, request: Request):
                     item = await asyncio.wait_for(queue.get(), timeout=5.0)
                 except asyncio.TimeoutError:
                     continue
-                if item is _ContextEventBus._DONE:
+                if item is state._ContextEventBus._DONE:
                     yield {"data": json.dumps({"kind": "done"})}
                     break
                 seq, part = item
@@ -147,7 +142,7 @@ async def session_stream(context_id: str, request: Request):
         except asyncio.CancelledError:
             raise
         finally:
-            _event_bus.unsubscribe(context_id, queue)
+            state._event_bus.unsubscribe(context_id, queue)
 
     return EventSourceResponse(generate(), ping=15)
 
@@ -158,26 +153,26 @@ async def delete_session(context_id: str):
     # Settle any input-required pause and drop the awaiting-input marker; the pending
     # record and tasks are removed with the session below regardless.
     await _abort_pending_input(context_id)
-    _awaiting_input_contexts.discard(context_id)
+    state._awaiting_input_contexts.discard(context_id)
     # Release every executor's live state for this context (runtime, resume pump, turn
     # lock, flags, and the shared conversation) so a deleted session leaves nothing
     # behind. Teardown subsumes abort — it stops any in-flight turn and pump first.
-    for executor in _executors.values():
+    for executor in state._executors.values():
         executor.teardown_context(context_id)
     # Delete every task in the context from the task store, then reclaim any upload files
     # the session referenced that no surviving session still references (uploads are
     # content-addressed and may be shared, so only truly-orphaned files are removed).
-    if _app._task_store is not None:
+    if state._task_store is not None:
         uploads_root = str(harness_home_directory() / "uploads")
         upload_pattern = re.compile(re.escape(uploads_root) + r"/[^\"\\]+")
         referenced_uploads: set[str] = set()
-        for text in await _app._task_store.context_message_texts(context_id):
+        for text in await state._task_store.context_message_texts(context_id):
             referenced_uploads.update(upload_pattern.findall(text))
         # One call drops the context's tasks (head/history/artifacts) and its
         # conversation checkpoint — the single durable turn surface.
-        await _app._task_store.delete_context(context_id)
+        await state._task_store.delete_context(context_id)
         for path_string in referenced_uploads:
-            if not await _app._task_store.any_history_references(path_string):
+            if not await state._task_store.any_history_references(path_string):
                 await asyncio.to_thread(_remove_upload_file, path_string, uploads_root)
     # Prune this session's artifact versions (shadow-git branches + index rows) before the
     # session record goes, so its locations can still be resolved for the branch delete.
@@ -185,8 +180,8 @@ async def delete_session(context_id: str):
     # The retention pass above already removed persisted conversation/lifecycle state;
     # finish by removing the sidebar record. teardown_context dropped the live copies.
     def _delete_record() -> bool:
-        assert _app._session_factory is not None
-        database_session = _app._session_factory()
+        assert state._session_factory is not None
+        database_session = state._session_factory()
         try:
             record = database_session.query(SessionRecord).filter(SessionRecord.id == context_id).first()
             if record is None:

@@ -10,7 +10,7 @@ runtime, never this module.
 
 import importlib
 
-from harness.server import runtime
+from harness.server import state
 from harness.server.runtime import app
 
 # Register the split route modules WITHOUT binding their names into this module's namespace:
@@ -26,9 +26,9 @@ for _route_name in (
 
 
 def run_server(host: str = "127.0.0.1", port: int = 8822) -> None:
-    # Record the bind host on the runtime so its startup exposure check (fail-closed on a
-    # non-loopback bind without inbound auth) sees the real target before serving.
-    runtime._BIND_HOST = host
+    # Record the bind host in shared state so the runtime's startup exposure check
+    # (fail-closed on a non-loopback bind without inbound auth) sees the real target.
+    state._BIND_HOST = host
     import uvicorn
     uvicorn.run(app, host=host, port=port)
 

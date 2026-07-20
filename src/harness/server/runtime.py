@@ -46,6 +46,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
+from harness.server import state
 from harness.server.database import (
     SessionRecord,
     SessionLifecycleRecord,
@@ -75,7 +76,6 @@ from harness.server.models import (
 
 from a2a.server.apps.jsonrpc import A2AFastAPIApplication
 from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.tasks import PushNotificationSender
 
 from harness.core.a2a_executor import (
     AgentRegistry,
@@ -105,9 +105,6 @@ from harness.core.configuration import (
     load_agent_configuration,
     save_api_keys,
     seed_home_agents,
-)
-from harness.core.chatgpt_oauth import (
-    ChatGPTLoginFlow,
 )
 from harness.core.composio_router import composio_mcp_servers
 from harness.core.mcp_client import MCPClientManager
@@ -160,63 +157,24 @@ AGENT_CARD_PATH = "/.well-known/agent-card.json"
 
 
 
-class Broadcaster:
-    """A tiny in-process pub/sub. Subscribers receive every broadcast event,
-    which is how live changes (e.g. edited agents) reach connected clients."""
-
-    def __init__(self):
-        self._subscribers: set[asyncio.Queue] = set()
-
-    def subscribe(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subscribers.add(queue)
-        return queue
-
-    def unsubscribe(self, queue: asyncio.Queue) -> None:
-        self._subscribers.discard(queue)
-
-    def publish(self, event: dict) -> None:
-        for queue in list(self._subscribers):
-            queue.put_nowait(event)
 
 
-_global_configuration: Optional[GlobalConfiguration] = None
 # The host the server was told to bind to (set by run_server). Used at startup to fail closed
 # when exposed on a non-loopback interface without inbound auth.
-_BIND_HOST = "127.0.0.1"
-_session_factory: Optional[sessionmaker] = None
-_async_engine = None
-_task_store: Optional[AppendOnlyTaskStore] = None
-_registry: Optional[AgentRegistry] = None
-_mcp_manager: Optional[MCPClientManager] = None
 # Outbound A2A client manager (external agents this harness may delegate to). None until
 # startup builds it from remote-agents.json; installed on the registry so make_delegate
 # can branch a delegation over the wire.
-_remote_agent_manager: Optional[RemoteAgentManager] = None
 # Signs short-lived URLs for the A2A file-serving endpoint. Built at startup.
-_file_url_signer: Optional[FileUrlSigner] = None
 # Persisted push-notification configuration store and sender, shared by every mounted
 # agent's handler, so a registered webhook survives a restart.
-_push_configuration_store: Optional[PersistentPushNotificationConfigurationStore] = None
-_push_sender: Optional[PushNotificationSender] = None
-_push_httpx_client: Optional[httpx.AsyncClient] = None
-_main_loop: asyncio.AbstractEventLoop | None = None
-_file_lease_manager: FileLeaseManager | None = None
-_workspace_manager: SessionWorkspaceManager | None = None
-_terminal_manager: "TerminalSessionManager | None" = None
 # Composio Tool Router server(s), provisioned once at startup. Kept separate from
 # the mcp.json-derived servers so the file watcher's live reload re-merges them
 # instead of dropping Composio whenever mcp.json changes.
-_composio_servers: dict[str, _configuration.MCPServerConfiguration] = {}
-_executors: dict[str, HarnessAgentExecutor] = {}
-_mounted_agents: set[str] = set()
 # Dialogue history per A2A context, shared across every agent executor so that
 # switching the active agent continues the same conversation (the persona is
 # applied per-turn on top of this shared history).
-_conversations: dict[str, list] = {}
 # How many executions are running per context, including delegated agents. Drives
 # session-stream lifetime and the sidebar spinner; a count handles overlapping work.
-_running_contexts: dict[str, int] = {}
 
 
 def _notify_filesystem_lease_state() -> None:
@@ -224,134 +182,67 @@ def _notify_filesystem_lease_state() -> None:
     _publish_broadcast({"type": "filesystem_leases_changed"})
 
 
-class _ContextEventBus:
-    """Per-context fan-out of the structured A2A parts a turn emits.
-
-    A non-driving viewer (e.g. the sidebar re-opened on a running session) follows
-    the turn by subscribing here instead of polling the task store and re-replaying
-    the whole transcript every second. Normal turn parts are published after they
-    are persisted. Spawned-agent progress is published immediately and journaled
-    here until its queued copy reaches persistence. ``complete`` closes the stream.
-
-    Delivery is snapshot-then-tail and gap-/duplicate-free without a cursor: a
-    subscriber takes a baseline ``high_seq``, reads a compacted snapshot of the
-    persisted transcript, replays journaled immediate agent events through that
-    baseline, then drains its queue for events with seq > baseline and keeps
-    reading live. Agent event IDs let the client deduplicate the persisted copy.
-    """
-
-    # Sentinel placed on a subscriber's queue when the context's turn completes,
-    # so the SSE generator can emit a terminal frame and close cleanly.
-    _DONE = object()
-
-    def __init__(self) -> None:
-        self._seq: dict[str, int] = {}
-        self._subscribers: dict[str, list[asyncio.Queue]] = {}
-        self._agent_events: dict[str, list[tuple[int, dict]]] = {}
-
-    def publish(self, context_id: str, part: dict) -> int:
-        seq = self._seq.get(context_id, 0) + 1
-        self._seq[context_id] = seq
-        data = part.get("data") if part.get("kind") == "data" else None
-        if isinstance(data, dict) and data.get("event_id"):
-            self._agent_events.setdefault(context_id, []).append((seq, part))
-        for queue in self._subscribers.get(context_id, ()):
-            queue.put_nowait((seq, part))
-        return seq
-
-    def complete(self, context_id: str) -> None:
-        for queue in self._subscribers.get(context_id, ()):
-            queue.put_nowait(self._DONE)
-        self._agent_events.pop(context_id, None)
-
-    def high_seq(self, context_id: str) -> int:
-        return self._seq.get(context_id, 0)
-
-    def agent_events_through(
-        self, context_id: str, maximum_sequence: int
-    ) -> list[tuple[int, dict]]:
-        return [
-            (sequence, part)
-            for sequence, part in self._agent_events.get(context_id, ())
-            if sequence <= maximum_sequence
-        ]
-
-    def subscribe(self, context_id: str) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
-        self._subscribers.setdefault(context_id, []).append(queue)
-        return queue
-
-    def unsubscribe(self, context_id: str, queue: asyncio.Queue) -> None:
-        subscribers = self._subscribers.get(context_id)
-        if subscribers and queue in subscribers:
-            subscribers.remove(queue)
-            if not subscribers:
-                self._subscribers.pop(context_id, None)
 
 
-_event_bus = _ContextEventBus()
 
 
 def _publish_stream_event(context_id: str, part) -> None:
     """Executor hook: serialize one structured part and fan it out to live viewers."""
-    _event_bus.publish(context_id, part.model_dump(by_alias=True, exclude_none=True, mode="json"))
+    state._event_bus.publish(context_id, part.model_dump(by_alias=True, exclude_none=True, mode="json"))
 
 
 def _set_turn_state(context_id: str, running: bool) -> None:
     """Track active turns per context and broadcast on the empty/active edge so the
     sidebar reflects which conversations are currently running."""
-    previous = _running_contexts.get(context_id, 0)
+    previous = state._running_contexts.get(context_id, 0)
     updated = previous + 1 if running else max(0, previous - 1)
     if updated:
-        _running_contexts[context_id] = updated
+        state._running_contexts[context_id] = updated
     else:
-        _running_contexts.pop(context_id, None)
+        state._running_contexts.pop(context_id, None)
     if (previous == 0) != (updated == 0):
-        _broadcaster.publish({"type": "sessions_changed"})
+        state._broadcaster.publish({"type": "sessions_changed"})
     # When the last turn for a context finishes, tell live viewers to do a final
     # refresh and close — the structured-part fan-out is only meaningful mid-turn.
     if not running and updated == 0:
-        _event_bus.complete(context_id)
+        state._event_bus.complete(context_id)
 
 
 # Contexts whose latest turn is paused at input-required (durably; also populated on
 # startup from persisted input-required tasks, so the marker survives a restart).
-_awaiting_input_contexts: set[str] = set()
 
 
 def _notify_permission_state(context_id: str, awaiting: bool) -> None:
     """A turn suspended at (or resumed from) an input-required pause — track it durably
     and refresh the sidebar so it can swap the spinner for an attention marker."""
     if awaiting:
-        _awaiting_input_contexts.add(context_id)
+        state._awaiting_input_contexts.add(context_id)
     else:
-        _awaiting_input_contexts.discard(context_id)
-    _broadcaster.publish({"type": "sessions_changed"})
+        state._awaiting_input_contexts.discard(context_id)
+    state._broadcaster.publish({"type": "sessions_changed"})
 
-_broadcaster = Broadcaster()
 # Keeps references to in-flight session-title generation tasks so they are not
 # garbage-collected before completing.
-_title_tasks: set[Any] = set()
 
 
 def _publish_broadcast(event: dict) -> None:
     """Publish from either the event-loop thread or a worker thread."""
-    if _main_loop is not None and _main_loop.is_running():
-        _main_loop.call_soon_threadsafe(_broadcaster.publish, event)
+    if state._main_loop is not None and state._main_loop.is_running():
+        state._main_loop.call_soon_threadsafe(state._broadcaster.publish, event)
     else:
-        _broadcaster.publish(event)
+        state._broadcaster.publish(event)
 
 
 def _schedule_session_title(context_id: str, first_message: str) -> None:
-    if _main_loop is not None and _main_loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(_finalize_session_title(context_id, first_message), _main_loop)
-        _title_tasks.add(future)
-        future.add_done_callback(_title_tasks.discard)
+    if state._main_loop is not None and state._main_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(_finalize_session_title(context_id, first_message), state._main_loop)
+        state._title_tasks.add(future)
+        future.add_done_callback(state._title_tasks.discard)
         return
     try:
         task = asyncio.create_task(_finalize_session_title(context_id, first_message))
-        _title_tasks.add(task)
-        task.add_done_callback(_title_tasks.discard)
+        state._title_tasks.add(task)
+        task.add_done_callback(state._title_tasks.discard)
     except RuntimeError:
         # No running event loop (e.g. called outside a request) — keep the provisional title.
         pass
@@ -359,10 +250,10 @@ def _schedule_session_title(context_id: str, first_message: str) -> None:
 
 def _claim_work_habits_acknowledgement(context_id: str) -> bool:
     """Atomically claim the one-time work-habits acknowledgement for a session."""
-    if _session_factory is None or not context_id:
+    if state._session_factory is None or not context_id:
         return False
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(SessionLifecycleRecord, context_id)
             if record is not None and record.work_habits_acknowledged_at:
@@ -392,10 +283,10 @@ def _claim_work_habits_acknowledgement(context_id: str) -> bool:
 
 def _reset_work_habits_acknowledgements() -> None:
     """Allow one fresh acknowledgement after the work-habits setting changes."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             database_session.query(SessionLifecycleRecord).update(
                 {SessionLifecycleRecord.work_habits_acknowledged_at: ""},
@@ -415,9 +306,9 @@ def _session_agent_for(context_id: str) -> str:
     """Read a session's owning agent from its record (``""`` when unknown). Lets an
     on-demand action reach the right executor even before that agent has a live
     runtime this process (e.g. a session reopened after a restart)."""
-    if _session_factory is None or not context_id:
+    if state._session_factory is None or not context_id:
         return ""
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         record = database_session.get(SessionRecord, context_id)
         return (record.agent or "") if record is not None else ""
@@ -429,9 +320,9 @@ def _session_agent_for(context_id: str) -> str:
 
 def _session_working_directory_for(context_id: str) -> str:
     """Read a session's source working directory from its record."""
-    if _session_factory is None or not context_id:
+    if state._session_factory is None or not context_id:
         return ""
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         record = database_session.get(SessionRecord, context_id)
         return (record.working_directory or "") if record is not None else ""
@@ -451,7 +342,7 @@ def _executor_for_context(context_id: str) -> "HarnessAgentExecutor | None":
     self-select — that pattern silently no-ops whenever the runtime is cold (e.g. right
     after a restart, before the session has taken a turn)."""
     agent_name = _session_agent_for(context_id)
-    return _executors.get(agent_name) if agent_name else None
+    return state._executors.get(agent_name) if agent_name else None
 
 
 async def _resolve_pending_input(
@@ -461,9 +352,9 @@ async def _resolve_pending_input(
     """Route a native resolve (permission decision or question answers) into the durable
     input-required resolution the registry owns, so the native REST path and an external
     ``input_response`` message share one resume."""
-    if _registry is None:
+    if state._registry is None:
         return False
-    return await _registry.resolve_pending_input(
+    return await state._registry.resolve_pending_input(
         context_id, request_id, decision=decision, answers=answers, declined=declined,
     )
 
@@ -472,9 +363,9 @@ async def _abort_pending_input(context_id: str) -> bool:
     """Deny every pending interaction of a context's input-required task, resuming it so
     the denials are recorded and the conversation stays valid, instead of stranding a
     checkpoint that a later turn could not build on."""
-    if _registry is None:
+    if state._registry is None:
         return False
-    return await _registry.abort_pending_input(context_id)
+    return await state._registry.abort_pending_input(context_id)
 
 
 def _normalize_permission_mode(mode: str) -> str:
@@ -484,9 +375,9 @@ def _normalize_permission_mode(mode: str) -> str:
 def _session_permission_mode_for(context_id: str) -> str:
     """Read a context's persisted permission mode for frontend hydration and
     runtime rebuilds. Missing/invalid values fall back to the agent default."""
-    if _session_factory is None or not context_id:
+    if state._session_factory is None or not context_id:
         return "default"
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         record = database_session.get(SessionRecord, context_id)
         return _normalize_permission_mode(record.permission_mode or "default") if record is not None else "default"
@@ -498,11 +389,11 @@ def _session_permission_mode_for(context_id: str) -> str:
 
 def _set_session_permission_mode(context_id: str, mode: str) -> bool:
     """Persist a session permission mode. Returns whether the session exists."""
-    if _session_factory is None or not context_id:
+    if state._session_factory is None or not context_id:
         return False
     normalized = _normalize_permission_mode(mode)
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(SessionRecord, context_id)
             if record is None:
@@ -548,10 +439,10 @@ def _ensure_session_workspace(
     first_message: str,
     project_id: str = "",
 ) -> SessionWorkspace:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     source_directory = working_directory or str(Path.home())
 
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         record = database_session.get(SessionRecord, context_id)
         if record is not None:
@@ -562,9 +453,9 @@ def _ensure_session_workspace(
         database_session.close()
 
     requested_strategy = workspace_strategy if workspace_strategy in {"none", "branch", "worktree"} else ""
-    strategy = cast(WorkspaceStrategy, requested_strategy or (_global_configuration.workspace.strategy if _global_configuration is not None else "none"))
-    if _workspace_manager is not None:
-        workspace = _workspace_manager.prepare_sync(context_id, source_directory, strategy)
+    strategy = cast(WorkspaceStrategy, requested_strategy or (state._global_configuration.workspace.strategy if state._global_configuration is not None else "none"))
+    if state._workspace_manager is not None:
+        workspace = state._workspace_manager.prepare_sync(context_id, source_directory, strategy)
     else:
         resolved = str(Path(source_directory).expanduser().resolve(strict=False))
         workspace = SessionWorkspace(
@@ -575,7 +466,7 @@ def _ensure_session_workspace(
         )
 
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(SessionRecord, context_id)
             if record is not None:
@@ -642,7 +533,7 @@ def _record_model_selection(model_identifier: str) -> None:
     """Record a model selection in the history (upserting by id), mirroring the
     project-history list. Catalog models use their display label; typed model ids
     derive a readable label from the provider/model value."""
-    if not model_identifier or _session_factory is None:
+    if not model_identifier or state._session_factory is None:
         return
     definition = find_model(model_identifier)
     split = provider_and_suffix(model_identifier)
@@ -655,7 +546,7 @@ def _record_model_selection(model_identifier: str) -> None:
         provider, suffix = definition.provider, definition.identifier.split("/", 1)[1]
     label = definition.name if definition is not None else suffix.replace("/", " / ").replace("-", " ").replace("_", " ").title()
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(ModelHistoryRecord, model_identifier)
             selected_at = datetime.now(timezone.utc).isoformat()
@@ -679,9 +570,9 @@ def _record_model_selection(model_identifier: str) -> None:
 
 def _recent_models(limit: int = 8) -> list[dict[str, str]]:
     """Recently selected models, newest first."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return []
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         rows = (
             database_session.query(ModelHistoryRecord)
@@ -735,12 +626,11 @@ class _CaptureRequest:
         self.surface = surface
 
 
-_capture_queue: "asyncio.Queue[_CaptureRequest] | None" = None
 
 
 def _artifact_maximum_bytes() -> int:
     """The per-file byte cap above which a write is recorded as a placeholder version."""
-    workspace = getattr(_global_configuration, "workspace", None) if _global_configuration else None
+    workspace = getattr(state._global_configuration, "workspace", None) if state._global_configuration else None
     return int(getattr(workspace, "artifact_maximum_bytes", None) or artifacts.DEFAULT_MAXIMUM_BYTES)
 
 
@@ -754,7 +644,7 @@ def _capture_artifacts(
     Non-blocking: build a request, enqueue, and return so the agent's turn never waits on
     git. Takes keyword arguments (not a request object) so the runtime stays decoupled from
     the server's internal request type."""
-    if _capture_queue is None:
+    if state._capture_queue is None:
         return
     request = _CaptureRequest(
         context_id=context_id, location_uri=location_uri, executor=executor,
@@ -762,31 +652,31 @@ def _capture_artifacts(
         mode=mode, original_contents=original_contents,
         tool_call_id=tool_call_id, message=message, surface=surface,
     )
-    if _main_loop is not None and _main_loop.is_running():
-        _main_loop.call_soon_threadsafe(_capture_queue.put_nowait, request)
+    if state._main_loop is not None and state._main_loop.is_running():
+        state._main_loop.call_soon_threadsafe(state._capture_queue.put_nowait, request)
     else:
         try:
-            _capture_queue.put_nowait(request)
+            state._capture_queue.put_nowait(request)
         except asyncio.QueueFull:
             _artifact_logger.warning("capture queue full; dropped a capture for %s", context_id)
 
 
 async def _capture_worker() -> None:
-    assert _capture_queue is not None
+    assert state._capture_queue is not None
     while True:
-        request = await _capture_queue.get()
+        request = await state._capture_queue.get()
         try:
             await asyncio.to_thread(_run_capture, request)
         except Exception:
             _artifact_logger.exception("artifact capture failed for %s", request.context_id)
         finally:
-            _capture_queue.task_done()
+            state._capture_queue.task_done()
 
 
 def _project_id_for_context(context_id: str) -> str:
-    if _session_factory is None:
+    if state._session_factory is None:
         return ""
-    session = _session_factory()
+    session = state._session_factory()
     try:
         record = session.query(SessionRecord).filter(SessionRecord.id == context_id).first()
         return cast(str, record.project_id) if record is not None and record.project_id else ""
@@ -867,11 +757,11 @@ def _run_capture(request: "_CaptureRequest") -> None:
 
 
 def _record_capture(request: "_CaptureRequest", project_id: str, git_directory: str, work_tree: str, result: "artifacts.CommitResult") -> None:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     now = datetime.now(timezone.utc).isoformat()
     version_id = str(uuid.uuid4())
     with sqlite_write_lock():
-        session = _session_factory()
+        session = state._session_factory()
         try:
             session.add(ArtifactVersionRecord(
                 id=version_id, context_id=request.context_id, project_id=project_id,
@@ -900,7 +790,7 @@ def _upsert_surface(request: "_CaptureRequest", project_id: str, location_home: 
     """Create/refresh the surface (tab) for an ``open_artifact``. Reuses an existing surface
     for the same ``(context, absolute_path)`` so re-opening a file updates one tab. For an
     external-URL artifact (no ``absolute_path``) there is no git history — only the live source."""
-    assert _session_factory is not None
+    assert state._session_factory is not None
     surface = request.surface or {}
     absolute_path = surface.get("absolute_path", "")
     git_directory = work_tree = relative_path = latest_commit = latest_blob = ""
@@ -916,7 +806,7 @@ def _upsert_surface(request: "_CaptureRequest", project_id: str, location_home: 
     now = datetime.now(timezone.utc).isoformat()
     requested_surface_id = surface.get("surface_id") or ""
     with sqlite_write_lock():
-        session = _session_factory()
+        session = state._session_factory()
         try:
             # The agent supplies a stable surface id (derived from the target), so a repeat
             # open of the same file/URL reuses one tab; key purely on that id.
@@ -977,9 +867,9 @@ def _artifact_index(context_id: str, scope: str = "session") -> list[dict]:
     """The file-history list: one entry per tracked ``(git_directory, relative_path)`` with its latest
     change and version count. ``scope='full'`` widens each file to its whole cross-session
     lineage (same location + relative_path), ``'session'`` shows only this session's versions."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return []
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         keys = {
             (cast(str, row.git_directory), cast(str, row.relative_path))
@@ -1032,9 +922,9 @@ def _artifact_index(context_id: str, scope: str = "session") -> list[dict]:
 
 def _artifact_versions(context_id: str, git_directory: str, relative_path: str, scope: str = "session") -> list[dict]:
     """Every captured version of one file, oldest → newest (what the filmstrip walks)."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return []
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         query = database_session.query(ArtifactFileRecord).filter(
             ArtifactFileRecord.git_directory == git_directory, ArtifactFileRecord.relative_path == relative_path
@@ -1079,9 +969,9 @@ def _artifact_versions(context_id: str, git_directory: str, relative_path: str, 
 
 def _surface_records(context_id: str) -> list[dict]:
     """The surfaced artifacts (artifacts-panel tabs) for a session."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return []
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         rows = (
             database_session.query(ArtifactSurfaceRecord)
@@ -1180,9 +1070,9 @@ def _artifact_annotation_payload(row: ArtifactAnnotationRecord, surface: "Artifa
 
 
 def _artifact_annotation_records(context_id: str) -> list[dict]:
-    if _session_factory is None:
+    if state._session_factory is None:
         return []
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         rows = (
             database_session.query(ArtifactAnnotationRecord)
@@ -1202,7 +1092,7 @@ def _artifact_annotation_records(context_id: str) -> list[dict]:
 
 
 def _save_artifact_annotation_record(context_id: str, request: "ArtifactAnnotationSaveRequest") -> dict:
-    if _session_factory is None:
+    if state._session_factory is None:
         raise HTTPException(status_code=503, detail="Database is not ready.")
     surface_id = (request.surface_id or "").strip()
     version_id = (request.version_id or "").strip()
@@ -1211,7 +1101,7 @@ def _save_artifact_annotation_record(context_id: str, request: "ArtifactAnnotati
     updated_at = request.updated_at or datetime.now(timezone.utc).isoformat()
     key = {"context_id": context_id, "surface_id": surface_id, "version_id": version_id}
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             if database_session.get(SessionRecord, context_id) is None:
                 raise HTTPException(status_code=404, detail="Session not found.")
@@ -1243,11 +1133,11 @@ def _save_artifact_annotation_record(context_id: str, request: "ArtifactAnnotati
 
 
 def _delete_artifact_annotation_record(context_id: str, surface_id: str, version_id: str) -> bool:
-    if _session_factory is None:
+    if state._session_factory is None:
         return False
     key = {"context_id": context_id, "surface_id": surface_id, "version_id": version_id}
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             row = database_session.get(ArtifactAnnotationRecord, key)
             if row is None:
@@ -1281,8 +1171,8 @@ async def _generate_session_title(context_id: str, first_message: str) -> str:
     ``with_structured_output`` relies on, but accepts a regular tool call — the
     same pattern the main agent uses with ``bind_tools``.
     """
-    assert _global_configuration is not None
-    configuration = _global_configuration
+    assert state._global_configuration is not None
+    configuration = state._global_configuration
     agent_name = _session_agent_for(context_id) or configuration.default_agent
     working_directory = _session_working_directory_for(context_id)
     agent_directories = (
@@ -1330,13 +1220,13 @@ async def _finalize_session_title(context_id: str, first_message: str) -> None:
         return
     changed = await asyncio.to_thread(_set_session_title, context_id, title)
     if changed:
-        _broadcaster.publish({"type": "sessions_changed"})
+        state._broadcaster.publish({"type": "sessions_changed"})
 
 
 def _set_session_title(context_id: str, title: str) -> bool:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(SessionRecord, context_id)
             if record is None or record.title == title:
@@ -1353,8 +1243,8 @@ def _set_session_title(context_id: str, title: str) -> bool:
 
 def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
     """List recent chat sessions for the sidebar."""
-    assert _session_factory is not None
-    database_session = _session_factory()
+    assert state._session_factory is not None
+    database_session = state._session_factory()
     try:
         rows = database_session.query(SessionRecord).order_by(SessionRecord.created_at.desc()).limit(50).all()
         return {
@@ -1377,12 +1267,12 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
                     "permission_mode": _normalize_permission_mode(row.permission_mode or "default"),
                     "input_draft": row.input_draft or "",
                     "filesystem_leases": (
-                        _file_lease_manager.active_for_session(row.id)
-                        if _file_lease_manager is not None
+                        state._file_lease_manager.active_for_session(row.id)
+                        if state._file_lease_manager is not None
                         else []
                     ),
-                    "running": row.id in _running_contexts,
-                    "awaiting_input": row.id in _awaiting_input_contexts,
+                    "running": row.id in state._running_contexts,
+                    "awaiting_input": row.id in state._awaiting_input_contexts,
                 }
                 for row in rows
             ]
@@ -1398,16 +1288,16 @@ def _card_for(agent_name: str, working_directory: str = ""):
     globals plus the path's own ``.agents``, deduped) rather than the server's
     launch directory — so a card advertises the skills a session in that folder
     can actually find. Without one, the server-CWD scoping is used (startup mount)."""
-    assert _global_configuration is not None
-    configuration = load_agent_configuration(agent_name, _global_configuration.agent_directories())
+    assert state._global_configuration is not None
+    configuration = load_agent_configuration(agent_name, state._global_configuration.agent_directories())
     skill_roots = (
-        _global_configuration.skill_directories_for(working_directory)
+        state._global_configuration.skill_directories_for(working_directory)
         if working_directory
-        else _global_configuration.skill_directories()
+        else state._global_configuration.skill_directories()
     )
     all_skills = load_skills(skill_roots)
     agent_skills = skills_for_agent(all_skills, configuration.skills)
-    security_schemes, security = _global_configuration.a2a.card_security()
+    security_schemes, security = state._global_configuration.a2a.card_security()
     return configuration, build_agent_card(
         configuration, agent_skills, PUBLIC_BASE_URL,
         security_schemes=security_schemes, security=security,
@@ -1417,24 +1307,24 @@ def _card_for(agent_name: str, working_directory: str = ""):
 def _mount_agent(application: FastAPI, agent_name: str) -> None:
     """Serve one agent profile as its own A2A endpoint: its own executor, request
     handler, and AgentCard, mounted at a per-agent path. Idempotent."""
-    assert _global_configuration is not None and _task_store is not None and _registry is not None
+    assert state._global_configuration is not None and state._task_store is not None and state._registry is not None
     _configuration, card = _card_for(agent_name)
-    if agent_name in _mounted_agents:
-        _registry.register(agent_name, _registry._handlers[agent_name], card)
+    if agent_name in state._mounted_agents:
+        state._registry.register(agent_name, state._registry._handlers[agent_name], card)
         return
     executor = HarnessAgentExecutor(
         agent_name=agent_name,
-        global_configuration=_global_configuration,
-        task_store=_task_store,
-        registry=_registry,
+        global_configuration=state._global_configuration,
+        task_store=state._task_store,
+        registry=state._registry,
         on_new_context=_record_session_visible,
-        conversations=_conversations,
+        conversations=state._conversations,
         claim_work_habits_acknowledgement=_claim_work_habits_acknowledgement,
         on_turn_state=_set_turn_state,
         on_permission_state=_notify_permission_state,
         session_permission_mode_for=_session_permission_mode_for,
         on_stream_event=_publish_stream_event,
-        file_lease_manager=_file_lease_manager,
+        file_lease_manager=state._file_lease_manager,
         ensure_session_workspace=_ensure_session_workspace,
         ensure_mcp_servers=_ensure_mcp_servers_for,
         resolve_locations=_resolve_session_locations,
@@ -1443,42 +1333,42 @@ def _mount_agent(application: FastAPI, agent_name: str) -> None:
     )
     handler = DefaultRequestHandler(
         agent_executor=executor,
-        task_store=_task_store,
-        push_config_store=_push_configuration_store,
-        push_sender=_push_sender,
+        task_store=state._task_store,
+        push_config_store=state._push_configuration_store,
+        push_sender=state._push_sender,
     )
-    _executors[agent_name] = executor
-    _registry.register(agent_name, handler, card)
+    state._executors[agent_name] = executor
+    state._registry.register(agent_name, handler, card)
     rpc_path = agent_rpc_path(agent_name)
     A2AFastAPIApplication(agent_card=card, http_handler=handler).add_routes_to_app(
         application,
         rpc_url=rpc_path,
         agent_card_url=f"{rpc_path}{AGENT_CARD_PATH}",
     )
-    _mounted_agents.add(agent_name)
+    state._mounted_agents.add(agent_name)
 
 
 def _ensure_agents_for(working_directory: str) -> None:
     """Mount any agent the working directory declares that isn't mounted yet, so a
     folder's project-local agents become addressable A2A routes once that folder is
     selected. The route pool is shared and only grows — nothing is unmounted."""
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     directories = (
-        _global_configuration.agent_directories_for(working_directory)
+        state._global_configuration.agent_directories_for(working_directory)
         if working_directory
-        else _global_configuration.agent_directories()
+        else state._global_configuration.agent_directories()
     )
     for agent_name in list_agent_route_names(directories):
-        if agent_name not in _mounted_agents:
+        if agent_name not in state._mounted_agents:
             _mount_agent(app, agent_name)
 
 
 def _agent_directories_for_request(working_directory: str) -> list[Path]:
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     return (
-        _global_configuration.agent_directories_for(working_directory)
+        state._global_configuration.agent_directories_for(working_directory)
         if working_directory
-        else _global_configuration.agent_directories()
+        else state._global_configuration.agent_directories()
     )
 
 
@@ -1560,7 +1450,7 @@ async def _persist_agent_allow_patterns(agent_identifier: str, project_directory
     so a delegated agent's 'always allow' outlives its ephemeral runtime and every future spawn
     of the profile inherits it. Best effort; an existing decision for a pattern is never
     overridden (a deliberate deny/ask is not silently flipped to allow)."""
-    if not patterns or _global_configuration is None:
+    if not patterns or state._global_configuration is None:
         return
 
     def _write() -> bool:
@@ -1580,8 +1470,8 @@ async def _persist_agent_allow_patterns(agent_identifier: str, project_directory
         return
     # The current delegated agent already runs the command (its live session allowlist covers
     # it); this makes the change take effect for future spawns and the discovery cards.
-    if agent_identifier in _executors:
-        _executors[agent_identifier].reset_runtimes()
+    if agent_identifier in state._executors:
+        state._executors[agent_identifier].reset_runtimes()
     await asyncio.to_thread(_reload_agent_cards)
     _publish_broadcast({"type": "agents_changed"})
 
@@ -1590,22 +1480,22 @@ def _reload_agent_cards() -> None:
     """Recompile AgentCards from the agent markdown and skill files so discovery
     reflects edits without a restart. Agent behaviour itself is already live,
     since each turn loads its configuration and skills fresh."""
-    assert _global_configuration is not None and _registry is not None
-    for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
-        handler = _registry._handlers.get(agent_name)
+    assert state._global_configuration is not None and state._registry is not None
+    for agent_name in list_agent_route_names(state._global_configuration.agent_directories()):
+        handler = state._registry._handlers.get(agent_name)
         if handler is not None:
             _configuration, card = _card_for(agent_name)
-            _registry.register(agent_name, handler, card)
+            state._registry.register(agent_name, handler, card)
 
 
 def _watched_a2a_paths() -> list[str]:
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     directories = [
         # The .agents roots are watched recursively so mcp.json (live MCP server
         # definitions) is picked up alongside the agents/ and skills/ subtrees.
-        *_global_configuration.agents_root_directories(),
-        *_global_configuration.agent_directories(),
-        *_global_configuration.skill_directories(),
+        *state._global_configuration.agents_root_directories(),
+        *state._global_configuration.agent_directories(),
+        *state._global_configuration.skill_directories(),
     ]
     watched: list[str] = []
     seen: set[Path] = set()
@@ -1625,24 +1515,23 @@ async def _reload_mcp() -> None:
     (start new servers, stop removed/disabled ones, keep unchanged ones connected)
     and drop cached runtimes so the next turn rebuilds its tools with the new set.
     No server restart required."""
-    global _mcp_manager
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     # Serialize with the settings endpoints and the configuration watcher: they all
     # rebuild the shared `_mcp_manager`, so overlapping runs would clobber it.
-    async with _configuration_lock:
-        _global_configuration.mcp = GlobalConfiguration.load().mcp
+    async with state._configuration_lock:
+        state._global_configuration.mcp = GlobalConfiguration.load().mcp
         # Re-fold the startup-provisioned Composio server back in so a live mcp.json
         # edit doesn't drop Composio's tools (and the agent keeps its MCP tools).
-        _global_configuration.mcp.servers.update(_composio_servers)
-        enabled = _global_configuration.mcp.enabled_servers()
-        if _mcp_manager is None:
+        state._global_configuration.mcp.servers.update(state._composio_servers)
+        enabled = state._global_configuration.mcp.enabled_servers()
+        if state._mcp_manager is None:
             if enabled:
-                _mcp_manager = MCPClientManager(enabled)
-                await _mcp_manager.start()
-                set_mcp_client_manager(_mcp_manager)
+                state._mcp_manager = MCPClientManager(enabled)
+                await state._mcp_manager.start()
+                set_mcp_client_manager(state._mcp_manager)
         else:
-            await _mcp_manager.reconcile(enabled)
-        for executor in _executors.values():
+            await state._mcp_manager.reconcile(enabled)
+        for executor in state._executors.values():
             executor.reset_runtimes()
 
 
@@ -1658,9 +1547,9 @@ def _configure_telemetry(configuration: GlobalConfiguration) -> None:
 
 def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
     """Convert the loaded ``remote-agents.json`` config into the manager's dataclasses."""
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     result: dict[str, RemoteAgentConfiguration] = {}
-    for name, configuration in _global_configuration.remote_agents.enabled_agents().items():
+    for name, configuration in state._global_configuration.remote_agents.enabled_agents().items():
         auth = configuration.auth
         result[name] = RemoteAgentConfiguration(
             name=name,
@@ -1682,20 +1571,19 @@ async def _reload_remote_agents() -> None:
     """Re-read remote-agents.json and apply the external-agent set live: reconcile the
     outbound client manager and drop cached runtimes so the next turn's roster reflects
     the change. No server restart required."""
-    global _remote_agent_manager
-    assert _global_configuration is not None and _registry is not None
-    async with _configuration_lock:
-        _global_configuration.remote_agents = GlobalConfiguration.load().remote_agents
+    assert state._global_configuration is not None and state._registry is not None
+    async with state._configuration_lock:
+        state._global_configuration.remote_agents = GlobalConfiguration.load().remote_agents
         configurations = _remote_agent_dataclasses()
-        if _remote_agent_manager is None:
-            _remote_agent_manager = RemoteAgentManager(configurations)
-            await _remote_agent_manager.start()
-            _registry.set_remote_manager(_remote_agent_manager)
+        if state._remote_agent_manager is None:
+            state._remote_agent_manager = RemoteAgentManager(configurations)
+            await state._remote_agent_manager.start()
+            state._registry.set_remote_manager(state._remote_agent_manager)
         else:
-            await _remote_agent_manager.reconcile(configurations)
-        for executor in _executors.values():
+            await state._remote_agent_manager.reconcile(configurations)
+        for executor in state._executors.values():
             executor.reset_runtimes()
-        _broadcaster.publish({"type": "remote_agents_changed"})
+        state._broadcaster.publish({"type": "remote_agents_changed"})
 
 
 async def _poll_remote_agent_health(interval_seconds: float = 300.0) -> None:
@@ -1703,8 +1591,8 @@ async def _poll_remote_agent_health(interval_seconds: float = 300.0) -> None:
     even while idle, broadcasting on each pass so open panels refresh."""
     while True:
         await asyncio.sleep(interval_seconds)
-        if _remote_agent_manager is not None and _remote_agent_manager.has_agents():
-            await _remote_agent_manager.refresh_all()
+        if state._remote_agent_manager is not None and state._remote_agent_manager.has_agents():
+            await state._remote_agent_manager.refresh_all()
             _publish_broadcast({"type": "remote_agents_changed"})
 
 
@@ -1713,31 +1601,30 @@ async def _ensure_mcp_servers_for(working_directory: str) -> None:
     ``mcp.json`` servers, so a folder's servers are running and listable once that
     folder is selected. The pool is a union — servers are only added or updated,
     never removed — so no other session loses its servers."""
-    global _mcp_manager
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     if not working_directory:
         return
     # Serialize with every other `_mcp_manager` mutator (settings save, config/mcp.json
     # watchers) so concurrent reconciles never clobber the shared manager.
-    async with _configuration_lock:
-        folder_servers = _global_configuration.mcp_configuration_for(working_directory).servers
+    async with state._configuration_lock:
+        folder_servers = state._global_configuration.mcp_configuration_for(working_directory).servers
         new_servers = {
             name: configuration
             for name, configuration in folder_servers.items()
-            if _global_configuration.mcp.servers.get(name) != configuration
+            if state._global_configuration.mcp.servers.get(name) != configuration
         }
         if not new_servers:
             return
-        _global_configuration.mcp.servers.update(new_servers)
-        enabled = _global_configuration.mcp.enabled_servers()
-        if _mcp_manager is None:
+        state._global_configuration.mcp.servers.update(new_servers)
+        enabled = state._global_configuration.mcp.enabled_servers()
+        if state._mcp_manager is None:
             if enabled:
-                _mcp_manager = MCPClientManager(enabled)
-                await _mcp_manager.start()
-                set_mcp_client_manager(_mcp_manager)
+                state._mcp_manager = MCPClientManager(enabled)
+                await state._mcp_manager.start()
+                set_mcp_client_manager(state._mcp_manager)
         else:
-            await _mcp_manager.reconcile(enabled)
-        for executor in _executors.values():
+            await state._mcp_manager.reconcile(enabled)
+        for executor in state._executors.values():
             executor.reset_runtimes()
 
 
@@ -1746,7 +1633,7 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
     added agents, reload MCP servers, refresh cards, and broadcast so connected
     clients refetch immediately. Agents, skills, and MCP servers are all picked up
     live, so the only thing needing a restart is a change to the core harness."""
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     watched = _watched_a2a_paths()
     if not watched:
         return
@@ -1756,11 +1643,11 @@ async def _watch_agents_and_skills(application: FastAPI) -> None:
                 await _reload_mcp()
             if any(str(path).endswith("remote-agents.json") for _change, path in changes):
                 await _reload_remote_agents()
-            for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
-                if agent_name not in _mounted_agents:
+            for agent_name in list_agent_route_names(state._global_configuration.agent_directories()):
+                if agent_name not in state._mounted_agents:
                     _mount_agent(application, agent_name)
             _reload_agent_cards()
-            _broadcaster.publish({"type": "agents_changed"})
+            state._broadcaster.publish({"type": "agents_changed"})
     except asyncio.CancelledError:
         pass
 
@@ -1790,9 +1677,8 @@ async def _apply_live_credentials() -> None:
     Composio/MCP server set and its client manager, and drop cached agent runtimes so
     the next turn is built with the new credentials. Shared by the settings endpoint
     and the on-disk configuration watcher."""
-    global _composio_servers, _mcp_manager
-    assert _global_configuration is not None
-    configuration = _global_configuration
+    assert state._global_configuration is not None
+    configuration = state._global_configuration
     # Push the tool tuning policy process-wide so every window-scaled cap, timeout, and settlement
     # knob tracks the current configuration (mirrors the Exa/web-fetch client rebuild below).
     set_tuning(tuning_from_policy(configuration.tuning))
@@ -1805,37 +1691,34 @@ async def _apply_live_credentials() -> None:
     _rebuild_web_fetch_clients(configuration)
     # Re-provision Composio: rebuild its server config, fold it into (or remove it from)
     # the MCP set, and restart the client manager so Composio tools track its key.
-    _composio_servers = composio_mcp_servers(configuration.composio)
-    if _composio_servers:
-        configuration.mcp.servers.update(_composio_servers)
+    state._composio_servers = composio_mcp_servers(configuration.composio)
+    if state._composio_servers:
+        configuration.mcp.servers.update(state._composio_servers)
     else:
         configuration.mcp.servers.pop(configuration.composio.server_name, None)
-    if _mcp_manager is not None:
-        await _mcp_manager.aclose()
+    if state._mcp_manager is not None:
+        await state._mcp_manager.aclose()
     mcp_servers = configuration.mcp.enabled_servers()
-    _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
-    if _mcp_manager is not None:
-        await _mcp_manager.start()
-    set_mcp_client_manager(_mcp_manager)
-    for executor in _executors.values():
+    state._mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    if state._mcp_manager is not None:
+        await state._mcp_manager.start()
+    set_mcp_client_manager(state._mcp_manager)
+    for executor in state._executors.values():
         executor.reset_runtimes()
 
 
 # The content digest of the last configuration.yaml this process wrote, so the on-disk
 # watcher can tell our own saves (skip — already applied in-process) apart from a manual
 # user edit (apply). Set by every server-side configuration write via _persist_configuration.
-_last_written_configuration_digest: Optional[str] = None
 
 # Serializes every configuration mutation-and-apply (settings endpoints + the on-disk
 # watcher) so they never interleave at an await point. Without it, a UI save and a
 # concurrent disk-edit reload could both rebuild the MCP client manager, clobbering the
 # `_mcp_manager` global and leaking a half-started manager.
-_configuration_lock = asyncio.Lock()
 
 # The in-flight ChatGPT sign-in, if any. A sign-in owns a loopback server on port
 # 1455 for its lifetime, so at most one runs at a time; starting a new one supersedes
 # any stale flow. Held only between /auth/chatgpt/start and the browser redirect.
-_chatgpt_login_flow: Optional[ChatGPTLoginFlow] = None
 
 
 def _configuration_digest() -> Optional[str]:
@@ -1849,9 +1732,8 @@ def _configuration_digest() -> Optional[str]:
 async def _persist_configuration(**changes) -> None:
     """Write configuration changes to disk and remember the resulting content digest so
     the on-disk watcher does not treat our own save as an external edit."""
-    global _last_written_configuration_digest
     await asyncio.to_thread(save_api_keys, **changes)
-    _last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
+    state._last_written_configuration_digest = await asyncio.to_thread(_configuration_digest)
 
 
 async def _reload_configuration_from_disk() -> None:
@@ -1860,9 +1742,9 @@ async def _reload_configuration_from_disk() -> None:
     and broadcast so every connected client refetches. The MCP server *set* (mcp.json plus
     any folder-added servers) is left to its own watcher — only the credential-derived
     Composio server is re-provisioned here."""
-    assert _global_configuration is not None
+    assert state._global_configuration is not None
     fresh = await asyncio.to_thread(GlobalConfiguration.load)
-    configuration = _global_configuration
+    configuration = state._global_configuration
     user_context_setting_changed = configuration.user_context.enabled != fresh.user_context.enabled
     configuration.exa = fresh.exa
     configuration.jina = fresh.jina
@@ -1880,7 +1762,7 @@ async def _reload_configuration_from_disk() -> None:
     await _apply_live_credentials()
     if user_context_setting_changed:
         await asyncio.to_thread(_reset_work_habits_acknowledgements)
-    _broadcaster.publish({"type": "settings_changed"})
+    state._broadcaster.publish({"type": "settings_changed"})
 
 
 async def _watch_configuration() -> None:
@@ -1888,7 +1770,6 @@ async def _watch_configuration() -> None:
     server and every connected client — so editing an API key (or any setting) directly in
     the file takes effect immediately, no restart. The file is the single source of truth;
     our own writes are recognized by digest and skipped so a UI save does not echo."""
-    global _last_written_configuration_digest
     configuration_path = configuration_file_path()
     filename = configuration_path.name
     try:
@@ -1899,11 +1780,11 @@ async def _watch_configuration() -> None:
         ):
             # Serialize against UI-driven saves. Re-check the digest *inside* the lock so a
             # save that completed while we waited is recognized as ours (skip), not echoed.
-            async with _configuration_lock:
+            async with state._configuration_lock:
                 digest = await asyncio.to_thread(_configuration_digest)
-                if digest is not None and digest == _last_written_configuration_digest:
+                if digest is not None and digest == state._last_written_configuration_digest:
                     continue  # our own write echoing back — already applied in-process
-                _last_written_configuration_digest = digest
+                state._last_written_configuration_digest = digest
                 await _reload_configuration_from_disk()
     except asyncio.CancelledError:
         pass
@@ -1923,21 +1804,20 @@ async def _watch_ssh_hosts() -> None:
             recursive=False,
             watch_filter=lambda _change, path: Path(path).name == "config",
         ):
-            _broadcaster.publish({"type": "hosts_changed"})
+            state._broadcaster.publish({"type": "hosts_changed"})
     except asyncio.CancelledError:
         pass
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _global_configuration, _session_factory, _async_engine, _task_store, _registry, _mcp_manager, _remote_agent_manager, _file_url_signer, _push_configuration_store, _push_sender, _push_httpx_client, _composio_servers, _main_loop, _file_lease_manager, _workspace_manager, _terminal_manager, _last_written_configuration_digest
-    _main_loop = asyncio.get_running_loop()
-    _file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
-    _workspace_manager = SessionWorkspaceManager()
-    _terminal_manager = TerminalSessionManager()
-    _global_configuration = GlobalConfiguration.load()
-    _assert_exposure_authenticated(_global_configuration)
-    _configure_telemetry(_global_configuration)
+    state._main_loop = asyncio.get_running_loop()
+    state._file_lease_manager = FileLeaseManager(on_change=_notify_filesystem_lease_state)
+    state._workspace_manager = SessionWorkspaceManager()
+    state._terminal_manager = TerminalSessionManager()
+    state._global_configuration = GlobalConfiguration.load()
+    _assert_exposure_authenticated(state._global_configuration)
+    _configure_telemetry(state._global_configuration)
     # Seed the home layer (~/.agents) with editable copies of the server-shipped
     # agents/skills, non-destructively. This is what makes the desktop app's bundled
     # profiles appear AND gives each a writable home copy so per-agent settings (the
@@ -1948,7 +1828,7 @@ async def lifespan(application: FastAPI):
     # Seed the digest with the just-loaded file (GlobalConfiguration.load may create it
     # from the packaged template) so that first bootstrap write is not mistaken for a
     # manual edit by the configuration watcher.
-    _last_written_configuration_digest = _configuration_digest()
+    state._last_written_configuration_digest = _configuration_digest()
 
     database_path = database_file_path()
     configure_sqlite_lock(database_path)
@@ -1976,40 +1856,40 @@ async def lifespan(application: FastAPI):
     # synchronous write lock on the loop thread") is what prevents this whole class of
     # deadlock from creeping back in.
     await asyncio.to_thread(_initialize_history_schema)
-    _session_factory = sessionmaker(bind=sync_engine)
+    state._session_factory = sessionmaker(bind=sync_engine)
     # Guarantee at least one project exists so the app always opens into a live workspace
     # (no landing page, no empty state). On a fresh install this seeds the "Home" project.
     await asyncio.to_thread(_ensure_default_project)
 
     # Install the tool tuning policy from the loaded configuration before any tool can run.
-    set_tuning(tuning_from_policy(_global_configuration.tuning))
+    set_tuning(tuning_from_policy(state._global_configuration.tuning))
 
-    exa_key = _global_configuration.exa.effective_api_key
+    exa_key = state._global_configuration.exa.effective_api_key
     if exa_key:
         from exa_py import Exa
         set_exa_client(Exa(api_key=exa_key))
-    _rebuild_web_fetch_clients(_global_configuration)
+    _rebuild_web_fetch_clients(state._global_configuration)
 
     # Provision the Composio Tool Router (best-effort) and fold it into the MCP
     # config itself, so both the client manager and the agent's tool gating
     # (which binds list_mcp_tools/call_mcp_tool only when a server is configured)
     # see it — Composio's tools then ride the normal MCP path.
-    _composio_servers = composio_mcp_servers(_global_configuration.composio)
-    _global_configuration.mcp.servers.update(_composio_servers)
-    mcp_servers = _global_configuration.mcp.enabled_servers()
-    _mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
-    set_mcp_client_manager(_mcp_manager)
+    state._composio_servers = composio_mcp_servers(state._global_configuration.composio)
+    state._global_configuration.mcp.servers.update(state._composio_servers)
+    mcp_servers = state._global_configuration.mcp.enabled_servers()
+    state._mcp_manager = MCPClientManager(mcp_servers) if mcp_servers else None
+    set_mcp_client_manager(state._mcp_manager)
     mcp_start_task: asyncio.Task[None] | None = None
-    if _mcp_manager is not None:
+    if state._mcp_manager is not None:
         # Connect MCP servers in the BACKGROUND so a slow or hung server (a cold
         # `uvx`/`npx` spawn, a stalled HTTP endpoint) can never delay — let alone block —
         # the harness boot; the app was failing to start when an MCP handshake stalled.
         # The manager is already wired (tool gating keys on it, not on live connections),
         # so each server's tools simply appear as it finishes connecting. The lifespan
         # owns the task and cancels it during teardown.
-        mcp_start_task = asyncio.create_task(_mcp_manager.start())
+        mcp_start_task = asyncio.create_task(state._mcp_manager.start())
 
-    _async_engine = create_async_engine(
+    state._async_engine = create_async_engine(
         f"sqlite+aiosqlite:///{database_path}",
         # Wait up to 30s for the write lock instead of raising "database is locked"
         # when the task store and UI reads contend. WAL (set above) lets reads run
@@ -2017,7 +1897,7 @@ async def lifespan(application: FastAPI):
         connect_args={"timeout": 30},
     )
 
-    @event.listens_for(_async_engine.sync_engine, "connect")
+    @event.listens_for(state._async_engine.sync_engine, "connect")
     def _set_async_sqlite_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA journal_mode=WAL")
@@ -2025,9 +1905,9 @@ async def lifespan(application: FastAPI):
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
-    _task_store = AppendOnlyTaskStore(_async_engine)
-    await _task_store.initialize()
-    orphaned_task_ids = await _task_store.reconcile_orphaned_turns()
+    state._task_store = AppendOnlyTaskStore(state._async_engine)
+    await state._task_store.initialize()
+    orphaned_task_ids = await state._task_store.reconcile_orphaned_turns()
     if orphaned_task_ids:
         logging.getLogger("harness.server").warning(
             "Marked %d A2A task(s) interrupted after server restart.",
@@ -2036,24 +1916,24 @@ async def lifespan(application: FastAPI):
     # An input-required task is preserved (not orphaned): restore its awaiting-input
     # marker so the sidebar shows the pause survived the restart. A later answer resumes
     # it durably from its checkpoint.
-    _awaiting_input_contexts.update(await _task_store.input_required_context_ids())
+    state._awaiting_input_contexts.update(await state._task_store.input_required_context_ids())
 
-    _registry = AgentRegistry(_task_store)
-    _file_url_signer = FileUrlSigner(
+    state._registry = AgentRegistry(state._task_store)
+    state._file_url_signer = FileUrlSigner(
         load_or_create_secret(harness_home_directory()),
         PUBLIC_BASE_URL,
         allowed_root=harness_home_directory() / "uploads",
     )
-    _registry.set_file_url_signer(_file_url_signer)
-    _push_configuration_store = PersistentPushNotificationConfigurationStore(_async_engine)
-    await _push_configuration_store.initialize()
-    _push_httpx_client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
-    _push_sender = PinnedPushNotificationSender(
-        _push_httpx_client,
-        _push_configuration_store,
-        allow_private=_push_configuration_store.allow_private_webhooks,
+    state._registry.set_file_url_signer(state._file_url_signer)
+    state._push_configuration_store = PersistentPushNotificationConfigurationStore(state._async_engine)
+    await state._push_configuration_store.initialize()
+    state._push_httpx_client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
+    state._push_sender = PinnedPushNotificationSender(
+        state._push_httpx_client,
+        state._push_configuration_store,
+        allow_private=state._push_configuration_store.allow_private_webhooks,
     )
-    for agent_name in list_agent_route_names(_global_configuration.agent_directories()):
+    for agent_name in list_agent_route_names(state._global_configuration.agent_directories()):
         _mount_agent(application, agent_name)
 
     # Outbound A2A: build the external-agent client manager from remote-agents.json and
@@ -2062,9 +1942,9 @@ async def lifespan(application: FastAPI):
     # unreachable peer never blocks boot.
     _remote_agent_configurations = _remote_agent_dataclasses()
     if _remote_agent_configurations:
-        _remote_agent_manager = RemoteAgentManager(_remote_agent_configurations)
-        _registry.set_remote_manager(_remote_agent_manager)
-        asyncio.create_task(_remote_agent_manager.start())
+        state._remote_agent_manager = RemoteAgentManager(_remote_agent_configurations)
+        state._registry.set_remote_manager(state._remote_agent_manager)
+        asyncio.create_task(state._remote_agent_manager.start())
 
     # Kill any process groups orphaned by a previous unclean shutdown (a SIGKILL or
     # crash could not run the teardown handlers) so a background shell subtree — a
@@ -2075,7 +1955,7 @@ async def lifespan(application: FastAPI):
     # Recover background jobs persisted by a previous run: interrupted ones are
     # flagged for re-run and every context with a deliverable result is woken with
     # an autonomous turn so the agent picks the work back up on its own.
-    for executor in _executors.values():
+    for executor in state._executors.values():
         await executor.resume_pending_on_startup()
 
     watcher = asyncio.create_task(_watch_agents_and_skills(application))
@@ -2084,8 +1964,7 @@ async def lifespan(application: FastAPI):
     remote_agent_health_poller = asyncio.create_task(_poll_remote_agent_health())
     # The artifact-capture worker drains write-ish tool calls and runs the shadow-git
     # capture off-loop, so it never blocks a turn (best-effort, see _run_capture).
-    global _capture_queue
-    _capture_queue = asyncio.Queue(maxsize=4096)
+    state._capture_queue = asyncio.Queue(maxsize=4096)
     capture_worker = asyncio.create_task(_capture_worker())
     try:
         yield
@@ -2099,13 +1978,13 @@ async def lifespan(application: FastAPI):
             mcp_start_task.cancel()
             with suppress(asyncio.CancelledError):
                 await mcp_start_task
-        if _terminal_manager is not None:
-            await _terminal_manager.close_all()
+        if state._terminal_manager is not None:
+            await state._terminal_manager.close_all()
         cancel_all_background_tasks()
-        if _mcp_manager is not None:
-            await _mcp_manager.aclose()
-        if _proxy_client is not None:
-            await _proxy_client.aclose()
+        if state._mcp_manager is not None:
+            await state._mcp_manager.aclose()
+        if state._proxy_client is not None:
+            await state._proxy_client.aclose()
 
 
 # The only browsers that legitimately call this API are the desktop app's own webview (Tauri,
@@ -2125,7 +2004,6 @@ app.add_middleware(
 )
 
 # Cache one JWKS client per issuer URL — each fetches and caches signing keys itself.
-_jwks_clients: dict[str, "jwt.PyJWKClient"] = {}
 
 
 def _a2a_request_authorized(request: Request, configuration: "_configuration.A2AServerConfiguration") -> bool:
@@ -2140,10 +2018,10 @@ def _a2a_request_authorized(request: Request, configuration: "_configuration.A2A
         if header.startswith("Bearer "):
             token = header[len("Bearer "):]
             try:
-                client = _jwks_clients.get(configuration.oauth2_jwks_url)
+                client = state._jwks_clients.get(configuration.oauth2_jwks_url)
                 if client is None:
                     client = jwt.PyJWKClient(configuration.oauth2_jwks_url)
-                    _jwks_clients[configuration.oauth2_jwks_url] = client
+                    state._jwks_clients[configuration.oauth2_jwks_url] = client
                 signing_key = client.get_signing_key_from_jwt(token)
                 jwt.decode(
                     token,
@@ -2163,7 +2041,7 @@ async def _a2a_auth_middleware(request: Request, call_next):
     """Enforce inbound auth on the A2A RPC endpoints when configured. Discovery (the
     well-known card) and self-authenticating signed file URLs stay public so peers can
     still resolve the agent and fetch files it handed them."""
-    configuration = _global_configuration.a2a if _global_configuration is not None else None
+    configuration = state._global_configuration.a2a if state._global_configuration is not None else None
     path = request.url.path
     protected = (
         configuration is not None
@@ -2384,8 +2262,8 @@ def _add_location_row(database_session, project_id: str, location_input: Locatio
 
 
 def _projects_payload() -> dict[str, list[dict[str, Any]]]:
-    assert _session_factory is not None
-    database_session = _session_factory()
+    assert state._session_factory is not None
+    database_session = state._session_factory()
     try:
         rows = database_session.query(ProjectRecord).order_by(ProjectRecord.updated_at.desc()).all()
         return {"projects": [_serialize_project(row, database_session) for row in rows]}
@@ -2394,8 +2272,8 @@ def _projects_payload() -> dict[str, list[dict[str, Any]]]:
 
 
 def _project_payload(project_id: str) -> dict[str, Any] | None:
-    assert _session_factory is not None
-    database_session = _session_factory()
+    assert state._session_factory is not None
+    database_session = state._session_factory()
     try:
         record = database_session.get(ProjectRecord, project_id)
         return _serialize_project(record, database_session) if record is not None else None
@@ -2404,12 +2282,12 @@ def _project_payload(project_id: str) -> dict[str, Any] | None:
 
 
 def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     conflict = _locations_conflict_message([(location.kind, location.host_alias, location.base_directory) for location in request.locations])
     if conflict:
         raise ValueError(conflict)
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             now = _iso_now()
             project = ProjectRecord(
@@ -2435,9 +2313,9 @@ def _ensure_default_project() -> None:
     The initial location targets the server user's home directory. This is a no-op once any
     project exists, so it never changes user-created groupings.
     """
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             if database_session.query(ProjectRecord).count() > 0:
                 return
@@ -2461,8 +2339,8 @@ def _ensure_default_project() -> None:
 
 
 def _project_count() -> int:
-    assert _session_factory is not None
-    database_session = _session_factory()
+    assert state._session_factory is not None
+    database_session = state._session_factory()
     try:
         return database_session.query(ProjectRecord).count()
     finally:
@@ -2535,9 +2413,9 @@ def _delete_project(project_id: str) -> bool:
     """Delete a project and everything under it: its locations, its sessions, and the
     per-(session, location) worktree records. (Remote worktree teardown over SSH is a
     follow-up — the DB rows go now.)"""
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             project = database_session.get(ProjectRecord, project_id)
             if project is None:
@@ -2555,9 +2433,9 @@ def _delete_project(project_id: str) -> bool:
 
 
 def _create_location(project_id: str, request: LocationInput) -> dict[str, Any] | None:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             project = database_session.get(ProjectRecord, project_id)
             if project is None:
@@ -2579,9 +2457,9 @@ def _create_location(project_id: str, request: LocationInput) -> dict[str, Any] 
 
 
 def _update_location(location_id: str, request: LocationInput) -> dict[str, Any] | None:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(LocationRecord, location_id)
             if record is None:
@@ -2617,9 +2495,9 @@ def _update_location(location_id: str, request: LocationInput) -> dict[str, Any]
 
 
 def _delete_location(location_id: str) -> bool:
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(LocationRecord, location_id)
             if record is None:
@@ -2639,9 +2517,9 @@ def _resolve_session_locations(context_id: str) -> list[dict[str, Any]] | None:
     generated URI and the *effective* execution settings (own value, else project
     default). Returns ``None`` when the session has no project (so the runtime falls back
     to a single local location). Synchronous DB read — the executor calls it off-loop."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return None
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         session = database_session.get(SessionRecord, context_id)
         if session is None or not session.project_id:
@@ -2688,7 +2566,7 @@ def _reset_all_runtimes() -> None:
     """Drop cached agent runtimes so the next turn rebuilds its chat model. Used
     when the ChatGPT sign-in state changes (which lives in a token file, not the
     configuration, so the config watcher never fires for it)."""
-    for executor in _executors.values():
+    for executor in state._executors.values():
         executor.reset_runtimes()
 
 
@@ -3073,8 +2951,8 @@ def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
 
 
 def _session_draft(context_id: str) -> str:
-    assert _session_factory is not None
-    database_session = _session_factory()
+    assert state._session_factory is not None
+    database_session = state._session_factory()
     try:
         record = database_session.get(SessionRecord, context_id)
         if record is None:
@@ -3089,9 +2967,9 @@ def _update_session_draft(context_id: str, input_draft: str) -> None:
     ``asyncio.to_thread``). It takes the synchronous history.db write lock, which the
     async task store holds across its transaction's ``await``; acquiring it on the loop
     thread would deadlock the whole server."""
-    assert _session_factory is not None
+    assert state._session_factory is not None
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(SessionRecord, context_id)
             if record is None:
@@ -3107,8 +2985,8 @@ def _update_session_draft(context_id: str, input_draft: str) -> None:
 
 def _terminal_directory(context_id: str, working_directory: str) -> Path:
     directory = working_directory.strip()
-    if context_id and _session_factory is not None:
-        database_session = _session_factory()
+    if context_id and state._session_factory is not None:
+        database_session = state._session_factory()
         try:
             record = database_session.get(SessionRecord, context_id)
             if record is not None:
@@ -3210,9 +3088,9 @@ def _terminal_context_identifier(context_id: str, directory: Path) -> str:
 
 
 def _load_terminal_state(context_identifier: str, terminal_key: str) -> str:
-    if _session_factory is None:
+    if state._session_factory is None:
         return ""
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         record = database_session.get(TerminalStateRecord, (context_identifier, terminal_key))
         return record.scrollback if record is not None and record.scrollback else ""
@@ -3221,10 +3099,10 @@ def _load_terminal_state(context_identifier: str, terminal_key: str) -> str:
 
 
 def _save_terminal_state(context_identifier: str, terminal_key: str, directory: Path, scrollback: str) -> None:
-    if _session_factory is None:
+    if state._session_factory is None:
         return
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             now = datetime.now(timezone.utc).isoformat()
             record = database_session.get(TerminalStateRecord, (context_identifier, terminal_key))
@@ -3253,9 +3131,9 @@ def _save_terminal_state(context_identifier: str, terminal_key: str, directory: 
 def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
     """Persisted terminals for a context, ordered by creation so the client can rebuild
     a stable set of tabs. Runs off the event loop (synchronous history.db read)."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return []
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         records = (
             database_session.query(TerminalStateRecord)
@@ -3278,10 +3156,10 @@ def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
 
 
 def _delete_terminal_state(context_identifier: str, terminal_key: str) -> None:
-    if _session_factory is None:
+    if state._session_factory is None:
         return
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             record = database_session.get(TerminalStateRecord, (context_identifier, terminal_key))
             if record is not None:
@@ -3623,18 +3501,16 @@ _PROXY_DROP_REQUEST_HEADERS = {
 # One long-lived client so the upstream cookie jar (session, consent, CSRF cookies)
 # persists across every proxied request. Cookies are domain-scoped by httpx, so
 # different opened sites never share them. Created lazily on the running loop.
-_proxy_client: Optional[httpx.AsyncClient] = None
 
 
 def _get_proxy_client() -> httpx.AsyncClient:
-    global _proxy_client
-    if _proxy_client is None:
-        _proxy_client = httpx.AsyncClient(
+    if state._proxy_client is None:
+        state._proxy_client = httpx.AsyncClient(
             follow_redirects=True,
             timeout=30.0,
             headers=_PROXY_BROWSER_HEADERS,
         )
-    return _proxy_client
+    return state._proxy_client
 
 _PROXY_HTML_ATTR_RE = re.compile(
     r'(?P<pre>\b(?:src|href|action|formaction|poster|data-src|data-href|data-url)\s*=\s*)'
@@ -3831,9 +3707,9 @@ def _prune_session_artifacts(context_id: str) -> None:
     its persisted conversation and lifecycle facts. Runs off the event loop. Best-effort
     per repo — a missing/unreachable location's branch is left, but its DB rows are still
     cleared."""
-    if _session_factory is None:
+    if state._session_factory is None:
         return
-    database_session = _session_factory()
+    database_session = state._session_factory()
     try:
         repositories = {
             (cast(str, location_uri), cast(str, git_directory))
@@ -3852,7 +3728,7 @@ def _prune_session_artifacts(context_id: str) -> None:
         except Exception:
             _artifact_logger.exception("failed to prune session branch in %s", git_directory)
     with sqlite_write_lock():
-        database_session = _session_factory()
+        database_session = state._session_factory()
         try:
             for model in (
                 ArtifactVersionRecord,
@@ -3888,12 +3764,12 @@ def _assert_exposure_authenticated(configuration: "GlobalConfiguration") -> None
     configured would serve tool execution to an unauthenticated network by omission, so refuse
     to start rather than silently exposing it. Loopback (the desktop app's default) is
     unaffected."""
-    if _is_loopback_bind(_BIND_HOST):
+    if _is_loopback_bind(state._BIND_HOST):
         return
     a2a = getattr(configuration, "a2a", None)
     if a2a is None or not a2a.enabled():
         raise RuntimeError(
-            f"Refusing to start: bound to non-loopback host {_BIND_HOST!r} without inbound auth. "
+            f"Refusing to start: bound to non-loopback host {state._BIND_HOST!r} without inbound auth. "
             "Configure the [a2a] api_key or oauth2_jwks_url before exposing the server, or bind to "
             "127.0.0.1."
         )

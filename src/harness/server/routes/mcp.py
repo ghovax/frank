@@ -5,7 +5,7 @@ from harness.server.models import (
     MCPResourceReadRequest,
     MCPToolCallRequest,
 )
-from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
     _ensure_mcp_servers_for,
 )
@@ -23,32 +23,32 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
     the global Composio integration are listed — the launch directory's servers do
     not leak in. The folder's servers are ensured running first so their tools
     actually appear (the subprocess pool is shared and grows as a union)."""
-    assert _app._global_configuration is not None
+    assert state._global_configuration is not None
     # Servers declared by the working directory's own mcp.json are project-specific;
     # everything else (home globals and the Composio integration) is global.
     project_server_names: set[str] = set()
     if working_directory:
         await _ensure_mcp_servers_for(working_directory)
-        allowed = set(_app._global_configuration.mcp_configuration_for(working_directory).servers)
-        allowed.update(_app._composio_servers)
+        allowed = set(state._global_configuration.mcp_configuration_for(working_directory).servers)
+        allowed.update(state._composio_servers)
         configured = {
             name: configuration
-            for name, configuration in _app._global_configuration.mcp.servers.items()
+            for name, configuration in state._global_configuration.mcp.servers.items()
             if name in allowed
         }
-        home_root = _app._global_configuration.home_agents_root().resolve()
-        project_root = _app._global_configuration.project_agents_root_for(working_directory).resolve()
+        home_root = state._global_configuration.home_agents_root().resolve()
+        project_root = state._global_configuration.project_agents_root_for(working_directory).resolve()
         if project_root != home_root:
             project_server_names = set(
                 _configuration.MCPConfiguration.from_dotagents_roots([project_root]).servers
             )
     else:
-        configured = _app._global_configuration.mcp.servers
+        configured = state._global_configuration.mcp.servers
     tools_by_server: dict[str, list] = {}
-    if _app._mcp_manager is not None:
+    if state._mcp_manager is not None:
         # List every enabled server, then filter below — querying the manager for a
         # disabled server name would raise, since it only holds enabled ones.
-        listing = await _app._mcp_manager.list_tools("")
+        listing = await state._mcp_manager.list_tools("")
         tools_by_server = {entry["name"]: entry["tools"] for entry in listing["servers"]}
     servers = [
         {
@@ -66,22 +66,22 @@ async def mcp_tools(server: str = "", working_directory: str = ""):
 @router.get("/mcp/resources")
 async def mcp_resources(server: str = ""):
     """List resources exposed by configured MCP servers."""
-    if _app._mcp_manager is None:
+    if state._mcp_manager is None:
         return {"servers": []}
-    return await _app._mcp_manager.list_resources(server)
+    return await state._mcp_manager.list_resources(server)
 
 
 @router.post("/mcp/tools/call")
 async def mcp_call_tool(request: MCPToolCallRequest):
     """Call a configured MCP server tool. Intended for smoke tests and UI discovery."""
-    if _app._mcp_manager is None:
+    if state._mcp_manager is None:
         return {"error": "MCP is not configured."}
-    return await _app._mcp_manager.call_tool(request.server, request.tool_name, request.arguments)
+    return await state._mcp_manager.call_tool(request.server, request.tool_name, request.arguments)
 
 
 @router.post("/mcp/resources/read")
 async def mcp_read_resource(request: MCPResourceReadRequest):
     """Read a configured MCP resource. Intended for smoke tests and UI discovery."""
-    if _app._mcp_manager is None:
+    if state._mcp_manager is None:
         return {"error": "MCP is not configured."}
-    return await _app._mcp_manager.read_resource(request.server, request.uri)
+    return await state._mcp_manager.read_resource(request.server, request.uri)

@@ -12,6 +12,7 @@ from harness.server.models import (
     ProjectCreateRequest,
 )
 from harness.server import runtime as _app
+from harness.server import state
 from harness.server.runtime import (
     _create_location,
     _create_project,
@@ -91,8 +92,8 @@ async def delete_project(project_id: str):
     # Prune each session's artifact versions (shadow-git branches + index rows) while its
     # locations are still resolvable, then delete the project and its rows.
     def _session_ids() -> list[str]:
-        assert _app._session_factory is not None
-        database_session = _app._session_factory()
+        assert state._session_factory is not None
+        database_session = state._session_factory()
         try:
             return [
                 cast(str, row.id)
