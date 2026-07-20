@@ -19,11 +19,11 @@ from harness.server.runtime import (
     _ensure_agents_for,
     _load_agent_sidecar,
     _path_scope,
-    _publish_broadcast,
     _record_model_selection,
     _reload_agent_cards,
     _save_agent_sidecar,
 )
+from harness.server.services.broadcast import _publish_broadcast
 
 router = APIRouter()
 

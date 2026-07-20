@@ -26,7 +26,6 @@ from harness.server.runtime import (
     _decode_artifact_context,
     _delete_artifact_annotation_record,
     _executor_for_location_uri,
-    _publish_broadcast,
     _restore_artifact,
     _save_artifact_annotation_record,
     _surface_records,
@@ -39,6 +38,7 @@ from harness.server.runtime import (
     _rewrite_proxy_html,
     _rewrite_proxy_js,
 )
+from harness.server.services.broadcast import _publish_broadcast
 
 router = APIRouter()
 

@@ -31,11 +31,11 @@ from harness.server.runtime import (
     _normalize_permission_mode,
     _persist_configuration,
     _save_agent_sidecar,
-    _publish_broadcast,
     _recent_models,
     _reset_all_runtimes,
     _reset_work_habits_acknowledgements,
 )
+from harness.server.services.broadcast import _publish_broadcast
 
 router = APIRouter()
 
