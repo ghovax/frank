@@ -1,4 +1,5 @@
 """Terminals routes (split from harness.server.runtime)."""
+from harness.server.services.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
 from fastapi import APIRouter
 from contextlib import suppress
 from fastapi import HTTPException
@@ -8,13 +9,6 @@ from pathlib import Path
 import asyncio
 import json
 from harness.server import state
-from harness.server.runtime import (
-    TerminalSession,
-    _delete_terminal_state,
-    _list_terminal_states,
-    _terminal_context_for_request,
-    _terminal_directory,
-)
 
 router = APIRouter()
 
