@@ -1,4 +1,4 @@
-"""Chat routes (split from harness.server.boot)."""
+"""Chat routes."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from sse_starlette.sse import EventSourceResponse

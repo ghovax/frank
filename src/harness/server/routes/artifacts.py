@@ -1,4 +1,4 @@
-"""Artifacts routes (split from harness.server.boot)."""
+"""Artifacts routes."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request

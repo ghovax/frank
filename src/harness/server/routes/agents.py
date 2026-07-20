@@ -1,4 +1,4 @@
-"""Agents routes (split from harness.server.boot)."""
+"""Agents routes."""
 from fastapi import APIRouter
 from fastapi import HTTPException
 from harness.core.configuration import list_agents

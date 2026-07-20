@@ -1,4 +1,4 @@
-"""Projects routes (split from harness.server.boot)."""
+"""Projects routes."""
 from fastapi import APIRouter
 from harness.server.database import SessionRecord
 from fastapi import HTTPException

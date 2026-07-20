@@ -1,4 +1,4 @@
-"""Uploads routes (split from harness.server.boot)."""
+"""Uploads routes."""
 from fastapi import APIRouter
 from datetime import datetime
 from datetime import timezone

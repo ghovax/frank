@@ -1,4 +1,4 @@
-"""Settings routes (split from harness.server.boot)."""
+"""Settings routes."""
 from fastapi import APIRouter
 from harness.core.background_tasks import spawn_background_task
 import harness.core.configuration as _configuration

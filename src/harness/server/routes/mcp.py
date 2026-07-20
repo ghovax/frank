@@ -1,4 +1,4 @@
-"""Mcp routes (split from harness.server.boot)."""
+"""Mcp routes."""
 from fastapi import APIRouter
 import harness.core.configuration as _configuration
 from harness.server.models import (
