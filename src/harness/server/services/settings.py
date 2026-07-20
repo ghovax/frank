@@ -1,6 +1,8 @@
 """Settings domain: applying live credentials to the running clients, and persisting and
 reloading the configuration file."""
 
+from __future__ import annotations
+
 from harness.core.composio_router import composio_mcp_servers
 from harness.core.configuration import GlobalConfiguration
 from harness.core.configuration import configuration_file_path
@@ -20,7 +22,7 @@ from harness.server import state
 from harness.server.services.sessions import _reset_work_habits_acknowledgements
 
 
-def _rebuild_web_fetch_clients(configuration: "GlobalConfiguration") -> None:
+def _rebuild_web_fetch_clients(configuration: GlobalConfiguration) -> None:
     """Point the web-fetch tool's engines at the current config: the Jina Reader key
     (default engine; empty means keyless), a live Firecrawl client when a key is present
     (else none), and the optional proxy for the direct/download tiers."""

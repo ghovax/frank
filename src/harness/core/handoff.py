@@ -9,6 +9,8 @@ and rendered by the UI. Nothing is flattened into a bespoke shape; the structure
 A2A object travels end to end so a run is fully reproducible at every layer.
 """
 
+from __future__ import annotations
+
 from a2a.types import Artifact, Part, Task, TaskState, TaskStatus, TextPart
 
 from harness.identifiers import new_id

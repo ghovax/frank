@@ -19,6 +19,8 @@ egress proxy is configured (the proxy does its own DNS/connect), where resolving
 guards.
 """
 
+from __future__ import annotations
+
 import ipaddress
 import socket
 from urllib.parse import urlparse

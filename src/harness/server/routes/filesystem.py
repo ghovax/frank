@@ -1,4 +1,6 @@
 """Filesystem routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request

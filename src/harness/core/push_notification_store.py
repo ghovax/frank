@@ -13,6 +13,8 @@ webhook that was public when registered but rebinds to a loopback/metadata addre
 fires cannot turn a durable config into a blind SSRF channel.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os

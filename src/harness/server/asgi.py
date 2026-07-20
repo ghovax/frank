@@ -7,6 +7,8 @@ breaks the old ``app -> routes -> app`` cycle: the routes import the boot module
 services, never this entry. Import target for a server: ``harness.server.asgi:app``.
 """
 
+from __future__ import annotations
+
 import importlib
 
 from harness.server import state

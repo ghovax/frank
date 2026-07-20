@@ -26,6 +26,8 @@ The live transport is unchanged: the SDK still streams incremental
 persistence layer changes.
 """
 
+from __future__ import annotations
+
 import json
 import uuid
 from datetime import datetime, timezone

@@ -1,6 +1,8 @@
 """Terminal domain: the PTY-backed TerminalSession and its manager, plus terminal-state
 persistence."""
 
+from __future__ import annotations
+
 from collections import deque
 from contextlib import suppress
 from datetime import datetime

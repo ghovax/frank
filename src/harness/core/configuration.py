@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Iterable
 import json
 import os
@@ -344,7 +346,7 @@ class MCPConfiguration(BaseModel):
         }
 
     @classmethod
-    def from_dotagents_roots(cls, roots: Iterable[Path]) -> "MCPConfiguration":
+    def from_dotagents_roots(cls, roots: Iterable[Path]) -> MCPConfiguration:
         servers: dict[str, MCPServerConfiguration] = {}
         for root in roots:
             path = root / "mcp.json"
@@ -403,7 +405,7 @@ class RemoteAgentsConfiguration(BaseModel):
         }
 
     @classmethod
-    def from_dotagents_roots(cls, roots: Iterable[Path]) -> "RemoteAgentsConfiguration":
+    def from_dotagents_roots(cls, roots: Iterable[Path]) -> RemoteAgentsConfiguration:
         agents: dict[str, RemoteAgentServerConfiguration] = {}
         for root in roots:
             path = root / "remote-agents.json"
@@ -508,7 +510,7 @@ class GlobalConfiguration(BaseModel):
     maximum_history_age_days: int = 30
 
     @classmethod
-    def load(cls) -> "GlobalConfiguration":
+    def load(cls) -> GlobalConfiguration:
         """Load the configuration from ~/.daisy/configuration.yaml, creating the
         home directory and the file on first run from the packaged configuration."""
         path = configuration_file_path()
@@ -517,7 +519,7 @@ class GlobalConfiguration(BaseModel):
         return cls.from_yaml(path)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "GlobalConfiguration":
+    def from_yaml(cls, path: str | Path) -> GlobalConfiguration:
         with open(path) as file_handle:
             data = yaml.safe_load(file_handle)
         configuration = cls(**data)
@@ -637,14 +639,14 @@ class GlobalConfiguration(BaseModel):
             self._resolve_local(working_directory, self.AGENTS_ROOT_DIRECTORY) / "memories",
         ])
 
-    def mcp_configuration_for(self, working_directory: str) -> "MCPConfiguration":
+    def mcp_configuration_for(self, working_directory: str) -> MCPConfiguration:
         """The MCP servers declared for a working directory: those in the home
         ``mcp.json`` plus the working directory's own, deduped by name (the
         working directory overriding home). Used to filter what the UI lists and
         to grow the shared server pool, never to scope the launch directory in."""
         return MCPConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
 
-    def remote_agents_configuration_for(self, working_directory: str) -> "RemoteAgentsConfiguration":
+    def remote_agents_configuration_for(self, working_directory: str) -> RemoteAgentsConfiguration:
         """The external A2A agents declared for a working directory: those in the home
         ``remote-agents.json`` plus the working directory's own."""
         return RemoteAgentsConfiguration.from_dotagents_roots(self.agents_root_directories_for(working_directory))
@@ -920,7 +922,7 @@ class AgentConfiguration(BaseModel):
         return PermissionMode.coerce(self.permission_mode)
 
     @classmethod
-    def from_markdown(cls, path: str | Path) -> "AgentConfiguration":
+    def from_markdown(cls, path: str | Path) -> AgentConfiguration:
         path = Path(path)
         with open(path) as file_handle:
             content = file_handle.read()
@@ -1182,7 +1184,7 @@ class AgentSidecar(BaseModel):
     tools: Optional[_SidecarTools] = None
 
     @classmethod
-    def from_mapping(cls, data: "dict[str, Any] | None") -> "AgentSidecar":
+    def from_mapping(cls, data: dict[str, Any] | None) -> AgentSidecar:
         return cls.model_validate(data if isinstance(data, dict) else {})
 
     def to_mapping(self) -> dict[str, Any]:

@@ -23,7 +23,7 @@ import uuid
 
 class _DelegationMixin:
 
-    async def _await_pending_answers(self, pending: list["_PreflightGate"]) -> dict[str, Any]:
+    async def _await_pending_answers(self, pending: list[_PreflightGate]) -> dict[str, Any]:
         """Park a delegated turn in place until the user answers each gate. The gates were
         surfaced to the panel by the executor from the SUSPENDED event; here the turn awaits
         the answers on per-gate futures (completed by the shared resolver's delegated
@@ -31,8 +31,8 @@ class _DelegationMixin:
         declines, a permission denies. A top-level turn never reaches this: it returned at
         SUSPENDED to become a durable segment."""
         loop = asyncio.get_running_loop()
-        futures: dict[str, "asyncio.Future"] = {}
-        gate_by_request: dict[str, "_PreflightGate"] = {}
+        futures: dict[str, asyncio.Future] = {}
+        gate_by_request: dict[str, _PreflightGate] = {}
         for gate in pending:
             future = loop.create_future()
             self._agent_permission_futures[gate.request_id] = future
@@ -149,7 +149,7 @@ class _DelegationMixin:
             "prompt": prompt,
         })
 
-    def _relay_child_event(self, delegated: "DelegateMessage", group_id: str, step_id: str) -> "TurnEvent | None":
+    def _relay_child_event(self, delegated: DelegateMessage, group_id: str, step_id: str) -> TurnEvent | None:
         """Wrap one relayed agent event for re-emission. The child already speaks
         the unified vocabulary; we only prefix this agent's path segment so it renders
         at the right depth. Non-relay control messages (started/usage/done) carry no panel

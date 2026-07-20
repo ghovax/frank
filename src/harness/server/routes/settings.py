@@ -1,4 +1,6 @@
 """Settings routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from harness.core.background_tasks import spawn_background_task
 import harness.core.configuration as _configuration

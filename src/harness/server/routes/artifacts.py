@@ -1,4 +1,6 @@
 """Artifacts routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi import Request
@@ -53,7 +55,7 @@ async def get_artifact_diff(context_id: str, git_directory: str, relative_path: 
 
 
 @router.post("/sessions/{context_id}/artifacts/restore")
-async def restore_artifact(context_id: str, request: "ArtifactRestoreRequest"):
+async def restore_artifact(context_id: str, request: ArtifactRestoreRequest):
     """Restore a file to a chosen version (append-only — the current on-disk state is
     snapshotted first, then the old bytes are written back and recorded as a new version)."""
     await asyncio.to_thread(
@@ -91,7 +93,7 @@ async def get_artifact_annotations(context_id: str):
 
 
 @router.put("/sessions/{context_id}/artifact-annotations")
-async def save_artifact_annotations(context_id: str, request: "ArtifactAnnotationSaveRequest"):
+async def save_artifact_annotations(context_id: str, request: ArtifactAnnotationSaveRequest):
     """Create, update, or clear the annotation record for one artifact version."""
     record = await asyncio.to_thread(_save_artifact_annotation_record, context_id, request)
     _publish_broadcast({"type": "artifact_annotations_changed", "session_id": context_id})

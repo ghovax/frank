@@ -1,5 +1,7 @@
 """Session domain: session listing and drafts, permission-mode resolution, pending-input
 handling, title generation, and workspace setup."""
+
+from __future__ import annotations
 from harness.core.a2a_executor import HarnessAgentExecutor
 
 from datetime import datetime
@@ -125,7 +127,7 @@ def _session_working_directory_for(context_id: str) -> str:
         database_session.close()
 
 
-def _executor_for_context(context_id: str) -> "HarnessAgentExecutor | None":
+def _executor_for_context(context_id: str) -> HarnessAgentExecutor | None:
     """Resolve the executor that owns a context, by the agent recorded on its session.
 
     This is the correct way to dispatch an operation that targets a session's
@@ -140,7 +142,7 @@ def _executor_for_context(context_id: str) -> "HarnessAgentExecutor | None":
 
 async def _resolve_pending_input(
     context_id: str, request_id: str, *,
-    decision: str = "", answers: "list | None" = None, declined: bool = False,
+    decision: str = "", answers: list | None = None, declined: bool = False,
 ) -> bool:
     """Route a native resolve (permission decision or question answers) into the durable
     input-required resolution the registry owns, so the native REST path and an external

@@ -81,7 +81,7 @@ class _ToolsMixin:
         turn_tool_calls_log: list[dict],
         turn_tool_results_log: list[dict],
         outcomes: dict[str, dict],
-        decision: "_ResolvedToolDecision",
+        decision: _ResolvedToolDecision,
     ) -> AsyncIterator[TurnEvent]:
         """Run a single tool call, yielding its events and recording its outcome
         in ``outcomes`` (keyed by tool_call_id). The caller appends ToolMessages
@@ -205,7 +205,7 @@ class _ToolsMixin:
         turn_tool_calls_log: list[dict],
         turn_tool_results_log: list[dict],
         outcomes: dict[str, dict],
-        decisions: dict[str, "_ResolvedToolDecision"],
+        decisions: dict[str, _ResolvedToolDecision],
     ) -> AsyncIterator[TurnEvent]:
         """Run independent tool calls concurrently, yielding their events as they
         arrive (interleaved). The model emits several tool calls in one response
@@ -442,7 +442,7 @@ class _ToolsMixin:
 
     async def _execute_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision",
+        decision: _ResolvedToolDecision,
     ) -> AsyncIterator[TurnEvent]:
         """Execute a single tool call, yielding events. The caller collects results from
         TOOL_RESULT, ERROR, and BACKGROUND_STARTED events.
@@ -523,8 +523,8 @@ class _ToolsMixin:
 
     async def _tool_bash(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         raw_command = tool_arguments.get("command", "")
         if policy.is_remote:
@@ -623,8 +623,8 @@ class _ToolsMixin:
 
     async def _tool_read_file(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         file_path = str(tool_arguments.get("file_path", ""))
@@ -672,8 +672,8 @@ class _ToolsMixin:
 
     async def _tool_find_files(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         pattern = str(tool_arguments.get("pattern", ""))
@@ -691,8 +691,8 @@ class _ToolsMixin:
 
     async def _tool_search_content(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         pattern = str(tool_arguments.get("pattern", ""))
@@ -743,8 +743,8 @@ class _ToolsMixin:
 
     async def _tool_fetch_url(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         url = str(tool_arguments.get("url", ""))
         fmt = str(tool_arguments.get("format", "markdown") or "markdown")
@@ -760,8 +760,8 @@ class _ToolsMixin:
 
     async def _tool_download_file(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         if policy.read_only:
@@ -816,8 +816,8 @@ class _ToolsMixin:
 
     async def _tool_edit_or_write(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         assert resolved_location is not None
         if policy.read_only:
@@ -913,8 +913,8 @@ class _ToolsMixin:
 
     async def _tool_load_skill(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         skill_name = str(tool_arguments.get("name", ""))
         all_skills = enabled_skills(
@@ -940,8 +940,8 @@ class _ToolsMixin:
 
     async def _tool_wait_for(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         """A cancellable inline wait: the model's own polling primitive. It waits up to
         ``seconds`` but wakes the instant the turn is asked to stop, so a Stop is never
@@ -981,8 +981,8 @@ class _ToolsMixin:
 
     async def _tool_ask_user(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # ask_user's answers are the preflight "decision" — the question was
         # surfaced as a gate before the batch ran, and the human answered it (or
@@ -1012,8 +1012,8 @@ class _ToolsMixin:
 
     async def _tool_call_mcp_tool(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # Read-only enforcement and risk approval were resolved by the preflight
         # pass and applied above; an approved MCP call reaches here and runs.
@@ -1071,8 +1071,8 @@ class _ToolsMixin:
 
     async def _tool_mcp_query(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         tool_map = {
             "list_mcp_tools": list_mcp_tools_tool,
@@ -1086,8 +1086,8 @@ class _ToolsMixin:
 
     async def _tool_ask_agent(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
         question = str(tool_arguments.get("question", "")).strip()
@@ -1118,8 +1118,8 @@ class _ToolsMixin:
 
     async def _tool_respond_agent(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         message_identifier = str(tool_arguments.get("message_identifier", "")).strip()
         response_text = str(tool_arguments.get("response", "")).strip()
@@ -1152,8 +1152,8 @@ class _ToolsMixin:
 
     async def _tool_spawn_or_remote(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # No delegation-depth ceiling: a spawned agent runs its own turn loop, governed by the
         # model's own judgment of when it is done and the user's ability to interrupt, and
@@ -1373,8 +1373,8 @@ class _ToolsMixin:
 
     async def _tool_cancel_agent(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         task_identifier = str(tool_arguments.get("task_identifier", "")).strip()
         if not task_identifier.startswith("agent-"):
@@ -1404,8 +1404,8 @@ class _ToolsMixin:
 
     async def _tool_set_tasks(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         task_definitions = tool_arguments.get("tasks", [])
         identifiers = self._task_manager.add_tasks(task_definitions)
@@ -1427,8 +1427,8 @@ class _ToolsMixin:
 
     async def _tool_update_tasks(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         updates = tool_arguments.get("updates", [])
         updated_ids = self._task_manager.update_tasks(updates)
@@ -1449,8 +1449,8 @@ class _ToolsMixin:
 
     async def _tool_update_goal(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         status = tool_arguments.get("status", "active")
         goal = str(tool_arguments.get("goal", "")).strip()
@@ -1489,8 +1489,8 @@ class _ToolsMixin:
 
     async def _tool_open_artifact(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         if self._is_agent:
             yield Error(id=tool_call_identifier,
@@ -1570,8 +1570,8 @@ class _ToolsMixin:
 
     async def _tool_web_search(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         background_token = bind_background_jobs(self._background)
         try:
@@ -1588,8 +1588,8 @@ class _ToolsMixin:
 
     async def _tool_read_task(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         requested_task_id = tool_arguments.get("task_id", "")
         # A web_search/background-bash handle ("search-…"/"bg-…") is not an A2A
@@ -1616,8 +1616,8 @@ class _ToolsMixin:
 
     async def _tool_automation(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: "_ResolvedToolDecision", policy: CallExecutionPolicy,
-        resolved_location: "ResolvedLocation | None",
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # The two automation tools share one contract (surface.py): a preflight gate, an
         # action dispatch table, and the model-image side channel for screenshots. The tool

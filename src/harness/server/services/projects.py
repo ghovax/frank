@@ -1,6 +1,8 @@
 """Project domain: project and location CRUD, the SSH host registry, and the macOS
 permission probes (full-disk-access, accessibility, screen-recording)."""
 
+from __future__ import annotations
+
 from contextlib import suppress
 from harness.core.sqlite_lock import sqlite_write_lock
 from harness.locations import ssh_hosts as _ssh_hosts

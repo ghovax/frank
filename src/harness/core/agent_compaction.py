@@ -25,7 +25,7 @@ class _CompactionMixin:
         which has no provider usage figure of its own."""
         return len(text) // 4
 
-    def _observation_message(self) -> "SystemMessage | None":
+    def _observation_message(self) -> SystemMessage | None:
         """The observation-log system message (the folded conversation memory), if one
         exists. Tagged in ``additional_kwargs`` so it survives persistence + reload and
         can be found and appended to."""
@@ -49,7 +49,7 @@ class _CompactionMixin:
             return []
         return [observation.model_dump() for observation in batch.observations]
 
-    def _observations_of(self, message: "SystemMessage | None") -> list[dict]:
+    def _observations_of(self, message: SystemMessage | None) -> list[dict]:
         raw = message.additional_kwargs.get("observations") if message else None
         return list(raw) if isinstance(raw, list) else []
 

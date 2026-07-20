@@ -7,6 +7,8 @@ Split into its own leaf module so the persistence schema is one self-contained t
 handlers.
 """
 
+from __future__ import annotations
+
 from sqlalchemy import Boolean, Index, Integer, String, Text, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 

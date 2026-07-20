@@ -245,7 +245,7 @@ class ElementRegistry:
             if ref not in self._tokens:
                 return ref
 
-    def bind(self, elements: list["Element"]) -> None:
+    def bind(self, elements: list[Element]) -> None:
         """Assign each element its stable ref (minting a new one only for a never-seen identity)
         and rebind that ref to the element's current live token. Identities are disambiguated by
         an occurrence counter so identical siblings get distinct refs."""
@@ -339,7 +339,7 @@ class SerialWorker:
 
     def __init__(self, name: str) -> None:
         self._name = name
-        self._queue: "queue.Queue[Optional[tuple]]" = queue.Queue()
+        self._queue: queue.Queue[Optional[tuple]] = queue.Queue()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
 
@@ -362,7 +362,7 @@ class SerialWorker:
 
     def submit(self, operation: Callable[[], Any], timeout: float = 120.0) -> Any:
         self._ensure_thread()
-        future: "concurrent.futures.Future" = concurrent.futures.Future()
+        future: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((operation, future))
         return future.result(timeout=timeout)
 

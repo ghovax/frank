@@ -1,4 +1,6 @@
 """Chat routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import HTTPException
 from sse_starlette.sse import EventSourceResponse

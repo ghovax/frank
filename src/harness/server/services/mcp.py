@@ -1,6 +1,8 @@
 """MCP domain: per-request resolution of an agent's MCP servers, and the live reload that
 re-merges mcp.json with the Composio-provisioned servers."""
 
+from __future__ import annotations
+
 from harness.core.configuration import GlobalConfiguration
 from harness.core.mcp_client import MCPClientManager
 from harness.tools.tools import set_mcp_client_manager

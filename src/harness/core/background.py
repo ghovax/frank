@@ -119,7 +119,7 @@ class BackgroundCompletion:
 # Weak references to every live runner, purely so the process-exit / signal
 # handlers can cancel outstanding work without reintroducing a global registry
 # that owns the tasks. Ownership stays with each agent.
-_active_job_runners: "weakref.WeakSet[BackgroundJobs]" = weakref.WeakSet()
+_active_job_runners: weakref.WeakSet[BackgroundJobs] = weakref.WeakSet()
 
 
 class BackgroundJobs:
@@ -501,12 +501,12 @@ def reap_orphaned_processes() -> int:
 # dispatcher binds the current agent's runner for the narrow duration of the
 # producing call; the producer reads it through current_background_jobs().
 
-_current_background_jobs: contextvars.ContextVar["BackgroundJobs | None"] = contextvars.ContextVar(
+_current_background_jobs: contextvars.ContextVar[BackgroundJobs | None] = contextvars.ContextVar(
     "current_background_jobs", default=None
 )
 
 
-def bind_background_jobs(jobs: "BackgroundJobs") -> contextvars.Token:
+def bind_background_jobs(jobs: BackgroundJobs) -> contextvars.Token:
     return _current_background_jobs.set(jobs)
 
 
@@ -514,7 +514,7 @@ def unbind_background_jobs(token: contextvars.Token) -> None:
     _current_background_jobs.reset(token)
 
 
-def current_background_jobs() -> "BackgroundJobs":
+def current_background_jobs() -> BackgroundJobs:
     jobs = _current_background_jobs.get()
     if jobs is None:
         raise RuntimeError("No background job runner is bound to the current context.")

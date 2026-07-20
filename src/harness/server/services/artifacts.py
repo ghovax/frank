@@ -1,5 +1,7 @@
 """Artifact versioning domain: the shadow-git capture pipeline, the file-history index,
 per-version image annotations, restore, pruning, and the ``@ctx=`` preview-path codec."""
+
+from __future__ import annotations
 from harness.server.models import ArtifactAnnotationSaveRequest
 
 from datetime import datetime
@@ -127,7 +129,7 @@ def _group_work_trees(base_directory: str, changed_absolute_paths: list[str]) ->
     return groups
 
 
-def _run_capture(request: "CaptureRequest") -> None:
+def _run_capture(request: CaptureRequest) -> None:
     """Off-loop: version exactly the files this request names (never a folder survey),
     record the index rows, upsert any surface, and broadcast if anything changed."""
     project_id = _project_id_for_context(request.context_id)
@@ -182,7 +184,7 @@ def _run_capture(request: "CaptureRequest") -> None:
         _publish_broadcast({"type": "artifact_captured", "session_id": request.context_id})
 
 
-def _record_capture(request: "CaptureRequest", project_id: str, git_directory: str, work_tree: str, result: "artifacts.CommitResult") -> None:
+def _record_capture(request: CaptureRequest, project_id: str, git_directory: str, work_tree: str, result: artifacts.CommitResult) -> None:
     assert state._session_factory is not None
     now = datetime.now(timezone.utc).isoformat()
     version_id = str(uuid.uuid4())
@@ -212,7 +214,7 @@ def _record_capture(request: "CaptureRequest", project_id: str, git_directory: s
             session.close()
 
 
-def _upsert_surface(request: "CaptureRequest", project_id: str, location_home: str) -> None:
+def _upsert_surface(request: CaptureRequest, project_id: str, location_home: str) -> None:
     """Create/refresh the surface (tab) for an ``open_artifact``. Reuses an existing surface
     for the same ``(context, absolute_path)`` so re-opening a file updates one tab. For an
     external-URL artifact (no ``absolute_path``) there is no git history — only the live source."""
@@ -425,7 +427,7 @@ def _surface_records(context_id: str) -> list[dict]:
         database_session.close()
 
 
-def _executor_for_location_uri(context_id: str, location_uri: str) -> "LocationExecutor | None":
+def _executor_for_location_uri(context_id: str, location_uri: str) -> LocationExecutor | None:
     """Resolve the executor for one of a session's locations by URI (for serve/restore),
     rebuilding it from the session's location records so it works after a restart."""
     for entry in (_resolve_session_locations(context_id) or []):
@@ -463,7 +465,7 @@ def _restore_artifact(context_id: str, location_uri: str, git_directory: str, wo
     _publish_broadcast({"type": "artifact_captured", "session_id": context_id})
 
 
-def _artifact_annotation_payload(row: ArtifactAnnotationRecord, surface: "ArtifactSurfaceRecord | None" = None) -> dict:
+def _artifact_annotation_payload(row: ArtifactAnnotationRecord, surface: ArtifactSurfaceRecord | None = None) -> dict:
     """Annotation record → the ``image`` identity the panel renders pins from. The identity
     is ``(surface_id, version_id=commit sha)``; ``source`` is the live file path (readable
     for the latest version's stamping / read_file)."""
@@ -517,7 +519,7 @@ def _artifact_annotation_records(context_id: str) -> list[dict]:
         database_session.close()
 
 
-def _save_artifact_annotation_record(context_id: str, request: "ArtifactAnnotationSaveRequest") -> dict:
+def _save_artifact_annotation_record(context_id: str, request: ArtifactAnnotationSaveRequest) -> dict:
     if state._session_factory is None:
         raise HTTPException(status_code=503, detail="Database is not ready.")
     surface_id = (request.surface_id or "").strip()

@@ -14,6 +14,8 @@ everything structured (tool calls/results, agent activity, permission
 prompts) — so the live stream is fully A2A-shaped, not a bespoke side channel.
 """
 
+from __future__ import annotations
+
 import asyncio
 import base64
 import json
@@ -705,7 +707,7 @@ class _TurnEventSink:
     async def flush(self, force: bool = True) -> None:
         await self._text.flush(force=force)
 
-    async def emit_compaction(self, event: "CompactionStarted | CompactionDone") -> None:
+    async def emit_compaction(self, event: CompactionStarted | CompactionDone) -> None:
         """Map a runtime compaction event to its ``compaction`` DataPart, so both the
         manual pass and mid-turn auto-compaction render identically (a live
         "compacting" indicator, then the separator)."""
@@ -903,7 +905,7 @@ class _Ingested:
     later phase takes the result of the phase before it as a required argument, so the ordering
     is a type constraint (a phase literally cannot be called without its predecessor's output)
     rather than the unwritten rule that a shared instance-var machine leaves implicit."""
-    message: "Message"
+    message: Message
     user_text: str
     metadata: dict
     delegated: bool
@@ -912,7 +914,7 @@ class _Ingested:
     permission_mode: str
     requested_working_directory: str
     requested_workspace_strategy: str
-    artifact_payload: "Optional[dict]"
+    artifact_payload: Optional[dict]
     structured_payloads: list
 
 
@@ -920,8 +922,8 @@ class _Ingested:
 class _Resolved:
     """The materialized task and the resume decision, produced by ``_resolve_task``."""
     ingested: _Ingested
-    task: "Task"
-    updater: "TaskUpdater"
+    task: Task
+    updater: TaskUpdater
     is_resume: bool
     resume_plans: dict
     resume_answers: dict
@@ -931,8 +933,8 @@ class _Resolved:
 class _Prepared:
     """The stood-up runtime and event sink, produced by ``_prepare_runtime``."""
     resolved: _Resolved
-    runtime: "AgentRuntime"
-    sink: "_TurnEventSink"
+    runtime: AgentRuntime
+    sink: _TurnEventSink
 
 
 @dataclass(frozen=True)
@@ -975,7 +977,7 @@ class _TurnRunner:
 
     def __init__(
         self,
-        executor: "HarnessAgentExecutor",
+        executor: HarnessAgentExecutor,
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
@@ -1108,7 +1110,7 @@ class _TurnRunner:
             structured_payloads=self._structured_payloads,
         )
 
-    async def _resolve_task(self, ingested: _Ingested) -> "_Resolved | object":
+    async def _resolve_task(self, ingested: _Ingested) -> _Resolved | object:
         """Materialize the task, then either record a resume answer or start a fresh
         turn. Returns ``_DONE`` when the request is fully handled without streaming (a
         stale or partial answer), else the :class:`_Resolved` the next phases thread."""
@@ -1233,7 +1235,7 @@ class _TurnRunner:
         }, parent_context)
         self._turn_span = self._turn_span_context.__enter__()
 
-    async def _prepare_runtime(self, resolved: _Resolved) -> "_Prepared | object":
+    async def _prepare_runtime(self, resolved: _Resolved) -> _Prepared | object:
         """Build (or warm-fetch) the runtime, register it, and stand up the event sink.
         Returns ``_DONE`` for an autonomous wake that has nothing left to deliver, else the
         :class:`_Prepared` the streaming phases thread."""
@@ -1539,7 +1541,7 @@ class HarnessAgentExecutor(AgentExecutor):
         agent_name: str,
         global_configuration: GlobalConfiguration,
         task_store: TaskStore,
-        registry: Optional["AgentRegistry"] = None,
+        registry: Optional[AgentRegistry] = None,
         on_new_context: Optional[Callable[..., Any]] = None,
         conversations: Optional[dict[str, list]] = None,
         claim_work_habits_acknowledgement: Optional[Callable[[str], bool]] = None,
@@ -1629,7 +1631,7 @@ class HarnessAgentExecutor(AgentExecutor):
         task.add_done_callback(self._compaction_tasks.discard)
         return True
 
-    def _agent_handler(self) -> "Optional[RequestHandler]":
+    def _agent_handler(self) -> Optional[RequestHandler]:
         """The request handler that drives this executor's agent, via the registry's public
         accessor (never its private handler map)."""
         return self._registry.handler_for(self._agent_name) if self._registry is not None else None
@@ -2188,7 +2190,7 @@ class AgentRegistry:
         # External (over-the-wire) A2A agents, if configured. When a delegation names one
         # of these, make_delegate reaches it through this manager's A2A client instead of
         # the in-process local handler path.
-        self._remote_manager: Optional["RemoteAgentManager"] = None
+        self._remote_manager: Optional[RemoteAgentManager] = None
         # Signs URLs for files forwarded to a remote agent as FileParts.
         self._file_url_signer: Optional[FileUrlSigner] = None
         # Per (local session context, remote agent) → the remote server's contextId, so a
@@ -2196,7 +2198,7 @@ class AgentRegistry:
         # our own contextId.
         self._remote_contexts: dict[tuple[str, str], str] = {}
 
-    def set_remote_manager(self, remote_manager: Optional["RemoteAgentManager"]) -> None:
+    def set_remote_manager(self, remote_manager: Optional[RemoteAgentManager]) -> None:
         """Install (or replace) the outbound A2A client manager. Safe to call on reload."""
         self._remote_manager = remote_manager
 

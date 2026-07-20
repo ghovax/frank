@@ -9,6 +9,8 @@ skill, an agent reads its file (progressive disclosure) and follows the
 instructions.
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 import re
 from pathlib import Path

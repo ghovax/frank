@@ -616,7 +616,7 @@ def _context_snapshot(
 
 # Tree-sitter validators (multi-language)
 
-_TREE_SITTER_PARSERS: dict[str, "Parser"] = {}
+_TREE_SITTER_PARSERS: dict[str, Parser] = {}
 
 
 def _validate_with_tree_sitter(source_bytes: bytes, language_id: str) -> tuple:

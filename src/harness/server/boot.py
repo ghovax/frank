@@ -10,6 +10,8 @@ thin :mod:`harness.server.asgi` sits on top: it takes this ``app``, mounts the R
 routers onto it, and exposes ``run_server``.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hmac
 import ipaddress
@@ -516,7 +518,7 @@ app.add_middleware(
 # Cache one JWKS client per issuer URL — each fetches and caches signing keys itself.
 
 
-def _a2a_request_authorized(request: Request, configuration: "_configuration.A2AServerConfiguration") -> bool:
+def _a2a_request_authorized(request: Request, configuration: _configuration.A2AServerConfiguration) -> bool:
     """Whether an inbound A2A request satisfies the configured auth: a matching API-key
     header, or a Bearer JWT that verifies against the configured JWKS (issuer/audience)."""
     if configuration.api_key:
@@ -593,7 +595,7 @@ def _is_loopback_bind(host: str) -> bool:
         return False
 
 
-def _assert_exposure_authenticated(configuration: "GlobalConfiguration") -> None:
+def _assert_exposure_authenticated(configuration: GlobalConfiguration) -> None:
     """Fail closed on exposure: the only inbound auth the server has is the A2A config, and
     the REST + A2A surfaces execute tools. Binding to anything but loopback without that auth
     configured would serve tool execution to an unauthenticated network by omission, so refuse

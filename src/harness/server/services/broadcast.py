@@ -1,6 +1,8 @@
 """The SSE broadcast and turn-state notification helpers — thin wrappers over the shared
 Broadcaster and context event bus in :mod:`harness.server.state`."""
 
+from __future__ import annotations
+
 from harness.server import state
 
 

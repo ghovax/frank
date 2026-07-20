@@ -1,6 +1,8 @@
 """Location domain: the location/project serialization and session-location resolution
 primitives shared by the artifacts and projects services."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from datetime import timezone
 from harness.locations.resolver import LocationAddress
@@ -19,11 +21,11 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _location_address(record: "LocationRecord") -> LocationAddress:
+def _location_address(record: LocationRecord) -> LocationAddress:
     return LocationAddress(kind=record.kind, base_directory=record.base_directory, host_alias=record.host_alias or "")
 
 
-def _serialize_location(record: "LocationRecord") -> dict[str, Any]:
+def _serialize_location(record: LocationRecord) -> dict[str, Any]:
     """A location for the API: its generated URI (identity), derived name, connection, and
     its one execution policy (permission_mode)."""
     try:
@@ -45,7 +47,7 @@ def _serialize_location(record: "LocationRecord") -> dict[str, Any]:
     }
 
 
-def _serialize_project(record: "ProjectRecord", database_session, *, with_locations: bool = True) -> dict[str, Any]:
+def _serialize_project(record: ProjectRecord, database_session, *, with_locations: bool = True) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": record.id,
         "created_at": record.created_at,
@@ -129,7 +131,7 @@ def _existing_location_entries(database_session, project_id: str, *, exclude_id:
     return [(row.kind, row.host_alias or "", row.base_directory) for row in rows]
 
 
-def _add_location_row(database_session, project_id: str, location_input: LocationInput) -> "LocationRecord":
+def _add_location_row(database_session, project_id: str, location_input: LocationInput) -> LocationRecord:
     kind = location_input.kind if location_input.kind in ("local", "remote") else "local"
     host_alias = (location_input.host_alias or "").strip()
     base_directory = location_input.base_directory.strip()

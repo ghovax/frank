@@ -21,6 +21,8 @@ event vocabulary lives with the delegation code in ``a2a_executor.py``; this mod
 transport-focused and returns the raw A2A client stream.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time

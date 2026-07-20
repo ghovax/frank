@@ -1,4 +1,6 @@
 """Mcp routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 import harness.core.configuration as _configuration
 from harness.server.models import (

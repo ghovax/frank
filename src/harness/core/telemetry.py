@@ -11,6 +11,8 @@ there is nothing sensitive to redact. Nothing is emitted at all until an endpoin
 so the local-first default stays quiet.
 """
 
+from __future__ import annotations
+
 import logging
 from contextlib import contextmanager
 from typing import Any, Iterator, Optional

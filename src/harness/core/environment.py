@@ -8,6 +8,8 @@ user works, and what they browse). Everything here reads local metadata only and
 to silence on failure; the module holds no state.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import platform
@@ -225,7 +227,7 @@ def probe_local_environment() -> str:
     return json.dumps(payload)
 
 
-def _iter_history_lines() -> "Iterator[str]":
+def _iter_history_lines() -> Iterator[str]:
     """Yield each shell-history command line, normalized across zsh/bash/fish formats.
     Shared by the environment and user-context probes. Silent on unreadable files."""
     home = Path.home()

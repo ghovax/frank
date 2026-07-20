@@ -1,4 +1,6 @@
 """Agents routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from fastapi import HTTPException
 from harness.core.configuration import list_agents

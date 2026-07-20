@@ -268,7 +268,7 @@ class DelegateUsage(DelegateMessage):
 class DelegateDone(DelegateMessage):
     """The child turn finished; ``task`` is its terminal A2A task (serialized) when available."""
     child_task_id: str = ""
-    task: "dict[str, Any] | None" = None
+    task: dict[str, Any] | None = None
 
 
 # The closed union of every turn event, so a consumer can dispatch with ``match`` and prove

@@ -1,5 +1,7 @@
 """Agent domain: card building, per-request configuration resolution, sidecar
 read/write, configuration updates, and model-selection history."""
+
+from __future__ import annotations
 from harness.server.models import AgentConfigurationUpdateRequest
 
 from datetime import datetime
@@ -137,7 +139,7 @@ def _agent_configuration_for_request(agent_name: str, working_directory: str) ->
     return path, load_agent_configuration(agent_name, directories)
 
 
-def _agent_configuration_payload(agent_name: str, working_directory: str) -> "AgentConfigurationResponse":
+def _agent_configuration_payload(agent_name: str, working_directory: str) -> AgentConfigurationResponse:
     path, configuration = _agent_configuration_for_request(agent_name, working_directory)
     return AgentConfigurationResponse(
         id=configuration.identifier,
@@ -173,7 +175,7 @@ def _save_agent_sidecar(agent_markdown_path: Path, data: dict[str, Any]) -> None
     sidecar_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
-def _apply_agent_configuration_update(sidecar: dict[str, Any], request: "AgentConfigurationUpdateRequest") -> dict[str, Any]:
+def _apply_agent_configuration_update(sidecar: dict[str, Any], request: AgentConfigurationUpdateRequest) -> dict[str, Any]:
     model = AgentSidecar.from_mapping(sidecar)
     if request.model is not None or request.provider is not None or request.reasoning_effort is not None:
         model.set_preset(

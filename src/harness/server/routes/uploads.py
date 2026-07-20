@@ -1,4 +1,6 @@
 """Uploads routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from datetime import datetime
 from datetime import timezone

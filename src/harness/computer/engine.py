@@ -99,7 +99,7 @@ def _is_incomplete(snapshot: accessibility.Snapshot) -> bool:
     return all(ax.subrole in _WINDOW_CHROME_SUBROLES for ax in snapshot.elements)
 
 
-def _to_element(ax: accessibility.Element, token: "RegistryEntry") -> Element:
+def _to_element(ax: accessibility.Element, token: RegistryEntry) -> Element:
     flags: dict[str, Any] = {}
     if ax.enabled is False:
         flags["enabled"] = False

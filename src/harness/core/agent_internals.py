@@ -77,7 +77,7 @@ async def _stream_next(iterator: AsyncIterator) -> Any:
 
 def model_is_authorized(
     model_identifier: str,
-    global_configuration: "GlobalConfiguration",
+    global_configuration: GlobalConfiguration,
 ) -> bool:
     """Whether we currently hold credentials to call ``model_identifier``.
 
@@ -400,7 +400,7 @@ class _PreflightGate:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "_PreflightGate":
+    def from_dict(cls, data: dict) -> _PreflightGate:
         return cls(
             request_id=str(data.get("request_id", "")), tool_call_id=str(data.get("tool_call_id", "")),
             kind=str(data.get("kind", "permission")), command=str(data.get("command", "")),
@@ -434,7 +434,7 @@ class _ToolPlan:
         return {"tool_call_id": self.tool_call_id, "denial": self.denial, "gates": [g.to_dict() for g in self.gates]}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "_ToolPlan":
+    def from_dict(cls, data: dict) -> _ToolPlan:
         return cls(
             tool_call_id=str(data.get("tool_call_id", "")),
             denial=data.get("denial"),

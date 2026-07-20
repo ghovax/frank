@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime, timezone
@@ -109,8 +111,8 @@ from harness.core.agent_internals import (
 
 def build_chat_model(
     model_identifier: str,
-    global_configuration: "GlobalConfiguration",
-    agent_configuration: "AgentConfiguration",
+    global_configuration: GlobalConfiguration,
+    agent_configuration: AgentConfiguration,
 ) -> BaseChatModel:
     """Build the chat model for a provider-qualified (``provider/model``) id.
 
@@ -496,7 +498,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         # streamed events land here and the turn loop drains them so the agents
         # panel updates while the parent keeps working. Whatever is still queued
         # when the parent goes idle drains on the next (wake) turn.
-        self._spawned_agent_events: "asyncio.Queue[TurnEvent]" = asyncio.Queue()
+        self._spawned_agent_events: asyncio.Queue[TurnEvent] = asyncio.Queue()
         self._agent_event_sink: Optional[Callable[[dict[str, Any]], None]] = None
         self._settled_agent_lanes: set[tuple[str, str]] = set()
         # The latest call's context occupancy (prompt + completion) and the model's
@@ -562,7 +564,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         names = ", ".join(sorted(self._locations_by_name)) or "(none configured)"
         raise ToolLocationError(f"Unknown location {location_value!r}. Available: {names}.")
 
-    def _call_policy(self, location: "ResolvedLocation | None") -> CallExecutionPolicy:
+    def _call_policy(self, location: ResolvedLocation | None) -> CallExecutionPolicy:
         """The execution policy for one tool call. In the projects model
         an explicit live session mode governs every target immediately. While the session
         remains on ``default``, a target's explicit mode governs its calls, then the agent
@@ -612,7 +614,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         return self._conversation
 
     @property
-    def background_jobs(self) -> "BackgroundJobs":
+    def background_jobs(self) -> BackgroundJobs:
         """This runtime's background-job runner. The executor's resume pump reads it
         to know when in-flight work has completed."""
         return self._background
@@ -657,7 +659,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
     def token_usage(self) -> dict[str, int]:
         return dict(self._token_usage)
 
-    def _accumulate_usage(self, response: AIMessage) -> "TurnEvent | None":
+    def _accumulate_usage(self, response: AIMessage) -> TurnEvent | None:
         """Fold one model call's real token usage into the running session total
         and return a USAGE event carrying both the per-call and cumulative counts.
         Returns ``None`` when the provider reported no usage for this call."""
@@ -800,7 +802,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         elif self._permission_mode is PermissionMode.READ_ONLY:
             self._permission_mode = PermissionMode.DEFAULT
 
-    def set_permission_mode(self, mode: "str | PermissionMode") -> None:
+    def set_permission_mode(self, mode: str | PermissionMode) -> None:
         """Apply a live session override. ``default`` restores the agent card's own configured
         mode; any other known mode replaces it. An unknown value is ignored."""
         parsed = PermissionMode.parse(mode)
@@ -906,7 +908,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         self._artifact_capture = artifact_capture
 
     def _capture_written_artifacts(
-        self, resolved_location: "ResolvedLocation", *, changed_absolute_paths: list[str] | None,
+        self, resolved_location: ResolvedLocation, *, changed_absolute_paths: list[str] | None,
         tool_call_id: str, message: str, mode: str = "track",
         original_contents: dict[str, str] | None = None, surface: dict | None = None,
     ) -> None:

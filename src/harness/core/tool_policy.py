@@ -6,6 +6,8 @@ through as an immutable value (so concurrent calls never cross working directori
 permission flags), and the structured decisions the bash permission classifier emits.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Optional
@@ -33,7 +35,7 @@ class PermissionMode(StrEnum):
     BYPASS = "bypass"
 
     @classmethod
-    def parse(cls, value: "str | PermissionMode | None") -> "Optional[PermissionMode]":
+    def parse(cls, value: str | PermissionMode | None) -> Optional[PermissionMode]:
         """The mode a wire/config/DB string names, or ``None`` when it names no known mode —
         so a caller can tell 'absent or invalid' apart from a real choice."""
         if isinstance(value, cls):
@@ -44,7 +46,7 @@ class PermissionMode(StrEnum):
             return None
 
     @classmethod
-    def coerce(cls, value: "str | PermissionMode | None", default: "PermissionMode | None" = None) -> "PermissionMode":
+    def coerce(cls, value: str | PermissionMode | None, default: PermissionMode | None = None) -> PermissionMode:
         """The mode a value names, falling back to ``default`` (or :attr:`DEFAULT`) when it
         names none. The typed parse to apply at a string boundary."""
         parsed = cls.parse(value)
@@ -58,7 +60,7 @@ class PermissionMode(StrEnum):
         return _RESTRICTIVENESS[self]
 
     @classmethod
-    def more_restrictive(cls, *modes: "str | PermissionMode | None") -> "PermissionMode":
+    def more_restrictive(cls, *modes: str | PermissionMode | None) -> PermissionMode:
         """The more restrictive of the given modes — a lattice meet on the restrictiveness
         order. Unknown/absent inputs are ignored; with none given the interactive default
         applies. This is the delegated grant clamp: an agent runs at the more restrictive of
@@ -66,7 +68,7 @@ class PermissionMode(StrEnum):
         candidates = [mode for mode in (cls.parse(value) for value in modes) if mode is not None]
         return max(candidates, key=lambda mode: mode.restrictiveness) if candidates else cls.DEFAULT
 
-    def clamped_for_delegation(self) -> "PermissionMode":
+    def clamped_for_delegation(self) -> PermissionMode:
         """This mode as a delegated agent may run it: :attr:`BYPASS` is clamped to the
         interactive default, because a delegated agent never runs unattended."""
         return PermissionMode.DEFAULT if self is PermissionMode.BYPASS else self
@@ -130,7 +132,7 @@ class CallExecutionPolicy:
     running concurrently against different locations cannot cross policies or
     working directories."""
 
-    location: "ResolvedLocation | None"
+    location: ResolvedLocation | None
     working_directory: str
     mode: PermissionMode
 

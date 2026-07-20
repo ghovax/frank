@@ -1,4 +1,6 @@
 """Projects routes."""
+
+from __future__ import annotations
 from fastapi import APIRouter
 from harness.server.database import SessionRecord
 from fastapi import HTTPException

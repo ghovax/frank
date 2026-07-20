@@ -5,6 +5,8 @@ app read the registered agents (with live health resolved from the outbound clie
 manager) and edit that file. A write reloads the manager immediately (the file watcher
 also reloads, so the two are idempotent)."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path

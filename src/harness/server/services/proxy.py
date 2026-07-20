@@ -11,6 +11,8 @@ client keeps the upstream cookie jar (session/consent/CSRF cookies, domain-scope
 opened sites never share them) across proxied requests; framing-blocker and hop-by-hop
 response headers are dropped when re-serving."""
 
+from __future__ import annotations
+
 from fastapi import Request
 from harness.tools.tools import ASSETS_DIRECTORY
 from typing import Any

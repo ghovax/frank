@@ -1,6 +1,8 @@
 """Filesystem domain: git-status probing and change-watching, directory validation, and the
 native folder picker."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone

@@ -7,6 +7,8 @@ short-lived JWT-signed link to the file-serving endpoint, so bytes are served on
 and the link cannot be altered or outlive its window.
 """
 
+from __future__ import annotations
+
 import base64
 import hashlib
 import mimetypes

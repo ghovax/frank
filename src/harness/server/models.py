@@ -6,6 +6,8 @@ old ``app.py`` monolith — the back-import that once left these models referenc
 unresolved string annotations, crashing the routes that used them.
 """
 
+from __future__ import annotations
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
