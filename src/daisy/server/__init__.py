@@ -1,4 +1,4 @@
-"""The harness FastAPI server package.
+"""The Daisy FastAPI server package.
 
 :mod:`daisy.server.boot` is the composition root: it builds the FastAPI ``app``, drives
 its lifespan, mounts each agent's A2A sub-app, and runs the watchers — and imports no route

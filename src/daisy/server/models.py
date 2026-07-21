@@ -1,4 +1,4 @@
-"""HTTP request/response models for the harness server.
+"""HTTP request/response models for the Daisy server.
 
 The Pydantic DTOs the FastAPI routes accept and return. Extracted into their own leaf module
 so a route depends on the request/response contract directly rather than importing it from the

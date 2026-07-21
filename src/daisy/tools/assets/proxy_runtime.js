@@ -1,4 +1,4 @@
-// Harness artifact-proxy runtime.
+// Daisy artifact-proxy runtime.
 //
 // Injected into every page served through /artifact-proxy so that URLs built at
 // runtime by the page's own scripts (fetch/XHR, history navigations) resolve

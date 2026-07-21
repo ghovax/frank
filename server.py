@@ -1,4 +1,4 @@
-"""Launch entry point for the harness FastAPI server.
+"""Launch entry point for the Daisy FastAPI server.
 
 The server body lives in :mod:`daisy.server` (``boot`` builds the app and owns the shared
 state; ``asgi`` mounts the routers and exposes the ASGI ``app``) so it is importable as a
