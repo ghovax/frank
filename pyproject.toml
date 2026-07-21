@@ -49,6 +49,8 @@ dependencies = [
     "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
     "pyobjc-framework-ApplicationServices>=11.0; sys_platform == 'darwin'",
     "playwright>=1.61.0",
+    "model2vec>=0.8.2",
+    "semble>=0.1.10",
 ]
 
 [build-system]

@@ -1,11 +1,12 @@
-"""macOS computer-use: control any running app through the most accurate approach available.
+"""Perceiving and driving a live surface — the browser and the native macOS desktop.
 
-Scripting a cooperative app returns exact structured data; the accessibility tree reads
-and drives app UI as semantic elements; screen pixels are the last resort for apps with
-no accessible structure. Every action targets a specific process so it never disturbs,
-and is never disturbed by, what the user is doing. The ``computer`` harness tool
-dispatches into ``engine``.
+The model works this in two phases: ``search_screen`` retrieves the relevant elements (and, on the
+web, the page's network exchanges) from the current surface via :mod:`daisy.computer.retrieval`,
+and ``control_screen`` composes trusted actions over them, run in a killable subprocess by
+:mod:`daisy.computer.control`. The web substrate lives in :mod:`daisy.computer.web` (Chrome over
+Playwright) and the native one in :mod:`daisy.computer.engine` (the macOS accessibility tree).
+
+Submodules are imported by the code that needs them, not here: the macOS surface pulls
+``ApplicationServices`` and only loads where it can, while the retrieval and control layers are
+platform-neutral and import anywhere the server runs.
 """
-from daisy.computer import engine, permissions
-
-__all__ = ["engine", "permissions"]
