@@ -80,11 +80,18 @@ const settledTools: ToolEvent[] = [
     result: { content: "export function ToolCall() { /* … */ }" },
   },
   {
-    name: "search_content",
+    name: "search_code",
     toolCallId: "t2",
     status: "completed",
-    arguments: { pattern: "DisclosureRow", path: "web/src" },
-    result: { matches: ["web/src/components/ui/disclosure-row.tsx:60"] },
+    arguments: { query: "DisclosureRow" },
+    result: {
+      ok: true,
+      query: "DisclosureRow",
+      count: 1,
+      matches: [
+        { file: "web/src/components/ui/disclosure-row.tsx", start_line: 60, end_line: 64, language: "tsx", snippet: "export function DisclosureRow() { /* … */ }", score: 0.92 },
+      ],
+    },
   },
   {
     name: "edit_file",
@@ -110,7 +117,7 @@ const settledTools: ToolEvent[] = [
 
 const runningTools: ToolEvent[] = [
   {
-    name: "web_search",
+    name: "search_web",
     toolCallId: "r1",
     status: "completed",
     arguments: { query: "chakra ui semantic tokens" },
@@ -132,10 +139,10 @@ const runningTools: ToolEvent[] = [
 ];
 
 const failedTool: ToolEvent = {
-  name: "search_content",
+  name: "search_code",
   toolCallId: "f1",
   status: "failed",
-  arguments: { pattern: "([unbalanced", path: "web/src" },
+  arguments: { query: "([unbalanced" },
   result: { code: "tool_error", message: "regex parse error" },
 };
 

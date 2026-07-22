@@ -7,7 +7,7 @@ import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-displ
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
 import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
-import { BrowserActionBadge, ComputerActionBadge, ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
+import { ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { Pill } from "./ui/pill";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { STATUS_PALETTE, toolStatusKind } from "@/lib/status";
@@ -181,8 +181,6 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
       }
       badges={
         <>
-          {name === "computer" && <ComputerActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
-          {name === "browser" && <BrowserActionBadge action={toolArguments?.action ? String(toolArguments.action) : undefined} />}
           <ToolLocationBadge arguments={toolArguments} />
           <ToolRiskBadges arguments={toolArguments} />
           {status === "running" || status === "completed" || status === "failed" || status === "input_required" ? <ToolStatusBadge status={status} /> : null}
@@ -196,7 +194,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
         // and the result's first (e.g. PID) read as one list.
         <Flex direction="column" gap={2} align="stretch">
           {showArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
-          {showResult && <ToolResultView name={name} content={resultContent ?? ""} args={toolArguments} status={status} />}
+          {showResult && <ToolResultView name={name} content={resultContent ?? ""} status={status} />}
         </Flex>
       ) : undefined}
     </DisclosureRow>

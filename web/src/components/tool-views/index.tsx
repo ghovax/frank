@@ -2132,12 +2132,10 @@ function McpResultView({ data }: { data: Record<string, unknown> }) {
 export function ToolResultView({
   name,
   content,
-  args,
   status,
 }: {
   name: string;
   content: string;
-  args?: Record<string, unknown>;
   status?: ToolEventStatus;
 }) {
   const translation = useTranslations("ToolViews");

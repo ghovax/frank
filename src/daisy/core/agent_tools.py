@@ -683,7 +683,7 @@ class _ToolsMixin:
         # search_code indexes a local directory; a remote location has no local root to index, so
         # it reports that rather than pretending. The default (local) location is the working tree.
         root = resolved_location.base_directory if resolved_location is not None else "."
-        if resolved_location is not None and resolved_location.location is not None and resolved_location.location.is_remote:
+        if resolved_location is not None and resolved_location.is_remote:
             result: dict = {"ok": False, "error": "search_code runs only on the local codebase; use bash with ripgrep on a remote location."}
         else:
             result = await asyncio.to_thread(search_code, query, root, top_k=top_k, reindex=reindex)
