@@ -9,7 +9,7 @@ the remote's own environment (PATH, tool shims) is in effect — the same reason
 local terminal login-env work.
 
 Beyond raw command execution, the executor is the *filesystem abstraction* the file
-tools (``read_file``, ``edit_file``, ``write_file``, ``find_files``, ``search_content``)
+tools (``read_file``, ``edit_file``, ``write_file``, ``bash``)
 are written against: path resolution, text IO, glob matching (mtime-sorted), and regex
 search all go through it, so local and remote tool calls share one result-building code
 path in ``file_tools`` and differ only in which executor carries the primitives.
