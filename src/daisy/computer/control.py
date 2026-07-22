@@ -77,10 +77,10 @@ async def run_control_script(
                 return
             try:
                 call = json.loads(line)
-                result = await dispatch(call["call"], call.get("args", []), call.get("kwargs", {}))
-                reply: Any = result
-            except Exception as error:  # a failed primitive is reported into the script, not fatal
-                reply = {"__error__": f"{type(error).__name__}: {error}"}
+                value = await dispatch(call["call"], call.get("args", []), call.get("kwargs", {}))
+                reply: Any = {"value": value}
+            except Exception as error:  # a failed primitive is raised into the script, not fatal here
+                reply = {"error": f"{type(error).__name__}: {error}"}
             await loop.run_in_executor(None, _write_line, replies, json.dumps(reply, default=str))
 
     pump_task = asyncio.create_task(pump())

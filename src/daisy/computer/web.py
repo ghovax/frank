@@ -49,6 +49,22 @@ _APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js")
 # Per-exchange body clip. Only the top-ranked exchanges are ever returned to the model, but a
 # single huge body should still not dominate; the model can read more with ``evaluate`` if needed.
 _BODY_CLIP = 8000
+# JSON bodies up to this size are parsed and returned as structured data — the model reads and can
+# query them directly, never an escaped string — while larger or non-JSON bodies fall back to a
+# clipped string. Generous, because only the top-ranked exchanges ever reach the model.
+_BODY_JSON_MAX = 200_000
+
+
+def _decode_body(text: str, content_type: str = "") -> Any:
+    """Represent a captured HTTP body as structured data when it is JSON — so the model reads it as
+    an object it can navigate rather than an escaped string — and otherwise as a bounded string."""
+    stripped = text.lstrip()
+    if ("json" in content_type or stripped[:1] in "{[") and len(text) <= _BODY_JSON_MAX:
+        try:
+            return json.loads(text)
+        except Exception:
+            pass
+    return text if len(text) <= _BODY_CLIP else text[:_BODY_CLIP]
 
 # The user-visible Chromium browsers we can connect to and drive, mapped to the support directory
 # that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
@@ -171,8 +187,10 @@ class _Session:
                     "method": request.method, "url": request.url,
                     "status": response.status, "type": resource_type,
                 }
+                request_headers: dict[str, str] = {}
                 try:
-                    entry["request_headers"] = dict(request.headers)
+                    request_headers = dict(request.headers)
+                    entry["request_headers"] = request_headers
                 except Exception:
                     pass
                 headers: dict[str, str] = {}
@@ -184,7 +202,7 @@ class _Session:
                 try:
                     post = request.post_data
                     if post:
-                        entry["request_body"] = post[:_BODY_CLIP]
+                        entry["request_body"] = _decode_body(post, request_headers.get("content-type", ""))
                 except Exception:
                     pass
                 content_type = headers.get("content-type", "")
@@ -192,7 +210,7 @@ class _Session:
                     marker in content_type for marker in ("json", "javascript", "text", "xml", "graphql", "urlencoded")
                 ):
                     try:
-                        entry["response_body"] = response.text()[:_BODY_CLIP]
+                        entry["response_body"] = _decode_body(response.text(), content_type)
                     except Exception:
                         pass
                 self.exchanges.append(entry)
@@ -712,15 +730,21 @@ class WebSurface(Surface):
                 value = page.evaluate(expression_text, argument)
             except Exception as error:
                 return {"ok": False, "error": f"Evaluation failed: {str(error).splitlines()[0]}"}
+            # Playwright already deserialized the JS result into native Python; return it as-is so
+            # the model gets a structure it can navigate, never a stringified/escaped blob. Only a
+            # result too large for the budget degrades to a clipped string.
+            result: dict[str, Any] = {"ok": True, "url": _safe_url(page)}
             try:
-                rendered = json.dumps(value, ensure_ascii=False, default=str)
+                serialized = json.dumps(value, ensure_ascii=False, default=str)
             except Exception:
-                rendered = str(value)
-            clipped, truncated = clip_to_tokens(rendered, active_tuning().amount(Limit.EVALUATE_TOKENS))
-            result: dict[str, Any] = {"ok": True, "result": clipped, "url": _safe_url(page)}
+                serialized = str(value)
+            clipped, truncated = clip_to_tokens(serialized, active_tuning().amount(Limit.EVALUATE_TOKENS))
             if truncated:
+                result["result"] = clipped
                 result["truncated"] = True
                 result["note"] = message("evaluate_truncated")
+            else:
+                result["result"] = value
             return result
 
         return self.guard(run)

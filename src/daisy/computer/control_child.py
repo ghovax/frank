@@ -66,10 +66,10 @@ def _call(name: str, arguments: tuple, keywords: dict) -> Any:
     line = _reply.readline()
     if not line:
         raise RuntimeError("control_screen: the parent closed the connection.")
-    reply = json.loads(line)
-    if isinstance(reply, dict) and "__error__" in reply:
-        raise RuntimeError(reply["__error__"])
-    return reply
+    reply = json.loads(line)  # the parent always wraps: {"value": …} on success, {"error": …} on failure
+    if "error" in reply:
+        raise RuntimeError(reply["error"])
+    return reply.get("value")
 
 
 def _make_primitive(name: str):

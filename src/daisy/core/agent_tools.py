@@ -1663,7 +1663,19 @@ class _ToolsMixin:
             return
 
         async def dispatch(name: str, args: list, keywords: dict) -> Any:
-            return await asyncio.to_thread(surface.perform, name, args, keywords)
+            outcome = await asyncio.to_thread(surface.perform, name, args, keywords)
+            if isinstance(outcome, dict):
+                if outcome.get("ok") is False:
+                    # Surface a primitive failure into the script as a raised error it can try/except.
+                    raise RuntimeError(outcome.get("error", f"{name} failed"))
+                # Hand the script the useful value directly: evaluate's result or read's text is the
+                # value itself (structured and queryable), an action is its confirmation minus `ok`.
+                if "result" in outcome:
+                    return outcome["result"]
+                if "text" in outcome:
+                    return outcome["text"]
+                return {key: value for key, value in outcome.items() if key != "ok"}
+            return outcome
 
         result = await control.run_control_script(script, dispatch)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
