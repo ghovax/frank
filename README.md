@@ -23,7 +23,7 @@ The two halves talk only over HTTP, so the harness runs detached: the app stays 
 
 The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
 
-- **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([Permissions](documentation/configuration.md#permissions)).
+- **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([Permissions](documentation/configuration.md#permission-modes)).
 - **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
 - **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([What it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
@@ -50,61 +50,31 @@ On everything else, Claude Code and Codex lead: they are further along on polish
 
 ## Install
 
-Daisy targets **macOS on Apple Silicon**.
+Daisy targets **macOS on Apple Silicon**. Download the latest `.dmg` from the [Releases](https://github.com/ghovax/daisy/releases) page and drag **Daisy** to Applications; the build is self-signed, so Gatekeeper warns on first launch. Prefer to build from source? Clone the repo and use the Nix-pinned toolchain instead.
 
-### Download
-
-Grab the latest `.dmg` from the [**Releases**](https://github.com/ghovax/daisy/releases) page, open it, and drag **Daisy** to Applications.
-
-> [!NOTE]
-> The app is **self-signed, not Apple-notarized**, so Gatekeeper will warn on first launch. Right-click **Daisy.app → Open** and confirm once, or run `xattr -dr com.apple.quarantine /Applications/Daisy.app`. Notarized builds are planned.
-
-### Build from source
-
-See the [Development guide](documentation/development.md). In short:
-
-```sh
-git clone https://github.com/ghovax/daisy.git
-cd daisy
-direnv allow                       # or: nix develop  (provides bun, rust, cargo-tauri)
-cd web && bun install && cd ..
-cd web/src-tauri && cargo tauri build
-```
+See the [Installation guide](documentation/installation.md) for both paths — download and Gatekeeper, or build from source.
 
 ## Quickstart
 
 1. **Launch Daisy.** The bundled server starts automatically; the app connects to it.
 2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Daisy configuration file — see the [Example configuration](configuration.example.yaml).
-3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permissions) once you trust a flow.
+3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permission-modes) once you trust a flow.
 
-To enable the distinctive tools:
-
-- **Screen control** (`search_screen`/`control_screen`) needs macOS Accessibility permission for native apps (Daisy prompts you).
-- Driving **your own Chrome** needs Chrome's remote-debugging toggle enabled once (`chrome://inspect`). Daisy shows a one-click prompt.
+The screen-control tools need a one-time Accessibility grant and Chrome's remote-debugging toggle — see the [Installation guide](documentation/installation.md#permissions-the-app-may-ask-for).
 
 > [!NOTE]
-> So it fits your setup from the first turn, the agent's system prompt carries a snapshot of your machine and — only if you opt in — of how you work (identity, locale, frequent files and apps, and the like). Whatever is in the prompt goes to your configured model provider, so that snapshot sends personal data there. It is a deliberate choice and the user snapshot is opt-in; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider) for the reasoning and how to shape it.
+> Opt in and the system prompt also carries a snapshot of how you work, sent to your model provider along with the rest of the prompt. It is off by default; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider).
 
 ## Run the server anywhere
 
-The app defaults to a bundled local server, but any Daisy client can point at any Daisy harness:
-
-- **Local (default)** — the app manages a server on `127.0.0.1:8822`. Nothing to set up.
-- **Remote URL** — run `python server.py` on another host and add its URL under **Settings → Connections**.
-- **Over SSH** — add an SSH host and Daisy tunnels to the remote harness, so the server can live on a box you reach only over SSH.
-
-This is what makes Daisy more than a desktop toy: the agent, its tools, and its file and network access run wherever you put the harness, while the interface stays native and local. See the [Architecture guide](documentation/architecture.md).
+The app defaults to a bundled local server, but any client can point at any harness — local, a remote URL, or over SSH. The compute, files, and network live wherever you host the harness while the interface stays native and local. See the [Architecture guide](documentation/architecture.md#connections-local-remote-ssh) for the connection modes.
 
 > [!WARNING]
-> The harness has no built-in authentication. If you expose it beyond `localhost`, put it behind your own auth and transport security and never open it to the public internet. See the [Security notes](SECURITY.md).
+> The harness has no built-in authentication. Behind `localhost` that is fine; if you expose it, put your own auth and transport security in front. See the [Security notes](SECURITY.md).
 
 ## Documentation
 
-The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
-
-- [Set up providers and permissions](documentation/configuration.md)
-- [How the pieces fit together](documentation/architecture.md)
-- [The tool surface and screen control](documentation/tools.md)
+The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
 
 ## Built with
 

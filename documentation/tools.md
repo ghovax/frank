@@ -1,6 +1,6 @@
 # Tools
 
-Agents act through tools. Every tool call is subject to the [permission engine](configuration.md#permissions); risky ones can pause for approval. Each built-in tool carries the description the model reads as its docstring in `src/daisy/tools/tools.py`, so the authoritative spec is always in the repo.
+Agents act through tools. Every tool call is subject to the [permission engine](configuration.md#permission-modes); risky ones can pause for approval. Each built-in tool carries the description the model reads as its docstring in `src/daisy/tools/tools.py`, so the authoritative spec is always in the repo.
 
 ## The built-in surface
 
@@ -42,7 +42,7 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 
 ## Screen control (`search_screen` + `control_screen`)
 
-Daisy drives the live screen — native macOS apps and **your own Chrome** — through a two-phase pair of tools. These are **macOS-only** and **opt-in**: both are gated by `computer_control.enabled` (the default; see [configuration.md](configuration.md#execution-and-permissions)).
+Daisy drives the live screen — native macOS apps and **your own Chrome** — through a two-phase pair of tools. These are **macOS-only** and **opt-in**: both are gated by `computer_control.enabled` (the default; see [Configuration guide](configuration.md#execution-and-permissions)).
 
 **`search_screen` — read the live surface.** Point it at the current surface (the user's Chrome page or a native macOS app) with a plain-language query, and it returns the matching UI as **ranked elements** to act on, rather than pixels. On native apps it reads the **accessibility tree**; on Chrome it reads the page's real semantic structure (roles and names, iframes included) over the Chrome DevTools Protocol through Playwright. On the browser it additionally surfaces the page's own **network/API requests**, so the agent can see the endpoints the page calls.
 
@@ -52,7 +52,7 @@ Because Daisy attaches to **the Chrome you already use** — your real logins an
 
 **Enable it:**
 
-- Grant **Accessibility** permission to Daisy for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. Because the permission is matched to the app's code identity, the packaged build is signed with a stable identity so the grant survives updates (see [development.md](development.md#building-and-signing)).
+- Grant **Accessibility** permission to Daisy for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. Because the permission is matched to the app's code identity, the packaged build is signed with a stable identity so the grant survives updates (see [Development guide](development.md#building-and-signing)).
 - Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (Daisy provides a one-click prompt that opens the page).
 - Set `computer_control.enabled: true` (the default) in the config.
 

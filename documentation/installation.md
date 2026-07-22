@@ -46,6 +46,6 @@ cd web && bun install && cd ..
 cd web/src-tauri && cargo tauri build
 ```
 
-The build produces `web/src-tauri/target/release/bundle/macos/Daisy.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds) and packaging details, see [development.md](development.md#building-and-signing).
+The build produces `web/src-tauri/target/release/bundle/macos/Daisy.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds) and packaging details, see [Development guide](development.md#building-and-signing).
 
-You also need a local Python environment for the harness itself (a `.venv` with the project installed) — see [development.md](development.md#running-the-harness).
+You also need a local Python environment for the harness itself (a `.venv` with the project installed) — see [Development guide](development.md#running-the-harness).

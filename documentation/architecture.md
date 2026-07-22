@@ -4,25 +4,25 @@ Daisy is split into a **harness** (the Python agent runtime, plus a server that 
 
 ```mermaid
 flowchart LR
-    subgraph Client["Desktop app (Tauri + Next.js)"]
-        UI["Chat UI, settings, artifacts"]
-        Conn["Connection manager<br/>(local, URL, SSH)"]
+    subgraph DesktopApp["Desktop app (Tauri + Next.js)"]
+        ChatInterface["Chat UI, settings, artifacts"]
+        ConnectionManager["Connection manager<br/>(local, URL, SSH)"]
     end
 
     subgraph Harness["Harness (Python, FastAPI)"]
-        API["A2A + REST API<br/>127.0.0.1:8822"]
-        Loop["Agent loop<br/>(LangChain / LangGraph)"]
-        Perm["Permission engine"]
-        Tools["Tools: shell, files, web,<br/>screen control, MCP"]
-        Store["~/.daisy<br/>configuration.yaml, history.db"]
+        NetworkApi["A2A + REST API<br/>127.0.0.1:8822"]
+        AgentLoop["Agent loop<br/>(LangChain / LangGraph)"]
+        PermissionEngine["Permission engine"]
+        ToolDispatch["Tools: shell, files, web,<br/>screen control, MCP"]
+        PersistentStore["~/.daisy<br/>configuration.yaml, history.db"]
     end
 
-    Model["Model provider<br/>(Anthropic, OpenAI, … via LiteLLM)"]
+    ModelProvider["Model provider<br/>(Anthropic, OpenAI, … via LiteLLM)"]
 
-    UI --> Conn --> API
-    API --> Loop --> Perm --> Tools
-    Loop --> Store
-    Loop <--> Model
+    ChatInterface --> ConnectionManager --> NetworkApi
+    NetworkApi --> AgentLoop --> PermissionEngine --> ToolDispatch
+    AgentLoop --> PersistentStore
+    AgentLoop <--> ModelProvider
 ```
 
 ## The harness
@@ -34,7 +34,7 @@ The `daisy` package is the agent runtime — an importable Python library you ca
 - dispatches **tools** and runs each one through the **permission engine** before it takes effect;
 - persists everything to **`~/.daisy/`** — `configuration.yaml` and `history.db`.
 
-It binds `127.0.0.1:8822` by default. It has **no built-in authentication**: it trusts whoever can reach the port. That is fine on `localhost`; anywhere else it is your job to put auth and transport security in front (see [SECURITY.md](../SECURITY.md)).
+It binds `127.0.0.1:8822` by default. It has **no built-in authentication**: it trusts whoever can reach the port. That is fine on `localhost`; anywhere else it is your job to put auth and transport security in front (see [Security notes](../SECURITY.md)).
 
 ## The app
 
@@ -68,6 +68,6 @@ This is the design goal behind keeping the halves apart: **put the compute, the 
 
 ## Where to go next
 
-- Configure providers and behavior: [configuration.md](configuration.md).
-- Author agents, skills, memory, and MCP servers: [agents-and-skills.md](agents-and-skills.md).
-- The tool surface in detail: [tools.md](tools.md).
+- Configure providers and behavior: [Configuration guide](configuration.md).
+- Author agents, skills, memory, and MCP servers: [Agents and skills guide](agents-and-skills.md).
+- The tool surface in detail: [Tools guide](tools.md).

@@ -23,7 +23,7 @@ uv run python server.py
 # or: PYTHONPATH=src .venv/bin/python server.py
 ```
 
-It serves on `http://127.0.0.1:8822`. State is read from and written to `~/.daisy/` (created on first run). Add provider keys there or via environment variables — see [configuration.md](configuration.md).
+It serves on `http://127.0.0.1:8822`. State is read from and written to `~/.daisy/` (created on first run). Add provider keys there or via environment variables — see [Configuration guide](configuration.md).
 
 ## Running the web UI
 

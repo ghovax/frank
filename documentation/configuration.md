@@ -5,9 +5,9 @@ All runtime configuration lives in **`~/.daisy/configuration.yaml`**. It is crea
 Most settings are editable from **Settings** in the app. This document is the reference for the file itself, which you will want for headless or remote deployments.
 
 > [!IMPORTANT]
-> Every credential can also be provided through an environment variable (listed below), which takes precedence over the file. That lets you run a harness without writing any secret to disk. Never commit a filled-in config or a `.env` — see [SECURITY.md](../SECURITY.md).
+> Every credential can also be provided through an environment variable (listed below), which takes precedence over the file. That lets you run a harness without writing any secret to disk. Never commit a filled-in config or a `.env` — see [Security notes](../SECURITY.md).
 
-A fully-commented template lives at [`configuration.example.yaml`](../configuration.example.yaml).
+A fully-commented template lives at [Example configuration](../configuration.example.yaml).
 
 ## Model providers
 
@@ -74,7 +74,7 @@ user_context:     { enabled: true } # persistent context about you across sessio
 | `read_only` | Allow reads; deny writes and side effects. |
 | `bypass` | Approve everything. Use only when you fully trust the task. |
 
-Bash additionally honors per-command rules defined on each agent (for example `sudo *: deny`, `rm *: ask`) — see [agents-and-skills.md](agents-and-skills.md).
+Bash additionally honors per-command rules defined on each agent (for example `sudo *: deny`, `rm *: ask`) — see [Agents and skills guide](agents-and-skills.md).
 
 ## Agents
 
@@ -82,4 +82,4 @@ Bash additionally honors per-command rules defined on each agent (for example `s
 default_agent: "general-assistant"
 ```
 
-The primary agent for new sessions. Bundled options: `general-assistant`, `senior-researcher`, `code-investigator`, `code-implementer`. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [agents-and-skills.md](agents-and-skills.md).
+The primary agent for new sessions. Bundled options: `general-assistant`, `senior-researcher`, `code-investigator`, `code-implementer`. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills guide](agents-and-skills.md).
