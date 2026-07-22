@@ -879,7 +879,7 @@ async def control_screen(
     Primitives (call by bare name, no prefix):
       click(id, button="left", count=1) · type(id, text, submit=False, mode="replace") · press(key) · scroll(id=None, direction="down") · hover(id) · choose(id, option) · upload(id, paths) · drag(id, to_element) · select(id, text=…) · caret(id, …) · read(id)
     Browser only:
-      evaluate(js, arg=None) — run JavaScript in the page: structured extraction, and replaying the page's own authenticated API with fetch, which rides the user's real session · navigate(url="", history="", new_tab=False)
+      evaluate(js, arg=None) — run arbitrary JavaScript in the page and get its result back natively: read, filter, or aggregate its data down to just what you need, or call its own authenticated API with fetch (riding the user's real session) · navigate(url="", history="", new_tab=False)
     The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too.
 
     Arguments:
