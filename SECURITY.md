@@ -1,5 +1,7 @@
 # Security Policy
 
+Daisy is software that acts on your behalf with your privileges, so its security depends as much on how you run it as on the code. This policy covers how to report a vulnerability, the trust model you accept when you run Daisy, what it sends to your model provider, and how to keep credentials out of the repository.
+
 ## Reporting a vulnerability
 
 Please report security issues privately rather than opening a public issue.
