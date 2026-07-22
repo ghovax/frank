@@ -4,7 +4,7 @@
 
 **An open agent harness you can modify.**
 
-Daisy is an agent harness — the code between the model and your machine that runs the turn loop, defines the tools, holds the prompts, and enforces permissions. All of it is editable, and the harness shapes the result as much as the model does. Host it anywhere — laptop, VM, container, or over SSH — and drive it from a bundled macOS app or your own code.
+The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in Daisy all of it is yours to edit. Host it anywhere, and drive it from a bundled macOS app or your own code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
