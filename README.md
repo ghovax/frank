@@ -2,9 +2,9 @@
 
 # 🌼 Daisy
 
-**A local-first desktop workspace for AI agents.**
+**An open agent harness you can modify.**
 
-Daisy pairs a native macOS app with an open agent runtime. Agents can run shell commands, read and write files, search and fetch the web, control your Mac, and drive your browser — with a permission system in front of every action and your choice of model behind it.
+Daisy is an agent harness: the code between the model and your machine that runs the turn loop, defines the tools, holds the prompts, and enforces permissions. All of it is editable — the prompts are Markdown files; the tools, permission engine, and loop are Python. This matters because the harness, not just the model, shapes the result: the same model behaves differently depending on the harness around it. Daisy runs as a server you host — laptop, VM, container, or over SSH — and talks over HTTP to a bundled macOS app or to your own code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
@@ -18,6 +18,14 @@ Daisy is two things that are deliberately kept apart:
 - **The app** — a native macOS client (Tauri + Next.js) that is a polished interface to a harness. It ships with a harness bundled in, so it works out of the box with nothing to configure.
 
 Because the two halves talk over HTTP, **the harness runs detached, and you are not tied to one of them.** Run it locally for zero setup, on a workstation, a VM, or a container, or reach one over SSH — configure several locations, local and remote, and choose per session which the agent runs against. The app stays a thin, native front-end; the compute, files, and network access live wherever you put the harness. Its shell and file tools take a location too, so one agent can act across more than one machine in a single session. See [Run the server anywhere](#run-the-server-anywhere).
+
+## Why own the harness
+
+The harness decides a lot about the output: it writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — for example, OpenCode versus Claude Code or Codex on the same model. So being able to change the harness is useful. In Daisy you can:
+
+- **Change the permission rules.** The guardrails are code (`agent_permissions.py`, `tool_policy.py`), not a fixed config. Edit them to give the model more or less latitude.
+- **Have the agent work on Daisy itself.** The system prompt tells the agent it's running Daisy, and the source is plain code. Open the Daisy repo as the project and the agent can read and edit the harness — fix a bug, change a behavior — after which you rebuild.
+- **Give the agent context about you.** Optionally, Daisy adds a snapshot of your machine and habits — the directories and apps you use, your locale, when you're active — to the prompt, so it doesn't start cold. Off by default; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider).
 
 ## How it compares
 
