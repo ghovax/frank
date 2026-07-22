@@ -21,7 +21,7 @@ Because the two halves talk over HTTP, **the harness runs detached, and you are 
 
 ## Why own the harness
 
-The harness shapes the output as much as the model: it writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
+The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
 
 - **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([permissions](documentation/configuration.md#permissions)).
 - **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([architecture](documentation/architecture.md)).
