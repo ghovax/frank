@@ -24,8 +24,8 @@ Because the two halves talk over HTTP, **the server does not have to run on your
 ## Highlights
 
 - **Bring your own model.** Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Groq, Mistral, any OpenAI-compatible endpoint — or sign in with a ChatGPT subscription. Switch per session.
-- **A real tool surface.** Shell, file read/edit/write/search, web search, tiered URL fetching, file downloads, MCP tools and resources, tasks and goals, skills, and rendered artifacts.
-- **Controls your Mac.** A computer-use tool drives native apps through the macOS accessibility tree, and a browser tool drives *your own* Chrome — real logins, real sessions.
+- **A real tool surface.** Shell, file read/edit/write, semantic code search, web search, tiered URL fetching, file downloads, MCP tools and resources, tasks and goals, skills, and rendered artifacts.
+- **Controls your Mac.** A two-phase pair of screen tools reads the live surface — `search_screen` ranks native-app or Chrome elements from a plain-language query — and `control_screen` acts on them. It drives *your own* Chrome — real logins, real sessions.
 - **Permissions in front of everything.** Every risky action can pause for approval, with per-action risk levels and modes from ask-always to fully autonomous. Bash runs sandboxed to the workspace by default.
 - **Multiple agents, delegation, and skills.** Ship-with profiles for research and coding, agent-to-agent delegation, reusable `SKILL.md` capabilities, and persistent per-project memory — all plain Markdown you can edit.
 - **MCP-native.** Add any [Model Context Protocol](https://modelcontextprotocol.io) server; hosted integrations like Composio are first-class.
@@ -40,7 +40,7 @@ Because the two halves talk over HTTP, **the server does not have to run on your
       <p align="center"><b>Bring your own model</b><br/>Any provider or a ChatGPT subscription.</p>
     </td>
     <td width="50%">
-      <img alt="Computer-use and browser control" src="documentation/assets/screenshots/computer-use.png">
+      <img alt="Screen control over native apps and Chrome" src="documentation/assets/screenshots/computer-use.png">
       <p align="center"><b>Controls your Mac</b><br/>Native apps and your own browser.</p>
     </td>
   </tr>
@@ -87,8 +87,8 @@ cd web/src-tauri && cargo tauri build
 
 To enable the distinctive tools:
 
-- **Computer-use** needs macOS Accessibility permission (Daisy prompts you).
-- **Browser control** needs Chrome's remote-debugging toggle enabled once (`chrome://inspect`). Daisy shows a one-click prompt.
+- **Screen control** (`search_screen`/`control_screen`) needs macOS Accessibility permission for native apps (Daisy prompts you).
+- Driving **your own Chrome** needs Chrome's remote-debugging toggle enabled once (`chrome://inspect`). Daisy shows a one-click prompt.
 
 ## Run the server anywhere
 
@@ -113,7 +113,7 @@ Detailed guides live in [`documentation/`](documentation/):
 | [Configuration](documentation/configuration.md) | Providers, keys, permissions, MCP, all config keys |
 | [Architecture](documentation/architecture.md) | The client/server split, the harness, the app |
 | [Agents & skills](documentation/agents-and-skills.md) | Authoring agents, skills, memory, MCP servers |
-| [Tools](documentation/tools.md) | The full tool surface, including computer-use and browser |
+| [Tools](documentation/tools.md) | The full tool surface, including screen control (`search_screen`/`control_screen`) |
 | [Development](documentation/development.md) | Dev environment, running the pieces, building the app |
 
 ## Built with

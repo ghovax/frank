@@ -49,6 +49,18 @@ _collect = [
     "dotenv",
     "certifi",
     "charset_normalizer",
+    # Screen-search retrieval (search_screen) and code search (search_code): static embeddings
+    # plus BM25 and their data/model plumbing. collect_all pulls each package's data files and
+    # dynamic submodules PyInstaller would otherwise miss; any not installed are skipped above.
+    "model2vec",
+    "semble",
+    "tokenizers",
+    "safetensors",
+    "bm25s",
+    "vicinity",
+    "tree_sitter_language_pack",
+    "joblib",
+    "numpy",
 ]
 
 for package in _collect:

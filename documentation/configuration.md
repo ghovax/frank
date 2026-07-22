@@ -35,7 +35,7 @@ You can also **sign in with a ChatGPT subscription** from **Settings → Provide
 ## Web search and retrieval
 
 ```yaml
-exa:       { api_key: "" }          # web_search fallback — env: EXA_API_KEY
+exa:       { api_key: "" }          # search_web fallback — env: EXA_API_KEY
 jina:      { api_key: "" }          # fetch_url free tier — env: JINA_API_KEY
 firecrawl: { api_key: "" }          # fetch_url fallback — env: FIRECRAWL_API_KEY
 web_fetch: { proxy_url: "" }        # optional outbound proxy — env: DAISY_FETCH_PROXY
@@ -61,7 +61,7 @@ When enabled, Composio is exposed as a normal MCP server; the agent discovers it
 sandbox:   { enabled: true }        # confine bash to the active workspace
 workspace: { strategy: "none" }     # "none" | "branch" | "worktree"
 agent:     { permission_mode: "default" }
-computer_control: { enabled: true } # macOS computer-use tool
+computer_control: { enabled: true } # macOS screen tools (search_screen/control_screen)
 user_context:     { enabled: true } # persistent context about you across sessions
 ```
 

@@ -73,7 +73,7 @@ function BashCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function WebSearchCallView({ args }: { args: Record<string, unknown> }) {
+function SearchWebCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   return (
     <FieldList>
@@ -83,6 +83,46 @@ function WebSearchCallView({ args }: { args: Record<string, unknown> }) {
       {args.result_count != null && (
         <InlineField label={translation("results")}>{asString(args.result_count)}</InlineField>
       )}
+    </FieldList>
+  );
+}
+
+function SearchCodeCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      <Field label={translation("query")}>
+        <Text fontSize="xs">{asString(args.query)}</Text>
+      </Field>
+    </FieldList>
+  );
+}
+
+// search_screen takes a query and the surface to look at (browser / computer),
+// optionally scoped to an app. Only the fields that were provided are shown.
+function SearchScreenCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      <Field label={translation("query")}>
+        <Text fontSize="xs">{asString(args.query)}</Text>
+      </Field>
+      {asString(args.surface) && <InlineField label={translation("searchSurface")}>{asString(args.surface)}</InlineField>}
+      {asString(args.app) && <InlineField label={translation("searchApp")}>{asString(args.app)}</InlineField>}
+    </FieldList>
+  );
+}
+
+// control_screen runs a script against a surface; the script is the substance, so it
+// gets a full code block, with the surface as a compact field above it.
+function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      {asString(args.surface) && <InlineField label={translation("searchSurface")}>{asString(args.surface)}</InlineField>}
+      <Field label={translation("controlScript")}>
+        <MonoBlock>{asString(args.script)}</MonoBlock>
+      </Field>
     </FieldList>
   );
 }
@@ -131,186 +171,6 @@ function RespondAgentCallView({ args }: { args: Record<string, unknown> }) {
       <Field label={translation("response")}>
         <MarkdownContent content={asString(args.response)} fontSize="xs" />
       </Field>
-    </FieldList>
-  );
-}
-
-// Backend action name → a clear, human label key. The tool's raw actions are terse verbs
-// ("observe", "screenshot"); the badge maps them to what they actually do, the same way every
-// other enum in these views is mapped rather than shown raw.
-const COMPUTER_ACTION_LABEL_KEYS: Record<string, string> = {
-  observe: "computerActionObserve",
-  find: "computerActionFind",
-  click: "computerActionClick",
-  type: "computerActionType",
-  edit: "computerActionEdit",
-  select: "computerActionSelect",
-  caret: "computerActionCaret",
-  copy: "computerActionCopy",
-  cut: "computerActionCut",
-  paste: "computerActionPaste",
-  press: "computerActionPress",
-  menu: "computerActionMenu",
-  scroll: "computerActionScroll",
-  hover: "computerActionHover",
-  drag: "computerActionDrag",
-  screenshot: "computerActionScreenshot",
-};
-
-// The mapped action as a pill. Shown both on the tool-call heading (so the action reads at a
-// glance) and inside the expanded body. Exported for the heading in tool-call.tsx.
-export function ComputerActionBadge({ action }: { action?: string }) {
-  const translation = useTranslations("ToolViews");
-  if (!action) return null;
-  const key = COMPUTER_ACTION_LABEL_KEYS[action];
-  return <Pill colorPalette="cyan">{key ? translation(key as Parameters<typeof translation>[0]) : action}</Pill>;
-}
-
-// The computer-control tool packs one of several actions into a shared argument set,
-// so only the fields that action actually uses are shown — the action itself as a pill,
-// then whichever of app / element / key combo / menu path / direction / etc. are present.
-function ComputerCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const action = asString(args.action);
-  const modifiers = asArray(args.modifiers).map(asString).filter(Boolean);
-  const keyName = asString(args.key);
-  const keyCombo = [...modifiers, keyName].filter(Boolean).join(" + ");
-  const menuPath = asArray(args.menu_path).map(asString).filter(Boolean).join(" ▸ ");
-  const text = asString(args.text);
-  const windowScope = asString(args.window);
-  const clicks = Number(args.clicks ?? 1);
-  const button = asString(args.button);
-  return (
-    <FieldList>
-      <InlineField label={translation("computerAction")}>
-        <ComputerActionBadge action={action} />
-      </InlineField>
-      {asString(args.app) && <InlineField label={translation("computerApp")}>{asString(args.app)}</InlineField>}
-      {action === "find" && asString(args.query) && (
-        <InlineField label={translation("browserQuery")}>{asString(args.query)}</InlineField>
-      )}
-      {args.element != null && (
-        <InlineField label={translation("computerElement")}>
-          <Mono>{asString(args.element)}</Mono>
-        </InlineField>
-      )}
-      {keyCombo && (
-        <InlineField label={translation("computerKey")}>
-          <Mono>{keyCombo}</Mono>
-        </InlineField>
-      )}
-      {menuPath && <InlineField label={translation("computerMenuPath")}>{menuPath}</InlineField>}
-      {asString(args.direction) && <InlineField label={translation("computerDirection")}>{asString(args.direction)}</InlineField>}
-      {clicks > 1 && <InlineField label={translation("computerClicks")}>{String(clicks)}</InlineField>}
-      {button === "right" && <InlineField label={translation("computerButton")}>{button}</InlineField>}
-      {windowScope && windowScope !== "focused" && <InlineField label={translation("computerWindow")}>{windowScope}</InlineField>}
-      {text && (
-        <Field label={translation("computerText")}>
-          <Text fontSize="xs" whiteSpace="pre-wrap">{text}</Text>
-        </Field>
-      )}
-    </FieldList>
-  );
-}
-
-// The browser tool's actions mapped to clear labels, same idea as the computer tool.
-const BROWSER_ACTION_LABEL_KEYS: Record<string, string> = {
-  navigate: "browserActionNavigate",
-  observe: "browserActionObserve",
-  find: "browserActionFind",
-  screenshot: "browserActionScreenshot",
-  choose: "browserActionChoose",
-  select: "browserActionSelect",
-  caret: "browserActionCaret",
-  edit: "browserActionEdit",
-  copy: "browserActionCopy",
-  cut: "browserActionCut",
-  paste: "browserActionPaste",
-  upload: "browserActionUpload",
-  drag: "browserActionDrag",
-  click: "browserActionClick",
-  type: "browserActionType",
-  read: "browserActionRead",
-  evaluate: "browserActionEvaluate",
-  network: "browserActionNetwork",
-  press: "browserActionPress",
-  hover: "browserActionHover",
-  scroll: "browserActionScroll",
-  back: "browserActionBack",
-  forward: "browserActionForward",
-  reload: "browserActionReload",
-  tabs: "browserActionTabs",
-  new_tab: "browserActionNewTab",
-  switch_tab: "browserActionSwitchTab",
-  close_tab: "browserActionCloseTab",
-};
-
-export function BrowserActionBadge({ action }: { action?: string }) {
-  const translation = useTranslations("ToolViews");
-  if (!action) return null;
-  const key = BROWSER_ACTION_LABEL_KEYS[action];
-  return <Pill colorPalette="orange">{key ? translation(key as Parameters<typeof translation>[0]) : action}</Pill>;
-}
-
-function BrowserCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const action = asString(args.action);
-  const text = asString(args.text);
-  return (
-    <FieldList>
-      <InlineField label={translation("computerAction")}>
-        <BrowserActionBadge action={action} />
-      </InlineField>
-      {asString(args.url) && <InlineField label={translation("url")}>{asString(args.url)}</InlineField>}
-      {args.element != null && (
-        <InlineField label={translation("computerElement")}>
-          <Mono>{asString(args.element)}</Mono>
-        </InlineField>
-      )}
-      {asString(args.tab) && (
-        <InlineField label={translation("browserTab")}>
-          <Mono>{asString(args.tab)}</Mono>
-        </InlineField>
-      )}
-      {(action === "find" || action === "network") && asString(args.query) && (
-        <InlineField label={translation("browserQuery")}>{asString(args.query)}</InlineField>
-      )}
-      {asString(args.goal) && <InlineField label={translation("browserGoal")}>{asString(args.goal)}</InlineField>}
-      {asString(args.expect) && <InlineField label={translation("browserExpect")}>{asString(args.expect)}</InlineField>}
-      {asString(args.dialog) && (
-        <InlineField label={translation("browserDialog")}>
-          <Mono>{asString(args.dialog)}</Mono>
-        </InlineField>
-      )}
-      {action === "select" && asString(args.option) && (
-        <InlineField label={translation("browserOption")}>{asString(args.option)}</InlineField>
-      )}
-      {action === "upload" && Array.isArray(args.paths) && args.paths.length > 0 && (
-        <InlineField label={translation("browserPaths")}>{asArray(args.paths).map(asString).join(", ")}</InlineField>
-      )}
-      {action === "drag" && args.to_element != null && (
-        <InlineField label={translation("computerElement")}>
-          <Mono>{`${asString(args.element)} → ${asString(args.to_element)}`}</Mono>
-        </InlineField>
-      )}
-      {action === "press" && asString(args.key) && (
-        <InlineField label={translation("browserKey")}>
-          <Mono>{asString(args.key)}</Mono>
-        </InlineField>
-      )}
-      {action === "scroll" && asString(args.direction) && (
-        <InlineField label={translation("browserDirection")}>{asString(args.direction)}</InlineField>
-      )}
-      {action === "evaluate" && asString(args.expression) && (
-        <Field label={translation("browserExpression")}>
-          <MonoBlock>{asString(args.expression)}</MonoBlock>
-        </Field>
-      )}
-      {text && (
-        <Field label={translation("computerText")}>
-          <Text fontSize="xs" whiteSpace="pre-wrap">{text}</Text>
-        </Field>
-      )}
     </FieldList>
   );
 }
@@ -532,38 +392,6 @@ function WriteFileCallView({ args }: { args: Record<string, unknown> }) {
       <Field label={translation("content")}>
         <MonoBlock>{asString(args.content)}</MonoBlock>
       </Field>
-    </FieldList>
-  );
-}
-
-function SearchContentCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("pattern")}>
-        <Mono>{asString(args.pattern)}</Mono>
-      </InlineField>
-      {args.include ? (
-        <InlineField label={translation("include")}>
-          <Mono>{asString(args.include)}</Mono>
-        </InlineField>
-      ) : null}
-      {args.path ? (
-        <InlineField label={translation("path")}>
-          <Mono>{asString(args.path)}</Mono>
-        </InlineField>
-      ) : null}
-    </FieldList>
-  );
-}
-
-function FindFilesCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("pattern")}>
-        <Mono>{asString(args.pattern)}</Mono>
-      </InlineField>
     </FieldList>
   );
 }

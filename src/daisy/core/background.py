@@ -55,7 +55,7 @@ BACKGROUND_PRESENTATION: dict[str, dict[str, Any]] = {
         "completed_event": "background_bash_completed",
         "include_result": False,
     },
-    "web_search": {
+    "search_web": {
         "active_context_key": "pending_web_searches",
         "completed_event": "background_web_search_completed",
         "include_result": False,
@@ -70,7 +70,7 @@ BACKGROUND_PRESENTATION: dict[str, dict[str, Any]] = {
 # Identifier prefix per kind, so a job id is self-describing (e.g. ``bg-…``).
 _KIND_IDENTIFIER_PREFIX: dict[str, str] = {
     "bash": "bg",
-    "web_search": "search",
+    "search_web": "search",
     "spawn_agent": "agent",
 }
 

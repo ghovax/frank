@@ -103,11 +103,11 @@ def _maybe_json(value: str) -> Any:
         return value
 
 
-# Background-task handles minted by the tool registries: web_search ids carry the
+# Background-task handles minted by the tool registries: search_web ids carry the
 # "search-" prefix, background bash the "bg-" prefix. These are NOT A2A tasks and
 # can never be read with read_task — their results are auto-delivered when ready.
 _BACKGROUND_HANDLE_PREFIXES = {
-    "search-": "web_search",
+    "search-": "search_web",
     "bg-": "bash",
     "agent-": "spawn_agent",
 }

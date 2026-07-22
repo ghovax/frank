@@ -30,7 +30,7 @@ from daisy.core.models import find_model, resolve_litellm
 from daisy.locations.resolver import LocationAddress, executor_for, location_uri_for
 from daisy.tools.tools import (
     bash as bash_tool,
-    web_search as web_search_tool,
+    search_web as search_web_tool,
     spawn_agent as spawn_tool,
     call_remote_agent as call_remote_agent_tool,
     cancel_agent as cancel_agent_tool,
@@ -159,7 +159,7 @@ def _build_tools(
         download_file_tool,
         load_skill_tool,
         wait_for_tool,
-        web_search_tool,
+        search_web_tool,
         set_tasks_tool,
         update_tasks_tool,
         update_goal_tool,
@@ -309,7 +309,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         "update_tasks": "_tool_update_tasks",
         "update_goal": "_tool_update_goal",
         "open_artifact": "_tool_open_artifact",
-        "web_search": "_tool_web_search",
+        "search_web": "_tool_search_web",
         "read_task": "_tool_read_task",
         "search_screen": "_tool_search_screen",
         "control_screen": "_tool_control_screen",

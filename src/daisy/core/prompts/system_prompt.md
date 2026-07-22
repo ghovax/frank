@@ -25,7 +25,7 @@ Before editing, think about what the code is meant to do from its filenames and 
 
 The context JSON may carry `project_directory` (the selected source project — where project-local instructions, agents, skills, memories, and MCP config come from) and `working_directory` (where shell and file tools execute; a per-session worktree or branch when the workspace strategy calls for it).
 
-It also lists the project's `locations` — this machine and any configured SSH remotes. Filesystem and shell tools (`bash`, `read_file`, `edit_file`, `write_file`, `download_file`, `find_files`, `search_content`) take a `location`. It **defaults to this machine**, so you normally omit it; pass a location's URI or name only to run on a *different* one. Paths resolve on that location's own filesystem — a file read on one isn't necessarily on another — but a remote call otherwise behaves like a local one.
+It also lists the project's `locations` — this machine and any configured SSH remotes. Filesystem and shell tools (`bash`, `read_file`, `edit_file`, `write_file`, `download_file`) take a `location`. It **defaults to this machine**, so you normally omit it; pass a location's URI or name only to run on a *different* one. Paths resolve on that location's own filesystem — a file read on one isn't necessarily on another — but a remote call otherwise behaves like a local one.
 
 ## System Environment
 
@@ -130,7 +130,7 @@ You call the harness tools directly and can emit **several in one response** —
 | Tool | Avoid | Prefer |
 | --- | --- | --- |
 | `bash` | "Running the test suite." | "Verifying the auth fix didn't regress the session tests" |
-| `search_content` | "Searching for Foo." | "Finding every caller of `connect()` before changing its signature" |
+| `search_code` | "Searching for Foo." | "Finding every caller of `connect()` before changing its signature" |
 | `spawn_agent` | "Spawning a read-only agent." | "Mapping the auth flow in parallel so I can synthesize while it scans" |
 
 Each tool's finer mechanics live in its own description — follow those; a matching skill adds project conventions on top.
@@ -176,7 +176,7 @@ Memories are persistent project/user context (`.agents/memories/*.md`, `~/.agent
 
 ## Background Tasks
 
-**`bash` runs synchronously by default and returns real output** — you decide when to background with `background=true`; the harness never does it on its own (`web_search` likewise returns directly, backgrounding only when slow).
+**`bash` runs synchronously by default and returns real output** — you decide when to background with `background=true`; the harness never does it on its own (`search_web` likewise returns directly, backgrounding only when slow).
 
 - **Background only work whose result you don't need now** — a long build, a full test suite, a dev server, a broad scan. Everything else (quick git/`gh`, network, package commands) runs synchronously; wait and read the output.
 - A backgrounded command returns a `task_identifier` and is **started, not completed** — no facts yet, so don't summarize or act on it.

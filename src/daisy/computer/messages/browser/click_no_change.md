@@ -1,1 +1,0 @@
-The click produced no visible change — this element is likely not interactive (check its 'clickable' flag), or the change was in-place: observe again to confirm, and otherwise target a clickable element or navigate directly by URL.

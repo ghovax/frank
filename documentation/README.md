@@ -8,7 +8,7 @@ Detailed guides for installing, configuring, understanding, and developing Daisy
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
 | [Architecture](architecture.md) | The client/server split, the harness, the desktop app |
 | [Agents & skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
-| [Tools](tools.md) | The full tool surface, including computer-use and browser control |
+| [Tools](tools.md) | The full tool surface, including screen control (`search_screen`/`control_screen`) |
 | [Screenshots](screenshots.md) | How the README screenshots are staged and captured (maintainers) |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
 
@@ -19,10 +19,10 @@ Design plans for larger changes — the sequential, commit-associated record of 
 ```
 daisy/
 ├── server.py                 # launch shim for the harness (FastAPI app)
-├── src/harness/              # the runtime: agent loop, tools, permissions, A2A, REST
+├── src/daisy/              # the runtime: agent loop, tools, permissions, A2A, REST
 │   ├── core/                 # configuration, agent, prompts
 │   ├── tools/                # tool implementations and descriptions
-│   ├── computer/             # macOS computer-use and browser bridges
+│   ├── computer/             # macOS screen-control bridges (native apps + Chrome)
 │   └── server/               # HTTP routes
 ├── .agents/                  # bundled agents, skills, memories, MCP config
 ├── web/                      # the desktop app (Next.js UI + Tauri shell in src-tauri/)

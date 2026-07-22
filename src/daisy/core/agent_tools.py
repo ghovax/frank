@@ -58,7 +58,7 @@ from daisy.tools.tools import call_mcp_tool_with_events
 from daisy.tools.tools import list_mcp_resources as list_mcp_resources_tool
 from daisy.tools.tools import list_mcp_tools as list_mcp_tools_tool
 from daisy.tools.tools import read_mcp_resource as read_mcp_resource_tool
-from daisy.tools.tools import web_search as web_search_tool
+from daisy.tools.tools import search_web as search_web_tool
 from langchain_core.messages import ToolMessage
 from pathlib import Path
 from pydantic import ValidationError
@@ -1544,14 +1544,14 @@ class _ToolsMixin:
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
 
-    async def _tool_web_search(
+    async def _tool_search_web(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         background_token = bind_background_jobs(self._background)
         try:
-            result = await web_search_tool.ainvoke(tool_arguments)
+            result = await search_web_tool.ainvoke(tool_arguments)
         finally:
             unbind_background_jobs(background_token)
         result_data = _maybe_json(result)

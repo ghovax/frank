@@ -18,7 +18,7 @@ The README references five images under `documentation/assets/screenshots/`. Thi
 |------|--------|-----------------|
 | `hero.png` | Chat with live tool calls | New conversation, sidebar collapsed. Send a neutral task that uses a couple of tools, then capture once the tool cards and the answer are visible. |
 | `providers.png` | Model providers | Open **Settings → Providers**. Make sure keys read as dots, not plaintext. Capture the settings window. |
-| `computer-use.png` | Computer-use / browser | Run a task that uses the browser or computer tool. Capture with the `browser` (or `computer`) tool card visible. |
+| `computer-use.png` | Screen control | Run a task that uses the screen-control tools against Chrome or a native app. Capture with a `search_screen` or `control_screen` tool card visible. |
 | `artifacts.png` | Artifacts & projects | Produce an artifact, then open the **Artifacts** view. Capture with the rendered artifact shown. |
 | `permissions.png` | Permission approval | With permission mode `default`, run a task whose tool call needs approval. Capture **while the approval overlay is showing**, before you decide. |
 

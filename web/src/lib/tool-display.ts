@@ -8,8 +8,8 @@ import {
   LuWrench,
   LuLayoutDashboard,
   LuFileText,
-  LuFolderSearch,
   LuSearchCode,
+  LuScanSearch,
   LuFilePen,
   LuFilePlus,
   LuDownload,
@@ -18,7 +18,6 @@ import {
   LuListChecks,
   LuTarget,
   LuMousePointerClick,
-  LuCompass,
   LuCircleStop,
   LuUserSearch,
   LuMessageSquareShare,
@@ -44,9 +43,10 @@ interface ToolDisplayInfo {
 // Every tool that has a first-class icon/label below. Anything else is "unknown"
 // and surfaces its raw name in monospace.
 const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "web_search", "bash", "spawn_agent", "cancel_agent", "ask_agent", "respond_agent", "read_task", "read_file", "find_files",
-  "search_content", "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
-  "set_tasks", "update_tasks", "update_goal", "computer", "browser",
+  "search_web", "bash", "spawn_agent", "cancel_agent", "ask_agent", "respond_agent", "read_task", "read_file",
+  "search_code", "search_screen", "control_screen",
+  "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
+  "set_tasks", "update_tasks", "update_goal",
   "work_habits",
   "open_artifact",
   "call_mcp_tool", "list_mcp_tools", "list_mcp_resources", "read_mcp_resource",
@@ -59,7 +59,7 @@ function stripCdPrefix(command: string): string {
 
 function iconForTool(name: string): { icon: IconType; iconColor: string } {
   switch (name) {
-    case "web_search":
+    case "search_web":
       return { icon: LuGlobe, iconColor: "blue.fg" };
     case "bash":
       return { icon: LuTerminal, iconColor: "green.fg" };
@@ -75,10 +75,12 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuNetwork, iconColor: "orange.fg" };
     case "read_file":
       return { icon: LuFileText, iconColor: "blue.fg" };
-    case "find_files":
-      return { icon: LuFolderSearch, iconColor: "cyan.fg" };
-    case "search_content":
+    case "search_code":
       return { icon: LuSearchCode, iconColor: "teal.fg" };
+    case "search_screen":
+      return { icon: LuScanSearch, iconColor: "cyan.fg" };
+    case "control_screen":
+      return { icon: LuMousePointerClick, iconColor: "cyan.fg" };
     case "edit_file":
       return { icon: LuFilePen, iconColor: "yellow.fg" };
     case "write_file":
@@ -96,10 +98,6 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuTarget, iconColor: "orange.fg" };
     case "open_artifact":
       return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
-    case "computer":
-      return { icon: LuMousePointerClick, iconColor: "cyan.fg" };
-    case "browser":
-      return { icon: LuCompass, iconColor: "orange.fg" };
     case "work_habits":
       return { icon: LuUserSearch, iconColor: "blue.fg" };
     case "call_mcp_tool":
@@ -119,7 +117,7 @@ export type ToolDisplayTranslator = (key: string, values?: Record<string, string
 
 function fallbackLabel(name: string, args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
   switch (name) {
-    case "web_search":
+    case "search_web":
       return args?.query ? t("webSearch", { query: String(args.query) }) : t("webSearchBare");
     case "bash":
       return args?.command ? stripCdPrefix(String(args.command)) : t("bashBare");
@@ -135,10 +133,12 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
       return t("readTask");
     case "read_file":
       return args?.file_path ? readFileLabel(String(args.file_path), args, t) : t("readFileBare");
-    case "find_files":
-      return args?.pattern ? t("findFiles", { pattern: String(args.pattern) }) : t("findFilesBare");
-    case "search_content":
-      return args?.pattern ? t("searchContent", { pattern: String(args.pattern) }) : t("searchContentBare");
+    case "search_code":
+      return args?.query ? t("searchCode", { query: String(args.query) }) : t("searchCodeBare");
+    case "search_screen":
+      return searchScreenLabel(args, t);
+    case "control_screen":
+      return controlScreenLabel(args, t);
     case "edit_file":
       return args?.file_path ? t("editFile", { path: shortPath(String(args.file_path)) }) : t("editFileBare");
     case "write_file":
@@ -157,10 +157,6 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
       return t("updateGoal");
     case "open_artifact":
       return args?.title ? t("openArtifact", { title: String(args.title) }) : t("openArtifactBare");
-    case "computer":
-      return computerLabel(args, t);
-    case "browser":
-      return browserLabel(args, t);
     case "work_habits":
       return t("workHabits");
     case "call_mcp_tool":
@@ -190,58 +186,21 @@ function readFileLabel(filePath: string, args: Record<string, unknown>, t: ToolD
   return t("readFileLines", { file, start: offset, end: offset + limit - 1 });
 }
 
-// A computer-control call with no justification: describe it from its action + target.
-function computerLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
-  const action = args?.action ? String(args.action) : "";
-  const app = args?.app ? String(args.app) : "";
-  const verbActions = new Set(["observe", "find", "click", "type", "press", "menu", "scroll", "screenshot"]);
-  if (!verbActions.has(action)) return app ? t("computerControlling", { app }) : t("computerControllingMac");
-  return app ? t(`computer_${action}_app`, { app }) : t(`computer_${action}`);
+// A search_screen call with no justification: describe it from its query + surface.
+function searchScreenLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
+  const query = args?.query ? String(args.query) : "";
+  const surface = args?.surface ? String(args.surface) : "";
+  if (!query) return t("searchScreenBare");
+  return surface ? t("searchScreenSurface", { query, surface }) : t("searchScreen", { query });
 }
 
-// A browser call with no justification: describe it from its action and target.
-function browserLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
-  const action = args?.action ? String(args.action) : "";
-  switch (action) {
-    case "navigate":
-      return args?.url ? t("browserNavigate", { url: String(args.url) }) : t("browserNavigateBare");
-    case "observe":
-      return t("browserObserve");
-    case "find":
-      return t("browserFind");
-    case "click":
-      return t("browserClick");
-    case "type":
-      return t("browserType");
-    case "read":
-      return t("browserRead");
-    case "evaluate":
-      return t("browserEvaluate");
-    case "network":
-      return t("browserNetwork");
-    case "press":
-      return args?.key ? t("browserPress", { key: String(args.key) }) : t("browserPressBare");
-    case "hover":
-      return t("browserHover");
-    case "scroll":
-      return t("browserScroll");
-    case "back":
-      return t("browserBack");
-    case "forward":
-      return t("browserForward");
-    case "reload":
-      return t("browserReload");
-    case "tabs":
-      return t("browserTabs");
-    case "new_tab":
-      return args?.url ? t("browserNewTab", { url: String(args.url) }) : t("browserNewTabBare");
-    case "switch_tab":
-      return t("browserSwitchTab");
-    case "close_tab":
-      return t("browserCloseTab");
-    default:
-      return t("browserDefault");
-  }
+// A control_screen call with no justification: describe it from its surface + the
+// script's first line (the whole script is body content, not a one-line label).
+function controlScreenLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
+  const surface = args?.surface ? String(args.surface) : "";
+  const firstLine = args?.script ? String(args.script).split("\n").map((line) => line.trim()).find(Boolean) ?? "" : "";
+  if (firstLine) return t("controlScreenScript", { script: firstLine });
+  return surface ? t("controlScreenSurface", { surface }) : t("controlScreenBare");
 }
 
 function shortPath(path: string): string {

@@ -57,7 +57,7 @@ This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helpe
 
 ### Stable code-signing (recommended)
 
-The computer-use tool needs the macOS **Accessibility** grant, which is tied to the app's code identity. To keep that grant across rebuilds, sign with the persistent local identity:
+The screen-control tools (`search_screen`/`control_screen`) need the macOS **Accessibility** grant, which is tied to the app's code identity. To keep that grant across rebuilds, sign with the persistent local identity:
 
 ```sh
 # once: create the self-signed identity in your login keychain
@@ -79,4 +79,4 @@ uv run pytest
 
 ## Project layout
 
-See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness runtime is in `src/harness/` (with `server.py` as a thin launch shim), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.
+See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness runtime is in `src/daisy/` (with `server.py` as a thin launch shim), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.

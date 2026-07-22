@@ -227,7 +227,7 @@ async def bash(
 
 
 @tool
-async def web_search(
+async def search_web(
     query: str,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     result_count: int = 5,
@@ -290,7 +290,7 @@ async def web_search(
 
     jobs = current_background_jobs()
     jobs.spawn(
-        "web_search", run(), identifier=task_identifier, output_path=output_path,
+        "search_web", run(), identifier=task_identifier, output_path=output_path,
         arguments={"query": query, "justification": justification, "result_count": result_count},
         # A search that outlives the turn keeps running detached — a Stop ends the
         # turn but leaves it running, so its result still lands and wakes the agent.
@@ -633,7 +633,7 @@ def read_task(task_id: str = "", justification: str = Field(..., description="A 
 
     Use this to coordinate with externally supplied sibling A2A task ids: check whether a sibling has finished and read what it produced, then build on it.
 
-    This is NOT how you retrieve background results. A web_search ("search-…"), background-bash ("bg-…"), or spawned-agent ("agent-…") handle is not a readable task. Those results are delivered to you automatically when ready, so never call read_task on them and never use it to poll. Use ``cancel_agent`` only when a spawned agent should be stopped.
+    This is NOT how you retrieve background results. A search_web ("search-…"), background-bash ("bg-…"), or spawned-agent ("agent-…") handle is not a readable task. Those results are delivered to you automatically when ready, so never call read_task on them and never use it to poll. Use ``cancel_agent`` only when a spawned agent should be stopped.
 
     Arguments:
         task_id: The id of an externally supplied sibling A2A task to read.
