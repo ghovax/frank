@@ -1,6 +1,6 @@
 # Architecture
 
-Daisy is split into a **harness** (the server that runs agents) and an **app** (the native client). They communicate only over HTTP, which is the single most important fact about the system: the two can run on the same machine or on different ones, and nothing else changes.
+Daisy is split into a **harness** (the Python agent runtime, plus a server that exposes it) and an **app** (the native client). They communicate only over HTTP, which is the single most important fact about the system: the two can run on the same machine or on different ones, and nothing else changes.
 
 ```mermaid
 flowchart LR
@@ -27,7 +27,7 @@ flowchart LR
 
 ## The harness
 
-A standalone FastAPI application (`server.py` is a thin launch shim; the app lives in `src/daisy/`). It:
+The `daisy` package is the agent runtime — an importable Python library you can drive directly — and a thin FastAPI application wraps it for the network (`server.py` is a launch shim; both live in `src/daisy/`). Together they:
 
 - serves **every agent** as an independently addressable [A2A](https://github.com/google/A2A) endpoint (JSON-RPC), plus a small REST API the UI uses;
 - runs the **agent loop** on LangChain / LangGraph, with model access through [LiteLLM](https://litellm.ai) so any provider looks the same;

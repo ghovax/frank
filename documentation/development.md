@@ -71,11 +71,7 @@ packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app
 
 ## Tests
 
-Python tests live in `tests/`:
-
-```sh
-uv run pytest
-```
+The repository ships **no committed test suite** — changes are verified ad hoc (compile and lint with `uv run ruff check`, import the server, and drive the affected path directly). `pyproject.toml` is already set up for `pytest` (`testpaths = ["tests"]`, `asyncio_mode = "auto"`), so if you add a `tests/` directory `uv run pytest` will pick it up.
 
 ## Project layout
 

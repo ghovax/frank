@@ -1,6 +1,6 @@
 # Tools
 
-Agents act through tools. Every tool call is subject to the [permission engine](configuration.md#permissions); risky ones can pause for approval. Each built-in tool ships with a Markdown description the model reads (`src/daisy/tools/descriptions/`), so the authoritative spec is always in the repo.
+Agents act through tools. Every tool call is subject to the [permission engine](configuration.md#permissions); risky ones can pause for approval. Each built-in tool carries the description the model reads as its docstring in `src/daisy/tools/tools.py`, so the authoritative spec is always in the repo.
 
 ## The built-in surface
 
@@ -61,6 +61,7 @@ Because Daisy attaches to **the Chrome you already use** — your real logins an
 
 ## Where the definitions live
 
-- Descriptions the model reads: `src/daisy/tools/descriptions/*.md`
+- Descriptions the model reads: the tool docstrings in `src/daisy/tools/tools.py`
 - Implementations: `src/daisy/tools/` and `src/daisy/computer/`
+- Model-facing message templates: `src/daisy/tools/prompts/` and `src/daisy/core/prompts/`
 - The guidance the agent gets for screen control: `src/daisy/core/prompts/computer_control_guidance.md`

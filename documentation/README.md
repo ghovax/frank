@@ -6,10 +6,9 @@ Detailed guides for installing, configuring, understanding, and developing Daisy
 |-------|--------------|
 | [Installation](installation.md) | Download and Gatekeeper, or building from source |
 | [Configuration](configuration.md) | Providers, keys, permissions, MCP, and every config key |
-| [Architecture](architecture.md) | The client/server split, the harness, the desktop app |
-| [Agents & skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
+| [Architecture](architecture.md) | The library-and-server harness, the app, and how they connect |
+| [Agents and skills](agents-and-skills.md) | Authoring agents, skills, memory, and MCP servers |
 | [Tools](tools.md) | The full tool surface, including screen control (`search_screen`/`control_screen`) |
-| [Screenshots](screenshots.md) | How the README screenshots are staged and captured (maintainers) |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
 
 Design plans for larger changes — the sequential, commit-associated record of how the harness evolved — live in [`plans/`](plans/README.md); those are proposals and design history, distinct from the current-state guides above.

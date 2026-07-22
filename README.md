@@ -86,16 +86,7 @@ This is what makes Daisy more than a desktop toy: the agent, its tools, and its 
 
 ## Documentation
 
-Detailed guides live in [`documentation/`](documentation/):
-
-| Guide | What's in it |
-|-------|--------------|
-| [Installation](documentation/installation.md) | Download, Gatekeeper, building from source |
-| [Configuration](documentation/configuration.md) | Providers, keys, permissions, MCP, all config keys |
-| [Architecture](documentation/architecture.md) | The client/server split, the harness, the app |
-| [Agents and skills](documentation/agents-and-skills.md) | Authoring agents, skills, memory, MCP servers |
-| [Tools](documentation/tools.md) | The full tool surface, including screen control (`search_screen`/`control_screen`) |
-| [Development](documentation/development.md) | Dev environment, running the pieces, building the app |
+The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in **[`documentation/`](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps: [set up providers and permissions](documentation/configuration.md), [how the pieces fit together](documentation/architecture.md), [the tool surface and screen control](documentation/tools.md).
 
 ## Built with
 
