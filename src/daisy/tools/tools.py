@@ -877,9 +877,11 @@ async def control_screen(
     The script drives the surface you searched with ``search_screen``, calling bare-named primitives on the element ids that search returned. The input is real and trusted: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), and typing fires the events pages listen for. It is ordinary Python, so you can do a whole task in one call. First search to get ids, then act on them; the script itself cannot search, so if an element only appears after an action, search again for it in a new call.
 
     Primitives (call by bare name, no prefix):
-      click(id, button="left", count=1) · type(id, text, submit=False, mode="replace") · press(key) · scroll(id=None, direction="down") · hover(id) · choose(id, option) · upload(id, paths) · drag(id, to_element) · select(id, text=…) · caret(id, …) · read(id)
+      click(id, button="left", count=1) · type(id, text, submit=False, mode="replace") · press(key) · scroll(id=None, direction="down") · hover(id) · choose(id, option) · upload(id, paths) · drag(id, to_element) · read(id)
+    Selecting text within an editable field:
+      select(id, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field · caret(id, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
     Browser only:
-      evaluate(js, arg=None) — run arbitrary JavaScript in the page and get its result back natively: read, filter, or aggregate its data down to just what you need, or call its own authenticated API with fetch (riding the user's real session) · navigate(url="", history="", new_tab=False)
+      evaluate(javascript, argument=None) — run the given JavaScript source in the page and get its result back natively; when the source is written as a function, argument is the single value passed into it. Read, filter, or aggregate the page's data down to just what you need, or call its own signed-in API with fetch (riding the user's real session). · navigate(url="", history="", new_tab=False)
     The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too.
 
     Arguments:
