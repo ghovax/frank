@@ -14,10 +14,10 @@ Daisy is an agent harness — the code between the model and your machine that r
 
 Daisy is two things that are deliberately kept apart:
 
-- **The harness** — first a Python library: the `daisy` package is the agent runtime that runs the turn loop, dispatches tools, enforces permissions, talks to models, and persists history (built on LangChain), and you can import and drive it directly. A thin server (FastAPI) wraps that library to expose it over the [A2A](https://github.com/google/A2A) protocol and a small REST API. Use the library in your own code, or run the server — same runtime underneath.
+- **The harness** — the Python agent runtime. Import and drive it directly, or run it as a server that exposes it over [A2A](https://github.com/google/A2A) and REST. Same runtime either way.
 - **The app** — a native macOS client (Tauri + Next.js) that is a polished interface to a harness. It ships with a harness bundled in, so it works out of the box with nothing to configure.
 
-Because the two halves talk over HTTP, **the harness runs detached, and you are not tied to one of them.** Run it locally for zero setup, on a workstation, a VM, or a container, or reach one over SSH — configure several locations, local and remote, and choose per session which the agent runs against. The app stays a thin, native front-end; the compute, files, and network access live wherever you put the harness. Its shell and file tools take a location too, so one agent can act across more than one machine in a single session. See [Run the server anywhere](#run-the-server-anywhere).
+The two halves talk only over HTTP, so the harness runs detached: the app stays a thin native front-end while the compute, files, and network live wherever you host it. Configure several locations, local and remote, and pick one per session — tools take a location, so a single session can span machines. See [Run the server anywhere](#run-the-server-anywhere).
 
 ## Why own the harness
 
