@@ -19,21 +19,20 @@ Daisy is two things that are deliberately kept apart:
 
 Because the two halves talk over HTTP, **the harness runs detached, and you are not tied to one of them.** Run it locally for zero setup, on a workstation, a VM, or a container, or reach one over SSH — configure several locations, local and remote, and choose per session which the agent runs against. The app stays a thin, native front-end; the compute, files, and network access live wherever you put the harness. Its shell and file tools take a location too, so one agent can act across more than one machine in a single session. See [Run the server anywhere](#run-the-server-anywhere).
 
-## What's different
+## How it compares
 
-Most agent harnesses are a CLI or a web chat bolted to a code sandbox. Daisy shares the basics with them — shell, file edits, semantic code search, web search and fetch, MCP, tasks, skills, memory, delegation. Where it diverges:
+The closest tools are [Claude Code](https://www.anthropic.com/claude-code) and [OpenAI Codex](https://developers.openai.com/codex/) — both excellent, both further along than Daisy, and both sharing the coding basics with it: shell, file edits, semantic search, web search, MCP, and delegated agents. Being honest about where each stands:
 
-| | Daisy | The usual harness |
-|---|---|---|
-| **Interface** | Native macOS app, a thin client over the harness | A terminal or a browser tab |
-| **Where it runs** | The harness runs detached: keep one local, add remote boxes or SSH hosts, and pick per session which location a session uses — one agent can even act across several | Tied to the host and process it launched in |
-| **Models** | Any provider, or a ChatGPT login, switchable per session | Usually one provider, wired in |
-| **Your machine** | Drives your real macOS apps and your own signed-in Chrome — actual logins and sessions | A throwaway headless browser with no session |
-| **Reading the screen** | A plain-language search returns the few relevant elements; a script then acts on them | A full accessibility/DOM dump each step, or raw screenshots |
-| **Permissions** | An approval gate with per-action risk levels sits in front of every action | An all-or-nothing sandbox |
-| **State** | Lives on your disk in `~/.daisy` — your keys, your history | Often a hosted account |
+| | Daisy | Claude Code | OpenAI Codex |
+|---|---|---|---|
+| **Model** | Any provider, or a ChatGPT login, switchable per session | Claude models; third-party providers on the CLI and VS Code | OpenAI's GPT-5 Codex models only |
+| **Where it runs** | A harness you self-host — local, a VM, a container, or over SSH — with a native app pointed at it; one agent can span several configured locations in a session | Vendor client; long tasks run on Anthropic's cloud | Vendor client; async tasks run in OpenAI's cloud |
+| **Your machine** | Drives native macOS apps and your own signed-in Chrome for real, logged-in tasks, read through plain-language element search | Chrome integration aimed at debugging web apps; no native-app control | Files, shell, and tests only; no desktop or browser control |
+| **Source** | Open source (MIT); history and keys stay on your disk | Proprietary | Proprietary |
 
-The screen tools deserve the detail: `search_screen` ranks native-app or Chrome elements from a description of what you want, and `control_screen` composes a short Python script to act on them — so a twenty-row task is one script, not twenty round-trips. Both are opt-in and off until you turn them on. See [Tools](documentation/tools.md).
+Where they lead, plainly: both meet you in far more places — terminal, several IDEs, web, mobile, Slack, and CI or GitHub review — and carry deeper ecosystems, from Claude Code's subagents, hooks, plugins, and Agent SDK to Codex's cloud tasks and automatic PR review. Both also gate actions behind approvals and a sandbox, as Daisy does. Daisy is narrower and younger: macOS-only, one app and a server, aimed at the rows above. If you want a polished coding agent tied to one vendor's models and cloud, use theirs. If you want an open, model-agnostic agent you host yourself that can act on your real desktop, that is the gap Daisy fills.
+
+The screen tools are the clearest example: `search_screen` ranks native-app or Chrome elements from a description of what you want, and `control_screen` composes a short Python script to act on them, so a twenty-row task is one script rather than twenty round-trips. Both are opt-in and stay off until you turn them on. See [Tools](documentation/tools.md).
 
 ## Install
 
