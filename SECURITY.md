@@ -22,7 +22,9 @@ To be useful from the first turn, Daisy injects two context snapshots into the s
 
 This is deliberate on my part as the maintainer, and I implement it knowingly. The goal is to let the agent know who you are, what you work on, and what it can do for you, so it fits your world instead of relearning the basics every turn. It is not settled forever: I am open to a narrower snapshot, redacting or dropping individual fields, or moving more of it behind opt-in — open an issue to shape that. Today the user snapshot is already opt-in, both snapshots are built from local metadata only, and Daisy sends them to your model, not to me or anyone else.
 
-## Never commit credentials
+## For contributors
+
+### Never commit credentials
 
 API keys and other secrets belong in `~/.daisy/configuration.yaml` (outside the repo) or in environment variables — never in a tracked file. `~/.daisy/` is gitignored for this reason, and `configuration.example.yaml` ships with empty values only.
 
