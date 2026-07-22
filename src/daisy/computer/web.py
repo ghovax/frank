@@ -560,12 +560,12 @@ class WebSurface(Surface):
     # Acting — control_screen. ``perform`` routes one primitive call to its handler.
 
     def perform(self, operation: str, arguments: list, keywords: dict) -> dict:
-        handler = getattr(self, f"_op_{operation}", None)
+        handler = getattr(self, f"_primitive_{operation}", None)
         if handler is None:
             return {"ok": False, "error": f"The browser surface has no '{operation}' action."}
         return handler(*arguments, **keywords)
 
-    def _op_click(self, ref: str, *, button: str = "left", count: int = 1, dialog: str = "", **_: Any) -> dict:
+    def _primitive_click(self, ref: str, *, button: str = "left", count: int = 1, dialog: str = "", **_: Any) -> dict:
         def run() -> dict:
             session, page = self._live()
             session.pending_dialog = dialog or None
@@ -578,7 +578,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_type(self, ref: str, text: str, *, submit: bool = False, mode: str = "replace", **_: Any) -> dict:
+    def _primitive_type(self, ref: str, text: str, *, submit: bool = False, mode: str = "replace", **_: Any) -> dict:
         def run() -> dict:
             session, page = self._live()
             locator = self._locator(page, ref)
@@ -605,7 +605,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_press(self, key: str, **_: Any) -> dict:
+    def _primitive_press(self, key: str, **_: Any) -> dict:
         def run() -> dict:
             session, page = self._live()
             resolved = _KEY_ALIASES.get(key.strip().lower(), key.strip())
@@ -618,7 +618,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_hover(self, ref: str, **_: Any) -> dict:
+    def _primitive_hover(self, ref: str, **_: Any) -> dict:
         def run() -> dict:
             session, page = self._live()
             try:
@@ -630,7 +630,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_scroll(self, ref: Optional[str] = None, *, direction: str = "down", **_: Any) -> dict:
+    def _primitive_scroll(self, ref: Optional[str] = None, *, direction: str = "down", **_: Any) -> dict:
         normalized_direction = direction.strip().lower()
         if normalized_direction not in _SCROLL_DIRECTIONS:
             return {"ok": False, "error": f"Unknown scroll direction {direction!r}. Use down, up, left, right, top, or bottom."}
@@ -659,7 +659,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_choose(self, ref: str, option: str, **_: Any) -> dict:
+    def _primitive_choose(self, ref: str, option: str, **_: Any) -> dict:
         def run() -> dict:
             session, page = self._live()
             try:
@@ -672,7 +672,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_upload(self, ref: str, paths: Any, **_: Any) -> dict:
+    def _primitive_upload(self, ref: str, paths: Any, **_: Any) -> dict:
         def run() -> dict:
             resolved = [str(Path(path).expanduser()) for path in ([paths] if isinstance(paths, str) else paths)]
             missing = [path for path in resolved if not os.path.isfile(path)]
@@ -693,7 +693,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_drag(self, ref: str, to_element: Optional[str] = None, **_: Any) -> dict:
+    def _primitive_drag(self, ref: str, to_element: Optional[str] = None, **_: Any) -> dict:
         def run() -> dict:
             if to_element is None:
                 return {"ok": False, "error": "drag needs to_element — the element to drop onto."}
@@ -706,7 +706,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
+    def _primitive_select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
                    select_all: bool = False, occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
             _, page = self._live()
@@ -724,7 +724,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
+    def _primitive_caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
                   at_offset: Optional[int] = None, edge: str = "", occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
             _, page = self._live()
@@ -738,7 +738,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_read(self, ref: Optional[str] = None, **_: Any) -> dict:
+    def _primitive_read(self, ref: Optional[str] = None, **_: Any) -> dict:
         def run() -> dict:
             _, page = self._live()
             if ref is not None:
@@ -749,7 +749,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_evaluate(self, expression: str, argument: Any = None, **_: Any) -> dict:
+    def _primitive_evaluate(self, expression: str, argument: Any = None, **_: Any) -> dict:
         def run() -> dict:
             _, page = self._live()
             expression_text = expression.strip()
@@ -766,7 +766,7 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _op_navigate(self, url: str = "", *, history: str = "", new_tab: bool = False, browser: str = "chrome", **_: Any) -> dict:
+    def _primitive_navigate(self, url: str = "", *, history: str = "", new_tab: bool = False, browser: str = "chrome", **_: Any) -> dict:
         def run() -> dict:
             session = self.session(browser)
             if new_tab:

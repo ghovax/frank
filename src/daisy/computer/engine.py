@@ -235,7 +235,7 @@ class NativeSurface(Surface):
     # Acting — control_screen. ``perform`` routes one primitive call to its handler.
 
     def perform(self, operation: str, arguments: list, keywords: dict) -> dict:
-        handler = getattr(self, f"_op_{operation}", None)
+        handler = getattr(self, f"_primitive_{operation}", None)
         if handler is None:
             return {"ok": False, "error": f"The computer surface has no '{operation}' action."}
         gate = self.preflight(operation)
@@ -243,7 +243,7 @@ class NativeSurface(Surface):
             return gate
         return handler(*arguments, **keywords)
 
-    def _op_click(self, ref: str, *, button: str = "left", count: int = 1, **_: Any) -> dict:
+    def _primitive_click(self, ref: str, *, button: str = "left", count: int = 1, **_: Any) -> dict:
         def run() -> dict:
             entry = self._entry(ref)
             handle = self._live_handle(entry)
@@ -265,7 +265,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_type(self, ref: str, text: str, *, mode: str = "replace", **_: Any) -> dict:
+    def _primitive_type(self, ref: str, text: str, *, mode: str = "replace", **_: Any) -> dict:
         def run() -> dict:
             entry = self._entry(ref)
             handle = self._live_handle(entry)
@@ -294,7 +294,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_press(self, key: str, *, modifiers: Optional[list[str]] = None, **_: Any) -> dict:
+    def _primitive_press(self, key: str, *, modifiers: Optional[list[str]] = None, **_: Any) -> dict:
         def run() -> dict:
             pid = self._last_pid if self._last_pid is not None else self._resolve_pid("")
             keys = modifiers or []
@@ -304,7 +304,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_scroll(self, ref: Optional[str] = None, *, direction: str = "", **_: Any) -> dict:
+    def _primitive_scroll(self, ref: Optional[str] = None, *, direction: str = "", **_: Any) -> dict:
         def run() -> dict:
             if ref is not None:
                 entry = self._entry(ref)
@@ -324,7 +324,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
+    def _primitive_select(self, ref: str, *, text: Optional[str] = None, to_text: Optional[str] = None,
                    select_all: bool = False, occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
             entry = self._entry(ref)
@@ -346,7 +346,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
+    def _primitive_caret(self, ref: str, *, before: Optional[str] = None, after: Optional[str] = None,
                   at_offset: Optional[int] = None, edge: str = "", occurrence: int = 1, **_: Any) -> dict:
         def run() -> dict:
             entry = self._entry(ref)
@@ -366,7 +366,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_drag(self, ref: str, to_element: Optional[str] = None, *, button: str = "left", **_: Any) -> dict:
+    def _primitive_drag(self, ref: str, to_element: Optional[str] = None, *, button: str = "left", **_: Any) -> dict:
         def run() -> dict:
             if to_element is None:
                 return {"ok": False, "error": "drag needs to_element — the element to drop onto."}
@@ -379,7 +379,7 @@ class NativeSurface(Surface):
 
         return self.guard(run)
 
-    def _op_read(self, ref: str, **_: Any) -> dict:
+    def _primitive_read(self, ref: str, **_: Any) -> dict:
         def run() -> dict:
             entry = self._entry(ref)
             handle = self._live_handle(entry)
