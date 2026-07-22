@@ -1,31 +1,32 @@
 "use client";
 
-import { Badge, Box, Flex, Text } from "@chakra-ui/react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { LuBrain, LuChevronDown, LuChevronRight, LuCircleAlert, LuCircleX, LuLoaderCircle, LuMoon } from "react-icons/lu";
+import { Box, Flex, Text } from "@chakra-ui/react";
+import { memo, useMemo, useState, type ReactNode } from "react";
+import { LuBrain } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
-import { getToolCallDisplay } from "@/lib/tool-display";
+import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { iconForFilePath } from "@/lib/file-icons";
+import { STATUS_ICON, STATUS_PALETTE, type StatusKind } from "@/lib/status";
 import { DiffStatBadge, RollingNumber } from "./rolling-number";
 import { ToolCallLabel } from "./tool-label";
-import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { ToolCall, ToolLocationBadge, collapsedHeadingLocation, isBackgroundResult } from "./tool-call";
+import { Pill } from "./ui/pill";
+import { DisclosureRow } from "./ui/disclosure-row";
+import { ActivityIcon } from "./ui/activity-icon";
+import type { ToolEvent } from "@/lib/tool-event";
+import { hasBackgroundTaskIdentifier, toolStatus } from "@/lib/tool-event";
+import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
 
-// Shared, grouped/collapsible stack of contiguous tool calls — the single source
-// of truth for how a run of tool calls reads, used by both the chat timeline and
-// the agents panel so the two stay in sync. A full-height left marker brackets
-// the group; the header surfaces the most recent call; the body is a stack of
-// motion cards (a new call slides in, earlier ones settle behind). The group is
-// open while any call is running and auto-collapses when the batch completes
-// (a manual click is remembered as an override).
-function toolStatus(status: unknown): ToolEventStatus | undefined {
-  return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined;
-}
+// Shared, grouped/collapsible run of contiguous tool calls — the single source
+// of truth for how a batch of tool calls reads, used by both the chat timeline
+// and the agents panel so the two stay in sync. The group is a single line of
+// text in the transcript: the most recent call's icon and label (shimmering while
+// live), then a compact tally of the tools used and any
+// status/file chips — all hugging the text like a sentence, not a card. Opening
+// it hangs the individual call lines off a hairline left rule, the same visual
+// grammar the calls themselves (and markdown blockquotes) use.
 
-// Tally the tools by name, preserving first-seen order (so the recap reads in the
-// order work actually happened): each distinct tool becomes one icon plus how many
-// times it was invoked.
+// Tally tools by name while preserving first-seen order.
 function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, number> } {
   const order: string[] = [];
   const counts = new Map<string, number>();
@@ -37,15 +38,32 @@ function tallyTools(tools: ToolEvent[]): { order: string[]; counts: Map<string, 
   return { order, counts };
 }
 
-// The small tally count beside a tool/reasoning/status icon in the group heading.
-// One shared chip so every count reads with the same size and weight (fieldLabel),
-// tinted by its icon's accent.
-function CountChip({ value, color }: { value: number; color: string }) {
+// One tally chip in the group heading — the shared Pill carrying BOTH the icon and its
+// count, so each tool/status reads as a single unit.
+function TallyBadge({
+  icon,
+  count,
+  colorPalette = "gray",
+  title,
+  alwaysShowCount = false,
+}: {
+  icon: ReactNode;
+  count: number;
+  colorPalette?: string;
+  title?: string;
+  alwaysShowCount?: boolean;
+}) {
   return (
-    <Box as="span" display="inline-flex" alignItems="center" lineHeight="1" textStyle="fieldLabel" color={color}>
-      <RollingNumber value={value} />
-    </Box>
+    <Pill colorPalette={colorPalette} title={title} icon={icon}>
+      {alwaysShowCount || count > 1 ? <RollingNumber value={count} /> : null}
+    </Pill>
   );
+}
+
+// Map a tool's icon color ("blue.fg", "green.fg", … or "fg.muted") to a Chakra colorPalette,
+// so each tool's tally badge carries that tool's own accent as its background — not a flat gray.
+function paletteFromIconColor(iconColor: string): string {
+  return iconColor.endsWith(".fg") ? iconColor.slice(0, -3) : "gray";
 }
 
 interface FileChange {
@@ -87,276 +105,203 @@ function extractFileChanges(tools: ToolEvent[]): FileChange[] {
 interface ToolGroupProps {
   tools: ToolEvent[];
   agents?: { id: string; name: string; title?: string }[];
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   activeArtifactId?: string | null;
   onActivateArtifact?: (toolCallId: string) => void;
   // When true, the group stays expanded even after all calls complete — used by
   // the chat timeline to keep the latest group open until the assistant's text
   // response actually arrives, rather than collapsing the instant tools finish.
   keepOpen?: boolean;
-  // How many reasoning ("thinking") phases happened while this batch of work ran.
-  // Surfaced as a brain counter in the header (persisted: replay rebuilds the
-  // thinking messages this is counted from). 0 hides it.
-  thinkingCount?: number;
 }
 
 export const ToolGroup = memo(function ToolGroup({
   tools,
   agents = [],
-  onPermission,
-  onQuestion,
   activeArtifactId,
   onActivateArtifact,
   keepOpen = false,
-  thinkingCount = 0,
 }: ToolGroupProps) {
-  const t = useTranslations("ToolGroup");
+  const translation = useTranslations("ToolGroup");
+  const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const backgroundCount = tools.filter(
-    (tool) => toolStatus(tool.status) === "running" && isBackgroundResult(tool.result),
+    (tool) => toolStatus(tool.status) === "running" && hasBackgroundTaskIdentifier(tool.result),
   ).length;
   const runningCount = tools.filter((tool) => toolStatus(tool.status) === "running").length - backgroundCount;
   const inputRequiredCount = tools.filter((tool) => toolStatus(tool.status) === "input_required").length;
   const inputRequired = inputRequiredCount > 0;
   const failedCount = tools.filter((tool) => toolStatus(tool.status) === "failed").length;
   const active = runningCount > 0 || backgroundCount > 0 || inputRequired || keepOpen;
+  // Tri-state so the group can be toggled either way from its auto default: null =
+  // never touched (follow the default), else the user's explicit open/closed choice.
   const [manualOverride, setManualOverride] = useState<boolean | null>(null);
   const bodyOpen = manualOverride ?? false;
-  const bodyRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll the body to the bottom when new tool calls arrive.
-  useEffect(() => {
-    if (bodyOpen && bodyRef.current) {
-      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }
-  }, [tools.length, bodyOpen]);
-
-  // Extract file changes from tool arguments for the right side of the header: when
-  // the group includes file operations (edit_file, write_file) it shows the changed
-  // files with their extension icons and diff stats, alongside the status badge.
+  // Extract file changes from tool arguments for the heading: when the group includes
+  // file operations (edit_file, write_file) it shows the changed file with its
+  // extension icon and diff stat, alongside the status chips.
   const fileChanges = useMemo(() => extractFileChanges(tools), [tools]);
   const hasFileChanges = fileChanges.length > 0;
-  // The left side is a live recap: one icon per distinct tool with its invocation
-  // count, preceded by a live status line that shimmers while active.
-  const tally = useMemo(() => tallyTools(tools), [tools]);
+  // The left icon owns the latest call. The trailing tally therefore counts only
+  // earlier calls, preventing the latest tool from appearing twice in the same row.
+  const tally = useMemo(() => tallyTools(tools.slice(0, -1)), [tools]);
   // The status line shows the most recent tool's own label (its justification),
   // animated as work streams in and left in place when the batch finishes — more
   // informative than a static "Still working" / "Actions taken".
   const latestTool = tools[tools.length - 1];
+  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay) : null;
+  const HeadingIcon = headingDisplay?.icon ?? LuBrain;
+  const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // When the batch touched a single remote place, badge the collapsed heading with it
   // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
-  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
-  // A tools-less group is a live "thinking before acting" phase — its heading is
-  // just the reasoning indicator. Otherwise it tracks the latest tool's label.
+  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay).label : "";
+  // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
-  const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
-  // A thinking-only heading has no body to reveal, so it is not interactive.
-  const interactive = !thinkingOnly;
+  const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
+  // One call is already fully represented by the summary row. The grouped body only
+  // becomes useful once it can reveal multiple calls instead of repeating that row.
+  const interactive = tools.length > 1;
 
-  // Status chips: one colored icon (+ count) per state, in the same visual grammar as the
-  // tool tally beside them, readable at a glance with no prose badge to parse. Completed
-  // calls carry no chip; the settled card speaks for itself.
+  // Status chips surface states that need separate attention. Running and completed calls
+  // carry no chip: the live shimmer already communicates activity, while the settled line
+  // speaks for itself.
   const statusChips = [
-    inputRequiredCount > 0 && {
-      key: "input", Icon: LuCircleAlert, color: "yellow.fg",
-      count: inputRequiredCount, title: t("inputRequired"),
-    },
-    failedCount > 0 && {
-      key: "failed", Icon: LuCircleX, color: "red.fg",
-      count: failedCount, title: t("failedCount", { count: failedCount }),
-    },
-    runningCount > 0 && {
-      key: "running", Icon: LuLoaderCircle, color: "blue.fg", spin: true,
-      count: runningCount, title: t("runningCount", { count: runningCount }),
-    },
-    backgroundCount > 0 && {
-      key: "background", Icon: LuMoon, color: "purple.fg",
-      count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }),
-    },
-  ].filter((chip): chip is { key: string; Icon: typeof LuCircleX; color: string; count: number; title: string; spin?: boolean } => Boolean(chip));
+    inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: translation("inputRequired") },
+    failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: translation("failedCount", { count: failedCount }) },
+    backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: translation("backgroundCount", { count: backgroundCount }) },
+  ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
+
+  // The animated label slot: the latest tool's label crossfades as work streams in,
+  // with both labels in the same grid cell so nothing reflows, and shimmers while active.
+  // `minmax(0,1fr)` lets it truncate with an ellipsis.
+  const titleSlot = (
+    <Box minW={0} display="grid" gridTemplateColumns="minmax(0, 1fr)" position="relative">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.div
+          key={headingText}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, transition: { duration: 0.1, ease: "easeOut" } }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+          style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
+        >
+          <Text
+            textStyle="sm"
+            fontWeight="normal"
+            whiteSpace="nowrap"
+            overflow="hidden"
+            textOverflow="ellipsis"
+            // While active, leave the color unset so the shimmer class controls it: an
+            // inline color would override the gradient's transparent fill and the shimmer
+            // would silently not render.
+            className={active ? "running-title-shimmer" : undefined}
+          >
+            {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
+          </Text>
+        </motion.div>
+      </AnimatePresence>
+    </Box>
+  );
+
+  // The heading's chip cluster: prior-tool tallies, any file-change chip, the remote
+  // badge, and status chips — all animated in/out.
+  const badgeSlot = (
+    <>
+      <AnimatePresence initial={false}>
+        {tally.order.map((name) => {
+          const display = getToolCallDisplay(name, undefined, tDisplay);
+          const ToolIcon = display.icon;
+          const count = tally.counts.get(name) ?? 0;
+          return (
+            <motion.div
+              key={name}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              style={{ display: "inline-flex", alignItems: "center" }}
+            >
+              <TallyBadge title={display.label} count={count} colorPalette={paletteFromIconColor(display.iconColor)} icon={<ToolIcon />} alwaysShowCount />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+      {hasFileChanges && fileChanges.length > 0 && (
+        fileChanges.length === 1 ? fileChanges.map((file) => {
+          const FileIcon = iconForFilePath(file.path).icon;
+          return (
+            <Flex key={file.path} align="center" gap={1.5} minW={0} maxW="180px">
+              <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
+                <ActivityIcon><FileIcon /></ActivityIcon>
+              </Box>
+              <Text textStyle="fieldLabel" truncate>
+                {file.path.split("/").pop() ?? file.path}
+              </Text>
+              <DiffStatBadge additions={file.additions} deletions={file.deletions} />
+            </Flex>
+          );
+        }) : (
+          <Pill colorPalette="gray">{translation("filesCount", { count: fileChanges.length })}</Pill>
+        )
+      )}
+      <ToolLocationBadge arguments={groupLocation} />
+      <AnimatePresence initial={false}>
+        {statusChips.map(({ kind, count, title }) => {
+          const palette = STATUS_PALETTE[kind];
+          const ChipIcon = STATUS_ICON[kind];
+          return (
+            <motion.div
+              key={kind}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
+              style={{ display: "inline-flex", alignItems: "center" }}
+            >
+              <TallyBadge
+                title={title}
+                count={count}
+                colorPalette={palette}
+                icon={ChipIcon ? <ChipIcon /> : null}
+              />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </>
+  );
 
   return (
-    <Box alignSelf="flex-start" w="100%">
-      {/* Rendered as a proper card (same shell as a single ToolCall) so the group
-          reads as a first-class entry in the timeline, not a bare label. The border
-          tint tracks activity; the body is recessed (bg) so the nested tool cards
-          raise against it. */}
-      <Box
-        borderRadius="md"
-        overflow="hidden"
-        bg="bg.subtle"
-        border="1px solid"
-        borderColor="border"
+    <Box alignSelf="flex-start" w="100%" minW={0}>
+      <DisclosureRow
+        open={bodyOpen}
+        onOpenChange={interactive ? () => setManualOverride((current) => (current === null ? true : !current)) : undefined}
+        tone={active ? "active" : "muted"}
+        maxH={80}
+        followTailKey={tools.length}
+        icon={<Box color={headingIconColor}><HeadingIcon /></Box>}
+        title={titleSlot}
+        badges={badgeSlot}
       >
-        <Flex
-          as={interactive ? "button" : "div"}
-          align="center"
-          gap={1.5}
-          w="100%"
-          px={2.5}
-          // Same fixed geometry as ToolCardHeader (h=8 / px=2.5 / gap=1.5) so a group heading, a
-          // thinking-only heading, and a single tool card are pixel-identical — no reflow when a
-          // heading gains its first tool or sits beside a card, and badges never grow it.
-          h={8}
-          color="fg"
-          textAlign="left"
-          cursor={interactive ? "pointer" : "default"}
-          _hover={interactive ? { bg: "bg.muted" } : undefined}
-          onClick={interactive ? () => setManualOverride((current) => current === null ? true : !current) : undefined}
-        >
-          <Flex align="center" gap={2} flex={1} minW={0}>
-            {/* Status line — the latest tool's label. When the justification changes, the new
-                label blurs and fades in (the same token-in look as the streaming message, applied
-                to the whole label since it swaps as a unit — per-token spans would break this
-                single-line ellipsis), while the outgoing one fades out. The crossfade keeps the
-                entering and exiting labels in the SAME grid cell (both at gridArea 1/1) so they
-                overlap without reflow, while the cell sizes itself to one line of text — so the box
-                gets its height naturally from its content, no hand-tuned minH. `minmax(0,1fr)` lets
-                the single column shrink so the label truncates with an ellipsis. `initial={false}`
-                means the first label just appears; only a change animates. */}
-            <Box minW={0} flex={1} overflow="hidden" display="grid" gridTemplateColumns="minmax(0, 1fr)">
-              <AnimatePresence initial={false}>
-                <motion.div
-                  key={headingText}
-                  initial={{ opacity: 0, filter: "blur(2px)" }}
-                  animate={{ opacity: 1, filter: "blur(0px)" }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.22, ease: "easeOut" }}
-                  style={{ gridArea: "1 / 1", minWidth: 0, display: "flex", alignItems: "center" }}
-                >
-                  <Text
-                    textStyle="fieldLabel"
-                    whiteSpace="nowrap"
-                    overflow="hidden"
-                    textOverflow="ellipsis"
-                    // While active, leave the color unset so the shimmer class controls it:
-                    // an inline color would override the gradient's transparent fill (inline
-                    // beats class) and the shimmer would silently not render.
-                    color={active ? undefined : "fg.muted"}
-                    className={active ? "running-title-shimmer" : undefined}
-                  >
-                    {latestTool ? <ToolCallLabel name={latestTool.name} args={latestTool.arguments} /> : headingText}
-                  </Text>
-                </motion.div>
-              </AnimatePresence>
-            </Box>
-            <Flex align="center" gap={1.5} flexShrink={0}>
-              <AnimatePresence initial={false}>
-                {tally.order.map((name) => {
-                  const display = getToolCallDisplay(name);
-                  const ToolIcon = display.icon;
-                  const count = tally.counts.get(name) ?? 0;
-                  return (
-                    <motion.div
-                      key={name}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.12, ease: "easeOut" }}
-                      style={{ display: "inline-flex", alignItems: "center" }}
-                    >
-                      <Flex
-                        align="center"
-                        gap={1}
-                        flexShrink={0}
-                        title={display.label}
-                        color={active ? display.iconColor : "fg.muted"}
-                      >
-                        <ToolIcon size={13} />
-                        {count > 1 && <CountChip value={count} color="fg.muted" />}
-                      </Flex>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-              {/* Reasoning counter — how many times the agent stopped to think
-                  while doing this batch. Same rolling-number treatment as the
-                  tool counts, in the thinking (purple) accent. */}
-              {thinkingCount > 0 && (
-                <Flex
-                  align="center"
-                  gap={1}
-                  flexShrink={0}
-                  color={active ? "purple.fg" : "fg.muted"}
-                  title={t("thoughtCount", { count: thinkingCount })}
-                >
-                  <LuBrain size={13} />
-                  {thinkingCount > 1 && <CountChip value={thinkingCount} color="fg.muted" />}
-                </Flex>
-              )}
-            </Flex>
-          </Flex>
-          {hasFileChanges && fileChanges.length > 0 && (
-            <Flex align="center" gap={1.5} flexShrink={0} minW={0} overflow="hidden">
-              {fileChanges.length === 1 ? fileChanges.map((file) => {
-                const FileIcon = iconForFilePath(file.path).icon;
-                return (
-                  <Flex key={file.path} align="center" gap={1.5} minW={0} maxW="180px">
-                    <Box color="fg.muted" display="flex" alignItems="center" flexShrink={0}>
-                      <FileIcon size={13} />
-                    </Box>
-                    <Text textStyle="fieldLabel" truncate>
-                      {file.path.split("/").pop() ?? file.path}
-                    </Text>
-                    <DiffStatBadge additions={file.additions} deletions={file.deletions} />
-                  </Flex>
-                );
-              }) : (
-                <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
-                  {t("filesCount", { count: fileChanges.length })}
-                </Badge>
-              )}
-            </Flex>
-          )}
-          <ToolLocationBadge arguments={groupLocation} />
-          <AnimatePresence initial={false}>
-            {statusChips.map(({ key, Icon: ChipIcon, color, count, title, spin }) => (
-              <motion.div
-                key={key}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.12, ease: "easeOut" }}
-                style={{ display: "inline-flex", alignItems: "center" }}
-              >
-                <Flex align="center" gap={1} flexShrink={0} title={title} color={color}>
-                  <ChipIcon size={13} className={spin ? "tool-status-spin" : undefined} />
-                  {count > 1 && <CountChip value={count} color={color} />}
-                </Flex>
-              </motion.div>
+        {interactive ? (
+          <Flex direction="column" gap={1}>
+            {tools.map((tool, index) => (
+              <ToolCall
+                key={tool.toolCallId || `tool-${index}`}
+                name={tool.name}
+                arguments={tool.arguments}
+                result={tool.result}
+                toolCallId={tool.toolCallId}
+                status={tool.status}
+                permission={tool.permission}
+                question={tool.question}
+                agents={agents}
+                activeArtifactId={activeArtifactId}
+                onActivateArtifact={onActivateArtifact}
+              />
             ))}
-          </AnimatePresence>
-          {interactive && (
-            <Box color="fg.muted" fontSize="xs" flexShrink={0}>
-              {bodyOpen ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
-            </Box>
-          )}
-        </Flex>
-        {bodyOpen && interactive && (
-          <Box ref={bodyRef} borderTop="1px solid" borderColor="border" bg="bg" px={2.5} py={2} maxH={80} overflowY="auto">
-            <Flex direction="column" gap={2}>
-              {tools.map((tool, index) => (
-                <ToolCall
-                  key={tool.toolCallId || `tool-${index}`}
-                  name={tool.name}
-                  arguments={tool.arguments}
-                  result={tool.result}
-                  toolCallId={tool.toolCallId}
-                  status={tool.status}
-                  permission={tool.permission}
-                  question={tool.question}
-                  agents={agents}
-                  onPermission={onPermission}
-                  onQuestion={onQuestion}
-                  activeArtifactId={activeArtifactId}
-                  onActivateArtifact={onActivateArtifact}
-                />
-              ))}
-            </Flex>
-          </Box>
-        )}
-      </Box>
+          </Flex>
+        ) : undefined}
+      </DisclosureRow>
     </Box>
   );
 });

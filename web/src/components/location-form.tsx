@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Box, Button, Flex, IconButton, Input, Text } from "@chakra-ui/react";
+import { Alert, Box, Button, Flex, IconButton, Input, Skeleton, Text } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef } from "react";
 import { LuFolder, LuFolderOpen, LuPlus, LuServer, LuTrash2 } from "react-icons/lu";
 import { useTranslations } from "next-intl";
@@ -48,7 +48,7 @@ export function locationConflict(
   return null;
 }
 
-// The reusable location editor — used in the New Project wizard and in project settings.
+// The reusable folder editor — used during creation and in project-folder settings.
 // `hosts` come from ~/.ssh/config (remote only). `showPermission` reveals the permission
 // mode control (shown when editing an existing location, hidden in the create wizard so
 // creation stays about *where*, not policy). `onRemove` (optional) puts a remove control in
@@ -66,17 +66,17 @@ export function LocationForm({
   showPermission?: boolean;
   onRemove?: () => void;
 }) {
-  const t = useTranslations("LocationForm");
+  const translation = useTranslations("LocationForm");
   const set = (patch: Partial<LocationInput>) => onChange({ ...value, ...patch });
 
   const permissionModeItems = useMemo<SelectOption[]>(
     () => [
-      { value: "default", label: t("permissionManual") },
-      { value: "auto", label: t("permissionAuto") },
-      { value: "read_only", label: t("permissionReadOnly") },
-      { value: "bypass", label: t("permissionBypass") },
+      { value: "default", label: translation("permissionManual") },
+      { value: "auto", label: translation("permissionAuto") },
+      { value: "read_only", label: translation("permissionReadOnly") },
+      { value: "bypass", label: translation("permissionBypass") },
     ],
-    [t],
+    [translation],
   );
 
   const hostItems = useMemo<SelectOption[]>(
@@ -107,7 +107,7 @@ export function LocationForm({
     }
   }, [value.kind, hosts]);
 
-  // Prefill the base directory with the selected target's home directory as an editable
+  // Prefill the base directory with the selected location's home directory as an editable
   // starter: the local machine's home for a local location, the host's home for a remote.
   // Only fills when the field is empty or still holds a previous auto value, so a path the
   // user typed is never clobbered.
@@ -146,7 +146,7 @@ export function LocationForm({
           colorPalette={value.kind === "local" ? "green" : undefined}
           onClick={() => set({ kind: "local" })}
         >
-          <LuFolder size={13} /> {t("local")}
+          <LuFolder size={13} /> {translation("local")}
         </Button>
         <Button
           flex={1}
@@ -157,10 +157,10 @@ export function LocationForm({
           // case where hosts finish loading after the switch.
           onClick={() => set({ kind: "remote", host_alias: value.host_alias || hosts[0]?.alias || "" })}
         >
-          <LuServer size={13} /> {t("remote")}
+          <LuServer size={13} /> {translation("remote")}
         </Button>
         {onRemove && (
-          <IconButton aria-label={t("removeLocation")} variant="ghost" colorPalette="red" flexShrink={0} onClick={onRemove}>
+          <IconButton aria-label={translation("removeLocation")} variant="ghost" colorPalette="red" flexShrink={0} onClick={onRemove}>
             <LuTrash2 size={13} />
           </IconButton>
         )}
@@ -168,9 +168,9 @@ export function LocationForm({
 
       {value.kind === "remote" && (
         <Flex direction="column" gap={1}>
-          <Text textStyle="fieldLabel">{t("host")}</Text>
+          <Text textStyle="fieldLabel">{translation("host")}</Text>
           {hosts.length === 0 ? (
-            <Text fontSize="2xs" color="orange.fg">{t("noHosts")}</Text>
+            <Text fontSize="2xs" color="orange.fg">{translation("noHosts")}</Text>
           ) : (
             <SimpleSelect items={hostItems} value={value.host_alias ?? ""} onValueChange={(next) => set({ host_alias: next })} />
           )}
@@ -178,7 +178,7 @@ export function LocationForm({
       )}
 
       <Flex direction="column" gap={1}>
-        <Text textStyle="fieldLabel">{t("baseDirectory")}</Text>
+        <Text textStyle="fieldLabel">{translation("baseDirectory")}</Text>
         <Flex gap={2}>
           <Input
             flex={1}
@@ -188,7 +188,7 @@ export function LocationForm({
           />
           {value.kind === "local" && (
             <Button variant="outline" flexShrink={0} onClick={pickFolder}>
-              <LuFolderOpen size={14} /> {t("openFolder")}
+              <LuFolderOpen size={14} /> {translation("openFolder")}
             </Button>
           )}
         </Flex>
@@ -196,7 +196,7 @@ export function LocationForm({
 
       {showPermission && (
         <Flex direction="column" gap={1}>
-          <Text textStyle="fieldLabel">{t("permissionMode")}</Text>
+          <Text textStyle="fieldLabel">{translation("permissionMode")}</Text>
           <SimpleSelect items={permissionModeItems} value={value.permission_mode ?? "default"} onValueChange={(next) => set({ permission_mode: next })} />
         </Flex>
       )}
@@ -204,9 +204,8 @@ export function LocationForm({
   );
 }
 
-// A stack of editable location forms with an "Add location" button and an inline overlap
-// warning — the shared body of the New Project wizard and the project-settings Locations
-// tab (persistence differs; the editing surface is identical).
+// A stack of editable folder forms with an "Add folder" button and an inline overlap
+// warning. Creation and Settings share the same editing surface; only persistence differs.
 export function LocationEditorList({
   hosts,
   locations,
@@ -214,6 +213,7 @@ export function LocationEditorList({
   onAdd,
   onRemove,
   showPermission = false,
+  loading = false,
 }: {
   hosts: SshHost[];
   locations: LocationInput[];
@@ -221,8 +221,34 @@ export function LocationEditorList({
   onAdd: () => void;
   onRemove: (index: number) => void;
   showPermission?: boolean;
+  loading?: boolean;
 }) {
-  const t = useTranslations("LocationForm");
+  const translation = useTranslations("LocationForm");
+  if (loading) {
+    return (
+      <Flex data-layout="location-editor-loading" direction="column" gap={3} aria-label={translation("loadingLocations")}>
+        <Box borderWidth="1px" borderColor="border" borderRadius="md" p={3}>
+          <Flex direction="column" gap={3}>
+            <Flex gap={2}>
+              <Skeleton h={8} flex={1} borderRadius="md" />
+              <Skeleton h={8} flex={1} borderRadius="md" />
+            </Flex>
+            <Flex direction="column" gap={1}>
+              <Skeleton h={5} w={24} borderRadius="sm" />
+              <Skeleton h={8} w="full" borderRadius="md" />
+            </Flex>
+            {showPermission ? (
+              <Flex direction="column" gap={1}>
+                <Skeleton h={5} w={24} borderRadius="sm" />
+                <Skeleton h={8} w="full" borderRadius="md" />
+              </Flex>
+            ) : null}
+          </Flex>
+        </Box>
+        <Skeleton h={8} w="full" borderRadius="md" />
+      </Flex>
+    );
+  }
   const conflict = locationConflict(locations);
   return (
     <Flex direction="column" gap={3}>
@@ -238,7 +264,7 @@ export function LocationEditorList({
         </Box>
       ))}
       <Button variant="subtle" colorPalette="blue" w="100%" onClick={onAdd}>
-        <LuPlus size={14} /> {t("addLocation")}
+        <LuPlus size={14} /> {translation("addLocation")}
       </Button>
       {conflict && (
         <Alert.Root status="warning" size="sm" borderRadius="md" alignItems="center">
@@ -246,8 +272,8 @@ export function LocationEditorList({
           <Alert.Content>
             <Alert.Description fontSize="xs">
               {conflict.key === "conflictSameDirectory"
-                ? t("conflictSameDirectory", conflict.values)
-                : t("conflictNested", conflict.values)}
+                ? translation("conflictSameDirectory", conflict.values)
+                : translation("conflictNested", conflict.values)}
             </Alert.Description>
           </Alert.Content>
         </Alert.Root>

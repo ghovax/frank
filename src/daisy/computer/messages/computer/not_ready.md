@@ -1,0 +1,1 @@
+{{ app }} isn't showing anything to read yet. If it just opened it may still be starting up — bring it to the front and observe again in a moment. If it never exposes a readable interface (a game, a custom-drawn view), it can't be driven through its controls: take a screenshot to see it and ask the user to do the step. Don't act blind.

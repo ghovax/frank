@@ -14,6 +14,13 @@ const RICH_CONTENT_PROPS = {
   boxShadow: "lg",
   border: "1px solid",
   borderColor: "border",
+  // Bound the card and keep any long/unbreakable value inside it: without a max
+  // width a `whiteSpace="nowrap"` content box grows to its widest line and any
+  // untruncated field spills past the border. `maxW` caps it, `overflow="hidden"`
+  // clips the overrun, and `overflowWrap` lets long tokens break instead of pushing.
+  maxW: "20rem",
+  overflow: "hidden",
+  overflowWrap: "anywhere",
 } as const
 
 export interface TooltipProps extends ChakraTooltip.RootProps {

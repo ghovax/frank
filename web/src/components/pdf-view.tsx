@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { LuTriangleAlert } from "react-icons/lu";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import { Canvas } from "./ui/semantic";
 
 // Render PDFs with PDF.js (to a <canvas>) rather than relying on the browser's
 // built-in PDF plugin in an <iframe> — that path is inconsistent across browsers
@@ -113,7 +114,7 @@ export function PdfThumbnail({ url, width = 240 }: { url: string; width?: number
 
   return (
     <Box position="relative" minH="120px" minW={`${width}px`} display="flex" justifyContent="center">
-      <canvas ref={canvasRef} style={{ display: status === "ready" ? "block" : "none", borderRadius: 2 }} />
+      <Canvas ref={canvasRef} display={status === "ready" ? "block" : "none"} borderRadius="md" />
       {status !== "ready" && <PdfStatus kind={status === "error" ? "error" : "loading"} />}
     </Box>
   );
@@ -182,9 +183,12 @@ function PdfPageView({
       mx="auto"
       bg="bg"
       boxShadow="sm"
-      style={{ width: `${width}px`, minHeight: visible ? undefined : `${Math.round(width * aspect)}px` }}
+      w={`${width}px`}
+      minH={visible ? undefined : `${Math.round(width * aspect)}px`}
+      borderRadius="md"
+      overflow="hidden"
     >
-      {visible && <canvas ref={canvasRef} style={{ display: "block", width: `${width}px` }} />}
+      {visible && <Canvas ref={canvasRef} display="block" w={`${width}px`} borderRadius="md" />}
     </Box>
   );
 }

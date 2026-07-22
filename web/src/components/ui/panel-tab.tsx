@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Flex, Text } from "@chakra-ui/react";
+import { Box, Button, IconButton, Text } from "@chakra-ui/react";
 import type { ReactNode } from "react";
 import { LuX } from "react-icons/lu";
 import { Tooltip } from "./tooltip";
@@ -41,45 +41,45 @@ export function PanelTab({
   mono?: boolean;
 }) {
   const tab = (
-    <Flex
-      as="button"
-      align="center"
-      gap={1.5}
-      pl={2.5}
-      pr={onClose ? 1.5 : 2.5}
+    <Box
+      position="relative"
       h={PANEL_TAB_HEIGHT}
-      textStyle="fieldLabel"
-      borderRadius="md"
-      bg={active ? "bg.subtle" : "bg"}
-      border="1px solid"
-      borderColor={active ? "border.emphasized" : "border"}
-      color="fg"
-      cursor="pointer"
       flexShrink={0}
-      whiteSpace="nowrap"
-      onClick={onSelect}
-      _hover={{ bg: active ? "bg.muted" : "bg.subtle" }}
     >
-      {icon}
-      <Text truncate maxW={maxLabelWidth} fontFamily={mono ? "var(--app-font-mono)" : undefined}>{label}</Text>
+      <Button
+        variant="outline"
+        h="full"
+        gap={1.5}
+        pl={2.5}
+        pr={onClose ? 7 : 2.5}
+        textStyle="fieldLabel"
+        bg={active ? "bg.subtle" : "bg"}
+        borderColor={active ? "border.emphasized" : "border"}
+        color="fg"
+        whiteSpace="nowrap"
+        onClick={onSelect}
+        _hover={{ bg: active ? "bg.muted" : "bg.subtle" }}
+      >
+        {icon}
+        <Text truncate maxW={maxLabelWidth} fontFamily={mono ? "var(--app-font-mono)" : undefined}>{label}</Text>
+      </Button>
       {onClose && (
-        <Box
-          as="span"
-          display="inline-flex"
-          alignItems="center"
-          justifyContent="center"
-          borderRadius="sm"
-          boxSize={4.5}
-          flexShrink={0}
+        <IconButton
+          aria-label={closeLabel ?? label}
+          variant="ghost"
+          size="2xs"
+          position="absolute"
+          right={1}
+          top="50%"
+          transform="translateY(-50%)"
           color="fg.subtle"
           _hover={{ bg: "bg.muted", color: "fg" }}
           onClick={(event) => { event.stopPropagation(); onClose(); }}
-          aria-label={closeLabel}
         >
-          <LuX size={12} />
-        </Box>
+          <LuX />
+        </IconButton>
       )}
-    </Flex>
+    </Box>
   );
 
   if (!tooltip) return tab;

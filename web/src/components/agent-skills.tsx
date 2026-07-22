@@ -1,11 +1,14 @@
 "use client";
 
-import { Badge, Box, EmptyState, Flex, Text } from "@chakra-ui/react";
+import { Box, Flex, Span, Text } from "@chakra-ui/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { LuListChecks, LuPlug, LuPuzzle, LuWrench } from "react-icons/lu";
 import { fetchMcpTools, fetchSkills, subscribeEvents, type AgentCard, type AgentSkill, type McpServerTools, type McpTool } from "@/lib/api";
-import { ToolCard, ToolCardBody, ToolCardHeader, ToolMetaRow } from "./tool-card";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { SectionHeader } from "./ui/section-header";
+import { Pill } from "./ui/pill";
+import { InlineField } from "./ui/display";
 import { MarkdownContent } from "./markdown-content";
 
 // Renders a capability's display title: the human title when present, otherwise a
@@ -14,13 +17,13 @@ import { MarkdownContent } from "./markdown-content";
 function CapabilityTitle({ title, identifier }: { title?: string | null; identifier: string }) {
   const display = (title ?? "").trim();
   if (display && display !== identifier) return <>{display}</>;
-  return <Box as="span" fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Box>;
+  return <Span fontFamily="var(--app-font-mono)" fontWeight="medium">{identifier}</Span>;
 }
 
-// MCP tool descriptions come from Python docstrings, which carry an Args:/
-// Returns:/etc. section that duplicates the tool's input schema. For the
+// MCP tool descriptions come from Python docstrings, whose Arguments:/
+// Returns:/etc. sections duplicate the tool's input schema. For the
 // capability browser we only show the human-readable summary above it.
-const DOCSTRING_SECTION = /\n[ \t]*(Args|Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
+const DOCSTRING_SECTION = /\n[ \t]*(Arguments|Parameters|Params|Returns|Yields|Raises|Examples?|Notes?|See Also|References|Todo|Warnings?)(\s*\([^)]*\))?\s*:/i;
 
 function docstringSummary(description: string): string {
   const match = description.match(DOCSTRING_SECTION);
@@ -34,11 +37,11 @@ function disabledLast(first: { enabled?: boolean }, second: { enabled?: boolean 
 }
 
 // Shows the selected agent's A2A AgentCard skills — broadcast from the served
-// agent and rendered as collapsible cards, so you can see what an agent can do —
+// agent and rendered as collapsible rows, so you can see what an agent can do —
 // plus the tools exposed by the configured MCP servers, grouped per server.
-// Every card starts collapsed to keep the empty state uncluttered.
+// Every row starts collapsed to keep the empty state uncluttered.
 export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: AgentCard | null; workingDirectory?: string; homeDirectory?: string }) {
-  const t = useTranslations("AgentSkills");
+  const translation = useTranslations("AgentSkills");
   const [mcpServers, setMcpServers] = useState<McpServerTools[]>([]);
   const [folderSkills, setFolderSkills] = useState<AgentSkill[]>([]);
 
@@ -108,44 +111,40 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
     <Box w="100%" maxW="640px" mx="auto" pb={4}>
       {hasSkills && (
         <>
-          <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuListChecks size={14} />
-            <Text textStyle="panelTitle">{t("skillsAvailable")}</Text>
-          </Flex>
-          <Box mb={2} color="fg.muted">
-            <Text fontSize="xs">{t("skillsDescription")}</Text>
-          </Box>
+          <SectionHeader
+            icon={<LuListChecks size={14} />}
+            title={translation("skillsAvailable")}
+            description={translation("skillsDescription")}
+          />
           <Flex direction="column" gap={2}>
-            <ScopeLabel icon={<LuPuzzle size={12} />}>{t("skillsAvailableGlobally")}</ScopeLabel>
-            {globalSkills.length > 0
-              ? globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
-              : <EmptyScope icon={<LuPuzzle />}>{t("noGlobalSkills")}</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel icon={<LuPuzzle size={12} />}>{t("skillsAvailableInProject")}</ScopeLabel>}
-            {!isHomeFolder && (projectSkills.length > 0
-              ? projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)
-              : <EmptyScope icon={<LuPuzzle />}>{t("noProjectSkills")}</EmptyScope>)}
+            <ScopeGroup icon={<LuPuzzle />} label={translation("skillsAvailableGlobally")}>
+              {globalSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+            </ScopeGroup>
+            {!isHomeFolder && (
+              <ScopeGroup icon={<LuPuzzle />} label={translation("skillsAvailableInProject")}>
+                {projectSkills.map((skill) => <SkillCard key={skill.id} skill={skill} />)}
+              </ScopeGroup>
+            )}
           </Flex>
         </>
       )}
 
       {hasTools && (
         <Box mt={hasSkills ? 6 : 0}>
-          <Flex align="center" gap={1.5} mb={2} color="fg.muted">
-            <LuWrench size={14} />
-            <Text textStyle="panelTitle">{t("toolsAvailable")}</Text>
-          </Flex>
-          <Box mb={2} color="fg.muted">
-            <Text fontSize="xs">{t("toolsDescription")}</Text>
-          </Box>
+          <SectionHeader
+            icon={<LuWrench size={14} />}
+            title={translation("toolsAvailable")}
+            description={translation("toolsDescription")}
+          />
           <Flex direction="column" gap={2}>
-            <ScopeLabel icon={<LuPlug size={12} />}>{t("toolsAvailableGlobally")}</ScopeLabel>
-            {globalServers.length > 0
-              ? globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)
-              : <EmptyScope icon={<LuPlug />}>{t("noGlobalTools")}</EmptyScope>}
-            {!isHomeFolder && <ScopeLabel icon={<LuPlug size={12} />}>{t("toolsAvailableInProject")}</ScopeLabel>}
-            {!isHomeFolder && (projectServers.length > 0
-              ? projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)
-              : <EmptyScope icon={<LuPlug />}>{t("noProjectTools")}</EmptyScope>)}
+            <ScopeGroup icon={<LuPlug />} label={translation("toolsAvailableGlobally")}>
+              {globalServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
+            </ScopeGroup>
+            {!isHomeFolder && (
+              <ScopeGroup icon={<LuPlug />} label={translation("toolsAvailableInProject")}>
+                {projectServers.map((server) => <McpServerGroup key={server.name} server={server} />)}
+              </ScopeGroup>
+            )}
           </Flex>
         </Box>
       )}
@@ -153,65 +152,38 @@ export function AgentSkills({ card, workingDirectory, homeDirectory }: { card: A
   );
 }
 
-// A plain label separating the global capabilities from the ones the selected
-// project contributes itself. Always shown (even in the home folder) so the two
-// scopes read clearly; deliberately understated, not a bold uppercase heading.
-function ScopeLabel({ icon, children }: { icon?: ReactNode; children: string }) {
+// A scope group ("… globally" / "… in this project") — the same disclosure row as an
+// individual capability, one level up: its body holds that scope's cards. Open by
+// default so the capabilities stay visible while letting a whole scope be tucked away.
+function ScopeGroup({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
-    <Flex align="center" gap={1.5} mt={1}>
-      {icon && <Box color="fg.subtle" flexShrink={0}>{icon}</Box>}
-      <Text textStyle="fieldLabel" color="fg.subtle">
+    <DisclosureRow
+      defaultOpen
+      icon={<Box color="fg.subtle">{icon}</Box>}
+      title={<DisclosureLabel>{label}</DisclosureLabel>}
+    >
+      <Flex direction="column" gap={1}>
         {children}
-      </Text>
-    </Flex>
+      </Flex>
+    </DisclosureRow>
   );
 }
 
-// Placeholder for a scope that currently has no capabilities (e.g. a project with
-// no project-specific skills yet), matching the empty state used elsewhere so its
-// label is not left dangling.
-function EmptyScope({ icon, children }: { icon: ReactNode; children: string }) {
-  return (
-    <EmptyState.Root size="sm">
-      <EmptyState.Content>
-        <EmptyState.Indicator>{icon}</EmptyState.Indicator>
-        <EmptyState.Title fontSize="xs">{children}</EmptyState.Title>
-      </EmptyState.Content>
-    </EmptyState.Root>
-  );
-}
-
-// A small chip marking a capability the agent cannot currently use.
-function DisabledBadge() {
-  const t = useTranslations("AgentSkills");
-  return (
-    <Badge size="sm" variant="subtle" colorPalette="gray" borderRadius="sm" flexShrink={0}>
-      {t("disabled")}
-    </Badge>
-  );
-}
-
-// One agent skill, collapsed by default like a tool-call card. A disabled skill
-// is rendered greyed out and non-interactive (it cannot be expanded).
+// One agent skill, collapsed by default. A disabled skill is greyed out and inert;
+// a skill with no description or examples is a plain, non-expanding line.
 function SkillCard({ skill }: { skill: AgentSkill }) {
-  const t = useTranslations("AgentSkills");
-  const [open, setOpen] = useState(false);
+  const translation = useTranslations("AgentSkills");
   const enabled = skill.enabled !== false;
   const hasBody = !!skill.description || (skill.examples?.length ?? 0) > 0;
-  const collapsible = enabled && hasBody;
   return (
-    <Box opacity={enabled ? 1 : 0.55}>
-    <ToolCard>
-      <ToolCardHeader
-        collapsible={collapsible}
-        open={open}
-        onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPuzzle size={12} /></Box>}
-        title={<CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} />}
-        badges={enabled ? undefined : <DisabledBadge />}
-      />
-      {open && collapsible && (
-        <ToolCardBody>
+    <DisclosureRow
+      disabled={!enabled}
+      icon={<Box color="fg.muted"><LuPuzzle /></Box>}
+      title={<DisclosureLabel><CapabilityTitle title={skill.title ?? skill.name} identifier={skill.id} /></DisclosureLabel>}
+      badges={enabled ? undefined : <Pill colorPalette="gray">{translation("disabled")}</Pill>}
+    >
+      {enabled && hasBody ? (
+        <>
           {skill.description && (
             <Box color="fg.muted">
               <MarkdownContent content={skill.description} fontSize="xs" />
@@ -219,58 +191,45 @@ function SkillCard({ skill }: { skill: AgentSkill }) {
           )}
           {skill.examples && skill.examples.length > 0 && (
             <Box mt={2}>
-              <ToolMetaRow label={t("examples")}>
+              <InlineField label={translation("examples")}>
                 <Flex direction="column" gap={1}>
                   {skill.examples.map((example, index) => (
                     <Text key={index} fontSize="xs" color="fg.muted">“{example}”</Text>
                   ))}
                 </Flex>
-              </ToolMetaRow>
+              </InlineField>
             </Box>
           )}
-        </ToolCardBody>
-      )}
-    </ToolCard>
-    </Box>
+        </>
+      ) : undefined}
+    </DisclosureRow>
   );
 }
 
-// One MCP server's tools, collapsed by default like a tool-call card. A disabled
-// server is rendered greyed out and non-interactive (it cannot be expanded).
+// One MCP server's tools, collapsed by default. A disabled server is greyed out and
+// inert; an enabled server shows its tool count and expands to the tool rows.
 function McpServerGroup({ server }: { server: McpServerTools }) {
-  const t = useTranslations("AgentSkills");
-  const [open, setOpen] = useState(false);
+  const translation = useTranslations("AgentSkills");
   const enabled = server.enabled !== false;
   return (
-    <Box opacity={enabled ? 1 : 0.55}>
-    <ToolCard>
-      <ToolCardHeader
-        collapsible={enabled}
-        open={open}
-        onToggle={() => setOpen((value) => !value)}
-        icon={<Box color="fg.muted"><LuPlug size={12} /></Box>}
-        title={<CapabilityTitle identifier={server.name} />}
-        badges={
-          !enabled ? (
-            <DisabledBadge />
-          ) : (
-          <Text textStyle="fieldLabel" color="fg.subtle" flexShrink={0}>
-            {t("toolCount", { count: server.tools.length })}
-          </Text>
-          )
-        }
-      />
-      {enabled && open && (
-        <ToolCardBody>
-          <Flex direction="column" gap={2}>
-            {server.tools.map((tool) => (
-              <McpToolRow key={tool.name} tool={tool} />
-            ))}
-          </Flex>
-        </ToolCardBody>
-      )}
-    </ToolCard>
-    </Box>
+    <DisclosureRow
+      disabled={!enabled}
+      icon={<Box color="fg.muted"><LuPlug /></Box>}
+      title={<DisclosureLabel><CapabilityTitle identifier={server.name} /></DisclosureLabel>}
+      badges={
+        enabled
+          ? <Pill colorPalette="gray">{translation("toolCount", { count: server.tools.length })}</Pill>
+          : <Pill colorPalette="gray">{translation("disabled")}</Pill>
+      }
+    >
+      {enabled && server.tools.length > 0 ? (
+        <Flex direction="column" gap={2}>
+          {server.tools.map((tool) => (
+            <McpToolRow key={tool.name} tool={tool} />
+          ))}
+        </Flex>
+      ) : undefined}
+    </DisclosureRow>
   );
 }
 

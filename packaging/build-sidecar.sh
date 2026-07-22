@@ -20,10 +20,10 @@ cd "$repo_root"
 target="web/src-tauri/server-bin/Daisy Computer Use.app/Contents/MacOS/daisy"
 
 # Freshness guard: skip the freeze when the installed binary already exists and no
-# server source (server.py, the harness package, the spec, or the locked deps) is
+# server source (server.py, the daisy package, the spec, or the locked deps) is
 # newer than it. `find -newer` prints the first newer file, so empty means fresh.
 if [ -z "${FORCE:-}" ] && [ -x "$target" ]; then
-  newer_source="$(find server.py packaging/daisy-server.spec pyproject.toml uv.lock src/harness \
+  newer_source="$(find server.py packaging/daisy-server.spec pyproject.toml uv.lock src/daisy \
     -type f -newer "$target" -print -quit 2>/dev/null || true)"
   if [ -z "$newer_source" ]; then
     echo "sidecar up to date; skipping freeze (set FORCE=1 to rebuild)"

@@ -1,0 +1,1 @@
+The field kept a different value than you typed — usually a maxlength limit, an input mask, or a control that reformats what it receives. The `value` here is what it actually holds now; work from that rather than assuming your text went in verbatim.

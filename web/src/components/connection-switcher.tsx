@@ -55,7 +55,7 @@ export function ConnectionSwitcher({
   onConnectionChange?: (target: ConnectionTarget) => void;
   onOpenConnectionSettings: () => void;
 }) {
-  const t = useTranslations("ConnectionSwitcher");
+  const translation = useTranslations("ConnectionSwitcher");
   const [targets, setTargets] = useState<ConnectionTarget[]>([]);
   const [currentTarget, setCurrentTarget] = useState<string>(LOCAL_TARGET_ID);
   const [switchingTarget, setSwitchingTarget] = useState<string | null>(null);
@@ -100,12 +100,12 @@ export function ConnectionSwitcher({
 
   const currentLabel =
     currentTarget === LOCAL_TARGET_ID
-      ? t("localServer")
-      : targets.find((entry) => entry.id === currentTarget)?.name ?? t("connected");
+      ? translation("localServer")
+      : targets.find((entry) => entry.id === currentTarget)?.name ?? translation("connected");
   const currentTargetRecord = targets.find((entry) => entry.id === currentTarget);
   const activeStatus = switchingTarget ? "checking" : status;
   const activeStatusAppearance = statusAppearance(activeStatus);
-  const activeStatusLabel = t(`status.${activeStatus}`);
+  const activeStatusLabel = translation(`status.${activeStatus}`);
   const activeKind = currentTargetRecord?.kind ?? (currentTarget === LOCAL_TARGET_ID ? "local" : "remote");
   const activeUrl = getApiBase();
 
@@ -125,8 +125,8 @@ export function ConnectionSwitcher({
       if (!ok) {
         toaster.create({
           type: "error",
-          title: t("couldNotReach", { name: target.name }),
-          description: t("noResponse", { url }),
+          title: translation("couldNotReach", { name: target.name }),
+          description: translation("noResponse", { url }),
           closable: true,
         });
         return;
@@ -138,7 +138,7 @@ export function ConnectionSwitcher({
     } catch (caught) {
       toaster.create({
         type: "error",
-        title: t("couldNotReach", { name: target.name }),
+        title: translation("couldNotReach", { name: target.name }),
         description: caught instanceof Error ? caught.message : String(caught),
         closable: true,
       });
@@ -161,7 +161,7 @@ export function ConnectionSwitcher({
           borderColor="border"
           _hover={{ bg: "bg.muted" }}
           flexShrink={0}
-          title={t("switchConnection")}
+          title={translation("switchConnection")}
         >
           <Box
             boxSize="2"
@@ -191,8 +191,8 @@ export function ConnectionSwitcher({
           </Text>
         </Flex>
         <Flex direction="column" gap={1} mt={1.5}>
-          <StatusField label={t("type")} value={activeKind === "ssh" ? t("sshTunnel") : activeKind === "local" ? t("localServer") : t("remoteServer")} />
-          <StatusField label={t("url")} value={activeUrl} mono />
+          <StatusField label={translation("type")} value={activeKind === "ssh" ? translation("sshTunnel") : activeKind === "local" ? translation("localServer") : translation("remoteServer")} />
+          <StatusField label={translation("url")} value={activeUrl} mono />
         </Flex>
       </Box>
       <MenuSeparator />
@@ -201,12 +201,12 @@ export function ConnectionSwitcher({
         icon={<Box color="fg.muted" flexShrink={0}><LuLaptop size={13} /></Box>}
         selected={currentTarget === LOCAL_TARGET_ID}
         busy={switchingTarget === LOCAL_TARGET_ID}
-        busyLabel={t("connecting")}
+        busyLabel={translation("connecting")}
         onClick={() => {
           if (localTarget) void switchTo(localTarget);
         }}
       >
-        <Text fontWeight="medium" truncate>{t("localServer")}</Text>
+        <Text fontWeight="medium" truncate>{translation("localServer")}</Text>
       </MenuOption>
       {remoteTargets.map((profile) => (
         <MenuOption
@@ -216,7 +216,7 @@ export function ConnectionSwitcher({
           selected={currentTarget === profile.id}
           subtitle={profile.kind === "ssh" ? profile.sshHostAlias ?? profile.url : profile.url}
           busy={switchingTarget === profile.id}
-          busyLabel={t("connecting")}
+          busyLabel={translation("connecting")}
           onClick={() => void switchTo(profile)}
         >
           <Text fontWeight="medium" truncate>{profile.name}</Text>
@@ -229,7 +229,7 @@ export function ConnectionSwitcher({
         icon={<LuSettings2 size={13} />}
         onClick={onOpenConnectionSettings}
       >
-        <Text fontWeight="medium">{t("openConnectionSettings")}</Text>
+        <Text fontWeight="medium">{translation("openConnectionSettings")}</Text>
       </MenuOption>
     </DropdownMenu>
   );

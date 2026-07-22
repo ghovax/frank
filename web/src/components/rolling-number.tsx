@@ -1,7 +1,7 @@
 "use client";
 
-import { Box, Flex } from "@chakra-ui/react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Flex, Span } from "@chakra-ui/react";
+import { motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useRef, useState } from "react";
 
 const MotionSpan = motion.span;
@@ -17,12 +17,11 @@ function normalizedValue(value: number): number {
 // the final value all at once. Capping the tick count keeps a large jump from
 // dragging: a big delta simply takes bigger steps, not longer.
 const SLOT_TICK_INTERVAL_MS = 75;
-const SLOT_MAX_TICKS = 16;
+const SLOT_MAXIMUM_TICKS = 16;
 
-function useAnimatedValue(target: number): { displayValue: number; direction: 1 | -1 } {
+function useAnimatedValue(target: number): { displayValue: number } {
   const prefersReducedMotion = useReducedMotion();
   const [display, setDisplay] = useState(0);
-  const [direction, setDirection] = useState<1 | -1>(1);
   const displayRef = useRef(0);
 
   useEffect(() => {
@@ -31,44 +30,50 @@ function useAnimatedValue(target: number): { displayValue: number; direction: 1 
     const delta = targetValue - startValue;
     if (delta === 0) return;
 
-    setDirection(delta > 0 ? 1 : -1);
-
-    if (prefersReducedMotion) {
-      displayRef.current = targetValue;
-      setDisplay(targetValue);
-      return;
-    }
-
     const distance = Math.abs(delta);
-    const ticks = Math.min(distance, SLOT_MAX_TICKS);
+    // Reduced motion collapses to a single notch — one `advance` lands straight on the target.
+    const ticks = prefersReducedMotion ? 1 : Math.min(distance, SLOT_MAXIMUM_TICKS);
     const step = Math.ceil(distance / ticks) * Math.sign(delta);
 
+    let interval = 0;
     const advance = () => {
       let next = displayRef.current + step;
       const overshot = step > 0 ? next >= targetValue : next <= targetValue;
       if (overshot) next = targetValue;
       displayRef.current = next;
       setDisplay(next);
-      if (next === targetValue) {
+      if (next === targetValue && interval) {
         window.clearInterval(interval);
       }
     };
 
+    if (prefersReducedMotion) {
+      advance();
+      return;
+    }
+
     // Fire the first notch immediately so the counter reacts the instant a change
     // lands, then keep ticking on the interval until it reaches the target.
-    const interval = window.setInterval(advance, SLOT_TICK_INTERVAL_MS);
+    interval = window.setInterval(advance, SLOT_TICK_INTERVAL_MS);
     advance();
     return () => window.clearInterval(interval);
   }, [prefersReducedMotion, target]);
 
-  return { displayValue: display, direction };
+  return { displayValue: display };
 }
 
-const Digit = memo(function Digit({ digit, direction }: { digit: number; direction: 1 | -1 }) {
-  const safeDigit = Number.isFinite(digit) ? digit : 0;
+const DIGITS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+// One odometer digit: a vertical 0–9 strip inside a 1em window that translates to bring the
+// target digit into view. Because it is a pure transform toward a declarative target (no
+// AnimatePresence mount/exit), the shown digit always settles on the exact value — a roll can
+// never leave a digit parked off-screen (the old per-digit enter animation could, which is why
+// "10" sometimes rendered as "1"). A newly-appearing digit mounts already at its resting offset.
+const Digit = memo(function Digit({ digit }: { digit: number }) {
+  const prefersReducedMotion = useReducedMotion();
+  const safeDigit = Number.isFinite(digit) ? Math.min(9, Math.max(0, Math.round(digit))) : 0;
   return (
-    <Box
-      as="span"
+    <Span
       display="inline-block"
       position="relative"
       h="1em"
@@ -76,28 +81,27 @@ const Digit = memo(function Digit({ digit, direction }: { digit: number; directi
       overflow="hidden"
       lineHeight="1em"
       fontVariantNumeric="tabular-nums"
-      verticalAlign="-0.12em"
     >
-      <AnimatePresence initial={false} custom={direction} mode="popLayout">
-        <MotionSpan
-          key={safeDigit}
-          custom={direction}
-          initial={{ y: direction > 0 ? "100%" : "-100%", opacity: 0.3 }}
-          animate={{ y: "0%", opacity: 1 }}
-          exit={{ y: direction > 0 ? "-100%" : "100%", opacity: 0.3 }}
-          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {safeDigit}
-        </MotionSpan>
-      </AnimatePresence>
-    </Box>
+      <MotionSpan
+        animate={{ y: `${-safeDigit}em` }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        {DIGITS.map((d) => (
+          <Span key={d} h="1em" lineHeight="1em" display="flex" alignItems="center" justifyContent="center">
+            {d}
+          </Span>
+        ))}
+      </MotionSpan>
+    </Span>
   );
 });
 
@@ -108,21 +112,22 @@ interface RollingNumberProps {
 export const RollingNumber = memo(function RollingNumber({
   value,
 }: RollingNumberProps) {
-  const { displayValue, direction } = useAnimatedValue(value);
+  const { displayValue } = useAnimatedValue(value);
   const safeValue = normalizedValue(displayValue);
   const digits = String(safeValue).split("").map(Number);
   return (
-    <Box
-      as="span"
+    <Span
       display="inline-flex"
       alignItems="center"
       fontVariantNumeric="tabular-nums"
       whiteSpace="nowrap"
     >
       {digits.map((digit, index) => (
-        <Digit key={digits.length - index - 1} digit={digit} direction={direction} />
+        // Keyed by place (units, tens, …) so each column stays put and rolls in place; a new
+        // higher place mounts already at its resting offset.
+        <Digit key={digits.length - index - 1} digit={digit} />
       ))}
-    </Box>
+    </Span>
   );
 });
 
@@ -138,30 +143,28 @@ export function DiffStatBadge({
   return (
     <Flex align="center" gap={1} flexShrink={0} fontVariantNumeric="tabular-nums">
       {additions > 0 && (
-        <Box
-          as="span"
+        <Span
           gap={1}
           color="green.fg"
           textStyle="fieldLabel"
           display="inline-flex"
           alignItems="center"
         >
-          <Box as="span">+</Box>
+          <Span>+</Span>
           <RollingNumber value={additions} />
-        </Box>
+        </Span>
       )}
       {deletions > 0 && (
-        <Box
-          as="span"
+        <Span
           gap={1}
           color="red.fg"
           textStyle="fieldLabel"
           display="inline-flex"
           alignItems="center"
         >
-          <Box as="span">-</Box>
+          <Span>-</Span>
           <RollingNumber value={deletions} />
-        </Box>
+        </Span>
       )}
     </Flex>
   );

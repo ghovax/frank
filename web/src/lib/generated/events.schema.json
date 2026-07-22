@@ -83,7 +83,8 @@
         }
       },
       "required": [
-        "status"
+        "status",
+        "kind"
       ],
       "type": "object"
     },
@@ -137,6 +138,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "ErrorEvent": {
@@ -172,6 +176,10 @@
           ],
           "default": null
         },
+        "title": {
+          "default": "",
+          "type": "string"
+        },
         "tool_call_id": {
           "default": "",
           "type": "string"
@@ -181,6 +189,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "GroupStartedEvent": {
@@ -201,13 +212,18 @@
           },
           "type": "array"
         },
+        "title": {
+          "default": "",
+          "type": "string"
+        },
         "tool_call_id": {
           "default": "",
           "type": "string"
         }
       },
       "required": [
-        "agent_name"
+        "agent_name",
+        "kind"
       ],
       "type": "object"
     },
@@ -241,7 +257,8 @@
         }
       },
       "required": [
-        "tool_call_id"
+        "tool_call_id",
+        "kind"
       ],
       "type": "object"
     },
@@ -325,7 +342,8 @@
       "required": [
         "tool_name",
         "tool_call_id",
-        "status"
+        "status",
+        "kind"
       ],
       "type": "object"
     },
@@ -364,7 +382,8 @@
         }
       },
       "required": [
-        "request_id"
+        "request_id",
+        "kind"
       ],
       "type": "object"
     },
@@ -390,10 +409,15 @@
         },
         "request_id": {
           "type": "string"
+        },
+        "tool_call_id": {
+          "default": "",
+          "type": "string"
         }
       },
       "required": [
-        "request_id"
+        "request_id",
+        "kind"
       ],
       "type": "object"
     },
@@ -416,6 +440,9 @@
           "type": "array"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "SteeringEvent": {
@@ -437,6 +464,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "TextEvent": {
@@ -458,7 +488,8 @@
         }
       },
       "required": [
-        "text"
+        "text",
+        "kind"
       ],
       "type": "object"
     },
@@ -481,11 +512,18 @@
           "type": "array"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "ThinkingEvent": {
       "additionalProperties": false,
       "properties": {
+        "block_id": {
+          "default": "",
+          "type": "string"
+        },
         "kind": {
           "const": "thinking",
           "default": "thinking",
@@ -502,6 +540,9 @@
           "type": "string"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "TokenUsageEvent": {
@@ -537,6 +578,9 @@
           "type": "array"
         }
       },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "ToolCallEvent": {
@@ -565,7 +609,8 @@
       },
       "required": [
         "tool_call_id",
-        "tool_name"
+        "tool_name",
+        "kind"
       ],
       "type": "object"
     },
@@ -573,7 +618,7 @@
       "additionalProperties": false,
       "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
       "properties": {
-        "background_task_id": {
+        "background_task_identifier": {
           "anyOf": [
             {
               "type": "string"
@@ -676,7 +721,8 @@
         "tool_call_id",
         "tool_name",
         "status",
-        "metadata"
+        "metadata",
+        "kind"
       ],
       "type": "object"
     },
@@ -690,8 +736,17 @@
     },
     "TurnContext": {
       "additionalProperties": false,
-      "description": "The single structured object injected each turn, replacing the old pile of\nnewline-joined JSON blobs.",
+      "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
       "properties": {
+        "active_agents": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
         "active_goal": {
           "default": "",
           "type": "string"
@@ -699,15 +754,13 @@
         "background": {
           "tsType": "Record<string, unknown>"
         },
-        "pwd": {
+        "now": {
           "default": "",
           "type": "string"
         },
-        "reminders": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+        "pwd": {
+          "default": "",
+          "type": "string"
         },
         "tasks": {
           "items": {
@@ -716,6 +769,38 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "WarningEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "default": "",
+          "type": "string"
+        },
+        "kind": {
+          "const": "warning",
+          "default": "warning",
+          "type": "string"
+        },
+        "message": {
+          "default": "",
+          "type": "string"
+        },
+        "path": {
+          "items": {
+            "$ref": "#/$defs/AgentPathSegment"
+          },
+          "type": "array"
+        },
+        "title": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
       "type": "object"
     },
     "WireEvent": {
@@ -735,7 +820,8 @@
           "thinking_done": "#/$defs/ThinkingDoneEvent",
           "token_usage": "#/$defs/TokenUsageEvent",
           "tool_call": "#/$defs/ToolCallEvent",
-          "tool_result": "#/$defs/ToolResultEvent"
+          "tool_result": "#/$defs/ToolResultEvent",
+          "warning": "#/$defs/WarningEvent"
         },
         "propertyName": "kind"
       },
@@ -781,6 +867,9 @@
         },
         {
           "$ref": "#/$defs/QuestionEvent"
+        },
+        {
+          "$ref": "#/$defs/WarningEvent"
         },
         {
           "$ref": "#/$defs/ErrorEvent"

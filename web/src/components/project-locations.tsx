@@ -1,6 +1,6 @@
 "use client";
 
-import { Button, Flex } from "@chakra-ui/react";
+import { Button, Flex, Text } from "@chakra-ui/react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -25,36 +25,54 @@ function draftsFrom(locations: Location[]): LocationDraft[] {
   return locations.map((location) => ({ id: location.id, value: locationToInput(location) }));
 }
 
-// The project's locations manager, inside the Settings dialog's Locations tab. Presented
-// exactly like the New Project wizard: each location is an inline editable form stacked one
-// above the next, with an "Add location" button below — no list-then-edit view. Edits are
+// The project-folder manager inside Settings. Each folder is an inline editable form stacked
+// above the next, with an "Add folder" button below — no list-then-edit view. Edits are
 // batched and persisted on Save (create new, update changed, delete removed).
 export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
-  const t = useTranslations("ProjectLocationsPanel");
+  const translation = useTranslations("ProjectLocationsPanel");
   const [hosts, setHosts] = useState<SshHost[]>([]);
   const [original, setOriginal] = useState<Location[]>([]);
   const [drafts, setDrafts] = useState<LocationDraft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [loadedProjectId, setLoadedProjectId] = useState("");
+  const [failedProjectId, setFailedProjectId] = useState("");
 
-  const load = useCallback(() => {
-    getProject(projectId)
-      .then((project) => {
-        const locations = project?.locations ?? [];
-        setOriginal(locations);
-        setDrafts(draftsFrom(locations));
-      })
-      .catch(() => {});
+  const loadProject = useCallback(async () => {
+    const project = await getProject(projectId);
+    const locations = project?.locations ?? [];
+    setOriginal(locations);
+    setDrafts(draftsFrom(locations));
   }, [projectId]);
 
   useEffect(() => {
-    load();
-    listSshHosts().then(setHosts).catch(() => {});
+    let cancelled = false;
+    Promise.all([getProject(projectId), listSshHosts()])
+      .then(([project, nextHosts]) => {
+        if (cancelled) return;
+        const locations = project?.locations ?? [];
+        setOriginal(locations);
+        setDrafts(draftsFrom(locations));
+        setHosts(nextHosts);
+        setFailedProjectId("");
+        setLoadedProjectId(projectId);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFailedProjectId(projectId);
+        setLoadedProjectId(projectId);
+      });
     // Only re-read hosts live — never clobber in-progress location edits from a
     // projects_changed event (a save reloads explicitly).
-    return subscribeEvents((event) => {
-      if (event.type === "hosts_changed") listSshHosts().then(setHosts).catch(() => {});
+    const unsubscribe = subscribeEvents((event) => {
+      if (event.type === "hosts_changed") {
+        listSshHosts().then((nextHosts) => { if (!cancelled) setHosts(nextHosts); }).catch(() => {});
+      }
     });
-  }, [load]);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [projectId]);
 
   const updateDraft = (index: number, value: LocationInput) =>
     setDrafts((current) => current.map((draft, position) => (position === index ? { ...draft, value } : draft)));
@@ -84,9 +102,9 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
           }
         }
       }
-      load();
+      await loadProject();
     } catch (error) {
-      toaster.create({ type: "error", title: t("saveError"), description: error instanceof Error ? error.message : "", closable: true });
+      toaster.create({ type: "error", title: translation("saveError"), description: error instanceof Error ? error.message : "", closable: true });
     } finally {
       setSaving(false);
     }
@@ -94,19 +112,28 @@ export function ProjectLocationsPanel({ projectId }: { projectId: string }) {
 
   return (
     <Flex direction="column" gap={3} maxW="560px">
-      <LocationEditorList
-        hosts={hosts}
-        locations={drafts.map((draft) => draft.value)}
-        onChange={updateDraft}
-        onAdd={addDraft}
-        onRemove={removeDraft}
-        showPermission
-      />
+      {failedProjectId === projectId ? (
+        <Text fontSize="sm" color="red.fg">{translation("loadError")}</Text>
+      ) : (
+        <>
+          <LocationEditorList
+            hosts={hosts}
+            locations={drafts.map((draft) => draft.value)}
+            onChange={updateDraft}
+            onAdd={addDraft}
+            onRemove={removeDraft}
+            showPermission
+            loading={loadedProjectId !== projectId}
+          />
+          {loadedProjectId === projectId ? (
       <Flex justify="flex-end" mt={1}>
-        <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
-          {t("saveChanges")}
-        </Button>
-      </Flex>
+              <Button colorPalette="blue" disabled={!canSave || saving} loading={saving} onClick={handleSave}>
+                {translation("saveChanges")}
+              </Button>
+            </Flex>
+          ) : null}
+        </>
+      )}
     </Flex>
   );
 }

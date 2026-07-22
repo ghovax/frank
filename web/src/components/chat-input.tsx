@@ -6,6 +6,7 @@ import {
   createListCollection,
   Flex,
   IconButton,
+  Input,
   Portal,
   Select,
   Separator,
@@ -16,7 +17,9 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuArrowUp, LuCoins, LuFoldVertical, LuPaperclip, LuSquare, LuUser } from "react-icons/lu";
-import { fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ModelOption, type ProviderOption } from "@/lib/api";
+import { fetchChatGPTAuthStatus, fetchMessageHistory, referenceAttachment, saveMessageHistory, uploadFile, type Attachment, type ChatGPTUsage, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
+import { PermissionModeControl } from "./session-controls";
 import { activeConnectionIsLocal } from "@/lib/connection";
 import { isTauri } from "@/lib/connection-store";
 import { pickDesktopFilePaths, watchDesktopFileDrop } from "@/lib/desktop-files";
@@ -27,13 +30,8 @@ import { ConfirmDialog } from "./ui/confirm-dialog";
 import { ModelSelect, modelSupportsVision } from "./model-select";
 // SettingsDialog moved to ChatPanel top bar
 import type { TokenUsage } from "@/lib/use-chat";
-import { InlineField } from "./tool-views/primitives";
-
-// The composer textarea grows with its content up to this height (px), then scrolls.
-// Shared by the maxH cap and the auto-resize effect so they can never drift apart.
-const COMPOSER_MAX_HEIGHT = 180;
-// Shared min-width so Send and Stop occupy the same footprint (no reflow when toggling).
-const SEND_BUTTON_MIN_WIDTH = "70px";
+import { InlineField } from "./ui/display";
+import { Strong } from "./ui/semantic";
 
 interface ChatInputProps {
   onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void>;
@@ -48,7 +46,7 @@ interface ChatInputProps {
   // level). Gates send and colours the composer border; the composer no longer
   // validates the directory itself.
   directoryValid?: boolean;
-  agents: { id: string; name: string; title?: string }[];
+  agents: { id: string; name: string; title?: string; description?: string }[];
   selectedAgent: string;
   onAgentChange: (agent: string) => void;
   models: ModelOption[];
@@ -60,6 +58,10 @@ interface ChatInputProps {
   // session running that agent — not just this conversation.
   agentModel?: string;
   onAgentModelChange: (modelIdentifier: string) => void | Promise<void>;
+  // The session's permission mode and its change handler (persists + reflects on the
+  // server). Surfaced here as a selector beside agent/model so it's adjustable inline.
+  permissionMode?: PermissionMode;
+  onPermissionModeChange?: (mode: PermissionMode) => void;
   // Running token totals for the session, summed from the model's reported usage.
   // Null until the first turn reports usage.
   tokenUsage?: TokenUsage | null;
@@ -113,11 +115,46 @@ function ContextFillRing({ fraction }: { fraction: number }) {
   );
 }
 
+// The ChatGPT/Codex plan usage for the token view, but only when the active model is
+// on the chatgpt provider. Refreshed on each turn's falling edge (streaming
+// true -> false): the server re-snapshots the plan limits from that turn's response
+// headers, so the meters are current right after each send/receive.
+function useChatGPTUsage(agentModel: string | undefined, isStreaming: boolean): ChatGPTUsage | null {
+  const isChatGPT = !!agentModel && agentModel.startsWith("chatgpt/");
+  const [usage, setUsage] = useState<ChatGPTUsage | null>(null);
+
+  // Fetch whenever the model is on the chatgpt provider and no turn is streaming.
+  // That single condition covers both mount and the falling edge of each turn
+  // (streaming true -> false) — which is exactly when the server has re-snapshotted
+  // the plan limits from that turn's response headers.
+  useEffect(() => {
+    if (!isChatGPT || isStreaming) return;
+    let cancelled = false;
+    fetchChatGPTAuthStatus()
+      .then((status) => {
+        if (!cancelled) setUsage(status?.usage ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isChatGPT, isStreaming]);
+
+  return isChatGPT ? usage : null;
+}
+
 // The context-usage chip: a fill ring + percent, then the current context size
 // against the model's window. It reflects the latest exchange actually occupying
-// the window (not the cumulative session sum, which lives in the tooltip).
-function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
-  const t = useTranslations("ChatInput");
+// the window (not the cumulative session sum, which lives in the tooltip). On the
+// chatgpt provider the tooltip also carries the account's plan usage (5h + weekly).
+function ContextUsageChip({
+  tokenUsage,
+  chatgptUsage,
+}: {
+  tokenUsage?: TokenUsage | null;
+  chatgptUsage?: ChatGPTUsage | null;
+}) {
+  const translation = useTranslations("ChatInput");
   if (!tokenUsage || tokenUsage.contextTokens <= 0) return null;
   const hasContext = tokenUsage.contextWindow > 0;
   const contextFraction = hasContext ? tokenUsage.contextTokens / tokenUsage.contextWindow : 0;
@@ -125,45 +162,53 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
   const tooltipContent = (
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg">
-        {t("sessionTotals")}
+        {translation("sessionTotals")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={t("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={t("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={t("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("input")}><Text>{tokenUsage.inputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("output")}><Text>{tokenUsage.outputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("total")}><Text>{tokenUsage.totalTokens.toLocaleString()}</Text></InlineField>
         {tokenUsage.cacheReadTokens > 0 && (
-          <InlineField label={t("cacheReads")}><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("cacheReads")}><Text>{tokenUsage.cacheReadTokens.toLocaleString()}</Text></InlineField>
         )}
         {tokenUsage.reasoningTokens > 0 && (
-          <InlineField label={t("reasoning")}><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("reasoning")}><Text>{tokenUsage.reasoningTokens.toLocaleString()}</Text></InlineField>
         )}
-        <InlineField label={t("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
+        <InlineField label={translation("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
       </Flex>
       {tokenUsage.agentTotalTokens > 0 && (
         <>
           <Separator my={2} />
           <Text fontWeight="semibold" mb={1} color="fg">
-            {t("agents")}
+            {translation("agents")}
           </Text>
           <Flex direction="column" ps={2} gap={1}>
-            <InlineField label={t("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={t("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={t("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={t("modelCalls")}><Text>{tokenUsage.agentModelCalls}</Text></InlineField>
+            <InlineField label={translation("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
+            <InlineField label={translation("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
+            <InlineField label={translation("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
+            <InlineField label={translation("modelCalls")}><Text>{tokenUsage.agentModelCalls}</Text></InlineField>
           </Flex>
         </>
       )}
       <Separator my={2} />
       <Text fontWeight="semibold" mb={1} color="fg">
-        {t("usageThisTurn")}
+        {translation("usageThisTurn")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={t("input")}><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
-        <InlineField label={t("output")}><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("input")}><Text>{tokenUsage.contextInputTokens.toLocaleString()}</Text></InlineField>
+        <InlineField label={translation("output")}><Text>{tokenUsage.contextOutputTokens.toLocaleString()}</Text></InlineField>
         {hasContext && (
-          <InlineField label={t("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
+          <InlineField label={translation("window")}><Text>{tokenUsage.contextWindow.toLocaleString()}</Text></InlineField>
         )}
       </Flex>
+      {chatgptUsage && chatgptUsage.windows.length > 0 && (
+        <>
+          <Separator my={2} />
+          <Box w="210px" whiteSpace="normal">
+            <ChatGPTUsageMeters usage={chatgptUsage} />
+          </Box>
+        </>
+      )}
     </Box>
   );
   return (
@@ -189,16 +234,16 @@ function ContextUsageChip({ tokenUsage }: { tokenUsage?: TokenUsage | null }) {
         {hasContext && (
           <>
             <ContextFillRing fraction={contextFraction} />
-            <Text textStyle="fieldLabel" whiteSpace="nowrap">
+            <Text data-composer-context-percent="" textStyle="fieldLabel" whiteSpace="nowrap">
               {contextPercent}%
             </Text>
-            <Separator orientation="vertical" h={3.5} flexShrink={0} />
+            <Separator data-composer-context-detail="" orientation="vertical" h={3.5} flexShrink={0} />
           </>
         )}
-        <Box display="flex" alignItems="center" flexShrink={0}>
+        <Box data-composer-context-detail="" display="flex" alignItems="center" flexShrink={0}>
           <LuCoins size={13} />
         </Box>
-        <Text textStyle="fieldLabel" whiteSpace="nowrap">
+        <Text data-composer-context-detail="" textStyle="fieldLabel" whiteSpace="nowrap">
           {tokenUsage.contextTokens.toLocaleString()}
           {hasContext ? ` / ${tokenUsage.contextWindow.toLocaleString()}` : ""}
         </Text>
@@ -225,6 +270,8 @@ export function ChatInput({
   recentModels = [],
   agentModel = "",
   onAgentModelChange,
+  permissionMode = "default",
+  onPermissionModeChange,
   tokenUsage,
   onCompact,
   isCompacting = false,
@@ -232,7 +279,8 @@ export function ChatInput({
   compactionUserCount,
   artifactAnnotationRecords = [],
 }: ChatInputProps) {
-  const t = useTranslations("ChatInput");
+  const translation = useTranslations("ChatInput");
+  const chatgptUsage = useChatGPTUsage(agentModel, isStreaming);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -267,11 +315,11 @@ export function ChatInput({
   const attachmentTooltipContent = (
     <Box w="420px" maxW="calc(100vw - 32px)">
       <Text fontWeight="semibold" mb={1} color="fg">
-        {t("fileAttachments")}
+        {translation("fileAttachments")}
       </Text>
       <Flex direction="column" ps={2} gap={1}>
-        <InlineField label={t("images")}>
-          <Text>{visionSupported ? t("imagesSupported") : t("imagesUnsupported")}</Text>
+        <InlineField label={translation("images")}>
+          <Text>{visionSupported ? translation("imagesSupported") : translation("imagesUnsupported")}</Text>
         </InlineField>
       </Flex>
     </Box>
@@ -310,15 +358,6 @@ export function ChatInput({
       onDraftChange(latestInputValueRef.current);
     };
   }, [onDraftChange, sessionId]);
-
-  // Auto-resize the textarea as the user types, so the input grows with its
-  // content up to the configured maximum height.
-  useEffect(() => {
-    const textarea = inputRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
-  }, [inputValue]);
 
   // Fetch message history when the working directory changes.
   useEffect(() => {
@@ -526,18 +565,39 @@ export function ChatInput({
   }
 
   return (
-    <Box position="relative" pb={2}>
+    <Box
+      position="relative"
+      pb={2}
+      containerType="inline-size"
+      css={{
+        "@container (max-width: 900px)": {
+          "& [data-composer-agent-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
+          "& [data-composer-model]": { minWidth: "0 !important", maxWidth: "220px", flexShrink: 1 },
+          "& [data-composer-permission-control]": { minWidth: "0 !important", maxWidth: "160px", flexShrink: 1 },
+        },
+        "@container (max-width: 760px)": {
+          "& [data-composer-context-detail]": { display: "none" },
+          "& [data-composer-model-provider], & [data-composer-model-capabilities]": { display: "none" },
+        },
+        "@container (max-width: 620px)": {
+          "& [data-composer-permission-label], & [data-composer-compact-label]": { display: "none" },
+        },
+        "@container (max-width: 500px)": {
+          "& [data-composer-agent-label], & [data-composer-model-label], & [data-composer-model-capabilities], & [data-composer-context-percent]": { display: "none" },
+        },
+      }}
+    >
       <ConfirmDialog
         open={compactConfirmOpen}
         onOpenChange={setCompactConfirmOpen}
-        title={t("compactTitle")}
-        confirmLabel={t("compactConfirm")}
+        title={translation("compactTitle")}
+        confirmLabel={translation("compactConfirm")}
         confirmIcon={<LuFoldVertical size={14} />}
         onConfirm={() => onCompact?.()}
       >
-        {t.rich("compactBody", {
+        {translation.rich("compactBody", {
           count: compactionKeepRecentTurns,
-          b: (chunks) => <b>{chunks}</b>,
+          b: (chunks) => <Strong>{chunks}</Strong>,
         })}
       </ConfirmDialog>
 
@@ -565,144 +625,136 @@ export function ChatInput({
             {uploadingCount > 0 ? (
               <Flex align="center" gap={1.5} px={1.5} py={1} border="1px solid" borderColor="border" borderRadius="md" bg="bg.subtle">
                 <Box color="blue.fg"><LuPaperclip size={14} /></Box>
-                <Text fontSize="xs" color="fg.subtle">{t("uploading", { count: uploadingCount })}</Text>
+                <Text fontSize="xs" color="fg.subtle">{translation("uploading", { count: uploadingCount })}</Text>
               </Flex>
             ) : null}
           </Flex>
         ) : null}
-        <Box
-          ref={dropZoneRef}
-          border="1px solid"
-          borderColor={dragActive ? "blue.muted" : directoryValid ? "border" : "red.muted"}
-          borderRadius="md"
-          boxShadow="panel"
-          bg="bg.panel"
-          onDragEnter={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-          }}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragActive(false);
-            void handleFiles(event.dataTransfer.files);
-          }}
-          _focusWithin={{ borderColor: "border.emphasized" }}
-        >
-          <Flex align="flex-end" gap={2} px={2} py={2}>
+        <Flex align="stretch" gap={2}>
+          <Box
+            ref={dropZoneRef}
+            display="flex"
+            flex={1}
+            minW={0}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              void handleFiles(event.dataTransfer.files);
+            }}
+          >
             <Textarea
               ref={inputRef}
+              size="sm"
+              variant="outline"
               placeholder={
                 disabled
-                  ? t("placeholderConnecting")
+                  ? translation("placeholderConnecting")
                   : !directoryValid
-                    ? t("placeholderInvalidPath")
+                    ? translation("placeholderInvalidPath")
                     : hasPendingAnnotations
-                      ? t("placeholderAnnotations")
+                      ? translation("placeholderAnnotations")
                       : attachments.length > 0
-                        ? t("placeholderAttachments")
+                        ? translation("placeholderAttachments")
                         : isStreaming
-                          ? t("placeholderStreaming")
-                          : t("placeholderDefault")
+                          ? translation("placeholderStreaming")
+                          : translation("placeholderDefault")
               }
               value={inputValue}
               onChange={(event) => setInputValue(event.target.value)}
               onKeyDown={handleKeyDown}
               disabled={disabled}
-              fontSize="sm"
-              lineHeight="1.5"
-              minH={16}
-              maxH={`${COMPOSER_MAX_HEIGHT}px`}
-              border="none"
-              outline="none"
-              px={1}
-              py={1.5}
+              rows={1}
+              fieldSizing="content"
+              maxH="44"
+              overflowY="auto"
+              borderColor={dragActive ? "blue.muted" : directoryValid ? "border" : "red.muted"}
+              bg="bg.panel"
               resize="none"
-              _focus={{ boxShadow: "none", borderColor: "transparent" }}
-              _focusVisible={{ boxShadow: "none", outline: "none", borderColor: "transparent" }}
             />
-            <Flex gap={2} flexShrink={0}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                hidden
-                onChange={(event) => {
-                  if (event.target.files) void handleFiles(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-              <Tooltip
-                content={attachmentTooltipContent}
-                rich
-                openDelay={200}
-                closeDelay={60}
-                positioning={{ placement: "top" }}
+          </Box>
+          <Flex align="flex-end" gap={1.5} flexShrink={0}>
+            <Input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                if (event.target.files) void handleFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
+            <Tooltip
+              content={attachmentTooltipContent}
+              rich
+              openDelay={200}
+              closeDelay={60}
+              positioning={{ placement: "top" }}
+            >
+              <IconButton
+                aria-label={translation("attachFiles")}
+                onClick={() => void handleAttachClick()}
+                size="sm"
+                variant="outline"
+                bg="bg"
+                borderColor="border"
+                disabled={disabled || !directoryValid}
               >
-                <IconButton
-                  aria-label={t("attachFiles")}
-                  onClick={() => void handleAttachClick()}
-                  variant="ghost"
-                  boxSize="8"
-                  disabled={disabled || !directoryValid}
-                >
-                  <LuPaperclip size={14} />
-                </IconButton>
-              </Tooltip>
-              {isStreaming ? (
-                <Button
-                  onClick={handleAbortClick}
-                  colorPalette="red"
-                  variant="solid"
-                  minW={SEND_BUTTON_MIN_WIDTH}
-                  h={8}
-                  px={2}
-                  gap={1.5}
-                  loading={stopPending}
-                  loadingText={t("stopping")}
-                  disabled={stopPending}
-                >
-                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                    <LuSquare size={14} />
-                  </Box>
-                  {t("stop")}
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => void handleSubmit()}
-                  colorPalette="blue"
-                  variant="solid"
-                  minW={SEND_BUTTON_MIN_WIDTH}
-                  h={8}
-                  px={2}
-                  gap={1.5}
-                  loading={sendPending}
-                  loadingText={t("sending")}
-                  disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
-                >
-                  <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
-                    <LuArrowUp size={14} />
-                  </Box>
-                  {t("send")}
-                </Button>
-              )}
-            </Flex>
+                <LuPaperclip />
+              </IconButton>
+            </Tooltip>
+            {isStreaming ? (
+              <Button
+                onClick={handleAbortClick}
+                size="sm"
+                colorPalette="red"
+                variant="solid"
+                loading={stopPending}
+                loadingText={translation("stopping")}
+                disabled={stopPending}
+              >
+                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                  <LuSquare />
+                </Box>
+                {translation("stop")}
+              </Button>
+            ) : (
+              <Button
+                onClick={() => void handleSubmit()}
+                size="sm"
+                colorPalette="blue"
+                variant="solid"
+                loading={sendPending}
+                loadingText={translation("sending")}
+                disabled={sendPending || disabled || !directoryValid || uploadingCount > 0 || !inputValue.trim()}
+              >
+                <Box display="flex" alignItems="center" justifyContent="center" flexShrink={0}>
+                  <LuArrowUp />
+                </Box>
+                {translation("send")}
+              </Button>
+            )}
           </Flex>
-        </Box>
+        </Flex>
       </Box>
 
       {/* Selectors row (below the input): the agent and model selectors, with the
           context-usage chip and Compact action on the right. */}
-      <Flex justify="space-between" align="center" rowGap={1.5} columnGap={2} flexWrap="wrap" px={0} pt={1} pb={2}>
-        <Flex align="center" gap={2} flexWrap="wrap" minW={0}>
+      <Flex justify="space-between" align="center" columnGap={2} flexWrap="nowrap" px={0} pt={1} pb={2}>
+        <Flex align="center" gap={2} flexWrap="nowrap" flex={1} minW={0}>
           <Select.Root
+            data-composer-agent-control=""
             collection={agentCollection}
             value={[selectedAgent]}
             onValueChange={(details) => {
@@ -714,8 +766,9 @@ export function ChatInput({
             maxW="none"
             flexShrink={0}
           >
-            <Select.Control w="max-content" minW="max-content" maxW="none">
+            <Select.Control data-composer-agent-control="" w="max-content" minW="max-content" maxW="none">
               <Select.Trigger
+                data-composer-agent-control=""
                 w="max-content"
                 gap={1.5}
                 px={2}
@@ -731,7 +784,7 @@ export function ChatInput({
                 <Box display="flex" alignItems="center" color="fg.muted" flexShrink={0}>
                   <LuUser size={13} />
                 </Box>
-                <Select.ValueText placeholder={t("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
+                <Select.ValueText data-composer-agent-label="" placeholder={translation("agentPlaceholder")} maxW="none" overflow="visible" textOverflow="clip" whiteSpace="nowrap" />
               </Select.Trigger>
               <Select.IndicatorGroup>
                 <Select.Indicator />
@@ -739,13 +792,23 @@ export function ChatInput({
             </Select.Control>
             <Portal>
               <Select.Positioner>
-                <Select.Content minW="max-content" w="max-content">
-                  {agentCollection.items.map((item) => (
-                    <Select.Item item={item} key={item.value} whiteSpace="nowrap">
-                      {item.label}
-                      <Select.ItemIndicator />
-                    </Select.Item>
-                  ))}
+                <Select.Content minW="220px" maxW="320px">
+                  {agentCollection.items.map((item) => {
+                    // Look the description up from the source list by id — the collection item
+                    // only reliably carries label/value, so extra fields are read from `agents`.
+                    const description = agents.find((agent) => agent.id === item.value)?.description;
+                    return (
+                      <Select.Item item={item} key={item.value}>
+                        <Flex direction="column" minW={0} flex={1}>
+                          <Text fontSize="xs" fontWeight="medium" lineHeight="1.2" whiteSpace="nowrap">{item.label}</Text>
+                          {description ? (
+                            <Text fontSize="2xs" color="fg.muted" lineHeight="1.35" truncate>{description}</Text>
+                          ) : null}
+                        </Flex>
+                        <Select.ItemIndicator />
+                      </Select.Item>
+                    );
+                  })}
                 </Select.Content>
               </Select.Positioner>
             </Portal>
@@ -758,7 +821,9 @@ export function ChatInput({
             onChange={onAgentModelChange}
             fallbackModelId={agentModel}
             compact
+            responsiveCompact
           />
+          <PermissionModeControl value={permissionMode} onChange={(mode) => onPermissionModeChange?.(mode)} responsiveCompact />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (
@@ -771,13 +836,13 @@ export function ChatInput({
               flexShrink={0}
               disabled={isStreaming || isCompacting}
               onClick={() => setCompactConfirmOpen(true)}
-              title={isCompacting ? t("compactingTooltip") : t("compactTooltip")}
+              title={isCompacting ? translation("compactingTooltip") : translation("compactTooltip")}
             >
               {isCompacting ? <Spinner size="xs" /> : <LuFoldVertical size={13} />}
-              {isCompacting ? t("compacting") : t("compact")}
+              <Text data-composer-compact-label="">{isCompacting ? translation("compacting") : translation("compact")}</Text>
             </Button>
           )}
-          <ContextUsageChip tokenUsage={tokenUsage} />
+          <ContextUsageChip tokenUsage={tokenUsage} chatgptUsage={chatgptUsage} />
         </Flex>
       </Flex>
 

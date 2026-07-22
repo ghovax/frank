@@ -8,8 +8,8 @@ import {
   LuWrench,
   LuLayoutDashboard,
   LuFileText,
-  LuFolderSearch,
   LuSearchCode,
+  LuScanSearch,
   LuFilePen,
   LuFilePlus,
   LuDownload,
@@ -18,7 +18,10 @@ import {
   LuListChecks,
   LuTarget,
   LuMousePointerClick,
-  LuCompass,
+  LuCircleStop,
+  LuUserSearch,
+  LuMessageSquareShare,
+  LuMessageSquareReply,
 } from "react-icons/lu";
 
 interface ToolDisplayInfo {
@@ -40,9 +43,11 @@ interface ToolDisplayInfo {
 // Every tool that has a first-class icon/label below. Anything else is "unknown"
 // and surfaces its raw name in monospace.
 const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "web_search", "bash", "spawn_agent", "read_task", "read_file", "find_files",
-  "search_content", "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
-  "set_tasks", "update_tasks", "update_goal", "computer", "browser",
+  "search_web", "bash", "spawn_agent", "cancel_agent", "ask_agent", "respond_agent", "read_task", "read_file",
+  "search_code", "search_screen", "control_screen",
+  "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
+  "set_tasks", "update_tasks", "update_goal",
+  "work_habits",
   "open_artifact",
   "call_mcp_tool", "list_mcp_tools", "list_mcp_resources", "read_mcp_resource",
 ]);
@@ -54,20 +59,28 @@ function stripCdPrefix(command: string): string {
 
 function iconForTool(name: string): { icon: IconType; iconColor: string } {
   switch (name) {
-    case "web_search":
+    case "search_web":
       return { icon: LuGlobe, iconColor: "blue.fg" };
     case "bash":
       return { icon: LuTerminal, iconColor: "green.fg" };
     case "spawn_agent":
       return { icon: LuUsers, iconColor: "purple.fg" };
+    case "cancel_agent":
+      return { icon: LuCircleStop, iconColor: "red.fg" };
+    case "ask_agent":
+      return { icon: LuMessageSquareShare, iconColor: "purple.fg" };
+    case "respond_agent":
+      return { icon: LuMessageSquareReply, iconColor: "blue.fg" };
     case "read_task":
       return { icon: LuNetwork, iconColor: "orange.fg" };
     case "read_file":
       return { icon: LuFileText, iconColor: "blue.fg" };
-    case "find_files":
-      return { icon: LuFolderSearch, iconColor: "cyan.fg" };
-    case "search_content":
+    case "search_code":
       return { icon: LuSearchCode, iconColor: "teal.fg" };
+    case "search_screen":
+      return { icon: LuScanSearch, iconColor: "cyan.fg" };
+    case "control_screen":
+      return { icon: LuMousePointerClick, iconColor: "cyan.fg" };
     case "edit_file":
       return { icon: LuFilePen, iconColor: "yellow.fg" };
     case "write_file":
@@ -85,10 +98,8 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuTarget, iconColor: "orange.fg" };
     case "open_artifact":
       return { icon: LuLayoutDashboard, iconColor: "pink.fg" };
-    case "computer":
-      return { icon: LuMousePointerClick, iconColor: "cyan.fg" };
-    case "browser":
-      return { icon: LuCompass, iconColor: "orange.fg" };
+    case "work_habits":
+      return { icon: LuUserSearch, iconColor: "blue.fg" };
     case "call_mcp_tool":
     case "list_mcp_tools":
     case "list_mcp_resources":
@@ -99,115 +110,97 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
   }
 }
 
-function fallbackLabel(name: string, args?: Record<string, unknown>): string {
+// A translator scoped to the "ToolDisplay" message namespace (from next-intl's useTranslations).
+// Typed loosely here so the pure label helpers stay decoupled from the generated message types;
+// callers pass their own `t`.
+export type ToolDisplayTranslator = (key: string, values?: Record<string, string | number>) => string;
+
+function fallbackLabel(name: string, args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
   switch (name) {
-    case "web_search":
-      return args?.query ? `Browsing for "${String(args.query)}"` : "Browsing the web";
+    case "search_web":
+      return args?.query ? t("webSearch", { query: String(args.query) }) : t("webSearchBare");
     case "bash":
-      return args?.command ? stripCdPrefix(String(args.command)) : "Running command";
+      return args?.command ? stripCdPrefix(String(args.command)) : t("bashBare");
     case "spawn_agent":
-      return args?.agent ? `Delegating to "${String(args.agent)}" agent` : "Delegating to agent";
+      return args?.agent ? t("spawnAgent", { agent: String(args.agent) }) : t("spawnAgentBare");
+    case "cancel_agent":
+      return t("cancelAgent");
+    case "ask_agent":
+      return t("askAgent");
+    case "respond_agent":
+      return t("respondAgent");
     case "read_task":
-      return "Reading a related task";
+      return t("readTask");
     case "read_file":
-      return args?.file_path ? `Reading the file ${fileName(String(args.file_path))}${readFileRange(args)}` : "Reading file";
-    case "find_files":
-      return args?.pattern ? `Finding files matching "${String(args.pattern)}"` : "Finding files";
-    case "search_content":
-      return args?.pattern ? `Searching for "${String(args.pattern)}"` : "Searching content";
+      return args?.file_path ? readFileLabel(String(args.file_path), args, t) : t("readFileBare");
+    case "search_code":
+      return args?.query ? t("searchCode", { query: String(args.query) }) : t("searchCodeBare");
+    case "search_screen":
+      return searchScreenLabel(args, t);
+    case "control_screen":
+      return controlScreenLabel(args, t);
     case "edit_file":
-      return args?.file_path ? `Editing ${shortPath(String(args.file_path))}` : "Editing file";
+      return args?.file_path ? t("editFile", { path: shortPath(String(args.file_path)) }) : t("editFileBare");
     case "write_file":
-      return args?.file_path ? `Writing ${shortPath(String(args.file_path))}` : "Writing file";
+      return args?.file_path ? t("writeFile", { path: shortPath(String(args.file_path)) }) : t("writeFileBare");
     case "fetch_url":
-      return args?.url ? `Fetching ${String(args.url)}` : "Fetching URL";
+      return args?.url ? t("fetchUrl", { url: String(args.url) }) : t("fetchUrlBare");
     case "ask_user":
-      return "Asking the user";
+      return t("askUser");
     case "load_skill":
-      return args?.name ? `Loading "${String(args.name)}" skill` : "Loading skill";
+      return args?.name ? t("loadSkill", { name: String(args.name) }) : t("loadSkillBare");
     case "set_tasks":
-      return "Setting task list";
+      return t("setTasks");
     case "update_tasks":
-      return "Updating task list";
+      return t("updateTasks");
     case "update_goal":
-      return "Updating goal";
+      return t("updateGoal");
     case "open_artifact":
-      return args?.title ? `Opening "${String(args.title)}"` : "Opening an artifact";
-    case "computer":
-      return computerLabel(args);
-    case "browser":
-      return browserLabel(args);
+      return args?.title ? t("openArtifact", { title: String(args.title) }) : t("openArtifactBare");
+    case "work_habits":
+      return t("workHabits");
     case "call_mcp_tool":
-      return args?.tool_name ? `Calling MCP tool "${String(args.tool_name)}"` : "Calling MCP tool";
+      return args?.tool_name ? t("callMcpTool", { tool: String(args.tool_name) }) : t("callMcpToolBare");
     case "list_mcp_tools":
-      return "Listing MCP tools";
+      return t("listMcpTools");
     case "list_mcp_resources":
-      return "Listing MCP resources";
+      return t("listMcpResources");
     case "read_mcp_resource":
-      return args?.uri ? `Reading MCP resource "${String(args.uri)}"` : "Reading MCP resource";
+      return args?.uri ? t("readMcpResource", { uri: String(args.uri) }) : t("readMcpResourceBare");
     default:
       return name;
   }
 }
 
-// A computer-control call with no justification: describe it from its action + target.
-// The verb map keeps the wording consistent with the tool's own action names.
-function computerLabel(args?: Record<string, unknown>): string {
-  const action = args?.action ? String(args.action) : "";
-  const app = args?.app ? String(args.app) : "";
-  const verbs: Record<string, string> = {
-    observe: "Looking at",
-    click: "Clicking in",
-    type: "Typing in",
-    key: "Pressing a key in",
-    menu: "Choosing a menu in",
-    scroll: "Scrolling",
-    screenshot: "Capturing",
-    launch: "Opening",
-    run_script: "Scripting",
-  };
-  const verb = verbs[action];
-  if (!verb) return app ? `Controlling ${app}` : "Controlling this Mac";
-  return app ? `${verb} ${app}` : verb;
+// read_file with an optional line range — a complete sentence per case, so the range is not an
+// English-word-order suffix a translator would have to reassemble.
+function readFileLabel(filePath: string, args: Record<string, unknown>, t: ToolDisplayTranslator): string {
+  const file = fileName(filePath);
+  const offset = Number(args.offset ?? 1);
+  const limit = args.limit == null ? 0 : Number(args.limit);
+  const defaultLimit = 2000;
+  const hasSpecificOffset = Number.isFinite(offset) && offset > 1;
+  const hasSpecificLimit = Number.isFinite(limit) && limit > 0 && limit !== defaultLimit;
+  if (!hasSpecificOffset && !hasSpecificLimit) return t("readFile", { file });
+  if (!Number.isFinite(limit) || limit <= 0) return t("readFileFromLine", { file, line: offset });
+  return t("readFileLines", { file, start: offset, end: offset + limit - 1 });
 }
 
-// A browser call with no justification: describe it from its action and target.
-function browserLabel(args?: Record<string, unknown>): string {
-  const action = args?.action ? String(args.action) : "";
-  switch (action) {
-    case "navigate":
-      return args?.url ? `Opening ${String(args.url)}` : "Opening a page";
-    case "observe":
-      return "Reading the page";
-    case "click":
-      return "Clicking in the page";
-    case "type":
-      return "Typing in the page";
-    case "read":
-      return "Reading the page text";
-    case "press":
-      return args?.key ? `Pressing ${String(args.key)}` : "Pressing a key";
-    case "hover":
-      return "Hovering in the page";
-    case "scroll":
-      return "Scrolling the page";
-    case "back":
-      return "Going back";
-    case "forward":
-      return "Going forward";
-    case "reload":
-      return "Reloading the page";
-    case "tabs":
-      return "Listing tabs";
-    case "new_tab":
-      return args?.url ? `Opening ${String(args.url)} in a new tab` : "Opening a new tab";
-    case "switch_tab":
-      return "Switching tab";
-    case "close_tab":
-      return "Closing a tab";
-    default:
-      return "Using the browser";
-  }
+// A search_screen call with no justification: describe it from its query + surface.
+function searchScreenLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
+  const query = args?.query ? String(args.query) : "";
+  const surface = args?.surface ? String(args.surface) : "";
+  if (!query) return t("searchScreenBare");
+  return surface ? t("searchScreenSurface", { query, surface }) : t("searchScreen", { query });
+}
+
+// A control_screen call with no justification: describe it from its surface + the
+// script's first line (the whole script is body content, not a one-line label).
+function controlScreenLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
+  const surface = args?.surface ? String(args.surface) : "";
+  const firstLine = args?.script ? String(args.script).split("\n").map((line) => line.trim()).find(Boolean) ?? "" : "";
+  if (firstLine) return t("controlScreenScript", { script: firstLine });
+  return surface ? t("controlScreenSurface", { surface }) : t("controlScreenBare");
 }
 
 function shortPath(path: string): string {
@@ -219,26 +212,16 @@ function fileName(path: string): string {
   return path.split("/").filter(Boolean).at(-1) ?? path;
 }
 
-function readFileRange(args: Record<string, unknown>): string {
-  const offset = Number(args.offset ?? 1);
-  const limit = args.limit == null ? 0 : Number(args.limit);
-  const defaultLimit = 2000;
-  const hasSpecificOffset = Number.isFinite(offset) && offset > 1;
-  const hasSpecificLimit = Number.isFinite(limit) && limit > 0 && limit !== defaultLimit;
-  if (!hasSpecificOffset && !hasSpecificLimit) return "";
-  if (!Number.isFinite(limit) || limit <= 0) return ` around line ${offset}`;
-  return ` around lines ${offset}–${offset + limit - 1}`;
-}
-
 export function getToolCallDisplay(
   name: string,
-  args?: Record<string, unknown>
+  args: Record<string, unknown> | undefined,
+  t: ToolDisplayTranslator,
 ): ToolDisplayInfo {
   const known = KNOWN_TOOL_NAMES.has(name);
   const justification = args?.justification ? String(args.justification) : "";
   return {
     ...iconForTool(name),
-    label: justification || fallbackLabel(name, args),
+    label: justification || fallbackLabel(name, args, t),
     known,
     // A bare, unrecognized tool name reads as code (it *is* an identifier).
     mono: !known && !justification,

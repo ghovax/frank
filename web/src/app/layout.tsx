@@ -53,10 +53,8 @@ const monoFont = localFont({
 export const metadata: Metadata = {
   title: "Daisy",
   description: "Daisy GUI",
-  icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml", sizes: "any" }],
-    shortcut: [{ url: "/icon.svg", type: "image/svg+xml" }],
-  },
+  // The favicon comes from the file conventions app/favicon.ico + app/icon.png —
+  // the exact app icon (src-tauri/icons) so the browser tab matches the app icon.
 };
 
 export default function RootLayout({

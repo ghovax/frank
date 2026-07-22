@@ -75,13 +75,13 @@ export function TerminalSurface({
   const errorToastKeysRef = useRef<Set<string>>(new Set());
   const [, setConnectionStatus] = useState<{ state: "connecting" | "connected" | "disconnected" | "exited"; label: string } | null>(null);
   const { colorMode } = useColorMode();
-  const t = useTranslations("TerminalPanel");
+  const translation = useTranslations("TerminalPanel");
   // Kept in a ref so the toast copy stays current without adding `t` (a fresh
   // function each render) to the terminal effect's deps, which would remount it.
-  const translateRef = useRef(t);
+  const translateRef = useRef(translation);
   useEffect(() => {
-    translateRef.current = t;
-  }, [t]);
+    translateRef.current = translation;
+  }, [translation]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -292,8 +292,8 @@ export function TerminalSurface({
         position="absolute"
         top={1}
         bottom={3}
-        left={2}
-        right={0}
+        left={4}
+        right={4}
         minH={0}
         minW={0}
       />

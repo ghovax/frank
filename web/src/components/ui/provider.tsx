@@ -13,7 +13,7 @@ import { LocaleProvider } from "@/lib/i18n/locale-provider"
 //   • Radius — Chakra maps a control's corner to the semantic radii `l1/l2/l3` (xs/sm/md).
 //     Most controls default to `l2` (= sm). We remap `l1` and `l2` to `md` so `md` is the
 //     universal default corner (`l3` is already `md`); only `sm` (tiny chips), `full`
-//     (dots/pills/avatars) and `0` (joined segmented buttons) are ever set explicitly.
+//     (dots/pills/avatars) and `none` (joined segmented buttons) are ever set explicitly.
 //   • Size — the compact `xs` control height is the house default, set once via each
 //     control recipe's `defaultVariants`, instead of `size="xs"` on every button/input.
 //   • Dialogs — the stock dialog recipe is roomy (px6/pt6 headers, l3 corners); tightened
@@ -49,7 +49,14 @@ const config = defineConfig({
     recipes: {
       button: { defaultVariants: { size: "xs" } },
       input: { defaultVariants: { size: "xs" } },
-      textarea: { defaultVariants: { size: "xs" } },
+      textarea: {
+        variants: {
+          size: {
+            sm: { py: "1.5", lineHeight: "1.375rem", scrollPaddingBottom: "1.5" },
+          },
+        },
+        defaultVariants: { size: "xs" },
+      },
     },
     slotRecipes: {
       // Tab triggers (e.g. the Settings left nav) are clamped to the same 32px as the app's

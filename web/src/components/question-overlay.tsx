@@ -24,7 +24,7 @@ interface QuestionOverlayProps {
 }
 
 export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOverlayProps) {
-  const t = useTranslations("QuestionOverlay");
+  const translation = useTranslations("QuestionOverlay");
   const items = question.questions;
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<Record<number, string[]>>({});
@@ -106,9 +106,9 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         transition={{ duration: 0.15 }}
       >
         <Box
@@ -126,13 +126,13 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
         >
           <Flex align="center" justify="space-between" gap={2}>
             <Text textStyle="panelTitle" color="fg">
-              {t("questionProgress", { current: current + 1, total })}
+              {translation("questionProgress", { current: current + 1, total })}
             </Text>
             <Flex align="center" gap={1}>
               {onDismiss && (
                 <IconButton
-                  aria-label={t("dismissLabel")}
-                  title={t("dismissTitle")}
+                  aria-label={translation("dismissLabel")}
+                  title={translation("dismissTitle")}
                   variant="ghost"
                   color="fg.subtle"
                   onClick={() => onDismiss(question.requestId)}
@@ -151,19 +151,19 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                 {item.options!.map((option) => {
                   const isSelected = !text && !isSkipped && active.includes(option.label);
                   return (
-                    <Flex
+                    <Button
                       key={option.label}
-                      as="button"
-                      align="center"
+                      variant="outline"
+                      w="full"
+                      h="auto"
                       gap={2.5}
                       px={2.5}
                       py={1.5}
-                      borderRadius="md"
-                      border="1px solid"
+                      justifyContent="flex-start"
                       borderColor={isSelected ? "blue.solid" : "border"}
                       bg={isSelected ? "blue.subtle" : "bg"}
-                      cursor="pointer"
                       textAlign="left"
+                      whiteSpace="normal"
                       transition="all 120ms"
                       _hover={{ borderColor: isSelected ? "blue.solid" : "border.emphasized" }}
                       onClick={() => { if (!text) toggle(current, option.label, multiple); }}
@@ -188,7 +188,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                           </Box>
                         )}
                       </Flex>
-                    </Flex>
+                    </Button>
                   );
                 })}
               </Flex>
@@ -196,7 +196,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
 
             {customEnabled && (
               <Input
-                placeholder={t("customPlaceholder")}
+                placeholder={translation("customPlaceholder")}
                 value={text}
                 onChange={(event) => {
                   const value = event.target.value;
@@ -208,7 +208,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
 
             {isSkipped && (
               <Text fontSize="xs" color="fg.subtle">
-                {t("skippedNote")}
+                {translation("skippedNote")}
               </Text>
             )}
           </Flex>
@@ -223,7 +223,7 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                   onClick={() => setCurrent((previous) => previous - 1)}
                 >
                   <LuChevronLeft size={12} />
-                  {t("back")}
+                  {translation("back")}
                 </Button>
               )}
               {total > 1 && current < total - 1 && (
@@ -233,16 +233,16 @@ export function QuestionOverlay({ question, onQuestion, onDismiss }: QuestionOve
                   onClick={() => setCurrent((previous) => previous + 1)}
                 >
                   <LuChevronRight size={12} />
-                  {t("next")}
+                  {translation("next")}
                 </Button>
               )}
               <Button variant="subtle" colorPalette="red" onClick={skipCurrent}>
                 <LuSkipForward size={12} />
-                {t("skip")}
+                {translation("skip")}
               </Button>
             </Flex>
             <Button colorPalette="green" variant="solid" onClick={submit} disabled={!allAnswered}>
-              {t("submit")}
+              {translation("submit")}
             </Button>
           </Flex>
         </Box>

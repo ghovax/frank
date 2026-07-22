@@ -265,8 +265,6 @@ export interface Location {
 
 export interface Project {
   id: string;
-  name: string;
-  description: string;
   created_at: string;
   updated_at: string;
   session_count: number;
@@ -282,14 +280,7 @@ export interface LocationInput {
 }
 
 export interface ProjectCreateInput {
-  name: string;
-  description?: string;
   locations: LocationInput[];
-}
-
-export interface ProjectUpdateInput {
-  name?: string;
-  description?: string;
 }
 
 export async function listSshHosts(): Promise<SshHost[]> {
@@ -322,16 +313,6 @@ export async function createProject(input: ProjectCreateInput): Promise<Project>
   return await response.json() as Project;
 }
 
-export async function updateProject(projectId: string, input: ProjectUpdateInput): Promise<Project> {
-  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!response.ok) throw new Error(`Failed to update project (${response.status})`);
-  return await response.json() as Project;
-}
-
 export async function deleteProject(projectId: string): Promise<void> {
   await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
 }
@@ -360,11 +341,80 @@ export async function deleteLocation(locationId: string): Promise<void> {
   await fetch(`${API_BASE}/locations/${encodeURIComponent(locationId)}`, { method: "DELETE" });
 }
 
+// External A2A agents (remote agents this harness can delegate to).
+
+export interface RemoteAgent {
+  name: string;
+  cardUrl: string;
+  enabled: boolean;
+  authType: string;
+  allowedProfiles: string[];
+  allowedHosts: string[];
+  allowPrivate: boolean;
+  cardTtlSeconds: number;
+  health: string;   // unresolved | ok | unreachable | untrusted
+  error: string;
+  resolvedName: string;
+  resolvedDescription: string;
+  skills: string[];
+}
+
+export interface RemoteAgentAuthInput {
+  type: string;   // none | bearer | api_key | oauth2
+  token?: string;
+  header?: string;
+  schemePrefix?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+}
+
+export interface RemoteAgentInput {
+  name: string;
+  cardUrl: string;
+  enabled?: boolean;
+  auth?: RemoteAgentAuthInput;
+  cardTtlSeconds?: number;
+  allowedHosts?: string[];
+  allowPrivate?: boolean;
+  allowedProfiles?: string[];
+}
+
+export async function listRemoteAgents(): Promise<RemoteAgent[]> {
+  const response = await fetch(`${API_BASE}/remote-agents`);
+  if (!response.ok) throw new Error(`Failed to list remote agents (${response.status})`);
+  const data = (await response.json()) as { agents: RemoteAgent[] };
+  return data.agents ?? [];
+}
+
+export async function upsertRemoteAgent(input: RemoteAgentInput): Promise<void> {
+  const response = await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(input.name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(`Failed to save remote agent (${response.status})`);
+}
+
+export async function deleteRemoteAgent(name: string): Promise<void> {
+  await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export async function refreshRemoteAgent(name: string): Promise<{ health: string; error: string }> {
+  const response = await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(name)}/refresh`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(`Failed to refresh remote agent (${response.status})`);
+  return (await response.json()) as { health: string; error: string };
+}
+
 // Metadata key understood by the harness A2A executor.
 // A2A convention: an extension places its attributes under one URI-namespaced key in
 // the message `metadata` map, not as bare top-level keys. Mirrors DAISY_METADATA_KEY
 // / Metadata in the backend's a2a_executor.
 export const DAISY_METADATA_KEY = "urn:daisy:ext:turn:v1";
+export const CONTENT_BLOCK_METADATA_KEY = "urn:daisy:ext:content-block:v1";
 
 export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
@@ -373,6 +423,8 @@ export interface AgentSummary {
   id: string;
   name: string;
   title?: string;
+  // What the agent is for — shown as the subtitle in the agent picker.
+  description?: string;
   // The agent's resolved `provider/model` identifier. Empty means the agent is
   // missing a runnable model configuration.
   model?: string;
@@ -603,7 +655,6 @@ export interface ModelOption {
   name: string;
   provider: string;
   available: boolean;
-  curated: boolean;
   // Capabilities from models.dev (raw snake_case as the /models endpoint sends
   // them). `attachment` gates the composer's file-attach button; `vision` (image
   // input) and `input_modalities` annotate the picker.
@@ -691,14 +742,36 @@ export async function fetchRecentModels(): Promise<RecentModel[]> {
 // ChatGPT-subscription sign-in state for the `chatgpt` provider.
 // This is an OAuth session, not a stored key — the token lives server-side and
 // this only reports whether one is present and for which account.
+// One rate-limit window the ChatGPT/Codex backend enforces (a rolling 5h window
+// and a weekly window). `window_minutes` is the source of truth for labeling —
+// the 5h/weekly split isn't pinned to a fixed slot across accounts.
+export interface ChatGPTUsageWindow {
+  key: string;
+  used_percent: number;
+  window_minutes: number;
+  resets_at: number | null;
+}
+
+// The account's usage snapshot, captured from `x-codex-*` headers on the last turn.
+// Absent (null) until the first turn runs after sign-in — the headers only ride on
+// the responses call, so there is no cheaper source to poll.
+export interface ChatGPTUsage {
+  plan_type: string;
+  active_limit: string;
+  captured_at: number;
+  credits: { has_credits: boolean; balance: number | null; unlimited: boolean };
+  windows: ChatGPTUsageWindow[];
+}
+
 export interface ChatGPTAuthStatus {
   signed_in: boolean;
   email: string;
+  usage?: ChatGPTUsage | null;
 }
 
 export async function fetchChatGPTAuthStatus(): Promise<ChatGPTAuthStatus> {
   const response = await fetch(`${API_BASE}/auth/chatgpt`);
-  if (!response.ok) return { signed_in: false, email: "" };
+  if (!response.ok) return { signed_in: false, email: "", usage: null };
   return response.json();
 }
 
@@ -1197,6 +1270,17 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
   }
 }
 
+export async function cancelAgent(sessionId: string, taskIdentifier: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(taskIdentifier)}/abort`, { method: "POST" });
+    if (!response.ok) return false;
+    const result = await response.json() as { status?: string };
+    return result.status === "aborted";
+  } catch {
+    return false;
+  }
+}
+
 // Detach a still-blocking foreground shell command so it keeps running in the
 // background and the agent's turn continues (the harness is notified so the model
 // learns the command was backgrounded rather than finished).
@@ -1342,6 +1426,7 @@ export interface A2APart {
   kind: A2APartKind;
   text?: string;
   data?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface A2AErrorData {

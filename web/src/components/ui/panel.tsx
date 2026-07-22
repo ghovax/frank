@@ -10,6 +10,11 @@ import type { ReactNode } from "react";
 import { LuX } from "react-icons/lu";
 import { useScrollEdgeFade } from "@/lib/scroll-fade";
 
+// The single height every top strip shares — panel headers and the chat top bar — so all
+// their titles sit on one horizontal line. Fixed (not content-driven) is what makes the
+// alignment exact regardless of what each strip holds (a title, buttons, a two-line switcher).
+export const TOP_BAR_HEIGHT = "3rem";
+
 // The panel surface: a filled card that fills its tile (PanelTiles owns size + placement)
 // with the standard border + soft `panel` elevation. Extra props pass through so a panel
 // can add e.g. `position="relative"` or hover handlers.
@@ -45,8 +50,8 @@ export function PanelHeader({
   ...rest
 }: {
   icon?: ReactNode;
-  // Optional: a panel whose whole strip is a custom control (e.g. the sessions sidebar's
-  // project switcher) passes no title and supplies the control as `children` instead.
+  // Optional: a panel whose whole strip is a custom control passes no title and supplies
+  // the control as `children` instead.
   title?: ReactNode;
   onClose?: () => void;
   closeLabel?: string;
@@ -54,10 +59,12 @@ export function PanelHeader({
 } & FlexProps) {
   return (
     // Default strip padding: pr={2} matches the body's content edge; pl={3} insets a plain
-    // title slightly more. A panel whose whole strip is a full-width control (the sessions
-    // sidebar) overrides `pl={2}` so its button lines up with the body rows below it — `...rest`
-    // lets that win.
-    <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0} {...rest}>
+    // title slightly more. A panel whose whole strip is a full-width control can override
+    // `pl` through `...rest`.
+    // Fixed height (not content-driven) so every panel's top strip — and the chat top bar,
+    // which mirrors these props — is the exact same height, keeping all their titles on one
+    // horizontal line. `align="center"` then lands each title at the shared vertical center.
+    <Flex align="center" gap={2} pl={3} pr={2} h={TOP_BAR_HEIGHT} flexShrink={0} {...rest}>
       {icon ? <Box color="fg.muted">{icon}</Box> : null}
       {title ? (
         <Text textStyle="panelTitle" flex={1} minW={0} truncate>
@@ -81,7 +88,7 @@ export function PanelHeader({
 export function PanelBody({ children, ...rest }: BoxProps) {
   const { containerRef, onScroll, fade } = useScrollEdgeFade();
   return (
-    <Box ref={containerRef} onScroll={onScroll} flex={1} minH={0} overflowY="auto" px={2} py={2} css={fade} {...rest}>
+    <Box ref={containerRef} onScroll={onScroll} flex={1} minH={0} overflowY="auto" px={2} pb={4} pt={0} css={fade} {...rest}>
       {children}
     </Box>
   );

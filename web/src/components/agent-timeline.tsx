@@ -4,12 +4,10 @@ import { Flex } from "@chakra-ui/react";
 import type { ToolEvent } from "@/lib/tool-event";
 import type { AgentPart } from "@/lib/use-chat";
 import { MarkdownContent } from "./markdown-content";
-import { ToolCall } from "./tool-call";
 import { ToolGroup } from "./tool-group";
 
 type TimelineItem =
   | { kind: "text"; content: string }
-  | { kind: "tool"; tool: ToolEvent }
   | { kind: "tools"; id: string; tools: ToolEvent[] };
 
 // Renders an agent step's ordered timeline, mirroring the main chat's decisions:
@@ -55,30 +53,14 @@ export function AgentTimeline({
 }) {
   const items = buildTimelineItems(parts);
   return (
-    // pt lifts the first item so its gap from the top of the expanded step body matches
-    // the body's horizontal padding (ToolCardBody is px=2.5 / py=2); without it the first
-    // tool call sits closer to the top edge than to the sides. Only the agents panel uses
-    // this timeline, so the chat is unaffected.
-    <Flex direction="column" gap={1.5} align="stretch" pt={0.5}>
+    // The enclosing DisclosureRow body owns the top breathing room now, so this
+    // timeline just stacks its items. A parked gate raised inside a step shows here as
+    // an "input required" tool line; the actionable approve/deny lives in the shared
+    // overlay (driven from agentGroups), the same surface the root transcript uses.
+    <Flex direction="column" gap={1} align="stretch">
       {items.map((item, itemIndex) => {
         if (item.kind === "text") {
           return <MarkdownContent key={`text-${itemIndex}`} content={item.content} />;
-        }
-        if (item.kind === "tool") {
-          const tool = item.tool;
-          return (
-            <ToolCall
-              key={`tool-${tool.toolCallId || itemIndex}`}
-              name={tool.name}
-              arguments={tool.arguments}
-              result={tool.result}
-              toolCallId={tool.toolCallId}
-              status={tool.status}
-              permission={tool.permission}
-              question={tool.question}
-              agents={agents}
-            />
-          );
         }
         return <ToolGroup key={`tools-${item.id}`} tools={item.tools} agents={agents} />;
       })}

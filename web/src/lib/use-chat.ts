@@ -12,17 +12,19 @@ import {
   fetchSessionTasks,
   fetchSessionTasksPage,
   subscribeSessionStream,
+  CONTENT_BLOCK_METADATA_KEY,
   type A2AStreamResult,
   type A2AMessage,
-  type A2APart,
   type A2ATask as A2ATaskWire,
   type PermissionMode,
   type WorkspaceStrategy,
 } from "./api";
-import { isHiddenToolEventName, isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus } from "./tool-event";
+import { isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
 import { artifactImageKey, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "./artifact-annotations";
 import type { ArtifactEvent } from "@/components/artifact-bridge";
 import { toaster } from "@/components/ui/toaster";
+import { asArray, asRecord } from "@/lib/coerce";
+import type { WireEvent } from "@/lib/generated/events";
 
 // Re-export the A2A task shape so components can consume it from one place.
 export type A2ATask = A2ATaskWire;
@@ -58,12 +60,36 @@ export interface MessageAttachment {
   annotations?: ArtifactImageAnnotation[];
 }
 
+// The per-message side data the reducers attach and the views read. Every field is optional and
+// role-specific (a tool_call carries arguments/status/result/permission/question; a compaction
+// carries reason/messages*; a warning carries `warning`; …). Typed so a read like
+// `message.meta?.permission` is a real `ToolPermission | undefined`, not `unknown`.
+export interface MessageMeta {
+  arguments?: Record<string, unknown>;
+  toolCallId?: string;
+  // Spans tool lifecycle and the compaction/thinking indicators, so it is the wider string set.
+  status?: string;
+  result?: unknown;
+  permission?: ToolPermission;
+  question?: ToolQuestion;
+  error?: FriendlyError;
+  warning?: { code: string; title: string; message: string };
+  reason?: string;
+  messagesBefore?: number;
+  messagesAfter?: number;
+  groupId?: string;
+  durationMs?: number;
+  artifactAnnotationRecords?: ArtifactAnnotationRecord[];
+  attachments?: MessageAttachment[];
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
   content: string;
   timestamp: string;
-  meta?: Record<string, unknown>;
+  meta?: MessageMeta;
+  contentBlocks?: Array<{ identifier: string; content: string }>;
 }
 
 export interface ChatTask {
@@ -118,7 +144,7 @@ export interface QueuedMessage {
 // (the same unified vocabulary as the root agent). Reasoning is captured here for
 // fidelity but, like the main chat, is surfaced by the agents panel as a live status.
 export type AgentPart =
-  | { kind: "text"; content: string }
+  | { kind: "text"; content: string; blockIdentifier: string }
   | { kind: "thinking"; content: string; status: ToolEventStatus; durationMs?: number }
   | ({ kind: "tool" } & ToolEvent);
 
@@ -227,16 +253,16 @@ function applyAgentThinking(step: AgentStep, text: string): AgentStep {
   };
 }
 
-function appendAgentText(step: AgentStep, text: string): AgentStep {
+function appendAgentText(step: AgentStep, text: string, blockIdentifier: string): AgentStep {
   if (!text) return step;
   step = finishAgentThinking(step);
   const last = step.parts[step.parts.length - 1];
-  if (last && last.kind === "text") {
+  if (last && last.kind === "text" && last.blockIdentifier === blockIdentifier) {
     const parts = step.parts.slice(0, -1);
-    parts.push({ kind: "text", content: last.content + text });
+    parts.push({ kind: "text", content: last.content + text, blockIdentifier });
     return { ...step, parts };
   }
-  return { ...step, parts: [...step.parts, { kind: "text", content: text }] };
+  return { ...step, parts: [...step.parts, { kind: "text", content: text, blockIdentifier }] };
 }
 
 function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Record<string, unknown> | undefined, toolCallId: string): AgentStep {
@@ -250,19 +276,10 @@ function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Recor
   };
 }
 
-// Legacy fallback: infer lifecycle from a result payload's `code` suffix. Only used
-// when a wire event carries no explicit status (a replayed pre-migration part).
-function toolResultStatus(result: unknown): ToolEventStatus {
-  const code = String(asRecord(result).code ?? "");
-  if (code === "tool_error") return "failed";
-  if (code.endsWith("_started") || code === "background_task_scheduled") return "running";
-  return "completed";
-}
-
 // The explicit ToolStatus from the wire mapped to the UI lifecycle. `input_required`
 // is a separate, UI-only state driven by permission/question events, never a result.
-function statusFromWire(wireStatus: unknown, result: unknown): ToolEventStatus {
-  switch (String(wireStatus ?? "")) {
+function statusFromWire(wireStatus: unknown): ToolEventStatus {
+  switch (wireStatus) {
     case "ok":
       return "completed";
     case "error":
@@ -270,7 +287,7 @@ function statusFromWire(wireStatus: unknown, result: unknown): ToolEventStatus {
     case "running":
       return "running";
     default:
-      return toolResultStatus(result);
+      throw new Error(`Invalid tool result status: ${String(wireStatus)}`);
   }
 }
 
@@ -289,6 +306,34 @@ function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string
   };
 }
 
+// A delegated agent parked on a human-in-the-loop gate: flip the tool part that raised it
+// to `input_required` and attach the prompt, so the agents-panel card renders the same
+// inline approve/deny (or question) UI as the root transcript. The resolve routes by
+// request id to the parked delegated agent runtime, which resumes in place on the answer.
+function applyAgentToolPermission(step: AgentStep, toolCallId: string, permission: ToolPermission): AgentStep {
+  if (!toolCallId) return step;
+  return {
+    ...step,
+    parts: step.parts.map((part) =>
+      isToolPart(part) && part.toolCallId === toolCallId
+        ? { ...part, status: "input_required" as const, permission }
+        : part
+    ),
+  };
+}
+
+function applyAgentToolQuestion(step: AgentStep, toolCallId: string, question: ToolQuestion): AgentStep {
+  if (!toolCallId) return step;
+  return {
+    ...step,
+    parts: step.parts.map((part) =>
+      isToolPart(part) && part.toolCallId === toolCallId
+        ? { ...part, status: "input_required" as const, question }
+        : part
+    ),
+  };
+}
+
 // The result currently stored for a tool part, located by its call id across all
 // agent steps — so a streamed/MCP update merges into what is already there.
 function agentToolResult(agentGroups: AgentGroup[], toolCallId: string): unknown {
@@ -301,19 +346,17 @@ function agentToolResult(agentGroups: AgentGroup[], toolCallId: string): unknown
   return undefined;
 }
 
-function artifactPartsText(parts: A2APart[] | undefined): string {
-  return (parts ?? [])
-    .filter((part) => part.kind === "text" && part.text)
-    .map((part) => part.text ?? "")
-    .join("");
+function requiredContentBlockIdentifier(metadata: Record<string, unknown> | undefined): string {
+  const extension = asRecord(metadata?.[CONTENT_BLOCK_METADATA_KEY]);
+  const identifier = String(extension.id ?? "");
+  if (!identifier) throw new Error("Assistant text is missing its content-block identity.");
+  return identifier;
 }
 
-function streamArtifactText(result: Extract<A2AStreamResult, { kind: "artifact-update" }>): string {
-  return artifactPartsText(result.artifact?.parts);
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+function requiredEventBlockIdentifier(value: unknown): string {
+  const identifier = String(value ?? "");
+  if (!identifier) throw new Error("Assistant stream event is missing its content-block identity.");
+  return identifier;
 }
 
 interface FriendlyError {
@@ -421,9 +464,6 @@ function mergeMcpFinalResult(existing: unknown, finalResult: unknown): unknown {
   };
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
 
 function artifactIdentifier(value: unknown): string {
   const artifact = asRecord(value);
@@ -585,10 +625,19 @@ interface ReduceState {
   // older pages prepend without re-keying — and thus without remounting/re-animating
   // — the messages already on screen.
   keyCounts: Map<string, number>;
+  agentEventIdentifiers: Set<string>;
 }
 
 function newReduceState(): ReduceState {
-  return { messages: [], agentGroups: [], tasks: [], lane: null, tokenUsage: null, keyCounts: new Map() };
+  return {
+    messages: [],
+    agentGroups: [],
+    tasks: [],
+    lane: null,
+    tokenUsage: null,
+    keyCounts: new Map(),
+    agentEventIdentifiers: new Set(),
+  };
 }
 
 // A stable, position-independent id for a rendered message. Derived from the
@@ -650,9 +699,9 @@ function finishRunningThinkingWithDuration(state: ReduceState, durationMs: numbe
   );
 }
 
-function finishRunningTools(state: ReduceState): void {
+function finishActiveTools(state: ReduceState): void {
   state.messages = state.messages.map((message) =>
-    message.role === "tool_call" && message.meta?.status === "running"
+    message.role === "tool_call" && (message.meta?.status === "running" || message.meta?.status === "input_required")
       ? { ...message, meta: { ...message.meta, status: "completed" } }
       : message
   );
@@ -702,17 +751,48 @@ function messageMatchesToolEvent(message: ChatMessage, name: string, toolCallId:
   return event ? isSameToolEvent(event, name, toolCallId) : false;
 }
 
-function pushAssistantText(state: ReduceState, text: string, sourceId?: string): void {
+function appendAssistantContentBlock(
+  message: ChatMessage,
+  text: string,
+  blockIdentifier: string,
+): ChatMessage {
+  if (!message.contentBlocks) {
+    throw new Error("Assistant messages require structured content blocks.");
+  }
+  const existingContentBlocks = message.contentBlocks;
+  const lastContentBlockIndex = existingContentBlocks.length - 1;
+  const lastContentBlock = existingContentBlocks[lastContentBlockIndex];
+  const contentBlocks = lastContentBlock?.identifier === blockIdentifier
+    ? existingContentBlocks.map((contentBlock, contentBlockIndex) =>
+        contentBlockIndex === lastContentBlockIndex
+          ? { ...contentBlock, content: contentBlock.content + text }
+          : contentBlock
+      )
+    : [...existingContentBlocks, { identifier: blockIdentifier, content: text }];
+  return { ...message, content: message.content + text, contentBlocks };
+}
+
+function pushAssistantText(state: ReduceState, text: string, blockIdentifier: string, sourceId?: string): void {
   if (!text) return;
+  if (!blockIdentifier) throw new Error("Assistant text requires a content-block identity.");
   finishRunningThinking(state);
   if (state.lane === null) {
     const id = stableMessageId(state, "asst", sourceId);
     state.lane = id;
-    state.messages = [...state.messages, { id, role: "assistant", content: text, timestamp: new Date().toISOString() }];
+    state.messages = [
+      ...state.messages,
+      {
+        id,
+        role: "assistant",
+        content: text,
+        contentBlocks: [{ identifier: blockIdentifier, content: text }],
+        timestamp: new Date().toISOString(),
+      },
+    ];
   } else {
     const laneId = state.lane;
     state.messages = state.messages.map((message) =>
-      message.id === laneId ? { ...message, content: message.content + text } : message
+      message.id === laneId ? appendAssistantContentBlock(message, text, blockIdentifier) : message
     );
   }
 }
@@ -844,12 +924,26 @@ function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
 function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
   for (const part of message.parts ?? []) {
     if (part.kind === "text") {
-      pushAssistantText(state, part.text ?? "", message.messageId);
+      pushAssistantText(
+        state,
+        part.text ?? "",
+        requiredContentBlockIdentifier(part.metadata),
+        message.messageId,
+      );
       continue;
     }
     if (part.kind !== "data" || !part.data) continue;
     reduceDataPart(state, part.data, message.messageId);
   }
+}
+
+function isImmediateAgentEventMessage(message: A2AMessage): boolean {
+  return (message.parts ?? []).some((part) => (
+    part.kind === "data"
+    && Array.isArray(part.data?.path)
+    && part.data.path.length > 0
+    && Boolean(part.data.event_id)
+  ));
 }
 
 function steeringText(message: A2AMessage | undefined): string {
@@ -902,65 +996,111 @@ function reduceAgentLaneEvent(state: ReduceState, data: Record<string, unknown>)
   const apply = (updater: (step: AgentStep) => AgentStep) => {
     state.agentGroups = withStep(state.agentGroups, groupId, stepId, updater);
   };
-  switch (String(data.kind ?? "")) {
+  // Typed against the same generated union as the root reducer; `data` stays in scope for the
+  // few helpers that take a raw record and for `block_id`, which rides a relayed text event and
+  // is not on the text model.
+  const event = data as unknown as WireEvent;
+  switch (event.kind) {
     case "group_started":
-      ensureLaneGroup(state, groupId, stepId, String(data.agent_name ?? ""), String(data.title ?? ""), String(data.tool_call_id ?? ""));
+      ensureLaneGroup(state, groupId, stepId, event.agent_name ?? "", event.title ?? "", event.tool_call_id ?? "");
       break;
     case "text":
       ensureLaneGroup(state, groupId, stepId);
-      apply((step) => appendAgentText(step, String(data.text ?? "")));
+      apply((step) => appendAgentText(
+        step,
+        event.text,
+        requiredEventBlockIdentifier(data.block_id),
+      ));
       break;
     case "thinking":
       ensureLaneGroup(state, groupId, stepId);
-      apply((step) => applyAgentThinking(step, String(data.text ?? "")));
+      apply((step) => applyAgentThinking(step, event.text ?? ""));
       break;
     case "thinking_done":
-      apply((step) => finishAgentThinkingWithDuration(step, Number(data.duration_ms ?? 0)));
+      apply((step) => finishAgentThinkingWithDuration(step, event.duration_ms ?? 0));
       break;
     case "status":
-      if (String(data.code ?? "") === "waiting_for_tools") apply(finishAgentThinking);
+      if (event.code === "waiting_for_tools") apply(finishAgentThinking);
       break;
     case "tool_call":
-      if (isHiddenToolEventName(data.tool_name)) break;
       ensureLaneGroup(state, groupId, stepId);
-      apply((step) => appendAgentToolCall(step, String(data.tool_name ?? "unknown"), data.arguments as Record<string, unknown> | undefined, String(data.tool_call_id ?? "")));
+      apply((step) => appendAgentToolCall(step, event.tool_name || "unknown", event.arguments, event.tool_call_id));
       break;
     case "tool_result": {
-      const toolName = String(data.tool_name ?? "unknown");
-      if (isHiddenToolEventName(toolName)) break;
-      const toolCallId = String(data.tool_call_id ?? "");
-      const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(agentToolResult(state.agentGroups, toolCallId), data.display) : data.display;
+      const toolName = event.tool_name || "unknown";
+      const toolCallId = event.tool_call_id;
+      const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(agentToolResult(state.agentGroups, toolCallId), event.display) : event.display;
       const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
-      const status = statusFromWire(data.status, artifactUpdate.result);
+      const status = statusFromWire(event.status);
       state.agentGroups = withStep(artifactUpdate.agentGroups, groupId, stepId, (step) => upsertAgentToolResult(step, toolName, toolCallId, artifactUpdate.result, status));
       break;
     }
     case "mcp_event": {
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolCallId = event.tool_call_id;
       const mergedResult = mergeMcpResult(agentToolResult(state.agentGroups, toolCallId), streamedMcpResult(data));
       const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
       state.agentGroups = withStep(artifactUpdate.agentGroups, groupId, stepId, (step) => upsertAgentToolResult(step, "call_mcp_tool", toolCallId, artifactUpdate.result, "running"));
       break;
     }
+    case "permission_request": {
+      ensureLaneGroup(state, groupId, stepId);
+      const toolCallId = event.tool_call_id ?? "";
+      const permission: ToolPermission = {
+        requestId: event.request_id,
+        justification: event.justification || undefined,
+        risk: event.risk || undefined,
+      };
+      apply((step) => applyAgentToolPermission(step, toolCallId, permission));
+      break;
+    }
+    case "question": {
+      ensureLaneGroup(state, groupId, stepId);
+      const toolCallId = event.tool_call_id ?? "";
+      const question: ToolQuestion = {
+        requestId: event.request_id,
+        questions: (event.questions as unknown as QuestionItem[]) ?? [],
+      };
+      apply((step) => applyAgentToolQuestion(step, toolCallId, question));
+      break;
+    }
     case "done":
-      apply((step) => finishAgentStepState(step, String(data.state ?? "completed")));
+      apply((step) => finishAgentStepState(step, event.state ?? "completed"));
       break;
-    default:
+    case "compaction":
+    case "steering":
+    case "token_usage":
+    case "warning":
+    case "error":
+      // Root-transcript-only kinds; an agent lane never renders these.
       break;
+    default: {
+      // Exhaustiveness: a new WireEvent kind not handled above is a compile error.
+      const _exhaustive: never = event;
+      void _exhaustive;
+      break;
+    }
   }
 }
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
-  const kind = String(data.kind ?? "");
   // An agent event (non-empty path) is routed to the agents panel; the root
   // agent's own events (empty path) drive the main transcript below.
   if (Array.isArray(data.path) && data.path.length > 0) {
+    const eventIdentifier = String(data.event_id ?? "");
+    if (eventIdentifier) {
+      if (state.agentEventIdentifiers.has(eventIdentifier)) return;
+      state.agentEventIdentifiers.add(eventIdentifier);
+    }
     reduceAgentLaneEvent(state, data);
     return;
   }
-  switch (kind) {
+  // The one typed reader of a root wire event: switch on the generated union's
+  // discriminant so a renamed kind or field is a compile error, not a silent "".
+  // `data` stays in scope for the few helpers that take a raw record.
+  const event = data as unknown as WireEvent;
+  switch (event.kind) {
     case "steering": {
-      const text = String(data.text ?? "").trim();
+      const text = (event.text ?? "").trim();
       if (!text) break;
       state.lane = null;
       state.messages = [
@@ -974,8 +1114,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // "done" turns it into the separator (or, when nothing was compacted, drops
       // it). Renders as a full-width divider — not an assistant/user bubble.
       state.lane = null;
-      const status = String(data.status ?? "");
-      if (status === "started") {
+      if (event.status === "started") {
         state.messages = [
           ...state.messages,
           {
@@ -983,13 +1122,13 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
             role: "compaction",
             content: "",
             timestamp: new Date().toISOString(),
-            meta: { status: "running", reason: String(data.reason ?? "") },
+            meta: { status: "running", reason: event.reason ?? "" },
           },
         ];
         break;
       }
-      if (status === "done") {
-        const changed = data.ok !== false && Number(data.messages_after ?? 0) < Number(data.messages_before ?? 0);
+      if (event.status === "done") {
+        const changed = event.ok !== false && (event.messages_after ?? 0) < (event.messages_before ?? 0);
         const runningIndex = state.messages.findLastIndex(
           (message) => message.role === "compaction" && message.meta?.status === "running"
         );
@@ -1000,9 +1139,9 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         }
         const meta = {
           status: "done",
-          reason: String(data.reason ?? ""),
-          messagesBefore: Number(data.messages_before ?? 0),
-          messagesAfter: Number(data.messages_after ?? 0),
+          reason: event.reason ?? "",
+          messagesBefore: event.messages_before ?? 0,
+          messagesAfter: event.messages_after ?? 0,
         };
         if (runningIndex >= 0) {
           state.messages = state.messages.map((message, index) =>
@@ -1020,26 +1159,26 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "token_usage": {
       // The cumulative totals grow monotonically across the session, so the
       // latest part is authoritative on both the live stream and on replay.
-      const cumulative = asRecord(data.cumulative);
+      const cumulative = event.cumulative;
       // Per-call (latest) figures — this is the actual current context, not a sum.
-      const contextInputTokens = Number(data.input_tokens ?? 0);
-      const contextOutputTokens = Number(data.output_tokens ?? 0);
-      const agents = asRecord(data.agents);
+      const contextInputTokens = event.input_tokens ?? 0;
+      const contextOutputTokens = event.output_tokens ?? 0;
+      const agents = event.agents;
       state.tokenUsage = {
-        inputTokens: Number(cumulative.input_tokens ?? 0),
-        outputTokens: Number(cumulative.output_tokens ?? 0),
-        totalTokens: Number(cumulative.total_tokens ?? 0),
-        cacheReadTokens: Number(cumulative.cache_read_tokens ?? 0),
-        reasoningTokens: Number(cumulative.reasoning_tokens ?? 0),
-        modelCalls: Number(cumulative.model_calls ?? 0),
+        inputTokens: cumulative?.input_tokens ?? 0,
+        outputTokens: cumulative?.output_tokens ?? 0,
+        totalTokens: cumulative?.total_tokens ?? 0,
+        cacheReadTokens: cumulative?.cache_read_tokens ?? 0,
+        reasoningTokens: cumulative?.reasoning_tokens ?? 0,
+        modelCalls: cumulative?.model_calls ?? 0,
         contextInputTokens,
         contextOutputTokens,
         contextTokens: contextInputTokens + contextOutputTokens,
-        contextWindow: Number(data.context_window ?? 0),
-        agentInputTokens: Number(agents.input_tokens ?? 0),
-        agentOutputTokens: Number(agents.output_tokens ?? 0),
-        agentTotalTokens: Number(agents.total_tokens ?? 0),
-        agentModelCalls: Number(agents.model_calls ?? 0),
+        contextWindow: event.context_window ?? 0,
+        agentInputTokens: agents?.input_tokens ?? 0,
+        agentOutputTokens: agents?.output_tokens ?? 0,
+        agentTotalTokens: agents?.total_tokens ?? 0,
+        agentModelCalls: agents?.model_calls ?? 0,
       };
       break;
     }
@@ -1048,7 +1187,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // calls surface their own running/done status, so just close out any
       // in-flight thinking indicator. (The thinking ping itself is a `thinking`
       // event now, not a status — this only handles the wait edge.)
-      if (String(data.code ?? "") === "waiting_for_tools") finishRunningThinking(state);
+      if (event.code === "waiting_for_tools") finishRunningThinking(state);
       // A status (e.g. goal_check between answer attempts) ends the current prose
       // block, so the next text starts its own message instead of concatenating.
       state.lane = null;
@@ -1059,40 +1198,37 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // emitted after a mid-turn think (or a control tool) merges into the prior
       // message and the thinking card lands out of order.
       state.lane = null;
-      applyThinking(state, String(data.text ?? ""));
+      applyThinking(state, event.text ?? "");
       break;
     case "thinking_done":
-      finishRunningThinkingWithDuration(state, Number(data.duration_ms ?? 0));
+      finishRunningThinkingWithDuration(state, event.duration_ms ?? 0);
       break;
     case "tool_call": {
-      // Every tool call breaks the prose lane so surrounding text doesn't run
-      // together. Hidden runtime envelopes such as query still cause the break.
+      // Every tool call breaks the prose lane so surrounding text doesn't run together.
       state.lane = null;
-      if (isHiddenToolEventName(data.tool_name)) break;
       finishRunningThinking(state);
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolCallId = event.tool_call_id;
       state.messages = [
         ...state.messages,
         {
           id: `toolcall-${toolCallId || crypto.randomUUID()}`,
           role: "tool_call",
-          content: String(data.tool_name ?? "unknown"),
+          content: event.tool_name || "unknown",
           timestamp: new Date().toISOString(),
-          meta: { arguments: data.arguments, toolCallId, status: "running" },
+          meta: { arguments: event.arguments, toolCallId, status: "running" },
         },
       ];
       break;
     }
     case "tool_result": {
-      if (isHiddenToolEventName(data.tool_name)) break;
       finishRunningThinking(state);
       state.lane = null;
-      const toolName = String(data.tool_name ?? "");
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolName = event.tool_name;
+      const toolCallId = event.tool_call_id;
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, toolName, toolCallId));
-      const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, data.display) : data.display;
+      const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(currentMessage?.meta?.result, event.display) : event.display;
       const artifactUpdate = applyArtifactUpdates(state.messages, mergedResult, toolCallId);
-      const resultStatus = statusFromWire(data.status, artifactUpdate.result);
+      const resultStatus = statusFromWire(event.status);
       // set_tasks / update_tasks complete through this same universal path and carry
       // the authoritative task list for the side panel inside their result.
       const resultTasks = asRecord(artifactUpdate.result).tasks;
@@ -1118,7 +1254,7 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       break;
     }
     case "mcp_event": {
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolCallId = event.tool_call_id;
       const streamed = streamedMcpResult(data);
       const currentMessage = state.messages.find((message) => messageMatchesToolEvent(message, "call_mcp_tool", toolCallId));
       const mergedResult = mergeMcpResult(currentMessage?.meta?.result, streamed);
@@ -1135,11 +1271,11 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // "input required" and shows the prompt inline, so the command (and later
       // its output) stay together. The event always carries the toolCallId.
       finishRunningThinking(state);
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolCallId = event.tool_call_id;
       const permission = {
-        requestId: String(data.request_id ?? ""),
-        justification: data.justification ? String(data.justification) : undefined,
-        risk: data.risk ? String(data.risk) : undefined,
+        requestId: event.request_id,
+        justification: event.justification || undefined,
+        risk: event.risk || undefined,
       };
       state.messages = state.messages.map((message) =>
         message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
@@ -1153,10 +1289,10 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // as a permission: the card flips to "input required" and renders the
       // question inline; the tool result finalizes it once answered.
       finishRunningThinking(state);
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolCallId = event.tool_call_id;
       const question = {
-        requestId: String(data.request_id ?? ""),
-        questions: Array.isArray(data.questions) ? (data.questions as QuestionItem[]) : [],
+        requestId: event.request_id,
+        questions: (event.questions as unknown as QuestionItem[]) ?? [],
       };
       state.messages = state.messages.map((message) =>
         message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
@@ -1167,8 +1303,8 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     }
     case "error": {
       finishRunningThinking(state);
-      const toolName = String(data.tool_name ?? "");
-      const toolCallId = String(data.tool_call_id ?? "");
+      const toolName = event.tool_name ?? "";
+      const toolCallId = event.tool_call_id ?? "";
       if (toolCallId) {
         // Mark the tool call failed with a generic result. The raw error text is
         // model-facing (the runtime already delivered it to the model via the tool
@@ -1193,8 +1329,8 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     case "warning": {
       finishRunningThinking(state);
       state.lane = null;
-      const title = String(data.title ?? "Warning");
-      const message = String(data.message ?? "");
+      const title = event.title ?? "Warning";
+      const message = event.message ?? "";
       state.messages = [
         ...state.messages,
         {
@@ -1202,34 +1338,56 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
           role: "warning",
           content: message ? `${title} — ${message}` : title,
           timestamp: new Date().toISOString(),
-          meta: { warning: { code: String(data.code ?? ""), title, message } },
+          meta: { warning: { code: event.code ?? "", title, message } },
         },
       ];
       break;
     }
-    default:
-      break; // status (non-thinking), other — no UI change
+    case "text":
+    case "done":
+    case "group_started":
+      // The root transcript ignores these (streamed text and agent-panel lifecycle live elsewhere).
+      break;
+    default: {
+      // Exhaustiveness: a new WireEvent kind that is not handled above is a compile error.
+      const _exhaustive: never = event;
+      void _exhaustive;
+      break;
+    }
   }
 }
 
 function reduceArtifactUpdate(state: ReduceState, result: Extract<A2AStreamResult, { kind: "artifact-update" }>): void {
-  const text = streamArtifactText(result);
-  if (!text.trim()) return;
   if (hasAssistantTextAfterLastUser(state)) return;
-  pushAssistantText(state, text);
+  for (const part of result.artifact?.parts ?? []) {
+    if (part.kind !== "text" || !part.text?.trim()) continue;
+    pushAssistantText(
+      state,
+      part.text,
+      requiredContentBlockIdentifier(part.metadata),
+      result.artifact.artifactId,
+    );
+  }
 }
 
 function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, { kind: "status-update" }>): void {
   if (result.final || TERMINAL_STATES.has(result.status?.state as TaskState)) {
     finishRunningThinking(state);
-    finishRunningTools(state);
+    finishActiveTools(state);
   }
 }
 
 // Reconstruct messages + agentGroups from a session's persisted A2A tasks. The
 // history arrives already compacted server-side (adjacent same-kind deltas merged),
 // so it is reduced as-is — no client-side compaction pass.
-function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: AgentGroup[]; tasks: ChatTask[]; tokenUsage: TokenUsage | null; keyCounts: Map<string, number> } {
+function replayTasks(tasks: A2ATask[]): {
+  messages: ChatMessage[];
+  agentGroups: AgentGroup[];
+  tasks: ChatTask[];
+  tokenUsage: TokenUsage | null;
+  keyCounts: Map<string, number>;
+  agentEventIdentifiers: Set<string>;
+} {
   const mainTasks = tasks
     .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
@@ -1252,8 +1410,48 @@ function replayTasks(tasks: A2ATask[]): { messages: ChatMessage[]; agentGroups: 
       if (message.role === "user") reduceUserMessage(state, message);
       else reduceAgentMessage(state, message);
     }
+    if (!hasAssistantTextAfterLastUser(state)) {
+      for (const artifact of task.artifacts ?? []) {
+        for (const part of artifact.parts ?? []) {
+          if (part.kind !== "text" || !part.text?.trim()) continue;
+          pushAssistantText(
+            state,
+            part.text,
+            requiredContentBlockIdentifier(part.metadata),
+            artifact.artifactId,
+          );
+        }
+      }
+    }
+    if (TERMINAL_STATES.has(task.status?.state as TaskState)) finishActiveTools(state);
   }
-  return { messages: state.messages, agentGroups: state.agentGroups, tasks: state.tasks, tokenUsage: state.tokenUsage, keyCounts: state.keyCounts };
+  // Related child tasks are not transcript turns, but their persisted terminal
+  // state is authoritative for the exact agents-panel lane they own. This closes
+  // a lane even when its live `done` event was missed because the parent was
+  // stopped, the viewer disconnected, or the server restarted.
+  for (const task of tasks) {
+    const metadata = task.metadata as Record<string, unknown> | undefined;
+    if (!metadata || !Array.isArray(metadata.referenceTaskIds)) continue;
+    const lane = metadata.agentLane as Record<string, unknown> | undefined;
+    const groupId = String(lane?.groupId ?? "");
+    const stepId = String(lane?.stepId ?? "");
+    const taskState = task.status?.state as TaskState;
+    if (!groupId || !stepId || !TERMINAL_STATES.has(taskState)) continue;
+    state.agentGroups = withStep(
+      state.agentGroups,
+      groupId,
+      stepId,
+      (step) => finishAgentStepState(step, taskState),
+    );
+  }
+  return {
+    messages: state.messages,
+    agentGroups: state.agentGroups,
+    tasks: state.tasks,
+    tokenUsage: state.tokenUsage,
+    keyCounts: state.keyCounts,
+    agentEventIdentifiers: state.agentEventIdentifiers,
+  };
 }
 
 export function useChat(
@@ -1304,6 +1502,11 @@ export function useChat(
   // artifact + message; user-driven events (clicks) are never deduped.
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
+  // Set by a user Stop so the imminent stream-close does not auto-drain the queue
+  // into a fresh turn — which read as "Stop didn't stop it". Queued messages are
+  // left intact (not sent, not lost) for the user to send when they choose; the
+  // flag is one-shot, reset as soon as the aborted stream closes.
+  const abortedByUserRef = useRef(false);
   const errorToastKeysRef = useRef<Set<string>>(new Set());
   // Tracks whether this session was running, so we do a final refresh when its
   // turn finishes (the subscribe stream closes once it is no longer running).
@@ -1358,7 +1561,15 @@ export function useChat(
 
   const applyHistoryFragments = useCallback(() => {
     const replayed = replayTasks(historyFragmentsRef.current);
-    stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage, keyCounts: replayed.keyCounts };
+    stateRef.current = {
+      messages: replayed.messages,
+      agentGroups: replayed.agentGroups,
+      tasks: replayed.tasks,
+      lane: null,
+      tokenUsage: replayed.tokenUsage,
+      keyCounts: replayed.keyCounts,
+      agentEventIdentifiers: replayed.agentEventIdentifiers,
+    };
     flushNow();
   }, [flushNow]);
 
@@ -1516,16 +1727,15 @@ export function useChat(
     void drainOlderHistory();
   }, [isHistoryLoading, isOlderHistoryLoading, isStreaming, hasOlderHistory, drainOlderHistory]);
 
-  // Live updates for a session that is running on the server but is not being
-  // driven by this hook (we switched back to it, or it was started elsewhere).
+  // Live updates for a session that is running on the server.
   // Subscribes to the server's per-context event stream: one compacted snapshot
   // (catch-up) then a live tail of each emitted part, applied as O(delta) updates
   // through the same reducer the driver uses — instead of polling and re-replaying
-  // the whole transcript every second. Never subscribes while we're driving the
-  // turn ourselves; the live message/stream SSE is authoritative for that.
+  // the whole transcript every second. While this hook drives the root turn, this
+  // stream carries only identified agent-lane events; the root message stream stays
+  // authoritative for everything else.
   useEffect(() => {
     if (!initialSessionId) return;
-    if (streamedLocallyRef.current || isStreamingRef.current) return;
 
     let cancelled = false;
     let subscription: { abort: () => void } | null = null;
@@ -1533,7 +1743,15 @@ export function useChat(
 
     const applySnapshot = (tasks: A2ATask[]) => {
       const replayed = replayTasks(tasks);
-      stateRef.current = { messages: replayed.messages, agentGroups: replayed.agentGroups, tasks: replayed.tasks, lane: null, tokenUsage: replayed.tokenUsage, keyCounts: replayed.keyCounts };
+      stateRef.current = {
+        messages: replayed.messages,
+        agentGroups: replayed.agentGroups,
+        tasks: replayed.tasks,
+        lane: null,
+        tokenUsage: replayed.tokenUsage,
+        keyCounts: replayed.keyCounts,
+        agentEventIdentifiers: replayed.agentEventIdentifiers,
+      };
       sessionIdRef.current = initialSessionId;
       setSessionId(initialSessionId);
       flushNow();
@@ -1544,12 +1762,15 @@ export function useChat(
       subscription = subscribeSessionStream(
         initialSessionId,
         (frame) => {
-          if (cancelled || isStreamingRef.current || streamedLocallyRef.current) return;
+          if (cancelled) return;
+          const drivingRootTurn = isStreamingRef.current || streamedLocallyRef.current;
           if (frame.kind === "snapshot") {
+            if (drivingRootTurn) return;
             applySnapshot(frame.tasks);
             setHistoryError(false);
             setIsHistoryLoading(false);
           } else if (frame.kind === "live") {
+            if (drivingRootTurn && !isImmediateAgentEventMessage(frame.message)) return;
             reduceAgentMessage(stateRef.current, frame.message);
             flush();
           }
@@ -1685,7 +1906,7 @@ export function useChat(
           // spinning forever. Sweep here as the single catch-all so a card can never
           // outlive its stream.
           finishRunningThinking(stateRef.current);
-          finishRunningTools(stateRef.current);
+          finishActiveTools(stateRef.current);
           flush();
           // Drain queued text first (user intent), then any artifact events that
           // arrived mid-turn. A message still flagged `steering` here was accepted by
@@ -1697,11 +1918,17 @@ export function useChat(
           // discards its own copy on stream close, so this can't double-apply.
           const pendingText = queuedMessagesRef.current;
           const pendingArtifact = queuedArtifactEventsRef.current;
-          if (pendingText.length > 0) {
+          // A user Stop closes the stream; do not immediately relaunch a queued
+          // message as a new turn — that is exactly the "Stop didn't stop" symptom.
+          // Consume the one-shot flag and fall through to idle, leaving the queue for
+          // the user to send deliberately.
+          const abortedByUser = abortedByUserRef.current;
+          abortedByUserRef.current = false;
+          if (!abortedByUser && pendingText.length > 0) {
             const next = pendingText[0];
             setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
             runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
-          } else if (pendingArtifact.length > 0) {
+          } else if (!abortedByUser && pendingArtifact.length > 0) {
             const [next, ...rest] = pendingArtifact;
             queuedArtifactEventsRef.current = rest;
             runStreamRef.current({ kind: "artifact", event: next });
@@ -1793,8 +2020,8 @@ export function useChat(
   // the composer stays gated, with no hint that the click was lost.
   const notifyResolveFailure = useCallback((requestId: string, kind: "decision" | "answer", status: string) => {
     stateRef.current.messages = stateRef.current.messages.map((message) => {
-      const permission = message.meta?.permission as { requestId?: string } | undefined;
-      const question = message.meta?.question as { requestId?: string } | undefined;
+      const permission = message.meta?.permission;
+      const question = message.meta?.question;
       if (message.role !== "tool_call" || (permission?.requestId !== requestId && question?.requestId !== requestId)) return message;
       return { ...message, meta: { ...message.meta, status: "failed" } };
     });
@@ -1809,11 +2036,25 @@ export function useChat(
     });
   }, [flush]);
 
+  const settleInactivePrompt = useCallback((requestId: string) => {
+    stateRef.current.messages = stateRef.current.messages.map((message) => {
+      const permission = message.meta?.permission;
+      const question = message.meta?.question;
+      if (message.role !== "tool_call" || (permission?.requestId !== requestId && question?.requestId !== requestId)) return message;
+      return { ...message, meta: { ...message.meta, status: "completed" } };
+    });
+    flush();
+  }, [flush]);
+
   const handlePermission = useCallback(
     async (requestId: string, decision: PermissionDecision) => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolvePermission(ctx, requestId, decision);
+      if (result.status === "stale" || result.status === "unknown") {
+        settleInactivePrompt(requestId);
+        return;
+      }
       if (!result.ok) {
         notifyResolveFailure(requestId, "decision", result.status);
         return;
@@ -1822,7 +2063,7 @@ export function useChat(
       // approval resumes as "running" (the result/error finalizes it), a denial
       // is settled by the error the backend emits for this tool call.
       stateRef.current.messages = stateRef.current.messages.map((message) => {
-        const permission = message.meta?.permission as { requestId?: string } | undefined;
+        const permission = message.meta?.permission;
         if (message.role !== "tool_call" || permission?.requestId !== requestId) return message;
         return {
           ...message,
@@ -1831,7 +2072,7 @@ export function useChat(
       });
       flush();
     },
-    [flush, notifyResolveFailure]
+    [flush, notifyResolveFailure, settleInactivePrompt]
   );
 
   const handleQuestion = useCallback(
@@ -1839,6 +2080,10 @@ export function useChat(
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolveQuestion(ctx, requestId, answers);
+      if (result.status === "stale" || result.status === "unknown") {
+        settleInactivePrompt(requestId);
+        return;
+      }
       if (!result.ok) {
         notifyResolveFailure(requestId, "answer", result.status);
         return;
@@ -1846,7 +2091,7 @@ export function useChat(
       // Record the answer and hand the card back to its running lifecycle; the
       // tool_result finalizes it (same shape as a resolved permission).
       stateRef.current.messages = stateRef.current.messages.map((message) => {
-        const question = message.meta?.question as { requestId?: string } | undefined;
+        const question = message.meta?.question;
         if (message.role !== "tool_call" || question?.requestId !== requestId) return message;
         return {
           ...message,
@@ -1855,7 +2100,7 @@ export function useChat(
       });
       flush();
     },
-    [flush, notifyResolveFailure]
+    [flush, notifyResolveFailure, settleInactivePrompt]
   );
 
   // The user dismissed the whole question prompt without answering. Report the
@@ -1867,22 +2112,29 @@ export function useChat(
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolveQuestion(ctx, requestId, [], true);
+      if (result.status === "stale" || result.status === "unknown") {
+        settleInactivePrompt(requestId);
+        return;
+      }
       if (!result.ok) {
         notifyResolveFailure(requestId, "answer", result.status);
         return;
       }
       stateRef.current.messages = stateRef.current.messages.map((message) => {
-        const question = message.meta?.question as { requestId?: string } | undefined;
+        const question = message.meta?.question;
         if (message.role !== "tool_call" || question?.requestId !== requestId) return message;
         return { ...message, meta: { ...message.meta, status: "completed", question: { ...question, declined: true } } };
       });
       flush();
     },
-    [flush, notifyResolveFailure]
+    [flush, notifyResolveFailure, settleInactivePrompt]
   );
 
   const abort = useCallback(() => {
     const ctx = sessionIdRef.current;
+    // Suppress the queue auto-drain that the imminent stream close would otherwise
+    // trigger, so Stop halts everything instead of relaunching a queued follow-up.
+    abortedByUserRef.current = true;
     if (!ctx) {
       abortControllerRef.current?.abort();
       return Promise.resolve();
@@ -1895,8 +2147,8 @@ export function useChat(
     let settledAny = false;
     for (const message of stateRef.current.messages) {
       if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
-      const permission = message.meta?.permission as { requestId?: string } | undefined;
-      const question = message.meta?.question as { requestId?: string } | undefined;
+      const permission = message.meta?.permission;
+      const question = message.meta?.question;
       if (permission?.requestId) {
         settledAny = true;
         void resolvePermission(ctx, permission.requestId, "deny");

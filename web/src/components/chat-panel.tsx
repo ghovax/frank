@@ -1,14 +1,15 @@
 "use client";
 
 import {
-  Badge,
   Box,
   Button,
   EmptyState,
   Flex,
+  Heading,
   IconButton,
   Menu,
   Separator,
+  Span,
   Text,
   VStack,
 } from "@chakra-ui/react";
@@ -21,9 +22,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { VersionBadge } from "./attachment-chips";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 import { PanelTab } from "./ui/panel-tab";
-import { PanelBody, PanelCard, PanelHeader, PanelEmptyState } from "@/components/ui/panel";
+import { PanelCard, PanelHeader, PanelEmptyState, TOP_BAR_HEIGHT } from "@/components/ui/panel";
 import { SegmentedToggle } from "@/components/ui/segmented-toggle";
 import { extractToolArtifacts, externalArtifactUrl, ArtifactView } from "./tool-views";
 import { NativeWebview } from "./native-webview";
@@ -42,8 +43,8 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { getToolCallDisplay } from "@/lib/tool-display";
-import { isHiddenToolEventName, type ToolPermission, type ToolQuestion } from "@/lib/tool-event";
+import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
+import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, setPermissionMode, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
@@ -51,6 +52,18 @@ import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactI
 import type { ConnectionTarget } from "@/lib/connection";
 import { scrollFade, scrollFadeTopBottom } from "@/lib/scroll-fade";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { playAttentionSound, playTurnEndSound } from "@/lib/sounds";
+import { closePermissionNotification, notifyPermissionRequest, setPermissionNotificationHandler } from "@/lib/notify";
+import { ArtifactHistoryList } from "./artifact-history";
+
+// A Chakra Box that is also a motion component, so the right panel region can
+// animate its open/close (opacity + slide) exactly like the history sidebar on
+// the left — without losing its flex-layout props.
+const MotionBox = motion.create(Box);
+
+type SidePanelKey = "artifact" | "agents" | "background";
+
+const MAXIMUM_OPEN_SIDE_PANELS = 2;
 
 
 interface ChatPanelProps {
@@ -88,7 +101,7 @@ interface ChatPanelProps {
   onStreamingChange?: (isStreaming: boolean) => void;
   historyOpen?: boolean;
   onToggleHistory?: () => void;
-  models?: { id: string; name: string; provider: string; available: boolean; curated: boolean }[];
+  models?: { id: string; name: string; provider: string; available: boolean }[];
   modelProviders?: { id: string; name: string; openai_compatible: boolean }[];
   recentModels?: { id: string; name: string; provider: string }[];
   agentModel?: string;
@@ -98,7 +111,9 @@ interface ChatPanelProps {
 
 type TimelineItem =
   | { kind: "message"; message: ChatMessage }
-  | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingCount: number };
+  // A tool_group with no messages is a reasoning ("thinking") phase. `thinkingTurns`
+  // records whether reasoning exists so a standalone Thinking row can be retained.
+  | { kind: "tool_group"; id: string; messages: ChatMessage[]; thinkingTurns: number };
 
 // One versioned state of an artifact (the filmstrip walks these in sequence order).
 // Version identity is the git commit sha; bytes are the git blob sha at that commit.
@@ -147,7 +162,7 @@ type TranscriptArtifact = {
 
 function versionEntryFromWire(version: ArtifactVersion): ArtifactVersionEntry {
   return {
-    versionId: version.versionId || version.commitSha,
+    versionId: version.versionId,
     commitSha: version.commitSha,
     blobSha: version.blobSha,
     sequence: version.sequence,
@@ -163,8 +178,8 @@ function groupFromSurface(surface: ArtifactSurface): ArtifactGroup {
     id: surface.artifactId,
     artifactId: surface.artifactId,
     kind: surface.kind,
-    title: surface.title || surface.relativePath || "Artifact",
-    source: surface.source || surface.relativePath,
+    title: surface.title,
+    source: surface.source,
     gitDirectory: surface.gitDirectory,
     relativePath: surface.relativePath,
     absolutePath: surface.absolutePath,
@@ -215,18 +230,17 @@ function transcriptArtifactsFromMessages(messages: ChatMessage[]): Map<string, T
     const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
     if (resultContent == null) continue;
     for (const artifact of extractToolArtifacts("open_artifact", resultContent)) {
-      const artifactId = String(artifact.artifact_id ?? artifact.artifactId ?? artifact.id ?? "");
+      const artifactId = String(artifact.artifact_id ?? "");
       if (!artifactId) continue;
-      const rawKind = String(artifact.kind ?? artifact.type ?? "").toLowerCase();
-      const kind: TranscriptArtifact["kind"] =
-        rawKind === "image" || rawKind === "html" || rawKind === "iframe" ? rawKind : "file";
+      const kind = String(artifact.type ?? "").toLowerCase();
+      if (kind !== "image" && kind !== "html" && kind !== "iframe" && kind !== "file") continue;
       collected.set(artifactId, {
         artifactId,
         kind,
-        title: String(artifact.title ?? "Artifact"),
-        source: String(artifact.source ?? artifact.src ?? artifact.url ?? ""),
+        title: String(artifact.title ?? ""),
+        source: String(artifact.source ?? ""),
         location: String(artifact.location ?? ""),
-        absolutePath: String(artifact.absolute_path ?? artifact.absolutePath ?? ""),
+        absolutePath: String(artifact.absolute_path ?? ""),
         toolCallId,
       });
     }
@@ -255,60 +269,58 @@ function groupFromTranscript(artifact: TranscriptArtifact): ArtifactGroup {
 function timelineItems(messages: ChatMessage[]): TimelineItem[] {
   const items: TimelineItem[] = [];
   let index = 0;
-  // Reasoning phases seen since the last non-thinking, non-tool row. They belong to
-  // the tool batch they lead into (surfaced as the group's brain counter); a prose
-  // or user row that isn't a tool group discards them. The first such phase's id is
-  // kept too: it keys the group so the tools-less "thinking" heading and the tool
-  // group it becomes are the SAME element — the tools stream into the existing card
-  // instead of one card being swapped for another (which would flash a remount).
-  let pendingThinking = 0;
+  // The first reasoning phase seen since the last non-thinking, non-tool row. It
+  // belongs to the tool batch it leads into: its id keys the group so the
+  // tools-less "thinking" heading and the tool group it becomes are the SAME
+  // element — the tools stream into the existing row instead of one row being
+  // swapped for another (which would flash a remount). A prose or user row that
+  // isn't a tool group discards it.
   let pendingThinkingId: string | null = null;
+  // Count reasoning messages so a tools-less Thinking group can be distinguished from
+  // an empty group.
+  let pendingThinkingTurns = 0;
   while (index < messages.length) {
     const message = messages[index];
     if (message.role === "thinking") {
-      if (pendingThinking === 0) pendingThinkingId = message.id;
-      pendingThinking += 1;
+      pendingThinkingId ??= message.id;
+      pendingThinkingTurns += 1;
       index += 1;
       continue;
     }
-    if (message.role === "tool_call" && isHiddenToolEventName(message.content)) {
+    if (message.role === "assistant" && !message.content.trim()) {
       index += 1;
       continue;
     }
     if (message.role !== "tool_call") {
-      if (pendingThinking > 0 && pendingThinkingId) {
-        items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingCount: pendingThinking });
+      if (pendingThinkingId) {
+        items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
       }
       items.push({ kind: "message", message });
-      pendingThinking = 0;
       pendingThinkingId = null;
+      pendingThinkingTurns = 0;
       index += 1;
       continue;
     }
 
     const toolMessages: ChatMessage[] = [];
-    // The leading reasoning that led into this batch counts toward it too, and its
-    // id keys the group (stable from the pre-tool "thinking" heading onward).
-    let thinkingCount = pendingThinking;
+    // The leading reasoning that led into this batch keys the group (stable from
+    // the pre-tool "thinking" heading onward). Reasoning phases are tallied from the
+    // leading ones plus any interleaved between this group's calls.
     const groupKey = pendingThinkingId;
-    pendingThinking = 0;
+    let thinkingTurns = pendingThinkingTurns;
     pendingThinkingId = null;
+    pendingThinkingTurns = 0;
     // Gather contiguous tool calls. Reasoning ("thinking") is hidden from the
     // timeline, so it must not split a run of tool calls either — otherwise two
     // calls issued in successive iterations (each preceded by its own thinking)
-    // would render as separate entries instead of one group. Each interleaved
-    // reasoning phase is tallied into the group's brain counter.
+    // would render as separate entries instead of one group.
     while (index < messages.length) {
       const next = messages[index];
       if (next.role === "tool_call") {
-        if (isHiddenToolEventName(next.content)) {
-          index += 1;
-          continue;
-        }
         toolMessages.push(next);
         index += 1;
       } else if (next.role === "thinking") {
-        thinkingCount += 1;
+        thinkingTurns += 1;
         index += 1;
       } else {
         break;
@@ -320,14 +332,14 @@ function timelineItems(messages: ChatMessage[]): TimelineItem[] {
       // thinking→tools transition; fall back to the first tool otherwise.
       id: groupKey ?? toolMessages[0].id,
       messages: toolMessages,
-      thinkingCount,
+      thinkingTurns,
     });
   }
-  // A reasoning phase at the tail surfaces as a tools-less group heading. Keep it
-  // after it finishes too: thinking-only phases are first-class visualizations,
-  // not temporary placeholders to be filtered away.
-  if (pendingThinking > 0 && pendingThinkingId) {
-    items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingCount: pendingThinking });
+  // A reasoning phase at the tail surfaces as the live "Thinking" status line.
+  // The item is emitted here unconditionally; ToolGroup renders it only while
+  // the turn is live (keepOpen), so settled reasoning leaves no row behind.
+  if (pendingThinkingId) {
+    items.push({ kind: "tool_group", id: pendingThinkingId, messages: [], thinkingTurns: pendingThinkingTurns });
   }
   return items;
 }
@@ -367,7 +379,8 @@ export function ChatPanel({
   onAgentModelChange,
   compactionKeepRecentTurns,
 }: ChatPanelProps) {
-  const t = useTranslations("ChatPanel");
+  const translation = useTranslations("ChatPanel");
+  const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendArtifactEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
@@ -435,10 +448,14 @@ export function ChatPanel({
   // question prompt on a tool call). Read via a ref inside handleSend so a new
   // message is queued rather than steered while a decision is outstanding.
   const hasInputRequiredRef = useRef(false);
-  const [agentsPanelOpen, setAgentsPanelOpen] = useState(false);
+  const [openSidePanels, setOpenSidePanels] = useState<SidePanelKey[]>([]);
+  const agentsPanelOpen = openSidePanels.includes("agents");
+  const artifactPanelOpen = openSidePanels.includes("artifact");
+  const backgroundPanelOpen = openSidePanels.includes("background");
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
-  const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
-  const [artifactPanelWidth, setArtifactPanelWidth] = useState(560);
+  // Default right-region width: comfortable for one panel without dwarfing the
+  // transcript (pairs with the sidebar default of 240 in page.tsx). Drag grows it.
+  const [artifactPanelWidth, setArtifactPanelWidth] = useState(480);
   // Tabs are keyed by artifactId. A tab opens from the transcript (an open_artifact
   // result) or from History mode (selecting a changed file); its versions and bytes come
   // from the backend endpoints, refreshed live on the `artifact_captured` broadcast.
@@ -492,8 +509,35 @@ export function ChatPanel({
       ? initialSettingsSection : null;
   const [settingsOpen, setSettingsOpen] = useState(!!validInitialSection);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(validInitialSection ?? "general");
+  const [appliedInitialSettingsSection, setAppliedInitialSettingsSection] = useState(validInitialSection);
+  if (appliedInitialSettingsSection !== validInitialSection) {
+    setAppliedInitialSettingsSection(validInitialSection);
+    if (validInitialSection) {
+      setSettingsSection(validInitialSection);
+      setSettingsOpen(true);
+    }
+  }
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [backgroundPanelOpen, setBackgroundPanelOpen] = useState(false);
+
+  const setSidePanelOpen = useCallback((panel: SidePanelKey, open: boolean) => {
+    setOpenSidePanels((currentPanels) => {
+      const remainingPanels = currentPanels.filter((openPanel) => openPanel !== panel);
+      if (!open) return remainingPanels;
+      return [...remainingPanels, panel].slice(-MAXIMUM_OPEN_SIDE_PANELS);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (openSidePanels.length === 0 || !historyOpen || !window.matchMedia("(max-width: 1199px)").matches) return;
+    onToggleHistory?.();
+  }, [openSidePanels.length, historyOpen, onToggleHistory]);
+
+  const markSidePanelActive = useCallback((panel: SidePanelKey) => {
+    setOpenSidePanels((currentPanels) => {
+      if (!currentPanels.includes(panel) || currentPanels[currentPanels.length - 1] === panel) return currentPanels;
+      return [...currentPanels.filter((openPanel) => openPanel !== panel), panel];
+    });
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -708,11 +752,15 @@ export function ChatPanel({
   }, [initialSessionId]);
 
   // New content is followed by the layout effect above (only while pinned); this
-  // just surfaces the streaming flag to the parent. The initial jump-to-bottom is
-  // also handled there: pinned starts true, so the first post-load pass lands at
-  // the bottom instantly.
+  // surfaces the streaming flag to the parent and plays the turn-end chime on the
+  // live→settled transition (never on mount, so loading a finished session is
+  // silent). The initial jump-to-bottom is also handled there: pinned starts
+  // true, so the first post-load pass lands at the bottom instantly.
+  const wasStreamingRef = useRef(false);
   useEffect(() => {
     onStreamingChangeRef.current?.(isStreaming);
+    if (wasStreamingRef.current && !isStreaming) playTurnEndSound();
+    wasStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
   async function handlePermissionModeChange(nextMode: PermissionMode) {
@@ -739,7 +787,7 @@ export function ChatPanel({
     (sum, group) => sum + group.steps.filter((step) => !isStepDone(step)).length,
     0
    );
-  const currentFolderName = folderDisplayName(workingDirectory) || t("thisFolder");
+  const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
   // Entrance animation is reserved for rows a *live turn* just appended at the
   // bottom — never the initial load or a background history prepend, which arrive
@@ -811,16 +859,7 @@ export function ChatPanel({
       groups.set(artifactId, groupFromTranscript(transcriptArtifact));
     }
     for (const surface of artifactSurfaces) {
-      const transcriptGroup = groups.get(surface.artifactId);
-      const surfaceGroup = groupFromSurface(surface);
-      // Keep the transcript's absolute path/source if the surface omitted it.
-      groups.set(surface.artifactId, {
-        ...surfaceGroup,
-        title: surfaceGroup.title || transcriptGroup?.title || "Artifact",
-        source: surfaceGroup.source || transcriptGroup?.source || "",
-        absolutePath: surfaceGroup.absolutePath || transcriptGroup?.absolutePath || "",
-        toolCallId: surfaceGroup.toolCallId || transcriptGroup?.toolCallId || "",
-      });
+      groups.set(surface.artifactId, groupFromSurface(surface));
     }
     for (const [id, group] of Object.entries(historyGroupsById)) {
       if (!groups.has(id)) groups.set(id, group);
@@ -1062,7 +1101,7 @@ export function ChatPanel({
     setSeenTranscriptIds((current) => new Set([...current, ...newlyOpened]));
     setOpenArtifactIds((current) => [...current, ...newlyOpened.filter((id) => !current.includes(id))]);
     setActiveTabId(newlyOpened[newlyOpened.length - 1]);
-    setArtifactPanelOpen(true);
+    setSidePanelOpen("artifact", true);
   }
 
   // Open an artifact as a tab by its group id. If already open, just switch to it.
@@ -1075,14 +1114,15 @@ export function ChatPanel({
 
   // Open a changed file from the History list in the same tab+filmstrip flow. The file may
   // never have been surfaced as a tab, so its group is registered here.
-  const handleOpenHistoryFile = useCallback((entry: ArtifactIndexEntry) => {
+  const handleOpenHistoryFile = useCallback((entry: ArtifactIndexEntry, versionId: string) => {
     const group = groupFromIndexEntry(entry);
     setHistoryGroupsById((current) => (current[group.id] ? current : { ...current, [group.id]: group }));
+    setSelectedVersionByArtifact((current) => ({ ...current, [group.id]: versionId }));
     setOpenArtifactIds((current) => (current.includes(group.id) ? current : [...current, group.id]));
     setActiveTabId(group.id);
     setHistoryMode(false);
-    setArtifactPanelOpen(true);
-  }, []);
+    setSidePanelOpen("artifact", true);
+  }, [setSidePanelOpen]);
 
   // Close a specific artifact tab. If it was the active tab, switch to the nearest.
   const handleCloseTab = useCallback((artifactId: string) => {
@@ -1165,7 +1205,7 @@ export function ChatPanel({
 
   // A tool call awaiting the user's approval or answer pauses the turn. While it is
   // outstanding, the composer may only queue (see handleSend) and Stop auto-denies it.
-  const hasInputRequired = messages.some(
+  const hasInputRequired = isStreaming && messages.some(
     (message) => message.role === "tool_call" && message.meta?.status === "input_required"
   );
   useEffect(() => {
@@ -1181,28 +1221,103 @@ export function ChatPanel({
     | { kind: "permission"; permission: ToolPermission; title: string; command?: string; arguments?: Record<string, unknown> }
     | null
   ) = null;
-  for (const message of messages) {
-    if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
-    const question = message.meta?.question as ToolQuestion | undefined;
-    if (question) {
-      pendingPrompt = { kind: "question", question };
-      break;
-    }
-    const permission = message.meta?.permission as ToolPermission | undefined;
-    if (permission) {
-      const name = message.content;
-      const args = message.meta?.arguments as Record<string, unknown> | undefined;
-      const command = name === "bash" && args?.command ? String(args.command) : "";
-      pendingPrompt = {
-        kind: "permission",
-        permission,
-        title: getToolCallDisplay(name, args).label,
-        command: command || undefined,
-        arguments: args,
-      };
-      break;
+  if (isStreaming) {
+    for (const message of messages) {
+      if (message.role !== "tool_call" || message.meta?.status !== "input_required") continue;
+      const question = message.meta?.question as ToolQuestion | undefined;
+      if (question) {
+        pendingPrompt = { kind: "question", question };
+        break;
+      }
+      const permission = message.meta?.permission as ToolPermission | undefined;
+      if (permission) {
+        const name = message.content;
+        const args = message.meta?.arguments as Record<string, unknown> | undefined;
+        const command = name === "bash" && args?.command ? String(args.command) : "";
+        pendingPrompt = {
+          kind: "permission",
+          permission,
+          title: getToolCallDisplay(name, args, tToolDisplay).label,
+          command: command || undefined,
+          arguments: args,
+        };
+        break;
+      }
     }
   }
+  // A parked delegated agent's gate lives in the agents panel, not the main transcript, and it
+  // outlives the parent turn (spawn_agent is non-blocking), so it is surfaced through the
+  // same overlay regardless of isStreaming — otherwise the user could never answer it and
+  // the delegated agent would hang. The top-level prompt (above) takes priority when both exist.
+  if (!pendingPrompt) {
+    outer: for (const group of agentGroups) {
+      for (const step of group.steps) {
+        for (const part of step.parts) {
+          if (part.kind !== "tool" || part.status !== "input_required") continue;
+          const agentLabel = agents.find((candidate) => candidate.id === step.agent)?.title || step.agent;
+          if (part.question) {
+            pendingPrompt = { kind: "question", question: part.question };
+            break outer;
+          }
+          if (part.permission) {
+            const command = part.name === "bash" && part.arguments?.command ? String(part.arguments.command) : "";
+            const label = getToolCallDisplay(part.name, part.arguments, tToolDisplay).label;
+            pendingPrompt = {
+              kind: "permission",
+              permission: part.permission,
+              title: agentLabel ? `${agentLabel}: ${label}` : label,
+              command: command || undefined,
+              arguments: part.arguments,
+            };
+            break outer;
+          }
+        }
+      }
+    }
+  }
+
+  // Audio + system-notification side of a pending decision. The attention cue
+  // plays for the first prompt in a turn, while later prompts stay silent; a
+  // permission prompt additionally raises a system notification carrying the
+  // overlay's own primary action ("Allow once") as its action button — shown
+  // only while the window is unfocused, and retracted the moment the request
+  // resolves or is superseded, so nothing stale lingers in the notification
+  // center. Strings reuse the overlay's, so the two surfaces can never drift.
+  const tPermission = useTranslations("PermissionOverlay");
+  const pendingPermissionId = pendingPrompt?.kind === "permission" ? pendingPrompt.permission.requestId : "";
+  const pendingQuestionId = pendingPrompt?.kind === "question" ? pendingPrompt.question.requestId : "";
+  const pendingPermissionBody = pendingPrompt?.kind === "permission" ? pendingPrompt.command || pendingPrompt.title : "";
+  const notifiedPermissionRef = useRef("");
+  const attentionSoundPlayedRef = useRef(false);
+  const pendingPromptId = pendingPermissionId || pendingQuestionId;
+  useEffect(() => {
+    if (!isStreaming) {
+      attentionSoundPlayedRef.current = false;
+      return;
+    }
+    if (!pendingPromptId || attentionSoundPlayedRef.current) return;
+    attentionSoundPlayedRef.current = true;
+    playAttentionSound();
+  }, [isStreaming, pendingPromptId]);
+  useEffect(() => {
+    const previous = notifiedPermissionRef.current;
+    if (previous && previous !== pendingPermissionId) void closePermissionNotification(previous);
+    notifiedPermissionRef.current = pendingPermissionId;
+    if (!pendingPermissionId) return;
+    void notifyPermissionRequest({
+      requestId: pendingPermissionId,
+      title: tPermission("approvalNeeded"),
+      body: pendingPermissionBody,
+      actionLabel: tPermission("allowOnce"),
+    });
+  }, [pendingPermissionId, pendingPermissionBody, tPermission]);
+  // The notification's action button resolves the request exactly like the
+  // overlay's primary button would.
+  useEffect(() => {
+    setPermissionNotificationHandler((requestId) => handlePermission(requestId, "allow_once"));
+    return () => setPermissionNotificationHandler(null);
+  }, [handlePermission]);
+
   // Auto-open the agents panel on desktop when agent activity begins. Tracked
   // during render (skipped on the first render, so window is only read
   // client-side after a change) rather than in an effect.
@@ -1210,7 +1325,7 @@ export function ChatPanel({
   if (activeSteps !== previousActiveSteps) {
     setPreviousActiveSteps(activeSteps);
     if (activeSteps > 0 && window.matchMedia("(min-width: 768px)").matches) {
-      setAgentsPanelOpen(true);
+      setSidePanelOpen("agents", true);
     }
   }
 
@@ -1222,7 +1337,9 @@ export function ChatPanel({
     const startWidth = artifactPanelWidth;
 
     function handlePointerMove(moveEvent: globalThis.PointerEvent) {
-      const nextWidth = Math.min(900, Math.max(340, startWidth + startX - moveEvent.clientX));
+      // Clamp to the same bounds the region's CSS enforces (minW 360 / maxW 80vw,
+      // capped at 900) so the drag can never fight the styled limits.
+      const nextWidth = Math.min(Math.min(900, Math.round(window.innerWidth * 0.8)), Math.max(360, startWidth + startX - moveEvent.clientX));
       setArtifactPanelWidth(nextWidth);
     }
 
@@ -1247,11 +1364,11 @@ export function ChatPanel({
             right. Always visible so the controls have a stable home; the title
             fills in once the session names itself, matching the sidebar default
             until then. */}
-        <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0} minW={0}>
+        <Flex align="center" gap={2} px={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
           {onToggleHistory ? (
-            <Tooltip content={historyOpen ? t("hideConversations") : t("showConversations")} openDelay={300}>
+            <Tooltip content={historyOpen ? translation("hideConversations") : translation("showConversations")} openDelay={300}>
               <IconButton
-                aria-label={historyOpen ? t("hideConversationsSidebar") : t("showConversationsSidebar")}
+                aria-label={historyOpen ? translation("hideConversationsSidebar") : translation("showConversationsSidebar")}
                 variant="ghost"
                 colorPalette="gray"
                 flexShrink={0}
@@ -1263,46 +1380,46 @@ export function ChatPanel({
           ) : (
             <Box color="fg.muted" flexShrink={0}><LuMessageSquare size={14} /></Box>
           )}
-          <Text textStyle="panelTitle" truncate minW={0} flex={1}>
-            {sessionId ? (sessionTitle || t("untitledConversation")) : t("newConversation")}
+          <Text textStyle="panelTitle" fontWeight="medium" truncate minW={0} flex={1}>
+            {sessionId ? (sessionTitle || translation("untitledConversation")) : translation("newConversation")}
           </Text>
           <GitStatusBar status={directoryStatus} />
           <Flex align="center" gap={1} flexShrink={0}>
             <ToolbarAction
-              label={t("terminalAndBackground")}
+              label={translation("terminalAndBackground")}
               icon={<LuTerminal size={14} />}
               active={backgroundPanelOpen}
               colorPalette="green"
               indicator={runningShellCount > 0}
-              onClick={() => setBackgroundPanelOpen((current) => !current)}
+              onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
             />
             <ToolbarAction
-              label={t("agents")}
+              label={translation("agents")}
               icon={<LuNetwork size={14} />}
               active={agentsPanelOpen}
               colorPalette="purple"
               indicator={activeSteps > 0}
               onClick={() => {
                 setFocusedGroupId(null);
-                setAgentsPanelOpen((current) => !current);
+                setSidePanelOpen("agents", !agentsPanelOpen);
               }}
             />
             <ToolbarAction
-              label={t("artifacts")}
+              label={translation("artifacts")}
               icon={<LuAppWindow size={14} />}
               active={artifactPanelOpen}
               colorPalette="blue"
               indicator={openGroups.length > 0 || artifactIndex.length > 0}
-              onClick={() => setArtifactPanelOpen((current) => !current)}
+              onClick={() => setSidePanelOpen("artifact", !artifactPanelOpen)}
             />
             <ToolbarAction
-              label={t("settings")}
+              label={translation("settings")}
               icon={<LuSettings size={14} />}
               onClick={() => openSettings("general")}
             />
             <DropdownMenu
               trigger={
-                <IconButton aria-label={t("sessionOptions")} variant="ghost">
+                <IconButton aria-label={translation("sessionOptions")} variant="ghost">
                   <LuEllipsis size={14} />
                 </IconButton>
               }
@@ -1315,7 +1432,7 @@ export function ChatPanel({
                 onClick={() => { if (revealPath) void revealInFinder(revealPath); }}
               >
                 <LuFolderOpen size={13} />
-                <Box flex={1}>{t("openThisFolder")}</Box>
+                <Box flex={1}>{translation("openThisFolder")}</Box>
               </Menu.Item>
               <Menu.Item
                 value="delete"
@@ -1326,7 +1443,7 @@ export function ChatPanel({
                 onClick={() => setDeleteConfirmOpen(true)}
               >
                 <LuTrash2 size={13} />
-                <Box flex={1}>{t("deleteSession")}</Box>
+                <Box flex={1}>{translation("deleteSession")}</Box>
               </Menu.Item>
             </DropdownMenu>
           </Flex>
@@ -1343,13 +1460,13 @@ export function ChatPanel({
                     <LuTriangleAlert />
                   </EmptyState.Indicator>
                   <VStack gap={1}>
-                    <EmptyState.Title>{t("loadConversationErrorTitle")}</EmptyState.Title>
+                    <EmptyState.Title>{translation("loadConversationErrorTitle")}</EmptyState.Title>
                     <EmptyState.Description>
-                      {t("loadConversationErrorDescription")}
+                      {translation("loadConversationErrorDescription")}
                     </EmptyState.Description>
                   </VStack>
                   <Button variant="solid" colorPalette="blue" onClick={reloadHistory}>
-                    {t("retry")}
+                    {translation("retry")}
                   </Button>
                 </EmptyState.Content>
               </EmptyState.Root>
@@ -1369,14 +1486,14 @@ export function ChatPanel({
                         on the Projects home) — the build prompt, the project's locations (dotted
                         by connection status), then the folder's skills. */}
                     <Flex direction="column" align="center" gap={4}>
-                      <Text as="h2" fontSize="2xl" fontWeight="semibold" textAlign="center">
-                        {t("buildPrompt", { folder: currentFolderName })}
-                      </Text>
+                      <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center">
+                        {translation("buildPrompt", { folder: currentFolderName })}
+                      </Heading>
                       {projectLocations.length > 0 && (
                         <Flex direction="column" align="center" gap={2}>
                           <Flex align="center" justify="center" gap={1.5} color="fg.muted">
-                            <LuNetwork size={15} />
-                            <Text textStyle="sectionLabel">{t("locationsAvailable")}</Text>
+                            <LuNetwork size={14} />
+                            <Text textStyle="panelTitle">{translation("locationsAvailable")}</Text>
                           </Flex>
                           <Flex align="center" gap={2.5} wrap="wrap" justify="center">
                             {projectLocations.map((location) => (
@@ -1392,27 +1509,31 @@ export function ChatPanel({
                 </motion.div>
               ) : (
                 <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15, ease: "easeOut" }} style={{ width: "100%" }}>
-                  <VStack ref={scrollContentRef} gap={3} align="stretch" w="full" maxW="80rem" mx="auto">
+                  {/* gap 2.5 (10px): tight enough that a tool-activity line and the prose
+                      around it read as one document, while user bubbles — carrying their own
+                      fill — still mark the turn boundaries. */}
+                  <VStack ref={scrollContentRef} gap={2.5} align="stretch" w="full" maxW="80rem" mx="auto">
                     <AnimatePresence initial={false}>
                       {renderedTimeline.map((item, itemIndex) => {
                         const isLastItem = itemIndex === renderedTimeline.length - 1;
                         const key = item.kind === "tool_group" ? item.id : item.message.id;
+                        // A tools-less group is a reasoning phase; it stays in the transcript as a
+                        // persistent "Thinking" row (its own record of the planning that happened),
+                        // so it is only skipped if it somehow carries neither tools nor thinking.
+                        if (item.kind === "tool_group" && item.messages.length === 0 && item.thinkingTurns === 0) {
+                          return null;
+                        }
                         const inner = item.kind === "tool_group" ? (
                           <ChatToolGroup
                             messages={item.messages}
-                            onPermission={handlePermission}
-                            onQuestion={handleQuestion}
                             agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
                             keepOpen={isStreaming && isLastItem}
-                            thinkingCount={item.thinkingCount}
                           />
                         ) : (
                           <ChatMessageItem
                             message={enrichAnnotationVersions(item.message)}
-                            onPermission={handlePermission}
-                            onQuestion={handleQuestion}
                             agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
@@ -1424,22 +1545,22 @@ export function ChatPanel({
                         // token by token), so its wrapper stays a plain, stable row — an entrance
                         // animation on top of the streaming text would fight it. User messages and
                         // tool-call groups, though, are complete the moment they appear, so they get
-                        // a single gentle fade-and-rise. `animatedKeys` limits it to rows a live turn
+                        // a single gentle fade. `animatedKeys` limits it to rows a live turn
                         // just appended (never load or history), and `initial` only fires on mount,
-                        // so a tool group animates once — not again as its calls fill in.
+                        // so a tool group fades once — not again as its calls fill in.
                         const isAssistantMessage = item.kind === "message" && item.message.role === "assistant";
                         if (isAssistantMessage) {
                           return (
-                            <div key={key} style={{ display: "flex", flexDirection: "column" }}>
+                            <Box key={key} display="flex" flexDirection="column">
                               {inner}
-                            </div>
+                            </Box>
                           );
                         }
                         return (
                           <motion.div
                             key={key}
-                            initial={animatedKeys.has(key) ? { opacity: 0, y: 6 } : false}
-                            animate={{ opacity: 1, y: 0 }}
+                            initial={animatedKeys.has(key) ? { opacity: 0 } : false}
+                            animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.18, ease: "easeOut" }}
                             style={{ display: "flex", flexDirection: "column" }}
@@ -1452,7 +1573,7 @@ export function ChatPanel({
                     {queuedMessages.map((message, index) => (
                       <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
                         <IconButton
-                          aria-label={t("deleteQueuedMessage")}
+                          aria-label={translation("deleteQueuedMessage")}
                           variant="ghost"
                           colorPalette="red"
                           mt={0.5}
@@ -1473,11 +1594,11 @@ export function ChatPanel({
                           minW={0}
                         >
                           <Flex align="center" gap={1.5}>
-                            <Box as="span" display="inline-flex" alignItems="center">
+                            <Span display="inline-flex" alignItems="center">
                               {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
-                            </Box>
+                            </Span>
                             <Text textStyle="fieldLabel" color="fg.subtle">
-                              {message.steering ? t("steeringNextOpening") : t("queued")}
+                              {message.steering ? translation("steeringNextOpening") : translation("queued")}
                             </Text>
                           </Flex>
                           <Text fontSize="sm" color="fg.muted">{message.text}</Text>
@@ -1505,7 +1626,7 @@ export function ChatPanel({
             onClick={scrollToBottom}
           >
             <LuArrowDown />
-            {t("jumpToLatest")}
+            {translation("jumpToLatest")}
           </Button>
         )}
         </Box>
@@ -1558,6 +1679,8 @@ export function ChatPanel({
           recentModels={recentModels}
           agentModel={agentModel}
           onAgentModelChange={onAgentModelChange}
+          permissionMode={permissionMode}
+          onPermissionModeChange={handlePermissionModeChange}
           tokenUsage={tokenUsage}
           onCompact={compact}
           isCompacting={isCompacting}
@@ -1574,16 +1697,29 @@ export function ChatPanel({
           the chat (no gutter column) so the chat content keeps symmetric left/right padding;
           the resize handle overlaps the boundary as an absolute strip rather than consuming a
           column of space — mirroring the left sidebar's handle. */}
+      <AnimatePresence initial={false}>
       {(artifactPanelOpen || agentsPanelOpen || backgroundPanelOpen) && (
-        <Box
+        <MotionBox
+          key="panel-region"
+          data-layout="side-panel-region"
           flexShrink={0}
           h="100%"
-          w={{ base: "100%", md: `${artifactPanelWidth}px` }}
-          minW={{ base: "100%", md: "360px" }}
+          w={{ base: "100%", md: `min(${artifactPanelWidth}px, 55%)` }}
+          minW={{ base: "100%", md: "min(360px, 55%)" }}
           maxW={{ base: "100%", md: "80vw" }}
           pr={2}
           pb={2}
-          position="relative"
+          position={{ base: "absolute", md: "relative" }}
+          inset={{ base: 0, md: "auto" }}
+          zIndex={{ base: 3, md: "auto" }}
+          // Same slide + fade (and timing) as the history sidebar on the left, mirrored:
+          // the two edges of the window open and close as one family. Only transform and
+          // opacity animate — the width is applied instantly, so the resize drag never
+          // fights a tween and the transcript reflows exactly once per toggle.
+          initial={{ opacity: 0, x: 24 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 24 }}
+          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
         >
           <Box
             display={{ base: "none", md: "block" }}
@@ -1601,6 +1737,7 @@ export function ChatPanel({
               panels={[
                 artifactPanelOpen && {
                   key: "artifact",
+                  onActivate: () => markSidePanelActive("artifact"),
                   content: (
                     <PanelCard
                       position="relative"
@@ -1610,21 +1747,22 @@ export function ChatPanel({
             {/* Persistent top bar with the Artifacts ⇄ History toggle. */}
             <PanelHeader
               icon={<LuAppWindow size={14} />}
-              title={t("artifacts")}
-              onClose={() => setArtifactPanelOpen(false)}
-              closeLabel={t("collapseArtifactsSidebar")}
+              title={translation("artifacts")}
+              onClose={() => setSidePanelOpen("artifact", false)}
+              closeLabel={translation("collapseArtifactsSidebar")}
             >
               <SegmentedToggle
                 value={historyMode ? "history" : "artifacts"}
                 onChange={(next) => setHistoryMode(next === "history")}
                 options={[
-                  { value: "artifacts", label: t("artifacts"), icon: <LuAppWindow size={14} /> },
-                  { value: "history", label: t("history"), icon: <LuHistory size={14} /> },
+                  { value: "artifacts", label: translation("artifacts"), icon: <LuAppWindow size={14} /> },
+                  { value: "history", label: translation("history"), icon: <LuHistory size={14} /> },
                 ]}
               />
             </PanelHeader>
             {historyMode ? (
               <ArtifactHistoryList
+                sessionId={sessionId}
                 index={artifactIndex}
                 scope={artifactScope}
                 onScopeChange={setArtifactScope}
@@ -1633,8 +1771,8 @@ export function ChatPanel({
             ) : openGroups.length === 0 ? (
               <PanelEmptyState
                 icon={<LuAppWindow />}
-                title={t("noArtifactsTitle")}
-                description={t("noArtifactsDescription")}
+                title={translation("noArtifactsTitle")}
+                description={translation("noArtifactsDescription")}
               />
             ) : activeGroup ? (
               <>
@@ -1642,7 +1780,7 @@ export function ChatPanel({
                     scrolls horizontally when tabs overflow, but the scrollbar is hidden so
                     it doesn't flicker across the row while scrolling. */}
                 <Flex
-                  px={2}
+                  px={4}
                   pt={2}
                   overflowX="auto"
                   flexShrink={0}
@@ -1664,13 +1802,13 @@ export function ChatPanel({
                             <Box fontSize="xs" lineHeight="1.6" maxW="340px">
                               <Text fontWeight="semibold" mb={tabSourcePath ? 1 : 0} color="fg">{tab.title}</Text>
                               {tabSourcePath ? (
-                                <InlineField label={isUrl ? t("url") : t("path")}>
+                                <InlineField label={isUrl ? translation("url") : translation("path")}>
                                   <Text wordBreak="break-all" fontFamily="var(--app-font-mono)">{tabSourcePath}</Text>
                                 </InlineField>
                               ) : null}
                             </Box>
                           }
-                          closeLabel={t("closeTab", { title: tab.title })}
+                          closeLabel={translation("closeTab", { title: tab.title })}
                         />
                       );
                     })}
@@ -1680,7 +1818,7 @@ export function ChatPanel({
                     download, close. The 32px icon-button controls are the tallest element in
                     the row, so it keeps a constant height whether or not the (shorter) image
                     annotation pill is present — the bar never jumps switching image ⇄ web page. */}
-                <Flex pl={3} pr={2} py={2} align="center" gap={1} flexShrink={0}>
+                <Flex px={4} py={2} align="center" gap={1} flexShrink={0}>
                   <Flex align="center" gap={1.5} flex={1} minW={0}>
                     <Text textStyle="panelTitle" truncate>
                       {activeGroup.title}
@@ -1702,15 +1840,15 @@ export function ChatPanel({
                     >
                       <LuMousePointerClick size={13} />
                       {activeAnnotations.length > 0
-                        ? t("imageAnnotationCount", { count: activeAnnotations.length })
+                        ? translation("imageAnnotationCount", { count: activeAnnotations.length })
                         : isViewingLatestVersion
-                          ? t("clickToAnnotate")
-                          : t("noAnnotations")}
+                          ? translation("clickToAnnotate")
+                          : translation("noAnnotations")}
                     </Flex>
                   ) : null}
                   <IconButton
-                    aria-label={t("reloadArtifact")}
-                    title={t("reload")}
+                    aria-label={translation("reloadArtifact")}
+                    title={translation("reload")}
                     variant="ghost"
                     boxSize="8"
                     onClick={() => setArtifactReloadKey((current) => current + 1)}
@@ -1718,8 +1856,8 @@ export function ChatPanel({
                     <LuRotateCw size={14} />
                   </IconButton>
                   <IconButton
-                    aria-label={artifactMaximized ? t("minimizeArtifact") : t("maximizeArtifact")}
-                    title={artifactMaximized ? t("minimize") : t("maximize")}
+                    aria-label={artifactMaximized ? translation("minimizeArtifact") : translation("maximizeArtifact")}
+                    title={artifactMaximized ? translation("minimize") : translation("maximize")}
                     variant="ghost"
                     boxSize="8"
                     onClick={() => setArtifactMaximized((current) => !current)}
@@ -1728,8 +1866,8 @@ export function ChatPanel({
                   </IconButton>
                   {activeVersionEntry && activeGroup.relativePath ? (
                     <IconButton
-                      aria-label={t("restoreThisVersion")}
-                      title={isViewingLatestVersion ? t("restoreLatestVersion") : t("restoreVersionToWorkingTree")}
+                      aria-label={translation("restoreThisVersion")}
+                      title={isViewingLatestVersion ? translation("restoreLatestVersion") : translation("restoreVersionToWorkingTree")}
                       variant="ghost"
                       boxSize="8"
                       onClick={() => handleRestore(activeGroup, activeVersionEntry.commitSha)}
@@ -1738,8 +1876,8 @@ export function ChatPanel({
                     </IconButton>
                   ) : null}
                   <IconButton
-                    aria-label={t("downloadThisVersion")}
-                    title={t("download")}
+                    aria-label={translation("downloadThisVersion")}
+                    title={translation("download")}
                     variant="ghost"
                     boxSize="8"
                     disabled={!(activeVersionEntry?.blobSha || activeGroup.latestBlob) || !sessionId}
@@ -1761,8 +1899,8 @@ export function ChatPanel({
                     <LuDownload size={14} />
                   </IconButton>
                   <IconButton
-                    aria-label={t("closeAllArtifacts")}
-                    title={t("close")}
+                    aria-label={translation("closeAllArtifacts")}
+                    title={translation("close")}
                     variant="ghost"
                     boxSize="8"
                     colorPalette="red"
@@ -1779,9 +1917,9 @@ export function ChatPanel({
                     stepping. Only shown when there's more than one version. Newest is
                     editable; older nodes are read-only history. */}
                 {activeVersions.length > 1 ? (
-                  <Flex px={2} pt={2} pb={1.5} align="center" gap={1} flexShrink={0}>
+                  <Flex px={4} pt={2} pb={1.5} align="center" gap={1} flexShrink={0}>
                     <IconButton
-                      aria-label={t("previousVersion")}
+                      aria-label={translation("previousVersion")}
                       variant="ghost"
                       boxSize="8"
                       disabled={selectedVersionNumber <= 1}
@@ -1822,20 +1960,20 @@ export function ChatPanel({
                           const tooltip = (
                             <Box whiteSpace="nowrap">
                               <Text fontWeight="semibold" mb={1} color="fg">
-                                {t("versionNumber", { number: versionIndex + 1 })}
+                                {translation("versionNumber", { number: versionIndex + 1 })}
                               </Text>
                               <Flex direction="column" gap={1}>
-                                <InlineField label={t("created")}>
+                                <InlineField label={translation("created")}>
                                   <Text>
                                     {version.createdAt && !Number.isNaN(new Date(version.createdAt).getTime())
                                       ? format.dateTime(new Date(version.createdAt), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-                                      : t("unknown")}
+                                      : translation("unknown")}
                                   </Text>
                                 </InlineField>
                                 {annotationCount > 0 && (
-                                  <InlineField label={t("annotations")}><Text>{annotationCount}</Text></InlineField>
+                                  <InlineField label={translation("annotations")}><Text>{annotationCount}</Text></InlineField>
                                 )}
-                                {!isLatest && <InlineField label={t("editing")}><Text>{t("readOnly")}</Text></InlineField>}
+                                {!isLatest && <InlineField label={translation("editing")}><Text>{translation("readOnly")}</Text></InlineField>}
                               </Flex>
                             </Box>
                           );
@@ -1880,7 +2018,7 @@ export function ChatPanel({
                       </Flex>
                     </Box>
                     <IconButton
-                      aria-label={t("nextVersion")}
+                      aria-label={translation("nextVersion")}
                       variant="ghost"
                       boxSize="8"
                       disabled={selectedVersionNumber >= activeVersions.length}
@@ -1935,7 +2073,7 @@ export function ChatPanel({
                   if (!activeArtifact) {
                     return (
                       <Flex key={bodyKey} flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-                        {t("loadingArtifact")}
+                        {translation("loadingArtifact")}
                       </Flex>
                     );
                   }
@@ -1962,22 +2100,25 @@ export function ChatPanel({
                 },
                 agentsPanelOpen && {
                   key: "agents",
+                  onActivate: () => markSidePanelActive("agents"),
                   content: (
                     <AgentsPanel
                       agentGroups={agentGroups}
                       agents={agents}
+                      sessionId={sessionId}
                       open={agentsPanelOpen}
-                      onClose={() => setAgentsPanelOpen(false)}
+                      onClose={() => setSidePanelOpen("agents", false)}
                       focusedGroupId={focusedGroupId}
                     />
                   ),
                 },
                 backgroundPanelOpen && {
                   key: "background",
+                  onActivate: () => markSidePanelActive("background"),
                   content: (
                     <BackgroundTasksPanel
                       open={backgroundPanelOpen}
-                      onClose={() => setBackgroundPanelOpen(false)}
+                      onClose={() => setSidePanelOpen("background", false)}
                       messages={messages}
                       sessionId={sessionId}
                       workingDirectory={workspaceRuntimeDirectory || workingDirectory || homeDirectory || ""}
@@ -1987,8 +2128,9 @@ export function ChatPanel({
                 },
               ].filter(Boolean) as TilePanel[]}
             />
-        </Box>
+        </MotionBox>
       )}
+      </AnimatePresence>
 
       <SettingsDialog
         open={settingsOpen}
@@ -2016,106 +2158,16 @@ export function ChatPanel({
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title={t("deleteSessionConfirmTitle")}
-        confirmLabel={t("delete")}
+        title={translation("deleteSessionConfirmTitle")}
+        confirmLabel={translation("delete")}
         confirmIcon={<LuTrash2 size={14} />}
         danger
         onConfirm={() => { if (sessionId) onDeleteSession?.(sessionId); }}
       >
-        {t("deleteSessionConfirmBody")}
+        {translation("deleteSessionConfirmBody")}
       </ConfirmDialog>
     </Flex>
     </ArtifactEventProvider>
-  );
-}
-
-// The translation key + colour for a version/file change kind, so a row reads as a proper badge.
-function changeTypeAppearance(changeType: "A" | "M" | "D"): { labelKey: "changeAdded" | "changeDeleted" | "changeModified"; palette: string } {
-  if (changeType === "A") return { labelKey: "changeAdded", palette: "green" };
-  if (changeType === "D") return { labelKey: "changeDeleted", palette: "red" };
-  return { labelKey: "changeModified", palette: "blue" };
-}
-
-// History mode's body: the file-history index, newest first, with a scope switch (this
-// session ⇄ all sessions). Selecting a row opens the file in the tab+filmstrip flow.
-function ArtifactHistoryList({
-  index,
-  scope,
-  onScopeChange,
-  onOpen,
-}: {
-  index: ArtifactIndexEntry[];
-  scope: ArtifactScope;
-  onScopeChange: (scope: ArtifactScope) => void;
-  onOpen: (entry: ArtifactIndexEntry) => void;
-}) {
-  const t = useTranslations("ChatPanel");
-  const sortedEntries = [...index].sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || ""));
-  return (
-    <Flex direction="column" flex={1} minH={0}>
-      {/* Sub-header aligned with the top bar (same px/py, same segmented control) so the
-          scope switch reads as a peer of the Artifacts ⇄ History toggle above it. */}
-      <Flex align="center" gap={2} pl={3} pr={2} py={2} flexShrink={0}>
-        <SegmentedToggle<ArtifactScope>
-          value={scope}
-          onChange={onScopeChange}
-          options={[
-            { value: "session", label: t("thisSession") },
-            { value: "full", label: t("allSessions") },
-          ]}
-        />
-      </Flex>
-      {sortedEntries.length === 0 ? (
-        <PanelEmptyState
-          icon={<LuHistory />}
-          title={t("noChangedFilesTitle")}
-          description={t("noChangedFilesDescription")}
-        />
-      ) : (
-        <PanelBody>
-          <VStack gap={2} align="stretch">
-            {sortedEntries.map((entry) => {
-              const appearance = changeTypeAppearance(entry.latestChange);
-              const key = entry.artifactId || `${entry.gitDirectory}::${entry.relativePath}`;
-              // Name on top, its directory muted beneath (only when there is one) — so the
-              // path isn't repeated in full twice. Change badge + version count sit at the end.
-              const fileName = entry.relativePath.split("/").pop() || entry.title || entry.relativePath;
-              const directory = entry.relativePath.slice(0, Math.max(0, entry.relativePath.length - fileName.length)).replace(/\/+$/, "");
-              return (
-                <Flex
-                  key={key}
-                  as="button"
-                  align="center"
-                  gap={2}
-                  px={2.5}
-                  py={1.5}
-                  borderRadius="md"
-                  border="1px solid"
-                  borderColor="border"
-                  bg="bg.subtle"
-                  textAlign="left"
-                  cursor="pointer"
-                  _hover={{ bg: "bg.muted", borderColor: "border.emphasized" }}
-                  onClick={() => onOpen(entry)}
-                >
-                  <Box color="fg.muted" flexShrink={0} display="flex">
-                    <LuFile size={14} />
-                  </Box>
-                  <Flex direction="column" gap={1} flex={1} minW={0}>
-                    <Text textStyle="fieldLabel" truncate title={entry.relativePath}>{fileName}</Text>
-                    {directory ? <Text fontSize="xs" color="fg.subtle" truncate>{directory}</Text> : null}
-                  </Flex>
-                  <Badge size="sm" variant="subtle" colorPalette={appearance.palette} borderRadius="sm" flexShrink={0}>
-                    {t(appearance.labelKey)}
-                  </Badge>
-                  <VersionBadge number={entry.versionCount} active size="sm" />
-                </Flex>
-              );
-            })}
-          </VStack>
-        </PanelBody>
-      )}
-    </Flex>
   );
 }
 
@@ -2136,7 +2188,7 @@ function ArtifactFileDiff({
   scope: ArtifactScope;
   darkMode: boolean;
 }) {
-  const t = useTranslations("ChatPanel");
+  const translation = useTranslations("ChatPanel");
   // The fetched diff is keyed by its exact target so a stale result from a previous file
   // or version is never shown, and state is only written from the async callback (never
   // synchronously inside the effect).
@@ -2175,14 +2227,14 @@ function ArtifactFileDiff({
   if (hasDiffTarget && !resultIsCurrent) {
     return (
       <Flex flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-        {t("loadingDiff")}
+        {translation("loadingDiff")}
       </Flex>
     );
   }
   if (!shownDiff) {
     return (
       <Flex flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-        {t("noChangesToShow")}
+        {translation("noChangesToShow")}
       </Flex>
     );
   }

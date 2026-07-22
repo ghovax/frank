@@ -1,21 +1,21 @@
 "use client";
 
-import { Box, Button, Flex, Separator, Spinner, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Separator, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ArtifactAnnotationRecord } from "@/lib/artifact-annotations";
-import type { PermissionDecision, QuestionAnswer, ToolEvent, ToolEventStatus, ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
+import { toolStatus } from "@/lib/tool-event";
 import { AttachmentChips, ArtifactAnnotationChips } from "./attachment-chips";
 import { MarkdownContent } from "./markdown-content";
 import { ToolCall } from "./tool-call";
 import { ToolGroup } from "./tool-group";
+import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 
 interface ChatMessageProps {
   message: ChatMessage;
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   agents?: { id: string; name: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
@@ -48,9 +48,9 @@ interface FriendlyWarning {
 // the message below as rendered markdown, and a "Try again" action, so the user
 // reads it as a system failure with a clear next step rather than model prose.
 function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?: () => void }) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   const error = message.meta?.error as FriendlyError | undefined;
-  const title = error?.title?.trim() || t("errorTitle");
+  const title = error?.title?.trim() || translation("errorTitle");
   const body = error?.message?.trim() || message.content;
   return (
     <Box
@@ -60,8 +60,8 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
       borderColor="red.muted"
       bg="red.subtle"
       borderRadius="md"
-      px={3}
-      py={2.5}
+      px={2.5}
+      py={2}
     >
       <Flex align="center" gap={2} color="red.fg">
         <Box display="flex" alignItems="center" flexShrink={0}>
@@ -83,7 +83,7 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
             onClick={onRetry}
           >
             <LuRotateCw size={13} />
-            {t("tryAgain")}
+            {translation("tryAgain")}
           </Button>
         </Flex>
       )}
@@ -92,9 +92,9 @@ function ErrorMessageCard({ message, onRetry }: { message: ChatMessage; onRetry?
 }
 
 function WarningMessageCard({ message }: { message: ChatMessage }) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   const warning = message.meta?.warning as FriendlyWarning | undefined;
-  const title = warning?.title?.trim() || t("warningTitle");
+  const title = warning?.title?.trim() || translation("warningTitle");
   const body = warning?.message?.trim() || message.content;
   return (
     <Box
@@ -104,8 +104,8 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
       borderColor="orange.muted"
       bg="orange.subtle"
       borderRadius="md"
-      px={3}
-      py={2.5}
+      px={2.5}
+      py={2}
     >
       <Flex align="center" gap={2} color="orange.fg">
         <Box display="flex" alignItems="center" flexShrink={0}>
@@ -122,11 +122,7 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-function toolStatus(status: unknown): ToolEventStatus | undefined {
-  return status === "running" || status === "completed" || status === "done" || status === "failed" || status === "input_required" ? status : undefined;
-}
-
-function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact }: ChatMessageProps) {
+function ToolMessageCard({ message, agents = [], activeArtifactId, onActivateArtifact }: ChatMessageProps) {
   return (
     <ToolCall
       name={message.content}
@@ -137,8 +133,6 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
       question={message.meta?.question as ToolQuestion | undefined}
       toolCallId={message.meta?.toolCallId as string | undefined}
       agents={agents}
-      onPermission={onPermission}
-      onQuestion={onQuestion}
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
     />
@@ -146,7 +140,7 @@ function ToolMessageCard({ message, onPermission, onQuestion, agents = [], activ
 }
 
 function UserMessageCard({ message }: { message: ChatMessage }) {
-  const t = useTranslations("ChatMessage");
+  const translation = useTranslations("ChatMessage");
   const attachments = (message.meta?.attachments as MessageAttachment[] | undefined) ?? [];
   const artifactAnnotationRecords = (message.meta?.artifactAnnotationRecords as ArtifactAnnotationRecord[] | undefined) ?? [];
   const contentRef = useRef<HTMLDivElement>(null);
@@ -174,8 +168,8 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
           bg="bg.muted"
           border="1px solid"
           borderColor="border"
-          px={3}
-          py={2}
+          px={2.5}
+          py={1.5}
           borderRadius="md"
           maxW="100%"
         >
@@ -202,30 +196,43 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
           fontWeight="medium"
           onClick={() => setExpanded((current) => !current)}
         >
-          {expanded ? t("showLess") : t("showMore")}
+          {expanded ? translation("showLess") : translation("showMore")}
         </Button>
       )}
     </Flex>
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
-  const t = useTranslations("ChatMessage");
+export const ChatMessageItem = memo(function ChatMessageItem({ message, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
+  const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
       return <UserMessageCard message={message} />;
     }
 
-    case "assistant":
-      if (!message.content) return null;
+    case "assistant": {
+      if (!message.contentBlocks) {
+        throw new Error("Assistant messages require structured content blocks.");
+      }
+      const contentBlocks = message.contentBlocks.filter((contentBlock) => contentBlock.content.trim());
+      if (contentBlocks.length === 0) return null;
       return (
         // No horizontal inset: the assistant's prose shares the same left edge as the
-        // tool-call cards (which have none), so text and tools line up — matching the
-        // agents panel. A stray px here pushed the markdown ~4px inward of the cards.
+        // tool-activity lines (which have none), so text and tools line up — matching
+        // the agents panel. A stray px here pushed the markdown ~4px inward of them.
         <Box alignSelf="flex-start">
-          <MarkdownContent content={message.content} animate={streaming} />
+          <Flex direction="column" gap={3}>
+            {contentBlocks.map((contentBlock, contentBlockIndex) => (
+              <MarkdownContent
+                key={contentBlock.identifier}
+                content={contentBlock.content}
+                animate={streaming && contentBlockIndex === contentBlocks.length - 1}
+              />
+            ))}
+          </Flex>
         </Box>
       );
+    }
 
     // "thinking" is never rendered as a transcript row — reasoning is surfaced as
     // a compact live status instead (see ChatPanel / ToolGroup). Any thinking
@@ -234,7 +241,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
     case "tool_call": {
       return (
         <Box alignSelf="flex-start" w="100%">
-          <ToolMessageCard message={message} onPermission={onPermission} onQuestion={onQuestion} agents={agents} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
+          <ToolMessageCard message={message} agents={agents} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
         </Box>
       );
     }
@@ -271,13 +278,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
               gap={1.5}
               flexShrink={0}
               color={running ? "blue.fg" : undefined}
-              title={running || !before ? undefined : t("compactedTooltip", { before, after })}
+              title={running || !before ? undefined : translation("compactedTooltip", { before, after })}
             >
-              <Box display="flex" alignItems="center">
-                {running ? <Spinner size="xs" borderWidth="1px" /> : <LuFoldVertical size={12} />}
-              </Box>
+              <ActivityIcon>
+                {running ? <ActivitySpinner /> : <LuFoldVertical />}
+              </ActivityIcon>
               <Text textStyle="fieldLabel" className={running ? "running-title-shimmer" : undefined}>
-                {running ? t("compactingContext") : t("contextCompacted")}
+                {running ? translation("compactingContext") : translation("contextCompacted")}
               </Text>
             </Flex>
             <Separator flex={1} />
@@ -293,16 +300,13 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, onPermis
 
 interface ChatToolGroupProps {
   messages: ChatMessage[];
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   agents?: { id: string; name: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
   keepOpen?: boolean;
-  thinkingCount?: number;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermission, onQuestion, agents = [], activeArtifactId, onActivateArtifact, keepOpen, thinkingCount }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, agents = [], activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
   // ToolGroup renders, so the chat timeline and the agents panel stay in lockstep.
   const tools: ToolEvent[] = messages.map((message) => ({
@@ -318,12 +322,9 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, onPermissio
     <ToolGroup
       tools={tools}
       agents={agents}
-      onPermission={onPermission}
-      onQuestion={onQuestion}
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
       keepOpen={keepOpen}
-      thinkingCount={thinkingCount}
     />
   );
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Button, EmptyState, Flex, IconButton, Menu, Text, VStack } from "@chakra-ui/react";
+import { Box, Flex, IconButton, Menu, Text } from "@chakra-ui/react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuActivity, LuClock, LuFolder, LuMoveDownRight, LuPlus, LuServer, LuSquare, LuTerminal } from "react-icons/lu";
@@ -10,12 +10,17 @@ import type { ToolEventStatus } from "@/lib/tool-event";
 import { ToolCall } from "./tool-call";
 import { TerminalSurface } from "./terminal-panel";
 import { Tooltip } from "./ui/tooltip";
-import { PanelTab, PANEL_TAB_HEIGHT } from "./ui/panel-tab";
+import { PanelTab } from "./ui/panel-tab";
 import { PanelCard, PanelHeader, PanelEmptyState } from "./ui/panel";
 import { DropdownMenu } from "@/components/ui/menu";
 import { SegmentedToggle } from "./ui/segmented-toggle";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 import { scrollFade } from "@/lib/scroll-fade";
+import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
+import { locationTargetAddress, locationTargetLabel } from "./location-status";
+import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
+import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
+import { Pill } from "./ui/pill";
 
 // A shell command surfaced from the transcript, carried in the exact shape the
 // ToolCall component consumes so each row renders as a real tool call.
@@ -29,17 +34,8 @@ interface ShellTask {
   running: boolean;
   canBackground: boolean;
   // Already detached (the model ran it with background=true, or the user pushed a
-  // foreground command to the background) — its result is a "*_started" placeholder.
+  // foreground command to the background).
   backgrounded: boolean;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function isBackgroundResult(result: unknown): boolean {
-  const code = String(asRecord(result).code ?? "");
-  return code.endsWith("_started") || code === "background_task_scheduled";
 }
 
 function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
@@ -58,7 +54,7 @@ function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
       timestamp: message.timestamp,
       running,
       canBackground: message.content === "bash",
-      backgrounded: running && isBackgroundResult(meta.result),
+      backgrounded: running && hasBackgroundTaskIdentifier(meta.result),
     });
   }
   // Newest first — the live tail of shell activity reads back in time.
@@ -103,7 +99,11 @@ function mergeTasks(messageTasks: ShellTask[], liveTasks: ShellTask[]): ShellTas
     tasksByIdentifier.set(task.toolCallId, task);
   }
   for (const task of liveTasks) {
-    tasksByIdentifier.set(task.toolCallId, task);
+    const messageTask = tasksByIdentifier.get(task.toolCallId);
+    const transcriptJustification = messageTask?.arguments.justification;
+    tasksByIdentifier.set(task.toolCallId, transcriptJustification && !task.arguments.justification
+      ? { ...task, arguments: { ...task.arguments, justification: transcriptJustification } }
+      : task);
   }
   return Array.from(tasksByIdentifier.values())
     .sort((first, second) => second.timestamp.localeCompare(first.timestamp));
@@ -113,7 +113,7 @@ function mergeTasks(messageTasks: ShellTask[], liveTasks: ShellTask[]): ShellTas
 // while it is live — pushing a still-blocking foreground command to the
 // background, or stopping it outright.
 function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: string | null }) {
-  const t = useTranslations("BackgroundTasksPanel");
+  const translation = useTranslations("BackgroundTasksPanel");
   const [busy, setBusy] = useState<"stop" | "background" | null>(null);
 
   async function handleStop() {
@@ -137,45 +137,45 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
   }
 
   return (
-    <Box>
-      <ToolCall
-        name={task.name}
-        arguments={task.arguments}
-        result={task.result}
-        status={task.status}
-        toolCallId={task.toolCallId}
-      />
-      <Flex gap={1.5} justify="flex-end" mt={2}>
-        {task.canBackground && !task.backgrounded && (
-          <Button
-            variant="ghost"
-            px={1.5}
-            flexShrink={0}
-            disabled={!sessionId || busy !== null}
-            loading={busy === "background"}
-            loadingText={t("sending")}
-            onClick={handleBackground}
-            title={t("sendToBackgroundHint")}
-          >
-            <LuMoveDownRight size={12} />
-            {t("sendToBackground")}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          colorPalette="red"
-          px={1.5}
-          flexShrink={0}
-          disabled={!sessionId || busy !== null}
-          loading={busy === "stop"}
-          loadingText={t("stopping")}
-          onClick={handleStop}
-        >
-          <LuSquare size={12} />
-          {t("stop")}
-        </Button>
-      </Flex>
-    </Box>
+    <ToolCall
+      name={task.name}
+      arguments={task.arguments}
+      result={task.result}
+      status={task.status}
+      toolCallId={task.toolCallId}
+      actions={
+        <>
+          {task.canBackground && !task.backgrounded && (
+            <Tooltip content={translation("sendToBackgroundHint")} openDelay={300}>
+              <IconButton
+                aria-label={busy === "background" ? translation("sending") : translation("sendToBackground")}
+                variant="plain"
+                colorPalette="blue"
+                boxSize="5"
+                minW="5"
+                disabled={!sessionId || busy !== null}
+                onClick={handleBackground}
+              >
+                {busy === "background" ? <ActivitySpinner /> : <ActivityIcon><LuMoveDownRight /></ActivityIcon>}
+              </IconButton>
+            </Tooltip>
+          )}
+          <Tooltip content={translation("stop")} openDelay={300}>
+            <IconButton
+              aria-label={busy === "stop" ? translation("stopping") : translation("stop")}
+              variant="plain"
+              colorPalette="red"
+              boxSize="5"
+              minW="5"
+              disabled={!sessionId || busy !== null}
+              onClick={handleStop}
+            >
+              {busy === "stop" ? <ActivitySpinner /> : <ActivityIcon><LuSquare /></ActivityIcon>}
+            </IconButton>
+          </Tooltip>
+        </>
+      }
+    />
   );
 }
 
@@ -199,14 +199,13 @@ export function BackgroundTasksPanel({
   workingDirectory: string;
   locations?: Location[];
 }) {
-  const t = useTranslations("BackgroundTasksPanel");
+  const translation = useTranslations("BackgroundTasksPanel");
   const tasks = useMemo(() => shellTasksFromMessages(messages), [messages]);
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
-  const [showAllCompleted, setShowAllCompleted] = useState(false);
   const [activeView, setActiveView] = useState<"terminal" | "processes">("terminal");
   // The set of terminals for this session's context, and which one is on top. Restored
-  // from the server on mount/context change so tabs survive reloads; "main" is the
-  // legacy single-terminal key, kept as the default so existing scrollback carries over.
+  // from the server on mount/context change so tabs survive reloads. "main" is the
+  // canonical key for the first terminal created in an empty context.
   const [terminals, setTerminals] = useState<string[]>(["main"]);
   const [activeTerminal, setActiveTerminal] = useState<string>("main");
   // The location each terminal targets (by id); defaults to the project's first location.
@@ -219,7 +218,6 @@ export function BackgroundTasksPanel({
   const mergedTasks = useMemo(() => mergeTasks(tasks, liveTasks), [tasks, liveTasks]);
   const running = mergedTasks.filter((task) => task.running);
   const completed = mergedTasks.filter((task) => !task.running);
-  const visibleCompleted = showAllCompleted ? completed : completed.slice(0, 5);
 
   useEffect(() => {
     let cancelled = false;
@@ -289,16 +287,16 @@ export function BackgroundTasksPanel({
     <PanelCard>
       <PanelHeader
         icon={activeView === "terminal" ? <LuTerminal size={14} /> : <LuActivity size={14} />}
-        title={activeView === "terminal" ? t("terminal") : t("backgroundProcesses")}
+        title={activeView === "terminal" ? translation("terminal") : translation("backgroundProcesses")}
         onClose={onClose}
-        closeLabel={t("collapseSidebar")}
+        closeLabel={translation("collapseSidebar")}
       >
         <SegmentedToggle
           value={activeView}
           onChange={setActiveView}
           options={[
-            { value: "terminal", label: t("terminal"), icon: <LuTerminal size={14} /> },
-            { value: "processes", label: t("processes"), icon: <LuActivity size={14} /> },
+            { value: "terminal", label: translation("terminal"), icon: <LuTerminal size={14} /> },
+            { value: "processes", label: translation("processes"), icon: <LuActivity size={14} /> },
           ]}
         />
       </PanelHeader>
@@ -307,18 +305,18 @@ export function BackgroundTasksPanel({
         <Flex position="absolute" inset={0} direction="column" visibility={activeView === "terminal" ? "visible" : "hidden"}>
           {/* Terminal tabs — the shared PanelTab (identical to the Artifacts panel's tabs),
               plus a "＋" to spawn a new terminal and the location switcher, all at one height. */}
-          <Flex px={2} py={2} overflowX="auto" flexShrink={0}>
+          <Flex px={4} py={2} overflowX="auto" flexShrink={0}>
             <Flex gap={1.5} align="center">
               {terminals.map((key, index) => {
                 const terminalLocation = locationForTerminal(key);
                 const tabTooltip = (
                   <Box fontSize="xs" lineHeight="1.6" maxW="300px">
-                    <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">{t("terminalNumber", { number: index + 1 })}</Text>
+                    <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">{translation("terminalNumber", { number: index + 1 })}</Text>
                     {terminalLocation ? (
                       <Flex direction="column" gap={1}>
-                        <InlineField label={t("environment")}><Text>{terminalLocation.name}</Text></InlineField>
-                        <InlineField label={t("type")}><Text>{terminalLocation.kind === "remote" ? t("remoteSsh") : t("local")}</Text></InlineField>
-                        <Text color="fg.muted" wordBreak="break-all" mt={0.5}>{terminalLocation.base_directory}</Text>
+                        <InlineField label={translation("location")}><Text>{locationTargetLabel(terminalLocation)}</Text></InlineField>
+                        <InlineField label={translation("type")}><Text>{terminalLocation.kind === "remote" ? translation("remoteSsh") : translation("local")}</Text></InlineField>
+                        <Text color="fg.muted" wordBreak="break-all" mt={0.5}>{locationTargetAddress(terminalLocation)}</Text>
                       </Flex>
                     ) : null}
                   </Box>
@@ -327,12 +325,12 @@ export function BackgroundTasksPanel({
                   <PanelTab
                     key={key}
                     icon={<LuTerminal size={13} />}
-                    label={t("terminalNumber", { number: index + 1 })}
+                    label={translation("terminalNumber", { number: index + 1 })}
                     active={key === activeTerminal}
                     onSelect={() => setActiveTerminal(key)}
                     onClose={() => closeTerminal(key)}
                     tooltip={tabTooltip}
-                    closeLabel={t("closeTerminalNumber", { number: index + 1 })}
+                    closeLabel={translation("closeTerminalNumber", { number: index + 1 })}
                   />
                 );
               })}
@@ -340,23 +338,23 @@ export function BackgroundTasksPanel({
                 // Multiple environments: "＋" opens a menu to pick where the new terminal runs.
                 <DropdownMenu
                   trigger={
-                    <IconButton aria-label={t("newTerminal")} title={t("newTerminal")} variant="ghost" h={PANEL_TAB_HEIGHT} minW={PANEL_TAB_HEIGHT} flexShrink={0}>
+                    <IconButton aria-label={translation("newTerminal")} title={translation("newTerminal")} variant="ghost" flexShrink={0}>
                       <LuPlus size={14} />
                     </IconButton>
                   }
                   minW="200px"
                 >
-                  <Text px={2} py={1} textStyle="sectionLabel">{t("newTerminalIn")}</Text>
+                  <Text px={2} py={1} textStyle="sectionLabel">{translation("newTerminalIn")}</Text>
                   {locations.map((location) => (
                     <Menu.Item key={location.id} value={location.id} onClick={() => addTerminal(location.id)}>
                       {location.kind === "remote" ? <LuServer size={14} /> : <LuFolder size={14} />}
-                      <Box flex={1}>{location.name}</Box>
+                      <Box flex={1}>{locationTargetLabel(location)}</Box>
                     </Menu.Item>
                   ))}
                 </DropdownMenu>
               ) : (
-                <Tooltip content={t("newTerminal")} openDelay={300}>
-                  <IconButton aria-label={t("newTerminal")} variant="ghost" h={PANEL_TAB_HEIGHT} minW={PANEL_TAB_HEIGHT} flexShrink={0} onClick={() => addTerminal()}>
+                <Tooltip content={translation("newTerminal")} openDelay={300}>
+                  <IconButton aria-label={translation("newTerminal")} variant="ghost" flexShrink={0} onClick={() => addTerminal()}>
                     <LuPlus size={14} />
                   </IconButton>
                 </Tooltip>
@@ -386,52 +384,52 @@ export function BackgroundTasksPanel({
           inset={0}
           display={activeView === "processes" ? "block" : "none"}
           overflowY="auto"
-          px={2}
+          px={4}
           py={2}
           css={scrollFade}
         >
           {running.length === 0 && completed.length === 0 ? (
             <PanelEmptyState
               icon={<LuTerminal />}
-              title={t("noProcessesTitle")}
-              description={t("noProcessesDescription")}
+              title={translation("noProcessesTitle")}
+              description={translation("noProcessesDescription")}
             />
           ) : (
             <Flex direction="column" gap={2}>
-              {running.length === 0 && (
-                <EmptyState.Root size="sm">
-                  <EmptyState.Content>
-                    <EmptyState.Indicator>
-                      <LuTerminal />
-                    </EmptyState.Indicator>
-                    <VStack gap={0}>
-                      <EmptyState.Title fontSize="sm">{t("noActiveProcesses")}</EmptyState.Title>
-                      <EmptyState.Description fontSize="xs">
-                        {t("allJobsFinished")}
-                      </EmptyState.Description>
-                    </VStack>
-                  </EmptyState.Content>
-                </EmptyState.Root>
+              {running.length > 0 && (
+                <DisclosureRow
+                  defaultOpen
+                  tone="active"
+                  maxH="360px"
+                  followTailKey={running.length}
+                  icon={<LuActivity />}
+                  title={<DisclosureLabel shimmer>{translation("processesActive")}</DisclosureLabel>}
+                  badges={
+                    <Pill
+                      colorPalette="blue"
+                      icon={<ActivitySpinner />}
+                    >
+                      {running.length}
+                    </Pill>
+                  }
+                >
+                  <Flex direction="column" gap={1}>
+                    {running.map((task) => (
+                      <RunningTaskRow key={task.toolCallId} task={task} sessionId={sessionId} />
+                    ))}
+                  </Flex>
+                </DisclosureRow>
               )}
-              {running.length > 0 && running.map((task) => (
-                <RunningTaskRow key={task.toolCallId} task={task} sessionId={sessionId} />
-              ))}
 
               {completed.length > 0 && (
-                <Box mt={running.length > 0 ? 2 : 0}>
-                  <Flex align="flex-start" gap={2} mb={2}>
-                    <Box color="fg.muted" pt={0.5}>
-                      <LuClock size={14} />
-                    </Box>
-                    <Box minW={0}>
-                      <Text textStyle="panelTitle">{t("processesTerminated")}</Text>
-                      <Text fontSize="xs" color="fg.subtle">
-                        {showAllCompleted ? t("showingAll", { count: completed.length }) : t("showingLatest", { shown: Math.min(5, completed.length), total: completed.length })}
-                      </Text>
-                    </Box>
-                  </Flex>
+                <DisclosureRow
+                  maxH="min(52vh, 480px)"
+                  icon={<LuClock />}
+                  title={<DisclosureLabel>{translation("processesTerminated")}</DisclosureLabel>}
+                  badges={<Pill colorPalette="gray">{completed.length}</Pill>}
+                >
                   <Flex direction="column" gap={2}>
-                    {visibleCompleted.map((task) => (
+                    {completed.map((task) => (
                       <ToolCall
                         key={task.toolCallId}
                         name={task.name}
@@ -442,19 +440,7 @@ export function BackgroundTasksPanel({
                       />
                     ))}
                   </Flex>
-                  {completed.length > 5 && (
-                    <Button
-                      variant="ghost"
-                      mt={2}
-                      w="100%"
-                      color="fg.muted"
-                      fontWeight="medium"
-                      onClick={() => setShowAllCompleted((current) => !current)}
-                    >
-                      {showAllCompleted ? t("showFewer") : t("seeMore")}
-                    </Button>
-                  )}
-                </Box>
+                </DisclosureRow>
               )}
             </Flex>
           )}

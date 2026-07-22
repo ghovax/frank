@@ -12,6 +12,8 @@
 // The window chrome — hidden titlebar with native macOS traffic lights overlaid on
 // the content — is declared in tauri.conf.json.
 
+mod sound;
+
 use std::collections::{BTreeSet, HashMap};
 use std::io::{BufRead, BufReader};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -615,7 +617,8 @@ pub fn run() {
             artifact_show,
             artifact_set_bounds,
             artifact_hide,
-            artifact_close
+            artifact_close,
+            sound::play_system_sound
         ])
         .setup(|app| {
             let handle = app.handle();

@@ -1,1 +1,0 @@
-{{file_name}} has no visual preview, so opening it as an artifact would show an empty panel. The artifacts panel is for things with a visual form — web pages, HTML, images, SVGs, and PDFs. To show a code or text file, read it and share the relevant parts in the conversation instead.

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Dialog, Flex, IconButton, Image, Link, Portal, Text } from "@chakra-ui/react";
+import { Box, Button, Dialog, Flex, IconButton, Image, Link, Portal, Span, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
 import { LuExternalLink, LuMousePointerClick, LuX } from "react-icons/lu";
@@ -10,8 +10,9 @@ import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactI
 import type { MessageAttachment } from "@/lib/use-chat";
 import { PdfDocumentView, PdfThumbnail } from "./pdf-view";
 import { ArtifactView } from "./tool-views";
-import { InlineField } from "./tool-views/primitives";
+import { InlineField } from "./ui/display";
 import { Tooltip } from "./ui/tooltip";
+import { Frame } from "./ui/semantic";
 
 // Whether an attachment is a raster/vector image we can render inline (a thumbnail
 // on the chip, the full picture in the hover thumbnail and the lightbox). Prefers the
@@ -58,8 +59,7 @@ export function VersionBadge({ number, active = false, size = "sm" }: { number: 
   // of an absolute layer, so the box actually tracks the glyph width.
   const dimension = size === "md" ? 6 : 5;
   return (
-    <Box
-      as="span"
+    <Span
       display="inline-flex"
       alignItems="center"
       justifyContent="center"
@@ -78,7 +78,7 @@ export function VersionBadge({ number, active = false, size = "sm" }: { number: 
       style={{ fontVariantNumeric: "tabular-nums", textBox: "trim-both cap alphabetic" }}
     >
       {number}
-    </Box>
+    </Span>
   );
 }
 
@@ -111,12 +111,12 @@ function MediaChipCard({
   onRemove?: () => void;
   badge?: ReactNode;
 }) {
-  const t = useTranslations("AttachmentChips");
+  const translation = useTranslations("AttachmentChips");
   const tail = filename.slice(-7);
   const head = filename.slice(0, Math.max(0, filename.length - 7));
   return (
-    <Flex
-      direction="column"
+    <Box
+      position="relative"
       flexShrink={0}
       w={48}
       h="136px"
@@ -125,39 +125,48 @@ function MediaChipCard({
       border="1px solid"
       borderColor="border"
       bg="bg"
-      cursor="pointer"
-      textAlign="left"
-      role="button"
-      tabIndex={0}
       _hover={{ borderColor: "border.emphasized" }}
-      onClick={onClick}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}
+      _focusWithin={{ borderColor: "border.emphasized" }}
     >
-      <Flex flex={1} minH={0} w="100%" overflow="hidden" bg="bg.subtle" borderBottom="1px solid" borderColor="border" align="center" justify="center">
-        {thumbnail}
-      </Flex>
-      <Flex flexShrink={0} w="100%" px={2.5} py={2} minW={0} align="center" gap={1} textStyle="fieldLabel" color="fg" title={filename}>
-        <Flex minW={0} flex={1}>
-          <Text as="span" truncate>{head}</Text>
-          <Text as="span" flexShrink={0}>{tail}</Text>
+      <Button
+        variant="plain"
+        display="flex"
+        flexDirection="column"
+        w="full"
+        h="full"
+        p={0}
+        textAlign="left"
+        fontWeight="normal"
+        overflow="hidden"
+        onClick={onClick}
+      >
+        <Flex flex={1} minH={0} w="100%" overflow="hidden" bg="bg.subtle" borderBottom="1px solid" borderColor="border" align="center" justify="center">
+          {thumbnail}
         </Flex>
-        {badge}
-        {onRemove && (
-          <IconButton
-            aria-label={t("removeAttachment")}
-            variant="ghost"
-            boxSize="4.5"
-            minW="4.5"
-            flexShrink={0}
-            color="fg.muted"
-            _hover={{ color: "fg", bg: "bg.muted" }}
-            onClick={(event) => { event.stopPropagation(); onRemove(); }}
-          >
-            <LuX size={12} />
-          </IconButton>
-        )}
-      </Flex>
-    </Flex>
+        <Flex flexShrink={0} w="100%" px={2.5} py={2} pe={onRemove ? 8 : 2.5} minW={0} align="center" gap={1} textStyle="fieldLabel" color="fg" title={filename}>
+          <Flex minW={0} flex={1}>
+            <Span truncate>{head}</Span>
+            <Span flexShrink={0}>{tail}</Span>
+          </Flex>
+          {badge}
+        </Flex>
+      </Button>
+      {onRemove && (
+        <IconButton
+          aria-label={translation("removeAttachment")}
+          variant="ghost"
+          size="2xs"
+          position="absolute"
+          right={2}
+          bottom={1.5}
+          color="fg.muted"
+          _hover={{ color: "fg", bg: "bg.muted" }}
+          onClick={onRemove}
+        >
+          <LuX />
+        </IconButton>
+      )}
+    </Box>
   );
 }
 
@@ -201,7 +210,7 @@ function AttachmentLightbox({
   onAnnotationsChange?: (annotations: ArtifactImageAnnotation[]) => void;
   onClose: () => void;
 }) {
-  const t = useTranslations("AttachmentChips");
+  const translation = useTranslations("AttachmentChips");
   const url = artifactPageUrl(attachment.path);
   const image = isImageAttachment(attachment);
   const pdf = isPdfAttachment(attachment);
@@ -228,13 +237,13 @@ function AttachmentLightbox({
             <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
               <Dialog.Title textStyle="panelTitle" truncate>{attachment.filename}</Dialog.Title>
               {image && !onAnnotationsChange && annotationCount > 0 ? (
-                <AnnotationStatusPill>{t("annotationStatus", { count: annotationCount })}</AnnotationStatusPill>
+                <AnnotationStatusPill>{translation("annotationStatus", { count: annotationCount })}</AnnotationStatusPill>
               ) : null}
               {image && onAnnotationsChange ? (
-                <AnnotationStatusPill>{t("clickToAnnotate")}</AnnotationStatusPill>
+                <AnnotationStatusPill>{translation("clickToAnnotate")}</AnnotationStatusPill>
               ) : null}
               <Flex align="center" gap={2} ml="auto">
-                <Link href={url} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={t("openInNewTab")}>
+                <Link href={url} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={translation("openInNewTab")}>
                   <LuExternalLink size={14} />
                 </Link>
                 <Dialog.CloseTrigger position="static" />
@@ -250,10 +259,13 @@ function AttachmentLightbox({
                   <PdfDocumentView url={url} />
                 </Box>
               ) : (
-                <iframe
+                <Frame
                   src={url}
                   title={attachment.filename}
-                  style={{ width: "100%", height: "100%", border: "none", background: "white" }}
+                  w="full"
+                  h="full"
+                  border="none"
+                  bg="white"
                 />
               )}
             </Dialog.Body>
@@ -265,7 +277,7 @@ function AttachmentLightbox({
 }
 
 function ArtifactAnnotationLightbox({ record, onClose }: { record: ArtifactAnnotationRecord; onClose: () => void }) {
-  const t = useTranslations("AttachmentChips");
+  const translation = useTranslations("AttachmentChips");
   const imageArtifact = imageArtifactForAnnotationRecord(record);
   const imageIdentity = imageIdentityForArtifact(imageArtifact) ?? record.image;
   const link = record.image.source.startsWith("data:image/") ? "" : imageSourceForAnnotationRecord(record);
@@ -277,10 +289,10 @@ function ArtifactAnnotationLightbox({ record, onClose }: { record: ArtifactAnnot
           <Dialog.Content maxW="min(1100px, 92vw)" maxH="90vh" overflow="hidden">
             <Dialog.Header display="flex" alignItems="center" gap={2} position="relative">
               <Dialog.Title textStyle="panelTitle" truncate>{annotationRecordLabel(record)}</Dialog.Title>
-              <AnnotationStatusPill>{t("annotationStatus", { count: record.annotations.length })}</AnnotationStatusPill>
+              <AnnotationStatusPill>{translation("annotationStatus", { count: record.annotations.length })}</AnnotationStatusPill>
               <Flex align="center" gap={2} ml="auto">
                 {link ? (
-                  <Link href={link} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={t("openInNewTab")}>
+                  <Link href={link} target="_blank" rel="noreferrer" color="fg.muted" _hover={{ color: "fg" }} title={translation("openInNewTab")}>
                     <LuExternalLink size={14} />
                   </Link>
                 ) : null}
@@ -310,7 +322,7 @@ function ArtifactAnnotationLightbox({ record, onClose }: { record: ArtifactAnnot
 }
 
 function ArtifactAnnotationChip({ record }: { record: ArtifactAnnotationRecord }) {
-  const t = useTranslations("AttachmentChips");
+  const translation = useTranslations("AttachmentChips");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const versionNumber = record.image.versionSeq;
   // The same key/value hover card the artifacts-panel version node uses, so an annotated
@@ -319,8 +331,8 @@ function ArtifactAnnotationChip({ record }: { record: ArtifactAnnotationRecord }
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{annotationRecordLabel(record)}</Text>
       <Flex direction="column" gap={1}>
-        {versionNumber > 0 && <InlineField label={t("fieldVersion")}><Text>{versionNumber}</Text></InlineField>}
-        <InlineField label={t("fieldAnnotations")}><Text>{record.annotations.length}</Text></InlineField>
+        {versionNumber > 0 && <InlineField label={translation("fieldVersion")}><Text>{versionNumber}</Text></InlineField>}
+        <InlineField label={translation("fieldAnnotations")}><Text>{record.annotations.length}</Text></InlineField>
       </Flex>
     </Box>
   );
@@ -388,7 +400,7 @@ export function AttachmentChip({
   annotations?: ArtifactImageAnnotation[];
   onAnnotationsChange?: (annotations: ArtifactImageAnnotation[]) => void;
 }) {
-  const t = useTranslations("AttachmentChips");
+  const translation = useTranslations("AttachmentChips");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const image = isImageAttachment(attachment);
   const pdf = isPdfAttachment(attachment);
@@ -409,10 +421,10 @@ export function AttachmentChip({
     <Box whiteSpace="nowrap">
       <Text fontWeight="semibold" mb={1} color="fg" maxW={80} truncate>{attachment.filename}</Text>
       <Flex direction="column" gap={1}>
-        {attachment.mimeType && <InlineField label={t("fieldType")}><Text>{attachment.mimeType}</Text></InlineField>}
-        {attachment.size > 0 && <InlineField label={t("fieldSize")}><Text>{formatFileSize(attachment.size)}</Text></InlineField>}
-        {annotationCount > 0 && <InlineField label={t("fieldAnnotations")}><Text>{annotationCount}</Text></InlineField>}
-        {attachment.path && <InlineField label={t("fieldPath")}><Text truncate maxW={80}>{attachment.path}</Text></InlineField>}
+        {attachment.mimeType && <InlineField label={translation("fieldType")}><Text truncate maxW={80}>{attachment.mimeType}</Text></InlineField>}
+        {attachment.size > 0 && <InlineField label={translation("fieldSize")}><Text>{formatFileSize(attachment.size)}</Text></InlineField>}
+        {annotationCount > 0 && <InlineField label={translation("fieldAnnotations")}><Text>{annotationCount}</Text></InlineField>}
+        {attachment.path && <InlineField label={translation("fieldPath")}><Text truncate maxW={80}>{attachment.path}</Text></InlineField>}
       </Flex>
     </Box>
   );
