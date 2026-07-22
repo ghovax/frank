@@ -248,13 +248,13 @@ class NativeSurface(Surface):
             entry = self._entry(ref)
             handle = self._live_handle(entry)
             if handle is not None:
-                available = set(accessibility.action_names(handle))
-                if button == "right" and "AXShowMenu" in available:
+                available_actions = set(accessibility.action_names(handle))
+                if button == "right" and "AXShowMenu" in available_actions:
                     if AS.AXUIElementPerformAction(handle, "AXShowMenu") == 0:
                         return {"ok": True, "did": f"Opened context menu on {entry.name!r}", "via": "ax"}
                 elif button == "left":
-                    wanted = _OPEN_ACTIONS if count >= 2 else _ACTIVATE_ACTIONS
-                    action = next((name for name in wanted if name in available), "")
+                    preferred_actions = _OPEN_ACTIONS if count >= 2 else _ACTIVATE_ACTIONS
+                    action = next((name for name in preferred_actions if name in available_actions), "")
                     if action and AS.AXUIElementPerformAction(handle, action) == 0:
                         did = f"Opened {entry.name!r}" if count >= 2 else f"Clicked {entry.name!r}"
                         return {"ok": True, "did": did, "via": "ax"}

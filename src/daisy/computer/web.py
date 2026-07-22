@@ -189,7 +189,7 @@ class _Session:
                     pass
                 content_type = headers.get("content-type", "")
                 if resource_type in ("xhr", "fetch") and any(
-                    token in content_type for token in ("json", "javascript", "text", "xml", "graphql", "urlencoded")
+                    marker in content_type for marker in ("json", "javascript", "text", "xml", "graphql", "urlencoded")
                 ):
                     try:
                         entry["response_body"] = response.text()[:_BODY_CLIP]
@@ -584,8 +584,8 @@ class WebSurface(Surface):
         return self.guard(run)
 
     def _op_scroll(self, ref: Optional[str] = None, *, direction: str = "down", **_: Any) -> dict:
-        wanted = direction.strip().lower()
-        if wanted not in _SCROLL_DIRECTIONS:
+        normalized_direction = direction.strip().lower()
+        if normalized_direction not in _SCROLL_DIRECTIONS:
             return {"ok": False, "error": f"Unknown scroll direction {direction!r}. Use down, up, left, right, top, or bottom."}
 
         def run() -> dict:
@@ -605,10 +605,10 @@ class WebSurface(Surface):
                 "down": (0, step_y), "up": (0, -step_y), "right": (step_x, 0), "left": (-step_x, 0),
                 "top": (0, -_SCROLL_JUMP), "bottom": (0, _SCROLL_JUMP),
             }
-            delta_x, delta_y = deltas[wanted]
+            delta_x, delta_y = deltas[normalized_direction]
             page.mouse.wheel(delta_x, delta_y)
             settle(lambda: _element_signature(page))
-            return self._acted(session, page, f"Scrolled {wanted}")
+            return self._acted(session, page, f"Scrolled {normalized_direction}")
 
         return self.guard(run)
 

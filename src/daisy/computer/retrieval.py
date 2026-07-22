@@ -35,7 +35,7 @@ DENSE_MODEL = "minishlab/potion-retrieval-32M"
 # Reciprocal-rank-fusion constant. Fuses the BM25 and dense rankings without having to reconcile
 # their incomparable score scales: each document scores ``sum 1/(k + rank)`` over the rankings it
 # appears in. The standard k=60 damps the tail so a strong #1 in one ranker still leads.
-_RRF_K = 60
+_RANK_FUSION_K = 60
 
 _TOKEN = re.compile(r"[a-z0-9]+")
 
@@ -131,7 +131,7 @@ def _dense_model() -> Any:
     return _dense or None
 
 
-def _rank(scores: list[float]) -> list[int]:
+def _ranked_indices(scores: list[float]) -> list[int]:
     """Document indices ordered best-first by a score vector, ties broken by original order."""
     return sorted(range(len(scores)), key=lambda index: (-scores[index], index))
 
@@ -166,24 +166,24 @@ class Index:
         reciprocal rank fusion, so a hit strong in either ranker rises."""
         if not self.documents:
             return []
-        lexical = self._rrf(self._bm25.scores(_tokens(query)))
+        lexical = self._reciprocal_rank_scores(self._bm25.scores(_tokens(query)))
         dense_scores = self._dense_scores(query)
         if dense_scores is None:
             fused = lexical
         else:
-            semantic = self._rrf(dense_scores)
+            semantic = self._reciprocal_rank_scores(dense_scores)
             fused = [lexical[index] + semantic[index] for index in range(len(self.documents))]
-        order = _rank(fused)
+        order = _ranked_indices(fused)
         if not everything:
             order = order[:top_k]
         return [Hit(id=self.documents[index].id, score=fused[index], payload=self.documents[index].payload) for index in order]
 
     @staticmethod
-    def _rrf(scores: list[float]) -> list[float]:
+    def _reciprocal_rank_scores(scores: list[float]) -> list[float]:
         """Convert a raw score vector into reciprocal-rank contributions, so unrelated score scales
         fuse cleanly. A document not surfaced by a ranker (score 0 here means no lexical overlap)
         simply contributes from its rank position like any other."""
         contribution = [0.0] * len(scores)
-        for rank, index in enumerate(_rank(scores)):
-            contribution[index] = 1.0 / (_RRF_K + rank)
+        for rank, index in enumerate(_ranked_indices(scores)):
+            contribution[index] = 1.0 / (_RANK_FUSION_K + rank)
         return contribution
