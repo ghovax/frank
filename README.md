@@ -23,7 +23,7 @@ The two halves talk only over HTTP, so the harness runs detached: the app stays 
 
 The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
 
-- **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([Permissions](documentation/configuration.md#permission-modes)).
+- **Tune the guardrails.** Permission modes and per-command allow/deny rules are config; the engine that enforces them is open code, so you can change how permissioning works when the settings aren't enough ([Permissions](documentation/configuration.md#permission-modes)).
 - **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
 - **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([What it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
