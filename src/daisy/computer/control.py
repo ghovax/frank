@@ -17,6 +17,12 @@ import os
 import sys
 from typing import Any, Awaitable, Callable, Optional
 
+from daisy.computer.surface import message_loader
+
+# Model-facing control messages live in messages/control/*.md, loaded here so the child (which
+# holds no Daisy code) can report bare facts and leave the prose to the loader.
+message = message_loader("control")
+
 # Defaults for the child's resource ceilings, sized so a normal script never notices them and a
 # pathological one dies before it can hurt the host. The wall-clock timeout is the hard stop.
 _DEFAULT_TIMEOUT_SECONDS = 120.0
@@ -89,7 +95,10 @@ async def run_control_script(
         _quietly_close(requests)
         _quietly_close(replies)
 
-    return _parse_result(stdout)
+    result = _parse_result(stdout)
+    if result.get("error_code") == "syntax_error":
+        return {"ok": False, "error": message("syntax_error", detail=str(result.get("detail", "")), line=str(result.get("line", "")))}
+    return result
 
 
 def _write_line(stream: Any, text: str) -> None:

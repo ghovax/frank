@@ -111,10 +111,9 @@ def main() -> None:
         with redirect_stdout(captured):
             result["value"] = _run(script, namespace)
     except SyntaxError as error:
-        result = {"ok": False, "error": (
-            f"control_screen: the script has a syntax error — {error.msg} (line {error.lineno}). "
-            "End with the value as a bare expression, or print it; a top-level 'return' is not valid."
-        )}
+        # The child holds no Daisy code, so it reports the bare facts; the parent renders the
+        # model-facing message (messages/control/syntax_error.md) from them.
+        result = {"ok": False, "error_code": "syntax_error", "detail": error.msg or "", "line": error.lineno or 0}
     except Exception as error:
         result = {"ok": False, "error": f"{type(error).__name__}: {error}", "traceback": traceback.format_exc(limit=8)}
     output = captured.getvalue()
