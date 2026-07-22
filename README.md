@@ -1,27 +1,31 @@
-<div align="center">
-
 # 🌼 Daisy
 
-**A local-first desktop workspace for AI agents.**
+**An open agent harness you can modify.**
 
-Daisy pairs a native macOS app with an open agent runtime. Agents can run shell commands, read and write files, search and fetch the web, control your Mac, and drive your browser — with a permission system in front of every action and your choice of model behind it.
+The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in Daisy all of it is yours to edit. Host it anywhere, and drive it from a bundled macOS app or your own code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
-</div>
-
 ## What it is
 
-Daisy is two things that are deliberately kept apart:
+Daisy is two things, kept apart:
 
-- **The harness** — first a Python library: the `daisy` package is the agent runtime that runs the turn loop, dispatches tools, enforces permissions, talks to models, and persists history (built on LangChain), and you can import and drive it directly. A thin server (FastAPI) wraps that library to expose it over the [A2A](https://github.com/google/A2A) protocol and a small REST API. Use the library in your own code, or run the server — same runtime underneath.
-- **The app** — a native macOS client (Tauri + Next.js) that is a polished interface to a harness. It ships with a harness bundled in, so it works out of the box with nothing to configure.
+- **The harness** — the Python agent runtime. Import and drive it directly, or run it as a server that exposes it over [A2A](https://github.com/google/A2A) and REST. Same runtime either way.
+- **The app** — a native macOS client (Tauri + Next.js). It bundles a harness, so it works out of the box.
 
-Because the two halves talk over HTTP, **the harness runs detached, and you are not tied to one of them.** Run it locally for zero setup, on a workstation, a VM, or a container, or reach one over SSH — configure several locations, local and remote, and choose per session which the agent runs against. The app stays a thin, native front-end; the compute, files, and network access live wherever you put the harness. Its shell and file tools take a location too, so one agent can act across more than one machine in a single session. See [Run the server anywhere](#run-the-server-anywhere).
+The two halves talk only over HTTP, so the app stays a thin native front-end while the compute, files, and network live wherever you host the harness. Configure several locations and pick one per session; tools take a location, so a session can span machines. See [Run the server anywhere](#run-the-server-anywhere).
+
+## Why own the harness
+
+The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
+
+- **Tune the guardrails.** Permission modes and per-command allow/deny rules are config; the engine that enforces them is open code, so you can change how permissioning works when the settings aren't enough ([Permissions](documentation/configuration.md#permission-modes)).
+- **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
+- **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([What it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
 ## How it compares
 
-The two closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex). Both are more mature than Daisy, and as of 2026 both do the things that once made Daisy unusual: each drives a real, logged-in browser and controls native macOS apps, and Codex — like Daisy — is open source and can run on non-OpenAI models. This is not a list of things only Daisy does.
+The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex), both more mature than Daisy. As of 2026 both also drive a real, logged-in browser and control native macOS apps, and Codex is likewise open source and runs on non-OpenAI models — so this compares approaches, not things only Daisy does.
 
 | | Daisy | Claude Code | OpenAI Codex |
 |---|---|---|---|
@@ -29,74 +33,44 @@ The two closest tools are [Claude Code](https://code.claude.com) and [OpenAI Cod
 | **Models** | Any provider, or a ChatGPT login, per session — the screen tools included | Claude first; third-party providers for coding on the CLI and VS Code, but its browser and computer use need an Anthropic plan | GPT-5 Codex by default; the CLI can also point at OpenRouter, Ollama, LM Studio, or any compatible endpoint |
 | **Where it runs** | A harness you self-host — local, a VM, a container, or over SSH — with a native app pointed at it | Proprietary client; long tasks run on Anthropic's cloud | Local CLI, IDEs, and a desktop app; async tasks run on OpenAI's cloud |
 | **Screen control** | Native macOS apps and your own Chrome, read as ranked accessibility/DOM elements from a plain-language search — screenshots only when you ask | Your real Chrome session, plus macOS computer use driven by downscaled screenshots (research preview, Pro/Max) | In-app and Chrome-extension browser, plus background macOS computer use driven by screenshots |
-| **Reach** | One macOS app and a server | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
+| **Reach** | Desktop, web, and soon mobile, all pointed at a server you self-host | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
 
 Two design choices distinguish Daisy:
 
-- **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM that returns a few ranked elements, where both rivals' computer use reasons over screenshots — so a query costs a handful of elements instead of a downscaled image.
-- **A composed script, not a click-by-click loop.** `control_screen` runs an ordinary Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on a native app and in the browser, so a whole task — loop over every row, branch on what you find, pull a page's own API in a single line — is one call rather than a screenshot‑decide‑act round trip per click. One shared abstraction over both surfaces, and far fewer, leaner model turns to finish the job.
+- **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM, returning a few ranked elements where the rivals reason over screenshots — a query costs a handful of elements, not a downscaled image.
+- **A composed script, not a click-by-click loop.** `control_screen` runs a Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on native apps and in the browser. A whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a screenshot‑decide‑act round trip per click. Far fewer model turns to finish the job.
 
-The trade-off: this depends on there being an accessibility tree or DOM to read, whereas a screenshot approach works on anything drawn on screen, structure or not. See [Tools](documentation/tools.md).
+The trade-off: it needs an accessibility tree or DOM to read, where a screenshot approach works on anything drawn on screen. See [Tools](documentation/tools.md).
 
-On everything else, Claude Code and Codex lead: they are further along on polish, run in many more places, and carry deep ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent backed by a big vendor's cloud, use theirs.
+Elsewhere they lead: more polish, more places to run, deeper ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent on a vendor's cloud, use theirs.
 
 ## Install
 
-Daisy targets **macOS on Apple Silicon**.
+Daisy targets **macOS on Apple Silicon**. Download the latest `.dmg` from the [Releases](https://github.com/ghovax/daisy/releases) page and drag **Daisy** to Applications; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
 
-### Download
-
-Grab the latest `.dmg` from the [**Releases**](https://github.com/ghovax/daisy/releases) page, open it, and drag **Daisy** to Applications.
-
-> [!NOTE]
-> The app is **self-signed, not Apple-notarized**, so Gatekeeper will warn on first launch. Right-click **Daisy.app → Open** and confirm once, or run `xattr -dr com.apple.quarantine /Applications/Daisy.app`. Notarized builds are planned.
-
-### Build from source
-
-See [`documentation/development.md`](documentation/development.md). In short:
-
-```sh
-git clone https://github.com/ghovax/daisy.git
-cd daisy
-direnv allow                       # or: nix develop  (provides bun, rust, cargo-tauri)
-cd web && bun install && cd ..
-cd web/src-tauri && cargo tauri build
-```
+See the [Installation guide](documentation/installation.md) for both paths in full.
 
 ## Quickstart
 
 1. **Launch Daisy.** The bundled server starts automatically; the app connects to it.
-2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys are stored in `~/.daisy/configuration.yaml` — see [`configuration.example.yaml`](configuration.example.yaml).
-3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permissions) once you trust a flow.
+2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Daisy configuration file — see the [Example configuration](configuration.example.yaml).
+3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permission-modes) once you trust a flow.
 
-To enable the distinctive tools:
-
-- **Screen control** (`search_screen`/`control_screen`) needs macOS Accessibility permission for native apps (Daisy prompts you).
-- Driving **your own Chrome** needs Chrome's remote-debugging toggle enabled once (`chrome://inspect`). Daisy shows a one-click prompt.
+The screen-control tools need a one-time Accessibility grant and Chrome's remote-debugging toggle — see the [Installation guide](documentation/installation.md#permissions-the-app-may-ask-for).
 
 > [!NOTE]
-> So it fits your setup from the first turn, the agent's system prompt carries a snapshot of your machine and — only if you opt in — of how you work (identity, locale, frequent files and apps, and the like). Whatever is in the prompt goes to your configured model provider, so that snapshot sends personal data there. It is a deliberate choice and the user snapshot is opt-in; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider) for the reasoning and how to shape it.
+> Opt in and the system prompt also carries a snapshot of how you work, sent to your model provider along with the rest of the prompt. It is off by default; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider).
 
 ## Run the server anywhere
 
-The app defaults to a bundled local server, but any Daisy client can point at any Daisy harness:
-
-- **Local (default)** — the app manages a server on `127.0.0.1:8822`. Nothing to set up.
-- **Remote URL** — run `python server.py` on another host and add its URL under **Settings → Connections**.
-- **Over SSH** — add an SSH host and Daisy tunnels to the remote harness, so the server can live on a box you reach only over SSH.
-
-This is what makes Daisy more than a desktop toy: the agent, its tools, and its file and network access run wherever you put the harness, while the interface stays native and local. See [`documentation/architecture.md`](documentation/architecture.md).
+The app defaults to a bundled local server, but any client can point at any harness — local, a remote URL, or over SSH. The compute, files, and network live wherever you host the harness while the interface stays native and local. See the [Architecture guide](documentation/architecture.md#connections-local-remote-ssh) for the connection modes.
 
 > [!WARNING]
-> The harness has no built-in authentication. If you expose it beyond `localhost`, put it behind your own auth and transport security and never open it to the public internet. See [`SECURITY.md`](SECURITY.md).
+> The harness has no built-in authentication. Behind `localhost` that is fine; if you expose it, put your own auth and transport security in front. See the [Security notes](SECURITY.md).
 
 ## Documentation
 
-The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in **[`documentation/`](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
-
-- [Set up providers and permissions](documentation/configuration.md)
-- [How the pieces fit together](documentation/architecture.md)
-- [The tool surface and screen control](documentation/tools.md)
+The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
 
 ## Built with
 
@@ -104,7 +78,7 @@ The full guides — installation, configuration, architecture, authoring agents 
 
 ## Contributing
 
-Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome — see the [Contributing guide](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

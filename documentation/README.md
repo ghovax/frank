@@ -11,7 +11,7 @@ Detailed guides for installing, configuring, understanding, and developing Daisy
 | [Tools](tools.md) | The full tool surface, including screen control (`search_screen`/`control_screen`) |
 | [Development](development.md) | The dev environment, running the pieces, building the app |
 
-Design plans for larger changes — the sequential, commit-associated record of how the harness evolved — live in [`plans/`](plans/README.md); those are proposals and design history, distinct from the current-state guides above.
+Design plans for larger changes — the sequential, commit-associated record of how the harness evolved — live in [Plans](plans/README.md). Those are proposals and design history, distinct from the current-state guides above.
 
 ## The shape of the project
 
@@ -30,4 +30,4 @@ daisy/
 └── configuration.example.yaml
 ```
 
-State the harness reads and writes at runtime lives in **`~/.daisy/`**, never in the repository: `configuration.yaml` (credentials, selected model, settings) and `history.db` (chat history). It is created on first run and is the single source of truth.
+Runtime state — credentials, the selected model, chat history — lives in **`~/.daisy/`**, never in the repository. The [Configuration guide](configuration.md) is the reference for it.

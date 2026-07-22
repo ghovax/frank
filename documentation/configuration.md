@@ -1,17 +1,17 @@
 # Configuration
 
-All runtime configuration lives in **`~/.daisy/configuration.yaml`**. It is created on first run from a built-in template and is the single source of truth for credentials, the selected model, permissions, and feature toggles. The repository never contains a filled-in copy — `~/.daisy/` is outside the repo by design.
+All runtime configuration lives in **`~/.daisy/configuration.yaml`**. It is created on first run from a built-in template. It is the source of truth for credentials, the selected model, permissions, and feature toggles. The repository never contains a filled-in copy — `~/.daisy/` sits outside the repo.
 
-Most settings are editable from **Settings** in the app. This document is the reference for the file itself, which you will want for headless or remote deployments.
+Most settings are editable from **Settings** in the app. This document is the reference for the file itself, which you need for headless or remote deployments.
 
 > [!IMPORTANT]
-> Every credential can also be provided through an environment variable (listed below), which takes precedence over the file. That lets you run a harness without writing any secret to disk. Never commit a filled-in config or a `.env` — see [SECURITY.md](../SECURITY.md).
+> Every credential can also be set through an environment variable (listed below), which takes precedence over the file. This lets you run a harness without writing any secret to disk. Never commit a filled-in config or a `.env` — see [Security notes](../SECURITY.md).
 
-A fully-commented template lives at [`configuration.example.yaml`](../configuration.example.yaml).
+A fully-commented template lives at [Example configuration](../configuration.example.yaml).
 
 ## Model providers
 
-Set an `api_key` for the providers you use. First-party providers resolve through LiteLLM's built-in endpoints; any OpenAI-compatible provider may also set `base_url`.
+Set an `api_key` for the providers you use. First-party providers resolve through LiteLLM's built-in endpoints. Any OpenAI-compatible provider may also set `base_url`.
 
 ```yaml
 providers:
@@ -41,7 +41,7 @@ firecrawl: { api_key: "" }          # fetch_url fallback — env: FIRECRAWL_API_
 web_fetch: { proxy_url: "" }        # optional outbound proxy — env: DAISY_FETCH_PROXY
 ```
 
-`fetch_url` uses a tiered engine: Jina Reader (free) first, then Firecrawl, then a direct fetch. Each tier is optional; unset keys simply skip that tier.
+`fetch_url` uses a tiered engine: Jina Reader (free) first, then Firecrawl, then a direct fetch. Each tier is optional; an unset key skips that tier.
 
 ## Hosted integrations
 
@@ -53,7 +53,7 @@ composio:
   server_name: "composio"
 ```
 
-When enabled, Composio is exposed as a normal MCP server; the agent discovers its tools and authorizes accounts (Gmail, Notion, …) on first use.
+When enabled, Composio is exposed as a normal MCP server. The agent discovers its tools and authorizes accounts (Gmail, Notion, …) on first use.
 
 ## Execution and permissions
 
@@ -61,8 +61,8 @@ When enabled, Composio is exposed as a normal MCP server; the agent discovers it
 sandbox:   { enabled: true }        # confine bash to the active workspace
 workspace: { strategy: "none" }     # "none" | "branch" | "worktree"
 agent:     { permission_mode: "default" }
-computer_control: { enabled: true } # macOS screen tools (search_screen/control_screen)
-user_context:     { enabled: true } # persistent context about you across sessions
+computer_control: { enabled: false } # macOS screen tools (search_screen/control_screen); opt-in
+user_context:     { enabled: false } # persistent context about you across sessions; opt-in
 ```
 
 ### Permission modes
@@ -74,7 +74,7 @@ user_context:     { enabled: true } # persistent context about you across sessio
 | `read_only` | Allow reads; deny writes and side effects. |
 | `bypass` | Approve everything. Use only when you fully trust the task. |
 
-Bash additionally honors per-command rules defined on each agent (for example `sudo *: deny`, `rm *: ask`) — see [agents-and-skills.md](agents-and-skills.md).
+Bash additionally honors per-command rules defined on each agent (for example `sudo *: deny`, `rm *: ask`) — see [Agents and skills guide](agents-and-skills.md).
 
 ## Agents
 
@@ -82,4 +82,4 @@ Bash additionally honors per-command rules defined on each agent (for example `s
 default_agent: "general-assistant"
 ```
 
-The primary agent for new sessions. Bundled options: `general-assistant`, `senior-researcher`, `code-investigator`, `code-implementer`. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [agents-and-skills.md](agents-and-skills.md).
+The primary agent for new sessions. Bundled options: `general-assistant`, `senior-researcher`, `code-investigator`, `code-implementer`. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills guide](agents-and-skills.md).
