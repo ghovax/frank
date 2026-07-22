@@ -6,6 +6,12 @@ environment, and the shell-history-derived ``frequent_commands`` histogram) and
 :func:`probe_user_context` (the opt-in, more personal snapshot — where/what/who/when the
 user works, and what they browse). Everything here reads local metadata only and degrades
 to silence on failure; the module holds no state.
+
+Privacy: both snapshots are injected into the system prompt and therefore travel to the
+configured model provider, so they place machine and (opt-in) user PII in front of that
+provider. This is a deliberate design choice — the agent is meant to know who the user is,
+what they do, and what it can do for them — and it is open to revisiting (narrower snapshots,
+field redaction, wider opt-in). See the privacy section of SECURITY.md.
 """
 
 from __future__ import annotations

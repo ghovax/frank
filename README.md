@@ -17,7 +17,7 @@ Daisy is two things that are deliberately kept apart:
 - **The harness** — a standalone Python server (FastAPI + LangChain) that runs the agents, dispatches tools, enforces permissions, and persists history. It speaks the [A2A](https://github.com/google/A2A) protocol and a small REST API.
 - **The app** — a native macOS client (Tauri + Next.js) that is a polished interface to a harness. It ships with a harness bundled in, so it works out of the box with nothing to configure.
 
-Because the two halves talk over HTTP, **the server does not have to run on your Mac.** Deploy the harness on a workstation, a VM, or a container, and point the app at it — the app becomes a thin, native front-end to a backend that lives wherever your compute, files, and network access should be. The bundled local server is simply the zero-configuration default. See [Run the server anywhere](#run-the-server-anywhere).
+Because the two halves talk over HTTP, **the harness runs detached, and you are not tied to one of them.** Run it locally for zero setup, on a workstation, a VM, or a container, or reach one over SSH — configure several locations, local and remote, and choose per session which the agent runs against. The app stays a thin, native front-end; the compute, files, and network access live wherever you put the harness. Its shell and file tools take a location too, so one agent can act across more than one machine in a single session. See [Run the server anywhere](#run-the-server-anywhere).
 
 ## What's different
 
@@ -26,7 +26,7 @@ Most agent harnesses are a CLI or a web chat bolted to a code sandbox. Daisy sha
 | | Daisy | The usual harness |
 |---|---|---|
 | **Interface** | Native macOS app, a thin client over the harness | A terminal or a browser tab |
-| **Where it runs** | The harness is separable: keep it local, put it on a remote box, or reach it over SSH — the app just points at it | Tied to the host and process it launched in |
+| **Where it runs** | The harness runs detached: keep one local, add remote boxes or SSH hosts, and pick per session which location a session uses — one agent can even act across several | Tied to the host and process it launched in |
 | **Models** | Any provider, or a ChatGPT login, switchable per session | Usually one provider, wired in |
 | **Your machine** | Drives your real macOS apps and your own signed-in Chrome — actual logins and sessions | A throwaway headless browser with no session |
 | **Reading the screen** | A plain-language search returns the few relevant elements; a script then acts on them | A full accessibility/DOM dump each step, or raw screenshots |
@@ -69,6 +69,9 @@ To enable the distinctive tools:
 - **Screen control** (`search_screen`/`control_screen`) needs macOS Accessibility permission for native apps (Daisy prompts you).
 - Driving **your own Chrome** needs Chrome's remote-debugging toggle enabled once (`chrome://inspect`). Daisy shows a one-click prompt.
 
+> [!NOTE]
+> So it fits your setup from the first turn, the agent's system prompt carries a snapshot of your machine and — only if you opt in — of how you work (identity, locale, frequent files and apps, and the like). Whatever is in the prompt goes to your configured model provider, so that snapshot sends personal data there. It is a deliberate choice and the user snapshot is opt-in; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider) for the reasoning and how to shape it.
+
 ## Run the server anywhere
 
 The app defaults to a bundled local server, but any Daisy client can point at any Daisy harness:
@@ -91,7 +94,7 @@ Detailed guides live in [`documentation/`](documentation/):
 | [Installation](documentation/installation.md) | Download, Gatekeeper, building from source |
 | [Configuration](documentation/configuration.md) | Providers, keys, permissions, MCP, all config keys |
 | [Architecture](documentation/architecture.md) | The client/server split, the harness, the app |
-| [Agents & skills](documentation/agents-and-skills.md) | Authoring agents, skills, memory, MCP servers |
+| [Agents and skills](documentation/agents-and-skills.md) | Authoring agents, skills, memory, MCP servers |
 | [Tools](documentation/tools.md) | The full tool surface, including screen control (`search_screen`/`control_screen`) |
 | [Development](documentation/development.md) | Dev environment, running the pieces, building the app |
 
