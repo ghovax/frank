@@ -23,9 +23,9 @@ The two halves talk only over HTTP, so the harness runs detached: the app stays 
 
 The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
 
-- **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([permissions](documentation/configuration.md#permissions)).
-- **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([architecture](documentation/architecture.md)).
-- **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([what it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
+- **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([Permissions](documentation/configuration.md#permissions)).
+- **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
+- **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([What it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
 ## How it compares
 
@@ -61,7 +61,7 @@ Grab the latest `.dmg` from the [**Releases**](https://github.com/ghovax/daisy/r
 
 ### Build from source
 
-See the [development guide](documentation/development.md). In short:
+See the [Development guide](documentation/development.md). In short:
 
 ```sh
 git clone https://github.com/ghovax/daisy.git
@@ -74,7 +74,7 @@ cd web/src-tauri && cargo tauri build
 ## Quickstart
 
 1. **Launch Daisy.** The bundled server starts automatically; the app connects to it.
-2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Daisy configuration file — see the [example configuration](configuration.example.yaml).
+2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Daisy configuration file — see the [Example configuration](configuration.example.yaml).
 3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permissions) once you trust a flow.
 
 To enable the distinctive tools:
@@ -93,14 +93,14 @@ The app defaults to a bundled local server, but any Daisy client can point at an
 - **Remote URL** — run `python server.py` on another host and add its URL under **Settings → Connections**.
 - **Over SSH** — add an SSH host and Daisy tunnels to the remote harness, so the server can live on a box you reach only over SSH.
 
-This is what makes Daisy more than a desktop toy: the agent, its tools, and its file and network access run wherever you put the harness, while the interface stays native and local. See the [architecture guide](documentation/architecture.md).
+This is what makes Daisy more than a desktop toy: the agent, its tools, and its file and network access run wherever you put the harness, while the interface stays native and local. See the [Architecture guide](documentation/architecture.md).
 
 > [!WARNING]
-> The harness has no built-in authentication. If you expose it beyond `localhost`, put it behind your own auth and transport security and never open it to the public internet. See the [security notes](SECURITY.md).
+> The harness has no built-in authentication. If you expose it beyond `localhost`, put it behind your own auth and transport security and never open it to the public internet. See the [Security notes](SECURITY.md).
 
 ## Documentation
 
-The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[documentation](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
+The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
 
 - [Set up providers and permissions](documentation/configuration.md)
 - [How the pieces fit together](documentation/architecture.md)
@@ -112,7 +112,7 @@ The full guides — installation, configuration, architecture, authoring agents 
 
 ## Contributing
 
-Contributions are welcome — see the [contributing guide](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome — see the [Contributing guide](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
