@@ -8,8 +8,6 @@ Daisy pairs a native macOS app with an open agent runtime. Agents can run shell 
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
-<img alt="Daisy — an agent working through a task with live tool calls" src="documentation/assets/screenshots/hero.png" width="820">
-
 </div>
 
 ## What it is
@@ -21,40 +19,21 @@ Daisy is two things that are deliberately kept apart:
 
 Because the two halves talk over HTTP, **the server does not have to run on your Mac.** Deploy the harness on a workstation, a VM, or a container, and point the app at it — the app becomes a thin, native front-end to a backend that lives wherever your compute, files, and network access should be. The bundled local server is simply the zero-configuration default. See [Run the server anywhere](#run-the-server-anywhere).
 
-## Highlights
+## What's different
 
-- **Bring your own model.** Anthropic, OpenAI, Google, OpenRouter, xAI, DeepSeek, Groq, Mistral, any OpenAI-compatible endpoint — or sign in with a ChatGPT subscription. Switch per session.
-- **A real tool surface.** Shell, file read/edit/write, semantic code search, web search, tiered URL fetching, file downloads, MCP tools and resources, tasks and goals, skills, and rendered artifacts.
-- **Controls your Mac.** A two-phase pair of screen tools reads the live surface — `search_screen` ranks native-app or Chrome elements from a plain-language query — and `control_screen` acts on them. It drives *your own* Chrome — real logins, real sessions.
-- **Permissions in front of everything.** Every risky action can pause for approval, with per-action risk levels and modes from ask-always to fully autonomous. Bash runs sandboxed to the workspace by default.
-- **Multiple agents, delegation, and skills.** Ship-with profiles for research and coding, agent-to-agent delegation, reusable `SKILL.md` capabilities, and persistent per-project memory — all plain Markdown you can edit.
-- **MCP-native.** Add any [Model Context Protocol](https://modelcontextprotocol.io) server; hosted integrations like Composio are first-class.
-- **Local-first.** State lives in `~/.daisy`. Your keys, your history, your machine.
+Most agent harnesses are a CLI or a web chat bolted to a code sandbox. Daisy shares the basics with them — shell, file edits, semantic code search, web search and fetch, MCP, tasks, skills, memory, delegation. Where it diverges:
 
-## Screenshots
+| | Daisy | The usual harness |
+|---|---|---|
+| **Interface** | Native macOS app, a thin client over the harness | A terminal or a browser tab |
+| **Where it runs** | The harness is separable: keep it local, put it on a remote box, or reach it over SSH — the app just points at it | Tied to the host and process it launched in |
+| **Models** | Any provider, or a ChatGPT login, switchable per session | Usually one provider, wired in |
+| **Your machine** | Drives your real macOS apps and your own signed-in Chrome — actual logins and sessions | A throwaway headless browser with no session |
+| **Reading the screen** | A plain-language search returns the few relevant elements; a script then acts on them | A full accessibility/DOM dump each step, or raw screenshots |
+| **Permissions** | An approval gate with per-action risk levels sits in front of every action | An all-or-nothing sandbox |
+| **State** | Lives on your disk in `~/.daisy` — your keys, your history | Often a hosted account |
 
-<table>
-  <tr>
-    <td width="50%">
-      <img alt="Model providers and settings" src="documentation/assets/screenshots/providers.png">
-      <p align="center"><b>Bring your own model</b><br/>Any provider or a ChatGPT subscription.</p>
-    </td>
-    <td width="50%">
-      <img alt="Screen control over native apps and Chrome" src="documentation/assets/screenshots/computer-use.png">
-      <p align="center"><b>Controls your Mac</b><br/>Native apps and your own browser.</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <img alt="Artifacts and projects" src="documentation/assets/screenshots/artifacts.png">
-      <p align="center"><b>Artifacts &amp; projects</b><br/>Rendered output, organized workspaces.</p>
-    </td>
-    <td width="50%">
-      <img alt="Permission approval for a tool call" src="documentation/assets/screenshots/permissions.png">
-      <p align="center"><b>Permissions in front</b><br/>Approve, always-allow, or deny.</p>
-    </td>
-  </tr>
-</table>
+The screen tools deserve the detail: `search_screen` ranks native-app or Chrome elements from a description of what you want, and `control_screen` composes a short Python script to act on them — so a twenty-row task is one script, not twenty round-trips. Both are opt-in and off until you turn them on. See [Tools](documentation/tools.md).
 
 ## Install
 
