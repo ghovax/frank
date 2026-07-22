@@ -842,12 +842,15 @@ async def search_screen(
     app: str = "",
     limit: int = 8,
     all_matches: bool = False,
+    screenshot: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
     """Find things on the live screen by describing them in plain words.
 
-    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. This is how you locate a control before acting on it: search for it, take its id, then act with ``control_screen``. On the browser it also finds the page's own network requests — the API endpoints behind a rendered view — so you can pull data straight from the source instead of walking the rendered DOM. It returns the full, un-paged text of each match, not a truncated preview.
+    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. Describe the target however identifies it best — its visible label, its role, or the data behind it — and rely on the match being by meaning, not exact wording; rephrase or widen (``all_matches``) if the first results miss. This is how you locate a control before acting on it with ``control_screen``. On the browser it also searches the page's own traffic — the network requests and WebSocket frames behind a rendered view — so you can pull data straight from the source instead of walking the DOM. It returns the full, un-paged text of each match, not a truncated preview.
+
+    If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around. When a surface is drawn rather than structured (a canvas, a map, WebGL) and exposes nothing to match, seeing it as pixels is your call: pass ``screenshot``.
 
     Arguments:
         query: What you are looking for, in plain language — a control, or the data behind the page.
@@ -855,6 +858,7 @@ async def search_screen(
         app: For the computer surface — which app to look at, by name; omit to reuse the last one.
         limit: How many matches to return (default 8).
         all_matches: Return every match, ranked, instead of just the top ones — for harvesting a whole set (every row, every item).
+        screenshot: Return the visible surface as an image instead of elements — for seeing a canvas/WebGL surface that exposes no structure. Deliberate, never an automatic fallback.
         justification: Why this is needed.
         risk: Damage potential — low for reading the screen.
     """

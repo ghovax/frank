@@ -46,20 +46,19 @@ message = message_loader("browser")
 # freeze spec.
 _APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js").read_text()
 
-# Per-exchange body clip. Only the top-ranked exchanges are ever returned to the model, but a
-# single huge body should still not dominate; the model can read more with ``evaluate`` if needed.
+# Non-JSON text bodies are bounded (a huge HTML/text blob should not dominate). JSON bodies are not
+# capped — they are parsed to structure and only the top-ranked exchanges ever reach the model.
 _BODY_CLIP = 8000
-# JSON bodies up to this size are parsed and returned as structured data — the model reads and can
-# query them directly, never an escaped string — while larger or non-JSON bodies fall back to a
-# clipped string. Generous, because only the top-ranked exchanges ever reach the model.
-_BODY_JSON_MAX = 200_000
+# How many of a socket's most recent frames to keep, and how many live sockets to track.
+_WEBSOCKET_FRAME_LIMIT = 40
+_WEBSOCKET_LIMIT = 20
 
 
 def _decode_body(text: str, content_type: str = "") -> Any:
-    """Represent a captured HTTP body as structured data when it is JSON — so the model reads it as
-    an object it can navigate rather than an escaped string — and otherwise as a bounded string."""
+    """Represent a captured body as structured data when it is JSON — so the model reads it as an
+    object it can navigate rather than an escaped string — and otherwise as a bounded string."""
     stripped = text.lstrip()
-    if ("json" in content_type or stripped[:1] in "{[") and len(text) <= _BODY_JSON_MAX:
+    if "json" in content_type or stripped[:1] in "{[":
         try:
             return json.loads(text)
         except Exception:
@@ -136,6 +135,10 @@ class _Session:
         # surface the API endpoints behind a rendered view and ``evaluate`` can replay them.
         self.exchanges: deque[dict] = deque(maxlen=60)
         self._exchange_counter = count(1)
+        # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that
+        # never shows up as XHR). Keyed by a model-facing id, pruned oldest-first past the limit.
+        self.websockets: dict[str, dict] = {}
+        self._websocket_counter = count(1)
         # Dialogs auto-handled and downloads captured since the last result, drained into it.
         self.events: deque[dict] = deque(maxlen=8)
 
@@ -217,9 +220,30 @@ class _Session:
             except Exception:
                 pass
 
+        def on_websocket(websocket) -> None:
+            # Observe a WebSocket's frames — the model can search them like any exchange, and act on
+            # the socket in-page with ``evaluate`` (the page's own socket, or a new one it opens).
+            identifier = f"ws{next(self._websocket_counter)}"
+            if len(self.websockets) >= _WEBSOCKET_LIMIT:
+                self.websockets.pop(next(iter(self.websockets)))
+            record: dict[str, Any] = {"id": identifier, "url": websocket.url, "frames": deque(maxlen=_WEBSOCKET_FRAME_LIMIT)}
+            self.websockets[identifier] = record
+
+            def note(direction: str):
+                def handler(payload) -> None:
+                    if isinstance(payload, (bytes, bytearray)):
+                        record["frames"].append({"direction": direction, "binary_bytes": len(payload)})
+                    else:
+                        record["frames"].append({"direction": direction, "data": _decode_body(payload)})
+                return handler
+
+            websocket.on("framesent", note("sent"))
+            websocket.on("framereceived", note("received"))
+
         page.on("dialog", on_dialog)
         page.on("download", on_download)
         page.on("response", on_response)
+        page.on("websocket", on_websocket)
 
     def drain_events(self) -> list[dict]:
         events: list[dict] = []
@@ -509,6 +533,11 @@ class WebSurface(Surface):
                 documents.append(Document(
                     id=exchange["id"], text=f"{exchange['method']} {exchange['url']}",
                     payload={"kind": "request", **exchange},
+                ))
+            for record in list(session.websockets.values()):
+                documents.append(Document(
+                    id=record["id"], text=f"websocket {record['url']}",
+                    payload={"kind": "websocket", "url": record["url"], "frames": list(record["frames"])},
                 ))
             return {"ok": True, "url": _safe_url(page), "title": _safe_title(page), "documents": documents}
 

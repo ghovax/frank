@@ -1613,8 +1613,10 @@ class _ToolsMixin:
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
         # Read the live surface into documents, rank them against the query, return the matches
-        # with their native ids. When nothing is readable, offer a screenshot as the last resort
-        # for *seeing* — the only place pixels enter this flow.
+        # with their native ids. A screenshot is the model's explicit choice (screenshot=True) for
+        # *seeing* a surface with no structure — never an automatic fallback; and a read that fails
+        # (permission not granted, browser not connected) is reported as-is for the model to raise
+        # with the user, not worked around.
         from daisy.computer import retrieval
 
         surface_name = str(tool_arguments.get("surface", "browser") or "browser")
@@ -1623,6 +1625,15 @@ class _ToolsMixin:
         app = str(tool_arguments.get("app", ""))
         limit = int(tool_arguments.get("limit", 8) or 8)
         all_matches = bool(tool_arguments.get("all_matches", False))
+
+        if bool(tool_arguments.get("screenshot", False)):
+            shot = await asyncio.to_thread(surface.screenshot, app) if surface_name == "computer" else await asyncio.to_thread(surface.screenshot)
+            extra: dict[str, Any] = {}
+            if isinstance(shot, dict) and shot.get("image_path"):
+                extra, _ = await self._screenshot_extra(shot["image_path"])
+                shot.pop("image_path", None)
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=shot, extra=extra)
+            return
 
         gate = surface.preflight("documents")
         if gate is not None:
@@ -1633,14 +1644,6 @@ class _ToolsMixin:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=read)
             return
         documents = read.pop("documents", [])
-        if not documents:
-            shot = await asyncio.to_thread(surface.screenshot, app) if surface_name == "computer" else await asyncio.to_thread(surface.screenshot)
-            extra: dict[str, Any] = {}
-            if isinstance(shot, dict) and shot.get("image_path"):
-                extra, _ = await self._screenshot_extra(shot["image_path"])
-                shot.pop("image_path", None)
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=shot, extra=extra)
-            return
         index = retrieval.Index(documents)
         hits = index.search(query, top_k=limit, everything=all_matches)
         location = {key: value for key, value in read.items() if key not in ("ok",)}
