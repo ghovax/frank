@@ -36,6 +36,7 @@ export interface ToolQuestion {
   requestId: string;
   questions: QuestionItem[];
   answers?: QuestionAnswer[];
+  declined?: boolean;
 }
 
 export interface ToolEvent {

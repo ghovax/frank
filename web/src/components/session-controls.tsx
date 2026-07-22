@@ -84,18 +84,18 @@ export function PermissionModeControl({
   layout?: "chip" | "field";
   responsiveCompact?: boolean;
 }) {
-  const t = useTranslations("SessionControls");
+  const translation = useTranslations("SessionControls");
   const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "red" }[] = [
-    { value: "default", label: t("permissionDefaultLabel"), description: t("permissionDefaultDescription"), icon: <LuHand size={13} /> },
-    { value: "auto", label: t("permissionAutoLabel"), description: t("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
-    { value: "read_only", label: t("permissionReadOnlyLabel"), description: t("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
-    { value: "bypass", label: t("permissionBypassLabel"), description: t("permissionBypassDescription"), icon: <LuShieldOff size={13} />, colorPalette: "red" },
+    { value: "default", label: translation("permissionDefaultLabel"), description: translation("permissionDefaultDescription"), icon: <LuHand size={13} /> },
+    { value: "auto", label: translation("permissionAutoLabel"), description: translation("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
+    { value: "read_only", label: translation("permissionReadOnlyLabel"), description: translation("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
+    { value: "bypass", label: translation("permissionBypassLabel"), description: translation("permissionBypassDescription"), icon: <LuShieldOff size={13} />, colorPalette: "red" },
   ];
   const permissionItems = permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
   const metrics = controlMetrics(layout);
   const collection = createListCollection({ items: permissionItems });
   const selectedAppearance = permissionAppearance(value);
-  const selectedLabel = permissionItems.find((item) => item.value === value)?.label ?? t("permissionDefaultLabel");
+  const selectedLabel = permissionItems.find((item) => item.value === value)?.label ?? translation("permissionDefaultLabel");
 
   return (
     <Select.Root
@@ -240,10 +240,10 @@ export function SandboxToggleControl({
   size?: "xs" | "sm";
   layout?: "chip" | "field";
 }) {
-  const t = useTranslations("SessionControls");
+  const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: t("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
-    : { label: t("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" };
+    ? { label: translation("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
+    : { label: translation("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" };
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
@@ -257,10 +257,10 @@ export function CompactionToggleControl({
   size?: "xs" | "sm";
   layout?: "chip" | "field";
 }) {
-  const t = useTranslations("SessionControls");
+  const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: t("compactionAutomatic"), icon: <LuZap size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: t("compactionManual"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
+    ? { label: translation("compactionAutomatic"), icon: <LuZap size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
+    : { label: translation("compactionManual"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
@@ -274,10 +274,10 @@ export function UserContextToggleControl({
   size?: "xs" | "sm";
   layout?: "chip" | "field";
 }) {
-  const t = useTranslations("SessionControls");
+  const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: t("userContextOn"), icon: <LuUserSearch size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: t("userContextOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
+    ? { label: translation("userContextOn"), icon: <LuUserSearch size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
+    : { label: translation("userContextOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
@@ -291,10 +291,10 @@ export function ComputerControlToggleControl({
   size?: "xs" | "sm";
   layout?: "chip" | "field";
 }) {
-  const t = useTranslations("SessionControls");
+  const translation = useTranslations("SessionControls");
   const appearance: ToggleAppearance = enabled
-    ? { label: t("computerControlOn"), icon: <LuMousePointerClick size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
-    : { label: t("computerControlOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
+    ? { label: translation("computerControlOn"), icon: <LuMousePointerClick size={13} />, color: "blue.fg", background: "blue.subtle", borderColor: "blue.muted", hover: "blue.muted" }
+    : { label: translation("computerControlOff"), icon: <LuCircleSlash size={13} />, color: "fg.muted", background: "bg.subtle", borderColor: "border", hover: "bg.muted" };
   return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
 }
 
@@ -314,11 +314,11 @@ export function WorkspaceStrategyControl({
   gitWorkspaceAvailable?: boolean;
   title?: string;
 }) {
-  const t = useTranslations("SessionControls");
+  const translation = useTranslations("SessionControls");
   const workspaceChoices: { value: WorkspaceStrategyValue; label: string; description: string; title: string; icon: ReactNode; colorPalette?: "purple" | "teal" }[] = [
-    { value: "none", label: t("workspaceNoneLabel"), description: t("workspaceNoneDescription"), title: t("workspaceNoneTitle"), icon: <LuHardDrive size={13} /> },
-    { value: "branch", label: t("workspaceBranchLabel"), description: t("workspaceBranchDescription"), title: t("workspaceBranchTitle"), icon: <LuGitBranch size={13} />, colorPalette: "purple" },
-    { value: "worktree", label: t("workspaceWorktreeLabel"), description: t("workspaceWorktreeDescription"), title: t("workspaceWorktreeTitle"), icon: <LuGitFork size={13} />, colorPalette: "teal" },
+    { value: "none", label: translation("workspaceNoneLabel"), description: translation("workspaceNoneDescription"), title: translation("workspaceNoneTitle"), icon: <LuHardDrive size={13} /> },
+    { value: "branch", label: translation("workspaceBranchLabel"), description: translation("workspaceBranchDescription"), title: translation("workspaceBranchTitle"), icon: <LuGitBranch size={13} />, colorPalette: "purple" },
+    { value: "worktree", label: translation("workspaceWorktreeLabel"), description: translation("workspaceWorktreeDescription"), title: translation("workspaceWorktreeTitle"), icon: <LuGitFork size={13} />, colorPalette: "teal" },
   ];
   const workspaceItems = workspaceChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
   const metrics = controlMetrics(layout);
@@ -358,7 +358,7 @@ export function WorkspaceStrategyControl({
           whiteSpace="nowrap"
           fontWeight="medium"
           disabled={disabled}
-          title={title ?? selectedChoice?.title ?? t("workspaceStrategyFallbackTitle")}
+          title={title ?? selectedChoice?.title ?? translation("workspaceStrategyFallbackTitle")}
           lineHeight="1"
         >
           <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>

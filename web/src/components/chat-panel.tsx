@@ -43,7 +43,7 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
 import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
-import { getToolCallDisplay } from "@/lib/tool-display";
+import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
 import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, setPermissionMode, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
@@ -379,7 +379,8 @@ export function ChatPanel({
   onAgentModelChange,
   compactionKeepRecentTurns,
 }: ChatPanelProps) {
-  const t = useTranslations("ChatPanel");
+  const translation = useTranslations("ChatPanel");
+  const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
   const { messages, agentGroups, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendArtifactEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
@@ -786,7 +787,7 @@ export function ChatPanel({
     (sum, group) => sum + group.steps.filter((step) => !isStepDone(step)).length,
     0
    );
-  const currentFolderName = folderDisplayName(workingDirectory) || t("thisFolder");
+  const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
   // Entrance animation is reserved for rows a *live turn* just appended at the
   // bottom — never the initial load or a background history prepend, which arrive
@@ -1236,11 +1237,41 @@ export function ChatPanel({
         pendingPrompt = {
           kind: "permission",
           permission,
-          title: getToolCallDisplay(name, args).label,
+          title: getToolCallDisplay(name, args, tToolDisplay).label,
           command: command || undefined,
           arguments: args,
         };
         break;
+      }
+    }
+  }
+  // A parked delegated agent's gate lives in the agents panel, not the main transcript, and it
+  // outlives the parent turn (spawn_agent is non-blocking), so it is surfaced through the
+  // same overlay regardless of isStreaming — otherwise the user could never answer it and
+  // the delegated agent would hang. The top-level prompt (above) takes priority when both exist.
+  if (!pendingPrompt) {
+    outer: for (const group of agentGroups) {
+      for (const step of group.steps) {
+        for (const part of step.parts) {
+          if (part.kind !== "tool" || part.status !== "input_required") continue;
+          const agentLabel = agents.find((candidate) => candidate.id === step.agent)?.title || step.agent;
+          if (part.question) {
+            pendingPrompt = { kind: "question", question: part.question };
+            break outer;
+          }
+          if (part.permission) {
+            const command = part.name === "bash" && part.arguments?.command ? String(part.arguments.command) : "";
+            const label = getToolCallDisplay(part.name, part.arguments, tToolDisplay).label;
+            pendingPrompt = {
+              kind: "permission",
+              permission: part.permission,
+              title: agentLabel ? `${agentLabel}: ${label}` : label,
+              command: command || undefined,
+              arguments: part.arguments,
+            };
+            break outer;
+          }
+        }
       }
     }
   }
@@ -1335,9 +1366,9 @@ export function ChatPanel({
             until then. */}
         <Flex align="center" gap={2} px={2} h={TOP_BAR_HEIGHT} flexShrink={0} minW={0}>
           {onToggleHistory ? (
-            <Tooltip content={historyOpen ? t("hideConversations") : t("showConversations")} openDelay={300}>
+            <Tooltip content={historyOpen ? translation("hideConversations") : translation("showConversations")} openDelay={300}>
               <IconButton
-                aria-label={historyOpen ? t("hideConversationsSidebar") : t("showConversationsSidebar")}
+                aria-label={historyOpen ? translation("hideConversationsSidebar") : translation("showConversationsSidebar")}
                 variant="ghost"
                 colorPalette="gray"
                 flexShrink={0}
@@ -1350,12 +1381,12 @@ export function ChatPanel({
             <Box color="fg.muted" flexShrink={0}><LuMessageSquare size={14} /></Box>
           )}
           <Text textStyle="panelTitle" fontWeight="medium" truncate minW={0} flex={1}>
-            {sessionId ? (sessionTitle || t("untitledConversation")) : t("newConversation")}
+            {sessionId ? (sessionTitle || translation("untitledConversation")) : translation("newConversation")}
           </Text>
           <GitStatusBar status={directoryStatus} />
           <Flex align="center" gap={1} flexShrink={0}>
             <ToolbarAction
-              label={t("terminalAndBackground")}
+              label={translation("terminalAndBackground")}
               icon={<LuTerminal size={14} />}
               active={backgroundPanelOpen}
               colorPalette="green"
@@ -1363,7 +1394,7 @@ export function ChatPanel({
               onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
             />
             <ToolbarAction
-              label={t("agents")}
+              label={translation("agents")}
               icon={<LuNetwork size={14} />}
               active={agentsPanelOpen}
               colorPalette="purple"
@@ -1374,7 +1405,7 @@ export function ChatPanel({
               }}
             />
             <ToolbarAction
-              label={t("artifacts")}
+              label={translation("artifacts")}
               icon={<LuAppWindow size={14} />}
               active={artifactPanelOpen}
               colorPalette="blue"
@@ -1382,13 +1413,13 @@ export function ChatPanel({
               onClick={() => setSidePanelOpen("artifact", !artifactPanelOpen)}
             />
             <ToolbarAction
-              label={t("settings")}
+              label={translation("settings")}
               icon={<LuSettings size={14} />}
               onClick={() => openSettings("general")}
             />
             <DropdownMenu
               trigger={
-                <IconButton aria-label={t("sessionOptions")} variant="ghost">
+                <IconButton aria-label={translation("sessionOptions")} variant="ghost">
                   <LuEllipsis size={14} />
                 </IconButton>
               }
@@ -1401,7 +1432,7 @@ export function ChatPanel({
                 onClick={() => { if (revealPath) void revealInFinder(revealPath); }}
               >
                 <LuFolderOpen size={13} />
-                <Box flex={1}>{t("openThisFolder")}</Box>
+                <Box flex={1}>{translation("openThisFolder")}</Box>
               </Menu.Item>
               <Menu.Item
                 value="delete"
@@ -1412,7 +1443,7 @@ export function ChatPanel({
                 onClick={() => setDeleteConfirmOpen(true)}
               >
                 <LuTrash2 size={13} />
-                <Box flex={1}>{t("deleteSession")}</Box>
+                <Box flex={1}>{translation("deleteSession")}</Box>
               </Menu.Item>
             </DropdownMenu>
           </Flex>
@@ -1429,13 +1460,13 @@ export function ChatPanel({
                     <LuTriangleAlert />
                   </EmptyState.Indicator>
                   <VStack gap={1}>
-                    <EmptyState.Title>{t("loadConversationErrorTitle")}</EmptyState.Title>
+                    <EmptyState.Title>{translation("loadConversationErrorTitle")}</EmptyState.Title>
                     <EmptyState.Description>
-                      {t("loadConversationErrorDescription")}
+                      {translation("loadConversationErrorDescription")}
                     </EmptyState.Description>
                   </VStack>
                   <Button variant="solid" colorPalette="blue" onClick={reloadHistory}>
-                    {t("retry")}
+                    {translation("retry")}
                   </Button>
                 </EmptyState.Content>
               </EmptyState.Root>
@@ -1456,13 +1487,13 @@ export function ChatPanel({
                         by connection status), then the folder's skills. */}
                     <Flex direction="column" align="center" gap={4}>
                       <Heading as="h2" fontSize="3xl" fontWeight="semibold" textAlign="center">
-                        {t("buildPrompt", { folder: currentFolderName })}
+                        {translation("buildPrompt", { folder: currentFolderName })}
                       </Heading>
                       {projectLocations.length > 0 && (
                         <Flex direction="column" align="center" gap={2}>
                           <Flex align="center" justify="center" gap={1.5} color="fg.muted">
                             <LuNetwork size={14} />
-                            <Text textStyle="panelTitle">{t("locationsAvailable")}</Text>
+                            <Text textStyle="panelTitle">{translation("locationsAvailable")}</Text>
                           </Flex>
                           <Flex align="center" gap={2.5} wrap="wrap" justify="center">
                             {projectLocations.map((location) => (
@@ -1495,8 +1526,6 @@ export function ChatPanel({
                         const inner = item.kind === "tool_group" ? (
                           <ChatToolGroup
                             messages={item.messages}
-                            onPermission={handlePermission}
-                            onQuestion={handleQuestion}
                             agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
@@ -1505,8 +1534,6 @@ export function ChatPanel({
                         ) : (
                           <ChatMessageItem
                             message={enrichAnnotationVersions(item.message)}
-                            onPermission={handlePermission}
-                            onQuestion={handleQuestion}
                             agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
@@ -1546,7 +1573,7 @@ export function ChatPanel({
                     {queuedMessages.map((message, index) => (
                       <Flex key={message.id} align="flex-start" alignSelf="flex-end" maxW="80%" gap={1.5}>
                         <IconButton
-                          aria-label={t("deleteQueuedMessage")}
+                          aria-label={translation("deleteQueuedMessage")}
                           variant="ghost"
                           colorPalette="red"
                           mt={0.5}
@@ -1571,7 +1598,7 @@ export function ChatPanel({
                               {message.steering ? <LuNavigation size={11} /> : <LuClock size={11} />}
                             </Span>
                             <Text textStyle="fieldLabel" color="fg.subtle">
-                              {message.steering ? t("steeringNextOpening") : t("queued")}
+                              {message.steering ? translation("steeringNextOpening") : translation("queued")}
                             </Text>
                           </Flex>
                           <Text fontSize="sm" color="fg.muted">{message.text}</Text>
@@ -1599,7 +1626,7 @@ export function ChatPanel({
             onClick={scrollToBottom}
           >
             <LuArrowDown />
-            {t("jumpToLatest")}
+            {translation("jumpToLatest")}
           </Button>
         )}
         </Box>
@@ -1720,16 +1747,16 @@ export function ChatPanel({
             {/* Persistent top bar with the Artifacts ⇄ History toggle. */}
             <PanelHeader
               icon={<LuAppWindow size={14} />}
-              title={t("artifacts")}
+              title={translation("artifacts")}
               onClose={() => setSidePanelOpen("artifact", false)}
-              closeLabel={t("collapseArtifactsSidebar")}
+              closeLabel={translation("collapseArtifactsSidebar")}
             >
               <SegmentedToggle
                 value={historyMode ? "history" : "artifacts"}
                 onChange={(next) => setHistoryMode(next === "history")}
                 options={[
-                  { value: "artifacts", label: t("artifacts"), icon: <LuAppWindow size={14} /> },
-                  { value: "history", label: t("history"), icon: <LuHistory size={14} /> },
+                  { value: "artifacts", label: translation("artifacts"), icon: <LuAppWindow size={14} /> },
+                  { value: "history", label: translation("history"), icon: <LuHistory size={14} /> },
                 ]}
               />
             </PanelHeader>
@@ -1744,8 +1771,8 @@ export function ChatPanel({
             ) : openGroups.length === 0 ? (
               <PanelEmptyState
                 icon={<LuAppWindow />}
-                title={t("noArtifactsTitle")}
-                description={t("noArtifactsDescription")}
+                title={translation("noArtifactsTitle")}
+                description={translation("noArtifactsDescription")}
               />
             ) : activeGroup ? (
               <>
@@ -1775,13 +1802,13 @@ export function ChatPanel({
                             <Box fontSize="xs" lineHeight="1.6" maxW="340px">
                               <Text fontWeight="semibold" mb={tabSourcePath ? 1 : 0} color="fg">{tab.title}</Text>
                               {tabSourcePath ? (
-                                <InlineField label={isUrl ? t("url") : t("path")}>
+                                <InlineField label={isUrl ? translation("url") : translation("path")}>
                                   <Text wordBreak="break-all" fontFamily="var(--app-font-mono)">{tabSourcePath}</Text>
                                 </InlineField>
                               ) : null}
                             </Box>
                           }
-                          closeLabel={t("closeTab", { title: tab.title })}
+                          closeLabel={translation("closeTab", { title: tab.title })}
                         />
                       );
                     })}
@@ -1813,15 +1840,15 @@ export function ChatPanel({
                     >
                       <LuMousePointerClick size={13} />
                       {activeAnnotations.length > 0
-                        ? t("imageAnnotationCount", { count: activeAnnotations.length })
+                        ? translation("imageAnnotationCount", { count: activeAnnotations.length })
                         : isViewingLatestVersion
-                          ? t("clickToAnnotate")
-                          : t("noAnnotations")}
+                          ? translation("clickToAnnotate")
+                          : translation("noAnnotations")}
                     </Flex>
                   ) : null}
                   <IconButton
-                    aria-label={t("reloadArtifact")}
-                    title={t("reload")}
+                    aria-label={translation("reloadArtifact")}
+                    title={translation("reload")}
                     variant="ghost"
                     boxSize="8"
                     onClick={() => setArtifactReloadKey((current) => current + 1)}
@@ -1829,8 +1856,8 @@ export function ChatPanel({
                     <LuRotateCw size={14} />
                   </IconButton>
                   <IconButton
-                    aria-label={artifactMaximized ? t("minimizeArtifact") : t("maximizeArtifact")}
-                    title={artifactMaximized ? t("minimize") : t("maximize")}
+                    aria-label={artifactMaximized ? translation("minimizeArtifact") : translation("maximizeArtifact")}
+                    title={artifactMaximized ? translation("minimize") : translation("maximize")}
                     variant="ghost"
                     boxSize="8"
                     onClick={() => setArtifactMaximized((current) => !current)}
@@ -1839,8 +1866,8 @@ export function ChatPanel({
                   </IconButton>
                   {activeVersionEntry && activeGroup.relativePath ? (
                     <IconButton
-                      aria-label={t("restoreThisVersion")}
-                      title={isViewingLatestVersion ? t("restoreLatestVersion") : t("restoreVersionToWorkingTree")}
+                      aria-label={translation("restoreThisVersion")}
+                      title={isViewingLatestVersion ? translation("restoreLatestVersion") : translation("restoreVersionToWorkingTree")}
                       variant="ghost"
                       boxSize="8"
                       onClick={() => handleRestore(activeGroup, activeVersionEntry.commitSha)}
@@ -1849,8 +1876,8 @@ export function ChatPanel({
                     </IconButton>
                   ) : null}
                   <IconButton
-                    aria-label={t("downloadThisVersion")}
-                    title={t("download")}
+                    aria-label={translation("downloadThisVersion")}
+                    title={translation("download")}
                     variant="ghost"
                     boxSize="8"
                     disabled={!(activeVersionEntry?.blobSha || activeGroup.latestBlob) || !sessionId}
@@ -1872,8 +1899,8 @@ export function ChatPanel({
                     <LuDownload size={14} />
                   </IconButton>
                   <IconButton
-                    aria-label={t("closeAllArtifacts")}
-                    title={t("close")}
+                    aria-label={translation("closeAllArtifacts")}
+                    title={translation("close")}
                     variant="ghost"
                     boxSize="8"
                     colorPalette="red"
@@ -1892,7 +1919,7 @@ export function ChatPanel({
                 {activeVersions.length > 1 ? (
                   <Flex px={4} pt={2} pb={1.5} align="center" gap={1} flexShrink={0}>
                     <IconButton
-                      aria-label={t("previousVersion")}
+                      aria-label={translation("previousVersion")}
                       variant="ghost"
                       boxSize="8"
                       disabled={selectedVersionNumber <= 1}
@@ -1933,20 +1960,20 @@ export function ChatPanel({
                           const tooltip = (
                             <Box whiteSpace="nowrap">
                               <Text fontWeight="semibold" mb={1} color="fg">
-                                {t("versionNumber", { number: versionIndex + 1 })}
+                                {translation("versionNumber", { number: versionIndex + 1 })}
                               </Text>
                               <Flex direction="column" gap={1}>
-                                <InlineField label={t("created")}>
+                                <InlineField label={translation("created")}>
                                   <Text>
                                     {version.createdAt && !Number.isNaN(new Date(version.createdAt).getTime())
                                       ? format.dateTime(new Date(version.createdAt), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-                                      : t("unknown")}
+                                      : translation("unknown")}
                                   </Text>
                                 </InlineField>
                                 {annotationCount > 0 && (
-                                  <InlineField label={t("annotations")}><Text>{annotationCount}</Text></InlineField>
+                                  <InlineField label={translation("annotations")}><Text>{annotationCount}</Text></InlineField>
                                 )}
-                                {!isLatest && <InlineField label={t("editing")}><Text>{t("readOnly")}</Text></InlineField>}
+                                {!isLatest && <InlineField label={translation("editing")}><Text>{translation("readOnly")}</Text></InlineField>}
                               </Flex>
                             </Box>
                           );
@@ -1991,7 +2018,7 @@ export function ChatPanel({
                       </Flex>
                     </Box>
                     <IconButton
-                      aria-label={t("nextVersion")}
+                      aria-label={translation("nextVersion")}
                       variant="ghost"
                       boxSize="8"
                       disabled={selectedVersionNumber >= activeVersions.length}
@@ -2046,7 +2073,7 @@ export function ChatPanel({
                   if (!activeArtifact) {
                     return (
                       <Flex key={bodyKey} flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-                        {t("loadingArtifact")}
+                        {translation("loadingArtifact")}
                       </Flex>
                     );
                   }
@@ -2131,13 +2158,13 @@ export function ChatPanel({
       <ConfirmDialog
         open={deleteConfirmOpen}
         onOpenChange={setDeleteConfirmOpen}
-        title={t("deleteSessionConfirmTitle")}
-        confirmLabel={t("delete")}
+        title={translation("deleteSessionConfirmTitle")}
+        confirmLabel={translation("delete")}
         confirmIcon={<LuTrash2 size={14} />}
         danger
         onConfirm={() => { if (sessionId) onDeleteSession?.(sessionId); }}
       >
-        {t("deleteSessionConfirmBody")}
+        {translation("deleteSessionConfirmBody")}
       </ConfirmDialog>
     </Flex>
     </ArtifactEventProvider>
@@ -2161,7 +2188,7 @@ function ArtifactFileDiff({
   scope: ArtifactScope;
   darkMode: boolean;
 }) {
-  const t = useTranslations("ChatPanel");
+  const translation = useTranslations("ChatPanel");
   // The fetched diff is keyed by its exact target so a stale result from a previous file
   // or version is never shown, and state is only written from the async callback (never
   // synchronously inside the effect).
@@ -2200,14 +2227,14 @@ function ArtifactFileDiff({
   if (hasDiffTarget && !resultIsCurrent) {
     return (
       <Flex flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-        {t("loadingDiff")}
+        {translation("loadingDiff")}
       </Flex>
     );
   }
   if (!shownDiff) {
     return (
       <Flex flex={1} minH={0} align="center" justify="center" color="fg.subtle" fontSize="sm">
-        {t("noChangesToShow")}
+        {translation("noChangesToShow")}
       </Flex>
     );
   }

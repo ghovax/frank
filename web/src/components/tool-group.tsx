@@ -5,7 +5,7 @@ import { memo, useMemo, useState, type ReactNode } from "react";
 import { LuBrain } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
-import { getToolCallDisplay } from "@/lib/tool-display";
+import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { iconForFilePath } from "@/lib/file-icons";
 import { STATUS_ICON, STATUS_PALETTE, type StatusKind } from "@/lib/status";
 import { DiffStatBadge, RollingNumber } from "./rolling-number";
@@ -13,7 +13,7 @@ import { ToolCallLabel } from "./tool-label";
 import { Pill } from "./ui/pill";
 import { DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon } from "./ui/activity-icon";
-import type { PermissionDecision, QuestionAnswer, ToolEvent } from "@/lib/tool-event";
+import type { ToolEvent } from "@/lib/tool-event";
 import { hasBackgroundTaskIdentifier, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
 
@@ -105,8 +105,6 @@ function extractFileChanges(tools: ToolEvent[]): FileChange[] {
 interface ToolGroupProps {
   tools: ToolEvent[];
   agents?: { id: string; name: string; title?: string }[];
-  onPermission?: (requestId: string, decision: PermissionDecision) => void;
-  onQuestion?: (requestId: string, answers: QuestionAnswer[]) => void;
   activeArtifactId?: string | null;
   onActivateArtifact?: (toolCallId: string) => void;
   // When true, the group stays expanded even after all calls complete — used by
@@ -118,13 +116,12 @@ interface ToolGroupProps {
 export const ToolGroup = memo(function ToolGroup({
   tools,
   agents = [],
-  onPermission,
-  onQuestion,
   activeArtifactId,
   onActivateArtifact,
   keepOpen = false,
 }: ToolGroupProps) {
-  const t = useTranslations("ToolGroup");
+  const translation = useTranslations("ToolGroup");
+  const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const backgroundCount = tools.filter(
     (tool) => toolStatus(tool.status) === "running" && hasBackgroundTaskIdentifier(tool.result),
   ).length;
@@ -150,16 +147,16 @@ export const ToolGroup = memo(function ToolGroup({
   // animated as work streams in and left in place when the batch finishes — more
   // informative than a static "Still working" / "Actions taken".
   const latestTool = tools[tools.length - 1];
-  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments) : null;
+  const headingDisplay = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay) : null;
   const HeadingIcon = headingDisplay?.icon ?? LuBrain;
   const headingIconColor = headingDisplay?.iconColor ?? "purple.fg";
   // When the batch touched a single remote place, badge the collapsed heading with it
   // (local-only batches show nothing — local is the implied default).
   const groupLocation = useMemo(() => collapsedHeadingLocation(tools.map((tool) => tool.arguments)), [tools]);
-  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments).label : "";
+  const latestLabel = latestTool ? getToolCallDisplay(latestTool.name, latestTool.arguments, tDisplay).label : "";
   // A tools-less group is a "thinking before acting" phase and owns the leading brain icon.
   const thinkingOnly = tools.length === 0;
-  const headingText = latestLabel || (thinkingOnly ? t("thinking") : active ? t("working") : t("actionsTaken"));
+  const headingText = latestLabel || (thinkingOnly ? translation("thinking") : active ? translation("working") : translation("actionsTaken"));
   // One call is already fully represented by the summary row. The grouped body only
   // becomes useful once it can reveal multiple calls instead of repeating that row.
   const interactive = tools.length > 1;
@@ -168,9 +165,9 @@ export const ToolGroup = memo(function ToolGroup({
   // carry no chip: the live shimmer already communicates activity, while the settled line
   // speaks for itself.
   const statusChips = [
-    inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: t("inputRequired") },
-    failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: t("failedCount", { count: failedCount }) },
-    backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: t("backgroundCount", { count: backgroundCount }) },
+    inputRequiredCount > 0 && { kind: "input_required" as StatusKind, count: inputRequiredCount, title: translation("inputRequired") },
+    failedCount > 0 && { kind: "failed" as StatusKind, count: failedCount, title: translation("failedCount", { count: failedCount }) },
+    backgroundCount > 0 && { kind: "background" as StatusKind, count: backgroundCount, title: translation("backgroundCount", { count: backgroundCount }) },
   ].filter((chip): chip is { kind: StatusKind; count: number; title: string } => Boolean(chip));
 
   // The animated label slot: the latest tool's label crossfades as work streams in,
@@ -211,7 +208,7 @@ export const ToolGroup = memo(function ToolGroup({
     <>
       <AnimatePresence initial={false}>
         {tally.order.map((name) => {
-          const display = getToolCallDisplay(name);
+          const display = getToolCallDisplay(name, undefined, tDisplay);
           const ToolIcon = display.icon;
           const count = tally.counts.get(name) ?? 0;
           return (
@@ -243,7 +240,7 @@ export const ToolGroup = memo(function ToolGroup({
             </Flex>
           );
         }) : (
-          <Pill colorPalette="gray">{t("filesCount", { count: fileChanges.length })}</Pill>
+          <Pill colorPalette="gray">{translation("filesCount", { count: fileChanges.length })}</Pill>
         )
       )}
       <ToolLocationBadge arguments={groupLocation} />
@@ -298,8 +295,6 @@ export const ToolGroup = memo(function ToolGroup({
                 permission={tool.permission}
                 question={tool.question}
                 agents={agents}
-                onPermission={onPermission}
-                onQuestion={onQuestion}
                 activeArtifactId={activeArtifactId}
                 onActivateArtifact={onActivateArtifact}
               />

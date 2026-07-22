@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Emit the JSON Schema for the wire events and model-facing envelopes.
 
-Pydantic is the source of truth (``harness.core.events``); this uses Pydantic's own
+Pydantic is the source of truth (``daisy.core.events``); this uses Pydantic's own
 ``models_json_schema`` — no hand-written Python->TS type mapping — to produce
 ``web/src/lib/generated/events.schema.json``. The TypeScript is then generated from
-that schema by ``json-schema-to-typescript`` (see the web ``gen:events`` script), so
+that schema by ``json-schema-to-typescript`` (see the web ``build:events`` script), so
 the whole pipeline is two authoritative libraries and zero bespoke type-walking.
 
-Run the full pipeline with ``bun run gen:events`` in ``web/`` (which invokes this and
+Run the full pipeline with ``bun run build:events`` in ``web/`` (which invokes this and
 then ``json2ts``); this file alone only refreshes the schema.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
@@ -24,7 +25,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from pydantic import TypeAdapter  # noqa: E402
 from pydantic.json_schema import models_json_schema  # noqa: E402
 
-from harness.core import events  # noqa: E402
+from daisy.core import events  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +34,32 @@ REFERENCE_TEMPLATE = "#/$defs/{model}"
 
 
 def _strip_titles(node: object) -> object:
-    """Drop Pydantic's per-field ``title`` keys. They cause json-schema-to-typescript
-    to promote every field into its own throwaway alias (Kind1, Path4, …); the type
-    names we want come from the ``$defs`` keys, not titles."""
-    if isinstance(node, dict):
-        return {key: _strip_titles(value) for key, value in node.items() if key != "title"}
+    """Drop Pydantic's injected ``title`` *metadata* (which makes json-schema-to-typescript
+    promote every field into its own throwaway alias — Kind1, Path4, …); the type names we
+    want come from the ``$defs`` keys, not titles. A ``title`` that is a *field name* — a key
+    inside a ``properties``/``$defs`` map — is real data and is preserved; only a ``title``
+    keyword sitting directly on a schema node is metadata and stripped. (The naive "drop every
+    key named title" deletes a modelled field literally named ``title``, e.g.
+    ``GroupStartedEvent.title`` / ``WarningEvent.title``, silently erasing it from the wire.)"""
     if isinstance(node, list):
         return [_strip_titles(item) for item in node]
-    return node
+    if not isinstance(node, dict):
+        return node
+    cleaned: dict = {}
+    for key, value in node.items():
+        if key == "title":
+            # Metadata on this schema node — never a field name (field names are reached
+            # only as map keys in the branches below), so this is always Pydantic's title.
+            continue
+        if key in _SCHEMA_MAP_KEYS and isinstance(value, dict):
+            cleaned[key] = {name: _strip_titles(sub) for name, sub in value.items()}
+        elif key in _SCHEMA_LIST_KEYS and isinstance(value, list):
+            cleaned[key] = [_strip_titles(sub) for sub in value]
+        elif key in _SCHEMA_NODE_KEYS and isinstance(value, dict):
+            cleaned[key] = _strip_titles(value)
+        else:
+            cleaned[key] = _strip_titles(value)
+    return cleaned
 
 
 _STRUCTURAL = {"type", "$ref", "enum", "const", "anyOf", "oneOf", "allOf", "items", "properties", "tsType"}
@@ -84,7 +103,24 @@ def _readable_types(node: object) -> object:
     return cleaned
 
 
-def main() -> None:
+def _require_discriminant(definition: object) -> object:
+    """Mark the ``kind`` discriminant required. Pydantic makes it optional (each ``Literal`` has a
+    default), which leaves the generated TS with ``kind?: "..."`` — so the union does not narrow
+    cleanly and a reducer cannot assert exhaustiveness. On the wire the discriminator is always
+    present, so requiring it is accurate and lets the client switch on it as a real discriminated
+    union."""
+    if not isinstance(definition, dict):
+        return definition
+    properties = definition.get("properties")
+    if isinstance(properties, dict) and "kind" in properties:
+        required = list(definition.get("required") or [])
+        if "kind" not in required:
+            required.append("kind")
+        definition["required"] = required
+    return definition
+
+
+def _render_schema() -> str:
     top_level = [
         *events.WIRE_EVENT_MODELS,
         events.ModelToolResult,
@@ -103,7 +139,7 @@ def main() -> None:
     definitions.update(wire.pop("$defs", {}))
     definitions["WireEvent"] = wire
 
-    cleaned = {name: _readable_types(_strip_titles(definition)) for name, definition in definitions.items()}
+    cleaned = {name: _require_discriminant(_readable_types(_strip_titles(definition))) for name, definition in definitions.items()}
     schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "title": "DaisyEvents",
@@ -113,11 +149,36 @@ def main() -> None:
         "additionalProperties": False,
         "$defs": cleaned,
     }
+    return json.dumps(schema, indent=2, sort_keys=True) + "\n"
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Verify the committed schema matches the Python models; exit 1 on drift instead of writing.",
+    )
+    arguments = parser.parse_args()
+    rendered = _render_schema()
+
+    if arguments.check:
+        current = OUTPUT.read_text() if OUTPUT.exists() else ""
+        if current != rendered:
+            logger.error(
+                "%s is stale — the Pydantic event models changed but the schema was not regenerated. "
+                "Run `bun run build:events` and commit the result.",
+                OUTPUT.relative_to(ROOT),
+            )
+            return 1
+        logger.info("%s is up to date with the event models.", OUTPUT.relative_to(ROOT))
+        return 0
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(schema, indent=2, sort_keys=True) + "\n")
-    logger.info("wrote %s (%d definitions)", OUTPUT.relative_to(ROOT), len(definitions))
+    OUTPUT.write_text(rendered)
+    logger.info("wrote %s", OUTPUT.relative_to(ROOT))
+    return 0
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    main()
+    sys.exit(main())

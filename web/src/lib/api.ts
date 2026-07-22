@@ -341,6 +341,74 @@ export async function deleteLocation(locationId: string): Promise<void> {
   await fetch(`${API_BASE}/locations/${encodeURIComponent(locationId)}`, { method: "DELETE" });
 }
 
+// External A2A agents (remote agents this harness can delegate to).
+
+export interface RemoteAgent {
+  name: string;
+  cardUrl: string;
+  enabled: boolean;
+  authType: string;
+  allowedProfiles: string[];
+  allowedHosts: string[];
+  allowPrivate: boolean;
+  cardTtlSeconds: number;
+  health: string;   // unresolved | ok | unreachable | untrusted
+  error: string;
+  resolvedName: string;
+  resolvedDescription: string;
+  skills: string[];
+}
+
+export interface RemoteAgentAuthInput {
+  type: string;   // none | bearer | api_key | oauth2
+  token?: string;
+  header?: string;
+  schemePrefix?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopes?: string[];
+}
+
+export interface RemoteAgentInput {
+  name: string;
+  cardUrl: string;
+  enabled?: boolean;
+  auth?: RemoteAgentAuthInput;
+  cardTtlSeconds?: number;
+  allowedHosts?: string[];
+  allowPrivate?: boolean;
+  allowedProfiles?: string[];
+}
+
+export async function listRemoteAgents(): Promise<RemoteAgent[]> {
+  const response = await fetch(`${API_BASE}/remote-agents`);
+  if (!response.ok) throw new Error(`Failed to list remote agents (${response.status})`);
+  const data = (await response.json()) as { agents: RemoteAgent[] };
+  return data.agents ?? [];
+}
+
+export async function upsertRemoteAgent(input: RemoteAgentInput): Promise<void> {
+  const response = await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(input.name)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(`Failed to save remote agent (${response.status})`);
+}
+
+export async function deleteRemoteAgent(name: string): Promise<void> {
+  await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export async function refreshRemoteAgent(name: string): Promise<{ health: string; error: string }> {
+  const response = await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(name)}/refresh`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(`Failed to refresh remote agent (${response.status})`);
+  return (await response.json()) as { health: string; error: string };
+}
+
 // Metadata key understood by the harness A2A executor.
 // A2A convention: an extension places its attributes under one URI-namespaced key in
 // the message `metadata` map, not as bare top-level keys. Mirrors DAISY_METADATA_KEY

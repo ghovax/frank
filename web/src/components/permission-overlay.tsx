@@ -36,7 +36,7 @@ const RISK_PALETTE: Record<string, string> = { high: "red", medium: "orange", lo
 const RISK_KEY: Record<string, string> = { high: "riskHigh", medium: "riskMedium", low: "riskLow" };
 
 export function PermissionOverlay({ permission, title, detail, command, arguments: toolArguments, onPermission }: PermissionOverlayProps) {
-  const t = useTranslations("PermissionOverlay");
+  const translation = useTranslations("PermissionOverlay");
   const boxRef = useRef<HTMLDivElement>(null);
 
   function decide(decision: PermissionDecision) {
@@ -97,14 +97,14 @@ export function PermissionOverlay({ permission, title, detail, command, argument
                 <LuShieldAlert size={14} />
               </Box>
               <Text textStyle="panelTitle" color="fg">
-                {t("approvalNeeded")}
+                {translation("approvalNeeded")}
               </Text>
             </Flex>
             <Flex align="center" gap={2} flexShrink={0}>
               <ToolLocationBadge arguments={toolArguments} />
               {risk && (
                 <Pill colorPalette={RISK_PALETTE[risk] ?? "gray"}>
-                  {t("riskBadge", { level: RISK_KEY[risk] ? t(RISK_KEY[risk] as Parameters<typeof t>[0]) : risk })}
+                  {translation("riskBadge", { level: RISK_KEY[risk] ? translation(RISK_KEY[risk] as Parameters<typeof translation>[0]) : risk })}
                 </Pill>
               )}
             </Flex>
@@ -139,14 +139,14 @@ export function PermissionOverlay({ permission, title, detail, command, argument
 
           <Flex align="center" justify="space-between" gap={2} flexShrink={0}>
             <Button colorPalette="red" variant="solid" onClick={() => decide("deny")}>
-              {t("deny")}
+              {translation("deny")}
             </Button>
             <HStack gap={2}>
               <Button colorPalette="blue" variant="subtle" onClick={() => decide("allow_always")}>
-                {t("allowAlways")}
+                {translation("allowAlways")}
               </Button>
               <Button colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
-                {t("allowOnce")}
+                {translation("allowOnce")}
               </Button>
             </HStack>
           </Flex>

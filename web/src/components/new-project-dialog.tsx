@@ -22,7 +22,7 @@ export function NewProjectDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (project: Project) => void;
 }) {
-  const t = useTranslations("NewProjectDialog");
+  const translation = useTranslations("NewProjectDialog");
   const tc = useTranslations("Common");
   const [locations, setLocations] = useState<LocationInput[]>([emptyLocation()]);
   const [saving, setSaving] = useState(false);
@@ -44,7 +44,7 @@ export function NewProjectDialog({
       onCreated(project);
       onOpenChange(false);
     } catch (error) {
-      toaster.create({ type: "error", title: t("createError"), description: error instanceof Error ? error.message : "", closable: true });
+      toaster.create({ type: "error", title: translation("createError"), description: error instanceof Error ? error.message : "", closable: true });
     } finally {
       setSaving(false);
     }
@@ -57,19 +57,19 @@ export function NewProjectDialog({
         <Dialog.Positioner>
           <Dialog.Content w="min(560px, calc(100vw - 16px))">
             <Dialog.Header display="flex" flexDirection="column" alignItems="flex-start" gap={1}>
-              <Dialog.Title textStyle="panelTitle">{t("title")}</Dialog.Title>
-              <Text fontSize="sm" color="fg.muted">{t("description")}</Text>
+              <Dialog.Title textStyle="panelTitle">{translation("title")}</Dialog.Title>
+              <Text fontSize="sm" color="fg.muted">{translation("description")}</Text>
             </Dialog.Header>
             <Dialog.Body display="flex" flexDirection="column" gap={4}>
               <Box>
-                <Text textStyle="panelTitle" mb={2}>{t("folders")}</Text>
+                <Text textStyle="panelTitle" mb={2}>{translation("folders")}</Text>
                 <LocationEditorList hosts={hosts} locations={locations} onChange={updateLocation} onAdd={addLocation} onRemove={removeLocation} loading={!hostsLoaded} />
               </Box>
             </Dialog.Body>
             <Dialog.Footer>
               <Button variant="outline" onClick={() => onOpenChange(false)}>{tc("cancel")}</Button>
               <Button colorPalette="blue" disabled={!canCreate || saving} loading={saving} onClick={handleCreate}>
-                {t("create")}
+                {translation("create")}
               </Button>
             </Dialog.Footer>
           </Dialog.Content>

@@ -54,7 +54,9 @@ export function AgentTimeline({
   const items = buildTimelineItems(parts);
   return (
     // The enclosing DisclosureRow body owns the top breathing room now, so this
-    // timeline just stacks its items.
+    // timeline just stacks its items. A parked gate raised inside a step shows here as
+    // an "input required" tool line; the actionable approve/deny lives in the shared
+    // overlay (driven from agentGroups), the same surface the root transcript uses.
     <Flex direction="column" gap={1} align="stretch">
       {items.map((item, itemIndex) => {
         if (item.kind === "text") {

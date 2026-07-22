@@ -1,1 +1,0 @@
-Only the window controls are exposed — an Electron app that has not built its accessibility tree yet. Bring it to the front by running `open -a` on it through the bash tool, then observe again for its full UI.

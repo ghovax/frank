@@ -113,7 +113,7 @@ function mergeTasks(messageTasks: ShellTask[], liveTasks: ShellTask[]): ShellTas
 // while it is live — pushing a still-blocking foreground command to the
 // background, or stopping it outright.
 function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: string | null }) {
-  const t = useTranslations("BackgroundTasksPanel");
+  const translation = useTranslations("BackgroundTasksPanel");
   const [busy, setBusy] = useState<"stop" | "background" | null>(null);
 
   async function handleStop() {
@@ -146,9 +146,9 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
       actions={
         <>
           {task.canBackground && !task.backgrounded && (
-            <Tooltip content={t("sendToBackgroundHint")} openDelay={300}>
+            <Tooltip content={translation("sendToBackgroundHint")} openDelay={300}>
               <IconButton
-                aria-label={busy === "background" ? t("sending") : t("sendToBackground")}
+                aria-label={busy === "background" ? translation("sending") : translation("sendToBackground")}
                 variant="plain"
                 colorPalette="blue"
                 boxSize="5"
@@ -160,9 +160,9 @@ function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: strin
               </IconButton>
             </Tooltip>
           )}
-          <Tooltip content={t("stop")} openDelay={300}>
+          <Tooltip content={translation("stop")} openDelay={300}>
             <IconButton
-              aria-label={busy === "stop" ? t("stopping") : t("stop")}
+              aria-label={busy === "stop" ? translation("stopping") : translation("stop")}
               variant="plain"
               colorPalette="red"
               boxSize="5"
@@ -199,7 +199,7 @@ export function BackgroundTasksPanel({
   workingDirectory: string;
   locations?: Location[];
 }) {
-  const t = useTranslations("BackgroundTasksPanel");
+  const translation = useTranslations("BackgroundTasksPanel");
   const tasks = useMemo(() => shellTasksFromMessages(messages), [messages]);
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const [activeView, setActiveView] = useState<"terminal" | "processes">("terminal");
@@ -287,16 +287,16 @@ export function BackgroundTasksPanel({
     <PanelCard>
       <PanelHeader
         icon={activeView === "terminal" ? <LuTerminal size={14} /> : <LuActivity size={14} />}
-        title={activeView === "terminal" ? t("terminal") : t("backgroundProcesses")}
+        title={activeView === "terminal" ? translation("terminal") : translation("backgroundProcesses")}
         onClose={onClose}
-        closeLabel={t("collapseSidebar")}
+        closeLabel={translation("collapseSidebar")}
       >
         <SegmentedToggle
           value={activeView}
           onChange={setActiveView}
           options={[
-            { value: "terminal", label: t("terminal"), icon: <LuTerminal size={14} /> },
-            { value: "processes", label: t("processes"), icon: <LuActivity size={14} /> },
+            { value: "terminal", label: translation("terminal"), icon: <LuTerminal size={14} /> },
+            { value: "processes", label: translation("processes"), icon: <LuActivity size={14} /> },
           ]}
         />
       </PanelHeader>
@@ -311,11 +311,11 @@ export function BackgroundTasksPanel({
                 const terminalLocation = locationForTerminal(key);
                 const tabTooltip = (
                   <Box fontSize="xs" lineHeight="1.6" maxW="300px">
-                    <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">{t("terminalNumber", { number: index + 1 })}</Text>
+                    <Text fontWeight="semibold" mb={terminalLocation ? 1 : 0} color="fg">{translation("terminalNumber", { number: index + 1 })}</Text>
                     {terminalLocation ? (
                       <Flex direction="column" gap={1}>
-                        <InlineField label={t("location")}><Text>{locationTargetLabel(terminalLocation)}</Text></InlineField>
-                        <InlineField label={t("type")}><Text>{terminalLocation.kind === "remote" ? t("remoteSsh") : t("local")}</Text></InlineField>
+                        <InlineField label={translation("location")}><Text>{locationTargetLabel(terminalLocation)}</Text></InlineField>
+                        <InlineField label={translation("type")}><Text>{terminalLocation.kind === "remote" ? translation("remoteSsh") : translation("local")}</Text></InlineField>
                         <Text color="fg.muted" wordBreak="break-all" mt={0.5}>{locationTargetAddress(terminalLocation)}</Text>
                       </Flex>
                     ) : null}
@@ -325,12 +325,12 @@ export function BackgroundTasksPanel({
                   <PanelTab
                     key={key}
                     icon={<LuTerminal size={13} />}
-                    label={t("terminalNumber", { number: index + 1 })}
+                    label={translation("terminalNumber", { number: index + 1 })}
                     active={key === activeTerminal}
                     onSelect={() => setActiveTerminal(key)}
                     onClose={() => closeTerminal(key)}
                     tooltip={tabTooltip}
-                    closeLabel={t("closeTerminalNumber", { number: index + 1 })}
+                    closeLabel={translation("closeTerminalNumber", { number: index + 1 })}
                   />
                 );
               })}
@@ -338,13 +338,13 @@ export function BackgroundTasksPanel({
                 // Multiple environments: "＋" opens a menu to pick where the new terminal runs.
                 <DropdownMenu
                   trigger={
-                    <IconButton aria-label={t("newTerminal")} title={t("newTerminal")} variant="ghost" flexShrink={0}>
+                    <IconButton aria-label={translation("newTerminal")} title={translation("newTerminal")} variant="ghost" flexShrink={0}>
                       <LuPlus size={14} />
                     </IconButton>
                   }
                   minW="200px"
                 >
-                  <Text px={2} py={1} textStyle="sectionLabel">{t("newTerminalIn")}</Text>
+                  <Text px={2} py={1} textStyle="sectionLabel">{translation("newTerminalIn")}</Text>
                   {locations.map((location) => (
                     <Menu.Item key={location.id} value={location.id} onClick={() => addTerminal(location.id)}>
                       {location.kind === "remote" ? <LuServer size={14} /> : <LuFolder size={14} />}
@@ -353,8 +353,8 @@ export function BackgroundTasksPanel({
                   ))}
                 </DropdownMenu>
               ) : (
-                <Tooltip content={t("newTerminal")} openDelay={300}>
-                  <IconButton aria-label={t("newTerminal")} variant="ghost" flexShrink={0} onClick={() => addTerminal()}>
+                <Tooltip content={translation("newTerminal")} openDelay={300}>
+                  <IconButton aria-label={translation("newTerminal")} variant="ghost" flexShrink={0} onClick={() => addTerminal()}>
                     <LuPlus size={14} />
                   </IconButton>
                 </Tooltip>
@@ -391,8 +391,8 @@ export function BackgroundTasksPanel({
           {running.length === 0 && completed.length === 0 ? (
             <PanelEmptyState
               icon={<LuTerminal />}
-              title={t("noProcessesTitle")}
-              description={t("noProcessesDescription")}
+              title={translation("noProcessesTitle")}
+              description={translation("noProcessesDescription")}
             />
           ) : (
             <Flex direction="column" gap={2}>
@@ -403,7 +403,7 @@ export function BackgroundTasksPanel({
                   maxH="360px"
                   followTailKey={running.length}
                   icon={<LuActivity />}
-                  title={<DisclosureLabel shimmer>{t("processesActive")}</DisclosureLabel>}
+                  title={<DisclosureLabel shimmer>{translation("processesActive")}</DisclosureLabel>}
                   badges={
                     <Pill
                       colorPalette="blue"
@@ -425,7 +425,7 @@ export function BackgroundTasksPanel({
                 <DisclosureRow
                   maxH="min(52vh, 480px)"
                   icon={<LuClock />}
-                  title={<DisclosureLabel>{t("processesTerminated")}</DisclosureLabel>}
+                  title={<DisclosureLabel>{translation("processesTerminated")}</DisclosureLabel>}
                   badges={<Pill colorPalette="gray">{completed.length}</Pill>}
                 >
                   <Flex direction="column" gap={2}>

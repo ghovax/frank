@@ -32,7 +32,7 @@ export function LocationStatusDot({ location }: { location: Location }) {
 // hover card. No "available/configured" state text — the dot colour already carries status,
 // and the redundant host alias is folded into the address rather than shown as a second label.
 export function LocationChip({ location }: { location: Location }) {
-  const t = useTranslations("LocationStatus");
+  const translation = useTranslations("LocationStatus");
   const color = locationStatusColor(location);
   const label = locationTargetLabel(location);
   const address = locationTargetAddress(location);
@@ -42,11 +42,11 @@ export function LocationChip({ location }: { location: Location }) {
       <Text fontWeight="semibold" color="fg" mb={address ? 1 : 0}>{label}</Text>
       {address && (
         <Flex align="baseline" gap={2}>
-          <Text fontWeight="medium" color="fg.subtle" flexShrink={0}>{t("uri")}</Text>
+          <Text fontWeight="medium" color="fg.subtle" flexShrink={0}>{translation("uri")}</Text>
           <Text color="fg.muted" fontFamily="mono" wordBreak="break-all">{address}</Text>
         </Flex>
       )}
-      {hostMissing && <Text color="orange.fg" mt={1}>{t("hostNotFound")}</Text>}
+      {hostMissing && <Text color="orange.fg" mt={1}>{translation("hostNotFound")}</Text>}
     </Box>
   );
   return (

@@ -37,7 +37,7 @@ Useful scripts (in `web/`):
 
 - `bun run lint` — lint the UI.
 - `bun run build` — production static export (to `web/out`).
-- `bun run gen:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
+- `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
 ## Running the desktop app in dev
 
@@ -57,7 +57,7 @@ This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helpe
 
 ### Stable code-signing (recommended)
 
-The computer-use tool needs the macOS **Accessibility** grant, which is tied to the app's code identity. To keep that grant across rebuilds, sign with the persistent local identity:
+The screen-control tools (`search_screen`/`control_screen`) need the macOS **Accessibility** grant, which is tied to the app's code identity. To keep that grant across rebuilds, sign with the persistent local identity:
 
 ```sh
 # once: create the self-signed identity in your login keychain
@@ -71,12 +71,8 @@ packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app
 
 ## Tests
 
-Python tests live in `tests/`:
-
-```sh
-uv run pytest
-```
+The repository ships **no committed test suite** — changes are verified ad hoc (compile and lint with `uv run ruff check`, import the server, and drive the affected path directly). `pyproject.toml` is already set up for `pytest` (`testpaths = ["tests"]`, `asyncio_mode = "auto"`), so if you add a `tests/` directory `uv run pytest` will pick it up.
 
 ## Project layout
 
-See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness runtime is in `src/harness/` (with `server.py` as a thin launch shim), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.
+See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness runtime is in `src/daisy/` (with `server.py` as a thin launch shim), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.

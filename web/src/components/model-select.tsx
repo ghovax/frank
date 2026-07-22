@@ -61,13 +61,13 @@ interface ModelItem {
 // images. A text-only model shows nothing. Reused by the picker rows and the
 // current-model chip so capabilities read the same everywhere.
 export function ModelCapabilityBadges({ model, size = 12 }: { model?: ModelOption | null; size?: number }) {
-  const t = useTranslations("ModelSelect");
+  const translation = useTranslations("ModelSelect");
   if (!model) return null;
   const badges: { key: string; icon: React.ReactNode; label: string }[] = [];
   if (model.vision) {
-    badges.push({ key: "vision", icon: <LuImage size={size} />, label: t("visionBadge") });
+    badges.push({ key: "vision", icon: <LuImage size={size} />, label: translation("visionBadge") });
   } else if (model.attachment) {
-    badges.push({ key: "attachment", icon: <LuPaperclip size={size} />, label: t("attachmentBadge") });
+    badges.push({ key: "attachment", icon: <LuPaperclip size={size} />, label: translation("attachmentBadge") });
   }
   if (badges.length === 0) return null;
   return (
@@ -137,7 +137,7 @@ function keyByProvider(settings: Settings): Record<string, string> {
 }
 
 export function ModelSelect({ models, providers, value, onChange, recent = [], fallbackModelId = "", compact, responsiveCompact = false }: ModelSelectProps) {
-  const t = useTranslations("ModelSelect");
+  const translation = useTranslations("ModelSelect");
   const tc = useTranslations("Common");
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -174,9 +174,9 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         return left.name.localeCompare(right.name);
       });
     const items = providerModels.map((model) => ({ value: model.id, label: model.name, available: model.available }));
-    items.push({ value: CUSTOM_MODEL, label: t("selectUnlisted"), available: true });
+    items.push({ value: CUSTOM_MODEL, label: translation("selectUnlisted"), available: true });
     return items;
-  }, [models, recentIds, selectedProvider, t]);
+  }, [models, recentIds, selectedProvider, translation]);
   // Every model stays selectable (unavailable ones are only greyed as a hint) —
   // the Apply button, not the dropdown, is what gates on having a usable credential.
   const modelCollection = useMemo(() => createListCollection({ items: modelItems }), [modelItems]);
@@ -202,7 +202,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
       ? selectedModel
       : firstKnownModel;
   const effectiveModelId = value || fallbackModelId;
-  const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : t("modelFallback");
+  const chipModelName = effectiveModelId ? displayModelName(effectiveModelId, models) : translation("modelFallback");
   const chipNameIsFallback = effectiveModelId ? modelNameIsFallbackId(effectiveModelId, models) : true;
   const chipProviderLabel = effectiveModelId ? providerName(providerForModel(effectiveModelId, models), providers) : "";
   const chipModel = effectiveModelId ? (models.find((model) => model.id === effectiveModelId) ?? null) : null;
@@ -318,16 +318,16 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
           <Dialog.Positioner>
             <Dialog.Content maxW="520px">
               <Dialog.Header>
-                <Dialog.Title fontSize="sm">{t("dialogTitle")}</Dialog.Title>
+                <Dialog.Title fontSize="sm">{translation("dialogTitle")}</Dialog.Title>
               </Dialog.Header>
               <Dialog.Body>
                 <Text fontSize="xs" color="fg.muted" mb={4}>
-                  {t("dialogDescription")}
+                  {translation("dialogDescription")}
                 </Text>
                 <Flex direction="column" gap={4}>
                   <Box>
                     <Text textStyle="fieldLabel" mb={1}>
-                      {t("provider")}
+                      {translation("provider")}
                     </Text>
                     <Select.Root
                       collection={providerCollection}
@@ -346,7 +346,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                     >
                       <Select.Control>
                         <Select.Trigger>
-                          <Select.ValueText placeholder={t("chooseProvider")} />
+                          <Select.ValueText placeholder={translation("chooseProvider")} />
                         </Select.Trigger>
                         <Select.IndicatorGroup>
                           <Select.Indicator />
@@ -370,7 +370,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                   {selectedProviderIsCustom ? null : (
                   <Box>
                     <Text textStyle="fieldLabel" mb={1}>
-                      {t("model")}
+                      {translation("model")}
                     </Text>
                     <Select.Root
                       collection={modelCollection}
@@ -391,7 +391,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                     >
                       <Select.Control>
                         <Select.Trigger>
-                          <Select.ValueText placeholder={t("chooseModel")} />
+                          <Select.ValueText placeholder={translation("chooseModel")} />
                         </Select.Trigger>
                         <Select.IndicatorGroup>
                           <Select.Indicator />
@@ -415,7 +415,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                                     <ModelCapabilityBadges model={models.find((candidate) => candidate.id === model.value) ?? null} />
                                     {model.available && recentIds.has(model.value) ? (
                                       <Text fontSize="xs" color="fg.subtle" flexShrink={0}>
-                                        {t("recent")}
+                                        {translation("recent")}
                                       </Text>
                                     ) : null}
                                   </Flex>
@@ -451,7 +451,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                   {inCustomMode ? (
                     <Box>
                       <Text textStyle="fieldLabel" mb={1}>
-                        {t("modelId")}
+                        {translation("modelId")}
                       </Text>
                       <Input
                         fontFamily="var(--app-font-mono)"
@@ -462,7 +462,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                         onChange={(event) => setModelSuffix(event.target.value)}
                       />
                       <Text fontSize="xs" color="fg.muted" mt={1.5}>
-                        {t.rich("sentToLitellm", {
+                        {translation.rich("sentToLitellm", {
                           model: `${selectedProvider}/${modelSuffix || "model-name"}`,
                           code: (chunks) => <Span fontFamily="var(--app-font-mono)">{chunks}</Span>,
                         })}
@@ -475,7 +475,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                       <ChatGPTAuthControl />
                     ) : (
                       <SecretField
-                        label={t("providerApiKey", { provider: selectedProviderLabel })}
+                        label={translation("providerApiKey", { provider: selectedProviderLabel })}
                         placeholder={providerPlaceholder(selectedProvider)}
                         value={selectedProviderKey}
                         disabled={saving}
@@ -487,7 +487,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                   {selectedProviderIsCustom ? (
                     <Box>
                       <Text textStyle="fieldLabel" mb={1}>
-                        {t("endpoint")}
+                        {translation("endpoint")}
                       </Text>
                       <Input
                         fontFamily="var(--app-font-mono)"
@@ -507,7 +507,7 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                 </Button>
                 <Button colorPalette="blue" onClick={handleApply} loading={saving} disabled={!canApply}>
                   <LuCheck size={14} />
-                  {t("apply")}
+                  {translation("apply")}
                 </Button>
               </Dialog.Footer>
               <Dialog.CloseTrigger />
@@ -532,7 +532,7 @@ function SecretField({
   disabled: boolean;
   onChange: (value: string) => void;
 }) {
-  const t = useTranslations("ModelSelect");
+  const translation = useTranslations("ModelSelect");
   const [visible, setVisible] = useState(false);
   return (
     <Box>
@@ -550,7 +550,7 @@ function SecretField({
           onChange={(event) => onChange(event.target.value)}
         />
         <IconButton
-          aria-label={visible ? t("hide") : t("show")}
+          aria-label={visible ? translation("hide") : translation("show")}
           variant="ghost"
           flexShrink={0}
           onClick={() => setVisible((current) => !current)}

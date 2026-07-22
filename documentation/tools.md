@@ -1,6 +1,6 @@
 # Tools
 
-Agents act through tools. Every tool call is subject to the [permission engine](configuration.md#permissions); risky ones can pause for approval. Each built-in tool ships with a Markdown description the model reads (`src/harness/tools/descriptions/`), so the authoritative spec is always in the repo.
+Agents act through tools. Every tool call is subject to the [permission engine](configuration.md#permissions); risky ones can pause for approval. Each built-in tool carries the description the model reads as its docstring in `src/daisy/tools/tools.py`, so the authoritative spec is always in the repo.
 
 ## The built-in surface
 
@@ -12,15 +12,16 @@ Agents act through tools. Every tool call is subject to the [permission engine](
 | `read_file` | Read a file (with line ranges and image support). |
 | `write_file` | Create or overwrite a file. |
 | `edit_file` | Make a targeted edit to an existing file. |
-| `find_files` | Find files by name/glob. |
-| `search_content` | Search file contents. |
+| `search_code` | Semantic code search over the repository. |
 | `download_file` | Download a file from a URL to disk. |
+
+There are no dedicated `find_files`/`search_content` tools; for literal file-name and content search, use `bash` with ripgrep (`rg`) and `fd`.
 
 **Web**
 
 | Tool | What it does |
 |------|--------------|
-| `web_search` | Search the web (Exa-backed fallback). |
+| `search_web` | Search the web (Exa-backed fallback). |
 | `fetch_url` | Fetch and read a page via a tiered engine (Jina → Firecrawl → direct). |
 
 **Orchestration and knowledge**
@@ -39,27 +40,28 @@ Agents act through tools. Every tool call is subject to the [permission engine](
 
 `call_mcp_tool`, `list_mcp_tools`, `list_mcp_resources`, `read_mcp_resource` — bridge to any configured [MCP server](agents-and-skills.md#mcp-servers).
 
-## Computer-use (`computer`)
+## Screen control (`search_screen` + `control_screen`)
 
-Controls native macOS apps through the **accessibility tree** — it observes the on-screen UI as structured elements and acts on them (find, click, type, edit and select text, place the caret, copy/cut/paste, press keys, open menus, scroll, hover, drag), falling back to screenshots when needed. A single click activates or selects; a double click (`clicks: 2`) opens a folder, file, or list row. Structural actions re-read the app and return its actionable surface plus a `changed` flag, the same honest result the browser tool gives; it shares one implementation (`harness/computer/surface.py`) with the browser tool.
+Daisy drives the live screen — native macOS apps and **your own Chrome** — through a two-phase pair of tools. These are **macOS-only** and **opt-in**: both are gated by `computer_control.enabled` (the default; see [configuration.md](configuration.md#execution-and-permissions)).
 
-**Enable it:** grant **Accessibility** permission to Daisy (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. Set `computer_control.enabled: true` (the default) in the config.
+**`search_screen` — read the live surface.** Point it at the current surface (the user's Chrome page or a native macOS app) with a plain-language query, and it returns the matching UI as **ranked elements** to act on, rather than pixels. On native apps it reads the **accessibility tree**; on Chrome it reads the page's real semantic structure (roles and names, iframes included) over the Chrome DevTools Protocol through Playwright. On the browser it additionally surfaces the page's own **network/API requests**, so the agent can see the endpoints the page calls.
 
-Because the permission is matched to the app's code identity, the packaged build is signed with a stable identity so the grant survives updates (see [development.md](development.md#building-and-signing)).
+**`control_screen` — act on what was found.** Given the elements `search_screen` returned, it composes a short **Python script of trusted-input primitives** — click, type, scroll, `evaluate`, and the like — to carry out the action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the real logged-in session instead of re-authenticating. Actions run against the real surface (browser clicks go through Playwright's actionability checks), and the result reports back the resulting state so the agent can see what changed.
 
-## Browser (`browser`)
+Because Daisy attaches to **the Chrome you already use** — your real logins and sessions, not a throwaway profile — it only ever *connects* to the browser: it never launches, quits, or copies it.
 
-Drives **your own Chrome** — the real browser with your real logins and sessions — rather than a throwaway automated profile. Daisy connects over the Chrome DevTools Protocol (through Playwright) and reads the page's real semantic structure, iframes included, so the agent acts on clean roles and names instead of pixels.
+**Enable it:**
 
-It does what a person does in a browser: open pages, search the page for an element and act on it, click, type and edit text (select a phrase, place the caret, find-and-replace, copy/cut/paste through the real clipboard), submit a field, press keys and shortcuts, hover, scroll the right pane, choose dropdown options, upload files, drag and drop, capture a screenshot when a page has no structure to read, go back/forward, reload, and manage tabs. Clicks run through Playwright's actionability checks (the element must be visible, stable, and actually the thing under the pointer), and JavaScript dialogs are answered automatically and reported. Every action that changes the page returns the resulting page, and flags when the URL changed underneath it.
-
-**Enable it:** turn on Chrome's remote-debugging toggle once. Open `chrome://inspect`, enable it under the remote-debugging option (Daisy provides a one-click prompt that opens the page). No copied profiles, no separate login — Daisy attaches to the Chrome you already use, and only ever connects: it never launches, quits, or copies your browser.
+- Grant **Accessibility** permission to Daisy for native apps (System Settings → Privacy & Security → Accessibility). The app prompts you and links directly to the pane. Because the permission is matched to the app's code identity, the packaged build is signed with a stable identity so the grant survives updates (see [development.md](development.md#building-and-signing)).
+- Turn on Chrome's remote-debugging toggle once for the browser surface. Open `chrome://inspect` and enable it under the remote-debugging option (Daisy provides a one-click prompt that opens the page).
+- Set `computer_control.enabled: true` (the default) in the config.
 
 > [!NOTE]
-> Typing fills the field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
+> Typing fills a field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
 
 ## Where the definitions live
 
-- Descriptions the model reads: `src/harness/tools/descriptions/*.md`
-- Implementations: `src/harness/tools/` and `src/harness/computer/`
-- The guidance the agent gets for computer/browser control: `src/harness/core/prompts/computer_control_guidance.md`
+- Descriptions the model reads: the tool docstrings in `src/daisy/tools/tools.py`
+- Implementations: `src/daisy/tools/` and `src/daisy/computer/`
+- Model-facing message templates: `src/daisy/tools/prompts/` and `src/daisy/core/prompts/`
+- The guidance the agent gets for screen control: `src/daisy/core/prompts/computer_control_guidance.md`

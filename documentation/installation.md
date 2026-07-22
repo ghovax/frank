@@ -1,6 +1,6 @@
 # Installation
 
-Daisy targets **macOS on Apple Silicon (`aarch64`)**. The computer-use tool and the packaged app are macOS-specific; the harness itself is portable Python, but the desktop experience is built for the Mac.
+Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`search_screen`/`control_screen`) and the packaged app are macOS-specific; the harness itself is portable Python, but the desktop experience is built for the Mac.
 
 ## Option 1 — Download the app
 
@@ -23,8 +23,8 @@ Notarized builds are planned; until then this one-time step is required.
 
 ### Permissions the app may ask for
 
-- **Accessibility** — required for the computer-use tool (controlling native apps). Daisy prompts you and deep-links to the right settings pane. Grant it to Daisy.
-- **Chrome remote debugging** — required for the browser tool. Daisy shows a one-click prompt that opens `chrome://inspect`; enable the remote-debugging toggle once.
+- **Accessibility** — required for the screen-control tools (`search_screen`/`control_screen`) to read and act on native apps. Daisy prompts you and deep-links to the right settings pane. Grant it to Daisy.
+- **Chrome remote debugging** — required for the screen-control tools to drive your own Chrome. Daisy shows a one-click prompt that opens `chrome://inspect`; enable the remote-debugging toggle once.
 
 Neither is needed for plain chat or the file, shell, and web tools.
 
@@ -46,6 +46,6 @@ cd web && bun install && cd ..
 cd web/src-tauri && cargo tauri build
 ```
 
-The build produces `web/src-tauri/target/release/bundle/macos/Daisy.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the computer-use Accessibility grant survives rebuilds) and packaging details, see [development.md](development.md#building-and-signing).
+The build produces `web/src-tauri/target/release/bundle/macos/Daisy.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds) and packaging details, see [development.md](development.md#building-and-signing).
 
 You also need a local Python environment for the harness itself (a `.venv` with the project installed) — see [development.md](development.md#running-the-harness).
