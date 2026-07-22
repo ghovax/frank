@@ -46,14 +46,13 @@ from daisy.tools.tools import (
     list_mcp_resources as list_mcp_resources_tool,
     read_mcp_resource as read_mcp_resource_tool,
     read_file as read_file_tool,
-    find_files as find_files_tool,
-    search_content as search_content_tool,
+    search_code as search_code_tool,
     edit_file as edit_file_tool,
     write_file as write_file_tool,
     fetch_url as fetch_url_tool,
     download_file as download_file_tool,
-    computer as computer_tool,
-    browser as browser_tool,
+    search_screen as search_screen_tool,
+    control_screen as control_screen_tool,
     ask_user as ask_user_tool,
     load_skill as load_skill_tool,
     wait_for as wait_for_tool,
@@ -153,8 +152,7 @@ def _build_tools(
     available = [
         bash_tool,
         read_file_tool,
-        find_files_tool,
-        search_content_tool,
+        search_code_tool,
         edit_file_tool,
         write_file_tool,
         fetch_url_tool,
@@ -186,11 +184,12 @@ def _build_tools(
             for remote in global_configuration.remote_agents.enabled_agents().values()
         ):
             available.append(call_remote_agent_tool)
-    # The computer-use tool controls the whole machine, so it is opt-in: added only when
-    # the user has enabled it in Settings (which also gates the Accessibility grant flow).
+    # Searching and controlling the live screen (the browser and native apps) drives the whole
+    # machine, so it is opt-in: added only when the user has enabled it in Settings (which also
+    # gates the Accessibility grant flow).
     if global_configuration.computer_control.enabled:
-        available.append(computer_tool)
-        available.append(browser_tool)
+        available.append(search_screen_tool)
+        available.append(control_screen_tool)
     if global_configuration.mcp.enabled_servers():
         available.extend([
             list_mcp_tools_tool,
@@ -289,8 +288,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
     _TOOL_HANDLERS = {
         "bash": "_tool_bash",
         "read_file": "_tool_read_file",
-        "find_files": "_tool_find_files",
-        "search_content": "_tool_search_content",
+        "search_code": "_tool_search_code",
         "fetch_url": "_tool_fetch_url",
         "download_file": "_tool_download_file",
         "edit_file": "_tool_edit_or_write",
@@ -313,8 +311,8 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         "open_artifact": "_tool_open_artifact",
         "web_search": "_tool_web_search",
         "read_task": "_tool_read_task",
-        "computer": "_tool_automation",
-        "browser": "_tool_automation",
+        "search_screen": "_tool_search_screen",
+        "control_screen": "_tool_control_screen",
     }
 
     def __init__(

@@ -712,39 +712,20 @@ def read_file(
 
 
 @tool
-def find_files(pattern: str, location: str = "", include_ignored: bool = False, justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """Find files by glob pattern.
-
-    Results are newest-first by modification time and honor ``.gitignore`` by default. Keep searches scoped to the project. Set ``include_ignored=True`` only when the required file is known to be ignored. For an open-ended hunt requiring several reasoning rounds, delegate it to an agent. This tool is read-only.
-
-    Arguments:
-        pattern: Path glob; ** spans directories, * and ? stay within a segment.
-        location: The project location to search — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        include_ignored: Leave False. Results normally exclude what the project's .gitignore excludes (build output, dependencies, caches). Set True only when the file you need is itself gitignored and you have a specific reason to reach it.
-        justification: A concise, user-facing reason for this search.
-    """
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
-def search_content(
-    pattern: str,
-    location: str = "",
-    include: str | None = None,
-    path: str | None = None,
-    include_ignored: bool = False,
+def search_code(
+    query: str,
+    top_k: int = 10,
+    reindex: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
 ) -> str:
-    """Search file contents by regular expression.
+    """Search the codebase by meaning, in plain language.
 
-    Matches include file paths and line numbers and honor ``.gitignore`` by default. Use ``include`` for a filename glob and ``path`` for a subtree or single file. Results are capped, so use ``bash`` with ripgrep only when an exact count is required. Keep searches inside the project; delegate an open-ended multi-round investigation. This tool is read-only.
+    Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns the best-matching chunks with their file and line range — far cheaper than reading whole files, and it finds code by what it does even when you do not know the exact name. Use ``bash`` with ripgrep for an exact string or filename; use this when you are looking for "where X happens". This tool is read-only.
 
     Arguments:
-        pattern: Regular expression to search for.
-        location: The project location to search — its URI or name from the locations listed in your context. Defaults to the local filesystem; pass it only to target a different (remote) location.
-        include: Restrict the search to filenames matching this glob.
-        path: Directory or file to search (defaults to the working directory).
-        include_ignored: Leave False. The search normally skips what the project's .gitignore excludes. Set True only when what you are looking for lives in a gitignored file and you have a specific reason to reach it.
+        query: What you are looking for, in plain language ("where an element ref resolves to a live handle").
+        top_k: How many matching chunks to return (default 10).
+        reindex: Rebuild the code index first — pass this after you have edited files and need fresh results.
         justification: A concise, user-facing reason for this search.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -855,142 +836,63 @@ async def download_file(
 
 
 @tool
-async def computer(
-    action: Literal["observe", "pointer", "press", "type", "select", "caret", "scroll", "screenshot"],
+async def search_screen(
+    query: str,
+    surface: Literal["browser", "computer"] = "browser",
     app: str = "",
-    element: str | None = None,
-    query: str = "",
-    window: str = "focused",
-    gesture: str = "click",
-    to_element: str | None = None,
-    clicks: int = 1,
-    button: str = "left",
-    key: str = "",
-    modifiers: list[str] | None = None,
-    text: str = "",
-    mode: str = "replace",
-    to_text: str = "",
-    select_all: bool = False,
-    occurrence: int = 1,
-    before: str = "",
-    after: str = "",
-    at_offset: int | None = None,
-    edge: str = "",
-    direction: str = "",
+    limit: int = 8,
+    all_matches: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Look at and act on the local macOS computer the way a person does.
+    """Find things on the live screen by describing them in plain words.
 
-    Use this for native applications without an API or command-line path; use ``browser`` for web pages. ``observe`` returns accessible elements with stable references, roles, names, and values. Act on those references with pointer and keyboard operations—never guess screen coordinates. Acting calls report what changed, so do not observe again merely to confirm an already reported effect.
-
-    Combine operations as the task requires. If an action changes nothing, inspect the state and choose a different route instead of repeating it. A screenshot is a last resort for seeing inaccessible custom-drawn content, not for blind coordinate-based action. When an interface cannot be read safely, explain the limitation and ask the user to perform that step.
+    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. This is how you locate a control before acting on it: search for "the checkout button", get its id, then act with ``control_screen``. On the browser it also finds the page's own network requests — the API endpoints behind a rendered view — when you describe the data you want, so you can read or replay them. It returns the full text of each match, not a truncated preview.
 
     Arguments:
-        action: What to do — observe (look), pointer (click/hover/drag an element), press (a key or shortcut), type (enter text), select (select text by content), caret (place the cursor), scroll (reveal content), or screenshot (see an app that can't be read).
-        app: Which app to look at or act in, by name or bundle id. Omit to reuse the last one.
-        element: The ref of an element from a recent observe (pointer/type/select/caret target; scroll brings it into view; observe expands that region). Refs stay valid across calls.
-        query: Text to search the app's UI for (observe) — matches element names and values.
-        window: Which window to observe — "focused" (default), "all", "menu" (the menu bar), or a window's title.
-        gesture: For pointer — "click" (default), "hover", or "drag".
-        to_element: For a pointer drag — the element to drop onto.
-        clicks: For pointer — 1 (default) or 2 for a double-click.
-        button: For pointer — "left" (default) or "right" (opens the element's context menu).
-        key: For press — a named key (return, tab, escape, arrows, f1…) or a single letter/digit for a shortcut.
-        modifiers: Modifier keys held with `key`, e.g. ["command"] for Cmd+C, ["command","shift"].
-        text: Text to enter (type) or the substring to select (select).
-        mode: For type — "replace" (rewrite the field, default) or "insert" (at the caret).
-        to_text: For select — the end of a range: select from `text` through `to_text`.
-        select_all: For select — select the whole field.
-        occurrence: Which occurrence to target when the text appears more than once (1-based).
-        before: For caret — place it just before this text.
-        after: For caret — place it just after this text.
-        at_offset: For caret — place it at this character offset.
-        edge: For caret — the field "start" or "end".
-        direction: For scroll — up, down, left, or right (or give `element` to bring it into view).
-        justification: Why this action is needed.
-        risk: Damage potential — low for reads, higher for actions that change state.
+        query: What you are looking for, in plain language ("year dropdown and apply button", "the transactions API request").
+        surface: "browser" (the user's Chrome) or "computer" (a native macOS app).
+        app: For the computer surface — which app to look at, by name; omit to reuse the last one.
+        limit: How many matches to return (default 8).
+        all_matches: Return every match, ranked, instead of just the top ones — for harvesting a whole set (every row, every item).
+        justification: Why this is needed.
+        risk: Damage potential — low for reading the screen.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
 @tool
-async def browser(
-    action: Literal[
-        "navigate", "observe", "pointer", "press", "type", "select", "caret", "scroll",
-        "choose", "upload", "evaluate", "network", "tabs", "screenshot",
-    ],
-    url: str = "",
-    element: str | None = None,
-    query: str = "",
-    offset: int | None = None,
-    goal: str = "",
-    expect: str = "",
-    history: str = "",
-    gesture: str = "click",
-    to_element: str | None = None,
-    clicks: int = 1,
-    button: str = "left",
-    dialog: str = "",
-    key: str = "",
-    text: str = "",
-    mode: str = "replace",
-    submit: bool = False,
-    to_text: str = "",
-    select_all: bool = False,
-    occurrence: int = 1,
-    before: str = "",
-    after: str = "",
-    at_offset: int | None = None,
-    edge: str = "",
-    direction: str = "down",
-    option: str = "",
-    paths: list[str] | None = None,
-    expression: str = "",
-    tab: str = "",
-    browser_name: str = "chrome",
+async def control_screen(
+    script: str,
+    surface: Literal["browser", "computer"] = "browser",
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Look at and act on the web in the user's own signed-in Chrome the way a person does.
+    """Act on the live screen by composing a short Python script of trusted actions.
 
-    This connects to the user's real browser profile and live sessions. Use ``observe`` to read page structure, stable element references, names, values, and context, including iframes. Narrow large pages with ``query``, ``element``, or ``goal``. Acting calls reread the page and report state and URL changes, so avoid redundant observations and never repeat an action that changed nothing.
+    The script drives the surface you searched with ``search_screen``, calling bare-named primitives on the element ids that search returned. The input is real and trusted: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), and typing fires the events pages listen for. Compose freely — loop over ids, branch, read values, do a whole task in one call. First search to get ids, then act on them; the script itself cannot search, so if an element only appears after an action, search again for it in a new call.
 
-    Use ``evaluate`` or ``network`` when structured page data is faster and more accurate than stepping through rendered controls; both operate with the user's signed-in privileges and require appropriate care. Use ``screenshot`` only to see custom-drawn content, never to guess coordinates. Prefer a fresh tab when it avoids disturbing the user's current page. This tool acts on the live web; ``open_artifact`` is only a side-panel preview surface.
+    Primitives (call by bare name, no prefix):
+      click(id, button="left", count=1) · type(id, text, submit=False, mode="replace") · press(key) · scroll(id=None, direction="down") · hover(id) · choose(id, option) · upload(id, paths) · drag(id, to_element) · select(id, text=…) · caret(id, …) · read(id)
+    Browser only:
+      evaluate(js, arg=None) — run JavaScript in the page: structured extraction, and replaying the page's own authenticated API with fetch, which rides the user's real session · navigate(url="", history="", new_tab=False)
+    A bare ``return <value>`` ends the script and reports the value; anything you ``print`` comes back too.
 
     Arguments:
-        action: What to do — navigate (go to a URL, or back/forward/reload), observe (look at the page), pointer (click/hover/drag an element), press (a key or shortcut), type (enter text), select (select text by content), caret (place the cursor), scroll, choose (pick a dropdown option), upload (attach files), evaluate (run JavaScript), network (read requests), tabs (list/open/switch/close), or screenshot (see a page that can't be read).
-        url: The address to open (navigate, or tabs with mode "open").
-        element: The ref of an element from a recent observe (pointer/type/select/caret target; scroll moves its pane; observe expands its subtree, or returns its text with `offset`). Refs stay valid across calls.
-        query: Text to search the page for (observe) — matches names, values, and context, iframes included; or a url substring to filter by (network).
-        offset: With observe on an element, return its text starting here (continue a long read; the result names the next offset).
-        goal: What you're trying to reach (observe, navigate) — ranks a large page's listing so the relevant controls survive the cap.
-        expect: Text you expect the action to produce — the tool waits for it and reports `expected_found`.
-        history: For navigate without a url — "back", "forward", or "reload".
-        gesture: For pointer — "click" (default), "hover", or "drag".
-        to_element: For a pointer drag — the element to drop onto.
-        clicks: For pointer — 1 (default) or 2 for a double-click.
-        button: For pointer — "left" (default) or "right".
-        dialog: What to do with a JavaScript confirm/prompt a click triggers — "accept" or "dismiss".
-        key: For press — a key or chord, e.g. Enter, Escape, ArrowDown, or Meta+C / Control+A for a shortcut.
-        text: Text to enter (type) or the substring to select (select).
-        mode: For type — "replace" (rewrite the field, default) or "insert" (at the caret). For tabs — "list" (default), "open", "switch", or "close".
-        submit: With type, press Enter after entering the text.
-        to_text: For select — the end of a range: select from `text` through `to_text`.
-        select_all: For select — select the whole field.
-        occurrence: Which occurrence to target when the text appears more than once (1-based).
-        before: For caret — place it just before this text.
-        after: For caret — place it just after this text.
-        at_offset: For caret — place it at this character offset.
-        edge: For caret — the field "start" or "end".
-        direction: For scroll — down (default), up, left, right, top, or bottom.
-        option: For choose — the visible label (or value) to pick in a dropdown.
-        paths: For upload — local file path(s) to attach.
-        expression: For evaluate — a JavaScript expression to run in the page; the JSON result is returned.
-        tab: For tabs switch/close — the tab id from tabs (list).
-        browser_name: Which browser to connect to — "chrome" (default), "edge", or "brave".
-        justification: Why this action is needed.
-        risk: Damage potential — low for reads/navigation, higher for actions that change state.
+        script: The Python to run. For example:
+            choose("e231", "2025")
+            click("e240")
+            rows, page = [], 1
+            while True:
+                data = evaluate("p => fetch(`/api/txns?page=${p}`).then(r => r.json())", page)
+                rows += data["items"]
+                if not data["hasMore"]:
+                    break
+                page += 1
+            return len(rows)
+        surface: "browser" or "computer" — the surface the ids came from.
+        justification: Why this is needed.
+        risk: Damage potential — higher for actions that change state.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 

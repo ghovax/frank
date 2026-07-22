@@ -284,42 +284,6 @@ def read_image_file(
     return _payload("read_completed", **fields), f"data:{mime_type};base64,{encoded}"
 
 
-def find_files(executor: LocationExecutor, base_directory: str, pattern: str, include_ignored: bool = False) -> str:
-    """Match files by glob pattern, newest first. Honors .gitignore unless
-    include_ignored is set. Returns JSON."""
-    paths = executor.glob_files(
-        base_directory, pattern, active_tuning().amount(Limit.GLOB_RESULTS), include_ignored,
-    )
-    return _payload("find_completed", pattern=pattern, matches=paths, count=len(paths))
-
-
-def search_content(
-    executor: LocationExecutor,
-    base_directory: str,
-    pattern: str,
-    include: str | None = None,
-    path: str | None = None,
-    include_ignored: bool = False,
-) -> str:
-    """Search file contents by regex through the location's executor (ripgrep when
-    available, extended-regex grep or a Python walk otherwise). Honors .gitignore
-    unless include_ignored is set."""
-    target = executor.resolve(base_directory, path) if path else (base_directory or str(Path.cwd()))
-    if not executor.exists(target):
-        raise FileNotFoundError(f"Search path does not exist: {target}")
-    if executor.is_local:
-        home = Path.home().resolve(strict=False)
-        if Path(target).expanduser().resolve(strict=False) == home:
-            raise ValueError(
-                "Refusing to search the home directory. "
-                "Narrow the search to a project folder or specific subdirectory."
-            )
-    matches = executor.grep(
-        pattern, target, include, active_tuning().amount(Limit.GREP_RESULTS), include_ignored,
-    )
-    return _payload("search_completed", pattern=pattern, matches=matches, count=len(matches))
-
-
 # Coordinate replacement engine
 
 
@@ -910,8 +874,6 @@ __all__ = [
     "read_file",
     "read_image_file",
     "IMAGE_FILE_SUFFIXES",
-    "find_files",
-    "search_content",
     "content_sha256",
     "edit_file",
     "write_file",

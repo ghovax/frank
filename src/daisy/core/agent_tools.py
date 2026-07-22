@@ -670,48 +670,24 @@ class _ToolsMixin:
         )
 
 
-    async def _tool_find_files(
+    async def _tool_search_code(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        assert resolved_location is not None
-        pattern = str(tool_arguments.get("pattern", ""))
-        include_ignored = bool(tool_arguments.get("include_ignored", False))
-        result = await asyncio.to_thread(
-            file_tools.find_files,
-            resolved_location.executor,
-            resolved_location.base_directory,
-            pattern,
-            include_ignored,
-        )
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-        )
+        from daisy.tools.code_search import search_code
 
-
-    async def _tool_search_content(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
-        resolved_location: ResolvedLocation | None,
-    ) -> AsyncIterator[TurnEvent]:
-        assert resolved_location is not None
-        pattern = str(tool_arguments.get("pattern", ""))
-        include = tool_arguments.get("include")
-        include = str(include) if include else None
-        search_path = tool_arguments.get("path")
-        search_path = str(search_path) if search_path else None
-        include_ignored = bool(tool_arguments.get("include_ignored", False))
-        result = await asyncio.to_thread(
-            file_tools.search_content,
-            resolved_location.executor,
-            resolved_location.base_directory,
-            pattern,
-            include,
-            search_path,
-            include_ignored,
-        )
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
-        )
+        query = str(tool_arguments.get("query", ""))
+        top_k = int(tool_arguments.get("top_k", 10) or 10)
+        reindex = bool(tool_arguments.get("reindex", False))
+        # search_code indexes a local directory; a remote location has no local root to index, so
+        # it reports that rather than pretending. The default (local) location is the working tree.
+        root = resolved_location.base_directory if resolved_location is not None else "."
+        if resolved_location is not None and resolved_location.location is not None and resolved_location.location.is_remote:
+            result: dict = {"ok": False, "error": "search_code runs only on the local codebase; use bash with ripgrep on a remote location."}
+        else:
+            result = await asyncio.to_thread(search_code, query, root, top_k=top_k, reindex=reindex)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
 
     async def _run_backgroundable_tool(
@@ -1614,32 +1590,80 @@ class _ToolsMixin:
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
 
 
-    async def _tool_automation(
+    @staticmethod
+    def _surface_for(surface_name: str):
+        """The live surface a screen tool names: the native macOS tree, or the user's Chrome."""
+        from daisy.computer import engine as native_surface, web as web_surface
+
+        return native_surface.SURFACE if surface_name == "computer" else web_surface.SURFACE
+
+    async def _screenshot_extra(self, image_path: str) -> tuple[dict, Any]:
+        """Ride a screenshot's pixels on the model_image side channel to a vision-capable model,
+        exactly like read_file; the raw path never reaches the UI."""
+        extra: dict[str, Any] = {}
+        if self._model_supports_vision():
+            data_uri = await asyncio.to_thread(_screenshot_data_uri, image_path)
+            if data_uri:
+                extra["model_image"] = data_uri
+        return extra, None
+
+    async def _tool_search_screen(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        # The two automation tools share one contract (surface.py): a preflight gate, an
-        # action dispatch table, and the model-image side channel for screenshots. The tool
-        # name only selects which surface — native macOS or the user's Chrome.
-        from daisy.computer import engine as native_surface, web as web_surface
-        surface = native_surface.SURFACE if tool_name == "computer" else web_surface.SURFACE
-        action = str(tool_arguments.get("action", ""))
-        blocked = surface.preflight(action)
-        if blocked is not None:
-            # A clear, actionable error (a missing permission) beats a silent empty result.
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=blocked,
-            )
+        # Read the live surface into documents, rank them against the query, return the matches
+        # with their native ids. When nothing is readable, offer a screenshot as the last resort
+        # for *seeing* — the only place pixels enter this flow.
+        from daisy.computer import retrieval
+
+        surface_name = str(tool_arguments.get("surface", "browser") or "browser")
+        surface = self._surface_for(surface_name)
+        query = str(tool_arguments.get("query", ""))
+        app = str(tool_arguments.get("app", ""))
+        limit = int(tool_arguments.get("limit", 8) or 8)
+        all_matches = bool(tool_arguments.get("all_matches", False))
+
+        gate = surface.preflight("documents")
+        if gate is not None:
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=gate)
             return
-        result = await asyncio.to_thread(surface.dispatch, action, tool_arguments)
-        extra: dict[str, Any] = {}
-        # A screenshot's pixels ride the model_image side channel to a vision-capable model,
-        # exactly like read_file; the raw path never reaches the UI.
-        if action in surface.screenshot_actions and isinstance(result, dict) and result.get("image_path"):
-            if self._model_supports_vision():
-                data_uri = await asyncio.to_thread(_screenshot_data_uri, result["image_path"])
-                if data_uri:
-                    extra["model_image"] = data_uri
-            result.pop("image_path", None)
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result, extra=extra,
-        )
+        read = await asyncio.to_thread(surface.documents, app) if surface_name == "computer" else await asyncio.to_thread(surface.documents)
+        if not read.get("ok"):
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=read)
+            return
+        documents = read.pop("documents", [])
+        if not documents:
+            shot = await asyncio.to_thread(surface.screenshot, app) if surface_name == "computer" else await asyncio.to_thread(surface.screenshot)
+            extra: dict[str, Any] = {}
+            if isinstance(shot, dict) and shot.get("image_path"):
+                extra, _ = await self._screenshot_extra(shot["image_path"])
+                shot.pop("image_path", None)
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=shot, extra=extra)
+            return
+        index = retrieval.Index(documents)
+        hits = index.search(query, top_k=limit, everything=all_matches)
+        location = {key: value for key, value in read.items() if key not in ("ok",)}
+        result = {"ok": True, **location, "count": len(hits), "hits": [{"id": hit.id, **hit.payload} for hit in hits]}
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
+
+    async def _tool_control_screen(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
+    ) -> AsyncIterator[TurnEvent]:
+        # Run the model's Python in the killable sandbox, bridging each primitive to a trusted
+        # action on the chosen surface (the surface performs its own permission preflight).
+        from daisy.computer import control
+
+        surface = self._surface_for(str(tool_arguments.get("surface", "browser") or "browser"))
+        script = str(tool_arguments.get("script", ""))
+        if not script.strip():
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result={"ok": False, "error": "control_screen needs a script to run."})
+            return
+
+        async def dispatch(name: str, args: list, keywords: dict) -> Any:
+            return await asyncio.to_thread(surface.perform, name, args, keywords)
+
+        result = await control.run_control_script(script, dispatch)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
