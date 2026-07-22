@@ -98,14 +98,15 @@ workspace:
 agent:
   permission_mode: "default"
 
-# macOS computer-use tool (accessibility-driven control of native apps). Disable to
-# remove the capability entirely.
+# macOS computer-use tool (accessibility-driven control of native apps). Off by
+# default; enable to let the agent read and drive native apps.
 computer_control:
-  enabled: true
+  enabled: false
 
-# Let agents build up persistent context about you across sessions.
+# Let agents build up persistent context about you across sessions. Off by default
+# because it surfaces personal data to your model provider; enable if you want it.
 user_context:
-  enabled: true
+  enabled: false
 
 # ---------------------------------------------------------------------------
 # Agents

@@ -61,8 +61,8 @@ When enabled, Composio is exposed as a normal MCP server; the agent discovers it
 sandbox:   { enabled: true }        # confine bash to the active workspace
 workspace: { strategy: "none" }     # "none" | "branch" | "worktree"
 agent:     { permission_mode: "default" }
-computer_control: { enabled: true } # macOS screen tools (search_screen/control_screen)
-user_context:     { enabled: true } # persistent context about you across sessions
+computer_control: { enabled: false } # macOS screen tools (search_screen/control_screen); opt-in
+user_context:     { enabled: false } # persistent context about you across sessions; opt-in
 ```
 
 ### Permission modes
