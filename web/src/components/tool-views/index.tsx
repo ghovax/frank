@@ -565,7 +565,7 @@ function SearchScreenResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// control_screen runs a script and returns its return value / stdout, or an error with
+// control_screen runs a script and reports its value / stdout, or an error with
 // an optional traceback. Debugging-off / missing grants render as their fix-it flow.
 function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
@@ -587,15 +587,15 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
       </FieldList>
     );
   }
-  const ret = data.return;
-  const retText = ret == null ? "" : typeof ret === "object" ? JSON.stringify(ret, null, 2) : asString(ret);
+  const resultValue = data.value;
+  const resultText = resultValue == null ? "" : typeof resultValue === "object" ? JSON.stringify(resultValue, null, 2) : asString(resultValue);
   const stdout = asString(data.stdout);
-  if (!retText && !stdout) return null;
+  if (!resultText && !stdout) return null;
   return (
     <FieldList>
-      {retText && (
+      {resultText && (
         <Field label={translation("controlReturn")}>
-          <MonoBlock>{retText}</MonoBlock>
+          <MonoBlock>{resultText}</MonoBlock>
         </Field>
       )}
       {stdout && (

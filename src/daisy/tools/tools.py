@@ -720,10 +720,10 @@ def search_code(
 ) -> str:
     """Search the codebase by meaning, in plain language.
 
-    Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns the best-matching chunks with their file and line range — far cheaper than reading whole files, and it finds code by what it does even when you do not know the exact name. Use ``bash`` with ripgrep for an exact string or filename; use this when you are looking for "where X happens". This tool is read-only.
+    Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns the best-matching chunks with their file and line range — far cheaper than reading whole files, and it finds code by what it does even when you do not know the exact name. Use ``bash`` with ripgrep for an exact string or filename; use this to find code by meaning. This tool is read-only.
 
     Arguments:
-        query: What you are looking for, in plain language ("where an element ref resolves to a live handle").
+        query: What you are looking for, in plain language.
         top_k: How many matching chunks to return (default 10).
         reindex: Rebuild the code index first — pass this after you have edited files and need fresh results.
         justification: A concise, user-facing reason for this search.
@@ -847,10 +847,10 @@ async def search_screen(
 ) -> str:
     """Find things on the live screen by describing them in plain words.
 
-    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. This is how you locate a control before acting on it: search for "the checkout button", get its id, then act with ``control_screen``. On the browser it also finds the page's own network requests — the API endpoints behind a rendered view — when you describe the data you want, so you can read or replay them. It returns the full text of each match, not a truncated preview.
+    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. This is how you locate a control before acting on it: search for it, take its id, then act with ``control_screen``. On the browser it also finds the page's own network requests — the API endpoints behind a rendered view — when you describe the data you want, so you can read or replay them. It returns the full text of each match, not a truncated preview.
 
     Arguments:
-        query: What you are looking for, in plain language ("year dropdown and apply button", "the transactions API request").
+        query: What you are looking for, in plain language — a control, or the data behind the page.
         surface: "browser" (the user's Chrome) or "computer" (a native macOS app).
         app: For the computer surface — which app to look at, by name; omit to reuse the last one.
         limit: How many matches to return (default 8).
@@ -870,26 +870,16 @@ async def control_screen(
 ) -> str:
     """Act on the live screen by composing a short Python script of trusted actions.
 
-    The script drives the surface you searched with ``search_screen``, calling bare-named primitives on the element ids that search returned. The input is real and trusted: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), and typing fires the events pages listen for. Compose freely — loop over ids, branch, read values, do a whole task in one call. First search to get ids, then act on them; the script itself cannot search, so if an element only appears after an action, search again for it in a new call.
+    The script drives the surface you searched with ``search_screen``, calling bare-named primitives on the element ids that search returned. The input is real and trusted: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), and typing fires the events pages listen for. It is ordinary Python, so you can do a whole task in one call. First search to get ids, then act on them; the script itself cannot search, so if an element only appears after an action, search again for it in a new call.
 
     Primitives (call by bare name, no prefix):
       click(id, button="left", count=1) · type(id, text, submit=False, mode="replace") · press(key) · scroll(id=None, direction="down") · hover(id) · choose(id, option) · upload(id, paths) · drag(id, to_element) · select(id, text=…) · caret(id, …) · read(id)
     Browser only:
       evaluate(js, arg=None) — run JavaScript in the page: structured extraction, and replaying the page's own authenticated API with fetch, which rides the user's real session · navigate(url="", history="", new_tab=False)
-    A bare ``return <value>`` ends the script and reports the value; anything you ``print`` comes back too.
+    The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too.
 
     Arguments:
-        script: The Python to run. For example:
-            choose("e231", "2025")
-            click("e240")
-            rows, page = [], 1
-            while True:
-                data = evaluate("p => fetch(`/api/txns?page=${p}`).then(r => r.json())", page)
-                rows += data["items"]
-                if not data["hasMore"]:
-                    break
-                page += 1
-            return len(rows)
+        script: The Python to run.
         surface: "browser" or "computer" — the surface the ids came from.
         justification: Why this is needed.
         risk: Damage potential — higher for actions that change state.

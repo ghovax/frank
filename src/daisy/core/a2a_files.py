@@ -13,6 +13,7 @@ import base64
 import hashlib
 import mimetypes
 import os
+from daisy.core import environment_variables
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -100,8 +101,8 @@ async def ingest_file_part(
         # socket connect cannot swap in a private target — unless an egress proxy is configured,
         # which does its own DNS/connect, so pinning to an IP would be wrong (and the resolve
         # check already ran). No proxy (the desktop app's normal case): pin.
-        proxied = bool(os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-                       or os.environ.get("ALL_PROXY") or os.environ.get("all_proxy"))
+        proxied = bool(os.environ.get(environment_variables.HTTPS_PROXY) or os.environ.get("https_proxy")
+                       or os.environ.get(environment_variables.ALL_PROXY) or os.environ.get("all_proxy"))
         if proxied or not ips:
             fetch_url, headers, extensions = file.uri, {}, {}
         else:

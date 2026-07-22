@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 import json
 import os
+from daisy.core import environment_variables
 import re
 import shlex
 import shutil
@@ -179,7 +180,7 @@ class ExaConfiguration(BaseModel):
 
     @property
     def effective_api_key(self) -> str:
-        return os.environ.get("EXA_API_KEY") or self.api_key
+        return os.environ.get(environment_variables.EXA_API_KEY) or self.api_key
 
 
 class JinaConfiguration(BaseModel):
@@ -189,7 +190,7 @@ class JinaConfiguration(BaseModel):
 
     @property
     def effective_api_key(self) -> str:
-        return os.environ.get("JINA_API_KEY") or self.api_key
+        return os.environ.get(environment_variables.JINA_API_KEY) or self.api_key
 
 
 class FirecrawlConfiguration(BaseModel):
@@ -202,11 +203,11 @@ class FirecrawlConfiguration(BaseModel):
 
     @property
     def effective_api_key(self) -> str:
-        return os.environ.get("FIRECRAWL_API_KEY") or self.api_key
+        return os.environ.get(environment_variables.FIRECRAWL_API_KEY) or self.api_key
 
     @property
     def effective_api_url(self) -> str:
-        return os.environ.get("FIRECRAWL_API_URL") or self.api_url
+        return os.environ.get(environment_variables.FIRECRAWL_API_URL) or self.api_url
 
 
 class WebFetchConfiguration(BaseModel):
@@ -218,7 +219,7 @@ class WebFetchConfiguration(BaseModel):
 
     @property
     def effective_proxy_url(self) -> str:
-        return os.environ.get("DAISY_FETCH_PROXY") or self.proxy_url
+        return os.environ.get(environment_variables.DAISY_FETCH_PROXY) or self.proxy_url
 
 
 class SandboxConfiguration(BaseModel):
@@ -319,7 +320,7 @@ class ComposioConfiguration(BaseModel):
 
     @property
     def effective_api_key(self) -> str:
-        return os.environ.get("COMPOSIO_API_KEY") or self.api_key
+        return os.environ.get(environment_variables.COMPOSIO_API_KEY) or self.api_key
 
 
 class MCPServerConfiguration(BaseModel):

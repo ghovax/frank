@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from daisy.core import environment_variables
 from typing import Optional
 
 from sqlalchemy import Column, MetaData, String, Table, Text, delete, select
@@ -175,8 +176,8 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
         # its own DNS/connect (pinning to an IP would then be wrong, and the resolve check
         # above already ran).
         proxied = bool(
-            os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-            or os.environ.get("ALL_PROXY") or os.environ.get("all_proxy")
+            os.environ.get(environment_variables.HTTPS_PROXY) or os.environ.get("https_proxy")
+            or os.environ.get(environment_variables.ALL_PROXY) or os.environ.get("all_proxy")
         )
         if proxied or not ips:
             post_url, headers, extensions = url, {}, {}

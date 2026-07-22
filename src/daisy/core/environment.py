@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+from daisy.core import environment_variables
 import platform
 from datetime import datetime
 from pathlib import Path
@@ -210,9 +211,9 @@ def probe_local_environment() -> str:
             "arch": uname.machine,
         },
         "host": host,
-        "shell": os.environ.get("SHELL"),
-        "locale": os.environ.get("LANG"),
-        "timezone": os.environ.get("TZ") or "system default",
+        "shell": os.environ.get(environment_variables.SHELL),
+        "locale": os.environ.get(environment_variables.LANG),
+        "timezone": os.environ.get(environment_variables.TZ) or "system default",
         "python": platform.python_version(),
         "tools": {
             "present": present,
@@ -221,7 +222,7 @@ def probe_local_environment() -> str:
         # The user's habitual commands mapped to how they invoke them (sub-commands + flag
         # names), mined from their shell history. No positional args / flag values.
         "frequent_commands": _shell_command_usage(),
-        "path": [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry],
+        "path": [entry for entry in os.environ.get(environment_variables.PATH, "").split(os.pathsep) if entry],
         "env": environment,
     }
     return json.dumps(payload)

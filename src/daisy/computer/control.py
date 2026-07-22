@@ -33,36 +33,34 @@ async def run_control_script(
     address_space_bytes: int = _DEFAULT_ADDRESS_SPACE_BYTES,
 ) -> dict:
     """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
-    return the child's result dict (``{ok, return?, stdout?, error?, traceback?}``). On timeout the
+    return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
     child is killed and a timeout payload is returned instead."""
     request_read, request_write = os.pipe()   # child → parent (primitive calls)
-    reply_read, reply_write = os.pipe()        # parent → child (results)
+    reply_read, reply_write = os.pipe()        # parent → child (configuration, then results)
 
-    config = {
+    configuration = {
         "script": script,
         "limits": {"cpu_seconds": int(timeout) + 5, "address_space_bytes": address_space_bytes},
     }
-    environment = {
-        **os.environ,
-        "DAISY_CONTROL_CONFIG": json.dumps(config),
-        "DAISY_CONTROL_REQUEST_FD": str(request_write),
-        "DAISY_CONTROL_REPLY_FD": str(reply_read),
-    }
 
-    # Launch the child by file path, not ``-m daisy.computer.control_child``: running it as a
-    # module would import the ``daisy.computer`` package first, which pulls the macOS-only surface
-    # code. As a script it stays stdlib-only, which is the whole point of the disposable child.
+    # Launch the child by file path, not ``-m daisy.computer.control_child``: running it as a module
+    # would import the ``daisy.computer`` package first, which pulls the macOS-only surface code. As
+    # a script it stays stdlib-only, which is the whole point of the disposable child. The two pipe
+    # fds are passed on argv (not via the environment, which would leak them into every subprocess);
+    # the configuration is handed over on the reply pipe below.
     child_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "control_child.py")
     process = await asyncio.create_subprocess_exec(
-        sys.executable, child_path,
+        sys.executable, child_path, str(request_write), str(reply_read),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        env=environment, pass_fds=(request_write, reply_read),
+        pass_fds=(request_write, reply_read),
     )
     # The parent keeps only its own ends; the child holds the others.
     os.close(request_write)
     os.close(reply_read)
     requests = os.fdopen(request_read, "r")
     replies = os.fdopen(reply_write, "w", buffering=1)
+    # The configuration is the first line the child reads on the reply pipe; primitive replies follow.
+    _write_line(replies, json.dumps(configuration))
 
     async def pump() -> None:
         """Service one primitive call at a time until the child closes the request pipe."""
