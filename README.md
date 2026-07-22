@@ -31,7 +31,12 @@ The two closest tools are [Claude Code](https://code.claude.com) and [OpenAI Cod
 | **Screen control** | Native macOS apps and your own Chrome, read as ranked accessibility/DOM elements from a plain-language search — screenshots only when you ask | Your real Chrome session, plus macOS computer use driven by downscaled screenshots (research preview, Pro/Max) | In-app and Chrome-extension browser, plus background macOS computer use driven by screenshots |
 | **Reach** | One macOS app and a server | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
 
-What genuinely sets Daisy apart comes down to two choices. First, it reads the screen as **structure** — a semantic search over the accessibility tree and DOM that returns a few ranked elements — rather than as **screenshots**, the way both rivals' computer use does; a query costs a handful of elements instead of a downscaled image. Second, it **acts through a composed script**: `control_screen` runs an ordinary Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on a native app and in the browser, so a whole task — loop over every row, branch on what you find, pull a page's own API in a single line — is one call rather than a screenshot‑decide‑act round trip per click. One shared abstraction over both surfaces, and far fewer, leaner model turns to finish the job. The trade-off is honest: this leans on there being an accessibility tree or DOM to read, whereas a screenshot approach works on anything drawn on screen, structure or not. See [Tools](documentation/tools.md).
+What genuinely sets Daisy apart comes down to two choices:
+
+- **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM that returns a few ranked elements, where both rivals' computer use reasons over screenshots — so a query costs a handful of elements instead of a downscaled image.
+- **A composed script, not a click-by-click loop.** `control_screen` runs an ordinary Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on a native app and in the browser, so a whole task — loop over every row, branch on what you find, pull a page's own API in a single line — is one call rather than a screenshot‑decide‑act round trip per click. One shared abstraction over both surfaces, and far fewer, leaner model turns to finish the job.
+
+The trade-off is honest: this leans on there being an accessibility tree or DOM to read, whereas a screenshot approach works on anything drawn on screen, structure or not. See [Tools](documentation/tools.md).
 
 Be clear-eyed about the rest: Claude Code and Codex are far ahead on polish, run in many more places, and carry deep ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; if you want a mature multi-surface agent backed by a big vendor's cloud, use theirs.
 
@@ -87,7 +92,11 @@ This is what makes Daisy more than a desktop toy: the agent, its tools, and its 
 
 ## Documentation
 
-The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in **[`documentation/`](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps: [set up providers and permissions](documentation/configuration.md), [how the pieces fit together](documentation/architecture.md), [the tool surface and screen control](documentation/tools.md).
+The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in **[`documentation/`](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
+
+- [Set up providers and permissions](documentation/configuration.md)
+- [How the pieces fit together](documentation/architecture.md)
+- [The tool surface and screen control](documentation/tools.md)
 
 ## Built with
 
