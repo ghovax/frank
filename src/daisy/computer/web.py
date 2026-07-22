@@ -37,7 +37,7 @@ from typing import Any, Optional
 
 from daisy.computer.retrieval import Document, element_text
 from daisy.computer.surface import Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range
-from daisy.core.tuning import Limit, active_tuning, clip_to_tokens, settle
+from daisy.core.tuning import Limit, active_tuning, settle
 
 message = message_loader("browser")
 
@@ -46,24 +46,23 @@ message = message_loader("browser")
 # freeze spec.
 _APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js").read_text()
 
-# Non-JSON text bodies are bounded (a huge HTML/text blob should not dominate). JSON bodies are not
-# capped — they are parsed to structure and only the top-ranked exchanges ever reach the model.
-_BODY_CLIP = 8000
-# How many of a socket's most recent frames to keep, and how many live sockets to track.
-_WEBSOCKET_FRAME_LIMIT = 40
-_WEBSOCKET_LIMIT = 20
+# How many of a socket's most recent frames to keep, and how many live sockets to track. These bound
+# the *live capture's* memory — a page open for hours, or a high-rate feed — by dropping the oldest
+# background traffic; they never truncate a body or a result the model is actually looking at.
+_WEBSOCKET_FRAME_LIMIT = 200
+_WEBSOCKET_LIMIT = 32
 
 
 def _decode_body(text: str, content_type: str = "") -> Any:
     """Represent a captured body as structured data when it is JSON — so the model reads it as an
-    object it can navigate rather than an escaped string — and otherwise as a bounded string."""
+    object it can navigate rather than an escaped string — and otherwise as the plain string."""
     stripped = text.lstrip()
     if "json" in content_type or stripped[:1] in "{[":
         try:
             return json.loads(text)
         except Exception:
             pass
-    return text if len(text) <= _BODY_CLIP else text[:_BODY_CLIP]
+    return text
 
 # The user-visible Chromium browsers we can connect to and drive, mapped to the support directory
 # that holds each one's DevToolsActivePort file (written when its remote-debugging switch is on).
@@ -132,8 +131,9 @@ class _Session:
         # means the default (acknowledge alerts, decline questions).
         self.pending_dialog: Optional[str] = None
         # The page's recent network exchanges — full request/response, so ``search_screen`` can
-        # surface the API endpoints behind a rendered view and ``evaluate`` can replay them.
-        self.exchanges: deque[dict] = deque(maxlen=60)
+        # surface the API endpoints behind a rendered view and ``evaluate`` can replay them. A
+        # generous rolling window, bounded only so a long-lived page cannot grow the buffer forever.
+        self.exchanges: deque[dict] = deque(maxlen=250)
         self._exchange_counter = count(1)
         # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that
         # never shows up as XHR). Keyed by a model-facing id, pruned oldest-first past the limit.
@@ -759,22 +759,10 @@ class WebSurface(Surface):
                 value = page.evaluate(expression_text, argument)
             except Exception as error:
                 return {"ok": False, "error": f"Evaluation failed: {str(error).splitlines()[0]}"}
-            # Playwright already deserialized the JS result into native Python; return it as-is so
-            # the model gets a structure it can navigate, never a stringified/escaped blob. Only a
-            # result too large for the budget degrades to a clipped string.
-            result: dict[str, Any] = {"ok": True, "url": _safe_url(page)}
-            try:
-                serialized = json.dumps(value, ensure_ascii=False, default=str)
-            except Exception:
-                serialized = str(value)
-            clipped, truncated = clip_to_tokens(serialized, active_tuning().amount(Limit.EVALUATE_TOKENS))
-            if truncated:
-                result["result"] = clipped
-                result["truncated"] = True
-                result["note"] = message("evaluate_truncated")
-            else:
-                result["result"] = value
-            return result
+            # Playwright already deserialized the JS result into native Python; return it as-is and
+            # in full, so the model gets a structure it can navigate — never a stringified, escaped,
+            # or truncated blob. The model scopes its own JavaScript if it wants less back.
+            return {"ok": True, "result": value, "url": _safe_url(page)}
 
         return self.guard(run)
 

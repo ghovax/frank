@@ -85,7 +85,6 @@ class Limit(Enum):
     # As a share of a 200K window: 16K ≈ 8% for one command's output, 4K ≈ 2% for a read window,
     # 24K ≈ 12% for a whole fetched page (the rest overflows to a file). Enforced by clip_to_tokens.
     OUTPUT_TOKENS = (16_000, _Scale.OUTPUT)        # one tool's inline output (bash, model result)
-    EVALUATE_TOKENS = (4_000, _Scale.OUTPUT)       # a browser evaluate() JSON result
     FETCH_TOKENS = (24_000, _Scale.OUTPUT)         # a fetched web page's inline text
     MAXIMUM_LINE_CHARS = (2_048, _Scale.OUTPUT)    # a single over-long line clipped (minified blob)
 
