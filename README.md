@@ -4,7 +4,7 @@
 
 **An open agent harness you can modify.**
 
-Daisy is an agent harness: the code between the model and your machine that runs the turn loop, defines the tools, holds the prompts, and enforces permissions. All of it is editable — the prompts are Markdown files; the tools, permission engine, and loop are Python. This matters because the harness, not just the model, shapes the result: the same model behaves differently depending on the harness around it. Daisy runs as a server you host — laptop, VM, container, or over SSH — and talks over HTTP to a bundled macOS app or to your own code.
+Daisy is an agent harness — the code between the model and your machine that runs the turn loop, defines the tools, holds the prompts, and enforces permissions. All of it is editable, and that matters: the harness shapes the result as much as the model does. Run it as a server you host — laptop, VM, container, or over SSH — driven by a bundled macOS app or your own code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
@@ -21,11 +21,11 @@ Because the two halves talk over HTTP, **the harness runs detached, and you are 
 
 ## Why own the harness
 
-The harness decides a lot about the output: it writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — for example, OpenCode versus Claude Code or Codex on the same model. So being able to change the harness is useful. In Daisy you can:
+The harness shapes the output as much as the model: it writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
 
-- **Change the permission rules.** The guardrails are code (`agent_permissions.py`, `tool_policy.py`), not a fixed config. Edit them to give the model more or less latitude.
-- **Have the agent work on Daisy itself.** The system prompt tells the agent it's running Daisy, and the source is plain code. Open the Daisy repo as the project and the agent can read and edit the harness — fix a bug, change a behavior — after which you rebuild.
-- **Give the agent context about you.** Optionally, Daisy adds a snapshot of your machine and habits — the directories and apps you use, your locale, when you're active — to the prompt, so it doesn't start cold. Off by default; see [what the agent sends to your model provider](SECURITY.md#what-the-agent-sends-to-your-model-provider).
+- **Permission rules are code, not fixed config** — edit them to give the model more or less latitude ([permissions](documentation/configuration.md#permissions)).
+- **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([architecture](documentation/architecture.md)).
+- **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([what it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
 ## How it compares
 
