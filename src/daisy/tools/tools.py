@@ -232,7 +232,7 @@ async def search_web(
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     result_count: int = 5,
 ) -> str:
-    """Search the web using Exa. Returns a list of results with titles, URLs, and summaries.
+    """Search the web using Exa. Returns a ranked list of results with titles, URLs, and a summary of each — so you can often answer directly without fetching the page.
 
     Most searches finish quickly and return their ``web_search_completed`` results directly from this call. A slow search returns a ``web_search_started`` acknowledgement instead; its results are then delivered to you automatically as a separate ``web_search_completed`` message carrying the same ``task_identifier`` — never call ``read_task`` on the identifier and never poll for it. Just keep working (you can start several searches at once); pending results appear on their own.
 
@@ -720,7 +720,7 @@ def search_code(
 ) -> str:
     """Search the codebase by meaning, in plain language.
 
-    Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns the best-matching chunks with their file and line range — far cheaper than reading whole files, and it finds code by what it does even when you do not know the exact name. Use ``bash`` with ripgrep for an exact string or filename; use this to find code by meaning. This tool is read-only.
+    Ranks the project's code against a natural-language query (semantic similarity plus lexical overlap) and returns just the best-matching chunks with their file and line range — a fraction of the tokens of grepping and reading whole files — finding code by what it does, not its exact name. Use ``bash`` with ripgrep for an exact string or filename; use this to find code by meaning. This tool is read-only.
 
     Arguments:
         query: What you are looking for, in plain language.
@@ -847,7 +847,7 @@ async def search_screen(
 ) -> str:
     """Find things on the live screen by describing them in plain words.
 
-    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. This is how you locate a control before acting on it: search for it, take its id, then act with ``control_screen``. On the browser it also finds the page's own network requests — the API endpoints behind a rendered view — when you describe the data you want, so you can read or replay them. It returns the full text of each match, not a truncated preview.
+    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. This is how you locate a control before acting on it: search for it, take its id, then act with ``control_screen``. On the browser it also finds the page's own network requests — the API endpoints behind a rendered view — so you can pull data straight from the source instead of walking the rendered DOM. It returns the full, un-paged text of each match, not a truncated preview.
 
     Arguments:
         query: What you are looking for, in plain language — a control, or the data behind the page.
