@@ -63,7 +63,7 @@ Each agent is served as its own [A2A](https://github.com/google/A2A) endpoint, a
 
 ## Skills
 
-A skill is a `SKILL.md` — a focused capability the agent loads **only when relevant**, so the system prompt stays lean. Frontmatter carries a `description` the model uses to decide when to load it (via the `load_skill` tool):
+A skill is a `SKILL.md` — a focused capability the agent loads **only when relevant**, keeping the system prompt lean. Frontmatter carries a `description` the model uses to decide when to load it (via the `load_skill` tool):
 
 ```markdown
 ---
@@ -81,7 +81,7 @@ Bundled skills include `coding`, `data-visualization`, `literature-search`, `har
 
 ## Memory
 
-`.agents/memories/*.md` are persistent notes. Only their metadata is injected into the prompt; the agent reads a memory's body **on demand**, keeping context small while letting knowledge accumulate across sessions.
+`.agents/memories/*.md` are persistent notes. Only their metadata is injected into the prompt; the agent reads a memory's body **on demand**, so context stays small while knowledge accumulates across sessions.
 
 ## MCP servers
 

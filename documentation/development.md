@@ -1,6 +1,6 @@
 # Development
 
-Daisy has three moving parts: the **Python harness**, the **Next.js web UI**, and the **Tauri desktop shell**. In development you usually run the harness and the UI directly; the packaged app is only built for releases.
+Daisy has three parts: the **Python harness**, the **Next.js web UI**, and the **Tauri desktop shell**. In development you run the harness and the UI directly. The packaged app is built only for releases.
 
 ## Toolchain
 

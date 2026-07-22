@@ -4,7 +4,7 @@
 
 **An open agent harness you can modify.**
 
-Daisy is an agent harness — the code between the model and your machine that runs the turn loop, defines the tools, holds the prompts, and enforces permissions. All of it is editable, and that matters: the harness shapes the result as much as the model does. Run it as a server you host — laptop, VM, container, or over SSH — driven by a bundled macOS app or your own code.
+Daisy is an agent harness — the code between the model and your machine that runs the turn loop, defines the tools, holds the prompts, and enforces permissions. All of it is editable, and the harness shapes the result as much as the model does. Host it anywhere — laptop, VM, container, or over SSH — and drive it from a bundled macOS app or your own code.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
@@ -12,12 +12,12 @@ Daisy is an agent harness — the code between the model and your machine that r
 
 ## What it is
 
-Daisy is two things that are deliberately kept apart:
+Daisy is two things, kept apart:
 
 - **The harness** — the Python agent runtime. Import and drive it directly, or run it as a server that exposes it over [A2A](https://github.com/google/A2A) and REST. Same runtime either way.
-- **The app** — a native macOS client (Tauri + Next.js) that is a polished interface to a harness. It ships with a harness bundled in, so it works out of the box with nothing to configure.
+- **The app** — a native macOS client (Tauri + Next.js). It bundles a harness, so it works out of the box.
 
-The two halves talk only over HTTP, so the harness runs detached: the app stays a thin native front-end while the compute, files, and network live wherever you host it. Configure several locations, local and remote, and pick one per session — tools take a location, so a single session can span machines. See [Run the server anywhere](#run-the-server-anywhere).
+The two halves talk only over HTTP, so the app stays a thin native front-end while the compute, files, and network live wherever you host the harness. Configure several locations and pick one per session; tools take a location, so a session can span machines. See [Run the server anywhere](#run-the-server-anywhere).
 
 ## Why own the harness
 
@@ -29,7 +29,7 @@ The harness writes the system prompt, defines the tools, manages context, and se
 
 ## How it compares
 
-The two closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex). Both are more mature than Daisy, and as of 2026 both do the things that once made Daisy unusual: each drives a real, logged-in browser and controls native macOS apps, and Codex — like Daisy — is open source and can run on non-OpenAI models. This is not a list of things only Daisy does.
+The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex), both more mature than Daisy. As of 2026 both also drive a real, logged-in browser and control native macOS apps, and Codex is likewise open source and runs on non-OpenAI models — so this compares approaches, not things only Daisy does.
 
 | | Daisy | Claude Code | OpenAI Codex |
 |---|---|---|---|
@@ -41,18 +41,18 @@ The two closest tools are [Claude Code](https://code.claude.com) and [OpenAI Cod
 
 Two design choices distinguish Daisy:
 
-- **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM that returns a few ranked elements, where both rivals' computer use reasons over screenshots — so a query costs a handful of elements instead of a downscaled image.
-- **A composed script, not a click-by-click loop.** `control_screen` runs an ordinary Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on a native app and in the browser, so a whole task — loop over every row, branch on what you find, pull a page's own API in a single line — is one call rather than a screenshot‑decide‑act round trip per click. One shared abstraction over both surfaces, and far fewer, leaner model turns to finish the job.
+- **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM, returning a few ranked elements where the rivals reason over screenshots — a query costs a handful of elements, not a downscaled image.
+- **A composed script, not a click-by-click loop.** `control_screen` runs a Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on native apps and in the browser. A whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a screenshot‑decide‑act round trip per click. Far fewer model turns to finish the job.
 
-The trade-off: this depends on there being an accessibility tree or DOM to read, whereas a screenshot approach works on anything drawn on screen, structure or not. See [Tools](documentation/tools.md).
+The trade-off: it needs an accessibility tree or DOM to read, where a screenshot approach works on anything drawn on screen. See [Tools](documentation/tools.md).
 
-On everything else, Claude Code and Codex lead: they are further along on polish, run in many more places, and carry deep ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent backed by a big vendor's cloud, use theirs.
+Elsewhere they lead: more polish, more places to run, deeper ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent on a vendor's cloud, use theirs.
 
 ## Install
 
-Daisy targets **macOS on Apple Silicon**. Download the latest `.dmg` from the [Releases](https://github.com/ghovax/daisy/releases) page and drag **Daisy** to Applications; the build is self-signed, so Gatekeeper warns on first launch. Prefer to build from source? Clone the repo and use the Nix-pinned toolchain instead.
+Daisy targets **macOS on Apple Silicon**. Download the latest `.dmg` from the [Releases](https://github.com/ghovax/daisy/releases) page and drag **Daisy** to Applications; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
 
-See the [Installation guide](documentation/installation.md) for both paths — download and Gatekeeper, or build from source.
+See the [Installation guide](documentation/installation.md) for both paths in full.
 
 ## Quickstart
 

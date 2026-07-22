@@ -1,6 +1,6 @@
 # Installation
 
-Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`search_screen`/`control_screen`) and the packaged app are macOS-specific; the harness itself is portable Python, but the desktop experience is built for the Mac.
+Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`search_screen`/`control_screen`) and the packaged app are macOS-specific. The harness itself is portable Python, but the desktop experience is built for the Mac.
 
 ## Option 1 — Download the app
 
@@ -10,7 +10,7 @@ Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (
 
 ### Gatekeeper
 
-The app is **self-signed, not Apple-notarized**. macOS Gatekeeper will refuse the first launch with an "unidentified developer" or "damaged" message. This is expected. Clear it once, either way:
+The app is **self-signed, not Apple-notarized**. macOS Gatekeeper refuses the first launch with an "unidentified developer" or "damaged" message. This is expected. Clear it once, either way:
 
 - **Right-click** `Daisy.app` → **Open** → **Open** in the dialog, or
 - from a terminal:
@@ -19,18 +19,18 @@ The app is **self-signed, not Apple-notarized**. macOS Gatekeeper will refuse th
   xattr -dr com.apple.quarantine /Applications/Daisy.app
   ```
 
-Notarized builds are planned; until then this one-time step is required.
+Notarized builds are planned. Until then this one-time step is required.
 
 ### Permissions the app may ask for
 
 - **Accessibility** — required for the screen-control tools (`search_screen`/`control_screen`) to read and act on native apps. Daisy prompts you and deep-links to the right settings pane. Grant it to Daisy.
-- **Chrome remote debugging** — required for the screen-control tools to drive your own Chrome. Daisy shows a one-click prompt that opens `chrome://inspect`; enable the remote-debugging toggle once.
+- **Chrome remote debugging** — required for the screen-control tools to drive your own Chrome. Daisy shows a one-click prompt that opens `chrome://inspect`. Enable the remote-debugging toggle once.
 
 Neither is needed for plain chat or the file, shell, and web tools.
 
 ## Option 2 — Build from source
 
-You need the [Nix](https://nixos.org) package manager (the repo ships a flake devshell that pins bun, Rust, and the Tauri CLI) and, ideally, [direnv](https://direnv.net).
+You need the [Nix](https://nixos.org) package manager (the repo ships a flake devshell that pins bun, Rust, and the Tauri CLI), and optionally [direnv](https://direnv.net).
 
 ```sh
 git clone https://github.com/ghovax/daisy.git

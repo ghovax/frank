@@ -1,6 +1,6 @@
 # Architecture
 
-Daisy is split into a **harness** (the Python agent runtime, plus a server that exposes it) and an **app** (the native client). They communicate only over HTTP, which is the single most important fact about the system: the two can run on the same machine or on different ones, and nothing else changes.
+Daisy is split into a **harness** (the Python agent runtime, plus a server that exposes it) and an **app** (the native client). They communicate only over HTTP. The two can run on the same machine or on different ones, and nothing else changes.
 
 ```mermaid
 flowchart LR
@@ -27,18 +27,18 @@ flowchart LR
 
 ## The harness
 
-The `daisy` package is the agent runtime — an importable Python library you can drive directly — and a thin FastAPI application wraps it for the network (`server.py` is a launch shim; both live in `src/daisy/`). Together they:
+The `daisy` package is the agent runtime — an importable Python library you can drive directly. A thin FastAPI application wraps it for the network (`server.py` is a launch shim; both live in `src/daisy/`). Together they:
 
-- serves **every agent** as an independently addressable [A2A](https://github.com/google/A2A) endpoint (JSON-RPC), plus a small REST API the UI uses;
-- runs the **agent loop** on LangChain / LangGraph, with model access through [LiteLLM](https://litellm.ai) so any provider looks the same;
-- dispatches **tools** and runs each one through the **permission engine** before it takes effect;
-- persists everything to **`~/.daisy/`** — `configuration.yaml` and `history.db`.
+- serve **every agent** as an independently addressable [A2A](https://github.com/google/A2A) endpoint (JSON-RPC), plus a small REST API the UI uses;
+- run the **agent loop** on LangChain / LangGraph, with model access through [LiteLLM](https://litellm.ai) so any provider looks the same;
+- dispatch **tools** and run each one through the **permission engine** before it takes effect;
+- persist everything to **`~/.daisy/`** — `configuration.yaml` and `history.db`.
 
-It binds `127.0.0.1:8822` by default. It has **no built-in authentication**: it trusts whoever can reach the port. That is fine on `localhost`; anywhere else it is your job to put auth and transport security in front (see [Security notes](../SECURITY.md)).
+It binds `127.0.0.1:8822` by default. It has **no built-in authentication**: it trusts whoever can reach the port. That is fine on `localhost`. Anywhere else, put auth and transport security in front yourself (see [Security notes](../SECURITY.md)).
 
 ## The app
 
-A [Tauri](https://tauri.app) shell around a [Next.js](https://nextjs.org) UI (static export; Chakra UI). It is a **client** — it holds no agent logic. Its jobs are to render conversations, manage settings, preview artifacts, and, crucially, **choose which harness to talk to**.
+A [Tauri](https://tauri.app) shell around a [Next.js](https://nextjs.org) UI (static export; Chakra UI). It is a **client** — it holds no agent logic. It renders conversations, manages settings, previews artifacts, and **chooses which harness to talk to**.
 
 The packaged app bundles a frozen copy of the harness (built with PyInstaller by `packaging/build-sidecar.sh`) and starts it automatically, so a fresh install works with zero setup.
 
@@ -53,10 +53,10 @@ The UI's connection manager resolves the API base URL, in order:
 That yields three ways to run:
 
 - **Local (default).** The app manages the bundled server on `127.0.0.1:8822`.
-- **Remote URL.** Run `python server.py` on another host, expose `8822` (behind your own auth), and add its URL. The app is now a native front-end to a remote backend — the agent's shell, files, and network all live on that host.
+- **Remote URL.** Run `python server.py` on another host, expose `8822` (behind your own auth), and add its URL. The app becomes a native front-end to a remote backend — the agent's shell, files, and network all live on that host.
 - **Over SSH.** Add an SSH host; Daisy forwards a local port to the remote `8822`, so the harness can live on a machine you only reach over SSH, with no exposed port.
 
-This is the design goal behind keeping the halves apart: **put the compute, the files, and the credentials wherever they belong, and keep the interface native and local.**
+Keeping the halves apart serves one goal: **put the compute, the files, and the credentials wherever they belong, and keep the interface native and local.**
 
 ## Request lifecycle (a message)
 
