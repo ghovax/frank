@@ -21,18 +21,19 @@ Because the two halves talk over HTTP, **the harness runs detached, and you are 
 
 ## How it compares
 
-The closest tools are [Claude Code](https://www.anthropic.com/claude-code) and [OpenAI Codex](https://developers.openai.com/codex/) — both excellent, both further along than Daisy, and both sharing the coding basics with it: shell, file edits, semantic search, web search, MCP, and delegated agents. Being honest about where each stands:
+The two closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex), and plainly: both are more mature than Daisy, and as of 2026 both do the things that once made Daisy unusual. Each drives a real, logged-in browser and controls native macOS apps, and Codex — like Daisy — is open source and can run on non-OpenAI models. So this is not a list of things only Daisy does.
 
 | | Daisy | Claude Code | OpenAI Codex |
 |---|---|---|---|
-| **Model** | Any provider, or a ChatGPT login, switchable per session | Claude models; third-party providers on the CLI and VS Code | OpenAI's GPT-5 Codex models only |
-| **Where it runs** | A harness you self-host — local, a VM, a container, or over SSH — with a native app pointed at it; one agent can span several configured locations in a session | Vendor client; long tasks run on Anthropic's cloud | Vendor client; async tasks run in OpenAI's cloud |
-| **Your machine** | Drives native macOS apps and your own signed-in Chrome for real, logged-in tasks, read through plain-language element search | Chrome integration aimed at debugging web apps; no native-app control | Files, shell, and tests only; no desktop or browser control |
-| **Source** | Open source (MIT); history and keys stay on your disk | Proprietary | Proprietary |
+| **License** | Open source (MIT) | Proprietary | Open-source CLI (Apache-2.0); cloud and models are OpenAI's |
+| **Models** | Any provider, or a ChatGPT login, per session — the screen tools included | Claude first; third-party providers for coding on the CLI and VS Code, but its browser and computer use need an Anthropic plan | GPT-5 Codex by default; the CLI can also point at OpenRouter, Ollama, LM Studio, or any compatible endpoint |
+| **Where it runs** | A harness you self-host — local, a VM, a container, or over SSH — with a native app pointed at it | Proprietary client; long tasks run on Anthropic's cloud | Local CLI, IDEs, and a desktop app; async tasks run on OpenAI's cloud |
+| **Screen control** | Native macOS apps and your own Chrome, read as ranked accessibility/DOM elements from a plain-language search — screenshots only when you ask | Your real Chrome session, plus macOS computer use driven by downscaled screenshots (research preview, Pro/Max) | In-app and Chrome-extension browser, plus background macOS computer use driven by screenshots |
+| **Reach** | One macOS app and a server | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
 
-Where they lead, plainly: both meet you in far more places — terminal, several IDEs, web, mobile, Slack, and CI or GitHub review — and carry deeper ecosystems, from Claude Code's subagents, hooks, plugins, and Agent SDK to Codex's cloud tasks and automatic PR review. Both also gate actions behind approvals and a sandbox, as Daisy does. Daisy is narrower and younger: macOS-only, one app and a server, aimed at the rows above. If you want a polished coding agent tied to one vendor's models and cloud, use theirs. If you want an open, model-agnostic agent you host yourself that can act on your real desktop, that is the gap Daisy fills.
+What genuinely sets Daisy apart is narrow: it reads the screen as **structure** — a semantic search over the accessibility tree and DOM that returns a few ranked elements, which `control_screen` then acts on with a composed script — where both rivals' computer use reasons over **screenshots**. That makes Daisy leaner where an accessibility tree exists, and gives it native macOS control on whatever model you configure; their screenshot approach, in exchange, works on anything drawn on screen, structure or not. See [Tools](documentation/tools.md).
 
-The screen tools are the clearest example: `search_screen` ranks native-app or Chrome elements from a description of what you want, and `control_screen` composes a short Python script to act on them, so a twenty-row task is one script rather than twenty round-trips. Both are opt-in and stay off until you turn them on. See [Tools](documentation/tools.md).
+Be clear-eyed about the rest: Claude Code and Codex are far ahead on polish, run in many more places, and carry deep ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; if you want a mature multi-surface agent backed by a big vendor's cloud, use theirs.
 
 ## Install
 
