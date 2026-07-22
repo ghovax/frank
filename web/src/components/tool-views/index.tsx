@@ -471,17 +471,136 @@ function ReadFileResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function MatchListResultView({ data }: { data: Record<string, unknown> }) {
+// One code match: file:line-range heading (with language + score muted alongside)
+// over the matched snippet, rendered like a small diff/file body.
+function CodeMatchCard({ match }: { match: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
-  // Pattern is already shown on the call card — only surface the count + matches.
-  const matches = asArray(data.matches).map(asString);
-  const count = asString(data.count) || String(matches.length);
+  const file = asString(match.file);
+  const range = [asString(match.start_line), asString(match.end_line)].filter(Boolean).join("–");
+  const language = asString(match.language);
+  const score = asString(match.score);
+  const snippet = asString(match.snippet);
+  return (
+    <Card>
+      <Flex align="center" gap={2}>
+        <Mono flex={1} minW={0} truncate>{range ? `${file}:${range}` : file}</Mono>
+        {language && <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{language}</Text>}
+        {score && <Text fontSize="2xs" color="fg.subtle" flexShrink={0}>{translation("searchScore")} {score}</Text>}
+      </Flex>
+      {snippet && (
+        <Box mt={1}>
+          <MonoBlock>{snippet}</MonoBlock>
+        </Box>
+      )}
+    </Card>
+  );
+}
+
+// The query is already on the call card, so the result only surfaces the match count
+// and the matched snippets as cards.
+function SearchCodeResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const matches = asArray(data.matches).map(asRecord);
+  if (matches.length === 0) return <EmptyHint>{translation("noResults")}</EmptyHint>;
   return (
     <FieldList>
-      <InlineField label={translation("count")}>{count}</InlineField>
-      {matches.length > 0 && (
-        <Field label={translation("matches")}>
-          <MonoBlock>{matches.join("\n")}</MonoBlock>
+      <InlineField label={translation("count")}>{asString(data.count) || String(matches.length)}</InlineField>
+      <Field label={translation("matches")}>
+        <Flex direction="column" gap={1.5}>
+          {matches.map((match, index) => <CodeMatchCard key={index} match={match} />)}
+        </Flex>
+      </Field>
+    </FieldList>
+  );
+}
+
+// One screen hit: its role as a pill, a "request" tag for network-exchange hits, and
+// whichever of name / value / text / context are present as compact prose.
+function ScreenHitCard({ hit }: { hit: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const role = asString(hit.role);
+  const label = asString(hit.name) || asString(hit.text) || asString(hit.value);
+  const context = asString(hit.context);
+  return (
+    <Card>
+      <Flex align="center" gap={2}>
+        {role && <Pill colorPalette="cyan">{role}</Pill>}
+        {hit.kind === "request" && <Pill colorPalette="purple">{translation("searchScreenRequest")}</Pill>}
+        {label && <Text fontSize="xs" flex={1} minW={0} truncate>{label}</Text>}
+      </Flex>
+      {context && <Text fontSize="2xs" color="fg.subtle" mt={1}>{context}</Text>}
+    </Card>
+  );
+}
+
+// search_screen returns the surface it looked at (url/title for a browser, app/window
+// for the computer) plus the matched hits. A missing grant / debugging-off is rendered
+// as its fix-it flow, mirroring the other screen tools.
+function SearchScreenResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  if (data.ok === false) {
+    if (asString(data.code) === "browser_remote_debugging_off") {
+      return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
+    }
+    const neededPermission = asString(data.needs_permission);
+    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
+    return <ErrorView message={asString(data.error) || translation("failed")} />;
+  }
+  const hits = asArray(data.hits).map(asRecord);
+  return (
+    <FieldList>
+      {asString(data.title) && <InlineField label={translation("title")}>{asString(data.title)}</InlineField>}
+      {asString(data.url) && <InlineField label={translation("url")}>{asString(data.url)}</InlineField>}
+      {asString(data.app) && <InlineField label={translation("searchApp")}>{asString(data.app)}</InlineField>}
+      {asString(data.window) && <InlineField label={translation("searchWindow")}>{asString(data.window)}</InlineField>}
+      <InlineField label={translation("count")}>{asString(data.count) || String(hits.length)}</InlineField>
+      {hits.length > 0 && (
+        <Field label={translation("searchHits")}>
+          <Flex direction="column" gap={1.5}>
+            {hits.map((hit, index) => <ScreenHitCard key={asString(hit.id) || index} hit={hit} />)}
+          </Flex>
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+// control_screen runs a script and returns its return value / stdout, or an error with
+// an optional traceback. Debugging-off / missing grants render as their fix-it flow.
+function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  if (data.ok === false) {
+    if (asString(data.code) === "browser_remote_debugging_off") {
+      return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
+    }
+    const neededPermission = asString(data.needs_permission);
+    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
+    const traceback = asString(data.traceback);
+    return (
+      <FieldList>
+        <ErrorView message={asString(data.error) || translation("failed")} />
+        {traceback && (
+          <Field label={translation("controlTraceback")}>
+            <MonoBlock>{traceback}</MonoBlock>
+          </Field>
+        )}
+      </FieldList>
+    );
+  }
+  const ret = data.return;
+  const retText = ret == null ? "" : typeof ret === "object" ? JSON.stringify(ret, null, 2) : asString(ret);
+  const stdout = asString(data.stdout);
+  if (!retText && !stdout) return null;
+  return (
+    <FieldList>
+      {retText && (
+        <Field label={translation("controlReturn")}>
+          <MonoBlock>{retText}</MonoBlock>
+        </Field>
+      )}
+      {stdout && (
+        <Field label={translation("output")}>
+          <MonoBlock>{stdout}</MonoBlock>
         </Field>
       )}
     </FieldList>
@@ -636,8 +755,8 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
     switch (name) {
       case "bash":
         return <BashCallView args={args} />;
-      case "web_search":
-        return <WebSearchCallView args={args} />;
+      case "search_web":
+        return <SearchWebCallView args={args} />;
       case "spawn_agent":
         return <SpawnAgentCallView args={args} agents={agents} />;
       case "ask_agent":
@@ -658,20 +777,18 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <EditFileCallView args={args} />;
       case "write_file":
         return <WriteFileCallView args={args} />;
-      case "search_content":
-        return <SearchContentCallView args={args} />;
-      case "find_files":
-        return <FindFilesCallView args={args} />;
+      case "search_code":
+        return <SearchCodeCallView args={args} />;
+      case "search_screen":
+        return <SearchScreenCallView args={args} />;
+      case "control_screen":
+        return <ControlScreenCallView args={args} />;
       case "fetch_url":
         return <FetchUrlCallView args={args} />;
       case "load_skill":
         return <LoadSkillCallView args={args} />;
       case "ask_user":
         return <AskUserCallView args={args} />;
-      case "computer":
-        return <ComputerCallView args={args} />;
-      case "browser":
-        return <BrowserCallView args={args} />;
       default: {
         // The justification is already the collapsed heading (the tool-call title);
         // strip it so the expanded body never repeats it. MCP calls fall here too.
@@ -769,7 +886,7 @@ function WebResultCard({ result }: { result: Record<string, unknown> }) {
 // The query and requested count are already shown by the call view above, so the
 // result view only renders the result cards — shown directly, not behind a
 // nested collapsible (the tool-call card is the collapsible).
-function WebSearchResultView({ data }: { data: Record<string, unknown> }) {
+function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const results = asArray(data.results).map(asRecord);
   if (results.length === 0) return <EmptyHint>{translation("noResults")}</EmptyHint>;
@@ -2012,122 +2129,6 @@ function McpResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// The computer tool's result is one of a few shapes: an error, an observe snapshot, or a
-// one-line action confirmation. The app isn't repeated here — the call above already names it.
-// Element lists (the observe payload and the diff) are shown as their raw JSON in a code block,
-// like a diff or file body: no per-row assembly, just the data.
-function ComputerResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  if (data.ok === false) {
-    // A missing macOS privacy grant is not a failure to report but a thing to fix, so
-    // render the grant flow instead of a red error box.
-    const neededPermission = asString(data.needs_permission);
-    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
-    return <ErrorView message={asString(data.error) || translation("failed")} />;
-  }
-  const did = asString(data.did);
-
-  // Observe snapshot: a summary of what was seen — which window, how many elements, how
-  // long it took. The element tree itself and any model-directed guidance are the model's
-  // to read from the conversation; the transcript stays a glanceable receipt.
-  if (data.count != null) {
-    const durationMs = Number(data.duration_ms);
-    return (
-      <FieldList>
-        {asString(data.window) && <InlineField label={translation("computerWindow")}>{asString(data.window)}</InlineField>}
-        <InlineField label={translation("computerTotalElements")}>{asString(data.count)}</InlineField>
-        {Number.isFinite(durationMs) && (
-          <InlineField label={translation("computerDuration")}>{translation("computerMs", { value: Math.round(durationMs) })}</InlineField>
-        )}
-      </FieldList>
-    );
-  }
-
-  // Action confirmation (click / type / key / menu / scroll).
-  if (did) {
-    return (
-      <FieldList>
-        <InlineField label={translation("computerResult")}>{did}</InlineField>
-      </FieldList>
-    );
-  }
-  return null;
-}
-
-// The browser tool's result: an error, a tab listing, a page read, a page overview
-// (title / url / element list as JSON, like the computer tool), or an action confirmation.
-// The URL row is suppressed when it merely echoes the call's own `url` argument (the call
-// card already shows it); it appears only when the browser ended up somewhere else.
-function BrowserResultView({ data, args }: { data: Record<string, unknown>; args?: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const normalizeUrl = (value: string) => value.replace(/\/+$/, "");
-  const requestedUrl = normalizeUrl(asString(args?.url));
-  const resultUrl = asString(data.url);
-  const showUrl = Boolean(resultUrl) && (normalizeUrl(resultUrl) !== requestedUrl || data.url_changed === true);
-  if (data.ok === false) {
-    if (asString(data.code) === "browser_remote_debugging_off") {
-      return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
-    }
-    return <ErrorView message={asString(data.error) || translation("failed")} />;
-  }
-  if (Array.isArray(data.tabs)) {
-    const tabs = asArray(data.tabs).map(asRecord);
-    return (
-      <FieldList>
-        {tabs.map((tab, index) => (
-          <InlineField
-            key={asString(tab.tab) || index}
-            label={asString(tab.title) || asString(tab.url) || String(index + 1)}
-          >
-            {asString(tab.url)}{tab.active ? ` · ${translation("browserTabActive")}` : ""}
-          </InlineField>
-        ))}
-      </FieldList>
-    );
-  }
-  if (data.text != null) {
-    return (
-      <FieldList>
-        {asString(data.title) && <InlineField label={translation("title")}>{asString(data.title)}</InlineField>}
-        {showUrl && <InlineField label={translation("url")}>{resultUrl}</InlineField>}
-        <Field label={translation("browserPageText")}>
-          <MonoBlock>{asString(data.text)}</MonoBlock>
-        </Field>
-      </FieldList>
-    );
-  }
-  // Page overview: what the browser landed on and how much is there. The element tree
-  // and any model-directed guidance travel in the conversation, not the transcript.
-  if (data.count != null) {
-    return (
-      <FieldList>
-        {asString(data.did) && <InlineField label={translation("computerResult")}>{asString(data.did)}</InlineField>}
-        {asString(data.title) && <InlineField label={translation("title")}>{asString(data.title)}</InlineField>}
-        {showUrl && (
-          <InlineField label={translation("url")}>
-            {resultUrl}{data.url_changed === true ? ` · ${translation("browserUrlChanged")}` : ""}
-          </InlineField>
-        )}
-        <InlineField label={translation("computerTotalElements")}>{asString(data.count)}</InlineField>
-        {data.dialog != null && (
-          <InlineField label={translation("browserDialog")}>
-            {`${asString(asRecord(data.dialog).type)}: ${asString(asRecord(data.dialog).message)}`}
-          </InlineField>
-        )}
-      </FieldList>
-    );
-  }
-  const did = asString(data.did);
-  if (did) {
-    return (
-      <FieldList>
-        <InlineField label={translation("computerResult")}>{did}</InlineField>
-      </FieldList>
-    );
-  }
-  return null;
-}
-
 export function ToolResultView({
   name,
   content,
@@ -2160,7 +2161,7 @@ export function ToolResultView({
     const code = asString(data.code);
     if (status === "running" && hasBackgroundTaskIdentifier(data)) return null;
     if (code === "tool_error") return null;
-    if (code === "web_search_completed") return <WebSearchResultView data={data} />;
+    if (code === "web_search_completed") return <SearchWebResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || translation("searchFailed")} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
@@ -2177,13 +2178,13 @@ export function ToolResultView({
     }
     if (name === "read_task") return <ReadTaskResultView data={data} />;
     if (name === "read_file") return <ReadFileResultView data={data} />;
-    if (name === "find_files" || name === "search_content") return <MatchListResultView data={data} />;
+    if (name === "search_code") return <SearchCodeResultView data={data} />;
+    if (name === "search_screen") return <SearchScreenResultView data={data} />;
+    if (name === "control_screen") return <ControlScreenResultView data={data} />;
     if (name === "edit_file" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;
-    if (name === "computer") return <ComputerResultView data={data} />;
-    if (name === "browser") return <BrowserResultView data={data} args={args} />;
     return <GenericView data={data} />;
   }
 

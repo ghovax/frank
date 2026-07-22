@@ -118,7 +118,7 @@ class ContextEventBus:
                 self._subscribers.pop(context_id, None)
 
 
-# --- shared runtime singletons (populated by the boot lifespan) ---
+# Shared runtime singletons (populated by the boot lifespan).
 _global_configuration: Optional[GlobalConfiguration] = None
 # The host the server was told to bind to (set by run_server). Read at startup to fail
 # closed when exposed on a non-loopback interface without inbound auth.

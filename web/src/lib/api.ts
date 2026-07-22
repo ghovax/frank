@@ -341,7 +341,7 @@ export async function deleteLocation(locationId: string): Promise<void> {
   await fetch(`${API_BASE}/locations/${encodeURIComponent(locationId)}`, { method: "DELETE" });
 }
 
-// --- External A2A agents (remote agents this harness can delegate to) ---------
+// External A2A agents (remote agents this harness can delegate to).
 
 export interface RemoteAgent {
   name: string;

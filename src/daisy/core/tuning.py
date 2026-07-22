@@ -85,20 +85,15 @@ class Limit(Enum):
     # As a share of a 200K window: 16K ≈ 8% for one command's output, 4K ≈ 2% for a read window,
     # 24K ≈ 12% for a whole fetched page (the rest overflows to a file). Enforced by clip_to_tokens.
     OUTPUT_TOKENS = (16_000, _Scale.OUTPUT)        # one tool's inline output (bash, model result)
-    READ_WINDOW_TOKENS = (4_000, _Scale.OUTPUT)    # one page/file read window, paged past
     EVALUATE_TOKENS = (4_000, _Scale.OUTPUT)       # a browser evaluate() JSON result
     FETCH_TOKENS = (24_000, _Scale.OUTPUT)         # a fetched web page's inline text
     MAXIMUM_LINE_CHARS = (2_048, _Scale.OUTPUT)    # a single over-long line clipped (minified blob)
 
     # Listing budgets, in item COUNTS, scaled by the window and listing_fraction.
-    ELEMENT_CAP = (300, _Scale.LISTING)            # elements in a full surface overview
-    PROSE_BUDGET = (80, _Scale.LISTING)            # non-interactive text rows kept in an overview
-    FIND_LIMIT = (25, _Scale.LISTING)              # matches a find returns
     READ_LINES = (2_000, _Scale.LISTING)           # lines a read returns on a non-positive limit
     GREP_RESULTS = (512, _Scale.LISTING)           # total grep matches
     GREP_PER_FILE = (512, _Scale.LISTING)          # grep matches per file
     GLOB_RESULTS = (1_000, _Scale.LISTING)         # files a glob returns
-    NETWORK_LIMIT = (50, _Scale.LISTING)           # recent network requests the browser reader gives
     WEB_SEARCH_MAXIMUM = (10, _Scale.LISTING)      # ceiling on requested web-search results
     REMOTE_LISTING = (32_768, _Scale.LISTING)      # remote paths listed before glob matching
 
@@ -111,7 +106,6 @@ class Limit(Enum):
     DRAG_TIMEOUT_MS = (8_000, _Scale.TIMEOUT)
     SCREENSHOT_TIMEOUT_MS = (20_000, _Scale.TIMEOUT)
     READ_TEXT_TIMEOUT_MS = (10_000, _Scale.TIMEOUT)
-    EXPECTATION_TIMEOUT_MS = (8_000, _Scale.TIMEOUT)  # waiting for a model-stated outcome to appear
     SIGTERM_GRACE_SECONDS = (2.0, _Scale.TIMEOUT)            # after SIGTERM, before SIGKILL, on cancel
     RIPGREP_SECONDS = (30.0, _Scale.TIMEOUT)
     # How long a backgroundable tool waits inline before it hands the work to the background
@@ -127,14 +121,10 @@ class Limit(Enum):
 
     # Fixed, deliberately NOT scaled — per-field clip lengths, the element ref length, and the
     # physical input-event pacing the OS needs for a synthesized click/keystroke/drag to register.
-    LABEL_LENGTH = (256, _Scale.FIXED)                       # an element's accessible name in a payload
-    VALUE_LENGTH = (512, _Scale.FIXED)                       # an element's own value/contents
-    REF_LENGTH = (6, _Scale.FIXED)                           # the opaque element ref (base-62)
     TYPE_CHUNK_SIZE = (20, _Scale.FIXED)                     # characters per synthesized keyboard event
     DRAG_STEPS = (12, _Scale.FIXED)                          # interpolation segments a drag is split into
     SCROLL_AMOUNT_PIXELS = (300, _Scale.FIXED)               # one wheel step for the native surface
     SETTLE_STABLE_READS = (2, _Scale.FIXED)                  # identical reads that count a surface settled
-    NO_EFFECT_LIMIT = (3, _Scale.FIXED)                      # consecutive no-effect actions before a surface stops accepting blind ones
     CLICK_INTERVAL_SECONDS = (0.01, _Scale.FIXED)            # between successive synthesized clicks
     DRAG_STEP_INTERVAL_SECONDS = (0.01, _Scale.FIXED)        # between interpolated drag-move events
     TYPE_CHUNK_INTERVAL_SECONDS = (0.005, _Scale.FIXED)      # between typed chunks
