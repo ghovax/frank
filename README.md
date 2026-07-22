@@ -61,7 +61,7 @@ Grab the latest `.dmg` from the [**Releases**](https://github.com/ghovax/daisy/r
 
 ### Build from source
 
-See [`documentation/development.md`](documentation/development.md). In short:
+See the [development guide](documentation/development.md). In short:
 
 ```sh
 git clone https://github.com/ghovax/daisy.git
@@ -74,7 +74,7 @@ cd web/src-tauri && cargo tauri build
 ## Quickstart
 
 1. **Launch Daisy.** The bundled server starts automatically; the app connects to it.
-2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys are stored in `~/.daisy/configuration.yaml` — see [`configuration.example.yaml`](configuration.example.yaml).
+2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Daisy configuration file — see the [example configuration](configuration.example.yaml).
 3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permissions) once you trust a flow.
 
 To enable the distinctive tools:
@@ -93,14 +93,14 @@ The app defaults to a bundled local server, but any Daisy client can point at an
 - **Remote URL** — run `python server.py` on another host and add its URL under **Settings → Connections**.
 - **Over SSH** — add an SSH host and Daisy tunnels to the remote harness, so the server can live on a box you reach only over SSH.
 
-This is what makes Daisy more than a desktop toy: the agent, its tools, and its file and network access run wherever you put the harness, while the interface stays native and local. See [`documentation/architecture.md`](documentation/architecture.md).
+This is what makes Daisy more than a desktop toy: the agent, its tools, and its file and network access run wherever you put the harness, while the interface stays native and local. See the [architecture guide](documentation/architecture.md).
 
 > [!WARNING]
-> The harness has no built-in authentication. If you expose it beyond `localhost`, put it behind your own auth and transport security and never open it to the public internet. See [`SECURITY.md`](SECURITY.md).
+> The harness has no built-in authentication. If you expose it beyond `localhost`, put it behind your own auth and transport security and never open it to the public internet. See the [security notes](SECURITY.md).
 
 ## Documentation
 
-The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in **[`documentation/`](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
+The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[documentation](documentation/README.md)**, which indexes them and sketches the project layout. Quick jumps:
 
 - [Set up providers and permissions](documentation/configuration.md)
 - [How the pieces fit together](documentation/architecture.md)
@@ -112,7 +112,7 @@ The full guides — installation, configuration, architecture, authoring agents 
 
 ## Contributing
 
-Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome — see the [contributing guide](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
