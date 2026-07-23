@@ -1,7 +1,7 @@
 ---
 created: 2026-07-23T18:00:00Z
 updated: 2026-07-23T18:00:00Z
-commit: 8da3380
+commit: 23877e9
 ---
 
 # Folding Search into Control
