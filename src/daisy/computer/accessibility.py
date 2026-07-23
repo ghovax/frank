@@ -27,6 +27,7 @@ action list.
 """
 from __future__ import annotations
 
+import threading
 import time
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -315,6 +316,59 @@ def enable_rich_accessibility(root: Any) -> None:
     apps that don't implement the attribute return an error we ignore."""
     with suppress(Exception):
         AS.AXUIElementSetAttributeValue(root, "AXManualAccessibility", kCFBooleanTrue)
+
+
+def prime_accessibility(pid: int) -> None:
+    """Switch on an app's rich accessibility tree ahead of a read, so a later read meets a tree that
+    is already built instead of racing its asynchronous construction. Idempotent and cheap (setting
+    AXManualAccessibility again is a no-op once the tree is up); called by the pre-warm watcher when
+    an app comes to the front. Best-effort: an app that ignores the handshake is left as it was."""
+    root = AS.AXUIElementCreateApplication(pid)
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    enable_rich_accessibility(root)
+
+
+# The pre-warm watcher. A daemon that switches on rich accessibility for whatever app is frontmost, a
+# beat before the model reads it. Because a built tree persists, priming the front app (and each app
+# the user switches to) means ``search_screen`` almost always meets a tree that is already up, so the
+# read path's wait for the async build seldom runs at all. It is a plain polling daemon, not an
+# AXObserver, on purpose: there is no single "tree built" notification to observe, and an observer
+# would cost a CFRunLoop on this thread to buy nothing the one cheap NSWorkspace query per tick does
+# not. The wait is moved off the model's critical path, not deleted — the build is still async.
+_PREWARM_INTERVAL_SECONDS = 0.4
+
+
+class _Prewarmer:
+    def __init__(self) -> None:
+        self._thread: Optional[threading.Thread] = None
+        self._lock = threading.Lock()
+        self._last_pid: Optional[int] = None
+
+    def start(self) -> None:
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._run, name="daisy-ax-prewarm", daemon=True)
+                self._thread.start()
+
+    def _run(self) -> None:
+        while True:
+            try:
+                pid = frontmost_pid()
+                if pid is not None and pid != self._last_pid:
+                    self._last_pid = pid
+                    prime_accessibility(pid)
+            except Exception:
+                pass
+            time.sleep(_PREWARM_INTERVAL_SECONDS)
+
+
+_prewarmer = _Prewarmer()
+
+
+def start_prewarm() -> None:
+    """Start the pre-warm watcher if it is not already running. Idempotent; the native surface calls
+    it on first use, so the daemon only runs when computer control is actually exercised."""
+    _prewarmer.start()
 
 
 def _window_roots(root: Any, window: str) -> list[Any]:
