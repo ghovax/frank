@@ -477,7 +477,6 @@ _MODEL_ONLY_RESULT_KEYS = frozenset({"hint", "note"})
 # Per-tool heavy payloads the UI summarizes (a count, a range) rather than dumping: the
 # model still reads them from the conversation; the client never needs the raw blob.
 _HEAVY_RESULT_KEYS: dict[str, frozenset[str]] = {
-    "search_screen": frozenset({"hits"}),
     "search_code": frozenset({"matches"}),
     "read_file": frozenset({"content"}),
 }

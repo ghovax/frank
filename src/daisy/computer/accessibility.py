@@ -4,7 +4,7 @@ This is the workhorse. It reads any running app's semantic UI (every button, fie
 menu item, its role, name, value, state and on-screen frame) and acts on elements
 directly (press a button, set a text field's value). Because AX actions target a
 specific element in a specific process, they never move the user's cursor or steal the
-keyboard: that is the containment guarantee. Pixels are a separate, last-resort surface.
+keyboard: that is the containment guarantee.
 
 The data is taken as the system returns it: each element's real AX attributes (AXRole,
 AXTitle, AXValue, …) are read and passed through, filtered only by which elements are
@@ -330,7 +330,7 @@ def prime_accessibility(pid: int) -> None:
 
 # The pre-warm watcher. A daemon that switches on rich accessibility for whatever app is frontmost, a
 # beat before the model reads it. Because a built tree persists, priming the front app (and each app
-# the user switches to) means ``search_screen`` almost always meets a tree that is already up, so the
+# the user switches to) means a ``find`` almost always meets a tree that is already up, so the
 # read path's wait for the async build seldom runs at all. It is a plain polling daemon, not an
 # AXObserver, on purpose: there is no single "tree built" notification to observe, and an observer
 # would cost a CFRunLoop on this thread to buy nothing the one cheap NSWorkspace query per tick does

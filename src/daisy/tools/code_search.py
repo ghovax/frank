@@ -1,7 +1,7 @@
 """Semantic code search — the engine behind ``search_code``. A thin wrapper over
 [semble](https://github.com/MinishLab/semble), which is purpose-built for this: it chunks a repo
 with tree-sitter, embeds each chunk with a code-specialized static model, fuses that with BM25, and
-returns the matching code with its file and line range. Unlike ``search_screen``, this genuinely is
+returns the matching code with its file and line range. Unlike a screen ``find``, this genuinely is
 code, so semble's code model and code chunking are exactly right — we use it directly rather than
 reimplementing it.
 

@@ -1,12 +1,11 @@
 """The native macOS automation surface: any running app, driven through its accessibility tree.
 
-The model works this in two phases, the same on the browser: **``search_screen``** reads the app
-into a flat set of elements (via :meth:`NativeSurface.documents`), each keyed by its position in
-the accessibility tree, and retrieval ranks them against the model's plain-language query;
-**``control_screen``** then acts on the chosen elements (via :meth:`NativeSurface.perform`) with
-trusted input — semantic AX actions where the element exposes them, synthesized mouse and keyboard
-where it does not. A screenshot is the last resort, and only for *seeing* when an app exposes
-nothing to read.
+The model drives it through one tool, ``control_screen``, whose script both reads and acts:
+**``find_one``/``find_many``** read the app into a flat set of elements (via
+:meth:`NativeSurface.documents`), each keyed by its position in the accessibility tree, and
+retrieval ranks them against the model's plain-language query; the acting primitives then drive the
+chosen elements (via :meth:`NativeSurface.perform`) with trusted input — semantic AX actions where
+the element exposes them, synthesized mouse and keyboard where it does not.
 
 Reading and acting through the accessibility tree is the accurate way to drive native UI; this
 module keeps the tree walk, the AX actions, the synthesized input, and the permission gate, and
@@ -105,7 +104,7 @@ class NativeSurface(Surface):
         self._last_pid: Optional[int] = None
         # id → element, rebuilt on every ``documents`` read. The id is the element's path in the
         # tree (``0.3.1``) — the platform's own address, stable within a snapshot and re-resolvable
-        # afterwards — so ``control_screen`` acts on exactly what ``search_screen`` returned.
+        # afterwards — so ``control_screen`` acts on exactly what a ``find`` returned.
         self._targets: dict[str, RegistryEntry] = {}
 
     def recover(self, detail: str) -> dict:
@@ -118,7 +117,7 @@ class NativeSurface(Surface):
         if target:
             pid = accessibility.find_app_pid(target)
             if pid is None:
-                raise ToolFailure({"ok": False, "error": f"App {target!r} is not running. Open it first (via the bash tool), then search."})
+                raise ToolFailure({"ok": False, "error": f"App {target!r} is not running. Open it first (via the bash tool), then find it."})
             return pid
         if self._last_pid is not None:
             return self._last_pid
@@ -130,7 +129,7 @@ class NativeSurface(Surface):
     def _entry(self, ref: str) -> RegistryEntry:
         entry = self._targets.get(ref)
         if entry is None:
-            raise ToolFailure({"ok": False, "error": f"No element {ref!r}. Search the screen first to get current element ids."})
+            raise ToolFailure({"ok": False, "error": f"No element {ref!r}. Find the element first (find_one or find_many) to get current element ids."})
         return entry
 
     def _live_handle(self, entry: RegistryEntry) -> Optional[Any]:
@@ -190,7 +189,7 @@ class NativeSurface(Surface):
                 env["frontmost"] = name
         return env
 
-    # Perceiving — search_screen.
+    # Perceiving — find.
 
     def preflight(self, operation: str) -> Optional[dict]:
         if operation in _NEEDS_ACCESSIBILITY and not permissions.accessibility_granted():

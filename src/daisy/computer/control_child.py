@@ -27,10 +27,12 @@ import traceback
 from contextlib import redirect_stdout
 from typing import Any
 
-# The primitives available inside a script — the union of what the two surfaces perform. Web-only
-# names (evaluate, navigate) are always bound; calling one against a native surface returns the
-# parent's error, which is the honest outcome.
+# The primitives available inside a script — the union of what the two surfaces perform, plus the
+# two retrieval primitives (find_one, find_many) the parent services from the same surface read.
+# Web-only names (evaluate, navigate) are always bound; calling one against a native surface returns
+# the parent's error, which is the honest outcome.
 _PRIMITIVES = (
+    "find_one", "find_many",
     "click", "type", "press", "hover", "scroll", "choose", "upload",
     "drag", "select", "caret", "read", "evaluate", "navigate",
 )

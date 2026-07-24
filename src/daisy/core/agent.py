@@ -51,7 +51,6 @@ from daisy.tools.tools import (
     write_file as write_file_tool,
     fetch_url as fetch_url_tool,
     download_file as download_file_tool,
-    search_screen as search_screen_tool,
     control_screen as control_screen_tool,
     ask_user as ask_user_tool,
     load_skill as load_skill_tool,
@@ -188,7 +187,6 @@ def _build_tools(
     # machine, so it is opt-in: added only when the user has enabled it in Settings (which also
     # gates the Accessibility grant flow).
     if global_configuration.computer_control.enabled:
-        available.append(search_screen_tool)
         available.append(control_screen_tool)
     if global_configuration.mcp.enabled_servers():
         available.extend([
@@ -311,7 +309,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _Delegation
         "open_artifact": "_tool_open_artifact",
         "search_web": "_tool_search_web",
         "read_task": "_tool_read_task",
-        "search_screen": "_tool_search_screen",
         "control_screen": "_tool_control_screen",
     }
 

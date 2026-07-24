@@ -1,4 +1,4 @@
-"""Semantic retrieval over a live surface — the engine behind ``search_screen``.
+"""Semantic retrieval over a live surface — the engine behind ``find_one``/``find_many``.
 
 The model states a goal in plain words; this ranks the elements (and, on the web, the page's
 captured network exchanges) by relevance and hands back the best matches, each carrying its
