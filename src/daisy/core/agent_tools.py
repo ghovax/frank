@@ -18,7 +18,6 @@ from daisy.core.agent_internals import _coerce_structured_arguments
 from daisy.core.agent_internals import _maybe_json
 from daisy.core.agent_internals import _model_result_status
 from daisy.core.agent_internals import _model_visible_tool_result
-from daisy.core.agent_internals import _screenshot_data_uri
 from daisy.core.agent_internals import _spawned_agent_report
 from daisy.core.agent_internals import _tool_timing_metadata
 from daisy.core.agent_internals import _utc_timestamp
@@ -1597,80 +1596,125 @@ class _ToolsMixin:
 
         return native_surface.SURFACE if surface_name == "computer" else web_surface.SURFACE
 
-    async def _screenshot_extra(self, image_path: str) -> tuple[dict, Any]:
-        """Ride a screenshot's pixels on the model_image side channel to a vision-capable model,
-        exactly like read_file; the raw path never reaches the UI."""
-        extra: dict[str, Any] = {}
-        if self._model_supports_vision():
-            data_uri = await asyncio.to_thread(_screenshot_data_uri, image_path)
-            if data_uri:
-                extra["model_image"] = data_uri
-        return extra, None
-
-    async def _tool_search_screen(
-        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
-        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
-        resolved_location: ResolvedLocation | None,
-    ) -> AsyncIterator[TurnEvent]:
-        # Read the live surface into documents, rank them against the query, return the matches
-        # with their native ids. A screenshot is the model's explicit choice (screenshot=True) for
-        # *seeing* a surface with no structure — never an automatic fallback; and a read that fails
-        # (permission not granted, browser not connected) is reported as-is for the model to raise
-        # with the user, not worked around.
-        from daisy.computer import retrieval
-
-        surface_name = str(tool_arguments.get("surface", "browser") or "browser")
-        surface = self._surface_for(surface_name)
-        query = str(tool_arguments.get("query", ""))
-        app = str(tool_arguments.get("app", ""))
-        limit = int(tool_arguments.get("limit", 8) or 8)
-        all_matches = bool(tool_arguments.get("all_matches", False))
-
-        if bool(tool_arguments.get("screenshot", False)):
-            shot = await asyncio.to_thread(surface.screenshot, app) if surface_name == "computer" else await asyncio.to_thread(surface.screenshot)
-            extra: dict[str, Any] = {}
-            if isinstance(shot, dict) and shot.get("image_path"):
-                extra, _ = await self._screenshot_extra(shot["image_path"])
-                shot.pop("image_path", None)
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=shot, extra=extra)
-            return
-
-        gate = surface.preflight("documents")
-        if gate is not None:
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=gate)
-            return
-        read = await asyncio.to_thread(surface.documents, app) if surface_name == "computer" else await asyncio.to_thread(surface.documents)
-        if not read.get("ok"):
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=read)
-            return
-        documents = read.pop("documents", [])
-        index = retrieval.Index(documents)
-        hits = index.search(query, top_k=limit, everything=all_matches)
-        location = {key: value for key, value in read.items() if key not in ("ok",)}
-        result = {"ok": True, **location, "count": len(hits), "hits": [{"id": hit.id, **hit.payload} for hit in hits]}
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
-
     async def _tool_control_screen(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        # Run the model's Python in the killable sandbox, bridging each primitive to a trusted
-        # action on the chosen surface (the surface performs its own permission preflight).
-        from daisy.computer import control
+        # Run the model's Python in the killable sandbox, bridging each primitive to a trusted action
+        # on the chosen surface. Reading and acting are one program: find_one/find_many rank the live
+        # surface into elements, and an acting primitive targets an element by the id a find returned
+        # or by a fresh query resolved the same way. The surface does its own OS-permission preflight;
+        # danger is gated at the tool call by the permission classifier, not here.
+        from daisy.computer import control, retrieval
+        from daisy.computer.surface import message_loader
 
-        surface = self._surface_for(str(tool_arguments.get("surface", "browser") or "browser"))
+        surface_name = str(tool_arguments.get("surface", "browser") or "browser")
+        surface = self._surface_for(surface_name)
+        app = str(tool_arguments.get("app", ""))
         script = str(tool_arguments.get("script", ""))
         if not script.strip():
             yield ToolResult(id=tool_call_identifier, name=tool_name, result={"ok": False, "error": "control_screen needs a script to run."})
             return
+        gate = surface.preflight("documents")
+        if gate is not None:
+            yield ToolResult(id=tool_call_identifier, name=tool_name, result=gate)
+            return
+
+        control_message = message_loader("control")
+        known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
+        acted_on: list[dict[str, str]] = []
+        mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
+        targeting_verbs = mutating_verbs | frozenset({"read", "hover", "scroll"})
+
+        def _rank(query: str, limit: int, everything: bool) -> list:
+            raw = surface.documents(app) if surface_name == "computer" else surface.documents()
+            if not raw.get("ok"):
+                raise RuntimeError(raw.get("error", "Could not read the screen."))
+            return retrieval.Index(raw.get("documents", [])).search(query, top_k=limit, everything=everything)
+
+        def _record(hit: Any) -> dict:
+            return {"id": hit.id, **hit.payload}
+
+        def _register(record: dict) -> None:
+            known_ids[record["id"]] = {
+                "id": record["id"], "name": record.get("name", ""),
+                "role": record.get("role", ""), "context": record.get("context", ""),
+            }
+
+        def _identity(record: dict) -> tuple:
+            return (record.get("name", ""), record.get("role", ""), record.get("context", ""))
+
+        def _candidates(records: list) -> str:
+            lines = []
+            for record in records:
+                parts = [f"id={record.get('id')}"]
+                for field in ("name", "role", "context"):
+                    if record.get(field):
+                        parts.append(f"{field}={record[field]!r}")
+                lines.append("  - " + ", ".join(parts))
+            return "\n".join(lines)
+
+        def find_many(query: Any, limit: int = 8, all: bool = False, **_: Any) -> list:
+            records = [_record(hit) for hit in _rank(str(query), int(limit), bool(all))]
+            for record in records:
+                _register(record)
+            return records
+
+        def find_one(query: Any, role: str = "", name: str = "", context: str = "", **_: Any) -> dict:
+            scored = [(_record(hit), float(hit.score or 0.0)) for hit in _rank(str(query), 8, False)]
+            if role or name or context:
+                scored = [
+                    (record, score) for record, score in scored
+                    if (not role or record.get("role", "") == role)
+                    and (not name or record.get("name", "") == name)
+                    and (not context or context in (record.get("context", "") or ""))
+                ]
+            if not scored:
+                raise RuntimeError(control_message("no_match", query=str(query)))
+            top, top_score = scored[0]
+            # Score-competitive: within the top five and at least 90% of the top score. Among those,
+            # a twin of the top by (name, role, context) means the query cannot pick one — raise.
+            competitive = [record for record, score in scored[:5] if top_score <= 0 or score >= 0.9 * top_score]
+            twins = [record for record in competitive[1:] if _identity(record) == _identity(top)]
+            if twins:
+                raise RuntimeError(control_message("ambiguous_match", query=str(query), candidates=_candidates([top, *twins])))
+            _register(top)
+            return top
+
+        def _resolve_target(verb: str, args: list) -> list:
+            if not args:
+                return args
+            target = args[0]
+            if isinstance(target, dict) and "id" in target:
+                return [target["id"], *args[1:]]
+            if not isinstance(target, str) or target in known_ids:
+                return args
+            if verb in mutating_verbs:
+                resolved = find_one(target)["id"]  # unique-or-raise
+            else:  # read / hover / scroll: a wrong non-mutating target is self-correcting, so top-1
+                hits = _rank(target, 1, False)
+                if not hits:
+                    raise RuntimeError(control_message("no_match", query=target))
+                record = _record(hits[0])
+                _register(record)
+                resolved = record["id"]
+            return [resolved, *args[1:]]
 
         async def dispatch(name: str, args: list, keywords: dict) -> Any:
-            outcome = await asyncio.to_thread(surface.perform, name, args, keywords)
+            if name == "find_many":
+                return await asyncio.to_thread(find_many, *args, **keywords)
+            if name == "find_one":
+                return await asyncio.to_thread(find_one, *args, **keywords)
+            if name in targeting_verbs:
+                args = await asyncio.to_thread(_resolve_target, name, list(args))
+            outcome = await asyncio.to_thread(surface.perform, name, list(args), keywords)
             if isinstance(outcome, dict):
                 if outcome.get("ok") is False:
                     # Surface a primitive failure into the script as a raised error it can try/except.
                     raise RuntimeError(outcome.get("error", f"{name} failed"))
+                if name in mutating_verbs and args and isinstance(args[0], str):
+                    acted_on.append({"action": name, **known_ids.get(args[0], {"id": args[0]})})
                 # Hand the script the useful value directly: evaluate's result or read's text is the
                 # value itself (structured and queryable), an action is its confirmation minus `ok`.
                 if "result" in outcome:
@@ -1681,4 +1725,6 @@ class _ToolsMixin:
             return outcome
 
         result = await control.run_control_script(script, dispatch)
+        if acted_on and isinstance(result, dict):
+            result.setdefault("acted_on", acted_on)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)

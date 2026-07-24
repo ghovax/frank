@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactM
 import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
-import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging, openScreenRecordingSettings } from "@/lib/api";
+import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { imageIdentityForArtifact, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import { useArtifactEvent } from "../artifact-bridge";
 import { MarkdownContent } from "../markdown-content";
@@ -94,21 +94,6 @@ function SearchCodeCallView({ args }: { args: Record<string, unknown> }) {
       <Field label={translation("query")}>
         <Text fontSize="xs">{asString(args.query)}</Text>
       </Field>
-    </FieldList>
-  );
-}
-
-// search_screen takes a query and the surface to look at (browser / computer),
-// optionally scoped to an app. Only the fields that were provided are shown.
-function SearchScreenCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <Field label={translation("query")}>
-        <Text fontSize="xs">{asString(args.query)}</Text>
-      </Field>
-      {asString(args.surface) && <InlineField label={translation("searchSurface")}>{asString(args.surface)}</InlineField>}
-      {asString(args.app) && <InlineField label={translation("searchApp")}>{asString(args.app)}</InlineField>}
     </FieldList>
   );
 }
@@ -514,57 +499,6 @@ function SearchCodeResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// One screen hit: its role as a pill, a "request" tag for network-exchange hits, and
-// whichever of name / value / text / context are present as compact prose.
-function ScreenHitCard({ hit }: { hit: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const role = asString(hit.role);
-  const label = asString(hit.name) || asString(hit.text) || asString(hit.value);
-  const context = asString(hit.context);
-  return (
-    <Card>
-      <Flex align="center" gap={2}>
-        {role && <Pill colorPalette="cyan">{role}</Pill>}
-        {hit.kind === "request" && <Pill colorPalette="purple">{translation("searchScreenRequest")}</Pill>}
-        {label && <Text fontSize="xs" flex={1} minW={0} truncate>{label}</Text>}
-      </Flex>
-      {context && <Text fontSize="2xs" color="fg.subtle" mt={1}>{context}</Text>}
-    </Card>
-  );
-}
-
-// search_screen returns the surface it looked at (url/title for a browser, app/window
-// for the computer) plus the matched hits. A missing grant / debugging-off is rendered
-// as its fix-it flow, mirroring the other screen tools.
-function SearchScreenResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  if (data.ok === false) {
-    if (asString(data.code) === "browser_remote_debugging_off") {
-      return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
-    }
-    const neededPermission = asString(data.needs_permission);
-    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
-    return <ErrorView message={asString(data.error) || translation("failed")} />;
-  }
-  const hits = asArray(data.hits).map(asRecord);
-  return (
-    <FieldList>
-      {asString(data.title) && <InlineField label={translation("title")}>{asString(data.title)}</InlineField>}
-      {asString(data.url) && <InlineField label={translation("url")}>{asString(data.url)}</InlineField>}
-      {asString(data.app) && <InlineField label={translation("searchApp")}>{asString(data.app)}</InlineField>}
-      {asString(data.window) && <InlineField label={translation("searchWindow")}>{asString(data.window)}</InlineField>}
-      <InlineField label={translation("count")}>{asString(data.count) || String(hits.length)}</InlineField>
-      {hits.length > 0 && (
-        <Field label={translation("searchHits")}>
-          <Flex direction="column" gap={1.5}>
-            {hits.map((hit, index) => <ScreenHitCard key={asString(hit.id) || index} hit={hit} />)}
-          </Flex>
-        </Field>
-      )}
-    </FieldList>
-  );
-}
-
 // control_screen runs a script and reports its value / stdout, or an error with
 // an optional traceback. Debugging-off / missing grants render as their fix-it flow.
 function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
@@ -590,9 +524,24 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
   const resultValue = data.value;
   const resultText = resultValue == null ? "" : typeof resultValue === "object" ? JSON.stringify(resultValue, null, 2) : asString(resultValue);
   const stdout = asString(data.stdout);
-  if (!resultText && !stdout) return null;
+  const actedOn = asArray(data.acted_on).map(asRecord);
+  if (!resultText && !stdout && actedOn.length === 0) return null;
   return (
     <FieldList>
+      {actedOn.length > 0 && (
+        <Field label={translation("controlActedOn")}>
+          <Flex direction="column" gap={1}>
+            {actedOn.map((entry, index) => {
+              const detail = asString(entry.name) || asString(entry.role);
+              return (
+                <Text key={index} fontSize="2xs" color="fg.muted">
+                  {asString(entry.action)}{detail ? ` · ${detail}` : ""}
+                </Text>
+              );
+            })}
+          </Flex>
+        </Field>
+      )}
       {resultText && (
         <Field label={translation("controlReturn")}>
           <MonoBlock>{resultText}</MonoBlock>
@@ -779,8 +728,6 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <WriteFileCallView args={args} />;
       case "search_code":
         return <SearchCodeCallView args={args} />;
-      case "search_screen":
-        return <SearchScreenCallView args={args} />;
       case "control_screen":
         return <ControlScreenCallView args={args} />;
       case "fetch_url":
@@ -956,20 +903,19 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
   );
 }
 
-// Shown when a tool needs a macOS privacy grant (Accessibility, Screen Recording): the same
-// in-chat alert language as the remote-debugging one, with a brief message and a one-click
-// button that surfaces the system prompt and opens the right System Settings pane.
-function PermissionGrantAlert({ kind }: { kind: string }) {
+// Shown when a tool needs the macOS Accessibility grant: the same in-chat alert language as the
+// remote-debugging one, with a brief message and a one-click button that surfaces the system
+// prompt and opens the right System Settings pane.
+function PermissionGrantAlert({ kind: _kind }: { kind: string }) {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
-  const isScreenRecording = kind === "screen_recording";
   return (
     <AlertBox colorPalette="yellow">
       <Text textStyle="fieldLabel">
-        {isScreenRecording ? translation("permissionScreenRecordingTitle") : translation("permissionAccessibilityTitle")}
+        {translation("permissionAccessibilityTitle")}
       </Text>
       <Text fontSize="xs" color="fg.muted" mt={0.5}>
-        {isScreenRecording ? translation("permissionScreenRecordingBody") : translation("permissionAccessibilityBody")}
+        {translation("permissionAccessibilityBody")}
       </Text>
       <Flex align="center" gap={2} mt={2}>
         <Button
@@ -977,7 +923,7 @@ function PermissionGrantAlert({ kind }: { kind: string }) {
           colorPalette="yellow"
           variant="solid"
           onClick={async () => {
-            await (isScreenRecording ? openScreenRecordingSettings() : openAccessibilitySettings());
+            await openAccessibilitySettings();
             setOpened(true);
           }}
         >
@@ -2177,7 +2123,6 @@ export function ToolResultView({
     if (name === "read_task") return <ReadTaskResultView data={data} />;
     if (name === "read_file") return <ReadFileResultView data={data} />;
     if (name === "search_code") return <SearchCodeResultView data={data} />;
-    if (name === "search_screen") return <SearchScreenResultView data={data} />;
     if (name === "control_screen") return <ControlScreenResultView data={data} />;
     if (name === "edit_file" || name === "write_file") return <FileEditResultView data={data} />;
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;

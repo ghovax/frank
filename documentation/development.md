@@ -57,7 +57,7 @@ This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helpe
 
 ### Stable code-signing (recommended)
 
-The screen-control tools (`search_screen`/`control_screen`) need the macOS **Accessibility** grant, which is tied to the app's code identity. To keep that grant across rebuilds, sign with the persistent local identity:
+The screen-control tools (`control_screen`) need the macOS **Accessibility** grant, which is tied to the app's code identity. To keep that grant across rebuilds, sign with the persistent local identity:
 
 ```sh
 # once: create the self-signed identity in your login keychain

@@ -63,7 +63,7 @@ Keeping the halves apart serves one goal: **put the compute, the files, and the 
 1. You send a message; the app POSTs it to the harness for the selected agent.
 2. The agent loop calls the model, which may request tool calls.
 3. Each tool call is classified for risk and checked against the permission mode. If it needs approval, the harness streams a permission request; the app shows the overlay and sends your decision back.
-4. Approved tools run — shell in the sandbox, files on the active location, screen control (`search_screen`/`control_screen`) against the local machine, MCP against configured servers.
+4. Approved tools run — shell in the sandbox, files on the active location, screen control (`control_screen`) against the local machine, MCP against configured servers.
 5. Results stream back as structured events; the app renders tool cards, artifacts, and the model's reply. Everything is persisted to `history.db`.
 
 ## Where to go next

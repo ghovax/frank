@@ -1,7 +1,8 @@
 """The shared spine both automation surfaces are built on: the web surface (Chrome over the
 DevTools protocol) and the native macOS surface (the accessibility tree). Each drives a very
-different substrate, but the model faces one two-phase contract — ``search_screen`` reads the
-surface into elements, ``control_screen`` acts on them — and the pieces common to both live here.
+different substrate, but the model faces one contract — the ``control_screen`` script reads the
+surface into elements with ``find_one``/``find_many`` and acts on them with the same primitives —
+and the pieces common to both live here.
 
 What is shared:
 
@@ -217,5 +218,5 @@ class Surface:
 
     def incomplete(self, message_name: str, **variables: str) -> dict:
         """A read that could not produce a usable view after waiting — a clear message the model can
-        act on (wait/retry, or fall back to a screenshot)."""
+        act on (wait and retry, or surface the blocker to the user)."""
         return {"ok": False, "incomplete": True, "error": self.message(message_name, **variables)}

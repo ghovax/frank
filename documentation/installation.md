@@ -1,6 +1,6 @@
 # Installation
 
-Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`search_screen`/`control_screen`) and the packaged app are macOS-specific. The harness itself is portable Python, but the desktop experience is built for the Mac.
+Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`control_screen`) and the packaged app are macOS-specific. The harness itself is portable Python, but the desktop experience is built for the Mac.
 
 ## Option 1 — Download the app
 
@@ -23,7 +23,7 @@ Notarized builds are planned. Until then this one-time step is required.
 
 ### Permissions the app may ask for
 
-- **Accessibility** — required for the screen-control tools (`search_screen`/`control_screen`) to read and act on native apps. Daisy prompts you and deep-links to the right settings pane. Grant it to Daisy.
+- **Accessibility** — required for the screen-control tools (`control_screen`) to read and act on native apps. Daisy prompts you and deep-links to the right settings pane. Grant it to Daisy.
 - **Chrome remote debugging** — required for the screen-control tools to drive your own Chrome. Daisy shows a one-click prompt that opens `chrome://inspect`. Enable the remote-debugging toggle once.
 
 Neither is needed for plain chat or the file, shell, and web tools.

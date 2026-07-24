@@ -542,13 +542,10 @@
     "fieldSha256": "SHA-256",
     "fieldArtifact": "アーティファクト",
     "searchSurface": "対象",
-    "searchApp": "アプリ",
-    "searchWindow": "ウィンドウ",
-    "searchHits": "ヒット",
-    "searchScreenRequest": "リクエスト",
     "searchScore": "スコア",
     "controlScript": "スクリプト",
     "controlReturn": "戻り値",
+    "controlActedOn": "実行した操作",
     "controlTraceback": "トレースバック"
   },
   "ChatGPTAuthControl": {
@@ -709,9 +706,6 @@
     "readMcpResourceBare": "MCP リソースを読み込み中",
     "searchCode": "「{query}」をコードから検索中",
     "searchCodeBare": "コードを検索中",
-    "searchScreen": "画面から「{query}」を検索中",
-    "searchScreenBare": "画面を検索中",
-    "searchScreenSurface": "{surface}から「{query}」を検索中",
     "controlScreenScript": "{script} を実行中",
     "controlScreenSurface": "{surface}を操作中",
     "controlScreenBare": "画面を操作中"

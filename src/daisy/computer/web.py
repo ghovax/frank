@@ -1,10 +1,10 @@
 """The web automation surface: the user's *own* Chrome, driven with Playwright over the Chrome
-DevTools Protocol. The model works it in two phases, the same on the native surface:
-**``search_screen``** reads the page into retrieval documents (:meth:`WebSurface.documents`) — one
-per element, plus one per recent network exchange, so the model can find a control *or* the page's
-own API endpoint by describing it — and **``control_screen``** acts on the result
-(:meth:`WebSurface.perform`) with Playwright's trusted, actionability-checked input, and can replay
-an authenticated request in-page with ``evaluate``.
+DevTools Protocol. The model drives it through one tool, ``control_screen``, whose script both reads
+and acts: **``find_one``/``find_many``** read the page into retrieval documents
+(:meth:`WebSurface.documents`) — one per element, plus one per recent network exchange, so the model
+can find a control *or* the page's own API endpoint by describing it — and the acting primitives run
+against the result (:meth:`WebSurface.perform`) with Playwright's trusted, actionability-checked
+input, and can replay an authenticated request in-page with ``evaluate``.
 
 Why the real browser, not a copy. The point of the browser tool is to act as the user, with their
 real logins and real session. Copying a profile cannot do that anymore: Google's Device Bound
@@ -130,7 +130,7 @@ class _Session:
         # What to do with the next JavaScript dialog an action triggers ("accept"/"dismiss"); None
         # means the default (acknowledge alerts, decline questions).
         self.pending_dialog: Optional[str] = None
-        # The page's recent network exchanges — full request/response, so ``search_screen`` can
+        # The page's recent network exchanges — full request/response, so a ``find`` can
         # surface the API endpoints behind a rendered view and ``evaluate`` can replay them. A
         # generous rolling window, bounded only so a long-lived page cannot grow the buffer forever.
         self.exchanges: deque[dict] = deque(maxlen=250)
@@ -253,7 +253,7 @@ class _Session:
 
 
 # Observation: Playwright's ref-carrying accessibility snapshot, parsed into the shared indexed
-# ``Element`` — the unit ``search_screen`` ranks.
+# ``Element`` — the unit a ``find`` ranks.
 
 _INTERACTIVE_ROLES = frozenset({
     "button", "link", "textbox", "searchbox", "combobox", "checkbox", "radio", "switch",
@@ -280,7 +280,7 @@ def _parse_snapshot(snapshot: str) -> list[Element]:
     """Parse the ai-mode aria snapshot (YAML-shaped, one node per line, ``[ref=...]`` markers,
     iframe contents inlined with frame-scoped refs) into shared ``Element`` objects, each carrying
     its aria-ref as ``token`` and the ``context`` of its nearest labelling ancestor. Every element
-    is kept — ``search_screen`` ranks the whole surface, so nothing is capped or budgeted out."""
+    is kept — a ``find`` ranks the whole surface, so nothing is capped or budgeted out."""
     elements: list[Element] = []
     labels: dict[int, str] = {}
     for line in snapshot.splitlines():
@@ -415,8 +415,12 @@ class WebSurface(Surface):
 
 
     def preflight(self, operation: str) -> Optional[dict]:
-        """The web surface gates nothing up front — an unreachable browser surfaces as a payload
-        from the operation itself."""
+        """Gate a read on the browser being reachable at all, so a Chrome with its remote-debugging
+        switch off surfaces as the structured not-connected payload (with the one-click enable
+        button) up front, rather than as a bare error raised mid-script. A connection that drops
+        later still surfaces from the operation itself."""
+        if operation == "documents" and _devtools_websocket_url("chrome") is None:
+            return _not_connected_payload()
         return None
 
     # Connection, touched only on the worker thread.
@@ -491,7 +495,7 @@ class WebSurface(Surface):
         aria-ref, valid until the next snapshot on the page; a locator whose element has since left
         surfaces as an ordinary action failure, which is the cue to search again."""
         if not ref:
-            raise ToolFailure({"ok": False, "error": "This action needs an element id from search_screen."})
+            raise ToolFailure({"ok": False, "error": "This action needs an element id from a find (find_one or find_many)."})
         return page.locator(f"aria-ref={ref}")
 
     def _field_text(self, locator) -> str:
@@ -500,7 +504,7 @@ class WebSurface(Surface):
         except Exception:
             return locator.text_content() or ""
 
-    # Perceiving — search_screen.
+    # Perceiving — find.
 
     def documents(self, browser: str = "chrome") -> dict:
         """Read the page into retrieval documents: one per element (its own words, keyed by its
@@ -540,20 +544,6 @@ class WebSurface(Surface):
                     payload={"kind": "websocket", "url": record["url"], "frames": list(record["frames"])},
                 ))
             return {"ok": True, "url": _safe_url(page), "title": _safe_title(page), "documents": documents}
-
-        return self.guard(run)
-
-    def screenshot(self) -> dict:
-        """The visible viewport as pixels — the fallback for surfaces with no semantic tree (a
-        canvas map, WebGL, a custom editor)."""
-
-        def run() -> dict:
-            session = self.session()
-            page = self.page(session)
-            handle, path = tempfile.mkstemp(prefix="daisy-web-capture-", suffix=".png")
-            os.close(handle)
-            page.screenshot(path=path, type="png", scale="css", timeout=active_tuning().amount(Limit.SCREENSHOT_TIMEOUT_MS))
-            return {"ok": True, "image_path": path, "url": _safe_url(page), "title": _safe_title(page), "note": message("screenshot_observe_only")}
 
         return self.guard(run)
 
@@ -795,7 +785,7 @@ class WebSurface(Surface):
 
     def _acted(self, session: _Session, page, did: str) -> dict:
         """The compact result of a control action: what it did, where it landed, and any dialog or
-        download it triggered. What *changed* is found by the next ``search_screen``, not diffed here."""
+        download it triggered. What *changed* is found by the next ``find``, not diffed here."""
         result: dict[str, Any] = {"ok": True, "did": did, "url": _safe_url(page)}
         events = session.drain_events()
         if events:

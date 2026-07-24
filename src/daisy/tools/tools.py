@@ -836,57 +836,33 @@ async def download_file(
 
 
 @tool
-async def search_screen(
-    query: str,
-    surface: Literal["browser", "computer"] = "browser",
-    app: str = "",
-    limit: int = 8,
-    all_matches: bool = False,
-    screenshot: bool = False,
-    justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
-    risk: Literal["low", "medium", "high"] = "low",
-) -> str:
-    """Find things on the live screen by describing them in plain words.
-
-    Reads the current surface — the user's signed-in browser page, or a native macOS app — into its elements and returns the ones that best match your query, each with a stable ``id``, its role, its full text, and its state. Describe the target however identifies it best — its visible label, its role, or the data behind it — and rely on the match being by meaning, not exact wording; rephrase or widen (``all_matches``) if the first results miss. This is how you locate a control before acting on it with ``control_screen``. On the browser it also searches the page's own traffic — the network requests and WebSocket frames behind a rendered view — so you can pull data straight from the source instead of walking the DOM. It returns the full, un-paged text of each match, not a truncated preview.
-
-    If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around. When a surface is drawn rather than structured (a canvas, a map, WebGL) and exposes nothing to match, seeing it as pixels is your call: pass ``screenshot``.
-
-    Arguments:
-        query: What you are looking for, in plain language — a control, or the data behind the page.
-        surface: "browser" (the user's Chrome) or "computer" (a native macOS app).
-        app: For the computer surface — which app to look at, by name; omit to reuse the last one.
-        limit: How many matches to return (default 8).
-        all_matches: Return every match, ranked, instead of just the top ones — for harvesting a whole set (every row, every item).
-        screenshot: Return the visible surface as an image instead of elements — for seeing a canvas/WebGL surface that exposes no structure. Deliberate, never an automatic fallback.
-        justification: Why this is needed.
-        risk: Damage potential — low for reading the screen.
-    """
-    raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
-
-
-@tool
 async def control_screen(
     script: str,
     surface: Literal["browser", "computer"] = "browser",
+    app: str = "",
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
 ) -> str:
-    """Act on the live screen by composing a short Python script of trusted actions.
+    """Read and drive the live screen by composing a short Python script — one program that both finds elements and acts on them.
 
-    The script drives the surface you searched with ``search_screen``, calling bare-named primitives on the element ids that search returned. The input is real and trusted: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), and typing fires the events pages listen for. It is ordinary Python, so you can do a whole task in one call. First search to get ids, then act on them; the script itself cannot search, so if an element only appears after an action, search again for it in a new call.
+    The script runs against the current surface — the user's signed-in browser page, or a native macOS app — calling bare-named primitives (no prefix). Reading is in the script: ``find_many`` and ``find_one`` rank the surface by meaning and return elements, each a dict with a stable ``id``, its ``role``, its text, and its ``context``. Acting is trusted input: a click is a real click (actionability-checked, works through overlays, opens file pickers and native dropdowns), typing fires the events pages listen for. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action.
 
-    Primitives (call by bare name, no prefix):
-      click(id, button="left", count=1) · type(id, text, submit=False, mode="replace") · press(key) · scroll(id=None, direction="down") · hover(id) · choose(id, option) · upload(id, paths) · drag(id, to_element) · read(id)
+    Finding elements:
+      find_many(query, limit=8, all=False) — the ranked matches, for reading or harvesting a whole set (act on every result). find_one(query, role="", name="", context="") — the single best match, for acting; it returns that one element, or raises if the top matches are indistinguishable (add a role/name/context discriminator and retry). Write explicit, descriptive queries — name the target, its role, and the section it sits under; a terse query spreads across every similar control. On the browser, find also searches the page's own traffic (network requests and WebSocket frames), so you can pull data from the source instead of walking the DOM.
+
+    Acting — call by bare name, no prefix:
+      click(target, button="left", count=1) · type(target, text, submit=False, mode="replace") · press(key) · scroll(target=None, direction="down") · hover(target) · choose(target, option) · upload(target, paths) · drag(target, to_element) · read(target). A ``target`` is an id a find returned (or the find_one result itself), or a plain-language query resolved the same way find_one resolves it — so for a state-changing action, never pick a find_many result by position; use find_one or a query so an unclear target is caught, not guessed. Typing fills a field without submitting unless ``submit=True``; ``press("Enter")`` and ``submit=True`` post a form, so be deliberate.
     Selecting text within an editable field:
-      select(id, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field · caret(id, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
+      select(target, text=None, to_text=None, select_all=False) — highlight a substring, a range from the caret up to some text, or the whole field · caret(target, before=None, after=None, at_offset=None, edge="") — place the cursor before/after some text, at a character offset, or at the "start"/"end" edge
     Browser only:
       evaluate(javascript, argument=None) — run the given JavaScript source in the page and get its result back natively; when the source is written as a function, argument is the single value passed into it. Read, filter, or aggregate the page's data down to just what you need, or call its own signed-in API with fetch (riding the user's real session). · navigate(url="", history="", new_tab=False)
-    The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too.
+
+    The script runs like a notebook cell: the value of a trailing bare expression is reported as the result, and whatever you ``print`` is returned too. The result also lists what each action touched (``acted_on``), so you can confirm you clicked and typed into the right elements. If the surface can't be read — Accessibility not granted, or the browser not connected — that comes back as an error to raise with the user, not something to route around.
 
     Arguments:
         script: The Python to run.
-        surface: "browser" or "computer" — the surface the ids came from.
+        surface: "browser" (the user's Chrome) or "computer" (a native macOS app).
+        app: For the computer surface — which app to look at, by name; omit to reuse the last one.
         justification: Why this is needed.
         risk: Damage potential — higher for actions that change state.
     """

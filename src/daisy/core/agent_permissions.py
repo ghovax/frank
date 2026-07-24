@@ -17,8 +17,28 @@ from daisy.core.tool_policy import _LOCATION_TOOLS
 from langchain_core.messages import SystemMessage
 from typing import Any
 from typing import Optional
+import ast
 import json
 import uuid
+
+# The state-changing control_screen primitives. A script that calls any of them is mutating; one that
+# only reads (find_one/find_many/read/hover/scroll) is read-only. This is the structural analogue of
+# the bash read-only assessment — a scan of the primitive names the script calls, not a regex.
+_MUTATING_SCREEN_PRIMITIVES = frozenset({"click", "type", "choose", "upload", "drag"})
+
+
+def _control_script_assessment(script: str) -> tuple[str, str]:
+    """Classify a control_screen script as ``read_only``, ``mutating``, or ``unknown`` by scanning
+    its calls for a state-changing primitive, so the permission classifier gets the same static
+    signal bash gets. ``unknown`` when the script does not parse (the classifier escalates on doubt)."""
+    try:
+        tree = ast.parse(script)
+    except SyntaxError:
+        return "unknown", "the script could not be parsed"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _MUTATING_SCREEN_PRIMITIVES:
+            return "mutating", f"calls {node.func.id}()"
+    return "read_only", ""
 
 
 
@@ -392,6 +412,43 @@ class _PermissionsMixin:
                 request_id=self._new_question_request_id(), tool_call_id=tool_call_identifier,
                 kind="question", questions=tool_arguments.get("questions", []) or [],
             ))
+            return plan
+
+        if tool_name == "control_screen":
+            script = tool_arguments.get("script", "") or ""
+            justification = tool_arguments.get("justification", "")
+            risk = tool_arguments.get("risk", "") or ""
+            static_classification, static_detail = _control_script_assessment(script)
+            # Read-only enforcement is a hard block (no human in the loop): a mutating script cannot
+            # run under a read-only policy; an unparseable one is treated as modifying, not waved through.
+            if policy.read_only and static_classification in ("mutating", "unknown"):
+                violation = f"a screen action that changes state ({static_detail})" if static_detail else "a screen action that changes state"
+                deny_message = self._prompt_loader.load("read_only_denied", {"violation": violation})
+                plan.denial = {"code": "", "message": deny_message, "denied_injection": False, "raw_command": ""}
+                return plan
+            if not policy.bypass_permissions and (static_classification != "read_only" or risk in ("medium", "high")):
+                if policy.auto_permissions:
+                    decision = await self._classify_permission(
+                        tool_kind="screen", command="control_screen", raw_command=script,
+                        default_decision="ask", read_only=(static_classification == "read_only"),
+                        risk=risk or "medium", justification=justification,
+                        static_classification=static_classification, static_detail=static_detail,
+                    )
+                    if decision.action == "auto_approve":
+                        self._record_event("screen_auto_approved", {"reason": decision.justification, "risk": decision.risk})
+                    else:
+                        plan.gates.append(_PreflightGate(
+                            request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                            kind="permission", command="control_screen",
+                            justification=decision.justification or justification, risk=decision.risk,
+                            deny_message="Screen action not approved by user",
+                        ))
+                else:
+                    plan.gates.append(_PreflightGate(
+                        request_id=self._new_permission_request_id(), tool_call_id=tool_call_identifier,
+                        kind="permission", command="control_screen", justification=justification, risk=risk or "medium",
+                        deny_message="Screen action not approved by user",
+                    ))
             return plan
 
         return plan

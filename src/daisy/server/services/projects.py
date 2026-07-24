@@ -1,5 +1,5 @@
 """Project domain: project and location CRUD, the SSH host registry, and the macOS
-permission probes (full-disk-access, accessibility, screen-recording)."""
+permission probes (full-disk-access, accessibility)."""
 
 from __future__ import annotations
 
@@ -155,19 +155,6 @@ def _open_accessibility_settings() -> None:
     with suppress(Exception):
         from daisy.computer import permissions
         permissions.open_accessibility_settings()
-
-
-def _request_screen_recording() -> None:
-    """Surface the system Screen Recording prompt if not yet granted."""
-    with suppress(Exception):
-        from daisy.computer import permissions
-        permissions.request_screen_recording()
-
-
-def _open_screen_recording_settings() -> None:
-    with suppress(Exception):
-        from daisy.computer import permissions
-        permissions.open_screen_recording_settings()
 
 
 def _delete_project(project_id: str) -> bool:
