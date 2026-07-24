@@ -40,15 +40,17 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 
 `call_mcp_tool`, `list_mcp_tools`, `list_mcp_resources`, `read_mcp_resource` — bridge to any configured [MCP server](agents-and-skills.md#mcp-servers).
 
-## Screen control (`search_screen` + `control_screen`)
+## Screen control (`control_screen`)
 
-Daisy drives the live screen — native macOS apps and **your own Chrome** — through a two-phase pair of tools. These are **macOS-only** and **opt-in**: both are gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
+Daisy drives the live screen — native macOS apps and **your own Chrome** — through one tool, `control_screen`, whose Python script both finds elements and acts on them. It is **macOS-only** and **opt-in**: gated by `computer_control.enabled` (off by default; see [Configuration guide](configuration.md#execution-and-permissions)).
 
-**`search_screen` — read the live surface.** Give it a plain-language query against the current surface (the user's Chrome page or a native macOS app), and it returns the matching UI as **ranked elements** to act on, not pixels. On native apps it reads the **accessibility tree**; on Chrome it reads the page's real semantic structure (roles and names, iframes included) over the Chrome DevTools Protocol through Playwright. On the browser it also surfaces the page's own **network/API requests**, so the agent sees the endpoints the page calls.
+**Finding — read the live surface.** Inside the script, `find_many(query)` and `find_one(query)` take a plain-language query and return the matching UI as **ranked elements** to act on, not pixels — each with a stable `id`, its role, its text, and its context. On native apps this reads the **accessibility tree**; on Chrome it reads the page's real semantic structure (roles and names, iframes included) over the Chrome DevTools Protocol through Playwright, and also surfaces the page's own **network/API requests**, so the agent can find the endpoints the page calls. `find_one` returns the single best match and raises if the top matches are indistinguishable, so an unclear target is caught rather than guessed.
 
-**`control_screen` — act on what was found.** From the elements `search_screen` returned, it composes a short **Python script of trusted-input primitives** — click, type, scroll, `evaluate`, and the like. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface (browser clicks go through Playwright's actionability checks), and the result reports the new state so the agent sees what changed.
+**Acting — a composed script of trusted-input primitives.** The same script drives the elements a find returned (by `id`, or by a query resolved the same way) with **trusted input** — click, type, scroll, `evaluate`, and the like. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface (browser clicks go through Playwright's actionability checks), and the result reports what each action touched (`acted_on`) so the agent sees what changed.
 
 Because Daisy attaches to **the Chrome you already use** — your real logins and sessions, not a throwaway profile — it only ever *connects* to the browser: it never launches, quits, or copies it.
+
+Daisy reads structure, not pixels: there is no screenshot path for computer use. A surface that is drawn rather than structured (a canvas, WebGL) exposes nothing to find — a structured visual fallback is planned but not yet built (see [the plan](plans/visual-fallback.md)).
 
 **Enable it:**
 
