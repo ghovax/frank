@@ -118,7 +118,7 @@ class ModelHistoryRecord(Base):
 
 class ArtifactVersionRecord(Base):
     """One captured version — a commit on a session branch in a shadow git repo. The
-    shadow repo lives under the location's ``~/.daisy/versions`` and is driven with an
+    shadow repo lives under the location's ``~/.xeac/versions`` and is driven with an
     explicit ``--git-dir``/``--work-tree`` so it never touches the user's own ``.git``
     (see ``core/artifact_versioning.py``). This row is the DB index into that git
     history: it lets the timeline list versions across every location without querying a

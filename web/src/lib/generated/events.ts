@@ -6,12 +6,12 @@
  */
 
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ToolStatus".
  */
 export type ToolStatus = "running" | "ok" | "error";
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "WireEvent".
  */
 export type WireEvent =
@@ -22,7 +22,6 @@ export type WireEvent =
   | ToolResultEvent
   | McpEvent
   | StatusEvent
-  | GroupStartedEvent
   | DoneEvent
   | CompactionEvent
   | SteeringEvent
@@ -32,36 +31,9 @@ export type WireEvent =
   | WarningEvent
   | ErrorEvent;
 
-export interface DaisyEvents {}
+export interface XeacEvents {}
 /**
- * One hop from an agent to a child agent it spawned. A full ``path`` is the
- * chain of these from the root; the UI groups by ``group_id`` (one spawn_agent
- * invocation) and orders by ``step_id`` (one child turn within it).
- *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
- * via the `definition` "AgentPathSegment".
- */
-export interface AgentPathSegment {
-  group_id: string;
-  step_id: string;
-}
-/**
- * Combined token spend of every agent this agent spawned this session. Kept in a
- * separate bucket from the parent's own usage — agents run in their own context and
- * only their deliverable returns to the parent, so their tokens are a distinct cost, not
- * part of the parent's context fill.
- *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
- * via the `definition` "AgentUsage".
- */
-export interface AgentUsage {
-  input_tokens?: number;
-  model_calls?: number;
-  output_tokens?: number;
-  total_tokens?: number;
-}
-/**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "CompactionEvent".
  */
 export interface CompactionEvent {
@@ -69,7 +41,6 @@ export interface CompactionEvent {
   messages_after?: number;
   messages_before?: number;
   ok?: boolean;
-  path?: AgentPathSegment[];
   reason?: string;
   status: "started" | "done";
   tokens_before?: number;
@@ -78,7 +49,7 @@ export interface CompactionEvent {
  * Session-lifetime running totals (monotonic), distinct from the per-call figures
  * on :class:`TokenUsageEvent` which describe only the latest model call.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "CumulativeUsage".
  */
 export interface CumulativeUsage {
@@ -90,51 +61,33 @@ export interface CumulativeUsage {
   total_tokens?: number;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "DoneEvent".
  */
 export interface DoneEvent {
   kind: "done";
-  path?: AgentPathSegment[];
   state?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ErrorEvent".
  */
 export interface ErrorEvent {
   code?: string;
   kind: "error";
   message?: string;
-  path?: AgentPathSegment[];
   status?: number | null;
   title?: string;
   tool_call_id?: string;
   tool_name?: string;
 }
 /**
- * A spawn_agent invocation begins. ``path`` already includes the new child
- * segment, so the client can create the group/step nodes lazily from any event —
- * this only carries the human-facing label (which agent) up front.
- *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
- * via the `definition` "GroupStartedEvent".
- */
-export interface GroupStartedEvent {
-  agent_name: string;
-  kind: "group_started";
-  path?: AgentPathSegment[];
-  title?: string;
-  tool_call_id?: string;
-}
-/**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "McpEvent".
  */
 export interface McpEvent {
   event?: Record<string, unknown>;
   kind: "mcp_event";
-  path?: AgentPathSegment[];
   server?: string;
   tool?: string;
   tool_call_id: string;
@@ -146,7 +99,7 @@ export interface McpEvent {
  * follows the header after a blank line, delivered **as-is**: prose stays prose (never
  * re-encoded into an escaped JSON string), structured output stays JSON.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ModelToolResult".
  */
 export interface ModelToolResult {
@@ -161,96 +114,86 @@ export interface ModelToolResult {
   tool_name: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "PermissionRequestEvent".
  */
 export interface PermissionRequestEvent {
   command?: string;
   justification?: string;
   kind: "permission_request";
-  path?: AgentPathSegment[];
   request_id: string;
   risk?: string;
   tool_call_id?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "QuestionEvent".
  */
 export interface QuestionEvent {
   kind: "question";
-  path?: AgentPathSegment[];
   questions?: Record<string, unknown>[];
   request_id: string;
   tool_call_id?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "StatusEvent".
  */
 export interface StatusEvent {
   code?: string;
   kind: "status";
-  path?: AgentPathSegment[];
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "SteeringEvent".
  */
 export interface SteeringEvent {
   kind: "steering";
-  path?: AgentPathSegment[];
   text?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "TextEvent".
  */
 export interface TextEvent {
   kind: "text";
-  path?: AgentPathSegment[];
   text: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ThinkingDoneEvent".
  */
 export interface ThinkingDoneEvent {
   duration_ms?: number;
   kind: "thinking_done";
-  path?: AgentPathSegment[];
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ThinkingEvent".
  */
 export interface ThinkingEvent {
   block_id?: string;
   kind: "thinking";
-  path?: AgentPathSegment[];
   text?: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "TokenUsageEvent".
  */
 export interface TokenUsageEvent {
-  agents?: AgentUsage;
   context_window?: number;
   cumulative?: CumulativeUsage;
   input_tokens?: number;
   kind: "token_usage";
   output_tokens?: number;
-  path?: AgentPathSegment[];
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ToolCallEvent".
  */
 export interface ToolCallEvent {
   arguments?: Record<string, unknown>;
   kind: "tool_call";
-  path?: AgentPathSegment[];
   tool_call_id: string;
   tool_name: string;
 }
@@ -259,7 +202,7 @@ export interface ToolCallEvent {
  * product decision — kept visible to the model too, so it can reason about what it
  * ran and when.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ToolMetadata".
  */
 export interface ToolMetadata {
@@ -271,7 +214,7 @@ export interface ToolMetadata {
   tool_name: string;
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "ToolResultEvent".
  */
 export interface ToolResultEvent {
@@ -279,7 +222,6 @@ export interface ToolResultEvent {
   display?: unknown;
   kind: "tool_result";
   metadata: ToolMetadata;
-  path?: AgentPathSegment[];
   status: ToolStatus;
   tool_call_id: string;
   tool_name: string;
@@ -288,13 +230,10 @@ export interface ToolResultEvent {
  * The structured per-turn context injected at the end of the message list: the current time,
  * where the agent is, its goal, its tasks, and its background work.
  *
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "TurnContext".
  */
 export interface TurnContext {
-  active_agents?: {
-    [k: string]: string;
-  }[];
   active_goal?: string;
   background?: Record<string, unknown>;
   now?: string;
@@ -302,13 +241,12 @@ export interface TurnContext {
   tasks?: Record<string, unknown>[];
 }
 /**
- * This interface was referenced by `DaisyEvents`'s JSON-Schema
+ * This interface was referenced by `XeacEvents`'s JSON-Schema
  * via the `definition` "WarningEvent".
  */
 export interface WarningEvent {
   code?: string;
   kind: "warning";
   message?: string;
-  path?: AgentPathSegment[];
   title?: string;
 }

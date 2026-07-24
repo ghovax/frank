@@ -37,7 +37,7 @@ def _bundled_dotagents_root() -> Path:
     directory sees at least the shipped profiles even when it has no ``.agents``
     of its own. Located by walking up from this file to the nearest ancestor
     that contains ``.agents/agents`` (an editable install points back at the
-    source tree); falls back to the expected ``src/daisy/core -> repo root``
+    source tree); falls back to the expected ``src/xeac/core -> repo root``
     layout when the directory is absent, so a build that ships the agents
     elsewhere contributes nothing rather than erroring.
 
@@ -202,7 +202,7 @@ class WebFetchConfiguration(BaseModel):
 
     @property
     def effective_proxy_url(self) -> str:
-        return os.environ.get(environment_variables.DAISY_FETCH_PROXY) or self.proxy_url
+        return os.environ.get(environment_variables.XEAC_FETCH_PROXY) or self.proxy_url
 
 
 class SandboxConfiguration(BaseModel):
@@ -369,7 +369,7 @@ class RemoteAgentServerConfiguration(BaseModel):
     card_ttl_seconds: int = 3600
     # Hostnames allowed beyond the card_url origin (the origin is always allowed).
     allowed_hosts: list[str] = []
-    # Permit private/loopback targets (e.g. a Daisy-to-Daisy loopback).
+    # Permit private/loopback targets (e.g. a XEAC-to-XEAC loopback).
     allow_private: bool = False
     # Which local agent profiles may delegate to this remote agent. Empty = all profiles.
     allowed_profiles: list[str] = []

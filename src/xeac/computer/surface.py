@@ -17,7 +17,7 @@ What is shared:
   the surface gets a chance to recover (drop a dead connection, forget stale handles).
 
 User- and model-facing prose is never inlined here; it is loaded from ``messages/*.md`` like every
-other prompt in the daisy.
+other prompt in the harness.
 """
 from __future__ import annotations
 

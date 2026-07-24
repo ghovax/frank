@@ -49,7 +49,7 @@ def _inventory(source_root: Path) -> dict[str, list[str]]:
 
 
 def _source_root() -> Path:
-    for candidate in ("src/xeac", "src/daisy"):
+    for candidate in ("src/xeac",):
         path = ROOT / candidate
         if path.is_dir():
             return path

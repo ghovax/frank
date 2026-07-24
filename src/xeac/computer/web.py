@@ -14,10 +14,10 @@ profile in place — which is also why ``evaluate`` (in-page ``fetch``) reaches 
 the page itself can, with its signing and its session.
 
 How the connection is made. Modern Chrome refuses ``--remote-debugging-port`` on the default
-profile, so daisy neither launches nor copies anything: the user turns on Chrome's own switch once
+profile, so xeac neither launches nor copies anything: the user turns on Chrome's own switch once
 (chrome://inspect/#remote-debugging), which starts a DevTools server and writes a
-``DevToolsActivePort`` file; daisy reads it and hands the ``ws://`` URL to Playwright's
-``connect_over_cdp``. daisy only ever connects; disconnecting leaves the browser running.
+``DevToolsActivePort`` file; xeac reads it and hands the ``ws://`` URL to Playwright's
+``connect_over_cdp``. xeac only ever connects; disconnecting leaves the browser running.
 
 Threading. Playwright's sync API is thread-affine, so the ``SerialWorker`` this surface inherits is
 mandatory: the Playwright instance, the connection, and the page registry are touched only on that
@@ -80,7 +80,7 @@ REMOTE_DEBUGGING_URL = "chrome://inspect/#remote-debugging"
 
 def _not_connected_payload() -> dict:
     """The structured result when Chrome's remote-debugging switch is off, so the UI can render an
-    alert with a one-click button. daisy never enables the switch — it grants full browser control,
+    alert with a one-click button. xeac never enables the switch — it grants full browser control,
     so it is the user's explicit choice."""
     return {
         "ok": False,
@@ -172,7 +172,7 @@ class _Session:
 
         def on_download(download) -> None:
             try:
-                destination = os.path.join(tempfile.mkdtemp(prefix="daisy-web-download-"), download.suggested_filename)
+                destination = os.path.join(tempfile.mkdtemp(prefix="xeac-web-download-"), download.suggested_filename)
                 download.save_as(destination)
                 self.events.append({"download": {"path": destination, "url": download.url}})
             except Exception as error:
@@ -400,7 +400,7 @@ class WebSurface(Surface):
     ranked-elsewhere documents, and performs trusted actions on the elements a search returned."""
 
     def __init__(self) -> None:
-        super().__init__("daisy-playwright", message)
+        super().__init__("xeac-playwright", message)
         self._playwright = None
         self._session: Optional[_Session] = None
 

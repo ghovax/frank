@@ -166,7 +166,7 @@ class SessionExecutor(AgentExecutor):
             parts=[_envelope_part(envelope_kind)],
             message_id=uuid.uuid4().hex,
             context_id=context_id,
-            metadata=_daisy_metadata_envelope(metadata_flags),
+            metadata=turn_metadata_envelope(metadata_flags),
         )
         async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
             pass

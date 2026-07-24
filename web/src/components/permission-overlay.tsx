@@ -8,16 +8,21 @@
 // so a pending approval always grabs attention at the bottom of the chat, even
 // when the triggering card is scrolled out of view.
 
-import { Box, Button, Flex, HStack, Text } from "@chakra-ui/react";
+import { Box, Button, Flex, Text } from "@chakra-ui/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef } from "react";
 import { LuShieldAlert } from "react-icons/lu";
-import type { PermissionDecision, ToolPermission } from "@/lib/tool-event";
+import type { ToolPermission } from "@/lib/tool-event";
 import { MarkdownContent } from "./markdown-content";
 import { ToolLocationBadge } from "./tool-call";
 import { Pill } from "./ui/pill";
 import { Pre } from "./ui/semantic";
+
+// The only runtime decisions that exist: deny, or allow this one call. A standing
+// allow would amend a policy that is now fixed when the session is created, so the
+// overlay never offers one.
+type RuntimeDecision = "deny" | "allow_once";
 
 interface PermissionOverlayProps {
   permission: ToolPermission;
@@ -29,7 +34,7 @@ interface PermissionOverlayProps {
   // The tool call's arguments, so the overlay can badge a remote `location` — a user
   // approving an operation should see *where* it runs, not just its risk.
   arguments?: Record<string, unknown>;
-  onPermission: (requestId: string, decision: PermissionDecision) => void;
+  onPermission: (requestId: string, decision: RuntimeDecision) => void;
 }
 
 const RISK_PALETTE: Record<string, string> = { high: "red", medium: "orange", low: "gray" };
@@ -39,21 +44,18 @@ export function PermissionOverlay({ permission, title, detail, command, argument
   const translation = useTranslations("PermissionOverlay");
   const boxRef = useRef<HTMLDivElement>(null);
 
-  function decide(decision: PermissionDecision) {
+  function decide(decision: RuntimeDecision) {
     onPermission(permission.requestId, decision);
   }
 
-  // 1 deny, 2 allow always, 3/Enter allow once — mirrors the on-screen buttons.
+  // 1 deny, 2/Enter allow once — mirrors the on-screen buttons.
   function handleKeyDown(event: React.KeyboardEvent) {
     const target = event.target instanceof HTMLElement ? event.target : null;
     const interactiveTarget = target?.closest("button,a,input,textarea,select,[role='button']");
     if (event.key === "1") {
       event.preventDefault();
       decide("deny");
-    } else if (event.key === "2") {
-      event.preventDefault();
-      decide("allow_always");
-    } else if (event.key === "3" || (event.key === "Enter" && (!interactiveTarget || event.target === event.currentTarget))) {
+    } else if (event.key === "2" || (event.key === "Enter" && (!interactiveTarget || event.target === event.currentTarget))) {
       event.preventDefault();
       decide("allow_once");
     }
@@ -141,14 +143,9 @@ export function PermissionOverlay({ permission, title, detail, command, argument
             <Button colorPalette="red" variant="solid" onClick={() => decide("deny")}>
               {translation("deny")}
             </Button>
-            <HStack gap={2}>
-              <Button colorPalette="blue" variant="subtle" onClick={() => decide("allow_always")}>
-                {translation("allowAlways")}
-              </Button>
-              <Button colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
-                {translation("allowOnce")}
-              </Button>
-            </HStack>
+            <Button colorPalette="green" variant="solid" onClick={() => decide("allow_once")}>
+              {translation("allowOnce")}
+            </Button>
           </Flex>
         </Box>
       </motion.div>

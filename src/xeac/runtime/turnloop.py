@@ -189,7 +189,7 @@ class _TurnLoopMixin:
             self._steering_available.clear()
         return events
 
-    def _daisy_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
+    def _harness_note_message(self, content: str, image_blocks: list[dict] | None = None) -> HumanMessage:
         """Wrap a harness-injected note in a user-role message carrying a
         ``<systemReminder>`` block.
 
@@ -200,21 +200,21 @@ class _TurnLoopMixin:
         such note therefore rewrites the prompt prefix and invalidates the cache for
         the whole conversation. A user-role note stays exactly where it was appended,
         so the prefix never changes — only grows — on every provider. The wrapper
-        itself lives in the ``daisy_note`` prompt template (wording stays in
+        itself lives in the ``harness_note`` prompt template (wording stays in
         files, not code); it tells the model this is authoritative harness
         guidance, not user input (see the Harness Guidance section of the system
-        prompt). The ``daisy_note`` marker keeps these notes from counting as
+        prompt). The ``harness_note`` marker keeps these notes from counting as
         user turns in the compaction boundary. ``image_blocks`` (OpenAI-shaped
         ``image_url`` blocks) turn the note multimodal — the user role is the one
         role every provider accepts images on, which is how a read image reaches
         a vision model."""
-        text = self._prompt_loader.load("daisy_note", {"content": content.strip()}).strip()
+        text = self._prompt_loader.load("harness_note", {"content": content.strip()}).strip()
         if image_blocks:
             return HumanMessage(
                 content=[{"type": "text", "text": text}, *image_blocks],
-                additional_kwargs={"daisy_note": True},
+                additional_kwargs={"harness_note": True},
             )
-        return HumanMessage(content=text, additional_kwargs={"daisy_note": True})
+        return HumanMessage(content=text, additional_kwargs={"harness_note": True})
 
     def _invalid_tool_call_content(self, invalid: dict) -> str:
         """Build the message for a malformed tool call — used both as the tool
@@ -310,9 +310,9 @@ class _TurnLoopMixin:
             # straight through to the provider. A self-realization note (e.g. an artifact
             # render error) enters as a <systemReminder> harness note so the model
             # treats it as its own observation, not as something the user said — in a
-            # user-role message so the append stays cache-safe (_daisy_note_message).
+            # user-role message so the append stays cache-safe (_harness_note_message).
             turn_message = (
-                self._daisy_note_message(user_message)
+                self._harness_note_message(user_message)
                 if as_system_note and isinstance(user_message, str)
                 else HumanMessage(content=user_message)
             )
@@ -428,7 +428,7 @@ class _TurnLoopMixin:
         would then invalidate the ENTIRE conversation cache on every turn). As a tail
         note, everything before it still prefix-matches the provider cache."""
         dynamic_parts = (
-            [self._daisy_note_message(self._build_dynamic_context())]
+            [self._harness_note_message(self._build_dynamic_context())]
             if first_iteration else []
         )
         return (
@@ -540,7 +540,7 @@ class _TurnLoopMixin:
             if response.content:
                 self._conversation.append(response)
             for invalid in response.invalid_tool_calls:
-                self._conversation.append(self._daisy_note_message(
+                self._conversation.append(self._harness_note_message(
                     self._invalid_tool_call_content(cast(dict, invalid)),
                 ))
             step.directive = _CONTINUE
@@ -566,7 +566,7 @@ class _TurnLoopMixin:
             # nudge counter and no ceiling.
             self._awaiting_goal_reconsideration = True
             goal_continuation = self._prompt_loader.load("goal_continuation", {"goal": self._active_goal})
-            self._conversation.append(self._daisy_note_message(goal_continuation))
+            self._conversation.append(self._harness_note_message(goal_continuation))
             yield Status(code="goal_check",
             )
             step.directive = _CONTINUE

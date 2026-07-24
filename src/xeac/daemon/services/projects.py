@@ -111,7 +111,7 @@ def _project_count() -> int:
 def _full_disk_access_granted() -> bool:
     """Whether *this* process can read Full-Disk-Access-protected data, tested by trying to
     read a byte of the user's TCC database (a canonical FDA-gated file). Reflects the reality
-    the user-context probe faces: in the packaged app FDA is attributed to Daisy.app (the
+    the user-context probe faces: in the packaged app FDA is attributed to XEAC.app (the
     responsible parent of the server), so this flips true once the user grants it. Any
     permission/OS error means no access."""
     protected = Path.home() / "Library" / "Application Support" / "com.apple.TCC" / "TCC.db"
@@ -124,7 +124,7 @@ def _full_disk_access_granted() -> bool:
 
 
 def _open_full_disk_access_settings() -> None:
-    """Open System Settings straight to the Full Disk Access pane so the user can add Daisy in
+    """Open System Settings straight to the Full Disk Access pane so the user can add XEAC in
     one hop. Best-effort; a non-macOS or failed ``open`` is simply a no-op."""
     with suppress(OSError, subprocess.SubprocessError):
         subprocess.run(

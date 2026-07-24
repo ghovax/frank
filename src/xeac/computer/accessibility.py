@@ -347,7 +347,7 @@ class _Prewarmer:
     def start(self) -> None:
         with self._lock:
             if self._thread is None or not self._thread.is_alive():
-                self._thread = threading.Thread(target=self._run, name="daisy-ax-prewarm", daemon=True)
+                self._thread = threading.Thread(target=self._run, name="xeac-ax-prewarm", daemon=True)
                 self._thread.start()
 
     def _run(self) -> None:

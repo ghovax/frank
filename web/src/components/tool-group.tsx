@@ -18,8 +18,7 @@ import { hasBackgroundTaskIdentifier, toolStatus } from "@/lib/tool-event";
 import { ToolCall, ToolLocationBadge, collapsedHeadingLocation } from "./tool-call";
 
 // Shared, grouped/collapsible run of contiguous tool calls — the single source
-// of truth for how a batch of tool calls reads, used by both the chat timeline
-// and the agents panel so the two stay in sync. The group is a single line of
+// of truth for how a batch of tool calls reads. The group is a single line of
 // text in the transcript: the most recent call's icon and label (shimmering while
 // live), then a compact tally of the tools used and any
 // status/file chips — all hugging the text like a sentence, not a card. Opening
@@ -104,7 +103,6 @@ function extractFileChanges(tools: ToolEvent[]): FileChange[] {
 
 interface ToolGroupProps {
   tools: ToolEvent[];
-  agents?: { id: string; name: string; title?: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (toolCallId: string) => void;
   // When true, the group stays expanded even after all calls complete — used by
@@ -115,7 +113,6 @@ interface ToolGroupProps {
 
 export const ToolGroup = memo(function ToolGroup({
   tools,
-  agents = [],
   activeArtifactId,
   onActivateArtifact,
   keepOpen = false,
@@ -294,7 +291,6 @@ export const ToolGroup = memo(function ToolGroup({
                 status={tool.status}
                 permission={tool.permission}
                 question={tool.question}
-                agents={agents}
                 activeArtifactId={activeArtifactId}
                 onActivateArtifact={onActivateArtifact}
               />

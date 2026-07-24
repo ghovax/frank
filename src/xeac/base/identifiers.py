@@ -1,4 +1,4 @@
-"""Canonical identifier minting for the daisy.
+"""Canonical identifier minting for the harness.
 
 Every identifier we generate ourselves follows one shape: a short kind prefix,
 a hyphen, then the canonical textual form of a UUID4 (e.g.

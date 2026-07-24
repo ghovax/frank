@@ -5,7 +5,7 @@ input — the one that actually gates control). It is user-granted in System Set
 can detect state and open the right pane, but never flip it ourselves.
 
 Attribution note: in the packaged app this grant attaches to the *responsible* parent
-process (Daisy.app), which the spawned server inherits — the same model the Full Disk
+process (XEAC.app), which the spawned server inherits — the same model the Full Disk
 Access flow already relies on.
 """
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""The child process that runs a ``control_screen`` script. It holds no Daisy code and no surface
+"""The child process that runs a ``control_screen`` script. It holds no XEAC code and no surface
 state: every primitive the script calls (``click``, ``type``, ``evaluate``, …) is a stub that
 sends one JSON request to the parent, blocks for the JSON reply, and returns it. The parent
 performs the real, trusted action on the live surface and answers. Keeping the child this thin is
@@ -113,7 +113,7 @@ def main() -> None:
         with redirect_stdout(captured):
             result["value"] = _run(script, namespace)
     except SyntaxError as error:
-        # The child holds no Daisy code, so it reports the bare facts; the parent renders the
+        # The child holds no XEAC code, so it reports the bare facts; the parent renders the
         # model-facing message (messages/control/syntax_error.md) from them.
         result = {"ok": False, "error_code": "syntax_error", "detail": error.msg or "", "line": error.lineno or 0}
     except Exception as error:

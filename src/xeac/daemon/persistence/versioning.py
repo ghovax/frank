@@ -1,7 +1,7 @@
 """Shadow-git version store for agent-produced artifacts.
 
 Every file the agent explicitly touches at a ``(location, path)`` is snapshotted into a
-**daisy-owned** git repository that lives under ``<location-home>/.daisy/versions/`` and
+**xeac-owned** git repository that lives under ``<location-home>/.xeac/versions/`` and
 is *never* the user's own repo. The trick that keeps it from ever touching the user's
 ``.git`` is to always drive git with an explicit ``--git-dir`` (our shadow repo) and
 ``--work-tree`` (the user's real directory): git then does no repository discovery and
@@ -49,8 +49,8 @@ from xeac.locations.executor import CommandResult, LocationExecutor
 # A git identity for commit-tree. The shadow history is machine-authored, so a fixed
 # identity is correct (and keeps commit-tree from failing when no user.* is configured).
 _GIT_IDENTITY_ENVIRONMENT = (
-    "GIT_AUTHOR_NAME=Daisy GIT_AUTHOR_EMAIL=daisy@localhost "
-    "GIT_COMMITTER_NAME=Daisy GIT_COMMITTER_EMAIL=daisy@localhost"
+    "GIT_AUTHOR_NAME=XEAC GIT_AUTHOR_EMAIL=xeac@localhost "
+    "GIT_COMMITTER_NAME=XEAC GIT_COMMITTER_EMAIL=xeac@localhost"
 )
 
 # 128 MiB — matches the settings default; blobs above this become placeholder versions.
@@ -93,11 +93,11 @@ def safe_reference_component(value: str) -> str:
 
 
 def branch_reference(session_id: str) -> str:
-    return f"refs/heads/daisy/session/{safe_reference_component(session_id)}"
+    return f"refs/heads/xeac/session/{safe_reference_component(session_id)}"
 
 
 def _index_file(git_directory: str, session_id: str) -> str:
-    return posixpath.join(git_directory, f"daisy-index-{safe_reference_component(session_id)}")
+    return posixpath.join(git_directory, f"xeac-index-{safe_reference_component(session_id)}")
 
 
 def git_directory_for(location_home: str, project_id: str, work_tree: str) -> str:
@@ -106,7 +106,7 @@ def git_directory_for(location_home: str, project_id: str, work_tree: str) -> st
     machine don't collide, grouped under the project."""
     key = hashlib.sha256(work_tree.encode("utf-8")).hexdigest()[:16]
     project = safe_reference_component(project_id or "no-project")
-    return posixpath.join(location_home, ".daisy", "versions", project, f"{key}.git")
+    return posixpath.join(location_home, ".xeac", "versions", project, f"{key}.git")
 
 
 def _run(executor: LocationExecutor, command: str, working_directory: str, *, allow_failure: bool = False) -> CommandResult:
@@ -266,7 +266,7 @@ def _commit_sequence(executor: LocationExecutor, git_directory: str, commit: str
 def _hash_object(executor: LocationExecutor, git_directory: str, session_id: str, content: bytes) -> str:
     """Write given bytes into the object store and return the blob sha, without touching
     the work tree (used to commit a file's pre-edit *original* bytes)."""
-    temporary = posixpath.join(git_directory, f"daisy-blob-tmp-{safe_reference_component(session_id)}")
+    temporary = posixpath.join(git_directory, f"xeac-blob-tmp-{safe_reference_component(session_id)}")
     executor.write_bytes(temporary, content)
     try:
         result = _run(executor, f"{_git_command(git_directory)} hash-object -w {_shell_quote(temporary)}", git_directory)

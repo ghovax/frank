@@ -4,7 +4,7 @@ A process-wide facade. When disabled (the default) every helper is a cheap no-op
 user configures an OTLP endpoint, a turn becomes a trace (session grouped by the A2A
 ``context_id``) carrying ``gen_ai.*`` usage attributes. Trace context rides the A2A message
 metadata as a W3C ``traceparent`` so a delegation nests under its parent turn and a shared
-backend can stitch Daisy's trace to a remote agent's.
+backend can stitch XEAC's trace to a remote agent's.
 
 Only span structure and usage/metadata are emitted — no prompt or completion bodies — so
 there is nothing sensitive to redact. Nothing is emitted at all until an endpoint is set,
@@ -38,7 +38,7 @@ def configure(
     endpoint: str,
     headers: Optional[dict[str, str]] = None,
     sample_ratio: float = 1.0,
-    service_name: str = "daisy",
+    service_name: str = "xeac",
 ) -> None:
     """Install (or tear down) the exporter. With no endpoint, telemetry stays disabled."""
     global _tracer, _token_counter, _call_counter
@@ -57,10 +57,10 @@ def configure(
     resource = Resource.create({"service.name": service_name})
     provider = TracerProvider(resource=resource, sampler=ParentBased(TraceIdRatioBased(max(0.0, min(1.0, sample_ratio)))))
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint, headers=headers or None)))
-    _tracer = provider.get_tracer("daisy")
+    _tracer = provider.get_tracer("xeac")
 
     reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=_metrics_endpoint(endpoint), headers=headers or None))
-    meter = MeterProvider(resource=resource, metric_readers=[reader]).get_meter("daisy")
+    meter = MeterProvider(resource=resource, metric_readers=[reader]).get_meter("xeac")
     _token_counter = meter.create_counter("gen_ai.client.token.usage", unit="{token}", description="LLM tokens used")
     _call_counter = meter.create_counter("gen_ai.client.operation.count", unit="{call}", description="LLM model calls")
     logger.info("Telemetry enabled; exporting traces and metrics to %s", endpoint)

@@ -88,7 +88,7 @@ class SessionWorkspaceManager:
             source_relative = source.relative_to(source_repository_root)
         except ValueError:
             source_relative = Path()
-        branch = f"daisy/session/{self._safe_branch_component(session_id)}"
+        branch = f"xeac/session/{self._safe_branch_component(session_id)}"
         base_ref = self._base_ref(source_repository_root)
         head = self._git_text(source_repository_root, "rev-parse", base_ref) or "HEAD"
 

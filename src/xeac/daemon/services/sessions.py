@@ -124,18 +124,6 @@ def _session_working_directory_for(context_id: str) -> str:
         database_session.close()
 
 
-def _executor_for_context(context_id: str) -> DaisyAgentExecutor | None:
-    """Resolve the executor that owns a context, by the agent recorded on its session.
-
-    This is the correct way to dispatch an operation that targets a session's
-    persisted state (its conversation) rather than an in-flight turn: it routes to the
-    owner authoritatively, independent of whether a runtime is currently warm. Prefer
-    it over broadcasting to every executor and relying on live-runtime membership to
-    self-select — that pattern silently no-ops whenever the runtime is cold (e.g. right
-    after a restart, before the session has taken a turn)."""
-    agent_name = _session_agent_for(context_id)
-    return state._executors.get(agent_name) if agent_name else None
-
 
 async def _resolve_pending_input(
     context_id: str, request_id: str, *,
@@ -465,7 +453,7 @@ def _update_session_draft(context_id: str, input_draft: str) -> None:
 
 
 def _remove_upload_file(path_string: str, uploads_root: str) -> None:
-    """Delete an orphaned content-addressed upload from Daisy's uploads directory."""
+    """Delete an orphaned content-addressed upload from XEAC's uploads directory."""
     path = Path(path_string)
     root = Path(uploads_root)
     if path.parent != root:

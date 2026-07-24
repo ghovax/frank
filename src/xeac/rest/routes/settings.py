@@ -45,7 +45,7 @@ async def full_disk_access_status():
 
 @router.post("/system/full-disk-access/open")
 async def open_full_disk_access_settings():
-    """Open System Settings to the Full Disk Access pane so the user can add Daisy."""
+    """Open System Settings to the Full Disk Access pane so the user can add XEAC."""
     await asyncio.to_thread(_boot._open_full_disk_access_settings)
     return {"ok": True}
 
@@ -59,7 +59,7 @@ async def accessibility_status():
 
 @router.post("/system/accessibility/open")
 async def open_accessibility_settings():
-    """Trigger the system Accessibility prompt and open the pane so the user can grant Daisy."""
+    """Trigger the system Accessibility prompt and open the pane so the user can grant XEAC."""
     await asyncio.to_thread(_boot._request_accessibility)
     await asyncio.to_thread(_boot._open_accessibility_settings)
     return {"ok": True}
@@ -166,7 +166,7 @@ async def chatgpt_auth_start():
     try:
         await flow.start()
     except OSError as error:
-        # Port 1455 is busy — most likely a Codex CLI (or a prior daisy) sign-in.
+        # Port 1455 is busy — most likely a Codex CLI (or a prior xeac) sign-in.
         raise HTTPException(
             status_code=409,
             detail=f"Could not start sign-in — the callback port 1455 is in use ({error}).",
@@ -207,7 +207,7 @@ async def chatgpt_auth_signout():
 
 @router.get("/settings")
 async def get_settings():
-    """Return the API credentials stored in ~/.daisy/configuration.yaml so the
+    """Return the API credentials stored in ~/.xeac/configuration.yaml so the
     settings dialog can pre-fill them, including per-provider keys."""
     assert state.global_configuration is not None
     try:
@@ -242,7 +242,7 @@ async def get_settings():
 
 @router.post("/settings")
 async def update_settings(request: SettingsUpdateRequest):
-    """Persist API credentials to ~/.daisy/configuration.yaml and apply them
+    """Persist API credentials to ~/.xeac/configuration.yaml and apply them
     live: refresh the in-memory configuration, the Exa client, restart the MCP
     client manager so Composio tools appear/disappear with its key, and drop
     cached agent runtimes so the next turn rebuilds with the new credentials."""

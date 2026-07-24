@@ -4,7 +4,6 @@ import { Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@cha
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
-import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { imageIdentityForArtifact, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import { useArtifactEvent } from "../artifact-bridge";
@@ -112,54 +111,6 @@ function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function agentLabelFor(agentName: string, agents: { id: string; name: string; title?: string }[]): string {
-  const agent = agents.find((candidate) => candidate.id === agentName);
-  return agent?.title || agent?.name || agentName || "Agent";
-}
-
-function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { id: string; name: string; title?: string }[] }) {
-  const translation = useTranslations("ToolViews");
-  const agentName = asString(args.agent) || "assistant";
-  return (
-    <FieldList>
-      <InlineField label={translation("agent")}>
-        <Pill colorPalette="purple">{agentLabelFor(agentName, agents)}</Pill>
-      </InlineField>
-      <Field label={translation("prompt")}>
-        <MarkdownContent content={asString(args.prompt)} fontSize="xs" />
-      </Field>
-    </FieldList>
-  );
-}
-
-function AskAgentCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("taskId")}>
-        <Mono>{asString(args.task_identifier)}</Mono>
-      </InlineField>
-      <Field label={translation("question")}>
-        <MarkdownContent content={asString(args.question)} fontSize="xs" />
-      </Field>
-    </FieldList>
-  );
-}
-
-function RespondAgentCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("messageId")}>
-        <Mono>{asString(args.message_identifier)}</Mono>
-      </InlineField>
-      <Field label={translation("response")}>
-        <MarkdownContent content={asString(args.response)} fontSize="xs" />
-      </Field>
-    </FieldList>
-  );
-}
-
 // A task's lifecycle status → a translation key and a colour, so it reads as a
 // proper badge instead of the raw lowercase value the model emits. The colour comes
 // from the shared status palette (via the normalized kind); only the label key is
@@ -259,16 +210,6 @@ function OpenArtifactCallView({ args }: { args: Record<string, unknown> }) {
     <FieldList>
       {title && <InlineField label={translation("title")}>{title}</InlineField>}
       {url && <InlineField label={translation("source")}><Mono>{url}</Mono></InlineField>}
-    </FieldList>
-  );
-}
-
-function ReadTaskCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const taskId = asString(args.task_id);
-  return (
-    <FieldList>
-      <InlineField label={translation("taskId")}>{taskId || "—"}</InlineField>
     </FieldList>
   );
 }
@@ -698,7 +639,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string; title?: string }[] }) {
+export function ToolCallView({ name, args }: { name: string; args?: Record<string, unknown> }) {
   if (!args) return null;
   const specificView = (() => {
     switch (name) {
@@ -706,18 +647,10 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <BashCallView args={args} />;
       case "search_web":
         return <SearchWebCallView args={args} />;
-      case "spawn_agent":
-        return <SpawnAgentCallView args={args} agents={agents} />;
-      case "ask_agent":
-        return <AskAgentCallView args={args} />;
-      case "respond_agent":
-        return <RespondAgentCallView args={args} />;
       case "set_tasks":
         return <WriteTasksCallView args={args} />;
       case "update_tasks":
         return <UpdateTasksCallView args={args} />;
-      case "read_task":
-        return <ReadTaskCallView args={args} />;
       case "open_artifact":
         return <OpenArtifactCallView args={args} />;
       case "read_file":
@@ -774,32 +707,6 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-function AgentMessageResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const code = asString(data.code);
-  const successful = code === "agent_question_queued" || code === "agent_response_delivered";
-  if (!successful) return <ErrorView message={asString(data.message) || translation("agentMessageFailed")} />;
-  return (
-    <FieldList>
-      <InlineField label={translation("fieldStatus")}>
-        <Pill colorPalette="green">
-          {code === "agent_question_queued" ? translation("agentQuestionQueued") : translation("agentResponseDelivered")}
-        </Pill>
-      </InlineField>
-      {asString(data.agent) && (
-        <InlineField label={translation("agent")}>
-          <Pill colorPalette="purple">{asString(data.agent)}</Pill>
-        </InlineField>
-      )}
-      {asString(data.message_identifier) && (
-        <InlineField label={translation("messageId")}>
-          <Mono>{asString(data.message_identifier)}</Mono>
-        </InlineField>
-      )}
-    </FieldList>
-  );
-}
-
 function WebResultCard({ result }: { result: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const title = asString(result.title) || translation("untitled");
@@ -841,20 +748,6 @@ function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
     <Flex direction="column" gap={1.5}>
       {results.map((result, index) => <WebResultCard key={index} result={result} />)}
     </Flex>
-  );
-}
-
-// A spawned agent returns its A2A task as the tool result; show its
-// deliverable (artifact).
-function AgentTaskResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const task = data as unknown as A2ATask;
-  return (
-    <FieldList>
-      <Field label={translation("response")}>
-        <MarkdownContent content={taskArtifactText(task)} />
-      </Field>
-    </FieldList>
   );
 }
 
@@ -934,19 +827,6 @@ function PermissionGrantAlert({ kind: _kind }: { kind: string }) {
       {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{translation("permissionOpened")}</Text>}
     </AlertBox>
   );
-}
-
-// read_task returns either an error code (no id match / unavailable) or the
-// task object itself (kind === "task"). The id is already shown on the call
-// card, so the result only surfaces the outcome — it never re-renders the id.
-function ReadTaskResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const code = asString(data.code);
-  if (code === "task_not_found") return <ErrorView message={translation("taskNotFound")} />;
-  if (code === "read_task_unavailable") {
-    return <EmptyHint>{translation("readTaskUnavailable")}</EmptyHint>;
-  }
-  return <AgentTaskResultView data={data} />;
 }
 
 const IFRAME_SANDBOX_TOKENS = new Set([
@@ -2109,18 +1989,10 @@ export function ToolResultView({
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || translation("searchFailed")} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
-    if (name === "ask_agent" || name === "respond_agent") return <AgentMessageResultView data={data} />;
-    if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
-    // A spawned agent's turn failed before it could report — surface the real reason
-    // (e.g. its model was rate-limited) rather than a bland field dump.
-    if (code === "agent_failed") return <ErrorView message={asString(data.message) || asString(data.title) || translation("agentFailed")} />;
-    // A spawned agent that genuinely finished with nothing to hand back.
-    if (code === "agent_no_report") return <EmptyHint>{asString(data.message) || translation("agentNoReport")}</EmptyHint>;
     if (code === "empty_response") {
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
-    if (name === "read_task") return <ReadTaskResultView data={data} />;
     if (name === "read_file") return <ReadFileResultView data={data} />;
     if (name === "search_code") return <SearchCodeResultView data={data} />;
     if (name === "control_screen") return <ControlScreenResultView data={data} />;
@@ -2131,6 +2003,6 @@ export function ToolResultView({
     return <GenericView data={data} />;
   }
 
-  // Non-JSON results (e.g. a spawned agent's final text) render as prose.
+  // Non-JSON results (a tool that answers in prose rather than a payload) render as markdown.
   return <MarkdownContent content={content} />;
 }

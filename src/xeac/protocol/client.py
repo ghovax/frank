@@ -97,7 +97,7 @@ class RemoteAgentConfiguration:
     # Extra hostnames allowed beyond the card_url origin (rare; e.g. a documented
     # separate RPC host). The card_url host is always allowed.
     allowed_hosts: list[str] = field(default_factory=list)
-    # Opt in to private/loopback/link-local targets (e.g. a Daisy-to-Daisy loopback test).
+    # Opt in to private/loopback/link-local targets (e.g. a XEAC-to-XEAC loopback test).
     allow_private: bool = False
     # Local agent profiles permitted to delegate to this remote agent. Empty = all.
     allowed_profiles: list[str] = field(default_factory=list)

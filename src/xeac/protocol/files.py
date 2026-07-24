@@ -1,4 +1,4 @@
-"""A2A ``FilePart`` interchange over Daisy's own HTTP.
+"""A2A ``FilePart`` interchange over XEAC's own HTTP.
 
 Ingest materializes an inbound ``FilePart`` (base64 bytes, or a URI) into the
 content-addressed upload store and returns the attachment dict the harness already
@@ -132,7 +132,7 @@ class PathNotServableError(Exception):
     into a fetchable URL."""
 
 
-_FILE_TOKEN_AUDIENCE = "daisy-a2a-file"
+_FILE_TOKEN_AUDIENCE = "xeac-a2a-file"
 
 
 class FileUrlSigner:

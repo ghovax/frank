@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Optional
 from xeac.computer.surface import message_loader
 
 # Model-facing control messages live in messages/control/*.md, loaded here so the child (which
-# holds no Daisy code) can report bare facts and leave the prose to the loader.
+# holds no XEAC code) can report bare facts and leave the prose to the loader.
 message = message_loader("control")
 
 # Defaults for the child's resource ceilings, sized so a normal script never notices them and a

@@ -74,7 +74,6 @@ export function LocationForm({
       { value: "default", label: translation("permissionManual") },
       { value: "auto", label: translation("permissionAuto") },
       { value: "read_only", label: translation("permissionReadOnly") },
-      { value: "bypass", label: translation("permissionBypass") },
     ],
     [translation],
   );

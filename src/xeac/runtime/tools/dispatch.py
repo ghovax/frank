@@ -423,19 +423,19 @@ class _ToolsMixin:
         # pixels a tool produced.
         for followup in image_followup_notes:
             note_text = self._prompt_loader.load("image_read_note", {"path": followup.get("path", "")})
-            self._conversation.append(self._daisy_note_message(
+            self._conversation.append(self._harness_note_message(
                 note_text,
                 image_blocks=[{"type": "image_url", "image_url": {"url": followup["data_uri"]}}],
             ))
         for denied_message in denied_command_notes:
-            self._conversation.append(self._daisy_note_message(denied_message))
+            self._conversation.append(self._harness_note_message(denied_message))
 
         # Malformed tool calls serialized alongside valid ones: correct them with a
         # harness note (not a ToolMessage — invalid calls aren't in the serialized
         # tool_calls, so a ToolMessage would be orphaned and rejected by strict
         # providers). Model-facing; not surfaced to the user.
         for invalid in response.invalid_tool_calls:
-            self._conversation.append(self._daisy_note_message(
+            self._conversation.append(self._harness_note_message(
                 self._invalid_tool_call_content(cast(dict, invalid)),
             ))
 

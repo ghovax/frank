@@ -36,7 +36,7 @@ async def serve_a2a_file(token: str):
 
 @router.post("/uploads")
 async def upload_file(file: UploadFile = File(...)):
-    """Store a user-provided file under Daisy's managed home and return generic file
+    """Store a user-provided file under XEAC's managed home and return generic file
     metadata (path, name, mime, size, digest). This is a core, feature-agnostic
     attachment mechanism — it knows nothing about any particular skill's data model.
 
@@ -84,7 +84,7 @@ async def upload_file(file: UploadFile = File(...)):
 @router.post("/attachments/reference")
 async def reference_attachment(reference: AttachmentReference):
     """Register a user attachment **in place** — the file is referenced by its real
-    local path, never copied into Daisy's home. Attachments are look-only (vision +
+    local path, never copied into XEAC's home. Attachments are look-only (vision +
     local tool reads), so the original path is all any consumer needs; returns the
     same generic metadata shape as /uploads so the two paths are interchangeable to
     the client. Localhost-only, like the rest of the API."""

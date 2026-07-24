@@ -21,7 +21,7 @@ baseline and how it scales — no parallel wall of module constants and one-line
 Two typed getters resolve any of them against the live window: :meth:`Tuning.amount` (an integer:
 tokens, counts, milliseconds, characters) and :meth:`Tuning.duration` (a float of seconds).
 
-Delivery mirrors the rest of the daisy. The static *policy* is process-global, pushed in by
+Delivery mirrors the rest of the harness. The static *policy* is process-global, pushed in by
 :func:`set_tuning` at startup and on every config reload (exactly like ``set_exa_client``). The
 dynamic *budget* — the live context window — is threaded per call through
 :data:`current_context_window`, a context variable the running agent sets around each tool

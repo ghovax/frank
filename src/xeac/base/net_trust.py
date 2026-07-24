@@ -8,7 +8,7 @@ make the server reach internal services (cloud metadata, an intranet host) on it
 The check resolves the hostname and inspects the *resolved IP addresses*, not the hostname
 string — a DNS name pointing at ``169.254.169.254`` is exactly the bypass a string check
 misses. IP literals are checked directly. Callers that legitimately need a private target
-(a Daisy-to-Daisy loopback test) opt in explicitly with ``allow_private``.
+(a XEAC-to-XEAC loopback test) opt in explicitly with ``allow_private``.
 
 Against a DNS rebind — a name that passes the check and then rebinds to a private IP before
 the socket connects — :func:`resolve_public_ips` plus :func:`pin_to_ip` let a caller pin the

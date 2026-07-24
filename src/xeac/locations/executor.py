@@ -348,7 +348,7 @@ class SshExecutor(LocationExecutor):
 
     def __init__(self, alias: str, control_directory: Path | None = None):
         self.alias = alias
-        self._control_directory = (control_directory or Path("~/.daisy/ssh-control").expanduser())
+        self._control_directory = (control_directory or Path("~/.xeac/ssh-control").expanduser())
         self._control_directory.mkdir(parents=True, exist_ok=True)
         self._home_directory: str | None = None
         self._ripgrep_available: bool | None = None

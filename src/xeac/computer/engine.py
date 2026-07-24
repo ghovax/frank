@@ -100,7 +100,7 @@ class NativeSurface(Surface):
     ranked-elsewhere documents, and performs trusted actions on the elements a search returned."""
 
     def __init__(self) -> None:
-        super().__init__("daisy-accessibility", message)
+        super().__init__("xeac-accessibility", message)
         self._last_pid: Optional[int] = None
         # id → element, rebuilt on every ``documents`` read. The id is the element's path in the
         # tree (``0.3.1``) — the platform's own address, stable within a snapshot and re-resolvable

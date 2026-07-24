@@ -9,7 +9,7 @@ backend site reads ``record.pending.gates[0].request_id`` rather than
 validation error at the boundary rather than a ``KeyError`` at the point of use.
 
 Serialization is deliberately byte-compatible with the historical flat keys (``pendingInteraction``,
-``daisyTurnKind``, ``referenceTaskIds``, ``agentLane``): ``referenceTaskIds`` and ``agentLane`` are
+``xeacTurnKind``, ``referenceTaskIds``): they are
 read by the web client off ``Task.metadata``, so the persisted/wire shape is unchanged — only the
 in-process access is now typed. Reshaping these under a single namespaced key is a later, separate
 step (see the typed-turn-core plan), not this one.
@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 # Every turn-state key still lives at the top level of ``Task.metadata`` for now (the web client
 # reads two of them there); these are the names the record (de)serializes to.
 PENDING_INTERACTION_KEY = "pendingInteraction"
-TURN_KIND_KEY = "daisyTurnKind"
+TURN_KIND_KEY = "xeacTurnKind"
 REFERENCE_TASK_IDS_KEY = "referenceTaskIds"
 
 

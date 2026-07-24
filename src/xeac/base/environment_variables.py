@@ -1,4 +1,4 @@
-"""Every environment variable Daisy defines or reads, named once, so there is a single source of
+"""Every environment variable XEAC defines or reads, named once, so there is a single source of
 truth and a typo is an ``ImportError`` rather than a silent miss. Import the constant, never the
 raw string::
 
@@ -6,14 +6,14 @@ raw string::
 
     key = os.environ.get(environment_variables.EXA_API_KEY)
 
-Daisy sets none of these itself; they are read from the process environment the host or user
+XEAC sets none of these itself; they are read from the process environment the host or user
 provides. Grouped by origin.
 """
 from __future__ import annotations
 
-# Daisy-defined. Optional override for the outbound proxy the fetch/download tools route through;
+# XEAC-defined. Optional override for the outbound proxy the fetch/download tools route through;
 # falls back to the standard proxy variables below when unset.
-DAISY_FETCH_PROXY = "DAISY_FETCH_PROXY"
+XEAC_FETCH_PROXY = "XEAC_FETCH_PROXY"
 
 # Outbound proxy, host-provided. Consulted so server-initiated requests (A2A file fetches, push
 # notifications) honour the same egress path as the rest of the process.

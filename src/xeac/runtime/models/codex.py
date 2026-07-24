@@ -8,11 +8,11 @@ endpoint ``chatgpt.com/backend-api/codex/responses``, which speaks the OpenAI
 full history resent every turn), and authenticates with the OAuth token minted for
 Codex plus a ``ChatGPT-Account-Id`` header.
 
-It sends daisy's *own* system prompt in the ``instructions`` field like any normal
+It sends xeac's *own* system prompt in the ``instructions`` field like any normal
 Responses request — there is no Codex-prompt impersonation. (The widely repeated
 claim that the endpoint validates a Codex-specific system prompt does not hold:
 opencode's codex plugin sends its own prompt under ``originator: opencode`` and it
-works; this mirrors that with ``originator: daisy``.) See
+works; this mirrors that with ``originator: xeac``.) See
 :mod:`xeac.base.credentials` for the auth/token side.
 """
 
@@ -61,13 +61,13 @@ MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
 CLIENT_VERSION = "0.144.4"
 # Identifies the client to the endpoint. opencode sends its own name here rather
 # than the real Codex CLI's — the proof that no exact impersonation is required.
-ORIGINATOR = "daisy"
+ORIGINATOR = "xeac"
 
 try:
-    _DAISY_VERSION = _package_version("daisy")
+    _XEAC_VERSION = _package_version("xeac")
 except PackageNotFoundError:  # not installed as a distribution (editable/source run)
-    _DAISY_VERSION = "0"
-USER_AGENT = f"daisy/{_DAISY_VERSION}"
+    _XEAC_VERSION = "0"
+USER_AGENT = f"xeac/{_XEAC_VERSION}"
 
 
 class ChatCodexModel(BaseChatModel):
@@ -132,7 +132,7 @@ class ChatCodexModel(BaseChatModel):
 
     def _to_responses_input(self, messages: Sequence[BaseMessage]) -> tuple[str, list[dict[str, Any]]]:
         """Translate LangChain messages into a Responses ``(instructions, input)``
-        pair. daisy's own system prompt(s) go straight into ``instructions`` (the
+        pair. xeac's own system prompt(s) go straight into ``instructions`` (the
         standard Responses home for system text) — no Codex preamble. Tool
         calls/results become top-level ``function_call`` / ``function_call_output``
         items (Responses does not nest them in a message)."""

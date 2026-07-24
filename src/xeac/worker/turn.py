@@ -142,7 +142,7 @@ class _TurnRunner:
 
     def __init__(
         self,
-        executor: DaisyAgentExecutor,
+        executor: "SessionExecutor",
         context: RequestContext,
         event_queue: EventQueue,
     ) -> None:
@@ -247,7 +247,7 @@ class _TurnRunner:
         ingested_attachments = await _ingest_incoming_file_parts(message)
         if ingested_attachments:
             self._structured_payloads.append({PART_KIND: "attachments", "attachments": ingested_attachments})
-        self._metadata = _daisy_metadata(message)
+        self._metadata = turn_metadata(message)
         self._requested_working_directory = str(self._metadata.get(Metadata.WORKING_DIRECTORY, ""))
         self._requested_workspace_strategy = str(self._metadata.get(Metadata.WORKSPACE_STRATEGY, ""))
         self._permission_mode = str(self._metadata.get(Metadata.PERMISSION_MODE, ""))
@@ -367,9 +367,9 @@ class _TurnRunner:
         parent_context = _telemetry.context_from_traceparent((ingested.message.metadata or {}).get("traceparent", ""))
         self._turn_span_context = _telemetry.span("agent.turn", {
             "session.id": task.context_id,
-            "daisy.task.id": task.id,
-            "daisy.agent.name": self._ex._agent_name,
-            "daisy.turn.kind": self._turn_kind,
+            "xeac.task.id": task.id,
+            "xeac.agent.name": self._ex._agent_name,
+            "xeac.turn.kind": self._turn_kind,
         }, parent_context)
         self._turn_span = self._turn_span_context.__enter__()
 
@@ -463,7 +463,7 @@ class _TurnRunner:
             # The wake message carries no prose (only an `autonomous_resume` part); the
             # framing note is supplied here and injected into the model as a
             # <systemReminder> harness note — cache-safe user-role delivery (see
-            # AgentRuntime._daisy_note_message) that never appears as user input in the
+            # AgentRuntime._harness_note_message) that never appears as user input in the
             # transcript.
             self._turn_input = _PROMPTS.load("background_resume_note", {})
         elif self._artifact_payload is not None:

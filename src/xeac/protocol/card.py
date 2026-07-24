@@ -74,7 +74,7 @@ def build_agent_card(
         protocol_version="0.3.0",
         preferred_transport="JSONRPC",
         additional_interfaces=[AgentInterface(transport="JSONRPC", url=url)],
-        provider=AgentProvider(organization="XEAC", url="https://github.com/ghovax/daisy"),
+        provider=AgentProvider(organization="XEAC", url="https://github.com/ghovax/xeac"),
         default_input_modes=["text/plain", "application/json"],
         default_output_modes=["text/plain", "text/markdown", "application/json"],
         capabilities=AgentCapabilities(
@@ -82,7 +82,7 @@ def build_agent_card(
             push_notifications=True,
             state_transition_history=True,
             extensions=[AgentExtension(
-                uri=DAISY_METADATA_KEY,
+                uri=XEAC_METADATA_KEY,
                 description="XEAC per-turn metadata (working directory, permission mode).",
                 required=False,
             )],

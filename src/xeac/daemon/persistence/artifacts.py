@@ -25,7 +25,7 @@ from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.services.locations import _resolve_session_locations
 
 
-_artifact_logger = logging.getLogger("daisy.artifacts")
+_artifact_logger = logging.getLogger("xeac.artifacts")
 
 
 class CaptureRequest:

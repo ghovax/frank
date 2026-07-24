@@ -1,15 +1,13 @@
-"""Launch entry point for the Daisy FastAPI server.
+"""Entry point for the frozen build.
 
-The server body lives in :mod:`daisy.server` (``boot`` builds the app and owns the shared
-state; ``asgi`` mounts the routers and exposes the ASGI ``app``) so it is importable as a
-normal module — run directly (``python server.py``) or frozen by PyInstaller, this file only
-starts it. Keeping the body out of ``__main__`` is what lets the route modules import that
-shared state without spawning a second, half-initialized copy of it.
+One executable serves all three roles — `xeac`, `xeacd`, and the worker the daemon re-execs —
+so packaging stays a single specification and every worker carries the same code identity as
+the signed bundle it runs from.
 """
 
-from daisy.server.asgi import app, run_server
+import sys
 
-__all__ = ["app", "run_server"]
+from xeac.__main__ import main
 
 if __name__ == "__main__":
-    run_server()
+    sys.exit(main())

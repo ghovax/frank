@@ -11,7 +11,7 @@ Consequences, kept deliberately visible:
     itself mints. OpenAI can invalidate this pattern at any time (Anthropic banned
     the equivalent for Claude in Feb 2026); treat it as fragile, not stable.
   * The tokens here are password-equivalent. They are stored in
-    ``~/.daisy/chatgpt_auth.json`` (mode 0600), deliberately **outside**
+    ``~/.xeac/chatgpt_auth.json`` (mode 0600), deliberately **outside**
     ``configuration.yaml`` — the config file is watched/digest-synced and would
     thrash on every silent token refresh, and secrets do not belong in the synced
     single-source-of-truth.
@@ -20,7 +20,7 @@ The OAuth flow is the standard authorization-code + PKCE dance. Because OpenAI
 registered Codex's ``redirect_uri`` as ``http://localhost:1455/auth/callback``, we
 must catch the browser redirect on that exact loopback address — so a short-lived
 loopback server is spun up for the duration of one sign-in rather than reusing the
-Daisy server's own port.
+XEAC server's own port.
 """
 
 from __future__ import annotations
@@ -268,13 +268,13 @@ class ChatGPTLoginFlow:
             "codex_cli_simplified_flow": "true",
             "state": self._state,
             # Names the client on the consent screen (opencode sends its own name here).
-            "originator": "Daisy",
+            "originator": "XEAC",
         }
         return f"{AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
 
     async def start(self) -> None:
         """Bind the loopback callback server. Raises ``OSError`` if port 1455 is
-        already taken (e.g. a concurrent Codex or Daisy sign-in)."""
+        already taken (e.g. a concurrent Codex or XEAC sign-in)."""
         self._server = HTTPServer((REDIRECT_HOST, REDIRECT_PORT), self._build_handler())
         # Bound so the serve loop wakes periodically to honour the overall timeout.
         self._server.timeout = 0.5
@@ -325,7 +325,7 @@ class ChatGPTLoginFlow:
                     self._page(400, failure)
                     return
                 flow._captured["code"] = query["code"][0]
-                self._page(200, "Signed in to ChatGPT. You can close this tab and return to Daisy.")
+                self._page(200, "Signed in to ChatGPT. You can close this tab and return to XEAC.")
 
             def _page(self, status: int, message: str) -> None:
                 body = _callback_page(message).encode("utf-8")

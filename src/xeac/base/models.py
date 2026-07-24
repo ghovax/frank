@@ -114,7 +114,7 @@ def _catalog() -> list[ModelDefinition]:
         local_id = _MODELS_DEV_PROVIDER_MAP.get(models_dev_id)
         if local_id is None:
             continue
-        # Skip providers not registered in this version of Daisy
+        # Skip providers not registered in this version of XEAC
         if get_provider_definition(local_id) is None:
             continue
         for model_id, model_info in provider_info.get("models", {}).items():

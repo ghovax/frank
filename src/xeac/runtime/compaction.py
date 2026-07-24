@@ -74,7 +74,7 @@ class _CompactionMixin:
             if isinstance(message, HumanMessage)
             # Harness notes ride in user-role messages for cache reasons but are
             # not user turns — they must not shift the keep-recent boundary.
-            and not message.additional_kwargs.get("daisy_note")
+            and not message.additional_kwargs.get("harness_note")
         ]
         if len(human_indices) <= keep:
             return 0

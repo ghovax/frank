@@ -11,7 +11,7 @@ from langchain_core.messages.content import (
 )
 
 
-CONTENT_BLOCK_METADATA_KEY = "urn:daisy:ext:content-block:v1"
+CONTENT_BLOCK_METADATA_KEY = "urn:xeac:ext:content-block:v1"
 
 
 @dataclass(frozen=True)
