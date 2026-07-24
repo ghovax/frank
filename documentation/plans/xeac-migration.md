@@ -1,6 +1,6 @@
 ---
 created: 2026-07-24T16:17:08Z
-updated: 2026-07-24T20:54:21Z
+updated: 2026-07-24T21:04:16Z
 commit: 52e5669
 ---
 
@@ -76,18 +76,19 @@ The rename forces `src/daisy/` → `src/xeac/` and rewrites every import regardl
 
 The spine of the layout is one rule: **the daemon never imports the runtime.** `xeacd` spawns worker processes; the workers carry the heavy runtime (LangChain, LiteLLM, model clients). That keeps the control plane light and lets the warm pool pre-fork *workers* rather than a daemon bloated with runtime imports. `base/` exists precisely so that the daemon and the CLI can share primitives with the runtime without importing it.
 
-```
-base         → (nothing internal)
-protocol     → base
-computer     → base
-locations    → base
-tools        → base, locations
-runtime      → base, protocol, computer, tools, locations
-worker       → base, protocol, runtime
-daemon       → base, protocol, persistence          (spawns workers; does NOT import runtime)
-cli          → base, protocol
-rest         → base, protocol, daemon               (GUI-facing, reworked in phase 2)
-```
+The layering is acyclic, and it is what the layering checker enforces:
+
+| Package | May import |
+|---|---|
+| `base` | nothing internal |
+| `protocol` | `base` |
+| `computer`, `locations` | `base` |
+| `tools` | `base`, `locations` |
+| `runtime` | `base`, `protocol`, `computer`, `tools`, `locations` |
+| `worker` | `base`, `protocol`, `runtime` |
+| `daemon` | `base`, `protocol`, and its own `persistence` — never `runtime` |
+| `cli` | `base`, `protocol` |
+| `rest` | `base`, `protocol`, `daemon` |
 
 ```
 src/xeac/
@@ -99,7 +100,7 @@ src/xeac/
   cli/          the `xeac` command
   computer/     unchanged leaf (macOS/browser surfaces)
   locations/    unchanged leaf (local + SSH execution)
-  rest/         GUI-facing REST surface (moved in stage 10, reworked in phase 2)
+  rest/         GUI-facing REST surface (moved in the REST stage, reworked in phase 2)
 ```
 
 ## Module map
@@ -241,7 +242,7 @@ Every module, what it holds, and where it comes from. This is the authoritative 
 
 ### `rest/` — the GUI-facing surface
 
-`app.py`; `routes/` (`artifacts`, `filesystem`, `terminals`, `mcp`, `projects`, `settings`, `sessions_ui`); `services/` (`artifacts_query`, `filesystem`, `terminals`, `proxy`); `models.py` for the DTOs. Sourced from today's `server/routes/*` and the GUI halves of `services/{artifacts,filesystem,terminals,proxy,projects,sessions,settings}.py`. The package is carved and populated during the move (stage 10) because stage 9 deletes `src/daisy/` and every module needs a home; only the *rework* into registry and session clients is deferred to phase 2.
+`app.py`; `routes/` (`artifacts`, `filesystem`, `terminals`, `mcp`, `projects`, `settings`, `sessions_ui`); `services/` (`artifacts_query`, `filesystem`, `terminals`, `proxy`); `models.py` for the DTOs. Sourced from today's `server/routes/*` and the GUI halves of `services/{artifacts,filesystem,terminals,proxy,projects,sessions,settings}.py`. The package is carved and populated during the REST stage because the rename stage deletes `src/daisy/` and every module needs a home; only the *rework* into registry and session clients is deferred to phase 2.
 
 ## Slice mechanics
 
@@ -270,25 +271,25 @@ The frozen build ships **one binary with argv dispatch** — `xeac`, `xeacd`, an
 
 ## Execution order
 
-The order is bottom-up by layer, so that at every step a moved layer depends only on layers already moved. Deletion comes first, in the old tree, where it can be verified against familiar code and where it shrinks everything that follows.
+The order is bottom-up by layer, so that at every step a moved layer depends only on layers already moved, and the stages run in the order listed. Deletion comes first, in the old tree, where it can be verified against familiar code and where it shrinks everything that follows.
 
 | Stage | What | Mechanics | Gate |
 |---|---|---|---|
-| 0. Guardrails | Symbol inventory (module to public symbols); `scripts/check_layers.py`, an AST import scan asserting the allowed edges and the no-module-level-`computer`-import rule; an import smoke script | new files only | The checker passes on the current tree with today's edges declared |
-| 1. Delete delegation | The mailbox, `make_delegate`, in-process spawn, `Delegate*`, the agents-panel events on both planes, and the frontend references | delete in place, old tree | Imports resolve; `check:events` regenerated; `bun run build` passes |
-| 2. `base/` | Eighteen modules; slice `configuration.py` into `paths`, `configuration`, `sidecar`, `prompts`, `catalog`; `tool_policy` into `permission_mode` | `git mv` the bulk, extract slices | `import xeac.base.*`; the layer has zero internal dependencies |
-| 3. `protocol/` | `events`, `turn_record`, `handoff`, `a2a_files`; the protocol slices of `a2a_executor`; `remote_agents` into `client`; the new `addressing` | slice and extract | `import xeac.protocol.*`; protocol depends only on base |
-| 4. Leaves | `computer/` and `locations/` verbatim, plus the XDG fix and the thread names | `git mv` whole | Imports resolve; `control_child.py` still launches by file path |
-| 5. `runtime/` | The large `agent_*` slices, with the mixin-preserving split of the tool handlers | slice per the table above | `import xeac.runtime`; runtime depends only on base, protocol, computer, tools, locations |
-| 6. `daemon/` | `boot` minus mounting, `persistence/`, `brokers/`, `services/`, registry, state, watchers; new `api`, `ingest`, `pool`, `lifecycle` | move plus new code | The daemon must not import the runtime — the checker's central assertion |
-| 7. `worker/` | `_TurnRunner` into `turn`, `_TurnEventSink` into `sink`, the executor into `session`; new `__main__`, `server`, `persistence`, `assignment` | slice plus new code | `import xeac.worker`; worker depends only on base, protocol, runtime |
-| 8. `cli/` | Entrypoint, client, renderer, autostart, and the command modules | new | `xeac --help` runs with no daemon present |
-| 9. Rename residue | `urn:xeac:*` in both planes, `XEAC_*`, XDG paths, `pyproject` name, `_package_version`, user agent, the PyInstaller specification, the Tauri bundle identity; delete `src/daisy/` | codemod plus manual edits | Full compile; frozen-build smoke test |
-| 10. `rest/` | The GUI routes and services, and the `_boot.*` bug fix | move | Imports resolve; the package no longer references `src/daisy` |
+| **Guardrails** | Symbol inventory (module to public symbols); `scripts/check_layers.py`, an AST import scan asserting the allowed edges and the no-module-level-`computer`-import rule; an import smoke script | new files only | The checker passes on the current tree with today's edges declared |
+| **Deletion** | The mailbox, `make_delegate`, in-process spawn, `Delegate*`, the agents-panel events on both planes, and the frontend references | delete in place, old tree | Imports resolve; `check:events` regenerated; `bun run build` passes |
+| **Foundations** | `base/`: eighteen modules; slice `configuration.py` into `paths`, `configuration`, `sidecar`, `prompts`, `catalog`; `tool_policy` into `permission_mode` | `git mv` the bulk, extract slices | `import xeac.base.*`; the layer has zero internal dependencies |
+| **Protocol** | `events`, `turn_record`, `handoff`, `a2a_files`; the protocol slices of `a2a_executor`; `remote_agents` into `client`; the new `addressing` | slice and extract | `import xeac.protocol.*`; protocol depends only on base |
+| **Leaves** | `computer/` and `locations/` verbatim, plus the XDG fix and the thread names | `git mv` whole | Imports resolve; `control_child.py` still launches by file path |
+| **Runtime** | The large `agent_*` slices, with the mixin-preserving split of the tool handlers | slice per the table above | `import xeac.runtime`; runtime depends only on base, protocol, computer, tools, locations |
+| **Daemon** | `boot` minus mounting, `persistence/`, `brokers/`, `services/`, registry, state, watchers; new `api`, `ingest`, `pool`, `lifecycle` | move plus new code | The daemon must not import the runtime — the checker's central assertion |
+| **Worker** | `_TurnRunner` into `turn`, `_TurnEventSink` into `sink`, the executor into `session`; new `__main__`, `server`, `persistence`, `assignment` | slice plus new code | `import xeac.worker`; worker depends only on base, protocol, runtime |
+| **CLI** | Entrypoint, client, renderer, autostart, and the command modules | new | `xeac --help` runs with no daemon present |
+| **Rename** | `urn:xeac:*` in both planes, `XEAC_*`, XDG paths, `pyproject` name, `_package_version`, user agent, the PyInstaller specification, the Tauri bundle identity; delete `src/daisy/` | codemod plus manual edits | Full compile; frozen-build smoke test |
+| **REST** | The GUI routes and services, and the `_boot.*` bug fix | move | Imports resolve; the package no longer references `src/daisy` |
 
 ## Verification gates
 
-There is **no test suite** — `tests/` contains zero test files despite the `pyproject` `testpaths` setting — so nothing here is verified by tests, and that is the single largest execution risk. Verification is structural, and it is what makes an irregularity visible early rather than at the first live turn: `python -m compileall src/xeac` plus a per-layer `import` smoke after each stage; the layering checker, which fails the moment a forbidden edge or a cycle appears; a symbol-inventory diff after each stage, where every public symbol recorded in stage 0 must still exist somewhere or appear on the deletion list; the existing `check:events` schema gate and the `json2ts` diff, which catch Python-to-TypeScript wire drift; and `bun run build` for the frontend. Behavioural confirmation is a manual smoke run of the daemon, one session, one turn, and one permission gate.
+There is **no test suite** — `tests/` contains zero test files despite the `pyproject` `testpaths` setting — so nothing here is verified by tests, and that is the single largest execution risk. Verification is structural, and it is what makes an irregularity visible early rather than at the first live turn: `python -m compileall src/xeac` plus a per-layer `import` smoke after each stage; the layering checker, which fails the moment a forbidden edge or a cycle appears; a symbol-inventory diff after each stage, where every public symbol recorded during the guardrails stage must still exist somewhere or appear on the deletion list; the existing `check:events` schema gate and the `json2ts` diff, which catch Python-to-TypeScript wire drift; and `bun run build` for the frontend. Behavioural confirmation is a manual smoke run of the daemon, one session, one turn, and one permission gate.
 
 ## Hazard register
 
@@ -300,12 +301,12 @@ These are the irregularities identified before starting, each with how it will b
 | `daemon` importing `runtime` | It is natural to reach for `AgentRuntime` while writing `api.py`; it would defeat the light control plane and bloat the pool | The layering checker fails the build |
 | A module-level `computer` import | It would make `fork()` unsafe on macOS through PyObjC and CoreFoundation. Today every import of `computer` is function-level (`agent_tools.py:1595,1609,1610`, `services/projects.py:141`, `routes/filesystem.py:106`), which is what makes pre-forking viable at all | The checker asserts lazy-only importing; this laziness is now a load-bearing invariant, not an accident |
 | Python and TypeScript wire drift | `urn:daisy:ext:*` lives in both the executor and `api.ts`, and the deleted events change the generated schema | The `check:events` gate, plus changing both planes in one commit |
-| Frozen-build asset loss | The specification hardcodes `collect_all("daisy")` and the `daisy/computer/<assets>` destinations | Update the specification in stage 9 and smoke the frozen binary, which the build script already exercises with a request to `/home` |
+| Frozen-build asset loss | The specification hardcodes `collect_all("daisy")` and the `daisy/computer/<assets>` destinations | Update the specification during the rename stage and smoke the frozen binary, which the build script already exercises with a request to `/home` |
 | Ordering of streamed persistence | The append-only history is row-ordered and `_persisted_counts` is tracked in memory, while workers now stream events to the daemon | The daemon remains the single writer, so ordering is preserved; a worker must never read back what it has just written |
-| Symbol drop during slicing | Around one hundred and twenty destination modules; a helper can vanish unnoticed | The stage-0 inventory, diffed after every stage |
-| Deletion overreach | Removing `spawn_agent` touches turn events, wire events, `turn_record`, and the frontend | Stage 1 is isolated and fully gated before any move begins |
+| Symbol drop during slicing | Around one hundred and twenty destination modules; a helper can vanish unnoticed | The guardrails inventory, diffed after every stage |
+| Deletion overreach | Removing `spawn_agent` touches turn events, wire events, `turn_record`, and the frontend | The deletion stage is isolated and fully gated before any move begins |
 
-One pre-existing defect is recorded here so it is not mistaken for migration damage: `routes/settings.py:43,49,57,63,64` and `routes/projects.py:82` call `_boot._full_disk_access_granted`, `_boot._open_full_disk_access_settings`, `_boot._accessibility_granted`, `_boot._request_accessibility`, `_boot._open_accessibility_settings`, and `_boot._project_count`, but `boot.py` defines none of them — they live in `services/projects.py`, and `boot.py` imports only `_ensure_default_project`. These are six AttributeErrors at request time today. They are fixed when those routes move in stage 10.
+One pre-existing defect is recorded here so it is not mistaken for migration damage: `routes/settings.py:43,49,57,63,64` and `routes/projects.py:82` call `_boot._full_disk_access_granted`, `_boot._open_full_disk_access_settings`, `_boot._accessibility_granted`, `_boot._request_accessibility`, `_boot._open_accessibility_settings`, and `_boot._project_count`, but `boot.py` defines none of them — they live in `services/projects.py`, and `boot.py` imports only `_ensure_default_project`. These are six AttributeErrors at request time today. They are fixed when those routes move during the REST stage.
 
 ## Invariants
 
@@ -321,7 +322,7 @@ Two capabilities are retired rather than reimplemented. Switching persona mid-co
 
 ## Phasing
 
-1. **Core.** Stages 0 through 10: the deletions, the rename, XDG placement, the package restructure, `xeacd` with its registry, lifecycle and reaper, sole-writer persistence, brokers, warm pool and autostart, the worker process serving A2A on a token-gated socket, and the `xeac` CLI.
+1. **Core.** Every stage in the table above: the deletions, the rename, XDG placement, the package restructure, `xeacd` with its registry, lifecycle and reaper, sole-writer persistence, brokers, warm pool and autostart, the worker process serving A2A on a token-gated socket, and the `xeac` CLI.
 2. **Clients.** Rework the Tauri application and the `rest/` surface into registry and session clients.
 
 ## Open questions
