@@ -5,7 +5,7 @@ export type ToolEventStatus = "running" | "completed" | "done" | "failed" | "inp
 // A human-in-the-loop approval attached to the tool call that triggered it (e.g.
 // a sandbox read outside the working directory). Lives on the same card so the
 // command — and, once approved, its output — read together.
-export type PermissionDecision = "deny" | "allow_once" | "allow_always";
+export type PermissionDecision = "deny" | "allow_once";
 
 export interface ToolPermission {
   requestId: string;

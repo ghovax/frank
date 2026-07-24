@@ -34,7 +34,9 @@ import { InlineField } from "./ui/display";
 import { Strong } from "./ui/semantic";
 
 interface ChatInputProps {
-  onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void>;
+  // Returns the session id when the send created one, which the composer ignores — it is
+  // the caller's business, not the input's.
+  onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void | string>;
   onAbort: () => void | Promise<void>;
   isStreaming: boolean;
   disabled?: boolean;

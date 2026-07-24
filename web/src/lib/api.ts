@@ -495,7 +495,7 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 export const XEAC_METADATA_KEY = "urn:xeac:ext:turn:v1";
 export const CONTENT_BLOCK_METADATA_KEY = "urn:xeac:ext:content-block:v1";
 
-export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
+export type PermissionMode = "default" | "auto" | "read_only";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
 
 export interface AgentSummary {
