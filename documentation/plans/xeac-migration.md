@@ -1,6 +1,6 @@
 ---
 created: 2026-07-24T16:17:08Z
-updated: 2026-07-24T21:10:02Z
+updated: 2026-07-24T21:11:55Z
 commit: 52e5669
 ---
 
@@ -268,6 +268,8 @@ Also deleted: mid-session permission-mode changes (`set_permission_mode` and the
 `src/daisy/` becomes `src/xeac/` and every import follows. Beyond the imports, the load-bearing items are: every `~/.daisy` path remapped to XDG (configuration, `history.db`, `background.db`, `chatgpt_auth.json`, uploads, workspaces, the signing secret, the SSH ControlMaster directory at `locations/executor.py:351`, and the per-location `.daisy/versions` shadow-git directories, which become `.xeac/versions` and orphan the old ones on every remote host); `urn:daisy:ext:*` to `urn:xeac:*`, changed in the Python and the TypeScript in the same commit because they are one contract; the `DAISY_*` environment variables to `XEAC_*`; the `daisy-*` thread, worker, and tempfile-prefix names; `_package_version("daisy")` and the derived `USER_AGENT`, which fail at runtime rather than import time if missed; the distribution name in `pyproject.toml`; and the PyInstaller specification, which hardcodes both `collect_all("daisy")` and the `daisy/computer/<assets>` data destinations, so the frozen build silently loses the computer surfaces' assets unless it is updated.
 
 The frozen build ships **one binary with argv dispatch** — `xeac`, `xeacd`, and the worker are the same executable entered differently. This keeps packaging to a single specification and lets the pool re-exec the binary it is already running.
+
+**The repository rename is out of scope and belongs to the owner, after this work has fully landed.** This plan renames everything *inside* the tree — the package, the paths, the environment variables, the wire keys, the bundle identity, the product strings — and nothing about the repository that holds it. The GitHub repository stays `ghovax/daisy`, the remote URL and the clone path are untouched, and the working directory remains as it is for the whole migration, so the ordinary intermediate condition is a tree whose code says `xeac` inside a repository still called `daisy`; that mismatch is expected and is not a defect to correct. For the same reason the repository URLs that appear in content — the agent card's `provider` organisation and the README's links to `github.com/ghovax/daisy` — are left pointing where they point, and are updated by the owner together with the rename itself. Nothing in the execution should attempt to rename the repository, rewrite the remote, or move the checkout.
 
 ## Execution stance: one destination, no waypoints
 
