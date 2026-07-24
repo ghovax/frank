@@ -1,5 +1,5 @@
 """Project domain: project and location CRUD, the SSH host registry, and the macOS
-permission probes (full-disk-access, accessibility, screen-recording)."""
+permission probes (full-disk-access, accessibility)."""
 
 from __future__ import annotations
 

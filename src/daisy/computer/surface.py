@@ -218,5 +218,5 @@ class Surface:
 
     def incomplete(self, message_name: str, **variables: str) -> dict:
         """A read that could not produce a usable view after waiting — a clear message the model can
-        act on (wait/retry, or fall back to a screenshot)."""
+        act on (wait and retry, or surface the blocker to the user)."""
         return {"ok": False, "incomplete": True, "error": self.message(message_name, **variables)}
