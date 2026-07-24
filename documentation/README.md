@@ -1,6 +1,6 @@
-# Daisy 🌼 — Documentation
+# XEAC 🌼 — Documentation
 
-Detailed guides for installing, configuring, understanding, and developing Daisy. For a high-level overview, start with the [project README](../README.md).
+Detailed guides for installing, configuring, understanding, and developing XEAC. For a high-level overview, start with the [project README](../README.md).
 
 | Guide | What's in it |
 |-------|--------------|
@@ -16,9 +16,9 @@ Design plans for larger changes — the sequential, commit-associated record of 
 ## The shape of the project
 
 ```
-daisy/
+xeac/
 ├── server.py                 # launch shim for the harness (FastAPI app)
-├── src/daisy/              # the runtime: agent loop, tools, permissions, A2A, REST
+├── src/xeac/              # the runtime: agent loop, tools, permissions, A2A, REST
 │   ├── core/                 # configuration, agent, prompts
 │   ├── tools/                # tool implementations and descriptions
 │   ├── computer/             # macOS screen-control bridges (native apps + Chrome)
@@ -30,4 +30,4 @@ daisy/
 └── configuration.example.yaml
 ```
 
-Runtime state — credentials, the selected model, chat history — lives in **`~/.daisy/`**, never in the repository. The [Configuration guide](configuration.md) is the reference for it.
+Runtime state — credentials, the selected model, chat history — lives in **`~/.config/xeac/`**, never in the repository. The [Configuration guide](configuration.md) is the reference for it.

@@ -74,7 +74,7 @@ def build_agent_card(
         protocol_version="0.3.0",
         preferred_transport="JSONRPC",
         additional_interfaces=[AgentInterface(transport="JSONRPC", url=url)],
-        provider=AgentProvider(organization="XEAC", url="https://github.com/ghovax/xeac"),
+        provider=AgentProvider(organization="XEAC", url="https://github.com/ghovax/daisy"),
         default_input_modes=["text/plain", "application/json"],
         default_output_modes=["text/plain", "text/markdown", "application/json"],
         capabilities=AgentCapabilities(

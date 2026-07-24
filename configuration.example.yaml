@@ -1,5 +1,5 @@
-# Daisy configuration — copy this file to ~/.daisy/configuration.yaml and fill in
-# the keys you need. On first run Daisy creates ~/.daisy/configuration.yaml from a
+# XEAC configuration — copy this file to ~/.config/xeac/configuration.yaml and fill in
+# the keys you need. On first run XEAC creates ~/.config/xeac/configuration.yaml from a
 # built-in template, so copying this over it is optional; it exists to document the
 # full schema in one place.
 #
@@ -8,7 +8,7 @@
 # the matching environment variable (noted per section), which takes precedence over
 # the file, so you never have to write a secret to disk if you would rather not.
 #
-# NEVER commit a filled-in copy of this file. ~/.daisy/ lives outside the repo and is
+# NEVER commit a filled-in copy of this file. ~/.config/xeac/ lives outside the repo and is
 # gitignored for exactly this reason.
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ jina:
 firecrawl:
   api_key: ""
 
-# Optional outbound proxy for direct fetches (env: DAISY_FETCH_PROXY).
+# Optional outbound proxy for direct fetches (env: XEAC_FETCH_PROXY).
 web_fetch:
   proxy_url: ""
 

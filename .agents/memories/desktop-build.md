@@ -1,32 +1,32 @@
 ---
 name: desktop-build
 title: Desktop app build & signing pipeline (macOS)
-description: How the Daisy macOS desktop app is built end to end — freezing the harness server into a signed helper bundle, the Accessibility/TCC identity trick, the self-signed codesign identity, the icon pipeline, and the two packaging gotchas that bloated the bundle.
+description: How the XEAC macOS desktop app is built end to end — freezing the harness server into a signed helper bundle, the Accessibility/TCC identity trick, the self-signed codesign identity, the icon pipeline, and the two packaging gotchas that bloated the bundle.
 importance: high
 tags: packaging, tauri, pyinstaller, codesign, accessibility, macos
 ---
 
-The Daisy desktop app is a Tauri v2 shell (Rust + a Next.js static export) that bundles and spawns the harness FastAPI server (`server.py`) as a **frozen sidecar** for local mode. Everything below is macOS-only and reproducible from a clean checkout. Never touch git history; work in-branch.
+The XEAC desktop app is a Tauri v2 shell (Rust + a Next.js static export) that bundles and spawns the harness FastAPI server (`server.py`) as a **frozen sidecar** for local mode. Everything below is macOS-only and reproducible from a clean checkout. Never touch git history; work in-branch.
 
 ## One command
 
-`cd web && cargo tauri build` runs the whole chain. `tauri.conf.json` `beforeBuildCommand` invokes `packaging/build-sidecar.sh`, then Tauri bundles `web/src-tauri/server-bin/` as a resource and compiles the Rust shell. `packaging/sign-app.sh <Daisy.app>` signs the result; install by `ditto`-ing it to `/Applications`.
+`cd web && cargo tauri build` runs the whole chain. `tauri.conf.json` `beforeBuildCommand` invokes `packaging/build-sidecar.sh`, then Tauri bundles `web/src-tauri/server-bin/` as a resource and compiles the Rust shell. `packaging/sign-app.sh <XEAC.app>` signs the result; install by `ditto`-ing it to `/Applications`.
 
 ## Freezing the server → a signed *helper .app* (the Accessibility identity trick)
 
-`packaging/daisy-server.spec` (PyInstaller) freezes `server.py`. Heavy deps use dynamic imports (litellm, uvicorn[standard], langchain, a2a), so the spec `collect_all`s them explicitly and `copy_metadata`s the ones read via `importlib.metadata`. `.agents/{agents,skills}` + `mcp.json` are bundled at the frozen root (the app's shipped base layer; `.agents/memories` is NOT shipped).
+`packaging/xeacd.spec` (PyInstaller) freezes `server.py`. Heavy deps use dynamic imports (litellm, uvicorn[standard], langchain, a2a), so the spec `collect_all`s them explicitly and `copy_metadata`s the ones read via `importlib.metadata`. `.agents/{agents,skills}` + `mcp.json` are bundled at the frozen root (the app's shipped base layer; `.agents/memories` is NOT shipped).
 
-The spec ends in a `BUNDLE(...)` step that wraps the frozen output as **`Daisy Computer Use.app`** with `CFBundleName="Daisy"`, `bundle_identifier="com.ghovax.daisy"`, `LSUIElement=True`.
+The spec ends in a `BUNDLE(...)` step that wraps the frozen output as **`XEAC Computer Use.app`** with `CFBundleName="XEAC"`, `bundle_identifier="com.ghovax.xeac"`, `LSUIElement=True`.
 
-Why a bundle, not a bare binary: the *server* — not the Tauri shell — is the process that calls the macOS Accessibility API for the computer-use tool, and TCC lists whichever process exercises a permission. A bare `daisy-server` binary shows its raw filename in System Settings ▸ Privacy ▸ Accessibility. Wrapped as a bundle carrying the **same** `CFBundleName` + identifier as the desktop app and signed with the same cert, it folds into the app's single **"Daisy"** entry instead of a second "daisy-server" row, and — because the identity is stable — the grant survives rebuilds.
+Why a bundle, not a bare binary: the *server* — not the Tauri shell — is the process that calls the macOS Accessibility API for the computer-use tool, and TCC lists whichever process exercises a permission. A bare `xeacd` binary shows its raw filename in System Settings ▸ Privacy ▸ Accessibility. Wrapped as a bundle carrying the **same** `CFBundleName` + identifier as the desktop app and signed with the same cert, it folds into the app's single **"XEAC"** entry instead of a second "xeacd" row, and — because the identity is stable — the grant survives rebuilds.
 
-macOS caches `AXIsProcessTrusted` per process, so after granting, the **server must restart** to see the grant. The app exposes a `restart_app` Tauri command; the Settings dialog prompts a restart and auto-enables computer-control on return (localStorage `daisy:pendingComputerControlEnable`).
+macOS caches `AXIsProcessTrusted` per process, so after granting, the **server must restart** to see the grant. The app exposes a `restart_app` Tauri command; the Settings dialog prompts a restart and auto-enables computer-control on return (localStorage `xeac:pendingComputerControlEnable`).
 
 ## The self-signed codesign identity (stable across rebuilds)
 
-Ad-hoc signing changes the cdhash every build, which invalidates the TCC grant. Instead `packaging/create-signing-cert.sh` makes a persistent self-signed identity **"Daisy Local Codesign"** in the login keychain. Gotcha: use **`/usr/bin/openssl`** (LibreSSL) for the p12 — openssl 3.x writes a MAC that `security import` rejects ("MAC verification failed"). Import with `security import -A -T /usr/bin/codesign`.
+Ad-hoc signing changes the cdhash every build, which invalidates the TCC grant. Instead `packaging/create-signing-cert.sh` makes a persistent self-signed identity **"XEAC Local Codesign"** in the login keychain. Gotcha: use **`/usr/bin/openssl`** (LibreSSL) for the p12 — openssl 3.x writes a MAC that `security import` rejects ("MAC verification failed"). Import with `security import -A -T /usr/bin/codesign`.
 
-`packaging/sign-app.sh` runs `codesign --force --deep --sign "Daisy Local Codesign" <Daisy.app>`. Each bundle takes its identifier from its own Info.plist (both `com.ghovax.daisy`); no hardened runtime (so PyInstaller dylibs still load).
+`packaging/sign-app.sh` runs `codesign --force --deep --sign "XEAC Local Codesign" <XEAC.app>`. Each bundle takes its identifier from its own Info.plist (both `com.ghovax.xeac`); no hardened runtime (so PyInstaller dylibs still load).
 
 ## Icon — Apple's own no-Xcode pipeline
 
@@ -41,4 +41,4 @@ Both are packaging bugs, not the freezer — swapping PyInstaller for Nuitka/etc
 
 ## Freshness / gitignore
 
-`build-sidecar.sh` skips the freeze when `web/src-tauri/server-bin/.../daisy-server` is newer than all of `server.py packaging/daisy-server.spec pyproject.toml uv.lock src/harness`. `FORCE=1` rebuilds. A stray `src/harness/.DS_Store` can trip the guard into a needless re-freeze. `web/src-tauri/server-bin/*` is gitignored (regenerated every build) with a kept `.gitkeep`.
+`build-sidecar.sh` skips the freeze when `web/src-tauri/server-bin/.../xeacd` is newer than all of `server.py packaging/xeacd.spec pyproject.toml uv.lock src/harness`. `FORCE=1` rebuilds. A stray `src/harness/.DS_Store` can trip the guard into a needless re-freeze. `web/src-tauri/server-bin/*` is gitignored (regenerated every build) with a kept `.gitkeep`.

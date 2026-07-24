@@ -223,9 +223,9 @@ def _proxy_runtime(base: str) -> str:
     in ``assets/proxy_runtime.js``; the per-page origin/prefix are substituted in."""
     source = (
         _PROXY_RUNTIME_TEMPLATE
-        .replace("__DAISY_PROXY_BASE__", json.dumps(base))
-        .replace("__DAISY_PROXY_URL__", json.dumps(f"{_PROXY_PATH}?url="))
-        .replace("__DAISY_WS_PROXY_URL__", json.dumps("/artifact-proxy-ws?url="))
+        .replace("__XEAC_PROXY_BASE__", json.dumps(base))
+        .replace("__XEAC_PROXY_URL__", json.dumps(f"{_PROXY_PATH}?url="))
+        .replace("__XEAC_WS_PROXY_URL__", json.dumps("/artifact-proxy-ws?url="))
     )
     return f"""<script>
 {source}

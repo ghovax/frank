@@ -176,20 +176,6 @@ function ContextUsageChip({
         )}
         <InlineField label={translation("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
       </Flex>
-      {tokenUsage.agentTotalTokens > 0 && (
-        <>
-          <Separator my={2} />
-          <Text fontWeight="semibold" mb={1} color="fg">
-            {translation("agents")}
-          </Text>
-          <Flex direction="column" ps={2} gap={1}>
-            <InlineField label={translation("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={translation("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={translation("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={translation("modelCalls")}><Text>{tokenUsage.agentModelCalls}</Text></InlineField>
-          </Flex>
-        </>
-      )}
       <Separator my={2} />
       <Text fontWeight="semibold" mb={1} color="fg">
         {translation("usageThisTurn")}
@@ -823,7 +809,14 @@ export function ChatInput({
             compact
             responsiveCompact
           />
-          <PermissionModeControl value={permissionMode} onChange={(mode) => onPermissionModeChange?.(mode)} responsiveCompact />
+          {/* The mode is fixed when the session is created, so the chip only stays a
+              picker until there is a session — after that it reports what was chosen. */}
+          <PermissionModeControl
+            value={permissionMode}
+            onChange={(mode) => onPermissionModeChange?.(mode)}
+            responsiveCompact
+            readOnly={!!sessionId}
+          />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (

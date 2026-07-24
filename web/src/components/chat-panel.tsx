@@ -19,7 +19,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { PanelTiles, type TilePanel } from "./panel-tiles";
 import { useColorMode } from "./ui/color-mode";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { useChat, isStepDone, type ChatMessage } from "@/lib/use-chat";
+import { useChat, type ChatMessage } from "@/lib/use-chat";
 import { ChatMessageItem, ChatToolGroup } from "./chat-message";
 import { VersionBadge } from "./attachment-chips";
 import { InlineField } from "./ui/display";
@@ -41,12 +41,11 @@ import { Tooltip } from "./ui/tooltip";
 import { ToolbarAction } from "@/components/ui/toolbar";
 import { DropdownMenu } from "@/components/ui/menu";
 import { PermissionOverlay } from "./permission-overlay";
-import { AgentsPanel } from "./agents-panel";
 import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
-import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, setPermissionMode, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import type { ConnectionTarget } from "@/lib/connection";
@@ -61,7 +60,7 @@ import { ArtifactHistoryList } from "./artifact-history";
 // the left — without losing its flex-layout props.
 const MotionBox = motion.create(Box);
 
-type SidePanelKey = "artifact" | "agents" | "background";
+type SidePanelKey = "artifact" | "background";
 
 const MAXIMUM_OPEN_SIDE_PANELS = 2;
 
@@ -383,7 +382,7 @@ export function ChatPanel({
   const tToolDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const format = useFormatter();
   const [permissionMode, setPermissionModeState] = useState<PermissionMode>(initialPermissionMode);
-  const { messages, agentGroups, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendArtifactEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
+  const { messages, tokenUsage, queuedMessages, sessionId, isStreaming, isHistoryLoading, historyError, reloadHistory, send, sendArtifactEvent, abort, dequeueMessage, handlePermission, handleQuestion, declineQuestion, compact } =
     useChat(agent, initialSessionId, workingDirectory, workspaceStrategy, permissionMode, sessionRunning, projectId);
 
   // Single source of truth for the working directory's validity and Git status —
@@ -449,10 +448,8 @@ export function ChatPanel({
   // message is queued rather than steered while a decision is outstanding.
   const hasInputRequiredRef = useRef(false);
   const [openSidePanels, setOpenSidePanels] = useState<SidePanelKey[]>([]);
-  const agentsPanelOpen = openSidePanels.includes("agents");
   const artifactPanelOpen = openSidePanels.includes("artifact");
   const backgroundPanelOpen = openSidePanels.includes("background");
-  const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null);
   // Default right-region width: comfortable for one panel without dwarfing the
   // transcript (pairs with the sidebar default of 240 in page.tsx). Drag grows it.
   const [artifactPanelWidth, setArtifactPanelWidth] = useState(480);
@@ -763,19 +760,16 @@ export function ChatPanel({
     wasStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  async function handlePermissionModeChange(nextMode: PermissionMode) {
-    const previousMode = permissionMode;
+  // The mode is fixed when the session is created, so this only ever configures the
+  // *next* session: it moves the local choice and persists it as the stored default.
+  // A live session's mode is immutable, and the controls that call this are read-only
+  // once one exists.
+  function handlePermissionModeChange(nextMode: PermissionMode) {
+    if (sessionId) return;
     setPermissionModeState(nextMode);
     onPermissionModeChange?.(nextMode);
     // Persist to server settings so it survives across sessions.
     saveSettings({ permission_mode: nextMode }).catch(() => {});
-    if (!sessionId) return;
-    try {
-      await setPermissionMode(sessionId, nextMode);
-    } catch {
-      setPermissionModeState(previousMode);
-      onPermissionModeChange?.(previousMode);
-    }
   }
 
   const handleInputDraftChange = useCallback((nextDraft: string) => {
@@ -783,10 +777,6 @@ export function ChatPanel({
     saveSessionDraft(sessionId, nextDraft).catch(() => {});
   }, [sessionId]);
 
-  const activeSteps = agentGroups.reduce(
-    (sum, group) => sum + group.steps.filter((step) => !isStepDone(step)).length,
-    0
-   );
   const currentFolderName = folderDisplayName(workingDirectory) || translation("thisFolder");
   const renderedTimeline = useMemo(() => timelineItems(messages), [messages]);
   // Entrance animation is reserved for rows a *live turn* just appended at the
@@ -1245,37 +1235,6 @@ export function ChatPanel({
       }
     }
   }
-  // A parked delegated agent's gate lives in the agents panel, not the main transcript, and it
-  // outlives the parent turn (spawn_agent is non-blocking), so it is surfaced through the
-  // same overlay regardless of isStreaming — otherwise the user could never answer it and
-  // the delegated agent would hang. The top-level prompt (above) takes priority when both exist.
-  if (!pendingPrompt) {
-    outer: for (const group of agentGroups) {
-      for (const step of group.steps) {
-        for (const part of step.parts) {
-          if (part.kind !== "tool" || part.status !== "input_required") continue;
-          const agentLabel = agents.find((candidate) => candidate.id === step.agent)?.title || step.agent;
-          if (part.question) {
-            pendingPrompt = { kind: "question", question: part.question };
-            break outer;
-          }
-          if (part.permission) {
-            const command = part.name === "bash" && part.arguments?.command ? String(part.arguments.command) : "";
-            const label = getToolCallDisplay(part.name, part.arguments, tToolDisplay).label;
-            pendingPrompt = {
-              kind: "permission",
-              permission: part.permission,
-              title: agentLabel ? `${agentLabel}: ${label}` : label,
-              command: command || undefined,
-              arguments: part.arguments,
-            };
-            break outer;
-          }
-        }
-      }
-    }
-  }
-
   // Audio + system-notification side of a pending decision. The attention cue
   // plays for the first prompt in a turn, while later prompts stay silent; a
   // permission prompt additionally raises a system notification carrying the
@@ -1317,18 +1276,6 @@ export function ChatPanel({
     setPermissionNotificationHandler((requestId) => handlePermission(requestId, "allow_once"));
     return () => setPermissionNotificationHandler(null);
   }, [handlePermission]);
-
-  // Auto-open the agents panel on desktop when agent activity begins. Tracked
-  // during render (skipped on the first render, so window is only read
-  // client-side after a change) rather than in an effect.
-  const [previousActiveSteps, setPreviousActiveSteps] = useState(activeSteps);
-  if (activeSteps !== previousActiveSteps) {
-    setPreviousActiveSteps(activeSteps);
-    if (activeSteps > 0 && window.matchMedia("(min-width: 768px)").matches) {
-      setSidePanelOpen("agents", true);
-    }
-  }
-
 
   const handleArtifactResizeStart = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1392,17 +1339,6 @@ export function ChatPanel({
               colorPalette="green"
               indicator={runningShellCount > 0}
               onClick={() => setSidePanelOpen("background", !backgroundPanelOpen)}
-            />
-            <ToolbarAction
-              label={translation("agents")}
-              icon={<LuNetwork size={14} />}
-              active={agentsPanelOpen}
-              colorPalette="purple"
-              indicator={activeSteps > 0}
-              onClick={() => {
-                setFocusedGroupId(null);
-                setSidePanelOpen("agents", !agentsPanelOpen);
-              }}
             />
             <ToolbarAction
               label={translation("artifacts")}
@@ -1698,7 +1634,7 @@ export function ChatPanel({
           the resize handle overlaps the boundary as an absolute strip rather than consuming a
           column of space — mirroring the left sidebar's handle. */}
       <AnimatePresence initial={false}>
-      {(artifactPanelOpen || agentsPanelOpen || backgroundPanelOpen) && (
+      {(artifactPanelOpen || backgroundPanelOpen) && (
         <MotionBox
           key="panel-region"
           data-layout="side-panel-region"
@@ -2096,20 +2032,6 @@ export function ChatPanel({
               </>
             ) : null}
                     </PanelCard>
-                  ),
-                },
-                agentsPanelOpen && {
-                  key: "agents",
-                  onActivate: () => markSidePanelActive("agents"),
-                  content: (
-                    <AgentsPanel
-                      agentGroups={agentGroups}
-                      agents={agents}
-                      sessionId={sessionId}
-                      open={agentsPanelOpen}
-                      onClose={() => setSidePanelOpen("agents", false)}
-                      focusedGroupId={focusedGroupId}
-                    />
                   ),
                 },
                 backgroundPanelOpen && {

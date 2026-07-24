@@ -129,13 +129,6 @@ const runningTools: ToolEvent[] = [
     status: "running",
     arguments: { command: "bun run build", justification: "Building to verify the change", read_only: false },
   },
-  {
-    name: "spawn_agent",
-    toolCallId: "r3",
-    status: "running",
-    arguments: { agent: "researcher" },
-    result: { code: "background_task_scheduled" },
-  },
 ];
 
 const failedTool: ToolEvent = {
@@ -264,28 +257,14 @@ export default function GalleryPage() {
       </VStack>
 
       <VStack gap={6} align="stretch" maxW="760px" mx="auto" mt={10}>
-        <Section title="Agent step body (activity lines nested in a disclosure)">
-          <Box data-audit="agent-step">
-            <DisclosureRow
-              defaultOpen
-              icon={<Box color="purple.fg"><LuSparkles /></Box>}
-              title={<DisclosureLabel>researcher — Survey the design system</DisclosureLabel>}
-            >
-              <VStack gap={1} align="stretch">
-                <MarkdownContent content={"Scanning the theme first, then the call sites."} />
-                <ToolGroup tools={settledTools.slice(0, 3)} />
-              </VStack>
-            </DisclosureRow>
-          </Box>
-        </Section>
-        <Section title="Capability disclosure (agents panel, skills)">
+        <Section title="Capability disclosure (skills)">
           <Box data-audit="panel-card">
             <DisclosureRow
               defaultOpen
               icon={<Box color="pink.fg"><LuSparkles /></Box>}
               title={<DisclosureLabel>A skill card title</DisclosureLabel>}
             >
-              <InlineField label="Source">daisy/skills/example</InlineField>
+              <InlineField label="Source">xeac/skills/example</InlineField>
               <InlineField label="Tools" mt={1}>bash, read_file</InlineField>
             </DisclosureRow>
           </Box>

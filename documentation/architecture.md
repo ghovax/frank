@@ -1,6 +1,6 @@
 # Architecture
 
-Daisy is split into a **harness** (the Python agent runtime, plus a server that exposes it) and an **app** (the native client). They communicate only over HTTP. The two can run on the same machine or on different ones, and nothing else changes.
+XEAC is split into a **harness** (the Python agent runtime, plus a server that exposes it) and an **app** (the native client). They communicate only over HTTP. The two can run on the same machine or on different ones, and nothing else changes.
 
 ```mermaid
 flowchart LR
@@ -14,7 +14,7 @@ flowchart LR
         AgentLoop["Agent loop<br/>(LangChain / LangGraph)"]
         PermissionEngine["Permission engine"]
         ToolDispatch["Tools: shell, files, web,<br/>screen control, MCP"]
-        PersistentStore["~/.daisy<br/>configuration.yaml, history.db"]
+        PersistentStore["~/.config/xeac<br/>configuration.yaml, history.db"]
     end
 
     ModelProvider["Model provider<br/>(Anthropic, OpenAI, … via LiteLLM)"]
@@ -27,12 +27,12 @@ flowchart LR
 
 ## The harness
 
-The `daisy` package is the agent runtime — an importable Python library you can drive directly. A thin FastAPI application wraps it for the network (`server.py` is a launch shim; both live in `src/daisy/`). Together they:
+The `xeac` package is the agent runtime — an importable Python library you can drive directly. A thin FastAPI application wraps it for the network (`server.py` is a launch shim; both live in `src/xeac/`). Together they:
 
 - serve **every agent** as an independently addressable [A2A](https://github.com/google/A2A) endpoint (JSON-RPC), plus a small REST API the UI uses;
 - run the **agent loop** on LangChain / LangGraph, with model access through [LiteLLM](https://litellm.ai) so any provider looks the same;
 - dispatch **tools** and run each one through the **permission engine** before it takes effect;
-- persist everything to **`~/.daisy/`** — `configuration.yaml` and `history.db`.
+- persist everything to **`~/.config/xeac/`** — `configuration.yaml` and `history.db`.
 
 It binds `127.0.0.1:8822` by default. It has **no built-in authentication**: it trusts whoever can reach the port. That is fine on `localhost`. Anywhere else, put auth and transport security in front yourself (see [Security notes](../SECURITY.md)).
 
@@ -47,14 +47,14 @@ The packaged app bundles a frozen copy of the harness (built with PyInstaller by
 The UI's connection manager resolves the API base URL, in order:
 
 1. a saved connection you selected in **Settings → Connections**, then
-2. the build-time default `NEXT_PUBLIC_DAISY_API_BASE`, then
-3. `http://localhost:8822`.
+2. the build-time default `NEXT_PUBLIC_XEAC_API_BASE`, then
+3. `http://the daemon's loopback port`.
 
 That yields three ways to run:
 
 - **Local (default).** The app manages the bundled server on `127.0.0.1:8822`.
 - **Remote URL.** Run `python server.py` on another host, expose `8822` (behind your own auth), and add its URL. The app becomes a native front-end to a remote backend — the agent's shell, files, and network all live on that host.
-- **Over SSH.** Add an SSH host; Daisy forwards a local port to the remote `8822`, so the harness can live on a machine you only reach over SSH, with no exposed port.
+- **Over SSH.** Add an SSH host; XEAC forwards a local port to the remote `8822`, so the harness can live on a machine you only reach over SSH, with no exposed port.
 
 Keeping the halves apart serves one goal: **put the compute, the files, and the credentials wherever they belong, and keep the interface native and local.**
 

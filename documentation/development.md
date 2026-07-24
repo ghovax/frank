@@ -1,6 +1,6 @@
 # Development
 
-Daisy has three parts: the **Python harness**, the **Next.js web UI**, and the **Tauri desktop shell**. In development you run the harness and the UI directly. The packaged app is built only for releases.
+XEAC has three parts: the **Python harness**, the **Next.js web UI**, and the **Tauri desktop shell**. In development you run the harness and the UI directly. The packaged app is built only for releases.
 
 ## Toolchain
 
@@ -19,11 +19,11 @@ uv sync                 # create .venv and install the project + dependencies
 ## Running the harness
 
 ```sh
-uv run python server.py
+uv run python -m xeac daemon
 # or: PYTHONPATH=src .venv/bin/python server.py
 ```
 
-It serves on `http://127.0.0.1:8822`. State is read from and written to `~/.daisy/` (created on first run). Add provider keys there or via environment variables — see [Configuration guide](configuration.md).
+It serves on `http://127.0.0.1:8822`. State is read from and written to `~/.config/xeac/` (created on first run). Add provider keys there or via environment variables — see [Configuration guide](configuration.md).
 
 ## Running the web UI
 
@@ -53,7 +53,7 @@ cd web/src-tauri
 cargo tauri build
 ```
 
-This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helper with PyInstaller — a no-op when nothing changed) and produces `target/release/bundle/macos/Daisy.app` plus a `.dmg`.
+This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helper with PyInstaller — a no-op when nothing changed) and produces `target/release/bundle/macos/XEAC.app` plus a `.dmg`.
 
 ### Stable code-signing (recommended)
 
@@ -64,7 +64,7 @@ The screen-control tools (`control_screen`) need the macOS **Accessibility** gra
 packaging/create-signing-cert.sh
 
 # after each build: restore symlinks (undo Tauri's dereferencing) and sign
-packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app
+packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/XEAC.app
 ```
 
 `sign-app.sh` also restores the frozen helper's symlink layout, which brings the app back from ~440 MB to ~230 MB (Tauri's resource copier otherwise dereferences PyInstaller's symlinks and doubles the bundle). The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
@@ -75,4 +75,4 @@ The repository ships **no committed test suite** — changes are verified ad hoc
 
 ## Project layout
 
-See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness runtime is in `src/daisy/` (with `server.py` as a thin launch shim), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.
+See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness runtime is in `src/xeac/` (with `server.py` as a thin launch shim), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.

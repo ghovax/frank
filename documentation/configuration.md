@@ -1,6 +1,6 @@
 # Configuration
 
-All runtime configuration lives in **`~/.daisy/configuration.yaml`**. It is created on first run from a built-in template. It is the source of truth for credentials, the selected model, permissions, and feature toggles. The repository never contains a filled-in copy — `~/.daisy/` sits outside the repo.
+All runtime configuration lives in **`~/.config/xeac/configuration.yaml`**. It is created on first run from a built-in template. It is the source of truth for credentials, the selected model, permissions, and feature toggles. The repository never contains a filled-in copy — `~/.config/xeac/` sits outside the repo.
 
 Most settings are editable from **Settings** in the app. This document is the reference for the file itself, which you need for headless or remote deployments.
 
@@ -38,7 +38,7 @@ You can also **sign in with a ChatGPT subscription** from **Settings → Provide
 exa:       { api_key: "" }          # search_web fallback — env: EXA_API_KEY
 jina:      { api_key: "" }          # fetch_url free tier — env: JINA_API_KEY
 firecrawl: { api_key: "" }          # fetch_url fallback — env: FIRECRAWL_API_KEY
-web_fetch: { proxy_url: "" }        # optional outbound proxy — env: DAISY_FETCH_PROXY
+web_fetch: { proxy_url: "" }        # optional outbound proxy — env: XEAC_FETCH_PROXY
 ```
 
 `fetch_url` uses a tiered engine: Jina Reader (free) first, then Firecrawl, then a direct fetch. Each tier is optional; an unset key skips that tier.

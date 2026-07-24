@@ -61,16 +61,9 @@ function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
   return tasks.sort((first, second) => second.timestamp.localeCompare(first.timestamp));
 }
 
-function toolNameForJob(job: BackgroundJob): string {
-  return job.kind === "spawn_agent" ? "spawn_agent" : job.kind;
-}
-
 function startedResultForJob(job: BackgroundJob): Record<string, unknown> {
   if (job.kind === "bash") {
     return { code: "bash_started", task_identifier: job.job_id };
-  }
-  if (job.kind === "spawn_agent") {
-    return { code: "agent_started", task_identifier: job.job_id, agent: job.arguments.agent };
   }
   return { code: `${job.kind}_started`, task_identifier: job.job_id };
 }
@@ -78,7 +71,7 @@ function startedResultForJob(job: BackgroundJob): Record<string, unknown> {
 function shellTasksFromBackgroundJobs(jobs: BackgroundJob[]): ShellTask[] {
   return jobs.map((job) => ({
     toolCallId: job.tool_call_id || job.job_id,
-    name: toolNameForJob(job),
+    name: job.kind,
     arguments: job.arguments ?? {},
     status: "running" as ToolEventStatus,
     result: startedResultForJob(job),

@@ -24,10 +24,10 @@ wheels/
 /package.json
 /package-lock.json
 
-# Harness state lives in ~/.daisy and is never tracked. The shippable default
+# Harness state lives in ~/.config/xeac and is never tracked. The shippable default
 # configuration is the empty template at src/harness/core/configuration.yaml;
-# the runtime .daisy/configuration.yaml holds real credentials, so it is ignored.
-/.daisy/
+# the runtime .xeac/configuration.yaml holds real credentials, so it is ignored.
+/.xeac/
 
 # The frozen computer-use server helper bundle — build output of
 # packaging/build-sidecar.sh, hundreds of MB, regenerated on every desktop build.
