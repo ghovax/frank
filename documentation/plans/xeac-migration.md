@@ -1,6 +1,6 @@
 ---
 created: 2026-07-24T16:17:08Z
-updated: 2026-07-24T21:19:51Z
+updated: 2026-07-24T23:30:00Z
 commit: 52e5669
 ---
 
@@ -457,3 +457,21 @@ Both phases are fully specified here. The split is an ordering of work, not a di
 ## Open questions
 
 Whether the home-agents layer moves fully under `$XDG_CONFIG_HOME/xeac/agents` or keeps a `~/.agents` alias for continuity with the existing dotfiles ecosystem is left open, to be decided when the configuration loader is ported.
+
+## Execution record
+
+The plan was executed end to end. What follows is what actually happened where it differed from the plan, so the record is honest about the design as built rather than as intended.
+
+**The GUI's REST surface was carved out but never mounted.** The plan says the routes are "served by the daemon's loopback listener rather than a standalone server", and the routers were moved into `rest/` — but nothing included them in an application, so every endpoint outside the control plane answered 404 and the desktop client was functional only for `session.send`. Mounting them meant resolving a layering question the plan's table did not anticipate: `rest` sits above `daemon`, so the daemon cannot import it. The application assembly moved into the daemon's `__main__.py`, and the layering checker gained one exemption — a package's `__main__.py` is its composition root, because assembling a program is precisely the act of reaching across layers.
+
+**Keeping the runtime out of the daemon needed three moves.** Mounting the GUI routes would otherwise have dragged LangChain and LiteLLM into the control plane. The browser assets and the artifact-runtime helper left the tool registry for `base`; the MCP client and the file-lease manager went with them; and the three endpoints that genuinely need the runtime (the ChatGPT subscription surfaces) import it when called. The invariant the plan named — the daemon never imports `runtime` — holds as stated.
+
+**The durable session row had no writer.** It was created lazily on a session's first turn by a hook the worker never received, so no session had one: no title, no draft, no workspace strategy, and an empty GUI session list. The row and the workspace are now written at `session.create`, which fits the design better than the lazy path did — where a session's tools run is part of what the session *is*, fixed at creation alongside its agent and its permission mode.
+
+**"Running" needed splitting in two.** A session's process is alive from bind to reap, including the long stretches where it sits idle between messages, so the registry's status could not answer "is it working?". Sessions report their turn state over the ingest channel and the control plane merges it into the session payload as `busy`; `ps` shows `working` or `idle` where it showed `running`.
+
+**Every shipped agent profile was disarmed.** `enabledBuiltinTools` had listed only the delegation tool, which was harmless when the field gated that one tool and fatal once it gated the whole surface: a session created from any bundled profile could not run `bash`. The profiles are cleaned, and an allow-list is narrowed at build time to tools that exist — an entry matching nothing can only deny, and a non-destructive home seed means a stale copy would have outlived the fix.
+
+Six defects surfaced only in end-state testing, which is the cost the plan accepted for deferring verification. Concurrent autostart started five daemons, because uvicorn unlinks an existing unix socket before binding — startup now takes an advisory lock. `attach` never ended when its session died, and `daemon stop` hung for as long as anyone was attached: the shutdown drained the connection while the stream waited for the shutdown to close it. `attach` and `history` on an unknown session exited silently with status 0. `xeac ps | head` printed a traceback. One unreachable MCP server took down the whole tool listing, its failed connect arriving as a `CancelledError` that escaped every `except Exception` in the path.
+
+The repository rename remains with the owner, as recorded above.

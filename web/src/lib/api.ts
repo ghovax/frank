@@ -772,15 +772,6 @@ export interface ModelsResponse {
   providers: ProviderOption[];
 }
 
-export interface FilesystemLease {
-  owner_session_id: string;
-  scope: "file" | "worktree";
-  path: string;
-  working_directory: string;
-  description: string;
-  acquired_at: number;
-}
-
 // API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/xeac).
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
@@ -1310,12 +1301,6 @@ export async function daemonStatus(options?: ApiRequestOptions & { signal?: Abor
   }
 }
 
-export async function fetchFilesystemLeases(): Promise<FilesystemLease[]> {
-  const response = await apiFetch(`/filesystem/leases`);
-  if (!response.ok) return [];
-  const data = await response.json();
-  return data.leases ?? [];
-}
 
 // Every turn a session has taken, replayed from the daemon's store — so it answers
 // whether the session is alive or long since reaped. Throws on failure so callers can
