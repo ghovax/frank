@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactM
 import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
 import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
-import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging, openScreenRecordingSettings } from "@/lib/api";
+import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { imageIdentityForArtifact, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import { useArtifactEvent } from "../artifact-bridge";
 import { MarkdownContent } from "../markdown-content";
@@ -956,20 +956,19 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
   );
 }
 
-// Shown when a tool needs a macOS privacy grant (Accessibility, Screen Recording): the same
-// in-chat alert language as the remote-debugging one, with a brief message and a one-click
-// button that surfaces the system prompt and opens the right System Settings pane.
-function PermissionGrantAlert({ kind }: { kind: string }) {
+// Shown when a tool needs the macOS Accessibility grant: the same in-chat alert language as the
+// remote-debugging one, with a brief message and a one-click button that surfaces the system
+// prompt and opens the right System Settings pane.
+function PermissionGrantAlert({ kind: _kind }: { kind: string }) {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
-  const isScreenRecording = kind === "screen_recording";
   return (
     <AlertBox colorPalette="yellow">
       <Text textStyle="fieldLabel">
-        {isScreenRecording ? translation("permissionScreenRecordingTitle") : translation("permissionAccessibilityTitle")}
+        {translation("permissionAccessibilityTitle")}
       </Text>
       <Text fontSize="xs" color="fg.muted" mt={0.5}>
-        {isScreenRecording ? translation("permissionScreenRecordingBody") : translation("permissionAccessibilityBody")}
+        {translation("permissionAccessibilityBody")}
       </Text>
       <Flex align="center" gap={2} mt={2}>
         <Button
@@ -977,7 +976,7 @@ function PermissionGrantAlert({ kind }: { kind: string }) {
           colorPalette="yellow"
           variant="solid"
           onClick={async () => {
-            await (isScreenRecording ? openScreenRecordingSettings() : openAccessibilitySettings());
+            await openAccessibilitySettings();
             setOpened(true);
           }}
         >
