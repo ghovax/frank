@@ -1,0 +1,308 @@
+"""The daemon's control plane: what clients call to make sessions exist and to read them.
+
+One method surface, reached two ways. The CLI and agents connect over a unix socket in the
+runtime directory; the desktop client connects over a loopback TCP port, because a webview
+cannot open a unix socket. Both carry the daemon's capability token, so the API is closed to
+anything that cannot read the 0600 token file — which is what finally puts authentication in
+front of a surface that executes tools.
+
+Reads and lifecycle are served from here, because the daemon is the sole writer and therefore
+already holds everything, whether a session is alive or long since reaped. Commands are a
+different matter: they belong to the session that runs them, so `session.send` and its
+siblings are relayed to that session's own socket rather than answered here. The daemon stays
+out of the path between two peers; it only carries what a human's client cannot address.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
+
+from xeac.base.permission_mode import PermissionMode
+from xeac.daemon import state
+from xeac.daemon.registry import RUNNING, SessionRecord
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+class RpcError(Exception):
+    """A control-plane call that cannot be served, with the status a client should see."""
+
+    def __init__(self, message: str, status_code: int = 400, code: str = "invalid_request") -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.code = code
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _require(params: dict, name: str) -> str:
+    value = str(params.get(name) or "").strip()
+    if not value:
+        raise RpcError(f"{name} is required")
+    return value
+
+
+def _session(session_id: str) -> SessionRecord:
+    record = state.registry.get(session_id) if state.registry else None
+    if record is None:
+        raise RpcError(f"No session {session_id!r}.", status_code=404, code="no_such_session")
+    return record
+
+
+async def _session_create(params: dict) -> dict:
+    """Mint a session and hand back its handle.
+
+    This is the only place a session's configuration is set. The mode is clamped against the
+    parent's, so a child can never be created looser than the session that spawned it — the
+    clamp lives here rather than in the caller because the caller is often the model."""
+    assert state.registry is not None and state.lifecycle is not None
+    agent = str(params.get("agent") or "").strip() or state.default_agent()
+    parent_id = str(params.get("parent") or "").strip()
+    parent = state.registry.get(parent_id) if parent_id else None
+    if parent_id and parent is None:
+        raise RpcError(f"No parent session {parent_id!r}.", status_code=404, code="no_such_session")
+
+    requested = str(params.get("permission_mode") or "")
+    mode = (
+        PermissionMode.more_restrictive(requested, parent.permission_mode)
+        if parent is not None
+        else PermissionMode.coerce(requested)
+    )
+
+    working_directory = str(params.get("working_directory") or "")
+    if parent is not None and not working_directory:
+        working_directory = parent.working_directory
+
+    record = state.registry.create(
+        agent=agent,
+        working_directory=working_directory,
+        permission_mode=str(mode),
+        project_id=str(params.get("project_id") or (parent.project_id if parent else "")),
+        parent=parent_id,
+        title=str(params.get("title") or ""),
+        created_at=_now(),
+    )
+    started = await state.lifecycle.start(record)
+    if not started:
+        raise RpcError(
+            f"Session {record.id} could not be started ({record.exit_reason or 'unknown reason'}).",
+            status_code=503,
+            code="worker_unavailable",
+        )
+    # The token is returned exactly once, here, to whoever asked for the session.
+    return {"id": record.id, "token": record.token, "socket": str(record.socket_path), "agent": record.agent}
+
+
+async def _session_list(params: dict) -> dict:
+    assert state.registry is not None
+    include_terminal = bool(params.get("all"))
+    records = state.registry.all() if include_terminal else state.registry.live()
+    parent = str(params.get("parent") or "")
+    if parent:
+        records = [record for record in records if record.parent == parent]
+    return {"sessions": [record.public() for record in sorted(records, key=lambda r: r.created_at)]}
+
+
+async def _session_get(params: dict) -> dict:
+    return {"session": _session(_require(params, "id")).public()}
+
+
+async def _session_tree(params: dict) -> dict:
+    """A session and everything under it, so a client can render the hierarchy that spawning
+    creates. Without this a fan-out just looks like a pile of unrelated sessions."""
+    assert state.registry is not None
+    root = _session(_require(params, "id"))
+    return {
+        "session": root.public(),
+        "descendants": [record.public() for record in state.registry.descendants_of(root.id)],
+    }
+
+
+async def _session_kill(params: dict) -> dict:
+    assert state.lifecycle is not None
+    record = _session(_require(params, "id"))
+    reaped = await state.lifecycle.reap(record.id, reason=str(params.get("reason") or "killed by request"))
+    return {"killed": record.id, "reaped": reaped}
+
+
+async def _session_send(params: dict) -> dict:
+    """Relay a message to the session's own socket.
+
+    A message to a session that is mid-turn is injected at its next safe point rather than
+    queued behind the whole turn, which is what makes a peer's question reach a working
+    session instead of waiting for it to finish."""
+    record = _session(_require(params, "id"))
+    if record.status != RUNNING:
+        raise RpcError(
+            f"Session {record.id} is {record.status}, so it cannot accept messages.",
+            status_code=409,
+            code="session_not_running",
+        )
+    return await state.relay_to_session(record, "message/send", params)
+
+
+async def _session_cancel(params: dict) -> dict:
+    record = _session(_require(params, "id"))
+    return await state.relay_to_session(record, "tasks/cancel", params)
+
+
+async def _session_respond(params: dict) -> dict:
+    """Answer a session's pending human-in-the-loop gate."""
+    record = _session(_require(params, "id"))
+    _require(params, "request_id")
+    return await state.relay_to_session(record, "input/respond", params)
+
+
+async def _session_history(params: dict) -> dict:
+    """A session's turns, read from the store rather than the session.
+
+    Served here on purpose: the daemon is the sole writer, so history is readable whether the
+    session is running, parked, or was reaped an hour ago."""
+    assert state.task_store is not None
+    session_id = _require(params, "id")
+    limit = int(params.get("limit") or 0)
+    tasks = await state.task_store.tasks_for_context(session_id)
+    serialized = [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks]
+    if limit > 0:
+        serialized = serialized[-limit:]
+    return {"tasks": serialized}
+
+
+async def _task_get(params: dict) -> dict:
+    assert state.task_store is not None
+    task = await state.task_store.get(_require(params, "task_id"))
+    if task is None:
+        raise RpcError("No such task.", status_code=404, code="no_such_task")
+    return {"task": task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})}
+
+
+async def _daemon_status(_params: dict) -> dict:
+    assert state.registry is not None
+    live = state.registry.live()
+    return {
+        "ok": True,
+        "sessions": {"live": len(live), "total": len(state.registry.all())},
+        "pool": {
+            "warm": state.pool.warm_count if state.pool else 0,
+            "assigned": state.pool.assigned_count if state.pool else 0,
+        },
+        "socket": str(state.daemon_socket),
+        "port": state.daemon_port,
+    }
+
+
+METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
+    "session.create": _session_create,
+    "session.list": _session_list,
+    "session.get": _session_get,
+    "session.tree": _session_tree,
+    "session.kill": _session_kill,
+    "session.send": _session_send,
+    "session.cancel": _session_cancel,
+    "session.respond": _session_respond,
+    "session.history": _session_history,
+    "task.get": _task_get,
+    "daemon.status": _daemon_status,
+}
+
+
+@router.post("/rpc")
+async def rpc(request: Request) -> JSONResponse:
+    """One entry point for every control-plane call."""
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": {"code": "invalid_json", "message": "Body must be JSON."}}, status_code=400)
+    method = str(payload.get("method") or "")
+    params = payload.get("params") or {}
+    if not isinstance(params, dict):
+        return JSONResponse({"error": {"code": "invalid_request", "message": "params must be an object."}}, status_code=400)
+    handler = METHODS.get(method)
+    if handler is None:
+        return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
+    try:
+        return JSONResponse({"result": await handler(params)})
+    except RpcError as error:
+        return JSONResponse({"error": {"code": error.code, "message": error.message}}, status_code=error.status_code)
+    except Exception as error:  # noqa: BLE001 — one bad call must not take the daemon down
+        logger.exception("Control-plane call %s failed", method)
+        return JSONResponse(
+            {"error": {"code": "internal_error", "message": f"{method} failed: {error}"}},
+            status_code=500,
+        )
+
+
+@router.get("/sessions/{session_id}/attach")
+async def attach(session_id: str, request: Request) -> EventSourceResponse:
+    """Watch a session: a snapshot of what has happened, then everything as it happens.
+
+    The snapshot comes first so a client that attaches mid-turn is not left guessing about
+    what it missed, and the live tail continues from there."""
+    record = state.registry.get(session_id) if state.registry else None
+    if record is None:
+        raise RpcError("No such session.", status_code=404, code="no_such_session")
+
+    async def stream():
+        assert state.task_store is not None
+        subscription = state.event_bus.subscribe(session_id)
+        try:
+            tasks = await state.task_store.tasks_for_context(session_id)
+            yield {
+                "data": json.dumps({
+                    "kind": "snapshot",
+                    "tasks": [t.model_dump(by_alias=True, exclude_none=True, mode="json") for t in tasks],
+                })
+            }
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(subscription.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    # A comment keeps the connection warm through proxies without inventing an
+                    # event the client would have to ignore.
+                    yield {"comment": "keepalive"}
+                    continue
+                if event is None:
+                    yield {"data": json.dumps({"kind": "done"})}
+                    break
+                yield {"data": json.dumps({"kind": "live", "seq": event.get("seq", 0), "message": event.get("part")})}
+        finally:
+            state.event_bus.unsubscribe(session_id, subscription)
+
+    return EventSourceResponse(stream())
+
+
+@router.get("/events")
+async def events(request: Request) -> EventSourceResponse:
+    """The daemon-wide bus: sessions appearing and ending, configuration changing."""
+
+    async def stream():
+        subscription = state.broadcaster.subscribe()
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    event = await asyncio.wait_for(subscription.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield {"comment": "keepalive"}
+                    continue
+                yield {"data": json.dumps(event)}
+        finally:
+            state.broadcaster.unsubscribe(subscription)
+
+    return EventSourceResponse(stream())

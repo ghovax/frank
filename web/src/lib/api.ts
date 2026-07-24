@@ -1,15 +1,18 @@
 import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifact-annotations";
 
-// Where the harness server lives. This is resolved at runtime, not baked in at
-// build time, because the desktop app can point at a local backend or a remote one
-// reached through an SSH tunnel (a configurable host:port). Resolution order:
-//   1. an explicit override set via `setApiBase` (persisted only in the browser build), then
-//   2. a build-time default from NEXT_PUBLIC_DAISY_API_BASE, then
-//   3. the conventional local harness address.
+// Where the daemon lives. The CLI and agents reach `xeacd` over its unix socket, but a
+// webview has no such transport, so the daemon also serves its control plane on a
+// loopback TCP listener for GUI clients, gated by a capability token. The address is
+// resolved at runtime, not baked in at build time, because the desktop app can point at
+// the local daemon or a remote one reached through an SSH tunnel. Resolution order:
+//   1. the endpoint the Tauri shell reports (`daemon_endpoint`, which also carries the token), then
+//   2. an explicit override set via `setApiBase` (persisted only in the browser build), then
+//   3. a build-time default from NEXT_PUBLIC_XEAC_API_BASE, then
+//   4. the conventional local daemon address.
 // The connection layer (profiles UI / local store) writes the override and reloads.
 const DEFAULT_API_BASE =
-  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DAISY_API_BASE : "") || "http://localhost:8822";
-const API_BASE_STORAGE_KEY = "daisy.apiBase";
+  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_XEAC_API_BASE : "") || "http://127.0.0.1:8823";
+const API_BASE_STORAGE_KEY = "xeac.apiBase";
 
 function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -28,6 +31,34 @@ function readStoredApiBase(): string {
 
 let API_BASE = readStoredApiBase();
 
+// The daemon's capability token. Every request the client makes carries it, and the
+// daemon answers nothing without it — this is what finally authenticates the GUI
+// surface rather than trusting the loopback bind. Outside Tauri there is no shell to
+// read the token file, so the token stays empty and only an unauthenticated daemon
+// (a developer running one by hand) answers.
+let daemonToken = "";
+let daemonEndpointPromise: Promise<void> | null = null;
+
+async function resolveDaemonEndpoint(): Promise<void> {
+  if (!runningInTauri()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const endpoint = await invoke<{ url: string; token: string }>("daemon_endpoint");
+    if (endpoint?.url) API_BASE = endpoint.url.replace(/\/+$/, "");
+    daemonToken = endpoint?.token ?? "";
+  } catch {
+    // The shell could not report an endpoint (the daemon is not up yet). Leave the
+    // defaults in place; the request that follows fails and the launcher surfaces it.
+  }
+}
+
+// Resolved once and memoized: the endpoint is fixed for the life of the daemon the
+// shell started, and every request would otherwise pay an IPC round trip.
+function ensureDaemonEndpoint(): Promise<void> {
+  if (!daemonEndpointPromise) daemonEndpointPromise = resolveDaemonEndpoint();
+  return daemonEndpointPromise;
+}
+
 export interface ApiRequestOptions {
   apiBase?: string;
 }
@@ -40,11 +71,59 @@ function apiUrl(path: string, options?: ApiRequestOptions): string {
   return `${apiBase(options)}${path}`;
 }
 
+// The token as a query parameter, for the three transports that cannot carry a header:
+// a WebSocket handshake, and any URL the browser itself loads (an iframe's src, an
+// <img>, a download). Everything else goes through `apiFetch` and gets the header.
+function withDaemonToken(url: string): string {
+  if (!daemonToken) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(daemonToken)}`;
+}
+
 function websocketUrl(path: string, options?: ApiRequestOptions): string {
   const base = apiBase(options);
   const url = new URL(path, `${base}/`);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
+  return withDaemonToken(url.toString());
+}
+
+// The single door every request goes through, so the capability token is attached in
+// exactly one place and cannot be forgotten at a call site.
+async function apiFetch(path: string, options: RequestInit & ApiRequestOptions = {}): Promise<Response> {
+  const { apiBase: baseOverride, headers, ...request } = options;
+  await ensureDaemonEndpoint();
+  return fetch(apiUrl(path, { apiBase: baseOverride }), {
+    ...request,
+    headers: {
+      ...(daemonToken ? { Authorization: `Bearer ${daemonToken}` } : {}),
+      ...(headers as Record<string, string> | undefined),
+    },
+  });
+}
+
+// The daemon's control plane: one POST carrying `{method, params}`. Lifecycle and reads
+// are answered by the daemon itself; a data-plane command (`session.send`, `.cancel`,
+// `.respond`) is relayed by the daemon to the owning session's socket, because a webview
+// cannot reach that socket. The CLI talks to the socket directly instead — same API,
+// different transport.
+async function rpc<T>(
+  method: string,
+  params: Record<string, unknown> = {},
+  options: ApiRequestOptions & { signal?: AbortSignal } = {},
+): Promise<T> {
+  const response = await apiFetch("/rpc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ method, params }),
+    apiBase: options.apiBase,
+    signal: options.signal,
+  });
+  const payload = await response.json().catch(() => ({})) as { result?: T; error?: { code?: string; message?: string } };
+  // The daemon answers with `{result}` or `{error}`; its message names what actually went
+  // wrong (no such session, session not running), which is worth more than the status code.
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.message || `${method} failed (${response.status})`);
+  }
+  return payload.result as T;
 }
 
 // The address the client is currently talking to.
@@ -81,7 +160,7 @@ function terminalContextQuery(sessionId: string | null | undefined, workingDirec
 }
 
 export async function listTerminals(sessionId: string | null, workingDirectory: string): Promise<TerminalInfo[]> {
-  const response = await fetch(`${API_BASE}/terminals${terminalContextQuery(sessionId, workingDirectory)}`);
+  const response = await apiFetch(`/terminals${terminalContextQuery(sessionId, workingDirectory)}`);
   if (!response.ok) return [];
   const data = await response.json();
   return Array.isArray(data.terminals)
@@ -95,7 +174,7 @@ export async function listTerminals(sessionId: string | null, workingDirectory: 
 
 export async function deleteTerminal(sessionId: string | null, workingDirectory: string, terminalKey: string): Promise<void> {
   if (!terminalKey) return;
-  await fetch(`${API_BASE}/terminals/${encodeURIComponent(terminalKey)}${terminalContextQuery(sessionId, workingDirectory)}`, {
+  await apiFetch(`/terminals/${encodeURIComponent(terminalKey)}${terminalContextQuery(sessionId, workingDirectory)}`, {
     method: "DELETE",
   });
 }
@@ -133,7 +212,7 @@ function discoveryKey(path: string, workingDirectory?: string): string {
 }
 
 async function fetchJson<T>(path: string, options?: ApiRequestOptions): Promise<T> {
-  const response = await fetch(apiUrl(path, options));
+  const response = await apiFetch(path, options);
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
   return response.json();
 }
@@ -183,9 +262,9 @@ export function artifactPageUrl(path: string, context?: { location?: string; ses
   if (location.startsWith("ssh://")) {
     const payload = JSON.stringify({ s: context?.session ?? "", l: location });
     const token = btoa(payload).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    return `${API_BASE}/artifact-page/@ctx=${token}/${encoded}`;
+    return withDaemonToken(`${API_BASE}/artifact-page/@ctx=${token}/${encoded}`);
   }
-  return `${API_BASE}/artifact-page/${encoded}`;
+  return withDaemonToken(`${API_BASE}/artifact-page/${encoded}`);
 }
 
 // The URL that renders an external page. It is fetched and re-served from the
@@ -194,7 +273,7 @@ export function artifactPageUrl(path: string, context?: { location?: string; ses
 // BBC, most news sites) render as a blank, blocked frame.
 export function artifactProxyUrl(url: string): string {
   if (!url) return "";
-  return `${API_BASE}/artifact-proxy?url=${encodeURIComponent(url)}`;
+  return withDaemonToken(`${API_BASE}/artifact-proxy?url=${encodeURIComponent(url)}`);
 }
 
 // A generic uploaded file. Feature-agnostic: the core knows only the stored file and
@@ -214,7 +293,7 @@ export interface Attachment {
 export async function uploadFile(file: File): Promise<Attachment> {
   const body = new FormData();
   body.append("file", file);
-  const response = await fetch(`${API_BASE}/uploads`, {
+  const response = await apiFetch(`/uploads`, {
     method: "POST",
     body,
   });
@@ -227,7 +306,7 @@ export async function uploadFile(file: File): Promise<Attachment> {
 // the file are the same machine (a local connection); a remote-server connection must
 // upload the bytes with uploadFile instead, since a local path is meaningless there.
 export async function referenceAttachment(path: string): Promise<Attachment> {
-  const response = await fetch(`${API_BASE}/attachments/reference`, {
+  const response = await apiFetch(`/attachments/reference`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
@@ -284,27 +363,27 @@ export interface ProjectCreateInput {
 }
 
 export async function listSshHosts(): Promise<SshHost[]> {
-  const response = await fetch(`${API_BASE}/hosts`);
+  const response = await apiFetch(`/hosts`);
   if (!response.ok) return [];
   const data = await response.json();
   return Array.isArray(data.hosts) ? (data.hosts as SshHost[]) : [];
 }
 
 export async function listProjects(): Promise<Project[]> {
-  const response = await fetch(`${API_BASE}/projects`);
+  const response = await apiFetch(`/projects`);
   if (!response.ok) return [];
   const data = await response.json();
   return Array.isArray(data.projects) ? (data.projects as Project[]) : [];
 }
 
 export async function getProject(projectId: string): Promise<Project | null> {
-  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`);
+  const response = await apiFetch(`/projects/${encodeURIComponent(projectId)}`);
   if (!response.ok) return null;
   return await response.json() as Project;
 }
 
 export async function createProject(input: ProjectCreateInput): Promise<Project> {
-  const response = await fetch(`${API_BASE}/projects`, {
+  const response = await apiFetch(`/projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -314,11 +393,11 @@ export async function createProject(input: ProjectCreateInput): Promise<Project>
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+  await apiFetch(`/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
 }
 
 export async function createLocation(projectId: string, input: LocationInput): Promise<Location> {
-  const response = await fetch(`${API_BASE}/projects/${encodeURIComponent(projectId)}/locations`, {
+  const response = await apiFetch(`/projects/${encodeURIComponent(projectId)}/locations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -328,7 +407,7 @@ export async function createLocation(projectId: string, input: LocationInput): P
 }
 
 export async function updateLocation(locationId: string, input: LocationInput): Promise<Location> {
-  const response = await fetch(`${API_BASE}/locations/${encodeURIComponent(locationId)}`, {
+  const response = await apiFetch(`/locations/${encodeURIComponent(locationId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -338,7 +417,7 @@ export async function updateLocation(locationId: string, input: LocationInput): 
 }
 
 export async function deleteLocation(locationId: string): Promise<void> {
-  await fetch(`${API_BASE}/locations/${encodeURIComponent(locationId)}`, { method: "DELETE" });
+  await apiFetch(`/locations/${encodeURIComponent(locationId)}`, { method: "DELETE" });
 }
 
 // External A2A agents (remote agents this harness can delegate to).
@@ -382,14 +461,14 @@ export interface RemoteAgentInput {
 }
 
 export async function listRemoteAgents(): Promise<RemoteAgent[]> {
-  const response = await fetch(`${API_BASE}/remote-agents`);
+  const response = await apiFetch(`/remote-agents`);
   if (!response.ok) throw new Error(`Failed to list remote agents (${response.status})`);
   const data = (await response.json()) as { agents: RemoteAgent[] };
   return data.agents ?? [];
 }
 
 export async function upsertRemoteAgent(input: RemoteAgentInput): Promise<void> {
-  const response = await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(input.name)}`, {
+  const response = await apiFetch(`/remote-agents/${encodeURIComponent(input.name)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -398,23 +477,23 @@ export async function upsertRemoteAgent(input: RemoteAgentInput): Promise<void> 
 }
 
 export async function deleteRemoteAgent(name: string): Promise<void> {
-  await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+  await apiFetch(`/remote-agents/${encodeURIComponent(name)}`, { method: "DELETE" });
 }
 
 export async function refreshRemoteAgent(name: string): Promise<{ health: string; error: string }> {
-  const response = await fetch(`${API_BASE}/remote-agents/${encodeURIComponent(name)}/refresh`, {
+  const response = await apiFetch(`/remote-agents/${encodeURIComponent(name)}/refresh`, {
     method: "POST",
   });
   if (!response.ok) throw new Error(`Failed to refresh remote agent (${response.status})`);
   return (await response.json()) as { health: string; error: string };
 }
 
-// Metadata key understood by the harness A2A executor.
+// Metadata key understood by a session's A2A surface.
 // A2A convention: an extension places its attributes under one URI-namespaced key in
-// the message `metadata` map, not as bare top-level keys. Mirrors DAISY_METADATA_KEY
-// / Metadata in the backend's a2a_executor.
-export const DAISY_METADATA_KEY = "urn:daisy:ext:turn:v1";
-export const CONTENT_BLOCK_METADATA_KEY = "urn:daisy:ext:content-block:v1";
+// the message `metadata` map, not as bare top-level keys. Mirrors XEAC_METADATA_KEY
+// / Metadata in the backend's protocol layer.
+export const XEAC_METADATA_KEY = "urn:xeac:ext:turn:v1";
+export const CONTENT_BLOCK_METADATA_KEY = "urn:xeac:ext:content-block:v1";
 
 export type PermissionMode = "default" | "auto" | "read_only" | "bypass";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
@@ -487,7 +566,7 @@ export async function fetchAgentConfiguration(agent: string, workingDirectory?: 
 
 export async function saveAgentConfiguration(agent: string, payload: SaveAgentConfigurationPayload, workingDirectory?: string): Promise<AgentConfiguration> {
   const query = workingDirectory ? `?working_directory=${encodeURIComponent(workingDirectory)}` : "";
-  const response = await fetch(`${API_BASE}/agents/${encodeURIComponent(agent)}/configuration${query}`, {
+  const response = await apiFetch(`/agents/${encodeURIComponent(agent)}/configuration${query}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -575,7 +654,7 @@ const DEFAULT_COMPACTION: CompactionSettings = {
 
 // Persist the Observational-Memory compaction settings (auto on/off + thresholds).
 export async function updateCompactionSettings(changes: Partial<CompactionSettings>): Promise<void> {
-  await fetch(`${API_BASE}/settings/compaction`, {
+  await apiFetch(`/settings/compaction`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(changes),
@@ -584,7 +663,7 @@ export async function updateCompactionSettings(changes: Partial<CompactionSettin
 
 // Toggle the opt-in user-context snapshot in the system prompt (rebuilds runtimes).
 export async function updateUserContextSetting(enabled: boolean): Promise<void> {
-  await fetch(`${API_BASE}/settings/user-context`, {
+  await apiFetch(`/settings/user-context`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
@@ -593,7 +672,7 @@ export async function updateUserContextSetting(enabled: boolean): Promise<void> 
 
 // Toggle the opt-in computer-use tool that controls macOS apps (rebuilds runtimes).
 export async function updateComputerControlSetting(enabled: boolean): Promise<void> {
-  await fetch(`${API_BASE}/settings/computer-control`, {
+  await apiFetch(`/settings/computer-control`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
@@ -604,7 +683,7 @@ export async function updateComputerControlSetting(enabled: boolean): Promise<vo
 // gates the deepest user-context signals. False on any error (e.g. non-macOS).
 export async function fetchFullDiskAccess(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/system/full-disk-access`);
+    const response = await apiFetch(`/system/full-disk-access`);
     if (!response.ok) return false;
     return (await response.json()).granted === true;
   } catch {
@@ -612,16 +691,16 @@ export async function fetchFullDiskAccess(): Promise<boolean> {
   }
 }
 
-// Open System Settings to the Full Disk Access pane so the user can add Daisy in one hop.
+// Open System Settings to the Full Disk Access pane so the user can add XEAC in one hop.
 export async function openFullDiskAccessSettings(): Promise<void> {
-  await fetch(`${API_BASE}/system/full-disk-access/open`, { method: "POST" }).catch(() => {});
+  await apiFetch(`/system/full-disk-access/open`, { method: "POST" }).catch(() => {});
 }
 
 // Whether the app can control other apps (read the accessibility tree, synthesize input) —
 // the permission the computer-use tool needs. False on any error (e.g. non-macOS).
 export async function fetchAccessibility(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/system/accessibility`);
+    const response = await apiFetch(`/system/accessibility`);
     if (!response.ok) return false;
     return (await response.json()).granted === true;
   } catch {
@@ -629,9 +708,9 @@ export async function fetchAccessibility(): Promise<boolean> {
   }
 }
 
-// Trigger the system Accessibility prompt and open its pane so the user can grant Daisy.
+// Trigger the system Accessibility prompt and open its pane so the user can grant XEAC.
 export async function openAccessibilitySettings(): Promise<void> {
-  await fetch(`${API_BASE}/system/accessibility/open`, { method: "POST" }).catch(() => {});
+  await apiFetch(`/system/accessibility/open`, { method: "POST" }).catch(() => {});
 }
 
 // Quit and relaunch the desktop app (Tauri command). macOS only reflects a new Accessibility
@@ -681,9 +760,9 @@ export interface FilesystemLease {
   acquired_at: number;
 }
 
-// API credentials stored in ~/.daisy/configuration.yaml.
+// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/xeac).
 export async function fetchSettings(): Promise<Settings> {
-  const response = await fetch(`${API_BASE}/settings`);
+  const response = await apiFetch(`/settings`);
   if (!response.ok) {
     return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox_enabled: true, user_context_enabled: false, computer_control_enabled: false, workspace_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
   }
@@ -704,7 +783,7 @@ export interface SaveSettingsPayload {
 }
 
 export async function saveSettings(settings: SaveSettingsPayload): Promise<void> {
-  await fetch(`${API_BASE}/settings`, {
+  await apiFetch(`/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
@@ -714,7 +793,7 @@ export async function saveSettings(settings: SaveSettingsPayload): Promise<void>
 // The model catalog for the picker (with per-model availability) and the provider
 // registry.
 export async function fetchModels(): Promise<ModelsResponse> {
-  const response = await fetch(`${API_BASE}/models`);
+  const response = await apiFetch(`/models`);
   if (!response.ok) return { models: [], providers: [] };
   return response.json();
 }
@@ -728,7 +807,7 @@ export interface RecentModel {
 }
 
 export async function fetchRecentModels(): Promise<RecentModel[]> {
-  const response = await fetch(`${API_BASE}/models/recent`);
+  const response = await apiFetch(`/models/recent`);
   if (!response.ok) return [];
   const data = await response.json();
   return data.models ?? [];
@@ -765,7 +844,7 @@ export interface ChatGPTAuthStatus {
 }
 
 export async function fetchChatGPTAuthStatus(): Promise<ChatGPTAuthStatus> {
-  const response = await fetch(`${API_BASE}/auth/chatgpt`);
+  const response = await apiFetch(`/auth/chatgpt`);
   if (!response.ok) return { signed_in: false, email: "", usage: null };
   return response.json();
 }
@@ -774,7 +853,7 @@ export async function fetchChatGPTAuthStatus(): Promise<ChatGPTAuthStatus> {
 // authorize URL to open in a browser. Completion arrives via a `settings_changed`
 // broadcast (or by re-polling fetchChatGPTAuthStatus).
 export async function startChatGPTLogin(): Promise<{ authorize_url: string }> {
-  const response = await fetch(`${API_BASE}/auth/chatgpt/start`, { method: "POST" });
+  const response = await apiFetch(`/auth/chatgpt/start`, { method: "POST" });
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(detail.detail || "Could not start ChatGPT sign-in.");
@@ -783,12 +862,12 @@ export async function startChatGPTLogin(): Promise<{ authorize_url: string }> {
 }
 
 export async function signOutChatGPT(): Promise<void> {
-  await fetch(`${API_BASE}/auth/chatgpt`, { method: "DELETE" });
+  await apiFetch(`/auth/chatgpt`, { method: "DELETE" });
 }
 
 export async function fetchArtifactAnnotations(contextId: string): Promise<ArtifactAnnotationRecord[]> {
   if (!contextId) return [];
-  const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifact-annotations`);
+  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`);
   if (!response.ok) return [];
   const data = await response.json();
   return Array.isArray(data.records) ? data.records as ArtifactAnnotationRecord[] : [];
@@ -796,7 +875,7 @@ export async function fetchArtifactAnnotations(contextId: string): Promise<Artif
 
 export async function saveArtifactAnnotations(contextId: string, record: ArtifactAnnotationRecord): Promise<void> {
   if (!contextId) return;
-  await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifact-annotations`, {
+  await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -811,7 +890,7 @@ export async function saveArtifactAnnotations(contextId: string, record: Artifac
 export async function deleteArtifactAnnotations(contextId: string, surfaceId: string, versionId: string): Promise<void> {
   if (!contextId || !surfaceId || !versionId) return;
   const query = `surface_id=${encodeURIComponent(surfaceId)}&version_id=${encodeURIComponent(versionId)}`;
-  await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifact-annotations?${query}`, {
+  await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations?${query}`, {
     method: "DELETE",
   });
 }
@@ -835,7 +914,7 @@ export function artifactBytesUrl(options: {
   params.set("sha", options.sha);
   params.set("session", options.session);
   if (options.download) params.set("download", options.download);
-  return `${API_BASE}/artifact-bytes?${params.toString()}`;
+  return withDaemonToken(`${API_BASE}/artifact-bytes?${params.toString()}`);
 }
 
 // The whole artifact catalog for a session: the file-history index (every changed
@@ -902,7 +981,7 @@ export async function fetchArtifacts(
   scope: ArtifactScope = "session",
 ): Promise<{ artifacts: ArtifactIndexEntry[]; surfaces: ArtifactSurface[] }> {
   if (!contextId) return { artifacts: [], surfaces: [] };
-  const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifacts?scope=${scope}`);
+  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts?scope=${scope}`);
   if (!response.ok) return { artifacts: [], surfaces: [] };
   const data = await response.json();
   return {
@@ -919,7 +998,7 @@ export async function fetchArtifactVersions(
 ): Promise<ArtifactVersion[]> {
   if (!contextId || !relativePath) return [];
   const params = new URLSearchParams({ git_directory: gitDirectory, relative_path: relativePath, scope });
-  const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifacts/versions?${params.toString()}`);
+  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/versions?${params.toString()}`);
   if (!response.ok) return [];
   const data = await response.json();
   return Array.isArray(data.versions) ? (data.versions as ArtifactVersion[]) : [];
@@ -937,7 +1016,7 @@ export async function fetchArtifactDiff(
     to_commit: options.toCommit,
     location: options.location,
   });
-  const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifacts/diff?${params.toString()}`);
+  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/diff?${params.toString()}`);
   if (!response.ok) return "";
   const data = await response.json();
   return String(data.diff ?? "");
@@ -948,7 +1027,7 @@ export async function restoreArtifact(
   options: { locationUri: string; gitDirectory: string; workTree: string; relativePath: string; commitSha: string },
 ): Promise<boolean> {
   if (!contextId) return false;
-  const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(contextId)}/artifacts/restore`, {
+  const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifacts/restore`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -963,7 +1042,7 @@ export async function restoreArtifact(
 }
 
 export async function setSandboxEnabled(enabled: boolean): Promise<void> {
-  await fetch(`${API_BASE}/settings/sandbox`, {
+  await apiFetch(`/settings/sandbox`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled }),
@@ -1023,39 +1102,37 @@ export async function fetchMcpTools(workingDirectory?: string): Promise<McpServe
 
 // Subscribe to live server events (e.g. agents changed). Returns an unsubscribe.
 //
-// All subscribers share ONE EventSource. Opening one per subscriber (many
-// components subscribe) quickly exhausted the browser's ~6-connections-per-host
-// limit with long-lived SSE streams, starving every other request to the server —
-// most visibly, a user-triggered POST could never get a connection and hung
-// forever. A single stream fans out to all local listeners instead.
+// All subscribers share ONE stream. Opening one per subscriber (many components
+// subscribe) quickly exhausted the browser's ~6-connections-per-host limit with
+// long-lived SSE streams, starving every other request to the server — most visibly, a
+// user-triggered POST could never get a connection and hung forever. A single stream
+// fans out to all local listeners instead.
 const eventListeners = new Set<(event: { type: string }) => void>();
-let sharedEventSource: EventSource | null = null;
+let sharedEventStream: { close: () => void } | null = null;
 
-function ensureEventSource(): void {
-  if (sharedEventSource) return;
-  const source = new EventSource(`${API_BASE}/events`);
-  source.onmessage = (message) => {
+function ensureEventStream(): void {
+  if (sharedEventStream) return;
+  sharedEventStream = openEventStream("/events", (raw) => {
     try {
-      const event = JSON.parse(message.data);
+      const event = JSON.parse(raw);
       if (event.type === "agents_changed") invalidateDiscoveryCache();
       eventListeners.forEach((listener) => listener(event));
     } catch {
       // ignore malformed
     }
-  };
-  sharedEventSource = source;
+  });
 }
 
 export function subscribeEvents(onEvent: (event: { type: string }) => void): () => void {
   eventListeners.add(onEvent);
-  ensureEventSource();
+  ensureEventStream();
   return () => {
     eventListeners.delete(onEvent);
     // Close the shared stream once nothing is listening, so it reopens cleanly
     // (and against a possibly-changed API base) when a subscriber returns.
-    if (eventListeners.size === 0 && sharedEventSource) {
-      sharedEventSource.close();
-      sharedEventSource = null;
+    if (eventListeners.size === 0 && sharedEventStream) {
+      sharedEventStream.close();
+      sharedEventStream = null;
     }
   };
 }
@@ -1063,7 +1140,7 @@ export function subscribeEvents(onEvent: (event: { type: string }) => void): () 
 // The default project shown before the user picks anything — the server provides
 // its folder name so the selector never has to derive one.
 export async function fetchHomeDirectory(): Promise<{ path: string; name: string }> {
-  const response = await fetch(`${API_BASE}/home`);
+  const response = await apiFetch(`/home`);
   const data = await response.json();
   return { path: String(data.path ?? ""), name: String(data.name ?? "") };
 }
@@ -1072,7 +1149,7 @@ export async function fetchHomeDirectory(): Promise<{ path: string; name: string
 // Returns "" if the host is unknown/unreachable — the field then stays empty for manual entry.
 export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   try {
-    const response = await fetch(`${API_BASE}/hosts/${encodeURIComponent(alias)}/home`);
+    const response = await apiFetch(`/hosts/${encodeURIComponent(alias)}/home`);
     if (!response.ok) return "";
     const data = await response.json();
     return String(data.path ?? "");
@@ -1081,47 +1158,146 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   }
 }
 
-export async function fetchSessions(options?: ApiRequestOptions): Promise<{
-  session_id: string;
-  project_id?: string;
+// A session as the daemon's registry knows it. `parent` is the session that spawned this
+// one — a spawned agent is an ordinary session now, so the hierarchy belongs in the
+// sidebar rather than in a separate agents panel. The capability token is never listed:
+// it is handed to the creator once, at `create`.
+export interface SessionSummary {
+  id: string;
   agent: string;
+  parent: string;
+  // starting | running | exited — the process's own lifecycle, not the turn's.
+  status: string;
+  awaiting_input: boolean;
   title: string;
+  working_directory: string;
+  project_id: string;
+  permission_mode: PermissionMode;
+  pid: number;
   created_at: string;
-  working_directory?: string;
-  runtime_working_directory?: string;
-  workspace_strategy?: "none" | "branch" | "worktree";
-  workspace_path?: string;
-  workspace_branch?: string;
-  source_repository_root?: string;
-  runtime_repository_root?: string;
-  workspace_head?: string;
-  workspace_error?: string;
-  running?: boolean;
-  awaiting_input?: boolean;
-  permission_mode?: PermissionMode;
-  input_draft?: string;
-  filesystem_leases?: FilesystemLease[];
-}[]> {
-  const response = await fetch(apiUrl("/sessions", options));
-  const data = await response.json();
-  return data.sessions;
+  updated_at: string;
+  exit_reason: string;
+}
+
+// Live sessions only by default; `all` includes the ones that have exited.
+export async function fetchSessions(options?: ApiRequestOptions & { all?: boolean }): Promise<SessionSummary[]> {
+  const data = await rpc<{ sessions?: SessionSummary[] }>("session.list", options?.all ? { all: true } : {}, options);
+  return data.sessions ?? [];
+}
+
+export async function fetchSession(sessionId: string, options?: ApiRequestOptions): Promise<SessionSummary | null> {
+  if (!sessionId) return null;
+  try {
+    const data = await rpc<{ session: SessionSummary }>("session.get", { id: sessionId }, options);
+    return data.session ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// A session and everything spawned beneath it. The daemon returns the descendants flat,
+// each carrying its `parent`, so a caller nests them itself rather than being handed a
+// shape it would have to flatten to search.
+export interface SessionTree {
+  session: SessionSummary;
+  descendants: SessionSummary[];
+}
+
+export async function sessionTree(sessionId: string, options?: ApiRequestOptions): Promise<SessionTree | null> {
+  if (!sessionId) return null;
+  try {
+    return await rpc<SessionTree>("session.tree", { id: sessionId }, options);
+  } catch {
+    return null;
+  }
+}
+
+// Create a session: one OS process running one agent, empty until it is sent a
+// message. This is the single point where the agent, the directory, the permission
+// mode and the parent are fixed — `send` never changes any of them. The returned token
+// is the session's capability handle; the daemon relays on our behalf, so the GUI keeps
+// it only to identify the session it owns.
+export interface SessionCreateInput {
+  agent: string;
+  workingDirectory?: string;
+  // The workspace a session runs in (in place, on a branch, or in a worktree) is chosen
+  // once here, like every other piece of its configuration.
+  workspaceStrategy?: WorkspaceStrategy;
+  permissionMode?: PermissionMode;
+  projectId?: string;
+  parent?: string;
+}
+
+export async function sessionCreate(input: SessionCreateInput, options?: ApiRequestOptions): Promise<{ id: string; token: string }> {
+  return rpc<{ id: string; token: string }>("session.create", {
+    agent: input.agent,
+    working_directory: input.workingDirectory ?? "",
+    workspace_strategy: input.workspaceStrategy ?? "none",
+    permission_mode: input.permissionMode ?? "default",
+    project_id: input.projectId ?? "",
+    ...(input.parent ? { parent: input.parent } : {}),
+  }, options);
+}
+
+// Drive a turn. A message to an idle session starts one; a message to a session that is
+// mid-turn is safe-point injected at the next tool boundary — which is why steering is
+// no longer a separate call. The response arrives on the attach stream, not here.
+export async function sessionSend(
+  sessionId: string,
+  parts: A2APart[],
+  metadata: Record<string, unknown> = {},
+  options?: ApiRequestOptions,
+): Promise<string> {
+  const data = await rpc<{ task_id?: string }>("session.send", { id: sessionId, parts, metadata }, options);
+  return data.task_id ?? "";
+}
+
+// The parts a turn carries: the typed prose plus any structured payloads (attachments,
+// artifact interactions, image annotations), which travel as DataParts so the agent
+// receives them as JSON rather than as prose.
+export function messageParts(text: string, dataParts?: Record<string, unknown>[]): A2APart[] {
+  const parts: A2APart[] = [];
+  if (text) parts.push({ kind: "text", text });
+  for (const dataPart of dataParts ?? []) parts.push({ kind: "data", data: dataPart });
+  if (parts.length === 0) parts.push({ kind: "text", text: "" });
+  return parts;
+}
+
+// One turn, read from the store — so it answers whether the session that ran it is alive
+// or long since reaped.
+export async function taskGet(taskId: string): Promise<A2ATask | null> {
+  if (!taskId) return null;
+  try {
+    const data = await rpc<{ task: A2ATask }>("task.get", { task_id: taskId });
+    return data.task ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Health, pool size and session counts. The launcher only cares that it answers at
+// all — that is the daemon's readiness signal — so the payload stays untyped here
+// rather than pinning a shape no caller reads.
+export async function daemonStatus(options?: ApiRequestOptions & { signal?: AbortSignal }): Promise<Record<string, unknown> | null> {
+  try {
+    return await rpc<Record<string, unknown>>("daemon.status", {}, options);
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchFilesystemLeases(): Promise<FilesystemLease[]> {
-  const response = await fetch(`${API_BASE}/filesystem/leases`);
+  const response = await apiFetch(`/filesystem/leases`);
   if (!response.ok) return [];
   const data = await response.json();
   return data.leases ?? [];
 }
 
-// All A2A tasks for a session (context): the main turn tasks (with history +
-// artifacts) and related agent tasks. Used to replay a session. Throws on a
-// non-OK response so callers can distinguish a transient failure (worth a retry)
-// from a genuinely empty session — `fetch` itself only rejects on network errors.
+// Every turn a session has taken, replayed from the daemon's store — so it answers
+// whether the session is alive or long since reaped. Throws on failure so callers can
+// distinguish a transient error (worth a retry) from a genuinely empty session.
 export async function fetchSessionTasks(sessionId: string, signal?: AbortSignal): Promise<A2ATask[]> {
-  const response = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`, { signal });
-  if (!response.ok) throw new Error(`Failed to load session tasks (${response.status})`);
-  const data = await response.json();
+  const data = await rpc<{ tasks?: A2ATask[] }>("session.history", { id: sessionId }, { signal });
   return data.tasks ?? [];
 }
 
@@ -1132,7 +1308,7 @@ export interface SessionTasksPage {
 }
 
 export async function fetchSessionDraft(sessionId: string): Promise<string> {
-  const response = await fetch(`${API_BASE}/sessions/${sessionId}/draft`);
+  const response = await apiFetch(`/sessions/${sessionId}/draft`);
   if (!response.ok) return "";
   const data = await response.json();
   return String(data.input_draft ?? "");
@@ -1140,7 +1316,7 @@ export async function fetchSessionDraft(sessionId: string): Promise<string> {
 
 export async function saveSessionDraft(sessionId: string, inputDraft: string): Promise<void> {
   if (!sessionId) return;
-  await fetch(`${API_BASE}/sessions/${sessionId}/draft`, {
+  await apiFetch(`/sessions/${sessionId}/draft`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ input_draft: inputDraft }),
@@ -1153,11 +1329,11 @@ export async function fetchSessionTasksPage(
   signal?: AbortSignal,
   limit = 400
 ): Promise<SessionTasksPage> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (beforeRowId != null) params.set("before_row_id", String(beforeRowId));
-  const response = await fetch(`${API_BASE}/sessions/${sessionId}/tasks/page?${params.toString()}`, { signal });
-  if (!response.ok) throw new Error(`Failed to load session task page (${response.status})`);
-  const data = await response.json();
+  const data = await rpc<{ tasks?: A2ATask[]; next_before_row_id?: number | null; has_more?: boolean }>(
+    "session.history",
+    { id: sessionId, limit, ...(beforeRowId != null ? { before_row_id: beforeRowId } : {}) },
+    { signal },
+  );
   return {
     tasks: data.tasks ?? [],
     next_before_row_id: data.next_before_row_id ?? null,
@@ -1175,29 +1351,29 @@ export interface ResolveResult {
   status: "resolved" | "stale" | "unknown" | "error" | "network";
 }
 
-async function postResolve(url: string, payload: Record<string, unknown>): Promise<ResolveResult> {
+// Answer a gate the session is parked on. The daemon relays the response to the
+// session's socket, where it lands as an `input_response` part and resumes the worker.
+async function sessionRespond(payload: Record<string, unknown>): Promise<ResolveResult> {
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) return { ok: false, status: "error" };
-    const data = await response.json().catch(() => ({}));
-    const status = String((data as { status?: unknown }).status ?? "");
+    const data = await rpc<{ status?: unknown }>("session.respond", payload);
+    const status = String(data.status ?? "");
     if (status === "resolved" || status === "stale") return { ok: true, status };
     return { ok: false, status: status === "unknown" ? "unknown" : "error" };
-  } catch {
-    return { ok: false, status: "network" };
+  } catch (error) {
+    // A transport failure and a rejected request read differently to the user: one is
+    // worth retrying, the other means the request is gone.
+    return { ok: false, status: error instanceof TypeError ? "network" : "error" };
   }
 }
 
+// Allow-always is gone with the mid-session policy it wrote to: the only runtime
+// decisions are per-call allow-once and deny.
 export async function resolvePermission(
   sessionId: string,
   requestId: string,
-  decision: "deny" | "allow_once" | "allow_always"
+  decision: "deny" | "allow_once"
 ): Promise<ResolveResult> {
-  return postResolve(`${API_BASE}/chat/${sessionId}/permission`, { request_id: requestId, decision });
+  return sessionRespond({ id: sessionId, request_id: requestId, decision });
 }
 
 // Answer a pending ask_user question. `answers` is one entry per question (in
@@ -1211,37 +1387,27 @@ export async function resolveQuestion(
   answers: unknown[],
   declined = false
 ): Promise<ResolveResult> {
-  return postResolve(`${API_BASE}/chat/${sessionId}/question`, { request_id: requestId, answers, declined });
+  return sessionRespond({ id: sessionId, request_id: requestId, answers, declined });
 }
 
-export async function steerSession(sessionId: string, message: string): Promise<boolean> {
-  const response = await fetch(`${API_BASE}/chat/${sessionId}/steer`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  if (!response.ok) return false;
-  const data = await response.json();
-  return !!data.queued;
-}
-
-// Returns whether the abort request actually reached the server. A false result
-// means the turn may still be running, so the caller can tell the user rather than
-// leave them believing they stopped it.
+// Returns whether the cancel actually reached the session. A false result means the
+// turn may still be running, so the caller can tell the user rather than leave them
+// believing they stopped it.
 export async function abortSession(sessionId: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/chat/${sessionId}/abort`, { method: "POST" });
-    return response.ok;
+    await rpc("session.cancel", { id: sessionId });
+    return true;
   } catch {
     return false;
   }
 }
 
-// Permanently delete a session and all its tasks on the server.
+// Terminate a session and reap its subtree — children are sessions of their own now,
+// so killing a parent takes the work it spawned with it.
 export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
-    return response.ok;
+    await rpc("session.kill", { id: sessionId });
+    return true;
   } catch {
     return false;
   }
@@ -1249,28 +1415,20 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 
 export async function compactSession(sessionId: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/chat/${sessionId}/compact`, { method: "POST" });
+    const response = await apiFetch(`/chat/${sessionId}/compact`, { method: "POST" });
     return response.ok;
   } catch {
     return false;
   }
 }
 
+// Stopping one tool call is the same data-plane cancel as stopping the turn — the
+// session has a single cancel — narrowed by the call the user pointed at, so a worker
+// that is still mid-batch drops only that call.
 export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/abort`, { method: "POST" });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-export async function cancelAgent(sessionId: string, taskIdentifier: string): Promise<boolean> {
-  try {
-    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(taskIdentifier)}/abort`, { method: "POST" });
-    if (!response.ok) return false;
-    const result = await response.json() as { status?: string };
-    return result.status === "aborted";
+    await rpc("session.cancel", { id: sessionId, tool_call_id: toolCallId });
+    return true;
   } catch {
     return false;
   }
@@ -1281,7 +1439,7 @@ export async function cancelAgent(sessionId: string, taskIdentifier: string): Pr
 // learns the command was backgrounded rather than finished).
 export async function sendToolToBackground(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/background`, { method: "POST" });
+    const response = await apiFetch(`/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/background`, { method: "POST" });
     return response.ok;
   } catch {
     return false;
@@ -1299,7 +1457,7 @@ export interface BackgroundJob {
 
 export async function fetchBackgroundJobs(sessionId: string): Promise<BackgroundJob[]> {
   try {
-    const response = await fetch(`${API_BASE}/chat/${encodeURIComponent(sessionId)}/background`);
+    const response = await apiFetch(`/chat/${encodeURIComponent(sessionId)}/background`);
     if (!response.ok) return [];
     const data = await response.json();
     return Array.isArray(data.jobs) ? data.jobs as BackgroundJob[] : [];
@@ -1336,7 +1494,7 @@ export interface DirectoryValidation {
 }
 
 export async function validateWorkingDirectory(directory: string): Promise<DirectoryValidation> {
-  const response = await fetch(`${API_BASE}/directory/validate`, {
+  const response = await apiFetch(`/directory/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ directory }),
@@ -1345,25 +1503,24 @@ export async function validateWorkingDirectory(directory: string): Promise<Direc
 }
 
 export function subscribeGitStatus(directory: string, onStatus: (status: DirectoryValidation) => void): () => void {
-  const source = new EventSource(`${API_BASE}/git/status/stream?directory=${encodeURIComponent(directory)}`);
-  source.onmessage = (message) => {
+  const stream = openEventStream(`/git/status/stream?directory=${encodeURIComponent(directory)}`, (raw) => {
     try {
-      onStatus(JSON.parse(message.data) as DirectoryValidation);
+      onStatus(JSON.parse(raw) as DirectoryValidation);
     } catch {
       // ignore malformed
     }
-  };
-  return () => source.close();
+  });
+  return () => stream.close();
 }
 
 export async function browseWorkingDirectory(): Promise<{ path: string; cancelled: boolean; error?: string }> {
-  const response = await fetch(`${API_BASE}/directory/browse`, { method: "POST" });
+  const response = await apiFetch(`/directory/browse`, { method: "POST" });
   return response.json();
 }
 
 export async function revealInFinder(path: string): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE}/directory/reveal`, {
+    const response = await apiFetch(`/directory/reveal`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path }),
@@ -1378,8 +1535,8 @@ export async function revealInFinder(path: string): Promise<boolean> {
 // browser tool reports it is off.
 export async function openBrowserRemoteDebugging(browserName = "chrome"): Promise<boolean> {
   try {
-    const response = await fetch(
-      `${API_BASE}/browser/enable-remote-debugging?browser_name=${encodeURIComponent(browserName)}`,
+    const response = await apiFetch(
+      `/browser/enable-remote-debugging?browser_name=${encodeURIComponent(browserName)}`,
       { method: "POST" }
     );
     return response.ok;
@@ -1388,24 +1545,15 @@ export async function openBrowserRemoteDebugging(browserName = "chrome"): Promis
   }
 }
 
-export async function setPermissionMode(sessionId: string, mode: PermissionMode): Promise<void> {
-  const response = await fetch(`${API_BASE}/chat/${sessionId}/permissions/mode`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode }),
-  });
-  if (!response.ok) throw new Error(`Failed to save permission mode (${response.status})`);
-}
-
 export async function fetchMessageHistory(workingDirectory: string): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/messages/history?working_directory=${encodeURIComponent(workingDirectory)}`);
+  const response = await apiFetch(`/messages/history?working_directory=${encodeURIComponent(workingDirectory)}`);
   if (!response.ok) throw new Error(`Failed to fetch message history (${response.status})`);
   const data = await response.json();
   return data.messages as string[];
 }
 
 export async function saveMessageHistory(workingDirectory: string, message: string): Promise<void> {
-  const response = await fetch(`${API_BASE}/messages/history`, {
+  const response = await apiFetch(`/messages/history`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ working_directory: workingDirectory, message }),
@@ -1422,14 +1570,6 @@ export interface A2APart {
   text?: string;
   data?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
-}
-
-export interface A2AErrorData {
-  kind: "error";
-  code?: string;
-  title?: string;
-  message?: string;
-  status?: number;
 }
 
 export interface A2AMessage {
@@ -1464,29 +1604,6 @@ export interface A2ATask {
   metadata?: Record<string, unknown>;
 }
 
-export interface A2AStatusUpdate {
-  kind: "status-update";
-  taskId: string;
-  contextId: string;
-  status: A2ATaskStatus;
-  final?: boolean;
-}
-
-export interface A2AArtifactUpdate {
-  kind: "artifact-update";
-  taskId: string;
-  contextId: string;
-  artifact: A2AArtifact;
-  lastChunk?: boolean;
-}
-
-// Any object the message/stream method yields.
-export type A2AStreamResult =
-  | (A2ATask & { kind?: "task" })
-  | A2AStatusUpdate
-  | A2AArtifactUpdate
-  | (A2AMessage & { kind: "message" });
-
 export function parseSseFrame(frame: string): string {
   return frame
     .split(/\r?\n/)
@@ -1496,168 +1613,104 @@ export function parseSseFrame(frame: string): string {
     .trim();
 }
 
-async function emitSseFrame(
-  frame: string,
-  onResult: (result: A2AStreamResult) => void | Promise<void>
-) {
-  const raw = parseSseFrame(frame);
-  if (!raw) return;
-  try {
-    const parsed = JSON.parse(raw);
-    const result = parsed.result ?? parsed;
-    if (result && typeof result === "object") {
-      await onResult(result as A2AStreamResult);
+// Read an SSE body frame by frame. `onFrame` receives each frame's data payload and
+// returns "stop" to end the read early (an in-band terminator, which the attach stream
+// uses so the connection closes on `done` rather than being left to time out).
+async function pumpEventStream(
+  body: ReadableStream<Uint8Array>,
+  onFrame: (raw: string) => void | "stop",
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const raw = parseSseFrame(frame);
+      if (!raw) continue;
+      if (onFrame(raw) === "stop") return;
     }
-  } catch {
-    // skip malformed json
+    if (done) break;
   }
+  const trailing = parseSseFrame(buffer);
+  if (trailing) onFrame(trailing);
 }
 
-// Sends a user message via the A2A `message/stream` JSON-RPC method and invokes
-// `onResult` for each streamed A2A object (Task, status-update, artifact-update,
-// message). Returns an AbortController so the caller can cancel.
-export function streamA2A(
-  text: string,
-  agent: string,
-  contextId: string | null,
-  onResult: (result: A2AStreamResult) => void | Promise<void>,
-  onDone: () => void,
-  workingDirectory?: string,
-  workspaceStrategy: WorkspaceStrategy = "none",
-  permissionMode: PermissionMode = "default",
-  messageId: string = crypto.randomUUID(),
-  // Optional structured payloads carried as typed DataParts alongside (or instead
-  // of) the text — e.g. attachments plus artifact-image annotations.
-  dataParts?: Record<string, unknown>[],
-  // The project this turn runs in; the server resolves its locations so the agent can
-  // address any of them per tool call.
-  projectId: string = ""
-): AbortController {
+// A long-lived SSE subscription over `fetch`, not `EventSource`: the daemon gates every
+// request on the capability token and EventSource cannot carry an Authorization header.
+// Reconnection therefore becomes ours to own — EventSource retried by itself, and the
+// shared bus relies on that to survive a daemon restart.
+function openEventStream(path: string, onData: (raw: string) => void): { close: () => void } {
   const controller = new AbortController();
+  let closed = false;
 
-  const parts: A2APart[] = [];
-  if (text) parts.push({ kind: "text", text });
-  for (const dataPart of dataParts ?? []) {
-    parts.push({ kind: "data", data: dataPart });
-  }
-  if (parts.length === 0) parts.push({ kind: "text", text: "" });
+  const run = async () => {
+    while (!closed) {
+      try {
+        const response = await apiFetch(path, {
+          signal: controller.signal,
+          headers: { Accept: "text/event-stream" },
+        });
+        if (response.ok && response.body) await pumpEventStream(response.body, onData);
+      } catch {
+        // A deliberate close and a dropped connection arrive the same way here; the
+        // `closed` flag below is what tells them apart.
+      }
+      if (closed) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  };
+  void run();
 
-  const message: A2AMessage = {
-    role: "user",
-    parts,
-    messageId,
-    metadata: {
-      [DAISY_METADATA_KEY]: {
-        ...(projectId ? { projectId } : {}),
-        ...(workingDirectory ? { workingDirectory } : {}),
-        workspaceStrategy,
-        permissionMode,
-      },
+  return {
+    close: () => {
+      closed = true;
+      controller.abort();
     },
   };
-  if (contextId) message.contextId = contextId;
-
-  const body = {
-    jsonrpc: "2.0",
-    id: crypto.randomUUID(),
-    method: "message/stream",
-    params: { message },
-  };
-
-  // Each agent is its own A2A endpoint; selecting an agent means addressing it.
-  fetch(`${API_BASE}/a2a/agents/${agent}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify(body),
-    signal: controller.signal,
-  })
-    .then(async (response) => {
-      if (!response.ok || !response.body) {
-        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", code: "server_error", title: "Server request failed", message: "Daisy could not start the turn. Check the server log and try again.", status: response.status } }] } }, final: true });
-        return;
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const frames = buffer.split(/\r?\n\r?\n/);
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) {
-          await emitSseFrame(frame, onResult);
-        }
-        if (done) break;
-      }
-      if (buffer.trim()) {
-        await emitSseFrame(buffer, onResult);
-      }
-    })
-    .catch((error) => {
-      if (error.name !== "AbortError") {
-        onResult({ kind: "status-update", taskId: "", contextId: contextId ?? "", status: { state: "failed", message: { role: "agent", parts: [{ kind: "data", data: { kind: "error", code: "network_error", title: "Could not reach Daisy", message: "The browser lost its connection to the Daisy server. Check that the server is still running and retry." } }] } }, final: true });
-      }
-    })
-    .finally(onDone);
-
-  return controller;
 }
 
-// A live, read-only view of a running session's structured parts — for a viewer
-// that isn't driving the turn. The server sends a `snapshot` frame (the compacted
-// transcript, same shape as fetchSessionTasks), then a `live` tail of one frame per
-// emitted part in the same agent-message shape the driver consumes, then a `done`
-// frame. Replaces per-second polling + full re-replay (O(N)/s) with O(delta) live
-// updates.
+// A live view of a session: `session.attach`. The daemon sends a `snapshot` frame (the
+// compacted transcript, same shape as fetchSessionTasks), then a `live` tail of one
+// frame per emitted part, then `done` when the turn ends. This is the only response
+// path — a turn is driven by `sessionSend` and observed here, whether this client sent
+// the message or another one did.
 export type SessionStreamFrame =
   | { kind: "snapshot"; tasks: A2ATask[] }
   | { kind: "live"; seq: number; message: A2AMessage }
   | { kind: "done" };
 
-export function subscribeSessionStream(
+export function attachSession(
   sessionId: string,
   onFrame: (frame: SessionStreamFrame) => void,
   onDone: () => void,
 ): { abort: () => void } {
   const controller = new AbortController();
-  fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/stream`, {
+  apiFetch(`/sessions/${encodeURIComponent(sessionId)}/attach`, {
     signal: controller.signal,
     headers: { Accept: "text/event-stream" },
   })
     .then(async (response) => {
-      if (!response.ok || !response.body) {
-        onDone();
-        return;
-      }
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const frames = buffer.split(/\r?\n\r?\n/);
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) {
-          const raw = parseSseFrame(frame);
-          if (!raw) continue;
-          try {
-            const parsed = JSON.parse(raw) as SessionStreamFrame;
-            onFrame(parsed);
-            if (parsed.kind === "done") {
-              controller.abort();
-              return;
-            }
-          } catch {
-            // skip malformed frame
-          }
+      if (!response.ok || !response.body) return;
+      await pumpEventStream(response.body, (raw) => {
+        let frame: SessionStreamFrame;
+        try {
+          frame = JSON.parse(raw) as SessionStreamFrame;
+        } catch {
+          return;
         }
-        if (done) break;
-      }
+        onFrame(frame);
+        if (frame.kind === "done") {
+          controller.abort();
+          return "stop";
+        }
+      });
     })
-    .catch((error) => {
-      if (error.name !== "AbortError") {
-        // swallow — onDone still fires via finally
-      }
+    .catch(() => {
+      // An abort and a dropped connection both end the stream; onDone still fires.
     })
     .finally(onDone);
 

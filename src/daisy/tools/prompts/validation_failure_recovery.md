@@ -1,1 +1,0 @@
-The edit failed syntax validation, so the file on disk was not modified. Fix the error described in `diagnostic` (its line, column, and message) and resubmit a corrective `edit_file`. Do not call `read_file` — the disk still holds the old correct state, so re-reading would show no error and waste a turn.

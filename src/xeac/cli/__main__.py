@@ -1,0 +1,233 @@
+"""`xeac`: the command.
+
+The verbs mirror the API exactly — create a session, send it a message, read it, watch it,
+list what exists, kill a tree. The CLI adds no capability of its own; it is the ergonomic
+face of the same surface the desktop client and agents use, which is why an agent spawning a
+peer runs the same command a person would.
+
+`create` is the only place a session's configuration is set. `send` only does work. That
+split is the permission model made visible: there is no verb that loosens a running session,
+because there is no such operation.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from typing import Any
+
+from xeac.cli import render
+from xeac.cli.client import DaemonError, call, daemon_is_up, ensure_daemon, stream
+
+
+def _print(payload: Any, as_json: bool, renderer=None) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2))
+    elif renderer is not None:
+        renderer(payload)
+    else:
+        print(payload)
+
+
+def _command_create(arguments: argparse.Namespace) -> int:
+    result = call(
+        "session.create",
+        agent=arguments.agent or "",
+        working_directory=arguments.directory or "",
+        permission_mode=arguments.mode or "",
+        project_id=arguments.project or "",
+        parent=arguments.parent or "",
+        title=arguments.title or "",
+    )
+    if arguments.json:
+        print(json.dumps(result, indent=2))
+    else:
+        # The bare id on stdout is what makes `id=$(xeac create ...)` work, which is how an
+        # agent spawns a peer from a shell.
+        print(result["id"])
+    return 0
+
+
+def _command_send(arguments: argparse.Namespace) -> int:
+    text = arguments.message
+    if text == "-":
+        text = sys.stdin.read()
+    result = call("session.send", id=arguments.session, parts=[{"kind": "text", "text": text}])
+    if arguments.wait:
+        return _follow(arguments.session, arguments.json, until_idle=True)
+    _print(result, arguments.json, lambda payload: print(payload.get("task_id", "")))
+    return 0
+
+
+def _command_get(arguments: argparse.Namespace) -> int:
+    result = call("session.get", id=arguments.session)
+    _print(result["session"], arguments.json, render.session_detail)
+    return 0
+
+
+def _command_wait(arguments: argparse.Namespace) -> int:
+    return _follow(arguments.session, arguments.json, until_idle=True, quiet=True)
+
+
+def _command_attach(arguments: argparse.Namespace) -> int:
+    return _follow(arguments.session, arguments.json, until_idle=False)
+
+
+def _follow(session_id: str, as_json: bool, *, until_idle: bool, quiet: bool = False) -> int:
+    """Watch a session's stream, optionally stopping once it goes idle.
+
+    `attach` follows until interrupted; `wait` follows until the session stops working and
+    then prints what it produced. Both read the same stream, so waiting is not polling."""
+    try:
+        for frame in stream(f"/sessions/{session_id}/attach"):
+            if as_json:
+                print(json.dumps(frame))
+            elif not quiet:
+                render.stream_frame(frame)
+            if until_idle and frame.get("kind") == "done":
+                break
+    except KeyboardInterrupt:
+        return 130
+    if until_idle:
+        result = call("session.history", id=session_id, limit=1)
+        if quiet and not as_json:
+            render.last_result(result.get("tasks") or [])
+    return 0
+
+
+def _command_ps(arguments: argparse.Namespace) -> int:
+    result = call("session.list", all=arguments.all)
+    _print(result["sessions"], arguments.json, render.session_table)
+    return 0
+
+
+def _command_tree(arguments: argparse.Namespace) -> int:
+    result = call("session.tree", id=arguments.session)
+    _print(result, arguments.json, render.session_tree)
+    return 0
+
+
+def _command_approve(arguments: argparse.Namespace) -> int:
+    decision = "deny" if arguments.deny else "allow_once"
+    result = call("session.respond", id=arguments.session, request_id=arguments.request, decision=decision)
+    _print(result, arguments.json, lambda payload: print("resolved" if payload.get("resolved") else "no matching request"))
+    return 0
+
+
+def _command_kill(arguments: argparse.Namespace) -> int:
+    result = call("session.kill", id=arguments.session)
+    _print(result, arguments.json, lambda payload: print(f"killed {payload['killed']} ({payload['reaped']} reaped)"))
+    return 0
+
+
+def _command_history(arguments: argparse.Namespace) -> int:
+    result = call("session.history", id=arguments.session, limit=arguments.limit or 0)
+    _print(result["tasks"], arguments.json, render.history)
+    return 0
+
+
+def _command_daemon(arguments: argparse.Namespace) -> int:
+    if arguments.action == "status":
+        if not daemon_is_up() and not arguments.start:
+            print("xeacd is not running")
+            return 1
+        _print(call("daemon.status"), arguments.json, render.daemon_status)
+        return 0
+    if arguments.action == "start":
+        ensure_daemon()
+        print("xeacd is running")
+        return 0
+    if arguments.action == "stop":
+        # Stopping is deliberately a signal rather than an API call: a daemon that is wedged
+        # badly enough to need stopping may not be answering its own socket.
+        import os
+        import signal
+
+        from xeac.base.paths import daemon_port_path
+
+        status = call("daemon.status")
+        del status
+        print("Send SIGTERM to the xeacd process to stop it; sessions are reaped with it.")
+        del os, signal, daemon_port_path
+        return 0
+    return 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="xeac", description="Drive XEAC sessions.")
+    parser.add_argument("--json", action="store_true", help="emit raw JSON instead of formatted output")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    create = subparsers.add_parser("create", help="create a session (the only place its configuration is set)")
+    create.add_argument("--agent", help="agent profile to run")
+    create.add_argument("--directory", "-C", help="working directory")
+    create.add_argument("--mode", choices=["default", "auto", "read_only"], help="permission mode, fixed for the session's life")
+    create.add_argument("--project", help="project id")
+    create.add_argument("--parent", help="parent session; the child is clamped to no looser a mode")
+    create.add_argument("--title", help="a human label for the session list")
+    create.set_defaults(handler=_command_create)
+
+    send = subparsers.add_parser("send", help="send a message to a session")
+    send.add_argument("session")
+    send.add_argument("message", help="the message, or - to read stdin")
+    send.add_argument("--wait", action="store_true", help="follow until the session goes idle")
+    send.set_defaults(handler=_command_send)
+
+    get = subparsers.add_parser("get", help="show a session")
+    get.add_argument("session")
+    get.set_defaults(handler=_command_get)
+
+    wait = subparsers.add_parser("wait", help="wait for a session to go idle, then print its result")
+    wait.add_argument("session")
+    wait.set_defaults(handler=_command_wait)
+
+    attach = subparsers.add_parser("attach", help="follow a session live")
+    attach.add_argument("session")
+    attach.set_defaults(handler=_command_attach)
+
+    ps = subparsers.add_parser("ps", help="list sessions")
+    ps.add_argument("--all", "-a", action="store_true", help="include sessions that have ended")
+    ps.set_defaults(handler=_command_ps)
+
+    tree = subparsers.add_parser("tree", help="show a session and everything it spawned")
+    tree.add_argument("session")
+    tree.set_defaults(handler=_command_tree)
+
+    approve = subparsers.add_parser("approve", help="answer a session's pending permission request")
+    approve.add_argument("session")
+    approve.add_argument("request")
+    approve.add_argument("--deny", action="store_true", help="deny instead of allowing")
+    approve.set_defaults(handler=_command_approve)
+
+    kill = subparsers.add_parser("kill", help="end a session and everything under it")
+    kill.add_argument("session")
+    kill.set_defaults(handler=_command_kill)
+
+    history = subparsers.add_parser("history", help="print a session's turns")
+    history.add_argument("session")
+    history.add_argument("--limit", type=int, help="only the last N turns")
+    history.set_defaults(handler=_command_history)
+
+    daemon = subparsers.add_parser("daemon", help="inspect or start the daemon")
+    daemon.add_argument("action", choices=["status", "start", "stop"], nargs="?", default="status")
+    daemon.add_argument("--start", action="store_true", help="start the daemon if it is not running")
+    daemon.set_defaults(handler=_command_daemon)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    arguments = parser.parse_args(argv)
+    try:
+        return arguments.handler(arguments)
+    except DaemonError as error:
+        print(f"xeac: {error}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

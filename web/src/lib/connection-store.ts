@@ -1,7 +1,7 @@
 // The front-end-local store. This holds state that belongs to *this client* — which
 // backends it knows how to reach and which one it used last — as opposed to the
-// harness server's own history.db (sessions, transcripts, provider secrets), which
-// is per-backend and travels with the server.
+// daemon's own history.db (sessions, transcripts, provider secrets), which is
+// per-backend and travels with the daemon.
 //
 // Inside the Tauri desktop app it persists to a dedicated SQLite database
 // (`sqlite:internal.db`, tables created by the Rust migration). In a plain browser it
@@ -29,9 +29,9 @@ export interface ConnectionProfile {
 }
 
 const DATABASE_NAME = "sqlite:internal.db";
-const LOCAL_STORAGE_CONNECTIONS = "daisy.connections";
-const LOCAL_STORAGE_APP_STATE = "daisy.appState";
-const LOCAL_STORAGE_SESSION_CONNECTIONS = "daisy.sessionConnections";
+const LOCAL_STORAGE_CONNECTIONS = "xeac.connections";
+const LOCAL_STORAGE_APP_STATE = "xeac.appState";
+const LOCAL_STORAGE_SESSION_CONNECTIONS = "xeac.sessionConnections";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;

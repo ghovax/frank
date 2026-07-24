@@ -3,12 +3,13 @@
 // Rust commands), remembering the last target, and pointing the API client at a
 // chosen backend.
 
-import { setApiBase, getApiBase, invalidateDiscoveryCache } from "@/lib/api";
+import { setApiBase, getApiBase, invalidateDiscoveryCache, daemonStatus } from "@/lib/api";
 import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind, type ConnectionProfile } from "@/lib/connection-store";
 
-// The conventional local harness address. The bundled server binds here, and this
-// is also the API client's built-in default.
-export const LOCAL_DEFAULT_URL = "http://localhost:8822";
+// The conventional local daemon address. `xeacd` serves its control plane on this
+// loopback port for GUI clients (the webview cannot open its unix socket), and this is
+// also the API client's built-in default.
+export const LOCAL_DEFAULT_URL = "http://127.0.0.1:8823";
 
 // app_state key remembering what the user connected to last: "local" or a
 // connection profile id. Drives the launcher's auto-connect on startup.
@@ -53,7 +54,7 @@ export async function setLastTargetId(id: string): Promise<void> {
   await setAppState(LAST_TARGET_KEY, id);
 }
 
-// Is the daisy server the UI is currently talking to running on *this* machine? Only
+// Is the daemon the UI is currently talking to running on *this* machine? Only
 // then do the user's local file paths mean anything to the server — which is what lets
 // attachments be referenced in place instead of uploaded as bytes. An SSH/remote server
 // sees a different filesystem, so its answer is false.
@@ -109,27 +110,25 @@ export async function resolveConnectionTarget(targetId: string | null | undefine
     : null;
 }
 
-// Is a harness server answering at this base URL? Hits `/home`, which every harness
-// server exposes and which needs no arguments. Short timeout so the launcher stays
-// responsive when a host is down or a tunnel isn't up.
+// Is a daemon answering at this base URL? Probes `daemon.status`, which is the
+// readiness signal: it needs no arguments and only a live, authenticated daemon answers
+// it. Short timeout so the launcher stays responsive when a host is down or a tunnel
+// isn't up. A stale socket file no longer looks like a running backend, which is exactly
+// what the old port probe could not tell apart.
 export async function checkConnection(url: string, timeoutMs = 3500): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${url.replace(/\/+$/, "")}/home`, {
-      signal: controller.signal,
-    });
-    return response.ok;
-  } catch {
-    return false;
+    const status = await daemonStatus({ apiBase: url.replace(/\/+$/, ""), signal: controller.signal });
+    return status !== null;
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Ensure the local server is up and return its URL. In the desktop app this spawns
-// the bundled server if nothing is listening yet; in a plain browser it just points
-// at the conventional local address (the user runs the server themselves).
+// Ensure the local daemon is up and return its URL. In the desktop app this spawns
+// `xeacd` if nothing is listening yet; in a plain browser it just points at the
+// conventional local address (the user runs the daemon themselves).
 export async function startLocalServer(): Promise<string> {
   if (!isTauri()) return LOCAL_DEFAULT_URL;
   const { invoke } = await import("@tauri-apps/api/core");
@@ -161,13 +160,13 @@ export async function startSshTunnel(profile: Pick<ConnectionProfile, "id" | "ss
       port: profile.sshPort || undefined,
       identityFile: profile.sshIdentityFile || undefined,
       localPort: profile.sshLocalPort || undefined,
-      remotePort: profile.sshRemotePort || 8822,
+      remotePort: profile.sshRemotePort || 8823,
     },
   });
 }
 
-// Wait for a freshly-started server to accept requests, polling until it responds
-// or the overall budget runs out (the frozen server takes a few seconds to boot).
+// Wait for a freshly-started daemon to accept requests, polling until it responds or
+// the overall budget runs out (the frozen binary takes a few seconds to boot).
 export async function waitForConnection(url: string, totalMs = 20000): Promise<boolean> {
   const deadline = Date.now() + totalMs;
   while (Date.now() < deadline) {
