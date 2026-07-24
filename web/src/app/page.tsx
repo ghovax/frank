@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
-import { SessionsSidebar, type SessionEntry, type SessionSort } from "@/components/sessions-sidebar";
+import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionStatus } from "@/components/sessions-sidebar";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -22,7 +22,7 @@ import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds"
 // The last project the user was in, remembered so a fresh launch reopens it (there is no
 // landing page to pick from). Best-effort localStorage — a cleared/absent value just falls
 // back to the first available project.
-const LAST_PROJECT_KEY = "daisy:lastProject";
+const LAST_PROJECT_KEY = "xeac:lastProject";
 function readLastProject(): string | null {
   try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; }
 }
@@ -30,6 +30,13 @@ function writeLastProject(projectId: string): void {
   try { localStorage.setItem(LAST_PROJECT_KEY, projectId); } catch { /* ignore */ }
 }
 
+
+// A session whose process is still up and working. The registry reports the process's
+// own lifecycle, so "busy" is exactly "not yet finished" — there is no separate per-turn
+// flag to reconcile with it.
+function isSessionBusy(session: SessionEntry): boolean {
+  return session.status === "starting" || session.status === "running";
+}
 
 function ProjectWorkspace() {
   const router = useRouter();
@@ -46,12 +53,12 @@ function ProjectWorkspace() {
   // the grant to the freshly-started server, so this runs on launch (not while the previous
   // instance was live) and only when the permission is actually present.
   useEffect(() => {
-    if (typeof window === "undefined" || localStorage.getItem("daisy:pendingComputerControlEnable") !== "1") return;
+    if (typeof window === "undefined" || localStorage.getItem("xeac:pendingComputerControlEnable") !== "1") return;
     let cancelled = false;
     void fetchAccessibility().then(async (granted) => {
       if (cancelled || !granted) return;
       await updateComputerControlSetting(true);
-      localStorage.removeItem("daisy:pendingComputerControlEnable");
+      localStorage.removeItem("xeac:pendingComputerControlEnable");
     });
     return () => { cancelled = true; };
   }, []);
@@ -196,7 +203,8 @@ function ProjectWorkspace() {
 
   const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>, target: ConnectionTarget, apiBase: string): SessionEntry[] => {
     return serverSessions.map((session) => ({
-      sessionId: session.session_id,
+      sessionId: session.id,
+      parentSessionId: session.parent ?? "",
       projectId: session.project_id ?? "",
       connectionId: target.id,
       connectionName: target.name,
@@ -206,14 +214,9 @@ function ProjectWorkspace() {
       title: session.title,
       createdAt: session.created_at,
       workingDirectory: session.working_directory ?? "",
-      runtimeWorkingDirectory: session.runtime_working_directory ?? session.working_directory ?? "",
-      workspaceStrategy: session.workspace_strategy ?? "none",
-      workspaceBranch: session.workspace_branch ?? "",
-      workspaceError: session.workspace_error ?? "",
-      running: session.running ?? false,
+      status: (session.status || "starting") as SessionStatus,
       awaitingInput: session.awaiting_input ?? false,
-      filesystemLeases: session.filesystem_leases ?? [],
-      inputDraft: session.input_draft ?? "",
+      exitReason: session.exit_reason ?? "",
       permissionMode: session.permission_mode ?? "default",
     }));
   }, []);
@@ -269,9 +272,8 @@ function ProjectWorkspace() {
     const finishedUnviewed = mapped
       .filter((session) => {
         const previous = previousById.get(session.sessionId);
-        const wasBusy = !!previous && (previous.running || previous.filesystemLeases.length > 0);
-        const isBusy = session.running || session.filesystemLeases.length > 0;
-        return wasBusy && !isBusy && session.sessionId !== activeId && !session.awaitingInput && !session.workspaceError;
+        const wasBusy = !!previous && isSessionBusy(previous);
+        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && session.status !== "failed";
       })
       .map((session) => session.sessionId);
     if (finishedUnviewed.length > 0) {
@@ -290,8 +292,7 @@ function ProjectWorkspace() {
     let shouldPlayAttentionSound = false;
     for (const session of mapped) {
       const previous = previousById.get(session.sessionId);
-      const isBusy = session.running || session.filesystemLeases.length > 0;
-      if (!isBusy) attentionPlayedForRunRef.current.delete(session.sessionId);
+      if (!isSessionBusy(session)) attentionPlayedForRunRef.current.delete(session.sessionId);
       if (
         session.awaitingInput
         && !!previous
@@ -408,8 +409,7 @@ function ProjectWorkspace() {
   const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
   const activeSessionConnectionReady =
     !activeSessionId || (!sessionsLoaded && !activeSession ? false : !activeSession || activeSession.connectionId === currentConnectionId);
-  const activeSessionRunning = activeSession?.running ?? false;
-  const displayedWorkspaceStrategy = activeSession?.workspaceStrategy ?? workspaceStrategy;
+  const activeSessionRunning = activeSession ? isSessionBusy(activeSession) : false;
 
   useEffect(() => {
     if (!activeSession || activeSession.connectionId === currentConnectionId) return;
@@ -434,7 +434,7 @@ function ProjectWorkspace() {
   const sortedSessions = useMemo(() => {
     if (sessionSort !== "active") return sessions;
     const rank = (session: SessionEntry) =>
-      session.awaitingInput ? 0 : session.running || session.filesystemLeases.length > 0 ? 1 : 2;
+      session.awaitingInput ? 0 : isSessionBusy(session) ? 1 : 2;
     return [...sessions].sort((left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt));
   }, [sessions, sessionSort]);
   const projectSessions = useMemo(
@@ -793,7 +793,7 @@ function ProjectWorkspace() {
           initialSessionId={activeSessionConnectionReady ? activeSessionId : null}
           initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
           sessionTitle={activeSession?.title}
-          initialInputDraft={activeSession?.inputDraft ?? ""}
+          initialInputDraft={activeSessionDraft}
           onDeleteSession={activeSessionId ? handleDeleteSession : undefined}
           currentConnectionId={currentConnectionId}
           onConnectionChange={handleConnectionChange}
@@ -806,8 +806,7 @@ function ProjectWorkspace() {
           homeDirectory={homeProject?.path ?? ""}
           sandboxEnabled={sandboxEnabledState}
           onSandboxEnabledChange={handleSandboxEnabledChange}
-          workspaceStrategy={displayedWorkspaceStrategy}
-          workspaceRuntimeDirectory={activeSession?.runtimeWorkingDirectory ?? ""}
+          workspaceStrategy={workspaceStrategy}
           onWorkspaceStrategyChange={handleWorkspaceStrategyChange}
           isConnected={isConnected && activeSessionConnectionReady}
           onStreamingChange={handleStreamingChange}

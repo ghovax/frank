@@ -393,3 +393,34 @@ def _run_tk_folder_picker() -> subprocess.CompletedProcess[str] | None:
         )
     except (FileNotFoundError, subprocess.SubprocessError):
         return None
+
+
+def _accessibility_granted() -> bool:
+    """Whether this process may read the accessibility tree and control other apps — the
+    permission the screen tools need. Imported lazily: the module pulls in PyObjC, and loading
+    that eagerly anywhere would make a pre-forked worker unsafe."""
+    try:
+        from xeac.computer import permissions
+
+        return permissions.accessibility_granted()
+    except Exception:
+        return False
+
+
+def _request_accessibility() -> None:
+    """Surface the system prompt (and deep-link to the pane) if not yet trusted."""
+    try:
+        from xeac.computer import permissions
+
+        permissions.request_accessibility()
+    except Exception:
+        pass
+
+
+def _open_accessibility_settings() -> None:
+    try:
+        from xeac.computer import permissions
+
+        permissions.open_accessibility_settings()
+    except Exception:
+        pass

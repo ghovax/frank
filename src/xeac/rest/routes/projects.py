@@ -13,7 +13,7 @@ from xeac.protocol.dtos import (
     LocationInput,
     ProjectCreateRequest,
 )
-from xeac.daemon import boot as _boot
+from xeac.daemon.services import projects as _projects
 from xeac.daemon import state
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.persistence.artifacts import _prune_session_artifacts
@@ -79,7 +79,7 @@ async def get_project(project_id: str):
 async def delete_project(project_id: str):
     # There is always exactly one active project in the UI, so the last one can't be
     # deleted — that would leave an empty state the redesigned app no longer has.
-    if await asyncio.to_thread(_boot._project_count) <= 1:
+    if await asyncio.to_thread(_projects._project_count) <= 1:
         raise HTTPException(status_code=400, detail="Can't delete the only project.")
     # Prune each session's artifact versions (shadow-git branches + index rows) while its
     # locations are still resolvable, then delete the project and its rows.

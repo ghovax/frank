@@ -25,7 +25,8 @@ from xeac.protocol.dtos import (
     SettingsUpdateRequest,
     UserContextUpdateRequest,
 )
-from xeac.daemon import boot as _boot
+from xeac.daemon.services import projects as _projects
+from xeac.rest.services import filesystem as _system
 from xeac.daemon import state
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
@@ -40,13 +41,13 @@ router = APIRouter()
 async def full_disk_access_status():
     """Whether the server process can read Full-Disk-Access-protected data (Screen Time,
     Safari history). Drives the Settings banner + button for the user-context feature."""
-    return {"granted": await asyncio.to_thread(_boot._full_disk_access_granted)}
+    return {"granted": await asyncio.to_thread(_projects._full_disk_access_granted)}
 
 
 @router.post("/system/full-disk-access/open")
 async def open_full_disk_access_settings():
     """Open System Settings to the Full Disk Access pane so the user can add XEAC."""
-    await asyncio.to_thread(_boot._open_full_disk_access_settings)
+    await asyncio.to_thread(_projects._open_full_disk_access_settings)
     return {"ok": True}
 
 
@@ -54,14 +55,14 @@ async def open_full_disk_access_settings():
 async def accessibility_status():
     """Whether the server can control other apps (read the AX tree, synthesize input) —
     the permission the computer-use tool needs. Drives the Settings banner/button."""
-    return {"granted": await asyncio.to_thread(_boot._accessibility_granted)}
+    return {"granted": await asyncio.to_thread(_system._accessibility_granted)}
 
 
 @router.post("/system/accessibility/open")
 async def open_accessibility_settings():
     """Trigger the system Accessibility prompt and open the pane so the user can grant XEAC."""
-    await asyncio.to_thread(_boot._request_accessibility)
-    await asyncio.to_thread(_boot._open_accessibility_settings)
+    await asyncio.to_thread(_system._request_accessibility)
+    await asyncio.to_thread(_system._open_accessibility_settings)
     return {"ok": True}
 
 

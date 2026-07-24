@@ -9,7 +9,7 @@ from fastapi import WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
-from xeac.base import artifact_versioning as artifacts
+from xeac.daemon.persistence import versioning as artifact_versioning
 from pathlib import Path
 import asyncio
 import httpx

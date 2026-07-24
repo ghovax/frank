@@ -7,7 +7,7 @@ from xeac.protocol.dtos import ArtifactAnnotationSaveRequest
 from datetime import datetime
 from datetime import timezone
 from fastapi import HTTPException
-from xeac.base import artifact_versioning as artifacts
+from xeac.daemon.persistence import versioning as artifacts
 from xeac.base.sqlite_lock import sqlite_write_lock
 from xeac.locations.executor import LocationExecutor
 from xeac.locations.resolver import LocationAddress

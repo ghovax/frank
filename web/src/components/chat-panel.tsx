@@ -94,7 +94,6 @@ interface ChatPanelProps {
   sandboxEnabled?: boolean;
   onSandboxEnabledChange?: (enabled: boolean) => void;
   workspaceStrategy?: WorkspaceStrategy;
-  workspaceRuntimeDirectory?: string;
   onWorkspaceStrategyChange?: (strategy: WorkspaceStrategy) => void | Promise<void>;
   isConnected?: boolean;
   onStreamingChange?: (isStreaming: boolean) => void;
@@ -365,7 +364,6 @@ export function ChatPanel({
   sandboxEnabled = true,
   onSandboxEnabledChange,
   workspaceStrategy = "none",
-  workspaceRuntimeDirectory = "",
   onWorkspaceStrategyChange,
   isConnected = false,
   onStreamingChange,
@@ -831,10 +829,8 @@ export function ChatPanel({
   const isCompacting = messages.some(
     (message) => message.role === "compaction" && message.meta?.status === "running"
   );
-  // "Reveal" opens the session's runtime directory (a worktree/branch checkout when
-  // the session manages one, otherwise the plain working directory) in the OS file
-  // manager. Falls back to the working directory before a session exists.
-  const revealPath = (workspaceRuntimeDirectory || workingDirectory || "").trim();
+  // "Reveal" opens the session's working directory in the OS file manager.
+  const revealPath = (workingDirectory || "").trim();
 
   // The open_artifact results in the transcript, keyed by artifactId — the signal for
   // which tabs to open (and what to render immediately, before the backend surface lands).
@@ -1462,7 +1458,6 @@ export function ChatPanel({
                         const inner = item.kind === "tool_group" ? (
                           <ChatToolGroup
                             messages={item.messages}
-                            agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
                             keepOpen={isStreaming && isLastItem}
@@ -1470,7 +1465,6 @@ export function ChatPanel({
                         ) : (
                           <ChatMessageItem
                             message={enrichAnnotationVersions(item.message)}
-                            agents={agents}
                             activeArtifactId={activeArtifactTabId}
                             onActivateArtifact={handleActivateArtifact}
                             onRetry={item.message.role === "error" ? handleRetry : undefined}
@@ -2043,7 +2037,7 @@ export function ChatPanel({
                       onClose={() => setSidePanelOpen("background", false)}
                       messages={messages}
                       sessionId={sessionId}
-                      workingDirectory={workspaceRuntimeDirectory || workingDirectory || homeDirectory || ""}
+                      workingDirectory={workingDirectory || homeDirectory || ""}
                       locations={projectLocations}
                     />
                   ),

@@ -20,14 +20,13 @@ from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers.request_handler import RequestHandler
 from a2a.server.tasks import TaskStore, TaskUpdater
-from a2a.types import Message, MessageSendParams, Part, Role, Task, TaskState
+from a2a.types import DataPart, Message, MessageSendParams, Part, Role, Task, TaskState
 from langchain_core.messages import messages_from_dict
 
 from xeac.base.background_tasks import spawn_background_task
 from xeac.base.configuration import GlobalConfiguration, load_agent_configuration
 from xeac.base.background_store import get_background_job_store
 from xeac.base.workspaces import SessionWorkspace
-from xeac.protocol.events import DataPart
 from xeac.protocol.metadata import (
     AUTONOMOUS_RESUME_KIND,
     COMPACTION_KIND,

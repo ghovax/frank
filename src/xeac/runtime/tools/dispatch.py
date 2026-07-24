@@ -18,10 +18,8 @@ from xeac.runtime.internals import _coerce_structured_arguments
 from xeac.runtime.internals import _maybe_json
 from xeac.runtime.internals import _model_result_status
 from xeac.runtime.internals import _model_visible_tool_result
-from xeac.runtime.internals import _spawned_agent_report
 from xeac.runtime.internals import _tool_timing_metadata
 from xeac.runtime.internals import _utc_timestamp
-from xeac.base.agent_runner import AgentRunner
 from xeac.runtime.background import bind_background_jobs
 from xeac.runtime.background import bind_tool_call_id
 from xeac.runtime.background import unbind_background_jobs
@@ -37,19 +35,15 @@ from xeac.runtime.locations import _LOCATION_TOOLS
 from xeac.base.tuning import Limit
 from xeac.base.tuning import active_tuning
 from xeac.base.tuning import current_context_window
-from xeac.runtime.turn_events import DelegateDone
-from xeac.runtime.turn_events import DelegateStarted
-from xeac.runtime.turn_events import DelegateUsage
 from xeac.runtime.turn_events import DeniedInjection
 from xeac.runtime.turn_events import Done
 from xeac.runtime.turn_events import Error
-from xeac.runtime.turn_events import GroupStarted
 from xeac.runtime.turn_events import Mcp
 from xeac.runtime.turn_events import ToolCall
 from xeac.runtime.turn_events import ToolResult
 from xeac.runtime.turn_events import TurnEvent
 from xeac.base.identifiers import new_id
-from xeac.runtime.tools import file_tools
+from xeac.runtime.tools import file_operations as file_tools
 from xeac.runtime.tools.registry import artifact_kind_for
 from xeac.runtime.tools.registry import bash as bash_tool
 from xeac.runtime.tools.registry import build_open_artifact_result

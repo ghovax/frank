@@ -65,6 +65,33 @@ logger = logging.getLogger(__name__)
 _PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
 
 
+
+@dataclass
+class _ContextState:
+    """The session's live execution state, with one explicit lifecycle: created on its first
+    turn, dropped whole when the session ends. A worker holds exactly one of these.
+
+    The conversation is deliberately not here — it is the durable checkpoint's in-memory
+    counterpart, restored from the store on the first turn and written back at safe points.
+    """
+
+    # Serializes the session's turns, so a message and an autonomous background wake never
+    # drive the one runtime concurrently.
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # The warm runtime, preserved across turns. None until the first turn builds it.
+    runtime: Optional[Any] = None
+    # After a turn ends with background work still in flight, this waits for each result and
+    # drives an autonomous turn to deliver it.
+    resume_pump: Optional[asyncio.Task] = None
+    # A turn is in flight, so a message can be injected into it rather than starting another.
+    running: bool = False
+    # The user stopped the session: while this holds no resume pump is armed, so a detached
+    # job completing later cannot wake a fresh turn. Lifted by the next real message.
+    aborted: bool = False
+    # A reset asked to drop the runtime while background work was still in flight, so the drop
+    # waits until it goes idle.
+    pending_reset: bool = False
+
 @dataclass(frozen=True)
 class _Ingested:
     """The parsed request — the turn's inputs and mode flags — produced by ``_ingest``. Each

@@ -12,9 +12,6 @@ from xeac.protocol.dtos import (
     AgentsList,
 )
 from xeac.daemon import state
-from xeac.daemon.boot import (
-    _ensure_agents_for,
-)
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.services.agents import AGENT_CARD_PATH, _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
 
@@ -28,7 +25,6 @@ async def agents(working_directory: str = ""):
     what makes the list track the chosen folder."""
     assert state.global_configuration is not None
     if working_directory:
-        _ensure_agents_for(working_directory)
         directories = state.global_configuration.agent_directories_for(working_directory)
     else:
         directories = state.global_configuration.agent_directories()
@@ -46,8 +42,6 @@ async def agents(working_directory: str = ""):
 async def agent_configuration(agent_name: str, working_directory: str = ""):
     assert state.global_configuration is not None
     try:
-        if working_directory:
-            _ensure_agents_for(working_directory)
         return _agent_configuration_payload(agent_name, working_directory)
     except FileNotFoundError as exception:
         raise HTTPException(status_code=404, detail=str(exception)) from exception
@@ -57,8 +51,6 @@ async def agent_configuration(agent_name: str, working_directory: str = ""):
 async def update_agent_configuration(agent_name: str, request: AgentConfigurationUpdateRequest, working_directory: str = ""):
     assert state.global_configuration is not None
     try:
-        if working_directory:
-            _ensure_agents_for(working_directory)
         agent_markdown_path, _configuration_data = _agent_configuration_for_request(agent_name, working_directory)
         sidecar = _load_agent_sidecar(agent_markdown_path)
         _save_agent_sidecar(agent_markdown_path, _apply_agent_configuration_update(sidecar, request))
@@ -98,7 +90,6 @@ async def agent_cards(working_directory: str = ""):
     # own), so the launch directory's agents don't leak into an unrelated folder.
     allowed_agents: set[str] | None = None
     if working_directory:
-        _ensure_agents_for(working_directory)
         allowed_agents = {
             agent["id"]
             for agent in list_agents(state.global_configuration.agent_directories_for(working_directory))
