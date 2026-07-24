@@ -9,7 +9,6 @@ import {
   LuLayoutDashboard,
   LuFileText,
   LuSearchCode,
-  LuScanSearch,
   LuFilePen,
   LuFilePlus,
   LuDownload,
@@ -44,7 +43,7 @@ interface ToolDisplayInfo {
 // and surfaces its raw name in monospace.
 const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "search_web", "bash", "spawn_agent", "cancel_agent", "ask_agent", "respond_agent", "read_task", "read_file",
-  "search_code", "search_screen", "control_screen",
+  "search_code", "control_screen",
   "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
   "set_tasks", "update_tasks", "update_goal",
   "work_habits",
@@ -77,8 +76,6 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuFileText, iconColor: "blue.fg" };
     case "search_code":
       return { icon: LuSearchCode, iconColor: "teal.fg" };
-    case "search_screen":
-      return { icon: LuScanSearch, iconColor: "cyan.fg" };
     case "control_screen":
       return { icon: LuMousePointerClick, iconColor: "cyan.fg" };
     case "edit_file":
@@ -135,8 +132,6 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
       return args?.file_path ? readFileLabel(String(args.file_path), args, t) : t("readFileBare");
     case "search_code":
       return args?.query ? t("searchCode", { query: String(args.query) }) : t("searchCodeBare");
-    case "search_screen":
-      return searchScreenLabel(args, t);
     case "control_screen":
       return controlScreenLabel(args, t);
     case "edit_file":
@@ -184,14 +179,6 @@ function readFileLabel(filePath: string, args: Record<string, unknown>, t: ToolD
   if (!hasSpecificOffset && !hasSpecificLimit) return t("readFile", { file });
   if (!Number.isFinite(limit) || limit <= 0) return t("readFileFromLine", { file, line: offset });
   return t("readFileLines", { file, start: offset, end: offset + limit - 1 });
-}
-
-// A search_screen call with no justification: describe it from its query + surface.
-function searchScreenLabel(args: Record<string, unknown> | undefined, t: ToolDisplayTranslator): string {
-  const query = args?.query ? String(args.query) : "";
-  const surface = args?.surface ? String(args.surface) : "";
-  if (!query) return t("searchScreenBare");
-  return surface ? t("searchScreenSurface", { query, surface }) : t("searchScreen", { query });
 }
 
 // A control_screen call with no justification: describe it from its surface + the

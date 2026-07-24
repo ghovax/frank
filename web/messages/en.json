@@ -542,13 +542,10 @@
     "fieldSha256": "SHA-256",
     "fieldArtifact": "Artifact",
     "searchSurface": "Surface",
-    "searchApp": "App",
-    "searchWindow": "Window",
-    "searchHits": "Hits",
-    "searchScreenRequest": "Request",
     "searchScore": "Score",
     "controlScript": "Script",
     "controlReturn": "Return value",
+    "controlActedOn": "Acted on",
     "controlTraceback": "Traceback"
   },
   "ChatGPTAuthControl": {
@@ -709,9 +706,6 @@
     "readMcpResourceBare": "Reading MCP resource",
     "searchCode": "Searching code for \"{query}\"",
     "searchCodeBare": "Searching code",
-    "searchScreen": "Searching the screen for \"{query}\"",
-    "searchScreenBare": "Searching the screen",
-    "searchScreenSurface": "Searching the {surface} for \"{query}\"",
     "controlScreenScript": "Running {script}",
     "controlScreenSurface": "Controlling the {surface}",
     "controlScreenBare": "Controlling the screen"
