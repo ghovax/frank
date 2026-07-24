@@ -80,6 +80,21 @@ async def run() -> int:
 
     import uvicorn
 
+    class _AnnouncingServer(uvicorn.Server):
+        """Sets an event once the socket is accepting connections.
+
+        uvicorn only exposes readiness as an attribute to be polled; making it awaitable is
+        what lets the worker report ready at the exact moment it can serve, rather than a
+        sleep-interval later."""
+
+        def __init__(self, configuration) -> None:  # noqa: ANN001 — matches uvicorn's signature
+            super().__init__(configuration)
+            self.ready = asyncio.Event()
+
+        async def startup(self, sockets=None) -> None:  # noqa: ANN001
+            await super().startup(sockets=sockets)
+            self.ready.set()
+
     config = uvicorn.Config(
         build_app(session),
         uds=str(socket_path),
@@ -87,7 +102,7 @@ async def run() -> int:
         access_log=False,
         lifespan="off",
     )
-    server = uvicorn.Server(config)
+    server = _AnnouncingServer(config)
 
     # uvicorn captures the termination signals itself; the worker wants its own teardown to
     # run first, so the session's turn is aborted and its conversation checkpointed before the
@@ -110,9 +125,15 @@ async def run() -> int:
     serve = asyncio.create_task(server.serve())
     # Only once the socket is accepting connections is the session usable, so readiness is
     # reported here rather than at assignment: a client that sends immediately after `create`
-    # must not race the bind.
-    while not server.started and not serve.done():
-        await asyncio.sleep(0.02)
+    # must not race the bind. Waiting on the readiness event and on the serve task together
+    # means a worker that cannot bind is reported as failed instead of hanging its creator
+    # until the assignment times out.
+    ready_wait = asyncio.create_task(server.ready.wait())
+    await asyncio.wait({ready_wait, serve}, return_when=asyncio.FIRST_COMPLETED)
+    if serve.done():
+        ready_wait.cancel()
+        await session.aclose()
+        return 1
     sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid()}) + "\n")
     sys.stdout.flush()
 

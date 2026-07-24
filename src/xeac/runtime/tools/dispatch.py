@@ -1147,13 +1147,6 @@ class _ToolsMixin:
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        if self._is_agent:
-            yield Error(id=tool_call_identifier,
-                tool=tool_name,
-                code="agent_artifact_denied",
-                message="Agents cannot open artifacts. Return findings only as text for the parent agent.",
-            )
-            return
         raw_target = str(tool_arguments.get("url", "")).strip()
         if not raw_target:
             yield Error(id=tool_call_identifier, tool=tool_name,

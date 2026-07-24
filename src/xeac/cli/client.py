@@ -12,7 +12,8 @@ import json
 import os
 import subprocess
 import sys
-import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from typing import Any, Optional
 
 import httpx
@@ -57,15 +58,21 @@ def _daemon_command() -> list[str]:
 
 
 def ensure_daemon() -> None:
-    """Start the daemon if it is not already up, and wait until it answers."""
+    """Start the daemon if it is not already up, and wait until it answers.
+
+    Readiness is read from the daemon itself: it writes one line to stdout the moment both of
+    its listeners are accepting connections, and closes the stream. Waiting on that line means
+    the first command after an autostart proceeds exactly when the daemon is usable, rather
+    than at whatever interval a poll happened to choose."""
     if daemon_is_up():
         return
     try:
-        subprocess.Popen(
+        daemon = subprocess.Popen(
             _daemon_command(),
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
+            text=True,
             # Detached, so the daemon outlives the command that started it — otherwise every
             # CLI invocation would take the fleet down with it on exit.
             start_new_session=True,
@@ -73,12 +80,35 @@ def ensure_daemon() -> None:
     except OSError as error:
         raise DaemonError(f"Could not start xeacd: {error}") from error
 
-    deadline = time.monotonic() + _STARTUP_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        if daemon_is_up():
-            return
-        time.sleep(0.1)
-    raise DaemonError("xeacd did not become ready in time. Check the daemon log.")
+    announcement = _await_announcement(daemon)
+    if announcement is None:
+        raise DaemonError(
+            "xeacd exited before it was ready. Check the daemon log under the state directory."
+            if daemon.poll() is not None
+            else "xeacd did not become ready in time. Check the daemon log under the state directory."
+        )
+
+
+def _await_announcement(daemon: subprocess.Popen) -> Optional[dict]:
+    """The daemon's one-line readiness announcement, or ``None`` if it never arrives.
+
+    The read runs on a worker thread so the timeout is real: a blocking `readline` on a daemon
+    that wedged before announcing would otherwise hang the command with no way out."""
+    if daemon.stdout is None:
+        return None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(daemon.stdout.readline)
+        try:
+            line = pending.result(timeout=_STARTUP_TIMEOUT_SECONDS)
+        except FuturesTimeout:
+            return None
+    if not line:
+        return None
+    try:
+        announcement = json.loads(line)
+    except ValueError:
+        return None
+    return announcement if announcement.get("ready") else None
 
 
 def call(method: str, **params: Any) -> dict:

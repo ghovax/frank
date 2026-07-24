@@ -105,14 +105,11 @@ class _TurnLoopMixin:
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
                 "available_agents": available_agents,
                 "remote_agents": remote_agents,
-                "is_agent": self._is_agent,
                 # The project's locations. Filesystem/shell tools take a `location` (its
                 # URI); it is required when there is more than one, optional when one.
                 "locations": self._locations_summary(),
             })
-            agent_context = "This agent is initialized as the main orchestrator agent."
-            if self._is_agent:
-                agent_context = self._prompt_loader.load("agent_context", {})
+            agent_context = self._prompt_loader.load("agent_context", {})
             # The opt-in user-context section is its own template, rendered into the prompt's
             # `user_environment` slot only when enabled and the probe found something — so the
             # section (heading and all) simply is not there when off.
@@ -602,17 +599,14 @@ class _TurnLoopMixin:
                 #  - a top-level turn returns here — the executor persists the checkpoint,
                 #    closes the segment as input-required, and a later answer resumes it;
                 #  - a delegated turn is an in-process, ephemeral continuation (it cannot
-                #    be a durable segment that a restart would only discard), so it parks
-                #    in place on the answer futures and continues this same stream — the
-                #    executor relays the prompt to the panel while it waits.
+                #    The pause is durable: the segment closes here and a later answer rebuilds
+                #    the turn from its checkpoint, so a session waiting on a person survives a
+                #    daemon restart rather than losing the work it had already done.
                 yield Suspended(interactions=[SuspensionGate(**gate.to_dict()) for gate in pending],
                     plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
                 )
-                if not self._is_agent:
-                    step.directive = _STOP
-                    return
-                answers = await self._await_pending_answers(pending)
-                decisions = self._resolve_tool_decisions(plans, answers)
+                step.directive = _STOP
+                return
             else:
                 decisions = self._resolve_tool_decisions(plans, {})
             async for event in self._drain_tools_concurrently(

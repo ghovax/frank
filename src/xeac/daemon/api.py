@@ -101,7 +101,11 @@ async def _session_create(params: dict) -> dict:
     if parent_id and parent is None:
         raise RpcError(f"No parent session {parent_id!r}.", status_code=404, code="no_such_session")
 
-    requested = str(params.get("permission_mode") or "")
+    # Precedence: what the caller asked for, else the configured default. Either way a child
+    # is clamped against its parent, so the fallback can never be a way to gain authority the
+    # parent did not have.
+    configured = getattr(getattr(state.global_configuration, "agent", None), "permission_mode", "")
+    requested = str(params.get("permission_mode") or "") or str(configured or "")
     mode = (
         PermissionMode.more_restrictive(requested, parent.permission_mode)
         if parent is not None
@@ -139,7 +143,7 @@ async def _session_list(params: dict) -> dict:
     parent = str(params.get("parent") or "")
     if parent:
         records = [record for record in records if record.parent == parent]
-    return {"sessions": [record.public() for record in sorted(records, key=lambda r: r.created_at)]}
+    return {"sessions": [record.public() for record in sorted(records, key=lambda entry: entry.created_at)]}
 
 
 async def _session_get(params: dict) -> dict:
@@ -289,7 +293,7 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
             yield {
                 "data": json.dumps({
                     "kind": "snapshot",
-                    "tasks": [t.model_dump(by_alias=True, exclude_none=True, mode="json") for t in tasks],
+                    "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
                 })
             }
             while True:

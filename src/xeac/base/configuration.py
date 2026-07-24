@@ -468,6 +468,12 @@ class ProviderCredential(BaseModel):
     base_url: str = ""
 
 
+class AgentDefaults(BaseModel):
+    """Defaults applied to a session whose creator did not specify them."""
+
+    permission_mode: Literal["default", "auto", "read_only"] = "default"
+
+
 class GlobalConfiguration(BaseModel):
     HOME_AGENTS_ROOT_DIRECTORY: ClassVar[str] = "~/.agents"
     AGENTS_ROOT_DIRECTORY: ClassVar[str] = ".agents"
@@ -491,6 +497,10 @@ class GlobalConfiguration(BaseModel):
     a2a: A2AServerConfiguration = A2AServerConfiguration()
     telemetry: TelemetryConfiguration = TelemetryConfiguration()
     default_agent: str = "general-assistant"
+    # What a session runs under when its creator does not say. An agent profile that declares
+    # its own stricter mode still wins: this is a floor for sessions created without one, not
+    # a way to loosen a profile that was written to be careful.
+    agent: AgentDefaults = AgentDefaults()
     maximum_history_age_days: int = 30
 
     @classmethod

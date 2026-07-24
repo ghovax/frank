@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import secrets
@@ -96,6 +97,28 @@ def _reclaim_socket() -> None:
     raise SystemExit(f"A daemon is already listening on {path}.")
 
 
+def _announcing_server_class():
+    """Built on demand so importing this module does not pull in uvicorn."""
+    import uvicorn
+
+    class AnnouncingServer(uvicorn.Server):
+        """A uvicorn server that sets an event once it is accepting connections.
+
+        uvicorn exposes readiness only as a `started` attribute, which leaves callers spinning
+        on it. Overriding `startup` makes readiness awaitable, so nothing polls, and a server
+        that fails to bind surfaces as a failed task rather than a loop that never ends."""
+
+        def __init__(self, config) -> None:  # noqa: ANN001 — matches uvicorn's signature
+            super().__init__(config)
+            self.ready = asyncio.Event()
+
+        async def startup(self, sockets=None) -> None:  # noqa: ANN001
+            await super().startup(sockets=sockets)
+            self.ready.set()
+
+    return AnnouncingServer
+
+
 def build_app() -> FastAPI:
     from xeac.daemon import state
     from xeac.daemon.api import router as control_router
@@ -159,8 +182,11 @@ async def _serve() -> int:
     await state.pool.start()
 
     app = build_app()
-    socket_server = uvicorn.Server(uvicorn.Config(app, uds=state.daemon_socket, log_level="warning", access_log=False))
-    tcp_server = uvicorn.Server(
+    announcing = _announcing_server_class()
+    socket_server = announcing(
+        uvicorn.Config(app, uds=state.daemon_socket, log_level="warning", access_log=False)
+    )
+    tcp_server = announcing(
         uvicorn.Config(app, host=LOOPBACK_HOST, port=state.daemon_port, log_level="warning", access_log=False)
     )
     # uvicorn captures SIGTERM/SIGINT itself, and with two servers sharing a process each
@@ -193,11 +219,21 @@ async def _serve() -> int:
 
     watcher = asyncio.create_task(_shutdown_on_signal())
     serving = asyncio.gather(socket_server.serve(), tcp_server.serve())
-    while not (socket_server.started and tcp_server.started):
-        if serving.done():
-            break
-        await asyncio.sleep(0.02)
+    # Wait for both listeners to be up, or for serving to fail — whichever happens first, so a
+    # daemon that cannot bind reports that instead of waiting on a readiness that never comes.
+    both_ready = asyncio.gather(socket_server.ready.wait(), tcp_server.ready.wait())
+    await asyncio.wait({both_ready, serving}, return_when=asyncio.FIRST_COMPLETED)
+    if serving.done():
+        both_ready.cancel()
+        await serving
+        return 1
     _write_handshake(state.daemon_token, state.daemon_port)
+    # One line on stdout, then close it: whoever started the daemon is waiting to read exactly
+    # this, and leaving the pipe open would let later output block on a reader that has gone.
+    with contextlib.suppress(OSError, ValueError):
+        sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid(), "port": state.daemon_port}) + "\n")
+        sys.stdout.flush()
+        sys.stdout.close()
     logger.info("xeacd listening on %s and %s:%d", state.daemon_socket, LOOPBACK_HOST, state.daemon_port)
 
     try:

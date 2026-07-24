@@ -127,10 +127,24 @@ def _command_history(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def _command_configure(arguments: argparse.Namespace) -> int:
+    from xeac.cli.commands import configure
+
+    if arguments.unset:
+        if not arguments.setting:
+            print("xeac: --unset needs a setting to remove", file=sys.stderr)
+            return 1
+        return configure.run_unset(arguments)
+    return configure.run(arguments)
+
+
 def _command_daemon(arguments: argparse.Namespace) -> int:
     if arguments.action == "status":
+        # Reporting must not start anything: `status` is what a person runs to find out, and a
+        # status check that silently launches a service is a status check that can never
+        # report the absence it was asked about. `--start` opts into the other behaviour.
         if not daemon_is_up() and not arguments.start:
-            print("xeacd is not running")
+            print("xeacd is not running (start it with `xeac daemon start`)")
             return 1
         _print(call("daemon.status"), arguments.json, render.daemon_status)
         return 0
@@ -168,7 +182,7 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xeac", description="Drive XEAC sessions.")
-    parser.add_argument("--json", action="store_true", help="emit raw JSON instead of formatted output")
+    parser.add_argument("-j", "--json", action="store_true", help="emit raw JSON instead of formatted output")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     def add(name: str, help_text: str) -> argparse.ArgumentParser:
@@ -177,23 +191,24 @@ def build_parser() -> argparse.ArgumentParser:
         `xeac ps --json` is what a person types; argparse would otherwise only accept the flag
         before the verb, and reject the natural form with an unhelpful error."""
         subparser = subparsers.add_parser(name, help=help_text)
-        subparser.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+        subparser.add_argument("-j", "--json", action="store_true", default=argparse.SUPPRESS,
                                help="emit raw JSON instead of formatted output")
         return subparser
 
     create = add("create", "create a session (the only place its configuration is set)")
-    create.add_argument("--agent", help="agent profile to run")
-    create.add_argument("--directory", "-C", help="working directory")
-    create.add_argument("--mode", choices=["default", "auto", "read_only"], help="permission mode, fixed for the session's life")
-    create.add_argument("--project", help="project id")
-    create.add_argument("--parent", help="parent session; the child is clamped to no looser a mode")
-    create.add_argument("--title", help="a human label for the session list")
+    create.add_argument("-a", "--agent", help="agent profile to run")
+    create.add_argument("-C", "--directory", help="working directory")
+    create.add_argument("-m", "--mode", choices=["default", "auto", "read_only"],
+                        help="permission mode, fixed for the session's life")
+    create.add_argument("-p", "--project", help="project identifier")
+    create.add_argument("-P", "--parent", help="parent session; the child is clamped to no looser a mode")
+    create.add_argument("-t", "--title", help="a human label for the session list")
     create.set_defaults(handler=_command_create)
 
     send = add("send", "send a message to a session")
     send.add_argument("session")
     send.add_argument("message", help="the message, or - to read stdin")
-    send.add_argument("--wait", action="store_true", help="follow until the session goes idle")
+    send.add_argument("-w", "--wait", action="store_true", help="follow until the session goes idle")
     send.set_defaults(handler=_command_send)
 
     get = add("get", "show a session")
@@ -209,7 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
     attach.set_defaults(handler=_command_attach)
 
     ps = add("ps", "list sessions")
-    ps.add_argument("--all", "-a", action="store_true", help="include sessions that have ended")
+    ps.add_argument("-a", "--all", action="store_true", help="include sessions that have ended")
     ps.set_defaults(handler=_command_ps)
 
     tree = add("tree", "show a session and everything it spawned")
@@ -219,7 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     approve = add("approve", "answer a session's pending permission request")
     approve.add_argument("session")
     approve.add_argument("request")
-    approve.add_argument("--deny", action="store_true", help="deny instead of allowing")
+    approve.add_argument("-d", "--deny", action="store_true", help="deny instead of allowing")
     approve.set_defaults(handler=_command_approve)
 
     kill = add("kill", "end a session and everything under it")
@@ -228,12 +243,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     history = add("history", "print a session's turns")
     history.add_argument("session")
-    history.add_argument("--limit", type=int, help="only the last N turns")
+    history.add_argument("-n", "--limit", type=int, help="only the last N turns")
     history.set_defaults(handler=_command_history)
+
+    configure = add("configure", "read or change what new sessions and daemons start with")
+    configure.add_argument("setting", nargs="?", help="dotted path, e.g. agent.permission_mode")
+    configure.add_argument("value", nargs="?", help="the new value; omit to read it")
+    configure.add_argument("-u", "--unset", action="store_true", help="remove the setting instead")
+    configure.set_defaults(handler=_command_configure)
 
     daemon = add("daemon", "inspect or start the daemon")
     daemon.add_argument("action", choices=["status", "start", "stop"], nargs="?", default="status")
-    daemon.add_argument("--start", action="store_true", help="start the daemon if it is not running")
+    daemon.add_argument("-s", "--start", action="store_true", help="start the daemon if it is not running")
     daemon.set_defaults(handler=_command_daemon)
 
     return parser
