@@ -11,6 +11,7 @@ event reaches a watcher at the moment it is persisted rather than on some later 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -67,10 +68,31 @@ async def _turn_tasks_for_context(params: dict) -> Any:
     return [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks]
 
 
+def _set_turn_state(session_id: str, running: bool) -> None:
+    """Count the turns a session has in flight, and broadcast only on the idle/busy edge.
+
+    A count rather than a flag because a session can have more than one turn open at once —
+    a compaction or an autonomous wake alongside the user's — and the sidebar must not go
+    quiet when the first of them finishes."""
+    previous = state._running_contexts.get(session_id, 0)
+    updated = previous + 1 if running else max(0, previous - 1)
+    if updated:
+        state._running_contexts[session_id] = updated
+    else:
+        state._running_contexts.pop(session_id, None)
+    if (previous == 0) != (updated == 0):
+        state.broadcaster.publish({"type": "sessions_changed"})
+
+
 async def _session_event(params: dict) -> dict:
     """A live turn event, or a change in whether the session is waiting on a human."""
     event = params.get("event") or {}
     session_id = str(event.get("context_id") or params.get("session_id") or "")
+    if "running" in event:
+        # Whether a turn is in flight, which the registry cannot infer: a session's process
+        # is alive for its whole life, including while it sits idle between messages.
+        _set_turn_state(session_id, bool(event.get("running")))
+        return {"noted": True}
     if "awaiting_input" in event:
         awaiting = bool(event.get("awaiting_input"))
         if state.registry is not None:
@@ -86,6 +108,23 @@ async def _session_event(params: dict) -> dict:
     return {"published": True}
 
 
+async def _session_title(params: dict) -> dict:
+    """A title a session generated for itself.
+
+    Produced in the worker because producing it means calling a model, which is the runtime's
+    job and not the control plane's. Written here because the daemon is the sole writer."""
+    from xeac.daemon.services.sessions import _set_session_title
+
+    session_id = str(params.get("session_id") or "")
+    title = str(params.get("title") or "").strip()
+    if not session_id or not title:
+        return {"saved": False}
+    changed = await asyncio.to_thread(_set_session_title, session_id, title)
+    if changed:
+        state.broadcaster.publish({"type": "sessions_changed"})
+    return {"saved": changed}
+
+
 _METHODS = {
     "task.save": _task_save,
     "task.get": _task_get,
@@ -95,6 +134,7 @@ _METHODS = {
     "turn.load_session_state": _turn_load_session_state,
     "turn.tasks_for_context": _turn_tasks_for_context,
     "session.event": _session_event,
+    "session.title": _session_title,
 }
 
 

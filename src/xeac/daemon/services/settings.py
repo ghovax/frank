@@ -7,9 +7,7 @@ from xeac.daemon.brokers.composio import composio_mcp_servers
 from xeac.base.configuration import GlobalConfiguration
 from xeac.base.paths import configuration_file_path
 from xeac.base.configuration import save_api_keys
-from xeac.daemon.brokers.mcp import MCPClientManager
-from xeac.base.tuning import set_tuning
-from xeac.base.tuning import tuning_from_policy
+from xeac.base.mcp_client import MCPClientManager
 from typing import Optional
 import asyncio
 import hashlib

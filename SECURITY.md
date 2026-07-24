@@ -15,7 +15,8 @@ Include what you found, how to reproduce it, and the impact you expect. You will
 
 XEAC runs AI agents that can execute shell commands, read and write files, control the Mac through the accessibility API, and drive a browser. **Treat it as software that acts on your behalf with your privileges.**
 
-- The harness server binds to `127.0.0.1:8822` by default. It adds no authentication or transport security of its own. If you deploy it on a remote host, put it behind your own, and never expose it directly to the public internet.
+- `xeacd` listens on a unix socket in your runtime directory and on an ephemeral loopback port, both gated by a capability token it writes `0600`. Each session has its own socket and its own token, minted at creation. That is access control between local users, not transport security: the token crosses the wire in the clear, so if you reach a daemon from another machine, tunnel it over SSH or put TLS in front, and never expose the port directly to the public internet.
+- A session's permission mode is fixed at creation and a child is clamped to no looser a mode than its parent. There is no bypass mode and no standing "always allow".
 - The permission system (approval prompts, sandboxed bash, permission modes) is a guardrail against mistakes and prompt-injection, not a sandbox against a determined local attacker. Run untrusted tasks accordingly.
 
 ## What the agent sends to your model provider

@@ -8,7 +8,7 @@ event frames. Nothing here is a data format — anything scripted should be read
 from __future__ import annotations
 
 import sys
-from typing import Any, Iterable
+from typing import Any
 
 # Colour is applied only when stdout is a terminal, so piping produces clean text.
 _TTY = sys.stdout.isatty()
@@ -126,6 +126,13 @@ def daemon_status(payload: dict) -> None:
     print(f"  {_colour('workers'.ljust(12), _DIM)}{pool.get('warm', 0)} warm, {pool.get('assigned', 0)} assigned")
     print(f"  {_colour('socket'.ljust(12), _DIM)}{payload.get('socket', '')}")
     print(f"  {_colour('port'.ljust(12), _DIM)}{payload.get('port', '')}")
+
+
+def daemon_endpoint(payload: dict) -> None:
+    """Where this daemon listens and the token that opens it — the pair a desktop client
+    needs to attach to it across an SSH tunnel."""
+    print(f"  {_colour('port'.ljust(12), _DIM)}{payload.get('port', '')}")
+    print(f"  {_colour('token'.ljust(12), _DIM)}{payload.get('token', '')}")
 
 
 def stream_frame(frame: dict) -> None:

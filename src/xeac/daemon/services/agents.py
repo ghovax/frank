@@ -18,7 +18,6 @@ from xeac.base.skills import skills_for_agent
 from xeac.base.sqlite_lock import sqlite_write_lock
 from xeac.protocol.dtos import AgentBashConfigurationResponse
 from xeac.protocol.dtos import AgentConfigurationResponse
-from xeac.protocol.dtos import AgentSpawnConfigurationResponse
 from pathlib import Path
 from typing import Any
 import xeac.base.configuration as _configuration
@@ -27,7 +26,15 @@ from xeac.daemon import state
 from xeac.daemon.persistence.database import ModelHistoryRecord
 
 
-PUBLIC_BASE_URL = "http://localhost:8822"
+def _catalogue_base_url() -> str:
+    """The address a card from this catalogue names.
+
+    These are agent *profiles*, not running sessions — nothing is listening on their
+    behalf until one is created, and a created session advertises its own socket instead.
+    So the honest address is the daemon that would create it, which binds an ephemeral
+    port chosen at boot; a fixed one baked in here would name whatever else happened to
+    take that number."""
+    return f"http://127.0.0.1:{state.daemon_port}"
 
 
 AGENT_CARD_PATH = "/.well-known/agent-card.json"
@@ -119,7 +126,7 @@ def _card_for(agent_name: str, working_directory: str = ""):
     agent_skills = skills_for_agent(all_skills, configuration.skills)
     security_schemes, security = state.global_configuration.a2a.card_security()
     return configuration, build_agent_card(
-        configuration, agent_skills, PUBLIC_BASE_URL,
+        configuration, agent_skills, _catalogue_base_url(),
         security_schemes=security_schemes, security=security,
     )
 
@@ -202,12 +209,18 @@ def _apply_agent_configuration_update(sidecar: dict[str, Any], request: AgentCon
 
 
 def _reload_agent_cards() -> None:
-    """Recompile AgentCards from the agent markdown and skill files so discovery
-    reflects edits without a restart. Agent behaviour itself is already live,
-    since each turn loads its configuration and skills fresh."""
-    assert state.global_configuration is not None and state.registry is not None
+    """Recompile the catalogue of AgentCards from the agent and skill files on disk.
+
+    This describes the agent *profiles* a session could be created with, which is a
+    different thing from the sessions themselves — a running session serves its own card on
+    its own socket. Kept current so discovery reflects an edit without a restart; agent
+    behaviour is already live, since every turn loads its configuration and skills fresh."""
+    assert state.global_configuration is not None
+    catalogue = {}
     for agent_name in list_agent_route_names(state.global_configuration.agent_directories()):
-        handler = state.registry._handlers.get(agent_name)
-        if handler is not None:
+        try:
             _configuration, card = _card_for(agent_name)
-            state.registry.register(agent_name, handler, card)
+        except Exception:  # noqa: BLE001 — one unreadable profile must not empty the catalogue
+            continue
+        catalogue[agent_name] = card
+    state.agent_cards = catalogue

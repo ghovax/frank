@@ -52,7 +52,7 @@ You are the senior researcher. You do not take bullshit...
 }
 ```
 
-Each agent is served as its own [A2A](https://github.com/google/A2A) endpoint, and an agent can **delegate** a sub-task to another agent (the `spawn_agent` tool). Bundled agents:
+Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. An agent that needs a peer creates a session (`xeac create`) and messages it over that protocol — the same thing you do from the terminal — rather than calling a delegation tool. Bundled agents:
 
 | Agent | Role |
 |-------|------|

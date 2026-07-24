@@ -69,6 +69,11 @@ export function ConnectionSettings({
   const [savingSshConnection, setSavingSshConnection] = useState(false);
   const [deletingConnectionId, setDeletingConnectionId] = useState<string | null>(null);
   const [newUrl, setNewUrl] = useState("");
+  // Every `xeacd` mints its own capability token at boot and publishes it in its runtime
+  // directory. That directory is on the *remote* machine, so this client cannot read it —
+  // the user pastes the token in, once, when saving the connection.
+  const [newToken, setNewToken] = useState("");
+  const [sshToken, setSshToken] = useState("");
   const [addMode, setAddMode] = useState<"url" | "ssh">("url");
   const [sshHosts, setSshHosts] = useState<SshHost[]>([]);
   const [sshLoading, setSshLoading] = useState(false);
@@ -77,7 +82,9 @@ export function ConnectionSettings({
   const [sshPort, setSshPort] = useState("");
   const [sshIdentityFile, setSshIdentityFile] = useState("");
   const [sshLocalPort, setSshLocalPort] = useState("");
-  const [sshRemotePort, setSshRemotePort] = useState("8822");
+  // No default: the daemon binds an ephemeral port, so there is no conventional number to
+  // guess. `xeac daemon endpoint` on that host reports the port and the token together.
+  const [sshRemotePort, setSshRemotePort] = useState("");
   const [sshContext, setSshContext] = useState("");
 
   const refreshConnections = useCallback(async () => {
@@ -128,7 +135,7 @@ export function ConnectionSettings({
       const url = await startLocalServer();
       const ok = isTauri()
         ? await waitForConnection(url)
-        : await checkConnection(url, 2000);
+        : await checkConnection(url, { timeoutMs: 2000 });
       if (!ok) {
         setFailedTarget(LOCAL_TARGET_ID);
         setConnectingTarget(null);
@@ -163,8 +170,8 @@ export function ConnectionSettings({
       try {
         const url = await resolveReachableConnectionUrl(profile);
         const ok = profile.kind === "ssh"
-          ? await waitForConnection(url)
-          : await checkConnection(url);
+          ? await waitForConnection(url, { token: profile.token ?? "" })
+          : await checkConnection(url, { token: profile.token ?? "" });
         if (!ok) {
           setFailedTarget(profile.id);
           setConnectingTarget(null);
@@ -176,7 +183,7 @@ export function ConnectionSettings({
           });
           return;
         }
-        await activateConnection(url, profile.id, profile.id);
+        await activateConnection(url, profile.id, { token: profile.token ?? "", profileId: profile.id });
         onConnected({ ...profile, url });
       } catch (caught) {
         setFailedTarget(profile.id);
@@ -210,19 +217,23 @@ export function ConnectionSettings({
       kind: "remote",
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
+      token: newToken.trim() || undefined,
     };
     try {
       await saveConnection(profile);
       setNewUrl("");
+      setNewToken("");
       await refreshConnections();
     } finally {
       window.setTimeout(() => setSavingConnection(false), Math.max(0, 450 - (performance.now() - startedAt)));
     }
-  }, [newUrl, refreshConnections]);
+  }, [newUrl, newToken, refreshConnections]);
 
   const handleAddSshConnection = useCallback(async () => {
     const alias = sshAlias.trim();
-    if (!alias) return;
+    // The port is not optional: `xeacd` binds an ephemeral one, so a tunnel with a guessed
+    // number forwards to nothing.
+    if (!alias || !sshRemotePort.trim()) return;
     const startedAt = performance.now();
     setSavingSshConnection(true);
     const discovered = sshHosts.find((host) => host.alias === alias);
@@ -233,13 +244,14 @@ export function ConnectionSettings({
       kind: "ssh",
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
+      token: sshToken.trim() || undefined,
       sshHostAlias: alias,
       sshHostName: discovered?.hostName,
       sshUser: sshUser.trim() || discovered?.user || undefined,
       sshPort: sshPort.trim() ? Number(sshPort.trim()) : discovered?.port ?? null,
       sshIdentityFile: sshIdentityFile.trim() || discovered?.identityFiles[0] || undefined,
       sshLocalPort: sshLocalPort.trim() ? Number(sshLocalPort.trim()) : null,
-      sshRemotePort: sshRemotePort.trim() ? Number(sshRemotePort.trim()) : 8822,
+      sshRemotePort: Number(sshRemotePort.trim()),
       sshContext: sshContext.trim() || undefined,
     };
     try {
@@ -249,13 +261,14 @@ export function ConnectionSettings({
       setSshPort("");
       setSshIdentityFile("");
       setSshLocalPort("");
-      setSshRemotePort("8822");
+      setSshRemotePort("");
+      setSshToken("");
       setSshContext("");
       await refreshConnections();
     } finally {
       window.setTimeout(() => setSavingSshConnection(false), Math.max(0, 450 - (performance.now() - startedAt)));
     }
-  }, [sshAlias, sshHosts, sshUser, sshPort, sshIdentityFile, sshLocalPort, sshRemotePort, sshContext, refreshConnections]);
+  }, [sshAlias, sshHosts, sshUser, sshPort, sshIdentityFile, sshLocalPort, sshRemotePort, sshToken, sshContext, refreshConnections]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -280,7 +293,9 @@ export function ConnectionSettings({
     || sshIdentityFile.trim()
     || sshLocalPort.trim()
     || sshContext.trim()
-    || (sshRemotePort.trim() && sshRemotePort.trim() !== "8822")
+    || sshRemotePort.trim()
+    || sshToken.trim()
+    || newToken.trim()
   );
 
   useEffect(() => {
@@ -429,7 +444,7 @@ export function ConnectionSettings({
                 </Box>
               </Button>
             </Flex>
-            <Box minH={addMode === "ssh" ? "344px" : "164px"}>
+            <Box minH={addMode === "ssh" ? "436px" : "266px"}>
               {addMode === "url" ? (
                 <VStack align="stretch" gap={3}>
                   <Field.Root>
@@ -445,6 +460,22 @@ export function ConnectionSettings({
                     />
                     <Field.HelperText fontSize="xs">
                       {translation("serverUrlHelper")}
+                    </Field.HelperText>
+                  </Field.Root>
+                  <Field.Root>
+                    <Field.Label textStyle="fieldLabel">{translation("accessToken")}</Field.Label>
+                    <Input
+                      bg="bg.subtle"
+                      type="password"
+                      placeholder={translation("accessTokenPlaceholder")}
+                      value={newToken}
+                      onChange={(event) => setNewToken(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void handleAddConnection();
+                      }}
+                    />
+                    <Field.HelperText fontSize="xs">
+                      {translation("accessTokenHelper")}
                     </Field.HelperText>
                   </Field.Root>
                   <Flex justify="flex-end">
@@ -514,15 +545,22 @@ export function ConnectionSettings({
                     </Field.Root>
                     <Field.Root>
                       <Field.Label textStyle="fieldLabel">{translation("serverPortOnHost")}</Field.Label>
-                      <Input bg="bg.subtle" placeholder="8822" value={sshRemotePort} onChange={(event) => setSshRemotePort(event.target.value.replace(/\D/g, ""))} />
+                      <Input bg="bg.subtle" placeholder={translation("serverPortOnHostPlaceholder")} value={sshRemotePort} onChange={(event) => setSshRemotePort(event.target.value.replace(/\D/g, ""))} />
                     </Field.Root>
                   </Flex>
+                  <Field.Root>
+                    <Field.Label textStyle="fieldLabel">{translation("accessToken")}</Field.Label>
+                    <Input bg="bg.subtle" type="password" placeholder={translation("accessTokenPlaceholder")} value={sshToken} onChange={(event) => setSshToken(event.target.value)} />
+                    <Field.HelperText fontSize="xs">
+                      {translation("accessTokenHelper")}
+                    </Field.HelperText>
+                  </Field.Root>
                   <Field.Root>
                     <Field.Label textStyle="fieldLabel">{translation("hostNotes")}</Field.Label>
                     <Textarea bg="bg.subtle" rows={3} placeholder={translation("hostNotesPlaceholder")} value={sshContext} onChange={(event) => setSshContext(event.target.value)} />
                   </Field.Root>
                   <Flex justify="flex-end">
-                    <Button variant="subtle" onClick={handleAddSshConnection} loading={savingSshConnection} disabled={!sshAlias.trim() || savingSshConnection}>
+                    <Button variant="subtle" onClick={handleAddSshConnection} loading={savingSshConnection} disabled={!sshAlias.trim() || !sshRemotePort.trim() || savingSshConnection}>
                       <LuPlus size={14} />
                       {translation("saveSshConnection")}
                     </Button>

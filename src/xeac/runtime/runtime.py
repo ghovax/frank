@@ -24,7 +24,7 @@ from xeac.base.configuration import (
 from langchain_core.language_models.chat_models import BaseChatModel
 from xeac.runtime.models.litellm import ChatLiteLLMModel
 from xeac.runtime.models.codex import ChatCodexModel
-from xeac.runtime.file_leases import FileLeaseManager
+from xeac.base.file_leases import FileLeaseManager
 from xeac.base.models import find_model, resolve_litellm
 from xeac.locations.resolver import LocationAddress, executor_for, location_uri_for
 from xeac.runtime.tools.registry import (
@@ -375,15 +375,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             "reasoning_tokens": 0,
             "model_calls": 0,
         }
-        # A separate bucket for the combined spend of agents this agent spawns. They
-        # run in their own context (only their deliverable returns here), so their tokens
-        # are a distinct cost surfaced separately, never mixed into the context fill.
-        self._agent_token_usage: dict[str, int] = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "model_calls": 0,
-        }
 
         prompts_directory = Path(__file__).parent / "prompts"
         self._prompt_loader = PromptLoader(prompts_directory)
@@ -599,17 +590,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             reasoning_tokens=reasoning,
             context_window=context_window,
             cumulative=dict(self._token_usage),
-            agents=dict(self._agent_token_usage),
         )
-
-    def _add_agent_usage(self, input_tokens: int, output_tokens: int) -> None:
-        """Fold one agent model call's spend into the separate agent bucket. Each
-        relayed child USAGE reports its per-call figures, so summing them totals every
-        agent's usage without double-counting cumulative snapshots."""
-        self._agent_token_usage["input_tokens"] += input_tokens
-        self._agent_token_usage["output_tokens"] += output_tokens
-        self._agent_token_usage["total_tokens"] += input_tokens + output_tokens
-        self._agent_token_usage["model_calls"] += 1
 
     @property
     def agent_name(self) -> str:

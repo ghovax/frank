@@ -14,7 +14,7 @@ response headers are dropped when re-serving."""
 from __future__ import annotations
 
 from fastapi import Request
-from xeac.runtime.tools.registry import ASSETS_DIRECTORY
+from xeac.base.browser_assets import PROXY_RUNTIME
 from typing import Any
 from urllib.parse import quote
 from urllib.parse import urljoin
@@ -212,7 +212,7 @@ def _rewrite_proxy_srcset(value: str, base: str) -> str:
     return ", ".join(rewritten)
 
 
-_PROXY_RUNTIME_TEMPLATE = (ASSETS_DIRECTORY / "proxy_runtime.js").read_text(encoding="utf-8")
+_PROXY_RUNTIME_TEMPLATE = PROXY_RUNTIME
 
 
 def _proxy_runtime(base: str) -> str:

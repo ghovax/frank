@@ -42,6 +42,18 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _close_watchers(session_id: str) -> None:
+    """Tell everyone attached to this session that it has ended.
+
+    Without it an `xeac attach` on a session that is killed — or that dies on its own — sits
+    on a stream that will never produce another frame, because the only thing that ever closed
+    it was the session speaking. A watcher must learn about the deaths too."""
+    from xeac.daemon import state
+
+    with contextlib.suppress(Exception):
+        state.event_bus.complete(session_id)
+
+
 class SessionLifecycle:
     """Owns the transition of a warm worker into a live session, and back out again."""
 
@@ -155,6 +167,7 @@ class SessionLifecycle:
             )
             # A dead parent takes its children with it, exactly as an explicit kill would.
             await self.reap(session_id, reason="parent session ended", skip_self=True)
+        _close_watchers(session_id)
         self._unlink_socket(session_id)
         self._changed()
 
@@ -191,6 +204,7 @@ class SessionLifecycle:
         if worker is not None:
             await self._terminate(worker)
             self._pool.release()
+        _close_watchers(session_id)
         self._unlink_socket(session_id)
 
     async def _terminate(self, worker: WarmWorker) -> None:

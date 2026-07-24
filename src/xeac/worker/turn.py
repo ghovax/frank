@@ -9,35 +9,29 @@ failed — runs through one teardown exactly once.
 from __future__ import annotations
 
 import asyncio
-import dataclasses
 import json
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import DataPart, Message, Part, Role, Task, TaskState
+from a2a.types import Message, Part, Task, TaskState
 from a2a.utils import new_task
 from langchain_core.messages import messages_to_dict
 
 from xeac.base import telemetry as _telemetry
+from xeac.base.background_store import get_background_job_store
 from xeac.base.configuration import PromptLoader
-from xeac.base.permission_mode import PermissionMode
 from xeac.protocol.errors import _safe_turn_error
 from xeac.protocol.events import ErrorEvent, StatusEvent
 from xeac.protocol.metadata import (
-    AUTONOMOUS_RESUME_KIND,
-    COMPACTION_KIND,
-    INPUT_RESPONSE_KIND,
     Metadata,
     PART_KIND,
-    envelope_part,
     turn_metadata,
-    turn_metadata_envelope,
 )
 from xeac.protocol.parts import (
     _all_attachments,
@@ -53,11 +47,16 @@ from xeac.protocol.parts import (
     _text_part,
     _work_habits_acknowledgement_parts,
 )
-from xeac.protocol.turn_record import PendingInteraction, ToolGate, TurnKind, TurnRecord
+from xeac.protocol.turn_record import TurnKind, TurnRecord
 from xeac.runtime.annotation_stamping import annotation_image_blocks, normalize_annotation_payloads
 from xeac.runtime.runtime import AgentRuntime
 from xeac.runtime.turn_events import SuspensionGate
 from xeac.worker.sink import _TurnEventSink
+
+if TYPE_CHECKING:
+    # Imported for the annotation only: `session` imports this module, so a real import here
+    # would close the cycle.
+    from xeac.worker.session import SessionExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -297,7 +296,7 @@ class _TurnRunner:
         """Materialize the task, then either record a resume answer or start a fresh
         turn. Returns ``_DONE`` when the request is fully handled without streaming (a
         stale or partial answer), else the :class:`_Resolved` the next phases thread."""
-        message, metadata = ingested.message, ingested.metadata
+        message = ingested.message
         task = self._request.current_task
         if task is None:
             task = new_task(message)

@@ -28,6 +28,24 @@ _MCP_CONNECT_TIMEOUT_SECONDS = 20.0
 MCPEventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
 
 
+def _as_connection_failure(error: BaseException, server_name: str) -> BaseException:
+    """Turn a cancellation raised *by* a failed connect into a real error.
+
+    The MCP client libraries build on anyio task groups, and a server that goes away
+    mid-handshake unwinds those groups by cancelling — which surfaces here as a bare
+    `CancelledError`. That is not our caller asking to stop; it is the connection failing, and
+    letting it propagate as cancellation makes a broken MCP server look like an abort and
+    escape every `except Exception` a caller reasonably wrote. A cancellation that our own
+    task actually requested is passed through untouched, which `Task.cancelling` is exactly
+    the signal for."""
+    if not isinstance(error, asyncio.CancelledError):
+        return error
+    task = asyncio.current_task()
+    if task is not None and task.cancelling() > 0:
+        return error
+    return ConnectionError(f"MCP server {server_name!r} closed the connection during setup")
+
+
 class MCPClientManager:
     """Small MCP client facade for configured servers.
 
@@ -99,22 +117,35 @@ class MCPClientManager:
             await self._close_connection(connection)
 
     async def list_tools(self, server: str = "") -> dict[str, Any]:
+        """What every selected server offers.
+
+        A server that cannot be reached is listed with no tools rather than failing the
+        whole call: one misconfigured or offline endpoint should grey out its own row, not
+        take the tool panel — and the agent's tool gating — down with it. Naming a single
+        server is a direct question, so that one does raise."""
         result: dict[str, Any] = {"servers": []}
         for name in self._selected_servers(server):
-            async with self._session(name) as session:
-                tools_result = await session.list_tools()
-                result["servers"].append({
-                    "name": name,
-                    "tools": [
-                        {
-                            "name": tool.name,
-                            "title": tool.title,
-                            "description": tool.description,
-                            "input_schema": tool.inputSchema,
-                        }
-                        for tool in tools_result.tools
-                    ],
-                })
+            try:
+                async with self._session(name) as session:
+                    tools_result = await session.list_tools()
+            except Exception as error:  # noqa: BLE001 — an unreachable server is a fact, not a failure
+                if server:
+                    raise
+                logger.warning("Could not list tools for MCP server %s: %s", name, error)
+                result["servers"].append({"name": name, "tools": [], "error": str(error)})
+                continue
+            result["servers"].append({
+                "name": name,
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "title": tool.title,
+                        "description": tool.description,
+                        "input_schema": tool.inputSchema,
+                    }
+                    for tool in tools_result.tools
+                ],
+            })
         return result
 
     async def call_tool(
@@ -173,23 +204,32 @@ class MCPClientManager:
             pass
 
     async def list_resources(self, server: str = "") -> dict[str, Any]:
+        """What every selected server exposes. Tolerant of an unreachable server for the
+        same reason `list_tools` is."""
         result: dict[str, Any] = {"servers": []}
         for name in self._selected_servers(server):
-            async with self._session(name) as session:
-                resources_result = await session.list_resources()
-                result["servers"].append({
-                    "name": name,
-                    "resources": [
-                        {
-                            "uri": str(resource.uri),
-                            "name": resource.name,
-                            "title": resource.title,
-                            "description": resource.description,
-                            "mime_type": resource.mimeType,
-                        }
-                        for resource in resources_result.resources
-                    ],
-                })
+            try:
+                async with self._session(name) as session:
+                    resources_result = await session.list_resources()
+            except Exception as error:  # noqa: BLE001
+                if server:
+                    raise
+                logger.warning("Could not list resources for MCP server %s: %s", name, error)
+                result["servers"].append({"name": name, "resources": [], "error": str(error)})
+                continue
+            result["servers"].append({
+                "name": name,
+                "resources": [
+                    {
+                        "uri": str(resource.uri),
+                        "name": resource.name,
+                        "title": resource.title,
+                        "description": resource.description,
+                        "mime_type": resource.mimeType,
+                    }
+                    for resource in resources_result.resources
+                ],
+            })
         return result
 
     async def read_resource(self, server: str, uri: str) -> dict[str, Any]:
@@ -271,7 +311,10 @@ class _StatefulStdioSession:
 
     @asynccontextmanager
     async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
-        session = await self._connect()
+        # Bounded like the startup connect: an endpoint that accepts the connection and then
+        # never completes the handshake would otherwise hold the caller open indefinitely,
+        # and a settings panel listing tools is not something to hang a request on.
+        session = await asyncio.wait_for(self._connect(), timeout=_MCP_CONNECT_TIMEOUT_SECONDS)
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)
@@ -298,7 +341,7 @@ class _StatefulStdioSession:
                     )
                 )
                 await session.initialize()
-            except BaseException:
+            except BaseException as error:
                 # Tear the partially-entered contexts down HERE, in the same task they were
                 # entered in, so a failed connection's anyio cancel scopes (stdio_client's
                 # subprocess task group) unwind within this task and cannot leak into — and
@@ -307,7 +350,7 @@ class _StatefulStdioSession:
                     await self._exit_stack.aclose()
                 self._exit_stack = AsyncExitStack()
                 self._session = None
-                raise
+                raise _as_connection_failure(error, self._server_name) from error
             self._session = session
             return session
 
@@ -348,7 +391,10 @@ class _StatefulStreamableHTTPSession:
 
     @asynccontextmanager
     async def session(self, event_callback: MCPEventCallback | None = None) -> AsyncIterator[ClientSession]:
-        session = await self._connect()
+        # Bounded like the startup connect: an endpoint that accepts the connection and then
+        # never completes the handshake would otherwise hold the caller open indefinitely,
+        # and a settings panel listing tools is not something to hang a request on.
+        session = await asyncio.wait_for(self._connect(), timeout=_MCP_CONNECT_TIMEOUT_SECONDS)
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)
@@ -380,7 +426,7 @@ class _StatefulStreamableHTTPSession:
                     )
                 )
                 await session.initialize()
-            except BaseException:
+            except BaseException as error:
                 # Same-task teardown of the partially-entered contexts on failure, so the
                 # streamable-http client's anyio task group unwinds within this task instead
                 # of leaking its cancel scope into the caller/lifespan task.
@@ -388,7 +434,7 @@ class _StatefulStreamableHTTPSession:
                     await self._exit_stack.aclose()
                 self._exit_stack = AsyncExitStack()
                 self._session = None
-                raise
+                raise _as_connection_failure(error, self._server_name) from error
             self._session = session
             return session
 

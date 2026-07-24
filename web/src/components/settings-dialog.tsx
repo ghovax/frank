@@ -428,10 +428,8 @@ export function SettingsDialog({
           model: agentConfiguration.model,
           provider: agentConfiguration.provider,
           reasoning_effort: agentConfiguration.reasoning_effort,
-          stream_agent_progress: agentConfiguration.stream_agent_progress,
           tools_enabled: agentConfiguration.tools_enabled,
           bash: agentConfiguration.bash,
-          spawn_agent: agentConfiguration.spawn_agent,
         }, workingDirectory);
         setAgentConfiguration(savedConfiguration);
         setSavedAgentConfiguration(savedConfiguration);
@@ -841,7 +839,6 @@ function AgentPermissionsEditor({
     [translation],
   );
   const rules = Object.entries(configuration.bash.permissions).sort(([leftPattern], [rightPattern]) => leftPattern.localeCompare(rightPattern));
-  const toolsEnabled = new Set(configuration.tools_enabled);
 
   function updateConfiguration(nextConfiguration: Partial<AgentConfiguration>) {
     onChange({ ...configuration, ...nextConfiguration });
@@ -857,19 +854,6 @@ function AgentPermissionsEditor({
 
   function updateBash(nextBash: Partial<AgentConfiguration["bash"]>) {
     updateConfiguration({ bash: { ...configuration.bash, ...nextBash } });
-  }
-
-  function updateSpawnAgent(enabled: boolean) {
-    const nextToolsEnabled = new Set(configuration.tools_enabled);
-    if (enabled) {
-      nextToolsEnabled.add("spawn_agent");
-    } else {
-      nextToolsEnabled.delete("spawn_agent");
-    }
-    updateConfiguration({
-      tools_enabled: Array.from(nextToolsEnabled),
-      spawn_agent: { ...configuration.spawn_agent, enabled },
-    });
   }
 
   function updateRulePattern(previousPattern: string, nextPattern: string) {
@@ -945,17 +929,6 @@ function AgentPermissionsEditor({
                 {configuration.bash.background_allowed ? translation("backgroundAllowed") : translation("backgroundBlocked")}
               </Button>
             </Flex>
-          </SettingField>
-          <SettingField label={translation("spawnAgents")}>
-            <Button
-              h={8}
-              justifyContent="flex-start"
-              variant={configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? "subtle" : "outline"}
-              colorPalette={configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? "purple" : "gray"}
-              onClick={() => updateSpawnAgent(!(configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent")))}
-            >
-              {configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? translation("enabled") : translation("disabled")}
-            </Button>
           </SettingField>
         </Flex>
       </SettingsGroup>

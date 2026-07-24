@@ -1,7 +1,7 @@
 """Terminals routes."""
 
 from __future__ import annotations
-from xeac.rest.services.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
+from xeac.daemon.brokers.terminals import TerminalSession, _delete_terminal_state, _list_terminal_states, _terminal_context_for_request, _terminal_directory
 from fastapi import APIRouter
 from contextlib import suppress
 from fastapi import HTTPException

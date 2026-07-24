@@ -8,10 +8,6 @@ from fastapi import HTTPException
 from xeac.base.credentials import ChatGPTLoginFlow
 from xeac.base.credentials import clear_tokens
 from xeac.base.credentials import load_tokens
-from xeac.runtime.models.codex import clear_subscription_models_cache
-from xeac.runtime.models.codex import clear_usage_snapshot
-from xeac.runtime.models.codex import fetch_subscription_models
-from xeac.runtime.models.codex import get_usage_snapshot
 from xeac.base.configuration import load_agent_configuration
 from xeac.base.models import MODELS
 from xeac.base.models import ModelDefinition
@@ -35,6 +31,20 @@ from xeac.daemon.services.settings import _apply_live_credentials, _persist_conf
 from xeac.daemon.services.projects import _reset_all_runtimes
 
 router = APIRouter()
+
+
+def _codex_models():
+    """The ChatGPT-subscription model surface, imported on use.
+
+    It lives in the runtime, which the daemon deliberately does not import at startup — that
+    weight is what the pre-started worker exists to carry. These three endpoints are the only
+    ones that need it, so they pay for it when they are called rather than making every daemon
+    boot pay for it."""
+    from xeac.runtime.models import codex
+
+    return codex
+
+
 
 
 @router.get("/system/full-disk-access")
@@ -79,7 +89,7 @@ async def list_models_endpoint():
     # *available* per-model against the account's live subscription catalog, so the
     # picker can grey the ones this plan does not serve. Live models the static
     # filter has not caught (real gpt-* only) are appended so nothing is missed.
-    live_chatgpt = await fetch_subscription_models()
+    live_chatgpt = await _codex_models().fetch_subscription_models()
     live_slugs = set(live_chatgpt)
     catalog = list(MODELS)
     known_chatgpt_slugs = {
@@ -149,7 +159,7 @@ async def chatgpt_auth_status():
     return {
         "signed_in": tokens is not None,
         "email": tokens.email if tokens else "",
-        "usage": get_usage_snapshot() if tokens is not None else None,
+        "usage": _codex_models().get_usage_snapshot() if tokens is not None else None,
     }
 
 
@@ -177,9 +187,9 @@ async def chatgpt_auth_start():
     async def _await_completion() -> None:
         try:
             await flow.wait()
-            clear_subscription_models_cache()
-            clear_usage_snapshot()
-            _reset_all_runtimes()
+            _codex_models().clear_subscription_models_cache()
+            _codex_models().clear_usage_snapshot()
+            await _reset_all_runtimes()
             _publish_broadcast({"type": "settings_changed"})
         except Exception:  # noqa: BLE001 — timeout/denial just leaves us signed out
             pass
@@ -199,9 +209,9 @@ async def chatgpt_auth_signout():
         await state.chatgpt_login_flow.close()
         state.chatgpt_login_flow = None
     await asyncio.to_thread(clear_tokens)
-    clear_subscription_models_cache()
-    clear_usage_snapshot()
-    _reset_all_runtimes()
+    _codex_models().clear_subscription_models_cache()
+    _codex_models().clear_usage_snapshot()
+    await _reset_all_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"ok": True}
 
@@ -277,8 +287,7 @@ async def update_settings(request: SettingsUpdateRequest):
                 sidecar = _load_agent_sidecar(agent_markdown_path)
                 sidecar["permissionMode"] = _normalize_permission_mode(request.permission_mode)
                 _save_agent_sidecar(agent_markdown_path, sidecar)
-                if configuration.default_agent in state._executors:
-                    state._executors[configuration.default_agent].reset_runtimes()
+                await state.reset_live_session_runtimes()
         if request.exa_api_key is not None:
             configuration.exa.api_key = request.exa_api_key
         if request.composio_api_key is not None:
@@ -320,8 +329,7 @@ async def update_sandbox(request: SandboxUpdateRequest):
     async with state.configuration_lock:
         await _persist_configuration(sandbox_enabled=request.enabled)
         state.global_configuration.sandbox.enabled = request.enabled
-        for executor in state._executors.values():
-            executor.reset_runtimes()
+        await state.reset_live_session_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "sandbox_enabled": state.global_configuration.sandbox.enabled}
 
@@ -337,8 +345,7 @@ async def update_user_context(request: UserContextUpdateRequest):
         state.global_configuration.user_context.enabled = request.enabled
         if setting_changed:
             await asyncio.to_thread(_reset_work_habits_acknowledgements)
-            for executor in state._executors.values():
-                executor.reset_runtimes()
+            await state.reset_live_session_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "user_context_enabled": state.global_configuration.user_context.enabled}
 
@@ -351,8 +358,7 @@ async def update_computer_control(request: ComputerControlUpdateRequest):
     async with state.configuration_lock:
         await _persist_configuration(computer_control_enabled=request.enabled)
         state.global_configuration.computer_control.enabled = request.enabled
-        for executor in state._executors.values():
-            executor.reset_runtimes()
+        await state.reset_live_session_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"status": "saved", "computer_control_enabled": state.global_configuration.computer_control.enabled}
 

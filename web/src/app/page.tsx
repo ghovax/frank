@@ -221,24 +221,29 @@ function ProjectWorkspace() {
     }));
   }, []);
 
-  const sessionTargetUrl = useCallback(async (target: ConnectionTarget): Promise<string | null> => {
+  // Where a target answers, and the token that authorises talking to it. The two travel
+  // together because the session list is fetched from every known daemon at once, and each
+  // one holds a different secret — presenting the active connection's token to the others
+  // would come back 401 and read as "that host is down".
+  const sessionTargetEndpoint = useCallback(async (target: ConnectionTarget): Promise<{ url: string; token?: string } | null> => {
     const activeTarget = currentConnectionRef.current?.id === target.id;
     const url = activeTarget || target.kind === "ssh" ? await resolveReachableConnectionUrl(target) : target.url;
-    const ok = await checkConnection(url, activeTarget ? 2000 : 900);
-    return ok ? url : null;
+    const token = target.kind === "local" ? undefined : target.token ?? "";
+    const ok = await checkConnection(url, { token, timeoutMs: activeTarget ? 2000 : 900 });
+    return ok ? { url, token } : null;
   }, []);
 
   const loadSessions = useCallback(async (targetsOverride?: ConnectionTarget[]) => {
     const targets = targetsOverride ?? (connectionTargetsRef.current.length > 0 ? connectionTargetsRef.current : [currentConnectionRef.current ?? LOCAL_CONNECTION_TARGET]);
     const rows = await Promise.all(targets.map(async (target) => {
       try {
-        const apiBase = await sessionTargetUrl(target);
-        if (!apiBase) return { target, sessions: null as SessionEntry[] | null };
-        const serverSessions = await fetchSessions({ apiBase });
+        const endpoint = await sessionTargetEndpoint(target);
+        if (!endpoint) return { target, sessions: null as SessionEntry[] | null };
+        const serverSessions = await fetchSessions({ apiBase: endpoint.url, token: endpoint.token });
         for (const session of serverSessions) {
           void setSessionConnection(session.id, target.id);
         }
-        return { target, sessions: mapSessions(serverSessions, target, apiBase) };
+        return { target, sessions: mapSessions(serverSessions, target, endpoint.url) };
       } catch {
         return { target, sessions: null as SessionEntry[] | null };
       }
@@ -308,7 +313,7 @@ function ProjectWorkspace() {
     sessionsRef.current = mapped;
     setSessions(mapped);
     setSessionsLoaded(true);
-  }, [mapSessions, sessionTargetUrl]);
+  }, [mapSessions, sessionTargetEndpoint]);
 
   // Coalesce the burst of sessions_changed events a single turn emits (running→true, title
   // generated, message saved, running→false) into one trailing refetch, so the session list
@@ -359,7 +364,7 @@ function ProjectWorkspace() {
         // also drives Settings — refetch it so the dialog reflects the on-disk change.
         loadSettings();
       }
-      if (event.type === "sessions_changed" || event.type === "filesystem_leases_changed") scheduleSessionsReload();
+      if (event.type === "sessions_changed") scheduleSessionsReload();
       if (event.type === "settings_changed") {
         loadSettings();
         loadModelCatalog();

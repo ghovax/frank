@@ -9,7 +9,7 @@ permission flags), and the structured decisions the bash permission classifier e
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 

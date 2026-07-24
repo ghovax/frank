@@ -1,42 +1,51 @@
 import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifact-annotations";
 
-// Where the daemon lives. The CLI and agents reach `xeacd` over its unix socket, but a
-// webview has no such transport, so the daemon also serves its control plane on a
-// loopback TCP listener for GUI clients, gated by a capability token. The address is
-// resolved at runtime, not baked in at build time, because the desktop app can point at
-// the local daemon or a remote one reached through an SSH tunnel. Resolution order:
-//   1. the endpoint the Tauri shell reports (`daemon_endpoint`, which also carries the token), then
-//   2. an explicit override set via `setApiBase` (persisted only in the browser build), then
+// Where the daemon lives, and what proves we may talk to it. The CLI and agents reach
+// `xeacd` over its unix socket, but a webview has no such transport, so the daemon also
+// serves its control plane on a loopback TCP listener for GUI clients, gated by a
+// capability token. Both the address and the token are resolved at runtime rather than
+// baked in, because the desktop app can point at the local daemon or at a remote one
+// reached through an SSH tunnel — and those are *different daemons with different
+// tokens*. Resolution order for the address:
+//   1. an explicit target set via `setApiBase` (a connection the user activated), then
+//   2. the endpoint the Tauri shell reports (`daemon_endpoint`), then
 //   3. a build-time default from NEXT_PUBLIC_XEAC_API_BASE, then
 //   4. the conventional local daemon address.
-// The connection layer (profiles UI / local store) writes the override and reloads.
+// The connection layer (profiles UI / local store) writes the explicit target.
 const DEFAULT_API_BASE =
   (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_XEAC_API_BASE : "") || "http://127.0.0.1:8823";
 const API_BASE_STORAGE_KEY = "xeac.apiBase";
+const API_TOKEN_STORAGE_KEY = "xeac.apiToken";
 
 function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-function readStoredApiBase(): string {
-  if (typeof window === "undefined") return DEFAULT_API_BASE;
-  if (runningInTauri()) return DEFAULT_API_BASE;
+function readStoredValue(key: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  if (runningInTauri()) return fallback;
   try {
-    return window.localStorage.getItem(API_BASE_STORAGE_KEY) || DEFAULT_API_BASE;
+    return window.localStorage.getItem(key) || fallback;
   } catch {
     // localStorage can be unavailable in restricted contexts.
-    return DEFAULT_API_BASE;
+    return fallback;
   }
 }
 
-let API_BASE = readStoredApiBase();
+let API_BASE = readStoredValue(API_BASE_STORAGE_KEY, DEFAULT_API_BASE);
 
-// The daemon's capability token. Every request the client makes carries it, and the
-// daemon answers nothing without it — this is what finally authenticates the GUI
-// surface rather than trusting the loopback bind. Outside Tauri there is no shell to
-// read the token file, so the token stays empty and only an unauthenticated daemon
-// (a developer running one by hand) answers.
-let daemonToken = "";
+// The token for the daemon we are actually talking to. Two sources, and the distinction
+// matters: the *local* token is the one the Tauri shell reads out of the runtime
+// directory of this machine, and it authenticates nothing on a remote host. A connection
+// profile therefore carries its own token, and when one is activated it wins — otherwise
+// every SSH-tunnelled daemon would be handed the local machine's secret and answer 401.
+let localDaemonToken = "";
+// Null, not "": a profile deliberately saved without a token must present none rather
+// than silently fall back to the local daemon's.
+let activeConnectionToken: string | null = readStoredValue(API_TOKEN_STORAGE_KEY, "") || null;
+// True once a connection has been activated, so the shell's local endpoint no longer
+// overwrites the target the user chose.
+let apiBaseWasChosen = Boolean(readStoredValue(API_BASE_STORAGE_KEY, ""));
 let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
@@ -44,8 +53,8 @@ async function resolveDaemonEndpoint(): Promise<void> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const endpoint = await invoke<{ url: string; token: string }>("daemon_endpoint");
-    if (endpoint?.url) API_BASE = endpoint.url.replace(/\/+$/, "");
-    daemonToken = endpoint?.token ?? "";
+    if (endpoint?.url && !apiBaseWasChosen) API_BASE = endpoint.url.replace(/\/+$/, "");
+    localDaemonToken = endpoint?.token ?? "";
   } catch {
     // The shell could not report an endpoint (the daemon is not up yet). Leave the
     // defaults in place; the request that follows fails and the launcher surfaces it.
@@ -61,6 +70,9 @@ function ensureDaemonEndpoint(): Promise<void> {
 
 export interface ApiRequestOptions {
   apiBase?: string;
+  // The token to present, when the request is aimed at a daemon other than the active
+  // one — a health probe against a saved profile before it has been activated.
+  token?: string;
 }
 
 function apiBase(options?: ApiRequestOptions): string {
@@ -71,30 +83,36 @@ function apiUrl(path: string, options?: ApiRequestOptions): string {
   return `${apiBase(options)}${path}`;
 }
 
-// The token as a query parameter, for the three transports that cannot carry a header:
-// a WebSocket handshake, and any URL the browser itself loads (an iframe's src, an
-// <img>, a download). Everything else goes through `apiFetch` and gets the header.
-function withDaemonToken(url: string): string {
-  if (!daemonToken) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(daemonToken)}`;
+function requestToken(options?: ApiRequestOptions): string {
+  return options?.token ?? activeConnectionToken ?? localDaemonToken;
+}
+
+// The token as a query parameter, for the transports that cannot carry a header: a
+// WebSocket handshake, and any URL the browser itself loads (an iframe's src, an <img>,
+// a download). Everything else goes through `apiFetch` and gets the header.
+function withDaemonToken(url: string, options?: ApiRequestOptions): string {
+  const token = requestToken(options);
+  if (!token) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 }
 
 function websocketUrl(path: string, options?: ApiRequestOptions): string {
   const base = apiBase(options);
   const url = new URL(path, `${base}/`);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return withDaemonToken(url.toString());
+  return withDaemonToken(url.toString(), options);
 }
 
 // The single door every request goes through, so the capability token is attached in
 // exactly one place and cannot be forgotten at a call site.
 async function apiFetch(path: string, options: RequestInit & ApiRequestOptions = {}): Promise<Response> {
-  const { apiBase: baseOverride, headers, ...request } = options;
+  const { apiBase: baseOverride, token: tokenOverride, headers, ...request } = options;
   await ensureDaemonEndpoint();
+  const token = requestToken({ token: tokenOverride });
   return fetch(apiUrl(path, { apiBase: baseOverride }), {
     ...request,
     headers: {
-      ...(daemonToken ? { Authorization: `Bearer ${daemonToken}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers as Record<string, string> | undefined),
     },
   });
@@ -179,12 +197,18 @@ export async function deleteTerminal(sessionId: string | null, workingDirectory:
   });
 }
 
-// Point the client at a different harness server. Persists the choice so it
-// survives reloads. Callers typically reload the app afterwards so in-flight
-// streams and caches restart cleanly against the new backend.
-export function setApiBase(url: string): void {
+// Point the client at a daemon, with the token that authorises talking to *that* one.
+// Persists the choice so it survives reloads. Callers typically reload the app
+// afterwards so in-flight streams and caches restart cleanly against the new backend.
+//
+// The token is required rather than optional so a call site cannot quietly leave the
+// previous daemon's token in place: pass "" for the local daemon, whose token the Tauri
+// shell reads from the runtime directory instead.
+export function setApiBase(url: string, token: string): void {
   const normalized = url.trim().replace(/\/+$/, "");
   API_BASE = normalized || DEFAULT_API_BASE;
+  apiBaseWasChosen = Boolean(normalized);
+  activeConnectionToken = token.trim() || null;
   if (typeof window === "undefined") return;
   if (runningInTauri()) return;
   try {
@@ -192,6 +216,11 @@ export function setApiBase(url: string): void {
       window.localStorage.setItem(API_BASE_STORAGE_KEY, normalized);
     } else {
       window.localStorage.removeItem(API_BASE_STORAGE_KEY);
+    }
+    if (activeConnectionToken) {
+      window.localStorage.setItem(API_TOKEN_STORAGE_KEY, activeConnectionToken);
+    } else {
+      window.localStorage.removeItem(API_TOKEN_STORAGE_KEY);
     }
   } catch {
     // Best-effort persistence; the in-memory value still applies this session.
@@ -515,10 +544,6 @@ export interface AgentBashConfiguration {
   permissions: Record<string, string>;
 }
 
-export interface AgentSpawnConfiguration {
-  enabled: boolean;
-}
-
 export interface AgentConfiguration {
   id: string;
   name: string;
@@ -527,10 +552,8 @@ export interface AgentConfiguration {
   provider: string;
   reasoning_effort: string;
   permission_mode: PermissionMode;
-  stream_agent_progress: boolean;
   tools_enabled: string[];
   bash: AgentBashConfiguration;
-  spawn_agent: AgentSpawnConfiguration;
   path: string;
 }
 
@@ -539,10 +562,8 @@ export interface SaveAgentConfigurationPayload {
   provider?: string;
   reasoning_effort?: string;
   permission_mode?: PermissionMode;
-  stream_agent_progress?: boolean;
   tools_enabled?: string[];
   bash?: Partial<AgentBashConfiguration>;
-  spawn_agent?: Partial<AgentSpawnConfiguration>;
 }
 
 // Agents are scoped to the selected folder: the bundled (server-shipped)
@@ -1415,8 +1436,8 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
 
 export async function compactSession(sessionId: string): Promise<boolean> {
   try {
-    const response = await apiFetch(`/chat/${sessionId}/compact`, { method: "POST" });
-    return response.ok;
+    const result = await rpc<{ compacting?: boolean }>("session.compact", { id: sessionId });
+    return Boolean(result?.compacting);
   } catch {
     return false;
   }
@@ -1439,8 +1460,11 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
 // learns the command was backgrounded rather than finished).
 export async function sendToolToBackground(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
-    const response = await apiFetch(`/chat/${encodeURIComponent(sessionId)}/tools/${encodeURIComponent(toolCallId)}/background`, { method: "POST" });
-    return response.ok;
+    const result = await rpc<{ backgrounded?: boolean }>("session.tool_background", {
+      id: sessionId,
+      tool_call_id: toolCallId,
+    });
+    return Boolean(result?.backgrounded);
   } catch {
     return false;
   }
@@ -1457,10 +1481,8 @@ export interface BackgroundJob {
 
 export async function fetchBackgroundJobs(sessionId: string): Promise<BackgroundJob[]> {
   try {
-    const response = await apiFetch(`/chat/${encodeURIComponent(sessionId)}/background`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data.jobs) ? data.jobs as BackgroundJob[] : [];
+    const result = await rpc<{ jobs?: BackgroundJob[] }>("session.background", { id: sessionId });
+    return Array.isArray(result?.jobs) ? result.jobs : [];
   } catch {
     return [];
   }

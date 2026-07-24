@@ -150,11 +150,11 @@ async def delete_session(context_id: str):
     # record and tasks are removed with the session below regardless.
     await _abort_pending_input(context_id)
     state._awaiting_input_contexts.discard(context_id)
-    # Release every executor's live state for this context (runtime, resume pump, turn
-    # lock, flags, and the shared conversation) so a deleted session leaves nothing
-    # behind. Teardown subsumes abort — it stops any in-flight turn and pump first.
-    for executor in state._executors.values():
-        executor.teardown_context(context_id)
+    # A session's live state lives in its own process, so deleting it is a reap rather than a
+    # per-executor teardown: the process goes, and with it the runtime, the resume pump, the
+    # turn lock, and the conversation. Its rows are removed below either way.
+    if state.lifecycle is not None:
+        await state.lifecycle.reap(context_id, reason="session deleted")
     # Delete every task in the context from the task store, then reclaim any upload files
     # the session referenced that no surviving session still references (uploads are
     # content-addressed and may be shared, so only truly-orphaned files are removed).

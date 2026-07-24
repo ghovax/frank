@@ -9,7 +9,6 @@ separate "start the service" step.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +17,7 @@ from typing import Any, Optional
 
 import httpx
 
-from xeac.base.paths import daemon_port_path, daemon_socket_path, daemon_token_path
+from xeac.base.paths import daemon_socket_path, daemon_token_path
 
 # How long to wait for a freshly started daemon to publish its handshake. Generous, because a
 # frozen build pays a real import cost on first launch.
@@ -146,6 +145,16 @@ def stream(path: str):
         headers={"Authorization": f"Bearer {token}"},
     ) as client:
         with client.stream("GET", f"http://daemon{path}") as response:
+            if response.status_code >= 400:
+                # An event stream that was refused still parses as "no frames", so without
+                # this an `attach` to a session that does not exist ends instantly and
+                # silently — reading, wrongly, as a session with nothing to say.
+                response.read()
+                try:
+                    message = response.json()["error"]["message"]
+                except (ValueError, KeyError, TypeError):
+                    message = f"xeacd refused the stream ({response.status_code})."
+                raise DaemonError(message)
             buffer = ""
             for chunk in response.iter_text():
                 buffer += chunk

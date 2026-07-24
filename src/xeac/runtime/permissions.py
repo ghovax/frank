@@ -8,8 +8,6 @@ from xeac.runtime.internals import _ResolvedToolDecision
 from xeac.runtime.internals import _PreflightGate
 from xeac.runtime.internals import _ToolPlan
 from xeac.runtime.internals import _coerce_structured_arguments
-from xeac.base.background_tasks import spawn_background_task
-from xeac.runtime.locations import BashAllowRule
 from xeac.runtime.locations import PermissionDecision
 from xeac.runtime.locations import ResolvedLocation
 from xeac.runtime.locations import ToolLocationError

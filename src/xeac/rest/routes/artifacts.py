@@ -19,7 +19,7 @@ from xeac.protocol.dtos import (
     ArtifactAnnotationSaveRequest,
     ArtifactRestoreRequest,
 )
-from xeac.runtime.tools.registry import _inject_artifact_runtime
+from xeac.base.browser_assets import inject_artifact_runtime
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.rest.services.proxy import _PROXY_DROP_HEADERS, _get_proxy_client, _proxy_forward_headers, _rewrite_proxy_css, _rewrite_proxy_html, _rewrite_proxy_js
 from xeac.daemon.persistence.artifacts import _ARTIFACT_CONTEXT_PREFIX, _artifact_annotation_records, _artifact_index, _artifact_versions, _decode_artifact_context, _delete_artifact_annotation_record, _executor_for_location_uri, _restore_artifact, _save_artifact_annotation_record, _surface_records
@@ -50,7 +50,7 @@ async def get_artifact_diff(context_id: str, git_directory: str, relative_path: 
         executor = _executor_for_location_uri(context_id, location)
         if executor is None:
             raise HTTPException(status_code=404, detail="Location is unavailable.")
-        return artifacts.diff(executor, git_directory, relative_path, from_commit, to_commit)
+        return artifact_versioning.diff(executor, git_directory, relative_path, from_commit, to_commit)
     return {"diff": await asyncio.to_thread(_diff)}
 
 
@@ -75,7 +75,7 @@ async def artifact_bytes(location: str, git_directory: str, sha: str, download: 
         if executor is None:
             raise HTTPException(status_code=404, detail="Location is unavailable.")
         try:
-            return artifacts.read_blob(executor, git_directory, sha)
+            return artifact_versioning.read_blob(executor, git_directory, sha)
         except OSError as error:
             raise HTTPException(status_code=404, detail=f"Version not found: {error}")
     data = await asyncio.to_thread(_load)
@@ -149,7 +149,7 @@ async def artifact_page(file_path: str):
         except OSError as error:
             raise HTTPException(status_code=404, detail=f"Could not read file: {error}")
         if is_html:
-            return HTMLResponse(_inject_artifact_runtime(data.decode("utf-8", errors="replace")), headers=no_store)
+            return HTMLResponse(inject_artifact_runtime(data.decode("utf-8", errors="replace")), headers=no_store)
         media_type, _ = mimetypes.guess_type(absolute_path)
         return Response(content=data, media_type=media_type or "application/octet-stream", headers=no_store)
 
@@ -162,7 +162,7 @@ async def artifact_page(file_path: str):
             markup = await asyncio.to_thread(path.read_text, encoding="utf-8")
         except (OSError, UnicodeDecodeError) as error:
             raise HTTPException(status_code=400, detail=f"Could not read file: {error}")
-        return HTMLResponse(_inject_artifact_runtime(markup), headers=no_store)
+        return HTMLResponse(inject_artifact_runtime(markup), headers=no_store)
     return FileResponse(path, headers=no_store)
 
 

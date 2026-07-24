@@ -28,7 +28,6 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 
 | Tool | What it does |
 |------|--------------|
-| `spawn_agent` | Delegate a sub-task to another agent. |
 | `set_tasks` / `update_tasks` | Maintain a task list for a multi-step job. |
 | `update_goal` | Track an overarching goal. |
 | `read_task` | Read a related/background task. |

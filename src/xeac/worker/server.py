@@ -11,18 +11,14 @@ process that merely guessed an id cannot.
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import secrets
-import uuid
-from typing import Any, Optional
+from typing import Any
 
-from a2a.types import DataPart, Message, MessageSendParams, Part, Role, TextPart
+from a2a.types import DataPart, Part, TextPart
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from xeac.protocol.metadata import INPUT_RESPONSE_KIND, PART_KIND, envelope_part
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +64,21 @@ def build_app(session) -> FastAPI:
                 return JSONResponse({"result": await _cancel(session, params)})
             if method == "session/status":
                 return JSONResponse({"result": session.status_payload()})
+            if method == "input/abort":
+                return JSONResponse({"result": {"aborted": await session.abort_pending_input()}})
+            if method == "session/compact":
+                return JSONResponse({"result": {"compacting": session.compact()}})
+            if method == "session/background":
+                return JSONResponse({"result": {"jobs": session.background_jobs()}})
+            if method == "session/tool_background":
+                identifier = str(params.get("tool_call_id") or "")
+                return JSONResponse({"result": {"backgrounded": session.background_tool_call(identifier)}})
+            if method == "session/reset":
+                # Settings changed under a live session. Drop the cached runtime so the next
+                # turn rebuilds it against the new configuration, rather than the session
+                # keeping the model and tool set it happened to start with.
+                session.reset_runtimes()
+                return JSONResponse({"result": {"ok": True}})
         except Exception as error:  # noqa: BLE001 — one bad call must not kill the session
             logger.exception("Session call %s failed", method)
             return JSONResponse(
@@ -136,5 +147,7 @@ async def _respond(session, params: dict) -> dict:
 async def _cancel(session, params: dict) -> dict:
     tool_call_id = str(params.get("tool_call_id") or "")
     if tool_call_id:
-        return {"cancelled": session.abort_tool(tool_call_id)}
+        # The facade method, not the context-keyed one underneath it: a worker is one session,
+        # so the id is implicit here and passing only the tool call would be a missing argument.
+        return {"cancelled": session.abort_tool_call(tool_call_id)}
     return {"cancelled": session.abort()}

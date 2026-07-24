@@ -443,123 +443,6 @@ wheels = [
 ]
 
 [[package]]
-name = "daisy"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "a2a-sdk" },
-    { name = "aiosqlite" },
-    { name = "curl-cffi" },
-    { name = "exa-py" },
-    { name = "fastapi" },
-    { name = "firecrawl-py" },
-    { name = "greenlet" },
-    { name = "httpx" },
-    { name = "langchain" },
-    { name = "langgraph" },
-    { name = "litellm" },
-    { name = "markdownify" },
-    { name = "mcp", extra = ["cli"] },
-    { name = "model2vec" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
-    { name = "pillow" },
-    { name = "playwright" },
-    { name = "pydantic" },
-    { name = "pyjwt" },
-    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
-    { name = "python-multipart" },
-    { name = "pyyaml" },
-    { name = "semble" },
-    { name = "sqlalchemy" },
-    { name = "sse-starlette" },
-    { name = "tiktoken" },
-    { name = "tree-sitter" },
-    { name = "tree-sitter-bash" },
-    { name = "tree-sitter-c" },
-    { name = "tree-sitter-cpp" },
-    { name = "tree-sitter-css" },
-    { name = "tree-sitter-go" },
-    { name = "tree-sitter-html" },
-    { name = "tree-sitter-javascript" },
-    { name = "tree-sitter-json" },
-    { name = "tree-sitter-markdown" },
-    { name = "tree-sitter-python" },
-    { name = "tree-sitter-rust" },
-    { name = "tree-sitter-toml" },
-    { name = "tree-sitter-typescript" },
-    { name = "tree-sitter-yaml" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "watchfiles" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pyinstaller" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a2a-sdk", specifier = "==0.3.7" },
-    { name = "aiosqlite", specifier = ">=0.22.1" },
-    { name = "curl-cffi", specifier = ">=0.15.0" },
-    { name = "exa-py", specifier = ">=2.14.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "firecrawl-py", specifier = ">=2.0.0" },
-    { name = "greenlet", specifier = ">=3.5.2" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "langchain", specifier = ">=0.3.0" },
-    { name = "langgraph", specifier = ">=1.2.0" },
-    { name = "litellm", specifier = ">=1.60.0" },
-    { name = "markdownify", specifier = ">=1.2.2" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.27,<2" },
-    { name = "model2vec", specifier = ">=0.8.2" },
-    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27.0" },
-    { name = "opentelemetry-sdk", specifier = ">=1.27.0" },
-    { name = "pillow", specifier = ">=11.0" },
-    { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pyjwt", specifier = ">=2.8.0" },
-    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=11.0" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=11.0" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=11.0" },
-    { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "semble", specifier = ">=0.1.10" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "sse-starlette", specifier = ">=2.0.0" },
-    { name = "tiktoken", specifier = ">=0.8.0" },
-    { name = "tree-sitter", specifier = ">=0.26" },
-    { name = "tree-sitter-bash", specifier = ">=0.23" },
-    { name = "tree-sitter-c", specifier = ">=0.23" },
-    { name = "tree-sitter-cpp", specifier = ">=0.23" },
-    { name = "tree-sitter-css", specifier = ">=0.23" },
-    { name = "tree-sitter-go", specifier = ">=0.23" },
-    { name = "tree-sitter-html", specifier = ">=0.20" },
-    { name = "tree-sitter-javascript", specifier = ">=0.23" },
-    { name = "tree-sitter-json", specifier = ">=0.24" },
-    { name = "tree-sitter-markdown", specifier = ">=0.3" },
-    { name = "tree-sitter-python", specifier = ">=0.25" },
-    { name = "tree-sitter-rust", specifier = ">=0.23" },
-    { name = "tree-sitter-toml", specifier = ">=0.6" },
-    { name = "tree-sitter-typescript", specifier = ">=0.23" },
-    { name = "tree-sitter-yaml", specifier = ">=0.7" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
-    { name = "watchfiles", specifier = ">=1.2.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pyinstaller", specifier = ">=6.21.0" },
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-]
-
-[[package]]
 name = "distro"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3266,6 +3149,123 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/86/eb/20b6cdf273913d0ad05a6a14aed4b9a85591c18a987a3d47f20fa13dcc47/websockets-15.0.1-cp313-cp313-win32.whl", hash = "sha256:ba9e56e8ceeeedb2e080147ba85ffcd5cd0711b89576b83784d8605a7df455fa", size = 176393, upload-time = "2025-03-05T20:02:53.814Z" },
     { url = "https://files.pythonhosted.org/packages/1b/6c/c65773d6cab416a64d191d6ee8a8b1c68a09970ea6909d16965d26bfed1e/websockets-15.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:e09473f095a819042ecb2ab9465aee615bd9c2028e4ef7d933600a8401c79561", size = 176837, upload-time = "2025-03-05T20:02:55.237Z" },
     { url = "https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743, upload-time = "2025-03-05T20:03:39.41Z" },
+]
+
+[[package]]
+name = "xeac"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "a2a-sdk" },
+    { name = "aiosqlite" },
+    { name = "curl-cffi" },
+    { name = "exa-py" },
+    { name = "fastapi" },
+    { name = "firecrawl-py" },
+    { name = "greenlet" },
+    { name = "httpx" },
+    { name = "langchain" },
+    { name = "langgraph" },
+    { name = "litellm" },
+    { name = "markdownify" },
+    { name = "mcp", extra = ["cli"] },
+    { name = "model2vec" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-sdk" },
+    { name = "pillow" },
+    { name = "playwright" },
+    { name = "pydantic" },
+    { name = "pyjwt" },
+    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
+    { name = "python-multipart" },
+    { name = "pyyaml" },
+    { name = "semble" },
+    { name = "sqlalchemy" },
+    { name = "sse-starlette" },
+    { name = "tiktoken" },
+    { name = "tree-sitter" },
+    { name = "tree-sitter-bash" },
+    { name = "tree-sitter-c" },
+    { name = "tree-sitter-cpp" },
+    { name = "tree-sitter-css" },
+    { name = "tree-sitter-go" },
+    { name = "tree-sitter-html" },
+    { name = "tree-sitter-javascript" },
+    { name = "tree-sitter-json" },
+    { name = "tree-sitter-markdown" },
+    { name = "tree-sitter-python" },
+    { name = "tree-sitter-rust" },
+    { name = "tree-sitter-toml" },
+    { name = "tree-sitter-typescript" },
+    { name = "tree-sitter-yaml" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "watchfiles" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pyinstaller" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "a2a-sdk", specifier = "==0.3.7" },
+    { name = "aiosqlite", specifier = ">=0.22.1" },
+    { name = "curl-cffi", specifier = ">=0.15.0" },
+    { name = "exa-py", specifier = ">=2.14.0" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "firecrawl-py", specifier = ">=2.0.0" },
+    { name = "greenlet", specifier = ">=3.5.2" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "langchain", specifier = ">=0.3.0" },
+    { name = "langgraph", specifier = ">=1.2.0" },
+    { name = "litellm", specifier = ">=1.60.0" },
+    { name = "markdownify", specifier = ">=1.2.2" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.27,<2" },
+    { name = "model2vec", specifier = ">=0.8.2" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.27.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.27.0" },
+    { name = "pillow", specifier = ">=11.0" },
+    { name = "playwright", specifier = ">=1.61.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyjwt", specifier = ">=2.8.0" },
+    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=11.0" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=11.0" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=11.0" },
+    { name = "python-multipart", specifier = ">=0.0.20" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "semble", specifier = ">=0.1.10" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "sse-starlette", specifier = ">=2.0.0" },
+    { name = "tiktoken", specifier = ">=0.8.0" },
+    { name = "tree-sitter", specifier = ">=0.26" },
+    { name = "tree-sitter-bash", specifier = ">=0.23" },
+    { name = "tree-sitter-c", specifier = ">=0.23" },
+    { name = "tree-sitter-cpp", specifier = ">=0.23" },
+    { name = "tree-sitter-css", specifier = ">=0.23" },
+    { name = "tree-sitter-go", specifier = ">=0.23" },
+    { name = "tree-sitter-html", specifier = ">=0.20" },
+    { name = "tree-sitter-javascript", specifier = ">=0.23" },
+    { name = "tree-sitter-json", specifier = ">=0.24" },
+    { name = "tree-sitter-markdown", specifier = ">=0.3" },
+    { name = "tree-sitter-python", specifier = ">=0.25" },
+    { name = "tree-sitter-rust", specifier = ">=0.23" },
+    { name = "tree-sitter-toml", specifier = ">=0.6" },
+    { name = "tree-sitter-typescript", specifier = ">=0.23" },
+    { name = "tree-sitter-yaml", specifier = ">=0.7" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+    { name = "watchfiles", specifier = ">=1.2.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyinstaller", specifier = ">=6.21.0" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
 ]
 
 [[package]]

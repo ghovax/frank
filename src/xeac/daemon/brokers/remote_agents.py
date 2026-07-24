@@ -38,18 +38,16 @@ async def _reload_remote_agents() -> None:
     """Re-read remote-agents.json and apply the external-agent set live: reconcile the
     outbound client manager and drop cached runtimes so the next turn's roster reflects
     the change. No server restart required."""
-    assert state.global_configuration is not None and state.registry is not None
+    assert state.global_configuration is not None
     async with state.configuration_lock:
         state.global_configuration.remote_agents = GlobalConfiguration.load().remote_agents
         configurations = _remote_agent_dataclasses()
         if state.remote_agent_manager is None:
             state.remote_agent_manager = RemoteAgentManager(configurations)
             await state.remote_agent_manager.start()
-            state.registry.set_remote_manager(state.remote_agent_manager)
         else:
             await state.remote_agent_manager.reconcile(configurations)
-        for executor in state._executors.values():
-            executor.reset_runtimes()
+        await state.reset_live_session_runtimes()
         state.broadcaster.publish({"type": "remote_agents_changed"})
 
 

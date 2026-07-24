@@ -5,7 +5,6 @@ batch draining, argument validation, and the backgroundable-tool runner. Imports
 from the leaf ``agent_internals`` module and stable modules, so the graph stays a clean DAG."""
 from __future__ import annotations
 
-from a2a.types import TaskState
 from dataclasses import replace
 from datetime import datetime
 from datetime import timezone
@@ -25,7 +24,7 @@ from xeac.runtime.background import bind_tool_call_id
 from xeac.runtime.background import unbind_background_jobs
 from xeac.runtime.background import unbind_tool_call_id
 from xeac.protocol.events import ToolStatus
-from xeac.runtime.file_leases import FileLeaseConflict
+from xeac.base.file_leases import FileLeaseConflict
 from xeac.base.skills import enabled_skills
 from xeac.base.skills import load_skills
 from xeac.runtime.locations import CallExecutionPolicy
@@ -36,13 +35,11 @@ from xeac.base.tuning import Limit
 from xeac.base.tuning import active_tuning
 from xeac.base.tuning import current_context_window
 from xeac.runtime.turn_events import DeniedInjection
-from xeac.runtime.turn_events import Done
 from xeac.runtime.turn_events import Error
 from xeac.runtime.turn_events import Mcp
 from xeac.runtime.turn_events import ToolCall
 from xeac.runtime.turn_events import ToolResult
 from xeac.runtime.turn_events import TurnEvent
-from xeac.base.identifiers import new_id
 from xeac.runtime.tools import file_operations as file_tools
 from xeac.runtime.tools.registry import artifact_kind_for
 from xeac.runtime.tools.registry import bash as bash_tool

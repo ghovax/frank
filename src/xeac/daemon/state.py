@@ -41,6 +41,13 @@ class Broadcaster:
         for queue in list(self._subscribers):
             queue.put_nowait(event)
 
+    def close(self) -> None:
+        """End every subscriber's stream. Used when the daemon is going down: an open SSE
+        response keeps the server from finishing its shutdown, so the streams have to be told
+        to end before the servers are asked to stop, not after."""
+        for queue in list(self._subscribers):
+            queue.put_nowait(None)
+
 
 class SessionEventBus:
     """Per-session fan-out of the events a turn emits, so several watchers can follow one
@@ -77,6 +84,13 @@ class SessionEventBus:
         for queue in list(self._subscribers.get(session_id, [])):
             queue.put_nowait(None)
 
+    def complete_all(self) -> None:
+        """Close every watcher of every session, for the same reason `Broadcaster.close`
+        exists: the daemon cannot finish shutting down while a stream is still open, and the
+        stream will not end until something tells it to."""
+        for session_id in list(self._subscribers):
+            self.complete(session_id)
+
 
 # --- singletons ------------------------------------------------------------------------
 
@@ -96,6 +110,10 @@ push_configuration_store: Any = None
 push_sender: Any = None
 terminal_manager: Any = None
 composio_servers: dict = {}
+# The agent *profiles* a session could be created with, as A2A cards, rebuilt whenever the
+# agent or skill files change. Distinct from the session registry: this is what could exist,
+# that is what does.
+agent_cards: dict = {}
 capture_queue: Any = None
 chatgpt_login_flow: Any = None
 proxy_client: Any = None
@@ -103,6 +121,22 @@ main_loop: Any = None
 
 broadcaster = Broadcaster()
 event_bus = SessionEventBus()
+
+# Per-session liveness the daemon learns from the event stream rather than from the registry:
+# `_running_contexts` counts the turns a session currently has in flight (a session can be
+# live but idle), and `_awaiting_input_contexts` marks the ones parked on a human decision.
+# The registry knows whether a *process* is alive; these know what it is doing.
+_running_contexts: dict[str, int] = {}
+_awaiting_input_contexts: set[str] = set()
+# Strong references to in-flight title generations, so a task is not collected mid-flight.
+_title_tasks: set = set()
+# Long-lived tasks the daemon owns: the on-disk watchers, and the two background connects
+# (MCP servers, remote peers) that must never hold up boot. Held so teardown can cancel them.
+_watchers: list = []
+_mcp_start_task = None
+_remote_start_task = None
+# The HTTP client the push sender borrows, closed with everything else on shutdown.
+_push_client = None
 
 # The daemon's own addresses and the token that guards them, written to the runtime directory
 # at startup so a client can find them without being told.
@@ -118,6 +152,27 @@ def default_agent() -> str:
     if global_configuration is None:
         return "assistant"
     return getattr(global_configuration, "default_agent", "assistant")
+
+
+async def reset_live_session_runtimes() -> None:
+    """Tell every running session to rebuild its runtime on the next turn.
+
+    Configuration that a session already read — its model, its tool tuning, its MCP servers —
+    is cached inside the session's process, so a change made in Settings would otherwise only
+    reach sessions started afterwards. This used to be a loop over in-process executors; with
+    a session being a process, it is a message to each of them.
+
+    Best effort by design: a session that has died or is mid-teardown simply misses it, and a
+    settings save must not fail because one session was unreachable."""
+    if registry is None:
+        return
+    live = list(registry.live())
+    if not live:
+        return
+    await asyncio.gather(
+        *(relay_to_session(record, "session/reset", {}) for record in live),
+        return_exceptions=True,
+    )
 
 
 async def relay_to_session(record, method: str, params: dict) -> dict:

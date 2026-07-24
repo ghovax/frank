@@ -19,6 +19,7 @@ from xeac.base.message_content import content_block_metadata
 from xeac.base.models import find_model
 from xeac.base.paths import uploads_directory
 from xeac.protocol.events import (
+    ToolCallEvent,
     ToolMetadata,
     ToolResultEvent,
     ToolStatus,

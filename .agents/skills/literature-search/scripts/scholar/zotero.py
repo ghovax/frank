@@ -11,7 +11,6 @@ import urllib.parse
 from typing import Any
 
 import httpx
-from habanero import Crossref
 
 from .analyze import _author_email, _resolve_work
 from .common import (
@@ -20,7 +19,6 @@ from .common import (
     _http_get,
     _load_dotenv,
     _parallel_map,
-    _strip_doi,
     logger,
 )
 from .read import _acquire_pdf, _resolve_fulltext_routes

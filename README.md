@@ -59,10 +59,10 @@ See the [Installation guide](documentation/installation.md) for both paths in fu
 From the terminal:
 
 ```
-xeac create --agent assistant -C ~/code/project    # prints a session id
+xeac create --agent general-assistant --directory ~/code/project   # prints a session id
 xeac send <id> "what does this project do?" --wait
-xeac ps                                            # what is running, and what is waiting on you
-xeac attach <id>                                   # follow it live
+xeac ps                                                            # what is running, and what waits on you
+xeac attach <id>                                                   # follow it live
 ```
 
 The daemon starts itself on the first command. From the app:

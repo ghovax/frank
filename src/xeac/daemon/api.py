@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -60,6 +60,19 @@ def _session(session_id: str) -> SessionRecord:
     if record is None:
         raise RpcError(f"No session {session_id!r}.", status_code=404, code="no_such_session")
     return record
+
+
+def _assert_session_known(session_id: str) -> None:
+    """Refuse an id nothing has ever heard of.
+
+    Only worth asking when a read came back empty, and only then because empty and unknown
+    look identical to a caller: a mistyped id would otherwise read as a session that simply
+    has not said anything yet. The registry alone is not the test — it holds what *this*
+    daemon started, while the store outlives restarts — so a session is known if either
+    remembers it, and the store has already been consulted by the time this is called."""
+    if state.registry is not None and state.registry.get(session_id) is not None:
+        return
+    raise RpcError(f"No session {session_id!r}.", status_code=404, code="no_such_session")
 
 
 def _assert_agent_exists(agent: str, working_directory: str) -> None:
@@ -196,19 +209,65 @@ async def _session_respond(params: dict) -> dict:
     return await state.relay_to_session(record, "input/respond", params)
 
 
+async def _session_compact(params: dict) -> dict:
+    """Ask a session to compact its own conversation."""
+    record = _session(_require(params, "id"))
+    return await state.relay_to_session(record, "session/compact", params)
+
+
+async def _session_background(params: dict) -> dict:
+    """What background work a session has in flight. Read from the session rather than the
+    store: a background job lives in the process running it."""
+    record = _session(_require(params, "id"))
+    return await state.relay_to_session(record, "session/background", params)
+
+
+async def _session_tool_background(params: dict) -> dict:
+    """Detach a still-blocking command so the session's turn can continue without it."""
+    record = _session(_require(params, "id"))
+    _require(params, "tool_call_id")
+    return await state.relay_to_session(record, "session/tool_background", params)
+
+
 async def _session_history(params: dict) -> dict:
     """A session's turns, read from the store rather than the session.
 
     Served here on purpose: the daemon is the sole writer, so history is readable whether the
-    session is running, parked, or was reaped an hour ago."""
+    session is running, parked, or was reaped an hour ago.
+
+    With a limit this pages backwards through the store, returning the cursor for the next page
+    — which is what lets a client show a long session immediately and pull the rest behind it,
+    rather than waiting on every turn it has ever had."""
     assert state.task_store is not None
     session_id = _require(params, "id")
     limit = int(params.get("limit") or 0)
-    tasks = await state.task_store.tasks_for_context(session_id)
-    serialized = [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks]
-    if limit > 0:
-        serialized = serialized[-limit:]
-    return {"tasks": serialized}
+    if limit <= 0:
+        tasks = await state.task_store.tasks_for_context(session_id)
+        if not tasks:
+            _assert_session_known(session_id)
+        return {
+            "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
+            "next_before_row_id": None,
+            "has_more": False,
+        }
+    raw_cursor = params.get("before_row_id")
+    page = await state.task_store.task_page_for_context(
+        session_id,
+        limit=limit,
+        before_row_id=int(raw_cursor) if raw_cursor is not None else None,
+    )
+    tasks = page.get("tasks") or []
+    if not tasks and raw_cursor is None:
+        _assert_session_known(session_id)
+    return {
+        "tasks": [
+            task.model_dump(by_alias=True, exclude_none=True, mode="json")
+            if hasattr(task, "model_dump") else task
+            for task in tasks
+        ],
+        "next_before_row_id": page.get("next_before_row_id"),
+        "has_more": bool(page.get("has_more")),
+    }
 
 
 async def _task_get(params: dict) -> dict:
@@ -243,6 +302,9 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "session.send": _session_send,
     "session.cancel": _session_cancel,
     "session.respond": _session_respond,
+    "session.compact": _session_compact,
+    "session.background": _session_background,
+    "session.tool_background": _session_tool_background,
     "session.history": _session_history,
     "task.get": _task_get,
     "daemon.status": _daemon_status,
@@ -281,9 +343,7 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
 
     The snapshot comes first so a client that attaches mid-turn is not left guessing about
     what it missed, and the live tail continues from there."""
-    record = state.registry.get(session_id) if state.registry else None
-    if record is None:
-        raise RpcError("No such session.", status_code=404, code="no_such_session")
+    _session(session_id)
 
     async def stream():
         assert state.task_store is not None
@@ -331,6 +391,11 @@ async def events(request: Request) -> EventSourceResponse:
                 except asyncio.TimeoutError:
                     yield {"comment": "keepalive"}
                     continue
+                if event is None:
+                    # The daemon is going down and has closed the bus. Ending here is what lets
+                    # it finish: a server draining its connections cannot outwait a stream that
+                    # is waiting on the server.
+                    break
                 yield {"data": json.dumps(event)}
         finally:
             state.broadcaster.unsubscribe(subscription)

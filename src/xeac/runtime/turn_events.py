@@ -130,7 +130,6 @@ class Usage(TurnEvent):
     reasoning_tokens: int = 0
     context_window: int = 0
     cumulative: dict[str, Any] = field(default_factory=dict)
-    agents: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -9,6 +9,14 @@ make forking a pre-warmed worker unsafe on macOS.
 
 Neither invariant is visible in a diff, so both are checked mechanically here.
 
+One exemption, and only one: a package's `__main__.py` is its composition root. Assembling a
+program is precisely the act of reaching across layers — the daemon's entry point serves the
+GUI surface that sits above it — and forbidding that would only push the wiring into a module
+that has no business knowing about it. The layer table constrains what the *parts* may know
+about each other; the entry point is where they are put together. The `computer` invariant
+still applies there, because that one is about what a process has loaded, not about who knows
+about whom.
+
     python scripts/check_layers.py
 """
 
@@ -90,6 +98,7 @@ def main() -> int:
         layer = _layer_of(path, source_root)
         if layer is None:
             continue
+        composition_root = path.name == "__main__.py"
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except (OSError, SyntaxError) as error:
@@ -100,7 +109,7 @@ def main() -> int:
             continue
         for imported, line, module_level in _imported_layers(tree):
             location = f"{path.relative_to(ROOT)}:{line}"
-            if imported != layer and imported not in allowed:
+            if not composition_root and imported != layer and imported not in allowed:
                 violations.append(f"{location}: {layer} may not import {imported}")
             # PyObjC/CoreFoundation must not be loaded before a worker forks.
             if imported == "computer" and module_level and layer != "computer":

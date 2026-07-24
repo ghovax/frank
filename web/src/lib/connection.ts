@@ -21,6 +21,9 @@ export interface ConnectionTarget {
   name: string;
   url: string;
   kind: ConnectionKind;
+  // The token that authorises talking to this particular daemon. Empty for the local
+  // one, whose token the desktop shell reads from the runtime directory itself.
+  token?: string;
   sshHostAlias?: string;
   sshHostName?: string;
   sshUser?: string;
@@ -63,24 +66,29 @@ export async function activeConnectionIsLocal(): Promise<boolean> {
   return (target?.kind ?? "local") === "local";
 }
 
+function targetFromProfile(profile: ConnectionProfile): ConnectionTarget {
+  return {
+    id: profile.id,
+    name: profile.name,
+    url: profile.url,
+    kind: profile.kind,
+    token: profile.token,
+    sshHostAlias: profile.sshHostAlias,
+    sshHostName: profile.sshHostName,
+    sshUser: profile.sshUser,
+    sshPort: profile.sshPort,
+    sshIdentityFile: profile.sshIdentityFile,
+    sshLocalPort: profile.sshLocalPort,
+    sshRemotePort: profile.sshRemotePort,
+    sshContext: profile.sshContext,
+  };
+}
+
 export async function listConnectionTargets(): Promise<ConnectionTarget[]> {
   const saved = await listConnections();
   return [
     { ...LOCAL_CONNECTION_TARGET, url: getApiBaseForLocalFallback() },
-    ...saved.map((profile) => ({
-      id: profile.id,
-      name: profile.name,
-      url: profile.url,
-      kind: profile.kind,
-      sshHostAlias: profile.sshHostAlias,
-      sshHostName: profile.sshHostName,
-      sshUser: profile.sshUser,
-      sshPort: profile.sshPort,
-      sshIdentityFile: profile.sshIdentityFile,
-      sshLocalPort: profile.sshLocalPort,
-      sshRemotePort: profile.sshRemotePort,
-      sshContext: profile.sshContext,
-    })),
+    ...saved.map(targetFromProfile),
   ];
 }
 
@@ -92,22 +100,7 @@ export async function resolveConnectionTarget(targetId: string | null | undefine
   if (!targetId || targetId === LOCAL_TARGET_ID) return LOCAL_CONNECTION_TARGET;
   const saved = await listConnections();
   const profile = saved.find((entry) => entry.id === targetId);
-  return profile
-    ? {
-      id: profile.id,
-      name: profile.name,
-      url: profile.url,
-      kind: profile.kind,
-      sshHostAlias: profile.sshHostAlias,
-      sshHostName: profile.sshHostName,
-      sshUser: profile.sshUser,
-      sshPort: profile.sshPort,
-      sshIdentityFile: profile.sshIdentityFile,
-      sshLocalPort: profile.sshLocalPort,
-      sshRemotePort: profile.sshRemotePort,
-      sshContext: profile.sshContext,
-    }
-    : null;
+  return profile ? targetFromProfile(profile) : null;
 }
 
 // Is a daemon answering at this base URL? Probes `daemon.status`, which is the
@@ -115,11 +108,23 @@ export async function resolveConnectionTarget(targetId: string | null | undefine
 // it. Short timeout so the launcher stays responsive when a host is down or a tunnel
 // isn't up. A stale socket file no longer looks like a running backend, which is exactly
 // what the old port probe could not tell apart.
-export async function checkConnection(url: string, timeoutMs = 3500): Promise<boolean> {
+export interface ConnectionProbeOptions {
+  // The token of the daemon being probed. A profile is health-checked *before* it is
+  // activated, so the client's current token is the wrong one to present — without this
+  // a remote daemon answers 401 and the probe reads as "host is down".
+  token?: string;
+  timeoutMs?: number;
+}
+
+export async function checkConnection(url: string, options: ConnectionProbeOptions = {}): Promise<boolean> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 3500);
   try {
-    const status = await daemonStatus({ apiBase: url.replace(/\/+$/, ""), signal: controller.signal });
+    const status = await daemonStatus({
+      apiBase: url.replace(/\/+$/, ""),
+      token: options.token,
+      signal: controller.signal,
+    });
     return status !== null;
   } finally {
     clearTimeout(timer);
@@ -167,28 +172,43 @@ export async function startSshTunnel(profile: Pick<ConnectionProfile, "id" | "ss
 
 // Wait for a freshly-started daemon to accept requests, polling until it responds or
 // the overall budget runs out (the frozen binary takes a few seconds to boot).
-export async function waitForConnection(url: string, totalMs = 20000): Promise<boolean> {
-  const deadline = Date.now() + totalMs;
+export async function waitForConnection(
+  url: string,
+  options: ConnectionProbeOptions & { totalMs?: number } = {},
+): Promise<boolean> {
+  const deadline = Date.now() + (options.totalMs ?? 20000);
   while (Date.now() < deadline) {
-    if (await checkConnection(url, 1500)) return true;
+    if (await checkConnection(url, { token: options.token, timeoutMs: 1500 })) return true;
     await new Promise((resolve) => setTimeout(resolve, 600));
   }
   return false;
 }
 
-// Point the whole UI at a backend. Persists the address (so it survives reloads),
-// clears the discovery cache, and records the choice for next launch.
-export async function activateConnection(url: string, targetId: string, profileId?: string): Promise<void> {
-  setApiBase(url);
+// Point the whole UI at a backend: its address and the token that authorises it, which
+// travel together because they belong to the same daemon. Persists the choice (so it
+// survives reloads), clears the discovery cache, and records it for next launch.
+//
+// The local daemon's token is empty here on purpose — the desktop shell reads it from
+// this machine's runtime directory, which is the one place it is authoritative.
+export async function activateConnection(
+  url: string,
+  targetId: string,
+  options: { token?: string; profileId?: string } = {},
+): Promise<void> {
+  setApiBase(url, options.token ?? "");
   invalidateDiscoveryCache();
   await setLastTargetId(targetId);
-  if (profileId) {
-    await touchConnection(profileId).catch(() => {});
+  if (options.profileId) {
+    await touchConnection(options.profileId).catch(() => {});
   }
 }
 
 export async function activateConnectionTarget(target: ConnectionTarget): Promise<void> {
-  await activateConnection(target.url, target.id, target.kind === "local" ? undefined : target.id);
+  const local = target.kind === "local";
+  await activateConnection(target.url, target.id, {
+    token: local ? "" : target.token ?? "",
+    profileId: local ? undefined : target.id,
+  });
 }
 
 export async function resolveReachableConnectionUrl(target: ConnectionTarget): Promise<string> {

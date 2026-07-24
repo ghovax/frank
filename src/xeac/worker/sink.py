@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable, assert_never
 
-from a2a.types import DataPart, Part
 
 from xeac.base import telemetry as _telemetry
 from xeac.protocol.events import (
@@ -207,7 +206,6 @@ class _TurnEventSink:
             case Usage():
                 await self.flush()
                 cumulative = event.cumulative or {}
-                agents = event.agents or {}
                 model_identifier = self._model_identifier()
                 _telemetry.set_attributes(self._span, {
                     "gen_ai.request.model": model_identifier or None,
@@ -228,12 +226,6 @@ class _TurnEventSink:
                         cache_read_tokens=cumulative.get("cache_read_tokens", 0),
                         reasoning_tokens=cumulative.get("reasoning_tokens", 0),
                         model_calls=cumulative.get("model_calls", 0),
-                    ),
-                    agents=AgentUsage(
-                        input_tokens=agents.get("input_tokens", 0),
-                        output_tokens=agents.get("output_tokens", 0),
-                        total_tokens=agents.get("total_tokens", 0),
-                        model_calls=agents.get("model_calls", 0),
                     ),
                 )))
             case Suspended():

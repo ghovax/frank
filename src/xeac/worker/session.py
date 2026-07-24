@@ -10,16 +10,17 @@ the session is reaped.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Optional
+from pathlib import Path
+from typing import Awaitable, Callable, Optional
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.request_handlers.request_handler import RequestHandler
-from a2a.server.tasks import TaskStore, TaskUpdater
+from a2a.server.tasks import TaskUpdater
 from a2a.types import DataPart, Message, MessageSendParams, Part, Role, Task, TaskState
 from langchain_core.messages import messages_from_dict
 
@@ -30,13 +31,14 @@ from xeac.base.workspaces import SessionWorkspace
 from xeac.protocol.metadata import (
     AUTONOMOUS_RESUME_KIND,
     COMPACTION_KIND,
+    INPUT_RESPONSE_KIND,
     Metadata,
     envelope_part,
     turn_metadata_envelope,
 )
+from xeac.protocol.events import StatusEvent
 from xeac.protocol.parts import _event_part
 from xeac.protocol.turn_record import PendingInteraction, ToolGate, TurnRecord
-from xeac.runtime.file_leases import FileLeaseManager
 from xeac.runtime.runtime import AgentRuntime
 from xeac.runtime.turn_events import SuspensionGate
 from xeac.worker.turn import _ContextState, _TurnRunner
@@ -87,7 +89,7 @@ class SessionExecutor(AgentExecutor):
 
         self._on_new_context = None
         self._session_permission_mode_for = None
-        self._on_turn_state = None
+        self._on_turn_state = self._notify_turn_state
         self._on_permission_state = self._notify_permission_state
         # Structured turn parts are handed to the daemon as they are persisted, so an attached
         # client sees the turn as it happens rather than on the next poll.
@@ -109,12 +111,24 @@ class SessionExecutor(AgentExecutor):
         self._startup_resume_tasks: set[asyncio.Task] = set()
         self._compaction_tasks: set[asyncio.Task] = set()
         self._work_habits_acknowledged = False
+        # A session is named after its first message, once.
+        self._titled = False
+        # This session's own MCP connections, and the task connecting them.
+        self._mcp_manager = None
+        self._mcp_connect: Optional[asyncio.Task] = None
 
     def _publish_stream_event(self, context_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Best effort and fire-and-forget: a
         watcher missing a frame is a cosmetic loss, and the turn must not wait on it."""
         payload = part.model_dump(by_alias=True, exclude_none=True, mode="json") if hasattr(part, "model_dump") else part
         spawn_background_task(self._task_store.publish_event({"context_id": context_id, "part": payload}))
+
+    def _notify_turn_state(self, context_id: str, running: bool) -> None:
+        """Tell the daemon whether a turn is in flight, so `ps` and the sidebar can show
+        working rather than merely alive — a session's process outlives its turns."""
+        spawn_background_task(
+            self._task_store.publish_event({"context_id": context_id, "running": running})
+        )
 
     def _notify_permission_state(self, context_id: str, awaiting: bool) -> None:
         """Tell the daemon this session is parked on a human, so `ps` can show it as waiting
@@ -164,7 +178,7 @@ class SessionExecutor(AgentExecutor):
             return
         message = Message(
             role=Role.agent,
-            parts=[_envelope_part(envelope_kind)],
+            parts=[envelope_part(envelope_kind)],
             message_id=uuid.uuid4().hex,
             context_id=context_id,
             metadata=turn_metadata_envelope(metadata_flags),
@@ -649,9 +663,48 @@ class SessionExecutor(AgentExecutor):
         return bool(state is not None and state.running)
 
     async def start(self) -> None:
-        """Prepare the session before its socket opens. Deliberately does not build the
-        runtime: that costs a model client and an MCP connect, and a session that is created
-        and never messaged should not pay for either."""
+        """Prepare the session before its socket opens.
+
+        Deliberately does not build the runtime: that costs a model client and an MCP
+        connect, and a session created but never messaged should pay for neither. What does
+        happen here is the process-global installation the tools read from — the tuning
+        policy, the search client, telemetry — because those are read at call time from
+        module state and a tool must never run against defaults the user did not choose."""
+        from xeac.base.telemetry import configure as configure_telemetry
+        from xeac.base.tuning import set_tuning, tuning_from_policy
+        from xeac.runtime.tools.registry import set_exa_client, set_mcp_client_manager
+
+        configuration = self._global_configuration
+        set_tuning(tuning_from_policy(configuration.tuning))
+
+        telemetry = configuration.telemetry
+        configure_telemetry(
+            enabled=telemetry.enabled,
+            endpoint=telemetry.exporter.endpoint,
+            headers=telemetry.resolved_headers(),
+            sample_ratio=telemetry.sample_ratio,
+        )
+
+        exa_key = configuration.exa.effective_api_key
+        if exa_key:
+            from exa_py import Exa
+
+            set_exa_client(Exa(api_key=exa_key))
+
+        # Each session connects its own MCP servers. The daemon keeps a pool of its own for
+        # the GUI's server browser, but connections are stateful and a session's tool calls
+        # belong to the session's process — sharing one pool across processes is not something
+        # a stdio server can offer.
+        servers = configuration.mcp.enabled_servers()
+        if servers:
+            from xeac.base.mcp_client import MCPClientManager
+
+            self._mcp_manager = MCPClientManager(servers)
+            set_mcp_client_manager(self._mcp_manager)
+            # Connected in the background: a hung server must not delay the session's socket,
+            # and tool gating keys on the manager existing rather than on live connections.
+            self._mcp_connect = asyncio.create_task(self._mcp_manager.start())
+
         self._context(self._session_id)
 
     async def start_turn(self, parts: list, metadata: dict) -> str:
@@ -659,6 +712,7 @@ class SessionExecutor(AgentExecutor):
         handler = self._agent_handler()
         if handler is None:
             raise RuntimeError("This session has no request handler.")
+        self._title_from_first_message(parts)
         message = Message(
             role=Role.user,
             parts=parts,
@@ -671,6 +725,65 @@ class SessionExecutor(AgentExecutor):
             if isinstance(event, Task) and not task_id:
                 task_id = event.id
         return task_id
+
+    def _title_from_first_message(self, parts: list) -> None:
+        """Name the session after what it was first asked to do.
+
+        Generated here rather than in the daemon because it means calling a model, and the
+        model machinery lives in the session's process. Fired once, in the background, so a
+        title never delays the turn it describes."""
+        if self._titled:
+            return
+        self._titled = True
+        prose = " ".join(
+            str(getattr(getattr(part, "root", part), "text", "") or "") for part in parts
+        ).strip()
+        if not prose:
+            return
+        spawn_background_task(self._generate_title(prose))
+
+    async def _generate_title(self, first_message: str) -> None:
+        """Ask the configured model for a short title, and hand it to the daemon.
+
+        The schema is bound as a tool with automatic choice rather than through structured
+        output: reasoning models reject both a json_schema response format and the forced tool
+        choice structured output relies on, but take an ordinary tool call — the same shape the
+        agent's own turns use. Reasoning is dialled down because a title is trivial and must
+        stay cheap; the agent's configured effort is for the work, not for naming it.
+
+        Silent on every failure: an unnamed session is a cosmetic loss, and a session must
+        never fail because it could not think of a title for itself."""
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        from xeac.base.configuration import PromptLoader
+        from xeac.protocol.dtos import SessionTitle
+        from xeac.runtime.internals import model_is_authorized
+        from xeac.runtime.runtime import build_chat_model
+
+        try:
+            configuration = load_agent_configuration(
+                self._agent_name,
+                self._global_configuration.agent_directories_for(self._working_directory),
+            )
+            model_identifier = configuration.model_identifier
+            if not model_identifier or not model_is_authorized(model_identifier, self._global_configuration):
+                return
+            titling_configuration = configuration.model_copy(update={"reasoning_effort": "low"})
+            model = build_chat_model(
+                model_identifier, self._global_configuration, titling_configuration
+            ).bind_tools([SessionTitle], tool_choice="auto")
+            prompt = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
+            response = await model.ainvoke([
+                SystemMessage(content=prompt.load("session_title", {})),
+                HumanMessage(content=first_message),
+            ])
+            if not response.tool_calls:
+                return
+            title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
+            if title:
+                await self._task_store.publish_title(title)
+        except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
+            logger.debug("Could not generate a title for session %s", self._session_id, exc_info=True)
 
     def inject(self, text: str) -> bool:
         """Deliver a message into the turn that is already running, at its next safe point.
@@ -718,6 +831,39 @@ class SessionExecutor(AgentExecutor):
     def abort_tool_call(self, tool_call_identifier: str) -> bool:
         return self.abort_tool(self._session_id, tool_call_identifier)
 
+    async def abort_pending_input(self) -> bool:
+        """Deny every gate this session is parked on.
+
+        The last denial resumes the turn, which records a denial for each blocked call — that
+        is what keeps the conversation valid, since a tool call with no result is a message the
+        next turn cannot build on. Returns whether anything was actually pending."""
+        tasks = await self._task_store.tasks_for_context(self._session_id)
+        for task in tasks:
+            pending = TurnRecord.from_metadata(task.metadata).pending
+            if pending is None or not pending.gates:
+                continue
+            for gate in pending.gates:
+                payload = (
+                    {"request_id": gate.request_id, "declined": True}
+                    if gate.is_question
+                    else {"request_id": gate.request_id, "decision": "deny"}
+                )
+                await self.resolve_pending_input(payload)
+            return True
+        return False
+
+    def compact(self) -> bool:
+        """Compact this session's conversation as a background turn."""
+        return self.compact_context(self._session_id)
+
+    def background_tool_call(self, tool_call_identifier: str) -> bool:
+        """Detach a still-blocking foreground command so the turn can continue."""
+        return self.send_tool_to_background(self._session_id, tool_call_identifier)
+
+    def background_jobs(self) -> list[dict]:
+        """The background work this session currently has in flight."""
+        return self.background_snapshots(self._session_id)
+
     def card_payload(self) -> dict:
         """What this session advertises at its well-known path.
 
@@ -764,9 +910,24 @@ class SessionExecutor(AgentExecutor):
         }
 
     async def aclose(self) -> None:
-        """Stop cleanly: abort any turn in flight so its conversation is checkpointed, then
-        release the store connection."""
+        """Stop cleanly: abort any turn in flight so its conversation is checkpointed, cancel
+        the background work it started, close this session's MCP connections, and release the
+        store. Ordered so nothing is torn down while something else still needs it, and each
+        step guarded so one failure cannot strand the rest."""
+        import contextlib
+
+        from xeac.runtime.background import cancel_all_background_jobs
+
         self.teardown_context(self._session_id)
+        with contextlib.suppress(Exception):
+            cancel_all_background_jobs()
+        if self._mcp_connect is not None and not self._mcp_connect.done():
+            self._mcp_connect.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._mcp_connect
+        if self._mcp_manager is not None:
+            with contextlib.suppress(Exception):
+                await self._mcp_manager.aclose()
         close = getattr(self._task_store, "aclose", None)
         if close is not None:
             await close()

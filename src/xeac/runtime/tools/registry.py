@@ -4,7 +4,6 @@ import asyncio
 import atexit
 import json
 import os
-import re
 import signal
 import sys
 from pathlib import Path
@@ -430,6 +429,10 @@ async def wait_for(
 
 
 
+# What counts as an image worth opening in the artifact panel rather than showing inline.
+_ARTIFACT_IMAGE_SUFFIXES = {".apng", ".avif", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
+
+
 def artifact_kind_for(path: str) -> str:
     """The render kind of a local artifact by extension: ``image`` (versioned bytes),
     ``html`` (served live so it can self-size/interact), ``iframe`` (a PDF, which the browser
@@ -446,22 +449,6 @@ def artifact_kind_for(path: str) -> str:
 
 
 # Runtime fragments injected into rendered HTML live as self-contained assets and
-# are read once at import. ASSETS_DIRECTORY is also read by server.py for the
-# artifact-proxy runtime.
-ASSETS_DIRECTORY = Path(__file__).parent / "assets"
-_ARTIFACT_RUNTIME = (ASSETS_DIRECTORY / "artifact_runtime.html").read_text(encoding="utf-8")
-
-
-def _inject_artifact_runtime(html: str) -> str:
-    """Place the artifact runtime (error + resize reporting) as early as possible in
-    the document so it catches failures in the model's own scripts and can size the
-    artifact. Falls back to prepending when there is no recognizable
-    ``<head>``/``<body>``/``<html>`` insertion point."""
-    for pattern in (r"<head[^>]*>", r"<body[^>]*>", r"<html[^>]*>"):
-        match = re.search(pattern, html, re.IGNORECASE)
-        if match:
-            return html[: match.end()] + _ARTIFACT_RUNTIME + html[match.end() :]
-    return _ARTIFACT_RUNTIME + html
 
 
 def build_open_artifact_result(

@@ -6,38 +6,16 @@ from __future__ import annotations
 from datetime import datetime
 from datetime import timezone
 from fastapi import HTTPException
-from xeac.base.configuration import PromptLoader
-from xeac.base.configuration import load_agent_configuration
 from xeac.base.workspaces import SessionWorkspace
 from xeac.base.workspaces import WorkspaceStrategy
 from xeac.base.sqlite_lock import sqlite_write_lock
-from xeac.protocol.dtos import SessionTitle
-from langchain_core.messages import HumanMessage
-from langchain_core.messages import SystemMessage
 from pathlib import Path
 from typing import Any
 from typing import cast
-import asyncio
-import xeac.base.configuration as _configuration
 import logging
 from xeac.daemon import state
 from xeac.daemon.persistence.database import SessionLifecycleRecord, SessionRecord
 from xeac.daemon.services.broadcast import _publish_broadcast
-
-
-def _schedule_session_title(context_id: str, first_message: str) -> None:
-    if state.main_loop is not None and state.main_loop.is_running():
-        future = asyncio.run_coroutine_threadsafe(_finalize_session_title(context_id, first_message), state.main_loop)
-        state._title_tasks.add(future)
-        future.add_done_callback(state._title_tasks.discard)
-        return
-    try:
-        task = asyncio.create_task(_finalize_session_title(context_id, first_message))
-        state._title_tasks.add(task)
-        task.add_done_callback(state._title_tasks.discard)
-    except RuntimeError:
-        # No running event loop (e.g. called outside a request) — keep the provisional title.
-        pass
 
 
 def _claim_work_habits_acknowledgement(context_id: str) -> bool:
@@ -129,23 +107,40 @@ async def _resolve_pending_input(
     context_id: str, request_id: str, *,
     decision: str = "", answers: list | None = None, declined: bool = False,
 ) -> bool:
-    """Route a native resolve (permission decision or question answers) into the durable
-    input-required resolution the registry owns, so the native REST path and an external
-    ``input_response`` message share one resume."""
-    if state.registry is None:
+    """Deliver a human's answer — a permission decision or a question's answers — to the
+    session waiting on it.
+
+    Relayed rather than resolved here: the parked turn lives in the session's process, and
+    only it can resume. This is the same call the CLI's `approve` makes and the same one an
+    `input_response` message carries, so all three land on one resume path."""
+    record = state.registry.get(context_id) if state.registry is not None else None
+    if record is None:
         return False
-    return await state.registry.resolve_pending_input(
-        context_id, request_id, decision=decision, answers=answers, declined=declined,
-    )
+    payload: dict = {"request_id": request_id}
+    if declined:
+        payload["declined"] = True
+    elif answers is not None:
+        payload["answers"] = answers
+    else:
+        payload["decision"] = decision or "deny"
+    try:
+        result = await state.relay_to_session(record, "input/respond", payload)
+    except Exception:  # noqa: BLE001 — an unreachable session is a "no", not a 500
+        return False
+    return bool(result.get("resolved"))
 
 
 async def _abort_pending_input(context_id: str) -> bool:
-    """Deny every pending interaction of a context's input-required task, resuming it so
-    the denials are recorded and the conversation stays valid, instead of stranding a
-    checkpoint that a later turn could not build on."""
-    if state.registry is None:
+    """Deny every gate a session is parked on, so its turn resumes and records the denials
+    rather than leaving a checkpoint no later turn could build on."""
+    record = state.registry.get(context_id) if state.registry is not None else None
+    if record is None:
         return False
-    return await state.registry.abort_pending_input(context_id)
+    try:
+        result = await state.relay_to_session(record, "input/abort", {})
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(result.get("aborted"))
 
 
 def _normalize_permission_mode(mode: str) -> str:
@@ -291,74 +286,9 @@ def _ensure_session_workspace(
     # Surface the new session immediately (its first turn is already marked
     # running, so the sidebar shows it with a spinner right away).
     _publish_broadcast({"type": "sessions_changed"})
-    _schedule_session_title(context_id, first_message)
     return workspace
 
 
-_title_prompt_loader = PromptLoader(
-    Path(_configuration.__file__).resolve().parent / "prompts"
-)
-
-
-async def _generate_session_title(context_id: str, first_message: str) -> str:
-    """Ask the configured LLM for a short, structured title for the session.
-
-    ``SessionTitle`` is bound as a tool with auto tool-choice rather than via
-    ``with_structured_output``: the configured reasoning model rejects both
-    ``response_format`` (json_schema) and the forced ``tool_choice`` that
-    ``with_structured_output`` relies on, but accepts a regular tool call — the
-    same pattern the main agent uses with ``bind_tools``.
-    """
-    assert state.global_configuration is not None
-    configuration = state.global_configuration
-    agent_name = _session_agent_for(context_id) or configuration.default_agent
-    working_directory = _session_working_directory_for(context_id)
-    agent_directories = (
-        configuration.agent_directories_for(working_directory)
-        if working_directory
-        else configuration.agent_directories()
-    )
-    agent_configuration = load_agent_configuration(agent_name, agent_directories)
-    model_identifier = agent_configuration.model_identifier
-    if not model_identifier:
-        return ""
-    # Auto-titling is a background nicety, so skip silently when the model's provider
-    # isn't authorized rather than surfacing an error. Authorization goes through the
-    # same central authority the main agent uses, so it covers the native chatgpt
-    # (OAuth) provider too — not just LiteLLM api keys, which is why titling used to
-    # exclude chatgpt sessions entirely.
-    if not model_is_authorized(model_identifier, configuration):
-        return ""
-    # Build through the shared factory so the title call uses the same provider,
-    # auth, and request path as the agent's own turns (the chatgpt subscription route
-    # included). Reasoning is dialed down: a title is trivial and must stay cheap and
-    # fast, unlike the agent's configured effort.
-    title_agent_configuration = agent_configuration.model_copy(update={"reasoning_effort": "low"})
-    llm = build_chat_model(
-        model_identifier, configuration, title_agent_configuration
-    ).bind_tools([SessionTitle], tool_choice="auto")
-    prompt = _title_prompt_loader.load("session_title", {})
-    response = await llm.ainvoke([
-        SystemMessage(content=prompt),
-        HumanMessage(content=first_message),
-    ])
-    if not response.tool_calls:
-        return ""
-    title = SessionTitle.model_validate(response.tool_calls[0]["args"]).title
-    return (title or "").strip()
-
-
-async def _finalize_session_title(context_id: str, first_message: str) -> None:
-    """Generate an LLM title for a new session and update the sidebar record."""
-    try:
-        title = await _generate_session_title(context_id, first_message)
-    except Exception:
-        return  # Keep the provisional title on any failure.
-    if not title:
-        return
-    changed = await asyncio.to_thread(_set_session_title, context_id, title)
-    if changed:
-        state.broadcaster.publish({"type": "sessions_changed"})
 
 
 def _set_session_title(context_id: str, title: str) -> bool:

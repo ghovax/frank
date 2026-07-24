@@ -955,9 +955,11 @@ class PermissionEvaluator:
         self._configuration = agent_configuration
 
     def check_tool_enabled(self, tool_name: str) -> None:
-        """Refuse a tool the agent's profile does not list. The check used to apply only to
-        `spawn_agent`, the one tool worth gating; with that tool gone it applies to whatever
-        `tools_enabled` actually names, which is what the field always meant."""
+        """Refuse a tool the agent's profile does not list.
+
+        Applies to whatever `tools_enabled` names, which is what the field always meant — an
+        agent that may not run shell commands must not be handed `bash` because the gate only
+        looked at one privileged tool."""
         if (
             self._configuration.tools_enabled
             and tool_name not in self._configuration.tools_enabled

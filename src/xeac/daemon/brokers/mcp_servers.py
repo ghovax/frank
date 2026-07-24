@@ -4,7 +4,7 @@ re-merges mcp.json with the Composio-provisioned servers."""
 from __future__ import annotations
 
 from xeac.base.configuration import GlobalConfiguration
-from xeac.daemon.brokers.mcp import MCPClientManager
+from xeac.base.mcp_client import MCPClientManager
 from xeac.daemon import state
 
 
@@ -28,8 +28,7 @@ async def _reload_mcp() -> None:
                 await state.mcp_manager.start()
         else:
             await state.mcp_manager.reconcile(enabled)
-        for executor in state._executors.values():
-            executor.reset_runtimes()
+        await state.reset_live_session_runtimes()
 
 
 async def _ensure_mcp_servers_for(working_directory: str) -> None:
@@ -59,5 +58,4 @@ async def _ensure_mcp_servers_for(working_directory: str) -> None:
                 await state.mcp_manager.start()
         else:
             await state.mcp_manager.reconcile(enabled)
-        for executor in state._executors.values():
-            executor.reset_runtimes()
+        await state.reset_live_session_runtimes()

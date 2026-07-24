@@ -249,9 +249,8 @@ def _hosts_payload() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def _reset_all_runtimes() -> None:
-    """Drop cached agent runtimes so the next turn rebuilds its chat model. Used
-    when the ChatGPT sign-in state changes (which lives in a token file, not the
-    configuration, so the config watcher never fires for it)."""
-    for executor in state._executors.values():
-        executor.reset_runtimes()
+async def _reset_all_runtimes() -> None:
+    """Drop every live session's cached runtime so the next turn rebuilds its chat model.
+    Used when the ChatGPT sign-in state changes, which lives in a token file rather than the
+    configuration, so the config watcher never fires for it."""
+    await state.reset_live_session_runtimes()

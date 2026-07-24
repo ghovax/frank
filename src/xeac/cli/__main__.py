@@ -148,6 +148,22 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
             return 1
         _print(call("daemon.status"), arguments.json, render.daemon_status)
         return 0
+    if arguments.action == "endpoint":
+        # The two values a GUI needs to attach to *this* daemon: where it listens, and the
+        # token that authorises talking to it. The port is ephemeral and the token is minted
+        # per boot, so neither can be guessed — and over SSH there is no runtime directory
+        # to read them from, which is what makes this worth a verb. It prints a secret, so
+        # it is a thing you ask for rather than something `status` volunteers.
+        from xeac.base.paths import daemon_port_path, daemon_token_path
+
+        try:
+            port = daemon_port_path().read_text().strip()
+            token = daemon_token_path().read_text().strip()
+        except OSError:
+            print("xeacd does not appear to be running", file=sys.stderr)
+            return 1
+        _print({"port": int(port), "token": token}, arguments.json, render.daemon_endpoint)
+        return 0
     if arguments.action == "start":
         ensure_daemon()
         print("xeacd is running")
@@ -253,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     configure.set_defaults(handler=_command_configure)
 
     daemon = add("daemon", "inspect or start the daemon")
-    daemon.add_argument("action", choices=["status", "start", "stop"], nargs="?", default="status")
+    daemon.add_argument("action", choices=["status", "start", "stop", "endpoint"], nargs="?", default="status")
     daemon.add_argument("-s", "--start", action="store_true", help="start the daemon if it is not running")
     daemon.set_defaults(handler=_command_daemon)
 
@@ -274,6 +290,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     except KeyboardInterrupt:
         return 130
+    except BrokenPipeError:
+        # `xeac ps | head` closes the pipe while we are still writing to it. That is a normal
+        # way to use a command, not a failure, so it must not print a traceback. Redirecting
+        # stdout to /dev/null first is what stops the interpreter from raising the same error
+        # again while flushing at exit, which would print one anyway.
+        import os
+
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        # 128 + SIGPIPE, the exit status a shell expects from a program a pipe closed under.
+        return 141
 
 
 if __name__ == "__main__":

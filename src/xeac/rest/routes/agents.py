@@ -57,8 +57,7 @@ async def update_agent_configuration(agent_name: str, request: AgentConfiguratio
         saved_configuration = _agent_configuration_payload(agent_name, working_directory)
         if saved_configuration.provider and saved_configuration.model:
             await asyncio.to_thread(_record_model_selection, f"{saved_configuration.provider}/{saved_configuration.model}")
-        if agent_name in state._executors:
-            state._executors[agent_name].reset_runtimes()
+        await state.reset_live_session_runtimes()
         _reload_agent_cards()
         _publish_broadcast({"type": "agents_changed"})
         return saved_configuration
@@ -76,7 +75,7 @@ async def agent_cards(working_directory: str = ""):
     the directory the server happens to have been launched in. The UI passes the
     selected project path so the advertised skills match what a session there can
     actually find, refreshing whenever the user picks a different folder."""
-    assert state.registry is not None and state.global_configuration is not None
+    assert state.global_configuration is not None
     skill_roots = (
         state.global_configuration.skill_directories_for(working_directory)
         if working_directory
@@ -95,8 +94,7 @@ async def agent_cards(working_directory: str = ""):
             for agent in list_agents(state.global_configuration.agent_directories_for(working_directory))
         }
     cards: list[dict] = []
-    for existing in state.registry.cards():
-        agent_name = str(existing.name or "")
+    for agent_name, existing in sorted(state.agent_cards.items()):
         if allowed_agents is not None and agent_name not in allowed_agents:
             continue
         try:
@@ -147,10 +145,11 @@ async def skills(working_directory: str = ""):
 @router.get(AGENT_CARD_PATH)
 async def default_agent_card():
     """Serve the default agent's card at the well-known path for spec compliance."""
-    assert state.registry is not None and state.global_configuration is not None
-    card = state.registry.card(state.global_configuration.default_agent) or (
-        state.registry.cards()[0] if state.registry.cards() else None
-    )
+    assert state.global_configuration is not None
+    catalogue = state.agent_cards
+    card = catalogue.get(state.global_configuration.default_agent)
+    if card is None:
+        card = next(iter(catalogue.values()), None)
     if card is None:
         return {}
     return card.model_dump(by_alias=True, exclude_none=True, mode="json")

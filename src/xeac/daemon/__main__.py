@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -20,9 +21,10 @@ import secrets
 import signal
 import socket
 import sys
-from pathlib import Path
+import time
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from xeac.base.paths import (
@@ -30,6 +32,7 @@ from xeac.base.paths import (
     daemon_socket_path,
     daemon_token_path,
     log_file_path,
+    runtime_directory,
 )
 
 logger = logging.getLogger("xeac.daemon")
@@ -37,6 +40,13 @@ logger = logging.getLogger("xeac.daemon")
 # Bound to loopback only. The token is what authorises a call; the bind is what keeps the
 # surface off the network entirely.
 LOOPBACK_HOST = "127.0.0.1"
+
+# The only browsers with any business here: the desktop app's own webview (whose origin is
+# `tauri://localhost` or `http://tauri.localhost` by platform) and a local dev server.
+_APP_ORIGIN_PATTERN = (
+    r"^(tauri://localhost|https?://tauri\.localhost"
+    r"|https?://localhost(:\d+)?|https?://127\.0\.0\.1(:\d+)?)$"
+)
 
 
 def _free_port() -> int:
@@ -71,6 +81,60 @@ def _clear_handshake() -> None:
     ):
         with contextlib.suppress(OSError):
             path.unlink(missing_ok=True)
+
+
+def _acquire_singleton_lock() -> int | None:
+    """An exclusive, process-lifetime lock: exactly one daemon per user.
+
+    The socket alone cannot enforce this. Two `xeac` commands run at the same moment both find
+    no daemon, both start one, and uvicorn unlinks an existing unix socket before binding — so
+    the second daemon silently takes the socket from the first and the first becomes an orphan
+    holding a pool of workers nothing will ever reap. An advisory lock is decided by the kernel
+    rather than by who checked first, which is what closes the window between looking and
+    binding.
+
+    The descriptor is deliberately never closed: the lock lives exactly as long as the process
+    that holds it, and the kernel drops it even if the daemon is killed outright."""
+    path = runtime_directory() / "xeacd.lock"
+    handle = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(handle)
+        return None
+    return handle
+
+
+async def _defer_to_running_daemon() -> int:
+    """Stand down for the daemon that won the lock, once it is actually serving.
+
+    Reporting ready is the point: whoever started this process is waiting on that one line
+    before it sends its first command, and the daemon it will reach is the other one. Exiting
+    silently instead would fail a command that has a perfectly good daemon to talk to.
+
+    This waits by connecting, unlike everything else in the daemon, because the thing being
+    waited on is in another process — there is no event to await across that boundary, only the
+    socket itself becoming answerable."""
+    deadline = time.monotonic() + 30.0
+    path = daemon_socket_path()
+    while time.monotonic() < deadline:
+        probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        probe.settimeout(0.5)
+        try:
+            probe.connect(str(path))
+        except OSError:
+            await asyncio.sleep(0.05)
+            continue
+        finally:
+            probe.close()
+        with contextlib.suppress(OSError, ValueError):
+            sys.stdout.write(json.dumps({"ready": True, "deferred": True}) + "\n")
+            sys.stdout.flush()
+            sys.stdout.close()
+        logger.info("Another xeacd already holds the runtime directory; standing down.")
+        return 0
+    logger.error("Another xeacd holds the lock but never started serving.")
+    return 1
 
 
 def _reclaim_socket() -> None:
@@ -121,10 +185,33 @@ def _announcing_server_class():
 
 def build_app() -> FastAPI:
     from xeac.daemon import state
+    from xeac.daemon.api import RpcError
     from xeac.daemon.api import router as control_router
     from xeac.daemon.ingest import router as ingest_router
+    from xeac.rest.app import mount as mount_gui_routes
 
     app = FastAPI(title="xeacd")
+    # The desktop client's webview is a browser, and a browser will not send a request its
+    # origin policy forbids. Scoped to the app's own origins — reflecting `*` would let any
+    # page the user happened to visit script a local, tool-executing API.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=_APP_ORIGIN_PATTERN,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+
+    @app.exception_handler(RpcError)
+    async def _rpc_error(_request: Request, error: RpcError) -> JSONResponse:
+        """The same error shape whether it was raised under `/rpc` or under a plain route.
+
+        `/rpc` catches these itself; the streaming routes do not, and without this an
+        `attach` to a session that does not exist came back as an opaque 500 with the
+        reason — the one useful part — swallowed by the default handler."""
+        return JSONResponse(
+            {"error": {"code": error.code, "message": error.message}}, status_code=error.status_code
+        )
 
     @app.middleware("http")
     async def authenticate(request: Request, call_next):
@@ -151,6 +238,7 @@ def build_app() -> FastAPI:
 
     app.include_router(control_router)
     app.include_router(ingest_router)
+    mount_gui_routes(app)
     return app
 
 
@@ -159,10 +247,13 @@ async def _serve() -> int:
 
     from xeac.base.configuration import GlobalConfiguration
     from xeac.daemon import state
+    from xeac.daemon.composition import close_shared_resources, open_shared_resources
     from xeac.daemon.lifecycle import SessionLifecycle
     from xeac.daemon.pool import WorkerPool
     from xeac.daemon.registry import SessionRegistry
 
+    if _acquire_singleton_lock() is None:
+        return await _defer_to_running_daemon()
     _reclaim_socket()
 
     state.global_configuration = GlobalConfiguration.load()
@@ -180,6 +271,9 @@ async def _serve() -> int:
         on_change=lambda: state.broadcaster.publish({"type": "sessions_changed"}),
     )
     await state.pool.start()
+    # Built after the stores and the pool, because the shared resources read from both, and
+    # after the port is known, because the file-URL signer signs against this daemon's address.
+    await open_shared_resources()
 
     app = build_app()
     announcing = _announcing_server_class()
@@ -214,6 +308,12 @@ async def _serve() -> int:
         handler that sets it while the loop is parked leaves the daemon running until something
         else happens to wake it — which is how a `stop` came back as "still running"."""
         await stopping.wait()
+        # Streams first, servers second. An open SSE response — someone left `xeac attach`
+        # running in another terminal — holds the connection until it yields its last frame,
+        # and uvicorn will not finish draining until it does. Closing the buses here is what
+        # keeps `daemon stop` from waiting on a watcher that is itself waiting on the stop.
+        state.event_bus.complete_all()
+        state.broadcaster.close()
         socket_server.should_exit = True
         tcp_server.should_exit = True
 
@@ -246,6 +346,8 @@ async def _serve() -> int:
             await state.lifecycle.aclose()
         with contextlib.suppress(Exception):
             await state.pool.aclose()
+        with contextlib.suppress(Exception):
+            await close_shared_resources()
         _clear_handshake()
     return 0
 

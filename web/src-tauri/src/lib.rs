@@ -665,6 +665,12 @@ pub fn run() {
             sql: include_str!("../migrations/003_add_ssh_connections.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "add_connection_tokens",
+            sql: include_str!("../migrations/004_add_connection_tokens.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

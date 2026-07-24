@@ -95,6 +95,10 @@ class DaemonTaskStore(TaskStore):
         than after the turn's next persistence point."""
         await self._call("session.event", event=event)
 
+    async def publish_title(self, title: str) -> None:
+        """Hand the daemon a title this session generated for itself."""
+        await self._call("session.title", title=title)
+
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.aclose()

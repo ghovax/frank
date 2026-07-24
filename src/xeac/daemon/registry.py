@@ -13,7 +13,7 @@ child's death is attributable to the parent that took it down.
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
