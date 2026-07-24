@@ -1,4 +1,4 @@
-"""Remote-agent routes (external A2A agents this harness can delegate to).
+"""Remote-agent routes: peers on other hosts, registered by their A2A card.
 
 The home ``~/.agents/remote-agents.json`` is the source of truth; these endpoints let the
 app read the registered agents (with live health resolved from the outbound client

@@ -18,8 +18,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -314,6 +315,81 @@ async def _task_get(params: dict) -> dict:
     return {"task": task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})}
 
 
+async def _remote_list(_params: dict) -> dict:
+    """The peers registered on other hosts, with their live health.
+
+    Listed apart from sessions because they are a different kind of thing: XEAC does not own
+    their lifecycle, cannot set their permission mode, and keeps no transcript of them. What
+    it has is an address and a card."""
+    assert state.global_configuration is not None
+    manager = state.remote_agent_manager
+    agents = []
+    for name, configuration in state.global_configuration.remote_agents.agents.items():
+        health = manager.health(name) if manager is not None else {"health": "unconfigured", "error": ""}
+        card = manager.card(name) if manager is not None else None
+        agents.append({
+            "name": name,
+            "card_url": configuration.card_url,
+            "enabled": configuration.enabled,
+            "health": health["health"],
+            "error": health["error"],
+            "description": (card.description if card is not None else "") or "",
+        })
+    return {"agents": sorted(agents, key=lambda entry: entry["name"])}
+
+
+async def _remote_send(params: dict) -> dict:
+    """Hand one message to a registered remote peer and return what it produced.
+
+    One-shot on purpose: a remote agent runs on someone else's machine, at their cost, with no
+    shared history and no access to this filesystem. That is a different bargain from a local
+    peer, so it gets a different verb rather than being smuggled into `session.send` — a caller
+    should never be unsure which side of the wire its work went to."""
+    from a2a.types import Message, Part, Role, TextPart
+
+    name = _require(params, "name")
+    text = str(params.get("text") or "")
+    manager = state.remote_agent_manager
+    if manager is None:
+        raise RpcError("No remote agents are configured.", status_code=404, code="no_remote_agents")
+    message = Message(
+        role=Role.user,
+        parts=[Part(root=TextPart(text=text))],
+        message_id=uuid.uuid4().hex,
+    )
+    collected: list[str] = []
+    try:
+        async for event in manager.send_message(name, message):
+            for part in _remote_text_parts(event):
+                collected.append(part)
+    except LookupError as error:
+        raise RpcError(str(error), status_code=404, code="no_such_remote_agent") from error
+    except Exception as error:  # noqa: BLE001 — an unreachable peer is an answer, not a crash
+        raise RpcError(f"{name} could not be reached: {error}", status_code=502, code="remote_unreachable") from error
+    return {"name": name, "text": "".join(collected)}
+
+
+def _remote_text_parts(event: Any) -> list[str]:
+    """The prose in one streamed A2A event, whatever shape it arrived in.
+
+    A remote agent may answer with a bare Message, or with a Task whose artifacts carry the
+    result; both are normal, so both are read rather than assuming the shape a particular peer
+    happens to use."""
+    texts: list[str] = []
+    candidates = event if isinstance(event, tuple) else (event,)
+    for candidate in candidates:
+        for part in getattr(candidate, "parts", None) or []:
+            text = getattr(getattr(part, "root", part), "text", "")
+            if text:
+                texts.append(str(text))
+        for artifact in getattr(candidate, "artifacts", None) or []:
+            for part in getattr(artifact, "parts", None) or []:
+                text = getattr(getattr(part, "root", part), "text", "")
+                if text:
+                    texts.append(str(text))
+    return texts
+
+
 async def _daemon_status(_params: dict) -> dict:
     assert state.registry is not None
     live = state.registry.live()
@@ -342,6 +418,8 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "session.background": _session_background,
     "session.tool_background": _session_tool_background,
     "session.history": _session_history,
+    "remote.list": _remote_list,
+    "remote.send": _remote_send,
     "task.get": _task_get,
     "daemon.status": _daemon_status,
 }

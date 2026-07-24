@@ -342,16 +342,14 @@ class AppendOnlyTaskStore(TaskStore):
     async def reconcile_orphaned_turns(self) -> list[str]:
         """Restart reconciliation, driven by each turn's own durable record.
 
-        In-memory executors cannot be resumed after a restart, so the reconciliation
-        reads one field — the turn kind — and applies the policy it implies:
+        A session's process does not survive its daemon, so every task left non-terminal by a
+        restart is reconciled against one rule:
 
-        * a **top-level** ``input-required`` pause is durable (its checkpoint and pending
-          interactions survive) and is preserved for a later answer to resume;
-        * a **delegated** ``input-required`` pause is failed — its resume depends on the
-          parent's in-process driver, which a restart does not restore;
-        * every **other non-terminal** task was caught mid-execution and is failed —
-          resume is at-most-once, so its in-flight tools did not complete and there is
-          nothing safe to resume into.
+        * an ``input-required`` pause is durable — its checkpoint and pending interactions
+          survive — and is preserved for a later answer to resume;
+        * every **other non-terminal** task was caught mid-execution and is failed: resume is
+          at-most-once, so its in-flight tools did not complete and there is nothing safe to
+          resume into.
 
         Returns the ids that were failed. Failing an interrupted turn persists an explicit
         error status so stale approvals, tools, and agent lanes cannot replay as active.

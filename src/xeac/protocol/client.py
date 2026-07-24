@@ -1,5 +1,5 @@
 """Outbound A2A client — reach third-party A2A agents over the wire, letting a local
-agent delegate to an agent that lives on someone else's server.
+session hand work to an agent that lives on someone else's server.
 
 Responsibilities:
 
@@ -17,7 +17,7 @@ Responsibilities:
   an internal endpoint (an SSRF-shaped attack).
 
 The mapping from a remote task's streamed events into the harness's own relayed-child
-event vocabulary lives with the delegation code in ``a2a_executor.py``; this module stays
+event vocabulary lives with the session executor in ``xeac.worker.session``; this module stays
 transport-focused and returns the raw A2A client stream.
 """
 
@@ -173,8 +173,10 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
     try:
         assert_public_host(host, allow_private=configuration.allow_private)
     except UntrustedHostError as exception:
+        # The inner error already names the remedy; repeating it here printed the same hint
+        # twice in one sentence.
         raise RemoteAgentTrustError(
-            f"Remote agent {configuration.name!r}: {exception}; set allow_private to permit it."
+            f"Remote agent {configuration.name!r}: {exception}."
         ) from exception
 
 

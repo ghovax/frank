@@ -33,13 +33,11 @@ REFERENCE_TASK_IDS_KEY = "referenceTaskIds"
 
 
 class TurnKind(StrEnum):
-    """What opened a turn — the fact its restart policy is derived from (a top-level user pause is
-    resumable and preserved across a restart; a harness-initiated or delegated one is not)."""
+    """What opened a turn: a person, a background result waking the session, or compaction."""
 
     USER = "user"
     AUTONOMOUS = "autonomous"
     COMPACTION = "compaction"
-    DELEGATED = "delegated"
 
 
 class ReconcileAction(StrEnum):
@@ -51,17 +49,17 @@ class ReconcileAction(StrEnum):
 
 
 def reconcile_action(kind: Optional[TurnKind], state: str, *, input_required: str) -> ReconcileAction:
-    """The reconciliation policy as one total function. In-memory executors cannot be resumed
-    after a restart, so:
+    """What to do with a non-terminal task found after a restart, as one total function.
 
-    * a **top-level** ``input-required`` pause is durable (checkpoint + pending interactions
-      survive) → :attr:`ReconcileAction.PRESERVE`;
-    * a **delegated** ``input-required`` pause depends on the parent's in-process driver, which a
-      restart does not restore → :attr:`ReconcileAction.FAIL`;
-    * every **other** non-terminal task was caught mid-execution (resume is at-most-once, so its
-      in-flight tools did not complete) → :attr:`ReconcileAction.FAIL`.
-    """
-    if state == input_required and kind is not TurnKind.DELEGATED:
+    * an ``input-required`` pause is durable — its checkpoint and pending interactions survive,
+      so a later answer resumes it → :attr:`ReconcileAction.PRESERVE`;
+    * every other non-terminal task was caught mid-execution, and resume is at-most-once, so its
+      in-flight tools did not complete → :attr:`ReconcileAction.FAIL`.
+
+    The turn kind no longer changes the answer: it did when a delegated turn was an in-process
+    continuation of its parent's, which a restart could not restore. A delegated turn is a
+    separate session now, reaped with the daemon and reconciled on its own terms."""
+    if state == input_required:
         return ReconcileAction.PRESERVE
     return ReconcileAction.FAIL
 

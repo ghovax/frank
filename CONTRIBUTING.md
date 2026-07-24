@@ -1,4 +1,4 @@
-# Contributing to XEAC 🌼
+# Contributing to XEAC
 
 Thanks for improving XEAC. This is the short version; the full guides live in the [documentation guides](documentation/).
 
@@ -12,14 +12,14 @@ cd xeac
 direnv allow          # or: nix develop
 ```
 
-Then follow [Development guide](documentation/development.md) to run the harness, the web UI, and the desktop app.
+Then follow the [Development guide](documentation/development.md) to run the daemon, the web UI, and the desktop app. The [`xeac` command](documentation/cli.md) is the day-to-day surface.
 
 ## Ground rules
 
 - **Never commit secrets.** API keys go in `~/.config/xeac/configuration.yaml` or environment variables, never in a tracked file. See [Security notes](SECURITY.md).
 - **Match the surrounding code.** Follow the existing naming, comment density, and structure; don't introduce a new style.
 - **Keep changes focused.** One logical change per pull request, with a clear description of what and why.
-- Run the checks that apply to your change (`bun run lint` in `web/`, `uv run ruff check` for the harness) before opening a PR.
+- Run the checks that apply to your change before opening a PR: `uv run ruff check` and `python scripts/check_layers.py` for the harness, `bun run lint` and `bun run build` in `web/`. The layering check enforces two invariants that are invisible in a diff — the daemon never imports the runtime, and `computer/` is never imported at module level.
 
 ## Reporting bugs and proposing features
 

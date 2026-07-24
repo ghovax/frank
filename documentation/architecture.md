@@ -51,14 +51,14 @@ Isolation is a property of the process. A worker is assigned exactly once and be
 - the **registry** of sessions (identity, parent, permission mode, capability token, status);
 - the **lifecycle**: starting workers, watching for crashes, and reaping a subtree parent-last so a child never outlives its parent;
 - the **databases**, as the sole writer — workers persist by posting to the daemon's ingest surface, so there is exactly one process writing SQLite;
-- the shared **brokers** (events, terminals, approvals);
+- the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote peers — everything there can only sensibly be one of;
 - a **warm worker pool** with a floor and a ceiling, so spawning a session is a socket write rather than a Python cold start, and a fan-out of ten children does not serialise behind the floor.
 
 It serves one API two ways: a **unix socket** for the CLI and for sessions, and a **loopback TCP port** for the desktop client, which cannot open a unix socket from a webview. The port is ephemeral and chosen at boot; both listeners require the capability token the daemon writes `0600` into the runtime directory.
 
 ## The CLI
 
-`xeac` adds nothing the API does not have — it is the ergonomic face of it. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` a pending tool call, `kill` a subtree, `configure` what the next session starts with.
+`xeac` adds nothing the API does not have — it is the ergonomic face of it. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` a pending tool call, `kill` a subtree, `remote` to reach a peer on another host, `configure` what the next session starts with. The [CLI guide](cli.md) is the reference.
 
 Lifecycle and reads go to the daemon; a data-plane message goes straight to the owning session's socket. Same API, different transport.
 
@@ -96,7 +96,7 @@ A session's permission mode is fixed when it is created and cannot be changed af
 1. You send a message to a session — `xeac send` writes to its socket directly; the app posts to the daemon, which relays it.
 2. The agent loop calls the model, which may request tool calls.
 3. Each tool call is classified for risk and checked against the session's permission mode. If it needs approval, the session streams a permission request; the CLI prints it and `xeac approve` answers, or the app shows an overlay.
-4. Approved tools run — shell in the sandbox, files on the active location, screen control (`control_screen`) against the local machine, MCP against configured servers.
+4. Approved tools run — shell in the sandbox, files on the active location, screen control (`control_screen`) against the local machine, MCP against the session's own connections (stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's).
 5. Results stream back as structured events. The session posts them to the daemon, which is the only writer of `history.db`, and fans them out to whoever is attached.
 
 ## Where to go next

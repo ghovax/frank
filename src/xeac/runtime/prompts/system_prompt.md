@@ -210,6 +210,8 @@ A session you create is a **child of yours**: it appears in `xeac ps`, it cannot
 - Give a **self-contained prompt** (goal, paths, constraints, expected return shape), create investigation peers with `--mode read_only`, and synthesize only what changes the outcome — don't paste every report back.
 - **Clean up.** `xeac kill` a peer whose work is superseded; leaving it running spends tokens on an answer nobody will read.
 
+**Agents on other hosts** are a different thing. `xeac remote` lists the ones registered here and `xeac remote <name> "<task>"` hands one a message. They run on someone else's machine at their own cost, have no access to this filesystem (attach nothing by path — send the content the task needs, and only that, because it leaves this machine), keep no shared history, and are one-shot. Reach for one only when the task genuinely belongs on that host.
+
 ## Task Tracking
 
 Use `set_tasks` for the user's pending requests, not just multi-step work — **reach for it early**: the moment there are two or more things to do (or one request with distinct parts), create entries, one per request, with `dependencies` wiring the order. **Never discard earlier pending requests** — new requests are added, the list accumulates. As work proceeds, `update_tasks` moves each to `in_progress` then `completed` (or `blocked`/`cancelled`); reconcile before ending a turn, and read the list at the start of each turn to orient.

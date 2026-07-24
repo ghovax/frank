@@ -143,6 +143,22 @@ def daemon_endpoint(payload: dict) -> None:
     print(f"  {_colour('token'.ljust(12), _DIM)}{payload.get('token', '')}")
 
 
+def remote_agents(agents: list[dict]) -> None:
+    """Peers on other hosts. Health first: a registered peer that cannot be resolved is the
+    thing worth noticing, since it looks identical to a working one until you send to it."""
+    if not agents:
+        print("no remote agents registered")
+        return
+    width = max(len(str(agent.get("name", ""))) for agent in agents)
+    for agent in agents:
+        health = str(agent.get("health", ""))
+        colour = _STATUS_COLOURS["running"] if health == "healthy" else _STATUS_COLOURS["failed"]
+        detail = agent.get("description") or agent.get("card_url") or ""
+        print(f"{str(agent.get('name', '')).ljust(width)}  {_colour(health, colour)}  {_short(detail, 52)}")
+        if agent.get("error"):
+            print(f"{' ' * width}  {_colour(str(agent['error']), _DIM)}")
+
+
 def stream_frame(frame: dict) -> None:
     """One frame of a live attach, rendered as it arrives.
 

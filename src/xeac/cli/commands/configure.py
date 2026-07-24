@@ -12,6 +12,7 @@ already in flight and change the rules underneath it.
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 
 import yaml
@@ -88,18 +89,43 @@ def _parse(raw: str) -> Any:
 
     A setting written as `true` or `8` should land as a boolean or a number, not as the string
     the shell handed over — otherwise a toggle set from the terminal reads as truthy text and
-    can never be turned off."""
+    can never be turned off.
+
+    `none` is deliberately *not* one of the null spellings, even though YAML accepts it as one.
+    It is a real value here — `workspace.strategy: none` is the default — and coercing it to
+    null wrote a configuration the schema rejects, which stopped the daemon from starting at
+    all. Removing a setting is what `--unset` is for; `null` and `~` still spell null for the
+    fields that genuinely take one."""
     lowered = raw.strip().lower()
     if lowered in {"true", "yes", "on"}:
         return True
     if lowered in {"false", "no", "off"}:
         return False
-    if lowered in {"null", "none", ""}:
+    if lowered in {"null", "~", ""}:
         return None
     try:
         return json.loads(raw)
     except ValueError:
         return raw
+
+
+def _validates(data: dict) -> str:
+    """Whether the configuration would still load, and what is wrong if not.
+
+    Checked before the file is written, because the daemon reads this file at startup: a value
+    the schema rejects does not fail the command that set it, it fails every command after —
+    including the one that would put it back."""
+    from xeac.base.configuration import GlobalConfiguration
+
+    try:
+        GlobalConfiguration.model_validate(data)
+    except Exception as error:  # noqa: BLE001 — the validator's message is the useful part
+        # Pydantic reports the field, then the reason, then a documentation URL. The first two
+        # are what a person needs; the URL is noise at a terminal.
+        lines = [line.strip() for line in str(error).splitlines()[1:3] if line.strip()]
+        reason = " ".join(line for line in lines if not line.startswith("For further"))
+        return reason.split(" [type=")[0] or str(error)
+    return ""
 
 
 def run(arguments) -> int:
@@ -137,6 +163,10 @@ def run(arguments) -> int:
         return 1
 
     _write(data, arguments.setting, _parse(arguments.value))
+    invalid = _validates(data)
+    if invalid:
+        print(f"xeac: {arguments.setting} would not be valid: {invalid}", file=sys.stderr)
+        return 1
     _save(data)
     # Echoing the stored value rather than the argument shows how it was interpreted, so a
     # `true` that landed as a string is visible immediately instead of at the next boot.
@@ -158,7 +188,12 @@ def run_unset(arguments) -> int:
     if not isinstance(node, dict) or parts[-1] not in node:
         print(f"xeac: no setting named {arguments.setting!r}")
         return 1
-    node.pop(parts[-1])
+    removed = node.pop(parts[-1])
+    invalid = _validates(data)
+    if invalid:
+        node[parts[-1]] = removed
+        print(f"xeac: {arguments.setting} cannot be removed: {invalid}", file=sys.stderr)
+        return 1
     _save(data)
     print(f"unset {arguments.setting}")
     return 0

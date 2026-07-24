@@ -1,7 +1,7 @@
 # XEAC configuration — copy this file to ~/.config/xeac/configuration.yaml and fill in
-# the keys you need. On first run XEAC creates ~/.config/xeac/configuration.yaml from a
-# built-in template, so copying this over it is optional; it exists to document the
-# full schema in one place.
+# the keys you need. On first run XEAC creates that file from a built-in template, so
+# copying this over it is optional; it exists to document the full schema in one place.
+# `xeac configure` reads and writes the same file, addressed by dotted path.
 #
 # Nothing here is required to launch. Add only what you use — an unset key simply
 # disables the feature that needs it. Every credential can also be supplied through
@@ -14,104 +14,167 @@
 # ---------------------------------------------------------------------------
 # Model providers
 #
-# The model that runs your agents. Set the api_key for the provider(s) you use.
-# First-party providers resolve through LiteLLM's built-in endpoints; any
-# OpenAI-compatible provider can also declare a base_url. Each key falls back to the
-# provider's conventional environment variable (e.g. ANTHROPIC_API_KEY, OPENAI_API_KEY,
-# GEMINI_API_KEY, OPENROUTER_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY, GROQ_API_KEY,
-# MISTRAL_API_KEY).
+# The model that runs your sessions. Set the api_key for the provider(s) you use.
+# Most resolve through LiteLLM's built-in endpoints; any OpenAI-compatible provider
+# can also declare a base_url. Each key falls back to that provider's conventional
+# environment variable. Around forty providers are registered — the ten below are the
+# common ones; src/xeac/base/providers.py is the full list with each one's variable.
+#
+# Which model a *session* uses is not set here: it belongs to the agent profile, under
+# `preset` in that agent's configuration.json.
 providers:
   anthropic:
-    api_key: ""
+    api_key: ""                     # env: ANTHROPIC_API_KEY
   openai:
-    api_key: ""
+    api_key: ""                     # env: OPENAI_API_KEY
   google:
-    api_key: ""
+    api_key: ""                     # env: GOOGLE_GENERATIVE_AI_API_KEY or GEMINI_API_KEY
   openrouter:
-    api_key: ""
+    api_key: ""                     # env: OPENROUTER_API_KEY
   xai:
-    api_key: ""
+    api_key: ""                     # env: XAI_API_KEY
   deepseek:
-    api_key: ""
+    api_key: ""                     # env: DEEPSEEK_API_KEY
   groq:
-    api_key: ""
+    api_key: ""                     # env: GROQ_API_KEY
   mistral:
-    api_key: ""
+    api_key: ""                     # env: MISTRAL_API_KEY
   opencode:
-    api_key: ""
+    api_key: ""                     # env: OPENCODE_API_KEY
     base_url: "https://opencode.ai/zen/go/v1"
   # Any OpenAI-compatible endpoint: point base_url at it and set the key.
   custom:
     api_key: ""
     base_url: ""
 
-# The provider/model selected in the UI. Usually set through the app rather than by
-# hand; left here so a headless deployment can pin them.
-selected_provider: ""
-selected_model: ""
-
 # ---------------------------------------------------------------------------
 # Web search and retrieval
 #
-# Exa powers the built-in web_search fallback (env: EXA_API_KEY).
+# Exa powers search_web (env: EXA_API_KEY). fetch_url reads pages through a tiered
+# engine: Jina Reader first (free tier), then Firecrawl, then a direct fetch — each
+# tier optional, an unset key simply skips it.
 exa:
   api_key: ""
-
-# fetch_url reads pages through a tiered engine. Jina Reader is a free-tier default;
-# Firecrawl is the higher-quality fallback (envs: JINA_API_KEY, FIRECRAWL_API_KEY).
 jina:
-  api_key: ""
+  api_key: ""                       # env: JINA_API_KEY
 firecrawl:
-  api_key: ""
+  api_key: ""                       # env: FIRECRAWL_API_KEY
+  api_url: ""                       # env: FIRECRAWL_API_URL, for a self-hosted instance
 
-# Optional outbound proxy for direct fetches (env: XEAC_FETCH_PROXY).
+# Outbound proxy for the fetch and download tools, overriding HTTPS_PROXY/ALL_PROXY
+# for those alone (env: XEAC_FETCH_PROXY).
 web_fetch:
   proxy_url: ""
 
 # ---------------------------------------------------------------------------
 # Hosted tool integrations
 #
-# Composio is exposed as a normal MCP server when enabled, giving agents authorized
-# access to apps like Gmail or Notion (env: COMPOSIO_API_KEY).
+# Composio is folded into the ordinary MCP set when enabled, giving sessions authorized
+# access to apps like Gmail or Notion through the normal MCP tools (env: COMPOSIO_API_KEY).
 composio:
   enabled: false
   url: "https://connect.composio.dev/mcp"
   api_key: ""
   server_name: "composio"
+  timeout_seconds: 60
 
 # ---------------------------------------------------------------------------
-# Execution behavior
+# Execution behaviour
 #
 # sandbox.enabled confines bash to the active workspace unless the user grants
-# permission. workspace.strategy controls optional branch/worktree setup ("none",
-# "branch", "worktree").
+# permission. workspace.strategy is resolved once when a session is created: a
+# "worktree" session runs its tools in its own git worktree, so parallel sessions on
+# one repository do not tread on each other.
 sandbox:
   enabled: true
 workspace:
-  strategy: "none"
+  strategy: "none"                  # "none" | "branch" | "worktree"
+  artifact_maximum_bytes: 134217728
 
-# Default permission posture for tool calls:
+# The permission mode a session gets when none is asked for:
 #   default    ask before risky actions
 #   auto       auto-approve low-risk actions, ask for the rest
 #   read_only  allow reads, deny writes and side effects
-#   bypass     approve everything (use with care)
+#
+# There is no bypass mode and no standing "always allow" — the only runtime decisions
+# are allow-once and deny. A session's mode is fixed when it is created and a session
+# created by another can never be looser than its parent.
 agent:
   permission_mode: "default"
 
-# macOS computer-use tool (accessibility-driven control of native apps). Off by
-# default; enable to let the agent read and drive native apps.
+# macOS screen control (control_screen): accessibility-driven reading and driving of
+# native apps and your own Chrome. Off by default; needs the Accessibility grant.
 computer_control:
   enabled: false
 
-# Let agents build up persistent context about you across sessions. Off by default
-# because it surfaces personal data to your model provider; enable if you want it.
+# Put a snapshot of how you work into the system prompt. Off by default because it
+# surfaces personal data to your model provider; enable if you want it.
 user_context:
   enabled: false
 
 # ---------------------------------------------------------------------------
-# Agents
+# Conversation compaction
 #
-# The primary agent used for new sessions. Bundled options: general-assistant,
-# senior-researcher, code-investigator, code-implementer. Add your own under
-# ~/.agents/agents/<id>/ or .agents/agents/<id>/ in a working directory.
+# How a long conversation is condensed as it approaches the model's context limit.
+compaction:
+  auto: true
+  observer_context_fraction: 0.6
+  reflector_observation_fraction: 0.3
+  keep_recent_turns: 6              # turns kept verbatim after a compaction
+
+# ---------------------------------------------------------------------------
+# Tool tuning
+#
+# How much context a tool result may occupy, and how patient the tools are. Raise
+# timeout_scale on a slow machine or network; lower the fractions to spend less
+# context on tool output.
+tuning:
+  output_fraction: 0.25
+  listing_fraction: 0.15
+  settle_interval_seconds: 0.05
+  settle_ceiling_seconds: 1.5
+  timeout_scale: 1.0
+
+# ---------------------------------------------------------------------------
+# Not here: MCP servers and remote peers
+#
+# `mcp` and `remote_agents` are also part of this schema, but they are declared in
+# .agents/mcp.json and .agents/remote-agents.json instead — project-local and global,
+# merged by name, the same way agents and skills are. See documentation/agents-and-skills.md.
+
+# ---------------------------------------------------------------------------
+# Inbound authentication
+#
+# Only relevant if you expose a daemon beyond loopback. Its own surfaces are already
+# gated by the capability token it writes 0600 into the runtime directory; this adds
+# A2A's inbound auth on top.
+a2a:
+  api_key: ""
+  api_key_header: "X-API-Key"
+  oauth2_jwks_url: ""
+  oauth2_issuer: ""
+  oauth2_audience: ""
+
+# ---------------------------------------------------------------------------
+# Telemetry
+#
+# Off by default. When enabled, spans and token usage go over OTLP to an endpoint you
+# choose — XEAC ships nothing anywhere on its own.
+telemetry:
+  enabled: false
+  exporter:
+    endpoint: ""
+    protocol: "http/protobuf"
+    headers: {}
+  sample_ratio: 1.0
+
+# ---------------------------------------------------------------------------
+# Agents and history
+#
+# default_agent is used when `xeac create` is given no --agent. Bundled options:
+# general-assistant, senior-researcher, code-investigator, code-implementer. Add your
+# own under ~/.agents/agents/<id>/ or .agents/agents/<id>/ in a working directory.
 default_agent: "general-assistant"
+
+# How long a finished session's transcript is kept.
+maximum_history_age_days: 30

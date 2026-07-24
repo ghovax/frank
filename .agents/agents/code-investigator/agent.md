@@ -2,7 +2,7 @@
 name: code-investigator
 title: Code investigator
 description: Investigates code paths, architecture, and behavior with evidence-backed findings and no file modifications.
-role: delegation-target
+role: peer
 enabled: true
 connection-type: internal
 ---

@@ -1,6 +1,8 @@
 # Tools
 
-Agents act through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones can pause for approval. Each built-in tool's docstring in `src/xeac/tools/tools.py` is the description the model reads, so the authoritative spec lives in the repo.
+A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones pause for approval, which reaches you as a prompt in the app or as `xeac approve` in the terminal. Each built-in tool's docstring in `src/xeac/runtime/tools/registry.py` is the description the model reads, so the authoritative spec lives in the repo.
+
+There is no delegation tool. A session that needs a peer creates one — `xeac create` through `bash` — and messages it, which is the same thing you do from the terminal. See [Architecture](architecture.md#sessions).
 
 ## The built-in surface
 
@@ -30,10 +32,11 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 |------|--------------|
 | `set_tasks` / `update_tasks` | Maintain a task list for a multi-step job. |
 | `update_goal` | Track an overarching goal. |
-| `read_task` | Read a related/background task. |
+| `read_task` | Read a related or background task. |
 | `load_skill` | Load a `SKILL.md` capability on demand. |
-| `open_artifact` | Render a produced file/output as an artifact in the UI. |
-| `ask_user` | Ask the user a question and wait. |
+| `open_artifact` | Render a produced file or output as an artifact in the UI. |
+| `ask_user` | Ask the user a question and wait for the answer. |
+| `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
 
 **MCP**
 
@@ -62,7 +65,9 @@ XEAC reads structure, not pixels: there is no screenshot path for computer use. 
 
 ## Where the definitions live
 
-- Descriptions the model reads: the tool docstrings in `src/xeac/tools/tools.py`
-- Implementations: `src/xeac/tools/` and `src/xeac/computer/`
-- Model-facing message templates: `src/xeac/tools/prompts/` and `src/xeac/core/prompts/`
-- The guidance the agent gets for screen control: `src/xeac/core/prompts/computer_control_guidance.md`
+- Descriptions the model reads: the tool docstrings in `src/xeac/runtime/tools/registry.py`
+- Implementations: `src/xeac/runtime/tools/` and `src/xeac/computer/`
+- Model-facing message templates: `src/xeac/runtime/prompts/` and `src/xeac/computer/messages/`
+- The guidance a session gets for screen control: `src/xeac/runtime/prompts/computer_control_guidance.md`
+
+A tool runs inside the session's own process, so its blast radius is that session: its working directory (its own git worktree, under the `worktree` strategy), its permission mode, and its own MCP connections.

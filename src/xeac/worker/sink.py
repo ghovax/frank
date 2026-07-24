@@ -108,9 +108,9 @@ class _TurnEventSink:
     flush) and the turn's telemetry span, and it accumulates the turn's terminal
     text and stop reason for the orchestrator to read once the stream drains.
 
-    A suspension forks to the injected ``suspend`` strategy: a delegated turn parks
-    in place (an in-process park — returns ``False``, keep consuming), a top-level
-    turn closes its segment durably (a durable segment — returns ``True``, stop).
+    A suspension goes to the injected ``suspend`` strategy, which returns whether the stream
+    is finished: every pause is durable now — the segment closes and a later answer rebuilds
+    the turn from its checkpoint — where a delegated turn used to park in place instead.
     """
 
     def __init__(

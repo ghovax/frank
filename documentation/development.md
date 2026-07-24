@@ -16,7 +16,7 @@ The Python harness runs from a local virtualenv managed with [uv](https://docs.a
 uv sync                 # create .venv and install the project + dependencies
 ```
 
-## Running the harness
+## Running it
 
 The CLI starts the daemon on its first command, so usually there is nothing to launch:
 
@@ -25,12 +25,13 @@ uv run xeac create --agent general-assistant --directory ~/code/project
 uv run xeac send <id> "what does this project do?" --wait
 ```
 
-To run the daemon in the foreground and watch its log:
+The [`xeac` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:
 
 ```sh
 uv run python -m xeac xeacd
-# or: PYTHONPATH=src .venv/bin/python server.py xeacd
 ```
+
+One image, three entry points, chosen by the first argument: `xeac` (the CLI), `xeacd` (the daemon), `worker` (a session). A bare launch lands in the CLI, which is why the daemon has to be asked for. `xeac daemon stop` takes down a foreground daemon and its sessions with it.
 
 It listens on a unix socket in your runtime directory and on an ephemeral loopback port for GUI clients; `xeac daemon endpoint` reports the port and the capability token. State follows the XDG convention — configuration in `~/.config/xeac/`, durable state in `~/.local/share/xeac/`, logs in `~/.local/state/xeac/` — all created on first run. Add provider keys via `xeac configure`, the configuration file, or environment variables; see the [Configuration guide](configuration.md).
 
@@ -45,6 +46,7 @@ bun run dev             # http://localhost:3000, talks to the daemon's loopback 
 Useful scripts (in `web/`):
 
 - `bun run lint` — lint the UI.
+- `bun run tauri:dev` / `bun run tauri:build` — the desktop shell (see below).
 - `bun run build` — production static export (to `web/out`).
 - `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
@@ -53,18 +55,18 @@ Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` 
 ## Running the desktop app in dev
 
 ```sh
-cd web/src-tauri
-cargo tauri dev         # launches the Tauri window against the dev UI + a local daemon
+cd web
+bun run tauri:dev       # launches the Tauri window against the dev UI + a local daemon
 ```
 
 ## Building and signing
 
 ```sh
-cd web/src-tauri
-cargo tauri build
+cd web
+bun run tauri:build
 ```
 
-This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helper with PyInstaller — a no-op when nothing changed, and it smoke-tests the frozen daemon before the build proceeds) and produces `target/release/bundle/macos/XEAC.app` plus a `.dmg`.
+This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helper with PyInstaller — a no-op when nothing changed, and it smoke-tests the frozen daemon before the build proceeds) and produces `web/src-tauri/target/release/bundle/macos/XEAC.app` plus a `.dmg` under `bundle/dmg/`.
 
 ### Stable code-signing (recommended)
 

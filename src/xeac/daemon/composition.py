@@ -1,14 +1,17 @@
 """What the daemon owns on behalf of everyone, and the watchers that keep it current.
 
 The registry, the worker pool and the stores are the daemon's *lifecycle* half, built in
-:mod:`xeac.daemon.__main__`. This is the other half: the shared resources a session cannot
-sensibly own alone — file leases that coordinate writes between sessions, the MCP server
-pool, workspaces, terminals, signed file URLs, push notifications, remote peers — plus the
-GUI surface that reads and edits them.
+:mod:`xeac.daemon.__main__`. This is the other half: what has to be singular — file leases
+that coordinate writes between sessions, workspaces, terminals, signed file URLs, push
+notifications, remote peers — plus the GUI surface that reads and edits them.
 
-They live here rather than in a worker because they are singular. A file lease is only a
-lease if one process arbitrates it; an MCP server pool shared by ten sessions should be one
-pool. A worker asks the daemon about these; it does not keep its own.
+They live here rather than in a worker because there can only sensibly be one of each. A
+file lease is only a lease if a single process arbitrates it.
+
+The MCP pool is the exception that proves the rule. The daemon keeps one for the GUI's
+server browser, but a session connects its own for its tool calls: MCP connections are
+stateful and a stdio server is a subprocess, neither of which crosses a process boundary.
+That is a real cost of process-per-session, taken deliberately.
 
 Deliberately free of `xeac.runtime` at import: the three GUI endpoints that genuinely need
 the runtime import it when called. Keeping the daemon's startup graph clear of LangChain

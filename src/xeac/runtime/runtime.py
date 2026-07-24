@@ -408,7 +408,6 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # same-named path on two hosts. Mutating tools compare against this so
         # stale line numbers cannot overwrite externally changed content.
         self._read_files: dict[tuple[str, str], str] = {}
-        # How many delegation hops led to this runtime (0 = top-level chat agent).
         self._abort_event = asyncio.Event()
         # Running token totals for the session, summed from the real usage each
         # model call reports (LiteLLM ``usage`` -> message ``usage_metadata``).
@@ -670,9 +669,9 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
 
     def abort(self) -> None:
         # Stop tears down only the live turn: signal the loop to end and kill every
-        # foreground tool still running. Detached background work and spawned agents
-        # have independent lifecycles and must not become collateral of steering the
-        # main flow; each can be canceled through its own targeted control.
+        # foreground tool still running. Detached background work has its own lifecycle and
+        # must not become collateral of steering the main flow — nor does a peer session,
+        # which is a separate process ended with `xeac kill`, not by stopping this turn.
         self._abort_event.set()
         self._background.cancel_foreground()
         for task in list(self._active_tool_tasks.values()):
@@ -727,13 +726,12 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
 
 
     def set_a2a_task_id(self, task_id: str) -> None:
-        """Record the A2A task id of the current turn so delegated agent
-        tasks can reference it as their parent."""
+        """Record the A2A task id of the current turn, so work raised during it can name the
+        turn it belongs to."""
         self._a2a_task_id = task_id
 
     def set_task_reader(self, task_reader: Callable) -> None:
-        """Install the reader used by the read_task tool to fetch sibling/agent
-        A2A tasks from the shared store."""
+        """Install the reader `read_task` uses to fetch related A2A tasks from the store."""
         self._task_reader = task_reader
 
     def set_artifact_capture(self, artifact_capture: Callable) -> None:

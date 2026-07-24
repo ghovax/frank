@@ -87,8 +87,8 @@ class _BackgroundJobRecord:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     tool_call_identifier: str = ""
     arguments: dict[str, Any] = field(default_factory=dict)
-    # A detached job has an independent lifecycle (bash background=true, web_search,
-    # or a spawned agent): it outlives the parent turn and Stop must NOT cancel it. A
+    # A detached job has an independent lifecycle (bash with background=true, a web search):
+    # it outlives the turn that started it and Stop must NOT cancel it. A
     # non-detached job backs a foreground/synchronous call still tied to the turn.
     detached: bool = False
     # Fires when the user manually pushes a still-blocking foreground command to the

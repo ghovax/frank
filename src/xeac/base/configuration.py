@@ -1124,13 +1124,13 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
 def describe_available_agents(
     agents_directory: str | Path | Iterable[str | Path]
 ) -> list[dict[str, str]]:
-    """Available agents with the metadata a delegating model needs to choose one.
+    """Available agent profiles, with the metadata needed to choose between them.
 
-    `list_available_agents` returns bare ids, which tells the model *that* it can
-    delegate but not *to whom* or *for what* — so it can't match a task to the
-    right specialist and tends to do everything itself. This carries each agent's
-    human title, its `description` (what it is for), and its declared `role`
-    (e.g. `delegation-target`) so the model can pick deliberately.
+    Bare ids tell a session *that* it can create a peer but not *for what*, so it cannot match
+    a task to the right specialist and tends to do everything itself. This carries each
+    profile's human title, its `description` (what it is for), and its declared `role` —
+    `primary` for a profile meant to be talked to directly, `peer` for one meant to be handed
+    a scoped task — so the choice can be deliberate.
     """
     described = []
     for name, path in sorted(_agent_paths(agents_directory).items()):

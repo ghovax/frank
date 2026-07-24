@@ -43,7 +43,7 @@ direnv allow            # or, without direnv:  nix develop
 cd web && bun install && cd ..
 
 # Build the desktop app (also freezes the Python harness into a bundled helper)
-cd web/src-tauri && cargo tauri build
+cd web && bun run tauri:build
 ```
 
 The build produces `web/src-tauri/target/release/bundle/macos/XEAC.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds) and packaging details, see [Development guide](development.md#building-and-signing).

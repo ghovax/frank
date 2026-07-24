@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "../.venv/bin/python ../packaging/export-icon.py --macos-only && bash ../packaging/build-sidecar.sh && bun run build",
+    "beforeBuildCommand": "uv run --project .. python ../packaging/export-icon.py --macos-only && bash ../packaging/build-sidecar.sh && bun run build",
     "frontendDist": "../out"
   },
   "app": {

@@ -351,9 +351,10 @@ class _PermissionsMixin:
                 sandbox_message = (
                     f"Sandbox approval required: this command reads outside the working directory ({paths})."
                 )
-                # A delegated agent escalates a sandbox read to the user like any other gate
-                # (it parks in place and resumes on the answer), rather than hard-denying:
-                # every human-in-the-loop interrupt a delegated agent raises reaches the user.
+                # A sandbox read escalates to the user like any other gate — the turn parks
+                # in place and resumes on the answer — rather than hard-denying. A session
+                # created by another parks the same way: its request reaches a person through
+                # `xeac approve` or the app, because there is nobody else to answer it.
                 permission_decision = self._evaluate_bash_permission(raw_command)
                 if policy.auto_permissions and permission_decision != "deny":
                     decision = await self._classify_permission(

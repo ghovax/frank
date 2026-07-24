@@ -138,6 +138,24 @@ def _command_configure(arguments: argparse.Namespace) -> int:
     return configure.run(arguments)
 
 
+def _command_remote(arguments: argparse.Namespace) -> int:
+    """Registered peers on other hosts: list them, or hand one a message.
+
+    Deliberately not `send`. A remote agent runs on someone else's machine, at their cost,
+    with no shared history and no access to this filesystem — a different bargain from a local
+    peer, and one a caller should never be unsure it made."""
+    if not arguments.name:
+        _print(call("remote.list")["agents"], arguments.json, render.remote_agents)
+        return 0
+    if not arguments.message:
+        print("xeac: give a message to send, or no name to list", file=sys.stderr)
+        return 1
+    text = sys.stdin.read() if arguments.message == "-" else arguments.message
+    result = call("remote.send", name=arguments.name, text=text)
+    _print(result, arguments.json, lambda payload: print(payload.get("text", "")))
+    return 0
+
+
 def _command_daemon(arguments: argparse.Namespace) -> int:
     if arguments.action == "status":
         # Reporting must not start anything: `status` is what a person runs to find out, and a
@@ -267,6 +285,11 @@ def build_parser() -> argparse.ArgumentParser:
     configure.add_argument("value", nargs="?", help="the new value; omit to read it")
     configure.add_argument("-u", "--unset", action="store_true", help="remove the setting instead")
     configure.set_defaults(handler=_command_configure)
+
+    remote = add("remote", "list peers on other hosts, or hand one a message")
+    remote.add_argument("name", nargs="?", help="the registered peer; omit to list them")
+    remote.add_argument("message", nargs="?", help="the message, or - to read stdin")
+    remote.set_defaults(handler=_command_remote)
 
     daemon = add("daemon", "inspect or start the daemon")
     daemon.add_argument("action", choices=["status", "start", "stop", "endpoint"], nargs="?", default="status")

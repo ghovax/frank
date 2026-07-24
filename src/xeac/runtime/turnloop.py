@@ -582,15 +582,12 @@ class _TurnLoopMixin:
         if not self._abort_event.is_set():
             plans, pending = await self._preflight_permissions(tool_calls)
             if pending:
-                # One suspend event for every turn. The executor renders the prompt from
-                # it (the same DataParts, whether shown in the transcript or relayed to
-                # the agents panel). Only the continuation transport differs, by turn kind:
-                #  - a top-level turn returns here — the executor persists the checkpoint,
-                #    closes the segment as input-required, and a later answer resumes it;
-                #  - a delegated turn is an in-process, ephemeral continuation (it cannot
-                #    The pause is durable: the segment closes here and a later answer rebuilds
-                #    the turn from its checkpoint, so a session waiting on a person survives a
-                #    daemon restart rather than losing the work it had already done.
+                # One suspend event for every turn: the session renders the prompt from it,
+                # and the pause is durable. The segment closes here as input-required and a
+                # later answer rebuilds the turn from its checkpoint, so a session waiting on
+                # a person survives a daemon restart rather than losing the work it had
+                # already done. There is no second, ephemeral continuation path any more —
+                # every turn belongs to a session, and every session is addressable.
                 yield Suspended(interactions=[SuspensionGate(**gate.to_dict()) for gate in pending],
                     plans={tool_call_id: plan.to_dict() for tool_call_id, plan in plans.items()},
                 )

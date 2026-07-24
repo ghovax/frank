@@ -13,7 +13,7 @@ Everything in XEAC is a **session**: one OS process running one agent, created e
 Three parts, kept apart:
 
 - **`xeacd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and holds a pool of warm workers so spawning a session is a socket write rather than a Python cold start. It runs no agents itself.
-- **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `kill` to end a subtree. It adds nothing the API does not have; it is the ergonomic face of it.
+- **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the API does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API.
 
 Agents compose the same way you do. An agent that needs a peer runs `xeac create` and talks to the address it gets back — there is no `spawn_agent` tool, no in-process delegation, and no separate path for a remote agent. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.
@@ -65,6 +65,8 @@ xeac ps                                                            # what is run
 xeac attach <id>                                                   # follow it live
 ```
 
+An agent composes the same way, from its own shell: `xeac create` a peer, `xeac send` it a brief, read what it produced. There is no second mechanism.
+
 The daemon starts itself on the first command. From the app:
 
 1. **Launch XEAC.** The daemon starts automatically; the app connects to it.
@@ -87,7 +89,7 @@ Sessions are reachable only by whoever holds their handle: `create` mints a capa
 
 ## Documentation
 
-The full guides — installation, configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
+The full guides — installation, the [`xeac` command](documentation/cli.md), configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
 
 ## Built with
 
