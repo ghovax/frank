@@ -1,6 +1,6 @@
 ---
 created: 2026-07-24T16:17:08Z
-updated: 2026-07-24T21:04:16Z
+updated: 2026-07-24T21:10:02Z
 commit: 52e5669
 ---
 
@@ -10,7 +10,7 @@ This plan restructures the harness around a single primitive — the session —
 
 ## Thesis
 
-The unit of durability and execution is the session: one OS process, one agent, created empty and then driven by messages over its life. `xeacd` is the control plane; the CLI (`xeac`) is ergonomic sugar over one API surface that the GUI and agents drive identically. `daisy` becomes `xeac`, `xeacd` is the daemon, wire keys move to `urn:xeac:*`, and placement moves to XDG. This is a hard break — no migration shim, no dual-running with the old layout.
+The unit of durability and execution is the session: one OS process, one agent, created empty and then driven by messages over its life. `xeacd` is the control plane; the CLI (`xeac`) is ergonomic sugar over one API surface that the GUI and agents drive identically. `daisy` becomes `xeac`, `xeacd` is the daemon, wire keys move to `urn:xeac:*`, and placement moves to XDG. This is a hard break — no migration shim, no dual-running with the old layout, and, as *Execution stance* below sets out in full, no intermediate compatibility scaffolding either: the tree stays broken until the end, and the end state is the only thing ever built toward.
 
 ## Architecture
 
@@ -269,42 +269,60 @@ Also deleted: mid-session permission-mode changes (`set_permission_mode` and the
 
 The frozen build ships **one binary with argv dispatch** — `xeac`, `xeacd`, and the worker are the same executable entered differently. This keeps packaging to a single specification and lets the pool re-exec the binary it is already running.
 
+## Execution stance: one destination, no waypoints
+
+**The tree is expected to be broken for the entire duration of the migration, and that is correct.** Nothing here is built to compile, import, or run at any intermediate point. The end state is the only target, and it is reached in one continuous motion.
+
+This is a deliberate constraint, not an oversight, because the alternative is worse. Demanding a green tree at each step in a restructure of this size forces exactly the artefacts this plan must not produce: compatibility re-exports left behind in `src/daisy/` so old imports keep resolving, facade modules keeping `a2a_executor.py` alive while its pieces move out from under it, stub functions standing in for handlers that have not moved yet, adapter shims bridging the old monolith to the half-built daemon, and dual code paths kept alive side by side so neither breaks. Every one of those is written to be deleted, and every one of them distorts the design it is scaffolding around. Work aimed at an intermediate green state is work aimed at the wrong target.
+
+The rules that follow from this, and they are absolute:
+
+**Never write a shim, stub, facade, adapter, or compatibility re-export.** If a module's callers have not been migrated yet, leave them broken; they are migrated later in the same continuous pass. **Never keep an old path alive alongside a new one.** There is no dual-running, no deprecation window, no fallback branch — the old code is deleted the moment its replacement is written, not after it is proven. **Never soften a design decision to make an intermediate state work.** If the destination shape is right, build the destination shape and let everything that references the old shape stay broken until it is rewritten. **Never repair a break in code that is scheduled to be rewritten or deleted anyway** — fixing an import in a module that the next stage removes is pure waste.
+
+Verification happens once, at the very end, and only then. Until that point, a red tree carries no information and should be neither consulted nor chased.
+
 ## Execution order
 
-The order is bottom-up by layer, so that at every step a moved layer depends only on layers already moved, and the stages run in the order listed. Deletion comes first, in the old tree, where it can be verified against familiar code and where it shrinks everything that follows.
+The stages run in the order listed. The order is bottom-up by layer, but this is now purely for the author's coherence — knowing where `base` symbols live before writing the runtime that imports them reduces churn and rework. It is emphatically **not** a sequence of checkpoints, and no stage is expected to leave the tree in a working condition. Deletion comes first because it shrinks everything that follows, and the guardrails inventory is captured first because the baseline it records cannot be reconstructed once the move has begun.
 
-| Stage | What | Mechanics | Gate |
-|---|---|---|---|
-| **Guardrails** | Symbol inventory (module to public symbols); `scripts/check_layers.py`, an AST import scan asserting the allowed edges and the no-module-level-`computer`-import rule; an import smoke script | new files only | The checker passes on the current tree with today's edges declared |
-| **Deletion** | The mailbox, `make_delegate`, in-process spawn, `Delegate*`, the agents-panel events on both planes, and the frontend references | delete in place, old tree | Imports resolve; `check:events` regenerated; `bun run build` passes |
-| **Foundations** | `base/`: eighteen modules; slice `configuration.py` into `paths`, `configuration`, `sidecar`, `prompts`, `catalog`; `tool_policy` into `permission_mode` | `git mv` the bulk, extract slices | `import xeac.base.*`; the layer has zero internal dependencies |
-| **Protocol** | `events`, `turn_record`, `handoff`, `a2a_files`; the protocol slices of `a2a_executor`; `remote_agents` into `client`; the new `addressing` | slice and extract | `import xeac.protocol.*`; protocol depends only on base |
-| **Leaves** | `computer/` and `locations/` verbatim, plus the XDG fix and the thread names | `git mv` whole | Imports resolve; `control_child.py` still launches by file path |
-| **Runtime** | The large `agent_*` slices, with the mixin-preserving split of the tool handlers | slice per the table above | `import xeac.runtime`; runtime depends only on base, protocol, computer, tools, locations |
-| **Daemon** | `boot` minus mounting, `persistence/`, `brokers/`, `services/`, registry, state, watchers; new `api`, `ingest`, `pool`, `lifecycle` | move plus new code | The daemon must not import the runtime — the checker's central assertion |
-| **Worker** | `_TurnRunner` into `turn`, `_TurnEventSink` into `sink`, the executor into `session`; new `__main__`, `server`, `persistence`, `assignment` | slice plus new code | `import xeac.worker`; worker depends only on base, protocol, runtime |
-| **CLI** | Entrypoint, client, renderer, autostart, and the command modules | new | `xeac --help` runs with no daemon present |
-| **Rename** | `urn:xeac:*` in both planes, `XEAC_*`, XDG paths, `pyproject` name, `_package_version`, user agent, the PyInstaller specification, the Tauri bundle identity; delete `src/daisy/` | codemod plus manual edits | Full compile; frozen-build smoke test |
-| **REST** | The GUI routes and services, and the `_boot.*` bug fix | move | Imports resolve; the package no longer references `src/daisy` |
+| Stage | What | Mechanics |
+|---|---|---|
+| **Guardrails** | Baseline symbol inventory (module to public symbols), captured before anything moves; `scripts/check_layers.py`, an AST import scan asserting the allowed edges and the no-module-level-`computer`-import rule. Both are tools for the final verification, not gates to pass now | new files only |
+| **Deletion** | The mailbox, `make_delegate`, in-process spawn, `Delegate*`, the agents-panel events on both planes, and the frontend references | delete in place, old tree |
+| **Foundations** | `base/`: eighteen modules; slice `configuration.py` into `paths`, `configuration`, `sidecar`, `prompts`, `catalog`; `tool_policy` into `permission_mode` | `git mv` the bulk, extract slices |
+| **Protocol** | `events`, `turn_record`, `handoff`, `a2a_files`; the protocol slices of `a2a_executor`; `remote_agents` into `client`; the new `addressing` | slice and extract |
+| **Leaves** | `computer/` and `locations/` verbatim, plus the XDG fix and the thread names | `git mv` whole |
+| **Runtime** | The large `agent_*` slices, with the mixin-preserving split of the tool handlers | slice per the table above |
+| **Daemon** | `boot` minus mounting, `persistence/`, `brokers/`, `services/`, registry, state, watchers; new `api`, `ingest`, `pool`, `lifecycle` | move plus new code |
+| **Worker** | `_TurnRunner` into `turn`, `_TurnEventSink` into `sink`, the executor into `session`; new `__main__`, `server`, `persistence`, `assignment` | slice plus new code |
+| **CLI** | Entrypoint, client, renderer, autostart, and the command modules | new |
+| **Rename** | `urn:xeac:*` in both planes, `XEAC_*`, XDG paths, `pyproject` name, `_package_version`, user agent, the PyInstaller specification, the Tauri bundle identity; delete `src/daisy/` | codemod plus manual edits |
+| **REST** | The GUI routes and services, and the `_boot.*` bug fix | move |
 
-## Verification gates
+## Verification, once, at the end
 
-There is **no test suite** — `tests/` contains zero test files despite the `pyproject` `testpaths` setting — so nothing here is verified by tests, and that is the single largest execution risk. Verification is structural, and it is what makes an irregularity visible early rather than at the first live turn: `python -m compileall src/xeac` plus a per-layer `import` smoke after each stage; the layering checker, which fails the moment a forbidden edge or a cycle appears; a symbol-inventory diff after each stage, where every public symbol recorded during the guardrails stage must still exist somewhere or appear on the deletion list; the existing `check:events` schema gate and the `json2ts` diff, which catch Python-to-TypeScript wire drift; and `bun run build` for the frontend. Behavioural confirmation is a manual smoke run of the daemon, one session, one turn, and one permission gate.
+Only after the final stage does anything get run. There is no test suite to inherit — `tests/` contains zero test files despite the `pyproject` `testpaths` setting — so the end-state pass is built from scratch, in this order.
+
+First the tree is made to compile: `python -m compileall src/xeac`, then an import of every package, fixing whatever falls out. Because nothing was checked along the way, this is where the accumulated breakage surfaces, and it surfaces all at once; that is the accepted price of the stance above and it should be worked through as one focused debugging pass rather than treated as a surprise.
+
+Then the structural checks confirm the restructure did what it claimed: the layering checker, asserting the acyclic layering and both engineering invariants; and the symbol-inventory diff against the baseline captured in the guardrails stage, where every public symbol must either still exist somewhere or appear on the deletion list. Then the cross-plane gates: the `check:events` schema regeneration, the `json2ts` diff, and `bun run build`.
+
+Finally, behaviour is proven with **throwaway tests** — written at this point and only this point, for the sole purpose of demonstrating that the end state works. They cover the paths that matter: the daemon starts and its control API answers; a session is created, assigned a warm worker, and serves A2A on its token-gated socket; a message drives a turn end to end; a permission gate suspends the session durably and the answer resumes it; a peer session is created from inside an agent and reached over the wire; and a parent's death reaps its children. These are scaffolding, not a deliverable — they exist to validate the migration and are discarded once it is proven. Building a real suite is worthwhile, but it is a separate piece of work with a separate goal, and conflating the two would pull focus off the destination.
 
 ## Hazard register
 
-These are the irregularities identified before starting, each with how it will be detected.
+These are the irregularities identified before starting, each with how it will be detected. Detection happens during the final verification pass, not along the way; the value of listing them now is that they are watched for while writing, so they are recognised rather than rediscovered.
 
 | Hazard | Why it is real | Detection and mitigation |
 |---|---|---|
-| Silent runtime-only breakage | No tests; most failures surface only when a turn actually runs | Structural gates catch import and shape errors; behavioural verification is a manual smoke run. Stated plainly rather than papered over |
-| `daemon` importing `runtime` | It is natural to reach for `AgentRuntime` while writing `api.py`; it would defeat the light control plane and bloat the pool | The layering checker fails the build |
+| Silent runtime-only breakage | No inherited tests; most failures surface only when a turn actually runs | The throwaway tests at the end are written precisely to force these paths to execute. Stated plainly rather than papered over |
+| `daemon` importing `runtime` | It is natural to reach for `AgentRuntime` while writing `api.py`; it would defeat the light control plane and bloat the pool | Held as a rule while writing the daemon, and confirmed by the layering checker at the end |
 | A module-level `computer` import | It would make `fork()` unsafe on macOS through PyObjC and CoreFoundation. Today every import of `computer` is function-level (`agent_tools.py:1595,1609,1610`, `services/projects.py:141`, `routes/filesystem.py:106`), which is what makes pre-forking viable at all | The checker asserts lazy-only importing; this laziness is now a load-bearing invariant, not an accident |
-| Python and TypeScript wire drift | `urn:daisy:ext:*` lives in both the executor and `api.ts`, and the deleted events change the generated schema | The `check:events` gate, plus changing both planes in one commit |
+| Python and TypeScript wire drift | `urn:daisy:ext:*` lives in both the executor and `api.ts`, and the deleted events change the generated schema | Both planes are changed together as a matter of discipline; the `check:events` gate confirms it at the end |
 | Frozen-build asset loss | The specification hardcodes `collect_all("daisy")` and the `daisy/computer/<assets>` destinations | Update the specification during the rename stage and smoke the frozen binary, which the build script already exercises with a request to `/home` |
 | Ordering of streamed persistence | The append-only history is row-ordered and `_persisted_counts` is tracked in memory, while workers now stream events to the daemon | The daemon remains the single writer, so ordering is preserved; a worker must never read back what it has just written |
-| Symbol drop during slicing | Around one hundred and twenty destination modules; a helper can vanish unnoticed | The guardrails inventory, diffed after every stage |
-| Deletion overreach | Removing `spawn_agent` touches turn events, wire events, `turn_record`, and the frontend | The deletion stage is isolated and fully gated before any move begins |
+| Symbol drop during slicing | Around one hundred and twenty destination modules; a helper can vanish unnoticed | The baseline inventory, diffed at the end |
+| Deletion overreach | Removing `spawn_agent` touches turn events, wire events, `turn_record`, and the frontend | The deletion stage is done in one pass against the familiar old tree, before any module has moved |
 
 One pre-existing defect is recorded here so it is not mistaken for migration damage: `routes/settings.py:43,49,57,63,64` and `routes/projects.py:82` call `_boot._full_disk_access_granted`, `_boot._open_full_disk_access_settings`, `_boot._accessibility_granted`, `_boot._request_accessibility`, `_boot._open_accessibility_settings`, and `_boot._project_count`, but `boot.py` defines none of them — they live in `services/projects.py`, and `boot.py` imports only `_ensure_default_project`. These are six AttributeErrors at request time today. They are fixed when those routes move during the REST stage.
 
@@ -312,11 +330,13 @@ One pre-existing defect is recorded here so it is not mistaken for migration dam
 
 `create` is the only place configuration and permissions are set; `send` never mutates configuration. A child's mode is clamped to no looser than its parent's; there is no bypass and no allow-always, so the only runtime permission decisions are per-call allow-once and deny. A pooled worker is never reused across sessions. A session's durable state survives its process — in the database, via `xeacd` — while its socket dies with it, so reads route through `xeacd` and commands route through the socket. `xeacd` sits in the persistence and observation path, never in the inbound agent-to-agent messaging path.
 
-Two engineering invariants join them, both enforced by the layering checker: the daemon never imports the runtime, and `computer/` is never imported at module level.
+Two engineering invariants join them, both confirmed by the layering checker in the final pass: the daemon never imports the runtime, and `computer/` is never imported at module level.
 
 ## Accepted costs
 
 Process-per-session with per-hop A2A is intrinsically heavier than nested coroutines. The warm pool amortizes cold start, but the per-process memory floor and the per-hop latency remain. This is the deliberate price of isolation and uniformity, taken with eyes open.
+
+Deferring all verification to the end has its own price, accepted deliberately: every accumulated error surfaces at once, in a tree that has changed everywhere, which is a harder debugging position than catching each break as it appears. It is taken in exchange for never once bending the design toward a temporary green state, and for never writing a line whose only purpose is to be deleted later.
 
 Two capabilities are retired rather than reimplemented. Switching persona mid-conversation on a shared context goes away, because a session is one agent for its life and the process-wide shared conversation map goes with the monolith. The unified agents panel goes away too: a child is now its own session, observed with `xeac attach` rather than relayed into its parent's transcript.
 
