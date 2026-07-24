@@ -67,6 +67,7 @@ async def run() -> int:
         project_id=str(assignment.get("project_id") or ""),
         parent=str(assignment.get("parent") or ""),
         token=str(assignment.get("token") or ""),
+        daemon_token=str(assignment.get("daemon_token") or ""),
         global_configuration=configuration,
     )
     await session.start()
@@ -88,19 +89,23 @@ async def run() -> int:
     )
     server = uvicorn.Server(config)
 
-    # uvicorn installs its own signal handlers; the worker wants its own teardown to run
-    # first so the session's turn is aborted and its conversation checkpointed.
-    server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
+    # uvicorn captures the termination signals itself; the worker wants its own teardown to
+    # run first, so the session's turn is aborted and its conversation checkpointed before the
+    # socket goes away.
+    server.capture_signals = contextlib.nullcontext  # type: ignore[method-assign]
     stopping = asyncio.Event()
 
-    def _stop() -> None:
-        stopping.set()
+    async def _shutdown_on_signal() -> None:
+        # Set from inside the loop rather than from the handler: uvicorn only observes the
+        # flag between its own iterations.
+        await stopping.wait()
         server.should_exit = True
 
     loop = asyncio.get_running_loop()
     for received in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):
-            loop.add_signal_handler(received, _stop)
+            loop.add_signal_handler(received, stopping.set)
+    shutdown_watcher = asyncio.create_task(_shutdown_on_signal())
 
     serve = asyncio.create_task(server.serve())
     # Only once the socket is accepting connections is the session usable, so readiness is
@@ -114,6 +119,7 @@ async def run() -> int:
     try:
         await serve
     finally:
+        shutdown_watcher.cancel()
         await session.aclose()
         with contextlib.suppress(OSError):
             socket_path.unlink(missing_ok=True)

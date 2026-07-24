@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 # How long a worker has to acknowledge its assignment and report a listening socket.
 _ASSIGNMENT_TIMEOUT_SECONDS = 60.0
 # How long a reaped process gets to exit on SIGTERM before it is killed outright.
-_TERMINATE_GRACE_SECONDS = 5.0
+_TERMINATE_GRACE_SECONDS = 3.0
+
+
+def _daemon_token() -> str:
+    from xeac.daemon import state
+
+    return state.daemon_token
 
 
 def _now() -> str:
@@ -77,6 +83,9 @@ class SessionLifecycle:
             "project_id": record.project_id,
             "parent": record.parent,
             "token": record.token,
+            # The daemon's own token, so the worker can write to the ingest endpoint. Its
+            # session token authorises calls *to* it, which is the other direction entirely.
+            "daemon_token": _daemon_token(),
             "socket": str(session_socket_path(record.id)),
         }
         try:
@@ -157,15 +166,16 @@ class SessionLifecycle:
         record = self._registry.get(session_id)
         if record is None:
             return 0
-        reaped = 0
-        for descendant in list(self._registry.descendants_of(session_id)):
-            if descendant.is_live:
-                self._registry.mark(
-                    descendant.id, status=EXITED, updated_at=_now(),
-                    exit_reason=reason or "parent session was reaped",
-                )
-                await self._stop(descendant.id)
-                reaped += 1
+        descendants = [record for record in self._registry.descendants_of(session_id) if record.is_live]
+        for descendant in descendants:
+            self._registry.mark(
+                descendant.id, status=EXITED, updated_at=_now(),
+                exit_reason=reason or "parent session was reaped",
+            )
+        # Stopped together rather than one at a time: each carries its own grace period, and a
+        # wide tree would otherwise take that period multiplied by its size to come down.
+        await asyncio.gather(*(self._stop(record.id) for record in descendants), return_exceptions=True)
+        reaped = len(descendants)
         if not skip_self and record.is_live:
             self._registry.mark(session_id, status=EXITED, updated_at=_now(), exit_reason=reason)
             await self._stop(session_id)
@@ -216,5 +226,7 @@ class SessionLifecycle:
     async def aclose(self) -> None:
         """Reap every live session. Called when the daemon itself is going down, so no worker
         outlives the thing that was supervising it."""
-        for record in list(self._registry.live()):
-            await self.reap(record.id, reason="daemon shutting down")
+        await asyncio.gather(
+            *(self.reap(record.id, reason="daemon shutting down") for record in self._registry.live()),
+            return_exceptions=True,
+        )

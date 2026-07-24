@@ -58,14 +58,16 @@ class DaemonTaskStore(TaskStore):
 
     # --- the TaskStore interface -------------------------------------------------------
 
-    async def save(self, task: Task) -> None:
+    # The context argument is part of the interface the A2A handler calls through; it carries
+    # per-call server state this store has no use for, but the signature must accept it.
+    async def save(self, task: Task, context: Any = None) -> None:
         await self._call("task.save", task=task.model_dump(by_alias=True, exclude_none=True, mode="json"))
 
-    async def get(self, task_id: str) -> Optional[Task]:
+    async def get(self, task_id: str, context: Any = None) -> Optional[Task]:
         raw = await self._call("task.get", task_id=task_id)
         return Task.model_validate(raw) if raw else None
 
-    async def delete(self, task_id: str) -> None:
+    async def delete(self, task_id: str, context: Any = None) -> None:
         await self._call("task.delete", task_id=task_id)
 
     # --- the extra surface a turn uses -------------------------------------------------

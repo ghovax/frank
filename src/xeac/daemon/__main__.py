@@ -55,10 +55,19 @@ def _write_handshake(token: str, port: int) -> None:
     port_path = daemon_port_path()
     port_path.write_text(str(port))
     port_path.chmod(0o600)
+    # The pid is how `xeac daemon stop` reaches a daemon that has stopped answering.
+    pidfile = daemon_socket_path().parent / "xeacd.pid"
+    pidfile.write_text(str(os.getpid()))
+    pidfile.chmod(0o600)
 
 
 def _clear_handshake() -> None:
-    for path in (daemon_token_path(), daemon_port_path(), daemon_socket_path()):
+    for path in (
+        daemon_token_path(),
+        daemon_port_path(),
+        daemon_socket_path(),
+        daemon_socket_path().parent / "xeacd.pid",
+    ):
         with contextlib.suppress(OSError):
             path.unlink(missing_ok=True)
 
@@ -154,21 +163,35 @@ async def _serve() -> int:
     tcp_server = uvicorn.Server(
         uvicorn.Config(app, host=LOOPBACK_HOST, port=state.daemon_port, log_level="warning", access_log=False)
     )
+    # uvicorn captures SIGTERM/SIGINT itself, and with two servers sharing a process each
+    # would install a handler that stops only itself — so a signal would down one listener and
+    # leave the other running, which is exactly how `stop` came back as "still running".
+    # Neutralise both and let the handler below stop them together.
     for server in (socket_server, tcp_server):
-        server.install_signal_handlers = lambda: None  # type: ignore[method-assign]
+        server.capture_signals = contextlib.nullcontext  # type: ignore[method-assign]
 
     stopping = asyncio.Event()
 
     def _stop() -> None:
         stopping.set()
-        socket_server.should_exit = True
-        tcp_server.should_exit = True
 
     loop = asyncio.get_running_loop()
     for received in (signal.SIGTERM, signal.SIGINT):
         with contextlib.suppress(NotImplementedError):
             loop.add_signal_handler(received, _stop)
 
+    async def _shutdown_on_signal() -> None:
+        """Wait for a signal, then tell both servers to stop.
+
+        Setting `should_exit` from inside the loop rather than from the signal handler is what
+        makes it take effect: uvicorn only observes the flag between its own iterations, so a
+        handler that sets it while the loop is parked leaves the daemon running until something
+        else happens to wake it — which is how a `stop` came back as "still running"."""
+        await stopping.wait()
+        socket_server.should_exit = True
+        tcp_server.should_exit = True
+
+    watcher = asyncio.create_task(_shutdown_on_signal())
     serving = asyncio.gather(socket_server.serve(), tcp_server.serve())
     while not (socket_server.started and tcp_server.started):
         if serving.done():
@@ -180,6 +203,7 @@ async def _serve() -> int:
     try:
         await serving
     finally:
+        watcher.cancel()
         # Sessions must not outlive their supervisor: a worker whose daemon is gone can no
         # longer persist anything, so leaving it running would silently lose work.
         with contextlib.suppress(Exception):

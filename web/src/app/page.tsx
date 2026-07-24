@@ -236,7 +236,7 @@ function ProjectWorkspace() {
         if (!apiBase) return { target, sessions: null as SessionEntry[] | null };
         const serverSessions = await fetchSessions({ apiBase });
         for (const session of serverSessions) {
-          void setSessionConnection(session.session_id, target.id);
+          void setSessionConnection(session.id, target.id);
         }
         return { target, sessions: mapSessions(serverSessions, target, apiBase) };
       } catch {

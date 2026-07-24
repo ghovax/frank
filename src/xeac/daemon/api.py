@@ -62,6 +62,31 @@ def _session(session_id: str) -> SessionRecord:
     return record
 
 
+def _assert_agent_exists(agent: str, working_directory: str) -> None:
+    """Refuse a session for an agent profile that is not there.
+
+    Without this a mistyped `--agent` mints a session that reports itself running and only
+    fails when it is first messaged, by which point the cause is several steps behind."""
+    from xeac.base.configuration import list_agents
+
+    configuration = state.global_configuration
+    if configuration is None:
+        return
+    directories = (
+        configuration.agent_directories_for(working_directory)
+        if working_directory
+        else configuration.agent_directories()
+    )
+    available = [entry["id"] for entry in list_agents(directories)]
+    if agent not in available:
+        known = ", ".join(sorted(available)) or "none found"
+        raise RpcError(
+            f"No agent profile named {agent!r}. Available: {known}.",
+            status_code=404,
+            code="no_such_agent",
+        )
+
+
 async def _session_create(params: dict) -> dict:
     """Mint a session and hand back its handle.
 
@@ -70,6 +95,7 @@ async def _session_create(params: dict) -> dict:
     clamp lives here rather than in the caller because the caller is often the model."""
     assert state.registry is not None and state.lifecycle is not None
     agent = str(params.get("agent") or "").strip() or state.default_agent()
+    _assert_agent_exists(agent, str(params.get("working_directory") or ""))
     parent_id = str(params.get("parent") or "").strip()
     parent = state.registry.get(parent_id) if parent_id else None
     if parent_id and parent is None:

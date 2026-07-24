@@ -139,17 +139,29 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         print("xeacd is running")
         return 0
     if arguments.action == "stop":
-        # Stopping is deliberately a signal rather than an API call: a daemon that is wedged
-        # badly enough to need stopping may not be answering its own socket.
+        # A signal rather than an API call: a daemon wedged badly enough to need stopping may
+        # not be answering its own socket, and this must work then too. The group is signalled
+        # so the sessions go with it — a worker whose daemon is gone cannot persist anything.
         import os
         import signal
 
-        from xeac.base.paths import daemon_port_path
+        from xeac.base.paths import runtime_directory
 
-        status = call("daemon.status")
-        del status
-        print("Send SIGTERM to the xeacd process to stop it; sessions are reaped with it.")
-        del os, signal, daemon_port_path
+        pidfile = runtime_directory() / "xeacd.pid"
+        try:
+            pid = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            print("xeacd does not appear to be running")
+            return 1
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            print("xeacd does not appear to be running")
+            return 1
+        except PermissionError:
+            print("xeac: not permitted to stop that process", file=sys.stderr)
+            return 1
+        print("stopping xeacd; its sessions are reaped with it")
         return 0
     return 1
 
@@ -159,7 +171,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--json", action="store_true", help="emit raw JSON instead of formatted output")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    create = subparsers.add_parser("create", help="create a session (the only place its configuration is set)")
+    def add(name: str, help_text: str) -> argparse.ArgumentParser:
+        """A subcommand that also accepts `--json` after the verb.
+
+        `xeac ps --json` is what a person types; argparse would otherwise only accept the flag
+        before the verb, and reject the natural form with an unhelpful error."""
+        subparser = subparsers.add_parser(name, help=help_text)
+        subparser.add_argument("--json", action="store_true", default=argparse.SUPPRESS,
+                               help="emit raw JSON instead of formatted output")
+        return subparser
+
+    create = add("create", "create a session (the only place its configuration is set)")
     create.add_argument("--agent", help="agent profile to run")
     create.add_argument("--directory", "-C", help="working directory")
     create.add_argument("--mode", choices=["default", "auto", "read_only"], help="permission mode, fixed for the session's life")
@@ -168,48 +190,48 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--title", help="a human label for the session list")
     create.set_defaults(handler=_command_create)
 
-    send = subparsers.add_parser("send", help="send a message to a session")
+    send = add("send", "send a message to a session")
     send.add_argument("session")
     send.add_argument("message", help="the message, or - to read stdin")
     send.add_argument("--wait", action="store_true", help="follow until the session goes idle")
     send.set_defaults(handler=_command_send)
 
-    get = subparsers.add_parser("get", help="show a session")
+    get = add("get", "show a session")
     get.add_argument("session")
     get.set_defaults(handler=_command_get)
 
-    wait = subparsers.add_parser("wait", help="wait for a session to go idle, then print its result")
+    wait = add("wait", "wait for a session to go idle, then print its result")
     wait.add_argument("session")
     wait.set_defaults(handler=_command_wait)
 
-    attach = subparsers.add_parser("attach", help="follow a session live")
+    attach = add("attach", "follow a session live")
     attach.add_argument("session")
     attach.set_defaults(handler=_command_attach)
 
-    ps = subparsers.add_parser("ps", help="list sessions")
+    ps = add("ps", "list sessions")
     ps.add_argument("--all", "-a", action="store_true", help="include sessions that have ended")
     ps.set_defaults(handler=_command_ps)
 
-    tree = subparsers.add_parser("tree", help="show a session and everything it spawned")
+    tree = add("tree", "show a session and everything it spawned")
     tree.add_argument("session")
     tree.set_defaults(handler=_command_tree)
 
-    approve = subparsers.add_parser("approve", help="answer a session's pending permission request")
+    approve = add("approve", "answer a session's pending permission request")
     approve.add_argument("session")
     approve.add_argument("request")
     approve.add_argument("--deny", action="store_true", help="deny instead of allowing")
     approve.set_defaults(handler=_command_approve)
 
-    kill = subparsers.add_parser("kill", help="end a session and everything under it")
+    kill = add("kill", "end a session and everything under it")
     kill.add_argument("session")
     kill.set_defaults(handler=_command_kill)
 
-    history = subparsers.add_parser("history", help="print a session's turns")
+    history = add("history", "print a session's turns")
     history.add_argument("session")
     history.add_argument("--limit", type=int, help="only the last N turns")
     history.set_defaults(handler=_command_history)
 
-    daemon = subparsers.add_parser("daemon", help="inspect or start the daemon")
+    daemon = add("daemon", "inspect or start the daemon")
     daemon.add_argument("action", choices=["status", "start", "stop"], nargs="?", default="status")
     daemon.add_argument("--start", action="store_true", help="start the daemon if it is not running")
     daemon.set_defaults(handler=_command_daemon)
@@ -220,6 +242,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     arguments = parser.parse_args(argv)
+    # SUPPRESS leaves the attribute unset unless the flag appeared after the verb, so the
+    # top-level value stands in when it did not.
+    if not hasattr(arguments, "json"):
+        arguments.json = False
     try:
         return arguments.handler(arguments)
     except DaemonError as error:

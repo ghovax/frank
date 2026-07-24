@@ -18,6 +18,7 @@ to a ceiling under fan-out rather than making a wide spawn queue behind the floo
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sys
@@ -164,8 +165,16 @@ class WorkerPool:
                     with_suppress.terminate()
                 except ProcessLookupError:
                     pass
-        for worker in parked:
-            try:
-                await asyncio.wait_for(worker.process.wait(), timeout=5)
-            except (asyncio.TimeoutError, ProcessLookupError):
-                pass
+        # Concurrently: these are independent processes, and waiting them out one at a time
+        # is what made quitting take tens of seconds with a warm pool.
+        await asyncio.gather(
+            *(self._await_exit(worker) for worker in parked), return_exceptions=True
+        )
+
+    @staticmethod
+    async def _await_exit(worker: WarmWorker, timeout: float = 3.0) -> None:
+        try:
+            await asyncio.wait_for(worker.process.wait(), timeout=timeout)
+        except (asyncio.TimeoutError, ProcessLookupError):
+            with contextlib.suppress(ProcessLookupError):
+                worker.process.kill()

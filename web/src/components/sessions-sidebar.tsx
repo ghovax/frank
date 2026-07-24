@@ -203,7 +203,7 @@ function SessionTreeRow({
   const hidden = hasChildren && !expanded ? node.children.flatMap(collectEntries) : [];
   const hiddenAttention = hidden.some((child) => child.awaitingInput);
   const hiddenProblem = hidden.some((child) => child.status === "failed");
-  const statusLabel = translation(STATUS_LABEL_KEY[entry.status] as Parameters<typeof translation>[0]);
+  const statusLabel = translation((STATUS_LABEL_KEY[entry.status] ?? "statusStarting") as Parameters<typeof translation>[0]);
   const statusTooltip = (
     <Box>
       <Text color="fg">{entry.awaitingInput ? translation("awaitingInput") : statusLabel}</Text>

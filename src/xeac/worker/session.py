@@ -61,6 +61,7 @@ class SessionExecutor(AgentExecutor):
         project_id: str = "",
         parent: str = "",
         token: str = "",
+        daemon_token: str = "",
     ):
         self._session_id = session_id
         self._agent_name = agent_name
@@ -77,7 +78,7 @@ class SessionExecutor(AgentExecutor):
         from xeac.base.paths import daemon_socket_path
         from xeac.worker.persistence import DaemonTaskStore
 
-        self._task_store = DaemonTaskStore(str(daemon_socket_path()), session_id, token)
+        self._task_store = DaemonTaskStore(str(daemon_socket_path()), session_id, daemon_token or token)
 
         # A2A needs a handler to drive turns through; a worker serves exactly one session, so
         # it builds its own rather than being handed a registry of them.
@@ -107,6 +108,7 @@ class SessionExecutor(AgentExecutor):
         self._claim_persisted_work_habits_acknowledgement = None
         self._startup_resume_tasks: set[asyncio.Task] = set()
         self._compaction_tasks: set[asyncio.Task] = set()
+        self._work_habits_acknowledged = False
 
     def _publish_stream_event(self, context_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Best effort and fire-and-forget: a
@@ -229,27 +231,18 @@ class SessionExecutor(AgentExecutor):
                 state.pending_reset = True
                 self._maybe_evict(context_id)
 
-    async def _claim_work_habits_acknowledgement(
-        self,
-        context_id: str,
-        *,
-        delegated: bool,
-        autonomous: bool,
-        compaction: bool,
-    ) -> bool:
-        """Claim the durable single user-turn acknowledgement for one session."""
-        if (
-            not self._global_configuration.user_context.enabled
-            or delegated
-            or autonomous
-            or compaction
-            or self._claim_persisted_work_habits_acknowledgement is None
-        ):
+    async def _claim_work_habits_acknowledgement(self, context_id: str, **_flags) -> bool:
+        """Whether this turn should emit the once-per-session work-habits acknowledgement.
+
+        A worker is created fresh per session and the acknowledgement is a user-facing nicety,
+        so there is nothing durable to claim: the first turn shows it, later turns do not."""
+        if not self._global_configuration.user_context.enabled:
             return False
-        return await asyncio.to_thread(
-            self._claim_persisted_work_habits_acknowledgement,
-            context_id,
-        )
+        if self._work_habits_acknowledged:
+            return False
+        self._work_habits_acknowledged = True
+        return True
+
 
     def _record_pending_answer(self, task, payload: dict) -> Optional[tuple[dict, dict]]:
         """Record one human answer into the task's durable pending-interaction record and
@@ -726,8 +719,29 @@ class SessionExecutor(AgentExecutor):
         return self.abort_tool(self._session_id, tool_call_identifier)
 
     def card_payload(self) -> dict:
-        """What this session advertises at its well-known path."""
-        from xeac.base.catalog import load_skills, skills_for_agent
+        """What this session advertises at its well-known path.
+
+        Degrades to a minimal card rather than failing: discovery is the first thing a peer
+        does, and answering it with a 500 hides whatever the real problem was behind a
+        transport error."""
+        try:
+            return self._build_card_payload()
+        except Exception:  # noqa: BLE001 — a card is descriptive, never load-bearing
+            logger.exception("Building the agent card for session %s failed", self._session_id)
+            return {
+                "name": self._agent_name,
+                "description": f"XEAC session {self._session_id}.",
+                "version": "1.0.0",
+                "protocolVersion": "0.3.0",
+                "url": f"unix:{self._session_id}",
+                "defaultInputModes": ["text/plain"],
+                "defaultOutputModes": ["text/plain"],
+                "capabilities": {"streaming": True},
+                "skills": [],
+            }
+
+    def _build_card_payload(self) -> dict:
+        from xeac.base.skills import load_skills, skills_for_agent
         from xeac.protocol.card import build_agent_card
 
         configuration = load_agent_configuration(

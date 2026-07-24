@@ -1022,12 +1022,29 @@ def _as_directories(directories: str | Path | Iterable[str | Path]) -> list[Path
     return [Path(directory).expanduser() for directory in directories]
 
 
+def _agent_markdown_in(directory: Path) -> Path:
+    """The agent definition inside a profile directory.
+
+    Both spellings are accepted: the shipped profiles are not consistent about it, and a
+    profile whose file is named `agent.md` was silently invisible rather than reported as
+    malformed — the worst way for this to fail."""
+    for name in ("AGENT.md", "agent.md"):
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    return directory / "AGENT.md"
+
+
 def _agent_paths(agents_directories: str | Path | Iterable[str | Path], include_aliases: bool = False) -> dict[str, Path]:
     paths: dict[str, Path] = {}
     for directory in _as_directories(agents_directories):
         if not directory.is_dir():
             continue
-        candidates = [*sorted(directory.glob("*.md")), *sorted(directory.glob("*/AGENT.md"))]
+        candidates = [
+            *sorted(directory.glob("*.md")),
+            *sorted(directory.glob("*/AGENT.md")),
+            *sorted(directory.glob("*/agent.md")),
+        ]
         for path in candidates:
             try:
                 configuration = AgentConfiguration.from_markdown(path)
