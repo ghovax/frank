@@ -19,7 +19,7 @@ uv sync                 # create .venv and install the project + dependencies
 ## Running the harness
 
 ```sh
-uv run python -m xeac daemon
+uv run python -m xeac xeacd
 # or: PYTHONPATH=src .venv/bin/python server.py
 ```
 

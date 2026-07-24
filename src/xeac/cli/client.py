@@ -52,8 +52,8 @@ def daemon_is_up() -> bool:
 
 def _daemon_command() -> list[str]:
     if getattr(sys, "frozen", False):
-        return [sys.executable, "daemon"]
-    return [sys.executable, "-m", "xeac", "daemon"]
+        return [sys.executable, "xeacd"]
+    return [sys.executable, "-m", "xeac", "xeacd"]
 
 
 def ensure_daemon() -> None:

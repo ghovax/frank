@@ -242,13 +242,8 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   uri: "fieldUri",
   query: "query",
   result_count: "results",
-  agent: "agent",
-  prompt: "prompt",
-  task_id: "taskId",
   task_identifier: "taskId",
-  message_identifier: "messageId",
   question: "question",
-  response: "response",
   code: "fieldStatus",
   // file / search tools (arguments)
   file_path: "filePath",
@@ -448,8 +443,7 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
     if (asString(data.code) === "browser_remote_debugging_off") {
       return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
     }
-    const neededPermission = asString(data.needs_permission);
-    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
+    if (asString(data.needs_permission)) return <PermissionGrantAlert />;
     const traceback = asString(data.traceback);
     return (
       <FieldList>
@@ -796,10 +790,11 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
   );
 }
 
-// Shown when a tool needs the macOS Accessibility grant: the same in-chat alert language as the
-// remote-debugging one, with a brief message and a one-click button that surfaces the system
-// prompt and opens the right System Settings pane.
-function PermissionGrantAlert({ kind: _kind }: { kind: string }) {
+// Shown when a tool needs the macOS Accessibility grant — the only grant a tool can be
+// missing now. Same in-chat alert language as the remote-debugging one: a brief message
+// and a one-click button that surfaces the system prompt and opens the right System
+// Settings pane.
+function PermissionGrantAlert() {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
   return (

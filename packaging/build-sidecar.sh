@@ -42,7 +42,7 @@ uv run pyinstaller \
 echo "smoke-testing the frozen daemon"
 # The binary is a single image with three entry points, so the daemon has to be asked for by
 # name; launching it bare would land in the CLI and exit immediately.
-"./packaging/dist/XEAC Computer Use.app/Contents/MacOS/xeac" daemon >/tmp/xeac-daemon-smoke.log 2>&1 &
+"./packaging/dist/XEAC Computer Use.app/Contents/MacOS/xeac" xeacd >/tmp/xeac-daemon-smoke.log 2>&1 &
 daemon_pid=$!
 trap 'kill "$daemon_pid" 2>/dev/null || true' EXIT
 # Readiness is the daemon publishing its handshake in the runtime directory and answering on

@@ -24,7 +24,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.argv = [sys.argv[0], *arguments[1:]]
         return worker_main()
 
-    if arguments and arguments[0] in {"daemon", "xeacd"}:
+    # `xeacd`, not `daemon`: the CLI has its own `daemon` verb for inspecting and starting the
+    # service, and routing that here would mean `xeac daemon status` silently tried to start a
+    # second daemon instead of reporting on the running one.
+    if arguments and arguments[0] == "xeacd":
         from xeac.daemon.__main__ import main as daemon_main
 
         sys.argv = [sys.argv[0], *arguments[1:]]

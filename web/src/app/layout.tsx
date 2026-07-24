@@ -51,8 +51,8 @@ const monoFont = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Daisy",
-  description: "Daisy GUI",
+  title: "XEAC",
+  description: "XEAC GUI",
   // The favicon comes from the file conventions app/favicon.ico + app/icon.png —
   // the exact app icon (src-tauri/icons) so the browser tab matches the app icon.
 };

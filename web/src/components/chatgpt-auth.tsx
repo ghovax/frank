@@ -18,7 +18,7 @@ import { ChatGPTUsageMeters } from "./chatgpt-usage-meters";
  *
  * A single button carries the state: signed out shows "Sign in with ChatGPT";
  * signed in shows "Sign out" (with the account) and reverses it. Sign-in opens
- * OpenAI's authorize URL in a browser; the daisy server catches the loopback
+ * OpenAI's authorize URL in a browser; the xeac daemon catches the loopback
  * redirect and persists the token, which we then observe by polling.
  */
 export function ChatGPTAuthControl({

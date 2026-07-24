@@ -14,7 +14,7 @@ import { Box, Button, EmptyState, Field, Flex, Image, Input, Text, Textarea, VSt
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuCheck, LuLaptop, LuNetwork, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
-import daisyIcon from "@/app/icon.png";
+import xeacIcon from "@/app/icon.png";
 import { toaster } from "@/components/ui/toaster";
 import { SectionHeader } from "@/components/ui/section-header";
 import {
@@ -52,7 +52,7 @@ export function ConnectionSettings({
   // (gate) or switches the live session and closes the dialog (switcher).
   onConnected: (target: ConnectionTarget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  // "page" shows the Daisy brand lockup for the full-screen fallback; "dialog" drops
+  // "page" shows the XEAC brand lockup for the full-screen fallback; "dialog" drops
   // it since the dialog already has a titled header.
   variant?: "page" | "dialog";
 }) {
@@ -292,9 +292,9 @@ export function ConnectionSettings({
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>
-            <Image src={daisyIcon.src} alt="" boxSize={14} borderRadius="xl" flexShrink={0} />
+            <Image src={xeacIcon.src} alt="" boxSize={14} borderRadius="xl" flexShrink={0} />
             <Text fontSize="4xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1" letterSpacing="tight">
-              Daisy
+              XEAC
             </Text>
           </Flex>
           <Text fontSize="sm" color="fg.muted" textAlign="center">

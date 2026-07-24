@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnabled, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnabled, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, resolveReachableConnectionUrl, type ConnectionTarget } from "@/lib/connection";
@@ -410,6 +410,20 @@ function ProjectWorkspace() {
   const activeSessionConnectionReady =
     !activeSessionId || (!sessionsLoaded && !activeSession ? false : !activeSession || activeSession.connectionId === currentConnectionId);
   const activeSessionRunning = activeSession ? isSessionBusy(activeSession) : false;
+
+  // The composer draft belongs to the session, not to the registry listing, so it is read
+  // from its own endpoint when a session is opened. The composer accepts it whenever it
+  // lands, as long as the user has not started typing over it.
+  const [activeSessionDraft, setActiveSessionDraft] = useState("");
+  useEffect(() => {
+    setActiveSessionDraft("");
+    if (!activeSessionId) return;
+    let cancelled = false;
+    fetchSessionDraft(activeSessionId)
+      .then((draft) => { if (!cancelled) setActiveSessionDraft(draft); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!activeSession || activeSession.connectionId === currentConnectionId) return;

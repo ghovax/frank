@@ -81,7 +81,7 @@ fn spawn_local_server(executable: &std::path::Path) -> std::io::Result<u32> {
         libc::posix_spawnattr_setflags(&mut attributes, libc::POSIX_SPAWN_SETSID as i16);
         // One image, three entry points: the daemon has to be asked for by name, or the
         // process would land in the CLI and exit immediately.
-        let subcommand = CString::new("daemon").expect("static string");
+        let subcommand = CString::new("xeacd").expect("static string");
         let argv = [path.as_ptr(), subcommand.as_ptr(), std::ptr::null()];
         let mut pid: libc::pid_t = 0;
         let code = libc::posix_spawn(
@@ -404,7 +404,7 @@ fn start_local_server(
     if !executable.exists() {
         return Err(format!(
             "The bundled daemon is not available (expected at {}). Start the harness \
-             yourself with `uv run python -m xeac daemon`, or connect to a remote server instead.",
+             yourself with `uv run python -m xeac xeacd`, or connect to a remote server instead.",
             executable.display()
         ));
     }

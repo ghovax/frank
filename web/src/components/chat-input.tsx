@@ -321,8 +321,14 @@ export function ChatInput({
     latestInputValueRef.current = inputValue;
   }, [inputValue]);
 
+  // Seed the composer from the session's stored draft. The draft is fetched from its own
+  // endpoint now (the session registry no longer carries it), so it can land after this
+  // composer has already mounted for the session — hence the second condition, which
+  // accepts a late arrival only while the box is still untouched and never overwrites
+  // what the user has begun typing.
   useEffect(() => {
-    if (persistedDraftKeyRef.current === draftKey) return;
+    const isNewSession = persistedDraftKeyRef.current !== draftKey;
+    if (!isNewSession && !(initialDraft && latestInputValueRef.current === "")) return;
     persistedDraftKeyRef.current = draftKey;
     const restoredDraft = sessionId ? initialDraft : "";
     setInputValue(restoredDraft);
