@@ -1,6 +1,6 @@
 ---
 created: 2026-07-24T16:17:08Z
-updated: 2026-07-24T21:11:55Z
+updated: 2026-07-24T21:19:51Z
 commit: 52e5669
 ---
 
@@ -27,7 +27,7 @@ The unit of durability and execution is the session: one OS process, one agent, 
 | **Peer messaging** | `send` to a live session is safe-point injected (delivered at the next tool boundary); async, so there is no mutual-await block; notify = A2A push-notifications; blackboard = a top-level session |
 | **Persistence** | `xeacd` is the sole writer — workers stream turn events to it; single-writer preserves today's append-only store with no cross-process lock contention |
 | **Remote/SSH** | Worker runs locally, reaches the remote over the wire, as today. No installs on remote hosts |
-| **Human + GUI** | CLI is primary. The Tauri app and REST surface are a phase-2 migration to registry+session clients — planned, built after the core |
+| **Human + GUI** | CLI is primary. The Tauri app and REST surface become registry and session clients, planned in full under *Frontend* and built after the backend core |
 | **Worker pool** | A pooled worker is assigned once, becomes that session for life, dies when reaped — never recycled. Isolation stays free |
 
 ## API surface
@@ -242,7 +242,7 @@ Every module, what it holds, and where it comes from. This is the authoritative 
 
 ### `rest/` — the GUI-facing surface
 
-`app.py`; `routes/` (`artifacts`, `filesystem`, `terminals`, `mcp`, `projects`, `settings`, `sessions_ui`); `services/` (`artifacts_query`, `filesystem`, `terminals`, `proxy`); `models.py` for the DTOs. Sourced from today's `server/routes/*` and the GUI halves of `services/{artifacts,filesystem,terminals,proxy,projects,sessions,settings}.py`. The package is carved and populated during the REST stage because the rename stage deletes `src/daisy/` and every module needs a home; only the *rework* into registry and session clients is deferred to phase 2.
+`app.py`; `routes/` (`artifacts`, `filesystem`, `terminals`, `mcp`, `projects`, `settings`, `sessions_ui`); `services/` (`artifacts_query`, `filesystem`, `terminals`, `proxy`); `models.py` for the DTOs. Sourced from today's `server/routes/*` and the GUI halves of `services/{artifacts,filesystem,terminals,proxy,projects,sessions,settings}.py`. The package is carved and populated during the REST stage because the rename stage deletes `src/daisy/` and every module needs a home; the endpoints it keeps serving are the ones the *Frontend* section maps as unchanged in shape, and they are served by the daemon's loopback listener rather than a standalone server.
 
 ## Slice mechanics
 
@@ -328,6 +328,111 @@ These are the irregularities identified before starting, each with how it will b
 
 One pre-existing defect is recorded here so it is not mistaken for migration damage: `routes/settings.py:43,49,57,63,64` and `routes/projects.py:82` call `_boot._full_disk_access_granted`, `_boot._open_full_disk_access_settings`, `_boot._accessibility_granted`, `_boot._request_accessibility`, `_boot._open_accessibility_settings`, and `_boot._project_count`, but `boot.py` defines none of them — they live in `services/projects.py`, and `boot.py` imports only `_ensure_default_project`. These are six AttributeErrors at request time today. They are fixed when those routes move during the REST stage.
 
+## Frontend
+
+The frontend is not an afterthought to this migration and not a string-replacement exercise. The desktop client drives a monolith over REST and SSE at a fixed `localhost:8822`, renders spawned agents in a panel that is being deleted, and is packaged by a Rust shell that spawns exactly one server process and proves it healthy by curling a TCP port. All three of those assumptions die. What follows plans the client with the same care as the backend, and it is executed under the same stance: no shims, no dual paths, no intermediate green.
+
+### Where it stands
+
+The client is a static Next.js export (`output: "export"`) inside a Tauri shell, and its weight is concentrated in four files: `chat-panel.tsx` (2258 lines, the monolith that owns `useChat`, the transcript timeline, the artifact panel, and the overlays), `tool-views/index.tsx` (2136 lines, every per-tool renderer), `use-chat.ts` (2267 lines, the turn state machine and event reducer), and `api.ts` (1665 lines, roughly seventy exported functions over REST, SSE, A2A, and one WebSocket). Everything reaches the backend through a single mutable `API_BASE` string.
+
+### The transport decision
+
+**A webview cannot open a unix socket.** There is no `tauri-plugin-http`, no registered URI scheme, no asset-protocol handler, and no occurrence of `AF_UNIX` or `XDG_RUNTIME_DIR` anywhere in the repository; the client's only transports are `fetch`, `EventSource`, and `WebSocket`, all of which require an `http(s)`/`ws(s)` origin. So while the CLI and agents reach `xeacd` and session sockets directly over the runtime directory, the GUI cannot.
+
+Therefore **`xeacd` also serves its control API on a loopback TCP listener for GUI clients**, gated by the same capability token, which the Tauri shell reads from a `0600` file in the runtime directory and attaches to every request. This is what keeps the client's entire `fetch`/`EventSource` architecture intact; the alternative — proxying every call through Tauri IPC — would mean rewriting all seventy `api.ts` functions and reimplementing SSE and WebSocket semantics over Tauri events, for no gain. It also, finally, closes the standing hole where the REST surface had no authentication at all and relied purely on binding to loopback.
+
+Because the GUI cannot reach session sockets either, **the daemon relays GUI data-plane commands to the owning session's socket.** This does not violate the invariant, which reserves the daemon out of the *agent-to-agent* messaging path; a command from a human's client is not that. The CLI keeps talking to session sockets directly, so the two clients differ in transport while sharing one API.
+
+### Endpoint remapping
+
+Every call the client makes today lands somewhere new. The mapping is the specification for the `api.ts` rewrite.
+
+| Today | Becomes |
+|---|---|
+| `POST /a2a/agents/{agent}` (drive a turn, SSE) | `session.create` once, then `send` per turn, relayed to the session socket |
+| `GET /sessions/{id}/stream` (observe) | `session.attach` |
+| `GET /sessions`, `GET /sessions/{id}/tasks[/page]` | `session.list`, `session.history` |
+| `DELETE /sessions/{id}` | `session.kill` (reaps the subtree) |
+| `POST /chat/{id}/permission`, `/question` | `send` carrying an `input_response` part |
+| `POST /chat/{id}/steer` | `send` — steering *is* a safe-point-injected message now, so the separate endpoint disappears |
+| `POST /chat/{id}/abort`, `/tools/{id}/abort` | `tasks/cancel` on the session socket |
+| `POST /chat/{id}/permissions/mode` | **deleted** — the mode is fixed at `create` |
+| `POST /chat/{id}/agents/{taskId}/abort` | **deleted** — a child is a session; `session.kill` covers it |
+| `GET /events` (shared bus), settings, projects, agents, models, artifacts, terminals, filesystem | daemon control API, unchanged in shape |
+
+### Component fates
+
+| Component | Fate |
+|---|---|
+| `agents-panel.tsx` (188), `agent-timeline.tsx` (69) | **Deleted whole** — the panel exists only to render in-process spawned agents |
+| `chat-panel.tsx` (2258) | Rewired to `create`/`send`/`attach`; loses `activeSteps` (`:786-789`), the agent-lane permission fallback (`:1252-1277`), the auto-open effect (`:1321-1330`), the Agents toolbar button (`:1396-1406`), and the `<AgentsPanel>` mount (`:2101-2113`) |
+| `use-chat.ts` (2267) | Loses the entire lane machinery — `AgentGroup`/`AgentStep`, `ensureLaneGroup`, `reduceAgentLaneEvent`, the `path`-based relay routing with its `event_id` dedup, `isImmediateAgentEventMessage`, the child-task replay closure, and the agents token bucket. The two stream paths collapse into `send` plus `attach` |
+| `tool-views/index.tsx` (2136) | Loses `SpawnAgentCallView`, `AskAgentCallView`, `RespondAgentCallView` (`:120-166`), `AgentMessageResultView` (`:777-801`), `AgentTaskResultView` (`:849-863`) and their switch entries |
+| `permission-overlay.tsx` | **Two buttons, not three** — allow-always is gone, so the `1`/`2`/`3` keyboard map becomes `1`/`2` (`:42-60`, `:141-151`) |
+| `chat-input.tsx` | Loses the agent token-usage block (`:179-190`); the permission-mode chip becomes a *creation-time* choice, not a live toggle |
+| `session-controls.tsx` | `PermissionModeControl` moves from a live control to a session-creation control |
+| `background-tasks-panel.tsx` | Loses the `spawn_agent` job kind (`:64-76`) |
+| `sessions-sidebar.tsx` | **Gains a tree** (see below) |
+| `tool-display.ts` | Loses the `spawn_agent`/`cancel_agent`/`ask_agent`/`respond_agent` entries, labels, and five icon imports |
+| `app/gallery/page.tsx` | Loses the `spawn_agent` fixture (`:132-138`) and the agent-step section (`:267-280`) |
+| Everything else (artifacts, terminals, settings, projects, locations, connection, `ui/`) | Survives; naming only |
+
+### A consequence that needs new UI
+
+Deleting the agents panel does not delete the concept — it relocates it. A spawned agent is now a **session**, so a task that fans out five children puts five new rows in the sidebar, indistinguishable from the user's own conversations. The sidebar must therefore render the parent/child hierarchy that `session.tree` exposes, with children nested under the session that spawned them and collapsed by default. Without that, the deletion trades a contained panel for a cluttered sidebar, which is a worse result than what exists today. This is the one place where the frontend needs genuinely new design rather than rewiring, and it is why the agents panel cannot simply be removed and forgotten.
+
+### Naming sweep
+
+| Category | Items |
+|---|---|
+| Storage keys | `daisy.apiBase`, `daisy.connections`, `daisy.appState`, `daisy.sessionConnections`, `daisy.locale`, `daisy.reconnect`, `daisy:lastProject`, `daisy:pendingComputerControlEnable` |
+| Wire keys | `urn:daisy:ext:turn:v1`, `urn:daisy:ext:content-block:v1` — changed in the same commit as the Python |
+| Environment | `NEXT_PUBLIC_DAISY_API_BASE`, `DAISY_PORT` (the Next dev-server port, *not* 8822 — easy to conflate) |
+| Tauri events / tags | `daisy://new-chat`, `daisy://open-session` (Tauri event names that merely look like a scheme — nothing registers them with the OS), `daisy-permission-`, `daisy-notification-click` |
+| CSS / assets | `.daisy-terminal-surface` (nine sites plus its one consumer), the `daisyIcon` imports and wordmarks in `sessions-sidebar.tsx` and `connection-settings.tsx` |
+| Product strings | `layout.tsx` title and description, tray labels, the two user-facing error copies in `api.ts` and their duplicate in `use-chat.ts` |
+| Generated | the `DaisyEvents` schema title and interface, and the `daisy-events.check.ts` temp filename in the `check:events` script |
+| i18n | Eleven "Daisy" values in each of `en.json` and `ja.json` at identical line numbers, plus the whole `AgentsPanel` namespace (17 keys) and the agent entries under `ToolViews`/`ToolDisplay`. `ja.json` is a verified exact mirror of `en.json` (647 keys, 29 namespaces), so both move together or the catalogs desync |
+
+One cross-plane trap: the four `SessionControls` workspace strings hardcode the branch prefix **`daisy/session`**, which the backend produces and `ja.json` keeps untranslated. Renaming either side alone leaves the UI describing a branch that does not exist.
+
+### Desktop shell and packaging
+
+The Rust shell assumes one server, one port, one pid. All three change.
+
+`spawn_local_server` passes `argv = [path, NULL]` (`lib.rs:79`) — there is no slot for a subcommand, so argv dispatch requires changing the spawn itself to launch the daemon entrypoint. `LocalServer` holds a single pid and `kill_local_server` sends one `SIGTERM` with no process-group handling, so a daemon's worker tree would be orphaned on quit; the shell must kill the process group and the daemon must reap its own children. `local_port_open` currently does triple duty — is the backend up, did someone else start it, is this a crash orphan — and that logic inverts once a socket file is involved, since a stale socket outlives a crash; readiness becomes a connect-and-probe against the daemon's loopback port, with the daemon unlinking its own stale socket at startup. The SSH tunnel stays TCP (`-L` to the daemon's loopback port, with `sshRemotePort` persisted in SQLite migration 003 and six UI sites), which is another reason the loopback listener earns its place.
+
+**The build gate blocks everything and must be fixed first.** `packaging/build-sidecar.sh:42-61` launches the frozen binary with **no arguments** and polls `curl http://127.0.0.1:8822/home` up to forty times, failing the build if nothing answers. A daemon that needs an argv subcommand, or that binds only a socket, fails there before the app ever compiles. The smoke test becomes: launch with the daemon subcommand, probe the daemon's readiness endpoint on its loopback port. The freshness guard at `:25-33` also hardcodes the watched source list (`src/daisy`), so the new package layout must be added or the freeze silently no-ops — a failure mode that looks like a stale build rather than an error.
+
+**The macOS code-identity requirement is load-bearing and easy to break.** The `Daisy Computer Use.app` helper shares the app's bundle identifier and signing identity precisely so the server process's Accessibility grant folds into the app's single entry — and workers are exactly the processes that will run the computer-use tools. Only one helper is ever signed (`sign-app.sh:42`). Therefore **workers must be spawned as the same signed executable inside the same bundle** — a re-exec or fork of the daemon binary, never another path or a bare interpreter — or macOS will list each worker as a separate Accessibility entry and ask the user to grant permission per worker. The one-binary-with-argv-dispatch choice satisfies this, but only because it is stated as a requirement here rather than left to chance.
+
+The remaining packaging renames are mechanical: the `EXE`/`COLLECT`/`BUNDLE` names and identifier in the spec, the helper `.app` name and paths across `build-sidecar.sh`, `sign-app.sh`, and `lib.rs:146-157`, the `"Daisy Local Codesign"` identity and the certificate script, `Cargo.toml`'s `name`/`default-run`/`[[bin]]`/`[lib]` (where the capitalised binary name is load-bearing for the Accessibility prompt), `tauri.conf.json`'s product name, identifier, and window title, the five TCC usage strings in `Info.plist`, the `Daisy.icon` composer document, and `package.json`'s `daisy-web`. `Entitlements.plist`'s `disable-library-validation` stays — it exists for the frozen helper.
+
+### Frontend stages
+
+These run after the backend core, in this order, under the same stance — nothing is expected to work until the end. The delegation deletion is not listed here because it happens on both planes together in the backend's deletion stage.
+
+| Stage | What |
+|---|---|
+| **Client transport** | Rewrite `api.ts` against the daemon control API and the relayed data plane; token attachment; the endpoint remapping above |
+| **Session rewire** | `use-chat.ts` and `chat-panel.tsx`: collapse the two stream paths into `send` plus `attach`, strip the lane machinery, move permission mode to creation |
+| **Sidebar tree** | Render the parent/child session hierarchy from `session.tree` |
+| **Desktop shell** | `lib.rs` daemon lifecycle, process-group kill, readiness probe, SSH tunnel port; the build-sidecar smoke test and freshness list; signing and bundle identity |
+| **Frontend naming** | Storage keys, wire keys, environment, Tauri events, CSS, assets, product strings, generated schema title, both i18n catalogs |
+
+### Frontend hazards
+
+| Hazard | Why it is real | Mitigation |
+|---|---|---|
+| Build gate fails before anything else | The sidecar smoke test curls `:8822/home` against an argument-less launch; it runs inside `tauri build` | Fix the smoke test in the desktop-shell stage, before attempting any app build |
+| Per-worker Accessibility prompts | Workers run the computer-use tools; only one helper is signed | Workers are re-execs of the same signed binary inside the same bundle — stated as a requirement, not an accident |
+| Orphaned worker tree on quit | The shell kills one pid with one `SIGTERM` | Kill the process group; the daemon reaps its children |
+| i18n catalog desync | `ja.json` mirrors `en.json` exactly today | Both catalogs edited together; key counts compared at the end |
+| The `daisy/session` branch prefix | Produced by the backend, hardcoded in four UI strings, untranslated in `ja.json` | Renamed on both planes in the same commit |
+| Sidebar flooded by child sessions | Deleting the agents panel relocates children into the session list | The sidebar tree stage is part of the plan, not an optional follow-up |
+| Two app instances racing | No single-instance plugin; both can pass the port probe and write the pid stamp | Pre-existing; the daemon's socket-and-lock ownership makes it recoverable, and it is recorded rather than silently inherited |
+
 ## Invariants
 
 `create` is the only place configuration and permissions are set; `send` never mutates configuration. A child's mode is clamped to no looser than its parent's; there is no bypass and no allow-always, so the only runtime permission decisions are per-call allow-once and deny. A pooled worker is never reused across sessions. A session's durable state survives its process — in the database, via `xeacd` — while its socket dies with it, so reads route through `xeacd` and commands route through the socket. `xeacd` sits in the persistence and observation path, never in the inbound agent-to-agent messaging path.
@@ -344,9 +449,11 @@ Two capabilities are retired rather than reimplemented. Switching persona mid-co
 
 ## Phasing
 
-1. **Core.** Every stage in the table above: the deletions, the rename, XDG placement, the package restructure, `xeacd` with its registry, lifecycle and reaper, sole-writer persistence, brokers, warm pool and autostart, the worker process serving A2A on a token-gated socket, and the `xeac` CLI.
-2. **Clients.** Rework the Tauri application and the `rest/` surface into registry and session clients.
+1. **Core.** Every stage in the backend table: the deletions, the rename, XDG placement, the package restructure, `xeacd` with its registry, lifecycle and reaper, sole-writer persistence, brokers, warm pool and autostart, the worker process serving A2A on a token-gated socket, and the `xeac` CLI.
+2. **Clients.** Every stage in the frontend table: the client transport rewrite, the session rewire, the sidebar tree, the desktop shell, and the frontend naming sweep.
+
+Both phases are fully specified here. The split is an ordering of work, not a difference in how completely each is planned, and the execution stance applies across both: verification happens once, after the frontend stages, when the whole system is expected to run for the first time.
 
 ## Open questions
 
-The exact GUI event re-wiring, from the monolith's `ContextEventBus` and SSE to the `xeacd` registry plus session sockets, is deferred to phase 2 and planned there rather than here. Whether the home-agents layer moves fully under `$XDG_CONFIG_HOME/xeac/agents` or keeps a `~/.agents` alias for continuity with the existing dotfiles ecosystem is left open, to be decided when the configuration loader is ported.
+Whether the home-agents layer moves fully under `$XDG_CONFIG_HOME/xeac/agents` or keeps a `~/.agents` alias for continuity with the existing dotfiles ecosystem is left open, to be decided when the configuration loader is ported.
