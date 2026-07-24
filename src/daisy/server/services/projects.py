@@ -157,19 +157,6 @@ def _open_accessibility_settings() -> None:
         permissions.open_accessibility_settings()
 
 
-def _request_screen_recording() -> None:
-    """Surface the system Screen Recording prompt if not yet granted."""
-    with suppress(Exception):
-        from daisy.computer import permissions
-        permissions.request_screen_recording()
-
-
-def _open_screen_recording_settings() -> None:
-    with suppress(Exception):
-        from daisy.computer import permissions
-        permissions.open_screen_recording_settings()
-
-
 def _delete_project(project_id: str) -> bool:
     """Delete a project and everything under it: its locations, its sessions, and the
     per-(session, location) worktree records. (Remote worktree teardown over SSH is a

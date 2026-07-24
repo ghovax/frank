@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 import ApplicationServices as AS
 
-from daisy.computer import accessibility, capture, input_synthesis, permissions
+from daisy.computer import accessibility, input_synthesis, permissions
 from daisy.computer.retrieval import Document, element_text
 from daisy.computer.surface import (
     Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
@@ -51,8 +51,7 @@ _MAXIMUM_BACKOFF_SECONDS = 0.2
 _ACTIVATE_ACTIONS = ("AXPress",)
 _OPEN_ACTIONS = ("AXOpen", "AXConfirm", "AXPick")
 
-# Every action reads the tree or synthesizes input, and so needs the Accessibility grant; only
-# ``screenshot`` gates on Screen Recording instead.
+# Every action reads the tree or synthesizes input, and so needs the Accessibility grant.
 _NEEDS_ACCESSIBILITY = frozenset({
     "documents", "click", "type", "press", "scroll", "select", "caret", "drag", "read",
 })
@@ -238,20 +237,6 @@ class NativeSurface(Surface):
             if environment:
                 result["environment"] = environment
             return result
-
-        return self.guard(run)
-
-    def screenshot(self, target: str = "") -> dict:
-        """See an app as pixels — the last resort, only when it exposes nothing to read."""
-
-        def run() -> dict:
-            pid = self._resolve_pid(target)
-            if not permissions.screen_recording_granted():
-                return {"ok": False, "error": message("screen_recording_needed"), "needs_permission": "screen_recording"}
-            path = capture.capture_window(pid)
-            if path is None:
-                return {"ok": False, "error": "Could not capture the app's window."}
-            return {"ok": True, "image_path": path, "app": accessibility.app_name_for_pid(pid), "note": message("screenshot_observe_only")}
 
         return self.guard(run)
 

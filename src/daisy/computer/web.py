@@ -543,20 +543,6 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def screenshot(self) -> dict:
-        """The visible viewport as pixels — the fallback for surfaces with no semantic tree (a
-        canvas map, WebGL, a custom editor)."""
-
-        def run() -> dict:
-            session = self.session()
-            page = self.page(session)
-            handle, path = tempfile.mkstemp(prefix="daisy-web-capture-", suffix=".png")
-            os.close(handle)
-            page.screenshot(path=path, type="png", scale="css", timeout=active_tuning().amount(Limit.SCREENSHOT_TIMEOUT_MS))
-            return {"ok": True, "image_path": path, "url": _safe_url(page), "title": _safe_title(page), "note": message("screenshot_observe_only")}
-
-        return self.guard(run)
-
     # Acting — control_screen. ``perform`` routes one primitive call to its handler.
 
     def perform(self, operation: str, arguments: list, keywords: dict) -> dict:

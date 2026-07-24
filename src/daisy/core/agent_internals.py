@@ -353,22 +353,6 @@ def _coerce_structured_arguments(schema: Any, arguments: dict) -> dict:
     return coerced
 
 
-def _screenshot_data_uri(path: str) -> str:
-    """Read a captured PNG into a data URI for the model_image side channel, then remove
-    the temp file. Empty string on any failure — a screenshot is best-effort."""
-    import base64
-    from contextlib import suppress
-    try:
-        with open(path, "rb") as handle:
-            encoded = base64.b64encode(handle.read()).decode("ascii")
-    except OSError:
-        return ""
-    finally:
-        with suppress(OSError):
-            os.remove(path)
-    return f"data:image/png;base64,{encoded}"
-
-
 @dataclass
 class _PreflightGate:
     """One human-in-the-loop interaction a tool call needs before it can run: a

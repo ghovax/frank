@@ -65,14 +65,6 @@ async def open_accessibility_settings():
     return {"ok": True}
 
 
-@router.post("/system/screen-recording/open")
-async def open_screen_recording_settings():
-    """Trigger the system Screen Recording prompt and open the pane so the user can grant Daisy."""
-    await asyncio.to_thread(_boot._request_screen_recording)
-    await asyncio.to_thread(_boot._open_screen_recording_settings)
-    return {"ok": True}
-
-
 @router.get("/models")
 async def list_models_endpoint():
     """The model catalog for the picker: every known model with its provider and

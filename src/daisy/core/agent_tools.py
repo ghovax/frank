@@ -18,7 +18,6 @@ from daisy.core.agent_internals import _coerce_structured_arguments
 from daisy.core.agent_internals import _maybe_json
 from daisy.core.agent_internals import _model_result_status
 from daisy.core.agent_internals import _model_visible_tool_result
-from daisy.core.agent_internals import _screenshot_data_uri
 from daisy.core.agent_internals import _spawned_agent_report
 from daisy.core.agent_internals import _tool_timing_metadata
 from daisy.core.agent_internals import _utc_timestamp
@@ -1597,16 +1596,6 @@ class _ToolsMixin:
 
         return native_surface.SURFACE if surface_name == "computer" else web_surface.SURFACE
 
-    async def _screenshot_extra(self, image_path: str) -> tuple[dict, Any]:
-        """Ride a screenshot's pixels on the model_image side channel to a vision-capable model,
-        exactly like read_file; the raw path never reaches the UI."""
-        extra: dict[str, Any] = {}
-        if self._model_supports_vision():
-            data_uri = await asyncio.to_thread(_screenshot_data_uri, image_path)
-            if data_uri:
-                extra["model_image"] = data_uri
-        return extra, None
-
     async def _tool_search_screen(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
@@ -1625,15 +1614,6 @@ class _ToolsMixin:
         app = str(tool_arguments.get("app", ""))
         limit = int(tool_arguments.get("limit", 8) or 8)
         all_matches = bool(tool_arguments.get("all_matches", False))
-
-        if bool(tool_arguments.get("screenshot", False)):
-            shot = await asyncio.to_thread(surface.screenshot, app) if surface_name == "computer" else await asyncio.to_thread(surface.screenshot)
-            extra: dict[str, Any] = {}
-            if isinstance(shot, dict) and shot.get("image_path"):
-                extra, _ = await self._screenshot_extra(shot["image_path"])
-                shot.pop("image_path", None)
-            yield ToolResult(id=tool_call_identifier, name=tool_name, result=shot, extra=extra)
-            return
 
         gate = surface.preflight("documents")
         if gate is not None:
