@@ -121,6 +121,11 @@ async def _session_title(params: dict) -> dict:
         return {"saved": False}
     changed = await asyncio.to_thread(_set_session_title, session_id, title)
     if changed:
+        # Both views of a session carry the title: the durable row the GUI lists from, and
+        # the registry the CLI reads, which would otherwise keep showing a directory for a
+        # session that has since named itself.
+        if state.registry is not None:
+            state.registry.mark(session_id, title=title)
         state.broadcaster.publish({"type": "sessions_changed"})
     return {"saved": changed}
 

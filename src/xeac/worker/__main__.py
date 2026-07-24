@@ -63,6 +63,7 @@ async def run() -> int:
         session_id=session_id,
         agent_name=str(assignment.get("agent") or configuration.default_agent),
         working_directory=str(assignment.get("working_directory") or ""),
+        runtime_working_directory=str(assignment.get("runtime_working_directory") or ""),
         permission_mode=str(assignment.get("permission_mode") or "default"),
         project_id=str(assignment.get("project_id") or ""),
         parent=str(assignment.get("parent") or ""),

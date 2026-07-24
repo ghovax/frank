@@ -39,6 +39,10 @@ class SessionRecord:
     agent: str
     working_directory: str
     permission_mode: str
+    # Where the session's tools actually run. Equal to `working_directory` unless the
+    # workspace strategy put the session in its own worktree or branch, which is decided once
+    # when the session is created — the same moment everything else about it is fixed.
+    runtime_working_directory: str = ""
     project_id: str = ""
     parent: str = ""
     token: str = ""
@@ -74,6 +78,7 @@ class SessionRecord:
             "awaiting_input": self.awaiting_input,
             "title": self.title,
             "working_directory": self.working_directory,
+            "runtime_working_directory": self.runtime_working_directory,
             "project_id": self.project_id,
             "permission_mode": self.permission_mode,
             "pid": self.pid,

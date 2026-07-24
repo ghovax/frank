@@ -100,6 +100,20 @@ def _assert_agent_exists(agent: str, working_directory: str) -> None:
         )
 
 
+def _public(record: SessionRecord) -> dict:
+    """A session as a client sees it: what the registry knows plus what it is doing.
+
+    The registry tracks the *process* — a session is "running" from the moment its worker
+    binds until it is reaped, including the long stretches where it sits idle between
+    messages. Whether a turn is actually in flight is something only the session can report,
+    and it does, over ingest. Merging the two here is what lets a client tell a session that
+    is working from one that is merely alive; keeping them separate fields is what stops a
+    listing from claiming a reaped session is busy."""
+    payload = record.public()
+    payload["busy"] = record.id in state._running_contexts
+    return payload
+
+
 async def _session_create(params: dict) -> dict:
     """Mint a session and hand back its handle.
 
@@ -138,6 +152,28 @@ async def _session_create(params: dict) -> dict:
         title=str(params.get("title") or ""),
         created_at=_now(),
     )
+
+    # Where the session will actually run, and its durable row, decided here rather than on
+    # its first turn: the workspace strategy can put a session in its own git worktree, and a
+    # session whose tools do not yet know which directory they operate on is not a session
+    # anyone can safely message. It is also the row the title and the draft later land on.
+    from xeac.daemon.services.sessions import _ensure_session_workspace
+
+    try:
+        workspace = await asyncio.to_thread(
+            _ensure_session_workspace,
+            record.id,
+            record.agent,
+            record.working_directory,
+            str(params.get("workspace_strategy") or ""),
+            record.permission_mode,
+            record.project_id,
+        )
+        state.registry.mark(record.id, runtime_working_directory=workspace.runtime_working_directory)
+    except Exception:  # noqa: BLE001 — a workspace that cannot be prepared is not a fatal
+        logger.exception("Could not prepare a workspace for session %s", record.id)
+        state.registry.mark(record.id, runtime_working_directory=record.working_directory)
+
     started = await state.lifecycle.start(record)
     if not started:
         raise RpcError(
@@ -156,11 +192,11 @@ async def _session_list(params: dict) -> dict:
     parent = str(params.get("parent") or "")
     if parent:
         records = [record for record in records if record.parent == parent]
-    return {"sessions": [record.public() for record in sorted(records, key=lambda entry: entry.created_at)]}
+    return {"sessions": [_public(record) for record in sorted(records, key=lambda entry: entry.created_at)]}
 
 
 async def _session_get(params: dict) -> dict:
-    return {"session": _session(_require(params, "id")).public()}
+    return {"session": _public(_session(_require(params, "id")))}
 
 
 async def _session_tree(params: dict) -> dict:
@@ -169,8 +205,8 @@ async def _session_tree(params: dict) -> dict:
     assert state.registry is not None
     root = _session(_require(params, "id"))
     return {
-        "session": root.public(),
-        "descendants": [record.public() for record in state.registry.descendants_of(root.id)],
+        "session": _public(root),
+        "descendants": [_public(record) for record in state.registry.descendants_of(root.id)],
     }
 
 

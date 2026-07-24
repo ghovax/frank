@@ -1189,6 +1189,9 @@ export interface SessionSummary {
   parent: string;
   // starting | running | exited — the process's own lifecycle, not the turn's.
   status: string;
+  // Whether a turn is actually in flight. A session's process stays alive between
+  // messages, so `status: "running"` means "there is a process", not "it is working".
+  busy: boolean;
   awaiting_input: boolean;
   title: string;
   working_directory: string;

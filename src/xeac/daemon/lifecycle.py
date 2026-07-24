@@ -91,6 +91,10 @@ class SessionLifecycle:
             "session_id": record.id,
             "agent": record.agent,
             "working_directory": record.working_directory,
+            # Where the session's tools run, which is not always where its project lives: a
+            # worktree workspace puts them somewhere else entirely, and the daemon resolved
+            # that when the session was created.
+            "runtime_working_directory": record.runtime_working_directory or record.working_directory,
             "permission_mode": record.permission_mode,
             "project_id": record.project_id,
             "parent": record.parent,

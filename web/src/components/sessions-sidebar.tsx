@@ -42,6 +42,9 @@ export interface SessionEntry {
   createdAt: string;
   workingDirectory: string;
   status: SessionStatus;
+  // Whether a turn is in flight. Distinct from `status`, which describes the process: a
+  // session stays "running" between messages, so only this means it is working.
+  busy: boolean;
   awaitingInput: boolean;
   // Why an exited/failed session ended, when the daemon knows — shown on the status dot.
   exitReason: string;

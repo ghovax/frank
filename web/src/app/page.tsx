@@ -31,11 +31,11 @@ function writeLastProject(projectId: string): void {
 }
 
 
-// A session whose process is still up and working. The registry reports the process's
-// own lifecycle, so "busy" is exactly "not yet finished" — there is no separate per-turn
-// flag to reconcile with it.
+// A session that is actually working, as opposed to one whose process is merely up. A
+// session outlives its turns — created empty, messaged, idle again — so the process
+// lifecycle alone would report every live session as busy forever.
 function isSessionBusy(session: SessionEntry): boolean {
-  return session.status === "starting" || session.status === "running";
+  return session.status === "starting" || session.busy;
 }
 
 function ProjectWorkspace() {
@@ -215,6 +215,7 @@ function ProjectWorkspace() {
       createdAt: session.created_at,
       workingDirectory: session.working_directory ?? "",
       status: (session.status || "starting") as SessionStatus,
+      busy: session.busy ?? false,
       awaitingInput: session.awaiting_input ?? false,
       exitReason: session.exit_reason ?? "",
       permissionMode: session.permission_mode ?? "default",

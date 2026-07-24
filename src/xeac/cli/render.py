@@ -14,8 +14,10 @@ from typing import Any
 _TTY = sys.stdout.isatty()
 
 _STATUS_COLOURS = {
+    "working": "\033[32m",   # green
     "running": "\033[32m",   # green
     "starting": "\033[33m",  # yellow
+    "idle": "\033[36m",      # cyan
     "failed": "\033[31m",    # red
     "exited": "\033[90m",    # grey
 }
@@ -29,11 +31,17 @@ def _colour(text: str, code: str) -> str:
 
 
 def _status(record: dict) -> str:
-    """A session's state, with the thing a user most needs to notice first: a session parked
-    on a permission request is not 'running', it is waiting for them."""
+    """What a session is doing, in the order a person needs to know it.
+
+    A session parked on a permission request is not "running", it is waiting for them — that
+    goes first. After that, "running" describes the process, which stays up between messages,
+    so a live session is reported as working or idle depending on whether a turn is actually
+    in flight. Nothing else could tell those two apart from the outside."""
     if record.get("awaiting_input"):
         return _colour("waiting", "\033[35m")
     status = str(record.get("status", ""))
+    if status == "running":
+        status = "working" if record.get("busy") else "idle"
     return _colour(status, _STATUS_COLOURS.get(status, ""))
 
 

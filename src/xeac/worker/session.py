@@ -60,6 +60,7 @@ class SessionExecutor(AgentExecutor):
         working_directory: str,
         permission_mode: str,
         global_configuration: GlobalConfiguration,
+        runtime_working_directory: str = "",
         project_id: str = "",
         parent: str = "",
         token: str = "",
@@ -68,6 +69,10 @@ class SessionExecutor(AgentExecutor):
         self._session_id = session_id
         self._agent_name = agent_name
         self._working_directory = working_directory
+        # Where tools actually run. The daemon resolves this when the session is created —
+        # a worktree workspace is not the project directory — and hands it over, so the
+        # session never has to work it out mid-turn.
+        self._runtime_working_directory = runtime_working_directory or working_directory
         self._permission_mode = permission_mode
         self._project_id = project_id
         self._parent = parent
@@ -548,50 +553,19 @@ class SessionExecutor(AgentExecutor):
             self._startup_resume_tasks.add(wake_task)
             wake_task.add_done_callback(self._startup_resume_tasks.discard)
 
-    async def _workspace_for(
-        self,
-        *,
-        context_id: str,
-        requested_working_directory: str,
-        requested_workspace_strategy: str,
-        requested_permission_mode: str,
-        first_message: str,
-        delegated: bool,
-        metadata: dict,
-    ) -> SessionWorkspace:
-        if delegated:
-            runtime_directory = str(
-                metadata.get(Metadata.RUNTIME_WORKING_DIRECTORY)
-                or metadata.get(Metadata.WORKING_DIRECTORY)
-                or requested_working_directory
-                or ""
-            )
-            project_directory = str(
-                metadata.get(Metadata.PROJECT_DIRECTORY)
-                or requested_working_directory
-                or runtime_directory
-            )
-            return SessionWorkspace(
-                source_working_directory=project_directory,
-                runtime_working_directory=runtime_directory,
-                strategy="worktree" if metadata.get(Metadata.RUNTIME_WORKING_DIRECTORY) else "none",
-            )
-        if self._ensure_session_workspace is not None:
-            return await asyncio.to_thread(
-                self._ensure_session_workspace,
-                context_id,
-                self._agent_name,
-                requested_working_directory,
-                requested_workspace_strategy,
-                requested_permission_mode,
-                first_message,
-                str(metadata.get(Metadata.PROJECT_ID, "")),
-            )
-        directory = requested_working_directory or ""
+    def _workspace(self, requested_working_directory: str = "") -> SessionWorkspace:
+        """Where this session's work happens.
+
+        The daemon resolved this when the session was created — a worktree strategy puts the
+        tools somewhere other than the project directory — and handed it over in the
+        assignment. It is not renegotiated per turn: where a session runs is part of what the
+        session *is*, fixed at creation alongside its agent and its permission mode."""
+        source = requested_working_directory or self._working_directory or ""
+        runtime = self._runtime_working_directory or source
         return SessionWorkspace(
-            source_working_directory=directory,
-            runtime_working_directory=directory,
-            strategy="none",
+            source_working_directory=source,
+            runtime_working_directory=runtime,
+            strategy="worktree" if runtime and runtime != source else "none",
         )
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:

@@ -211,9 +211,14 @@ def _ensure_session_workspace(
     working_directory: str,
     workspace_strategy: str,
     permission_mode: str,
-    first_message: str,
     project_id: str = "",
 ) -> SessionWorkspace:
+    """Give a session its durable row and the directory its tools will actually run in.
+
+    Called when the session is created, not on its first turn: the workspace decides where
+    every tool runs, and a session that exists but has not yet resolved where it lives is a
+    session nobody can address properly. Idempotent — a row that already has a runtime
+    directory is returned as it stands."""
     assert state.session_factory is not None
     source_directory = working_directory or str(Path.home())
 
@@ -256,8 +261,8 @@ def _ensure_session_workspace(
                     record.workspace_error = workspace.error
                     database_session.commit()
                 return _session_workspace_from_record(record)
-            # Provisional title so the sidebar shows something immediately
-            title = "" # Empty title
+            # No title yet: the session names itself once it has read its first message,
+            # which is the only point anything knows what the session is for.
             database_session.add(SessionRecord(
                 id=context_id,
                 agent=agent,
@@ -273,7 +278,7 @@ def _ensure_session_workspace(
                 workspace_error=workspace.error,
                 permission_mode=_normalize_permission_mode(permission_mode),
                 input_draft="",
-                title=title,
+                title="",
                 created_at=datetime.now(timezone.utc).isoformat(),
             ))
             database_session.commit()
@@ -283,8 +288,6 @@ def _ensure_session_workspace(
         finally:
             database_session.close()
 
-    # Surface the new session immediately (its first turn is already marked
-    # running, so the sidebar shows it with a spinner right away).
     _publish_broadcast({"type": "sessions_changed"})
     return workspace
 

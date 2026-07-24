@@ -403,7 +403,7 @@ class _TurnRunner:
         """Build (or warm-fetch) the runtime, register it, and stand up the event sink.
         Returns ``_DONE`` for an autonomous wake that has nothing left to deliver, else the
         :class:`_Prepared` the streaming phases thread."""
-        task, metadata = resolved.task, resolved.ingested.metadata
+        task = resolved.task
         # An autonomous wake with nothing left to deliver — a concurrent user turn already
         # drained the result while this one waited on the lock — is a no-op: close the task
         # without a model call rather than emit an empty turn. The finally still runs on
@@ -431,14 +431,7 @@ class _TurnRunner:
 
         await self._updater.start_work()
 
-        workspace = await self._ex._workspace_for(
-            context_id=task.context_id,
-            requested_working_directory=self._requested_working_directory,
-            requested_workspace_strategy=self._requested_workspace_strategy,
-            requested_permission_mode=self._permission_mode,
-            first_message=self._user_text,
-            metadata=metadata,
-        )
+        workspace = self._ex._workspace(self._requested_working_directory)
         if self._ex._ensure_mcp_servers is not None and workspace.source_working_directory:
             await self._ex._ensure_mcp_servers(workspace.source_working_directory)
 
