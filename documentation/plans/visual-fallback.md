@@ -1,7 +1,7 @@
 ---
 created: 2026-07-23T19:30:00Z
 updated: 2026-07-23T19:30:00Z
-commit: 0000000
+commit: 25c3c61
 ---
 
 # Removing Computer-Use Screenshots, and a Deferred Visual Fallback
