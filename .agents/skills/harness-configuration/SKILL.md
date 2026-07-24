@@ -69,12 +69,12 @@ One agent per directory: `.agents/agents/<name>/agent.md` (or `~/.agents/agents/
 
 ```markdown
 ---
-name: reviewer                       # route/slug — used for A2A routing and spawn_agent
+name: reviewer                       # slug — what `xeac create --agent` and the card name it by
 title: Reviewer                      # human label shown in the UI
 aliases: [code-reviewer]
 color: purple
 description: Reviews a diff for correctness and risk, read-only
-role: delegation-target              # or "primary" for a default chat agent
+role: delegation-target              # or "primary" for a default chat agent (labelling only)
 enabled: true
 connection_type: internal
 skills: []                           # skill slugs this agent may use; empty = all

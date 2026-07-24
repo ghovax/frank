@@ -1,5 +1,8 @@
-# PyInstaller spec that freezes the xeac FastAPI server (server.py) into a
-# self-contained binary the XEAC desktop app bundles and spawns for local mode.
+# PyInstaller spec that freezes XEAC into one self-contained binary the desktop app
+# bundles. It is a single image with three entry points — `xeac` (the CLI), `xeacd`
+# (the daemon) and `worker` (a session) — selected by the first argument, because a
+# worker must be a re-exec of the *same signed binary* for macOS to treat it as the
+# same code identity and keep one Accessibility grant covering every session.
 #
 # The dependency tree is heavy and full of *dynamic* imports (litellm loads
 # providers by name, uvicorn[standard] picks loops/protocols at runtime, langchain

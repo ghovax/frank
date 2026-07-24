@@ -20,6 +20,7 @@ from xeac.base.configuration import (
     GlobalConfiguration,
     PermissionEvaluator,
     PromptLoader,
+    load_agent_configuration,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from xeac.runtime.models.litellm import ChatLiteLLMModel
@@ -93,6 +94,23 @@ from xeac.runtime.internals import (
 )
 
 
+def _authorized_default_model(global_configuration: GlobalConfiguration) -> str:
+    """The default agent's model, when there are credentials for it.
+
+    Returns "" when even the default is unauthorized: there is nothing better to offer, and
+    substituting a model that also cannot run would only move the failure."""
+    try:
+        default_configuration = load_agent_configuration(
+            global_configuration.default_agent, global_configuration.agent_directories()
+        )
+    except Exception:  # noqa: BLE001 — a missing or broken default simply means no fallback
+        return ""
+    candidate = default_configuration.model_identifier
+    if candidate and model_is_authorized(candidate, global_configuration):
+        return candidate
+    return ""
+
+
 def build_chat_model(
     model_identifier: str,
     global_configuration: GlobalConfiguration,
@@ -129,6 +147,27 @@ def build_chat_model(
 
 
 def _build_tools(
+    agent_configuration: AgentConfiguration,
+    global_configuration: GlobalConfiguration,
+) -> list[BaseTool]:
+    tools = _all_available_tools(agent_configuration, global_configuration)
+    allowed = _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in tools})
+    return [tool for tool in tools if not allowed or tool.name in allowed]
+
+
+def _live_allow_list(configured: list[str], existing: set[str]) -> set[str]:
+    """An agent's tool allow-list, narrowed to tools that exist.
+
+    A profile may name a tool that has since been removed — every shipped profile listed the
+    delegation tool that peer sessions replaced. Since an allow-list denies everything it does
+    not name, keeping a dead entry would leave a profile that permits nothing at all, and a
+    non-destructive seed means the stale copy in a user's home directory outlives the fix.
+    Dropping the names that match nothing turns such a list back into what it plainly meant."""
+    live = {name for name in configured if name in existing}
+    return live
+
+
+def _all_available_tools(
     agent_configuration: AgentConfiguration,
     global_configuration: GlobalConfiguration,
 ) -> list[BaseTool]:
@@ -313,16 +352,14 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' must configure both provider and model."
             )
-        # When this agent's own provider isn't authorized — the common case for a
-        # delegation-target profile still pinned to a provider the user never keyed
-        # (e.g. a shipped `opencode/*` default after the session switched to the
-        # ChatGPT subscription) — building its client anyway yields a model that
-        # 401s on its first call, so a spawned agent dies the instant it starts.
-        # Fall back to the default agent's authorized model so the delegated agent inherits
-        # the session's working model instead. This is a no-op for the default agent
-        # itself (its model is already what we'd fall back to).
+        # A profile pinned to a provider the user never keyed — a shipped `opencode/*`
+        # default, say, on a machine that signed in with ChatGPT instead — would build a
+        # client that 401s on its first call, so the session would die the moment it was
+        # messaged. Fall back to the default agent's model when that one is authorized, so
+        # a peer created from such a profile inherits a model that actually works. A no-op
+        # for the default agent itself, whose model is already what we would fall back to.
         if not model_is_authorized(effective_model, global_configuration):
-            fallback_model = self._authorized_default_model()
+            fallback_model = _authorized_default_model(global_configuration)
             if fallback_model:
                 effective_model = fallback_model
         self._effective_model_identifier = effective_model
@@ -347,7 +384,15 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # one contiguous block (see the turn loop).
         self._tool_schemas: dict[str, Any] = {tool.name: tool.args_schema for tool in self._tools}
         self._bound_llm = self._llm.bind_tools(self._tools)
-        self._permissions = PermissionEvaluator(agent_configuration)
+        # The evaluator gates against the same narrowed allow-list the tool set was built
+        # from, so a profile naming a tool that no longer exists cannot refuse everything.
+        self._permissions = PermissionEvaluator(
+            agent_configuration.model_copy(update={
+                "tools_enabled": sorted(
+                    _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in self._tools})
+                ),
+            })
+        )
         self._background = BackgroundJobs(
             context_id=session_id,
             agent_name=agent_configuration.identifier,

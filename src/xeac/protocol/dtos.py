@@ -41,10 +41,6 @@ class AgentBashConfigurationResponse(BaseModel):
     permissions: dict[str, str]
 
 
-class AgentSpawnConfigurationResponse(BaseModel):
-    enabled: bool
-
-
 class AgentConfigurationResponse(BaseModel):
     id: str
     name: str
@@ -53,7 +49,6 @@ class AgentConfigurationResponse(BaseModel):
     provider: str = ""
     reasoning_effort: str = "high"
     permission_mode: Literal["default", "auto", "read_only"]
-    stream_agent_progress: bool
     tools_enabled: list[str]
     bash: AgentBashConfigurationResponse
     path: str
@@ -65,16 +60,11 @@ class AgentBashConfigurationRequest(BaseModel):
     permissions: dict[str, str] | None = None
 
 
-class AgentSpawnConfigurationRequest(BaseModel):
-    enabled: bool | None = None
-
-
 class AgentConfigurationUpdateRequest(BaseModel):
     model: str | None = None
     provider: str | None = None
     reasoning_effort: str | None = None
     permission_mode: Literal["default", "auto", "read_only"] | None = None
-    stream_agent_progress: bool | None = None
     tools_enabled: list[str] | None = None
     bash: AgentBashConfigurationRequest | None = None
 

@@ -156,7 +156,6 @@ def _agent_configuration_payload(agent_name: str, working_directory: str) -> Age
         provider=configuration.provider or "",
         reasoning_effort=configuration.reasoning_effort,
         permission_mode=configuration.permission_mode,
-        stream_agent_progress=configuration.stream_agent_progress,
         tools_enabled=configuration.tools_enabled,
         bash=AgentBashConfigurationResponse(
             enabled=configuration.tools.bash.enabled,
@@ -191,8 +190,6 @@ def _apply_agent_configuration_update(sidecar: dict[str, Any], request: AgentCon
         )
     if request.permission_mode is not None:
         model.permission_mode = request.permission_mode
-    if request.stream_agent_progress is not None:
-        model.stream_agent_progress = request.stream_agent_progress
     if request.tools_enabled is not None:
         model.set_tools_enabled(request.tools_enabled)
     if request.bash is not None:

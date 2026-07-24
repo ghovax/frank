@@ -87,10 +87,6 @@ class _TurnLoopMixin:
             available_agents = describe_available_agents(
                 self._global_configuration.agent_directories_for(self._project_directory)
             )
-            # External A2A agents are a distinct concept from local agents: they run on
-            # another server (no shared filesystem, their own model and cost, one-shot),
-            # so they are surfaced separately and reached with `call_remote_agent`.
-            remote_agents = self._remote_agent_roster()
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
@@ -104,7 +100,6 @@ class _TurnLoopMixin:
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
                 "available_agents": available_agents,
-                "remote_agents": remote_agents,
                 # The project's locations. Filesystem/shell tools take a `location` (its
                 # URI); it is required when there is more than one, optional when one.
                 "locations": self._locations_summary(),
@@ -154,11 +149,6 @@ class _TurnLoopMixin:
                 "active_count": self._background.active_count(),
                 "recent_events": self._execution_history[-20:],
             },
-            active_agents=(
-                self._active_agents(self._a2a_task_id)
-                if self._active_agents is not None and self._a2a_task_id
-                else []
-            ),
         )
         return context.model_dump_json(exclude_defaults=True)
 
@@ -493,10 +483,9 @@ class _TurnLoopMixin:
                             thinking_done_emitted = True
                             yield ThinkingDone(duration_ms=int((time.monotonic() - thinking_started_at) * 1000),
                             )
-                        if self._agent_configuration.stream_agent_progress:
-                            yield TextChunk(text=content_delta.text,
-                                block_id=content_delta.block_identifier,
-                            )
+                        yield TextChunk(text=content_delta.text,
+                            block_id=content_delta.block_identifier,
+                        )
                     else:
                         yield Thinking(text=content_delta.text,
                             block_id=content_delta.block_identifier,

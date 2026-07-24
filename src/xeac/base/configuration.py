@@ -887,7 +887,6 @@ class AgentConfiguration(BaseModel):
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
     system_prompt: str = ""
-    stream_agent_progress: bool = True
 
     @property
     def identifier(self) -> str:
@@ -1185,7 +1184,6 @@ class AgentSidecar(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
     preset: Optional[_SidecarPreset] = None
     permission_mode: Optional[str] = Field(default=None, alias="permissionMode")
-    stream_agent_progress: Optional[bool] = Field(default=None, alias="streamAgentProgress")
     tools: Optional[_SidecarTools] = None
 
     @classmethod
@@ -1210,8 +1208,6 @@ class AgentSidecar(BaseModel):
                 overrides["reasoning_effort"] = self.preset.reasoning_effort
         if self.permission_mode is not None:
             overrides["permission_mode"] = self.permission_mode
-        if self.stream_agent_progress is not None:
-            overrides["stream_agent_progress"] = self.stream_agent_progress
         if self.tools is not None:
             if self.tools.enabled_builtin_tools is not None:
                 overrides["tools_enabled"] = self.tools.enabled_builtin_tools
