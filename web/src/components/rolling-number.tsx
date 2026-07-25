@@ -95,9 +95,9 @@ const Digit = memo(function Digit({ digit }: { digit: number }) {
           alignItems: "center",
         }}
       >
-        {DIGITS.map((d) => (
-          <Span key={d} h="1em" lineHeight="1em" display="flex" alignItems="center" justifyContent="center">
-            {d}
+        {DIGITS.map((digit) => (
+          <Span key={digit} h="1em" lineHeight="1em" display="flex" alignItems="center" justifyContent="center">
+            {digit}
           </Span>
         ))}
       </MotionSpan>

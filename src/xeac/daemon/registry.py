@@ -13,7 +13,7 @@ child's death is attributable to the parent that took it down.
 from __future__ import annotations
 
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -39,6 +39,10 @@ class SessionRecord:
     agent: str
     working_directory: str
     permission_mode: str
+    # What this session's tool children may touch, resolved at creation from the machine's
+    # configuration and the agent profile and clamped against the creating session — the same
+    # once-and-immutable treatment the permission mode gets, and for the same reason.
+    sandbox: dict = field(default_factory=dict)
     # Where the session's tools actually run. Equal to `working_directory` unless the
     # workspace strategy put the session in its own worktree or branch, which is decided once
     # when the session is created — the same moment everything else about it is fixed.
@@ -81,6 +85,7 @@ class SessionRecord:
             "runtime_working_directory": self.runtime_working_directory,
             "project_id": self.project_id,
             "permission_mode": self.permission_mode,
+            "sandbox": self.sandbox,
             "pid": self.pid,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -100,6 +105,7 @@ class SessionRegistry:
         agent: str,
         working_directory: str,
         permission_mode: str,
+        sandbox: Optional[dict] = None,
         project_id: str = "",
         parent: str = "",
         title: str = "",
@@ -116,6 +122,7 @@ class SessionRegistry:
             agent=agent,
             working_directory=working_directory,
             permission_mode=permission_mode,
+            sandbox=dict(sandbox or {}),
             project_id=project_id,
             parent=parent,
             token=secrets.token_urlsafe(32),

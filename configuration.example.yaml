@@ -81,12 +81,25 @@ composio:
 # ---------------------------------------------------------------------------
 # Execution behaviour
 #
-# sandbox.enabled confines bash to the active workspace unless the user grants
-# permission. workspace.strategy is resolved once when a session is created: a
-# "worktree" session runs its tools in its own git worktree, so parallel sessions on
-# one repository do not tread on each other.
+# `sandbox` is what a session's tool children may do, enforced by the operating system:
+# sandbox-exec on macOS, Landlock plus a network namespace on Linux. The system stays
+# readable; your home is closed except for what `filesystem.readable` allows, and `deny`
+# wins over everything. `enforce: required` refuses to create a session where no backend
+# can enforce it. Resolved once when a session is created and clamped against its
+# creator, like the permission mode. `limits` are setrlimit(2) constants under their own
+# names. workspace.strategy is resolved once too: a "worktree" session runs its tools in
+# its own git worktree, so parallel sessions on one repository do not tread on each other.
 sandbox:
-  enabled: true
+  enforce: "required"               # "required" | "preferred" | "off"
+  network: true
+  filesystem:
+    readable: ["~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.cargo", "~/.npmrc"]
+    writable: ["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME", "~/.cache"]
+    deny: ["~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Library/Mail"]
+  limits:
+    RLIMIT_CORE: 0
+    RLIMIT_FSIZE: 8589934592
+    RLIMIT_NPROC: 2048
 workspace:
   strategy: "none"                  # "none" | "branch" | "worktree"
   artifact_maximum_bytes: 134217728

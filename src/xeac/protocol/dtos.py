@@ -134,7 +134,7 @@ class SettingsUpdateRequest(BaseModel):
     firecrawl_api_key: str | None = None
     web_fetch_proxy_url: str | None = None
     permission_mode: Literal["default", "auto", "read_only"] | None = None
-    sandbox_enabled: bool | None = None
+    sandbox: dict | None = None
     # Per-provider API keys (the opencode gateway's key lives under "opencode").
     provider_keys: dict[str, str] | None = None
     # Base URLs for the OpenAI-compatible providers (opencode, custom).
@@ -143,7 +143,11 @@ class SettingsUpdateRequest(BaseModel):
 
 
 class SandboxUpdateRequest(BaseModel):
-    enabled: bool
+    """A change to what tool children may do. Free-form because the surface is the configuration's
+    own — `enforce`, `filesystem`, `network`, `limits`, `umask`, `nice` — and validating it twice
+    would mean two definitions of one shape."""
+
+    sandbox: dict
 
 
 class UserContextUpdateRequest(BaseModel):

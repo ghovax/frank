@@ -229,7 +229,7 @@ class _TurnRunner:
         finally:
             await self._teardown()
 
-    # -- collaborators shared across phases --------------------------------------
+    # Collaborators shared across the phases below.
 
     async def _emit(self, part: Part, *, publish_stream_event: bool = True) -> None:
         await self._updater.update_status(TaskState.working, self._updater.new_agent_message([part]))
@@ -262,7 +262,7 @@ class _TurnRunner:
             self._task, self._updater, interactions, plans, self._save_runtime_conversation
         )
 
-    # -- phases ------------------------------------------------------------------
+    # The phases themselves.
 
     async def _ingest(self) -> _Ingested:
         """Parse the request message into the turn's inputs and mode flags. Returns them as a

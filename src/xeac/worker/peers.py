@@ -93,7 +93,7 @@ class PeerSessions:
             raise PeerSessionError(f"{method} was rejected ({response.status_code})")
         return body.get("result") or {}
 
-    # -- the SessionAccess surface the runtime's tools call ------------------------------
+    # The SessionAccess surface the runtime's tools call.
 
     async def create(self, *, agent: str, working_directory: str, permission_mode: str, title: str) -> dict:
         result = await self._call(

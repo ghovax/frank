@@ -5,6 +5,7 @@ import atexit
 import os
 import signal
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -51,6 +52,24 @@ def _require_mcp_client_manager():
     return _mcp_client_manager
 
 
+# The confinement every child spawned from this process runs under, and the workspace its
+# `$WORKSPACE` resolves to. Process-global for the same reason the Exa client and the MCP manager
+# are: a worker serves exactly one session, so process scope *is* session scope here. Set once,
+# from the assignment the daemon already resolved and clamped.
+_confinement_profile: Any | None = None
+_confinement_workspace: str = ""
+
+
+def set_confinement(profile: Any | None, workspace: str = "") -> None:
+    global _confinement_profile, _confinement_workspace
+    _confinement_profile = profile
+    _confinement_workspace = workspace
+
+
+def active_confinement() -> tuple[Any | None, str]:
+    return _confinement_profile, _confinement_workspace
+
+
 @tool
 async def bash(
     command: str,
@@ -82,7 +101,15 @@ async def bash(
         background: Run the command in the background instead of waiting for it. Use for long-running work whose result is not needed immediately.
         timeout: How many seconds to wait synchronously for the command before it auto-backgrounds (its result is then delivered when it finishes). Raise it for a command you want to wait longer for; it does not kill the command.
     """
-    output_path = Path("/tmp") / f"{new_id('bash')}.log"
+    from xeac.base import confinement as _confinement
+
+    profile, workspace = active_confinement()
+    # The tool's own log has to land somewhere the profile permits, or bash fails on its
+    # bookkeeping rather than on anything that was asked of it. A profile that permits no
+    # writable directory at all leaves the workspace as the only candidate — and if that is
+    # refused too, the command could not have written anything anyway.
+    _scratch = _confinement.temporary_directory(profile, workspace=workspace)
+    output_path = Path(_scratch or workspace or tempfile.gettempdir()) / f"{new_id('bash')}.log"
     process_holder: dict[str, Any] = {}
 
     def cancel_process() -> None:
@@ -100,16 +127,23 @@ async def bash(
                 return
 
     async def run() -> str:
-        process = await asyncio.create_subprocess_shell(
-            command,
+        spawn = _confinement.spawn_recipe(profile, workspace=workspace,
+                                          extra_environment={"XEAC_SESSION_ID": os.environ.get("XEAC_SESSION_ID", "")})
+        process = await asyncio.create_subprocess_exec(
+            # The command still runs through a shell — the confinement prefix wraps that shell,
+            # it does not replace it — but the working directory is now the process's own rather
+            # than a `cd` the model could write past in the same string.
+            *_confinement.resolve_command(command, spawn),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=workspace or None,
+            env=spawn.environment,
+            preexec_fn=spawn.preexec,
             # A new process *group*, not a new process session. The group is what `killpg`
             # needs to reap the whole subtree, and it is all that was ever wanted here — but
             # `start_new_session` also detached the shell from the worker's process session,
-            # which is how the daemon recognises a caller on its socket as this session. A
-            # command that had left the session could hold the daemon's token and create peers
-            # outside the tree; staying in the session is what makes it attributable.
+            # which is how the daemon recognises a caller on its socket as this session, and
+            # what `xeac kill` sweeps. Staying in the session is what makes it attributable.
             process_group=0,
         )
         process_holder["process"] = process

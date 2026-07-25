@@ -266,6 +266,7 @@ def build_app() -> FastAPI:
 async def _serve() -> int:
     import uvicorn
 
+    from xeac.base import confinement
     from xeac.base.configuration import GlobalConfiguration
     from xeac.daemon import state
     from xeac.daemon.composition import close_shared_resources, open_shared_resources
@@ -279,6 +280,18 @@ async def _serve() -> int:
     _reclaim_socket()
 
     state.global_configuration = GlobalConfiguration.load()
+    # Ask once, at boot, whether this machine can enforce a profile — and on macOS ask by running
+    # one, because `sandbox-exec` being on disk and Apple still honouring it are different
+    # questions, and the interface is deprecated. Sessions refuse individually when they must; this
+    # is so the answer is in the log before the first one does.
+    confinement_state = confinement.probe()
+    if confinement_state["backend"]:
+        logger.info("Confinement backend: %s", confinement_state["detail"])
+    else:
+        logger.warning(
+            "No confinement backend (%s). Sessions will refuse to start unless sandbox.enforce "
+            "is set to 'preferred' or 'off'.", confinement_state["detail"],
+        )
     state.daemon_token = secrets.token_urlsafe(32)
     state.daemon_socket = str(daemon_socket_path())
     state.daemon_port = _free_port()

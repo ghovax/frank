@@ -82,12 +82,45 @@ When enabled, Composio is folded into the ordinary MCP set rather than being a s
 ## Execution and permissions
 
 ```yaml
-sandbox:   { enabled: true }         # confine bash to the active workspace
+sandbox:   { enforce: "required" }   # what a tool child may do — see below
 workspace: { strategy: "none", artifact_maximum_bytes: 134217728 }
 agent:     { permission_mode: "default" }
 computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in
 user_context:     { enabled: false } # a snapshot of how you work, in the prompt; opt-in
 ```
+
+### Confinement
+
+What a session's tool children — a `bash` command, a `control_screen` script — may actually do, enforced by the operating system rather than inferred from the text of a command.
+
+```yaml
+sandbox:
+  enforce: required              # required | preferred | off
+  filesystem:
+    readable: ["~/.config", "~/.ssh", "~/.gitconfig", "~/.cargo", "~/.npmrc"]
+    writable: ["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME"]
+    deny:     ["~/Documents", "~/Desktop", "~/Downloads", "~/Library/Mail"]
+  network: true
+  limits:                        # POSIX rlimits, by their own names, in their own units
+    RLIMIT_CORE: 0
+    RLIMIT_FSIZE: 8589934592
+    RLIMIT_NPROC: 2048
+  umask: "0077"
+  nice: 0
+```
+
+Almost every field is a Unix primitive under its own name: `limits` are [`setrlimit(2)`](https://man7.org/linux/man-pages/man2/setrlimit.2.html) constants taking the integers that call takes, `umask` is `umask(2)`, `nice` is `nice(2)`. Only the filesystem and the network have no POSIX spelling, and they are the two that need a platform behind them.
+
+**The filesystem.** The system stays readable — `/usr` and `/etc` are not secrets, and denying them breaks every command while protecting nothing. What the lists govern is *your home*, which is closed by default: `readable` is the allowlist that keeps toolchains working, `writable` is narrower still, and `deny` wins over both. The shipped defaults keep credential and configuration directories readable, because breaking `git push` to protect a key is a bad trade; what they close is the personal data no toolchain touches. `$WORKSPACE` is the session's own directory.
+
+**The backend.** macOS uses [`sandbox-exec`](https://keith.github.io/xcode-man-pages/sandbox-exec.1.html) with a generated Seatbelt profile; Linux uses [Landlock](https://docs.kernel.org/userspace-api/landlock.html) plus a network namespace. `sandbox-exec` has been **deprecated by Apple since 10.15** and is depended on anyway, because nothing else on macOS confines a single child process: App Sandbox applies to a whole signed application and would confine the harness out of the files it exists to reach, Endpoint Security observes rather than bounds, and a separate uid or a container stops the agent being able to act as you. If Apple removes it, the boot-time probe fails and `enforce` decides what happens — which is why that setting exists.
+
+**`enforce`.** `required` (the default) refuses to create a session when no backend is available, naming what is missing. `preferred` runs with the POSIX half only — limits, mask, priority, a scoped environment — which is hygiene, not a boundary. `off` does not confine. The daemon logs which backend it found at startup, and a machine with none says so before the first session fails.
+
+A session's confinement is resolved when it is **created** and cannot be widened afterwards, exactly like its permission mode — and it is clamped against the session that created it, so path sets intersect and a peer can never be handed a wider filesystem than its creator holds. An agent profile may narrow it further with its own `sandbox:` block.
+
+> [!NOTE]
+> Commands run against a **remote location** are not confined: they execute on another machine, where a boundary drawn by this process has no meaning.
 
 `workspace.strategy` is one of `none`, `branch`, or `worktree`, and is resolved once when a session is created: a `worktree` session runs its tools in its own git worktree, so parallel sessions on one repository do not tread on each other.
 

@@ -46,7 +46,7 @@ import { AgentSkills } from "./agent-skills";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import type { ToolPermission, ToolQuestion } from "@/lib/tool-event";
 
-import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy } from "@/lib/api";
+import { artifactBytesUrl, artifactPageUrl, deleteArtifactAnnotations, fetchArtifactAnnotations, fetchArtifacts, fetchArtifactDiff, fetchArtifactVersions, getProject, restoreArtifact, fetchSettings, saveArtifactAnnotations, saveSessionDraft, saveSettings, subscribeEvents, revealInFinder, type AgentCard, type AgentSummary, type ArtifactIndexEntry, type ArtifactScope, type ArtifactSurface, type ArtifactVersion, type Location, type PermissionMode, type WorkspaceStrategy , type SandboxEnforce} from "@/lib/api";
 import { PdfDocumentView } from "./pdf-view";
 import { imageIdentityForArtifact, type ArtifactAnnotationRecord, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import type { ConnectionTarget } from "@/lib/connection";
@@ -92,8 +92,9 @@ interface ChatPanelProps {
   workingDirectory?: string;
   projectId?: string;
   homeDirectory?: string;
-  sandboxEnabled?: boolean;
-  onSandboxEnabledChange?: (enabled: boolean) => void;
+  sandboxEnforce?: SandboxEnforce;
+  sandboxBackend?: { backend: string; detail: string };
+  onSandboxEnforceChange?: (enforce: SandboxEnforce) => void;
   workspaceStrategy?: WorkspaceStrategy;
   onWorkspaceStrategyChange?: (strategy: WorkspaceStrategy) => void | Promise<void>;
   isConnected?: boolean;
@@ -362,8 +363,9 @@ export function ChatPanel({
   workingDirectory,
   projectId = "",
   homeDirectory,
-  sandboxEnabled = true,
-  onSandboxEnabledChange,
+  sandboxEnforce = "required" as SandboxEnforce,
+  sandboxBackend = { backend: "", detail: "" },
+  onSandboxEnforceChange,
   workspaceStrategy = "none",
   onWorkspaceStrategyChange,
   isConnected = false,
@@ -2077,8 +2079,9 @@ export function ChatPanel({
         onAgentChange={onAgentChange}
         livePermissionMode={permissionMode}
         onPermissionModeChange={handlePermissionModeChange}
-        liveSandboxEnabled={sandboxEnabled}
-        onSandboxEnabledChange={onSandboxEnabledChange}
+        liveSandboxEnforce={sandboxEnforce}
+        sandboxBackend={sandboxBackend}
+        onSandboxEnforceChange={onSandboxEnforceChange}
         liveWorkspaceStrategy={workspaceStrategy}
         onWorkspaceStrategyChange={onWorkspaceStrategyChange}
       />

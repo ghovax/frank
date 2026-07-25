@@ -83,7 +83,8 @@
     "restartTitle": "Restart XEAC?",
     "restartBody": "XEAC needs to restart for the Accessibility permission to take effect. Computer control turns on automatically once it does.",
     "restartConfirm": "Restart now",
-    "restartLater": "Later"
+    "restartLater": "Later",
+    "filesystemProtectionUnavailable": "This machine has no confinement backend, so sessions will refuse to start unless this is turned off."
   },
   "NewProjectDialog": {
     "title": "New project",
@@ -330,7 +331,8 @@
     "workspaceWorktreeDescription": "Create an isolated worktree on a xeac/session branch from the repo main line",
     "workspaceWorktreeTitle": "Creates a separate worktree and xeac/session branch from the repository main/default branch",
     "workspaceStrategyFallbackTitle": "Session isolation strategy",
-    "permissionFixedAtCreation": "Fixed when this session was created"
+    "permissionFixedAtCreation": "Fixed when this session was created",
+    "sandboxUnavailable": "Unenforceable here"
   },
   "GitStatusBar": {
     "detached": "detached @ {ref}",

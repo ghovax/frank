@@ -633,7 +633,7 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// --- Peer sessions -----------------------------------------------------------------
+// The peer-session tools.
 //
 // The most consequential calls a session makes, and until now the least legible: they fell
 // through to the raw argument dump, so a `create_session` brief — often several paragraphs —

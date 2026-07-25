@@ -37,10 +37,14 @@ composio:
   api_key: ""
   server_name: "composio"
 
-# sandbox.enabled confines bash tools to the active workspace unless the user
-# grants permission. workspace.strategy controls optional branch/worktree setup.
+# What a tool's child process may do, enforced by the operating system: sandbox-exec
+# on macOS, Landlock plus a network namespace on Linux. Paths not listed under the
+# user's home are unreadable; the system stays readable. `enforce: required` refuses
+# to create a session where no backend can enforce this. workspace.strategy controls
+# optional branch/worktree setup.
 sandbox:
-  enabled: true
+  enforce: "required"
+  network: true
 
 workspace:
   strategy: "none"

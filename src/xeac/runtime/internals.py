@@ -364,14 +364,14 @@ class _ToolPlan:
         return self.denial is None and not self.gates
 
     def to_dict(self) -> dict:
-        return {"tool_call_id": self.tool_call_id, "denial": self.denial, "gates": [g.to_dict() for g in self.gates]}
+        return {"tool_call_id": self.tool_call_id, "denial": self.denial, "gates": [gate.to_dict() for gate in self.gates]}
 
     @classmethod
     def from_dict(cls, data: dict) -> _ToolPlan:
         return cls(
             tool_call_id=str(data.get("tool_call_id", "")),
             denial=data.get("denial"),
-            gates=[_PreflightGate.from_dict(g) for g in (data.get("gates") or [])],
+            gates=[_PreflightGate.from_dict(gate) for gate in (data.get("gates") or [])],
         )
 
 

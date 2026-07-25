@@ -349,11 +349,18 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         file_lease_manager: FileLeaseManager | None = None,
         locations: list[dict] | None = None,
         parent_session: str = "",
+        sandbox=None,
     ):
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
         # turn context, because reporting back is sending it a message and that needs an id.
         self._parent_session = parent_session
+        # What every child this runtime spawns is confined to. Resolved by the daemon at session
+        # creation and clamped there; held rather than re-derived, so a configuration edit cannot
+        # widen a session that is already running.
+        from xeac.base.confinement import Profile
+
+        self._sandbox = sandbox if sandbox is not None else Profile()
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._on_record_event = on_record_event

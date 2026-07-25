@@ -78,6 +78,7 @@ async def run() -> int:
         working_directory=str(assignment.get("working_directory") or ""),
         runtime_working_directory=str(assignment.get("runtime_working_directory") or ""),
         permission_mode=str(assignment.get("permission_mode") or "default"),
+        sandbox=assignment.get("sandbox") or {},
         project_id=str(assignment.get("project_id") or ""),
         parent=str(assignment.get("parent") or ""),
         token=str(assignment.get("token") or ""),

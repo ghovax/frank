@@ -104,7 +104,7 @@ def save_api_keys(
     firecrawl_api_key: str | None = None,
     web_fetch_proxy_url: str | None = None,
     permission_mode: str | None = None,
-    sandbox_enabled: bool | None = None,
+    sandbox: dict | None = None,
     workspace_strategy: str | None = None,
     compaction: dict | None = None,
     user_context_enabled: bool | None = None,
@@ -131,8 +131,8 @@ def save_api_keys(
         data.setdefault("firecrawl", {})["api_key"] = firecrawl_api_key
     if web_fetch_proxy_url is not None:
         data.setdefault("web_fetch", {})["proxy_url"] = web_fetch_proxy_url
-    if sandbox_enabled is not None:
-        data.setdefault("sandbox", {})["enabled"] = sandbox_enabled
+    if sandbox is not None:
+        data.setdefault("sandbox", {}).update(sandbox)
     if workspace_strategy is not None:
         data.setdefault("workspace", {})["strategy"] = workspace_strategy
     if compaction is not None:
@@ -205,8 +205,65 @@ class WebFetchConfiguration(BaseModel):
         return os.environ.get(environment_variables.XEAC_FETCH_PROXY) or self.proxy_url
 
 
+class FilesystemConfiguration(BaseModel):
+    """Which paths a tool's child process may read and write.
+
+    The system is readable and is not listed here — `/usr` and `/etc` are not secrets, and denying
+    them breaks every command while protecting nothing. What these lists govern is the user's own
+    home, which is closed by default: ``readable`` is the allowlist that keeps toolchains working,
+    and ``deny`` wins over it. The defaults are chosen to protect what no toolchain touches and to
+    leave alone what every toolchain needs, so credential directories stay readable — breaking
+    `git push` to protect a key is a trade made by someone who does not have to use the result."""
+
+    readable: list[str] = [
+        "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
+        "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
+    ]
+    writable: list[str] = ["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME", "~/.cache"]
+    deny: list[str] = [
+        "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
+        "~/Library/Mail", "~/Library/Messages", "~/Library/Safari",
+    ]
+
+
 class SandboxConfiguration(BaseModel):
-    enabled: bool = True
+    """A session's confinement, enforced by the operating system rather than inferred from the
+    text of a command. Every field but the two path/network ones is POSIX under its own name:
+    ``limits`` are ``setrlimit(2)`` constants taking the integers that call takes, ``umask`` is
+    ``umask(2)``, ``nice`` is ``nice(2)``.
+
+    ``enforce`` decides what happens where no backend can enforce this. ``required`` refuses to
+    create the session and says what is missing, which is the direct answer to how this setting
+    came to exist: a key that claimed to confine and silently did not."""
+
+    enforce: Literal["required", "preferred", "off"] = "required"
+    filesystem: FilesystemConfiguration = FilesystemConfiguration()
+    network: bool = True
+    limits: dict[str, int] = {
+        "RLIMIT_CORE": 0,
+        "RLIMIT_FSIZE": 8 * 1024 * 1024 * 1024,
+        "RLIMIT_NPROC": 2048,
+    }
+    umask: Optional[str] = None
+    nice: int = 0
+
+    def to_profile(self):
+        """This configuration as the :class:`xeac.base.confinement.Profile` the spawn path
+        applies. Imported inside the method because confinement reads this module's types back."""
+        from xeac.base import confinement
+
+        return confinement.Profile(
+            filesystem=confinement.Filesystem(
+                readable=tuple(self.filesystem.readable),
+                writable=tuple(self.filesystem.writable),
+                deny=tuple(self.filesystem.deny),
+            ),
+            network=self.network,
+            limits={name: int(value) for name, value in self.limits.items()},
+            umask=int(self.umask, 8) if self.umask else None,
+            nice=self.nice,
+            enforce=self.enforce,
+        )
 
 
 class WorkspaceConfiguration(BaseModel):
@@ -883,6 +940,11 @@ class AgentConfiguration(BaseModel):
     # LLM classifier to auto-approve safe bash calls and escalate the rest.
     # read_only: hard-block all writes (investigation sessions). There is no bypass mode.
     permission_mode: Literal["default", "auto", "read_only"] = "default"
+    # An agent's own confinement, narrowing the global one. An investigator and a build agent
+    # genuinely want different filesystems, and the harness already accepts that agents differ in
+    # what they may do. Unset means "whatever the machine's configuration says"; set, it is still
+    # clamped against the session that created this one, so it can only ever narrow.
+    sandbox: Optional[SandboxConfiguration] = None
     tools: ToolsConfiguration = ToolsConfiguration()
     tools_enabled: list[str] = []
     system_prompt: str = ""

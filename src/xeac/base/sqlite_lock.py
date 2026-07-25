@@ -32,7 +32,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
 
-T = TypeVar("T")
+_Result = TypeVar("_Result")
 
 # history.db — the main task/session store.
 _sqlite_write_lock = threading.Lock()
@@ -115,7 +115,7 @@ def background_sqlite_write_lock():
         _release_file_locks(_background_write_lock, lock_handle)
 
 
-def run_with_sqlite_write_lock(function: Callable[..., T], *args, **kwargs) -> T:
+def run_with_sqlite_write_lock(function: Callable[..., _Result], *args, **kwargs) -> _Result:
     with sqlite_write_lock():
         return function(*args, **kwargs)
 

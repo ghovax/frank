@@ -98,7 +98,7 @@ A session's permission mode is fixed when it is created and cannot be changed af
 1. You send a message to a session — `xeac send` writes to its socket directly; the app posts to the daemon, which relays it.
 2. The agent loop calls the model, which may request tool calls.
 3. Each tool call is classified for risk and checked against the session's permission mode. If it needs approval, the session streams a permission request; the CLI prints it and `xeac approve` answers, or the app shows an overlay.
-4. Approved tools run — shell in the sandbox, files on the active location, screen control (`control_screen`) against the local machine, MCP against the session's own connections (stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's).
+4. Approved tools run — shell in an OS-enforced confinement (`sandbox-exec` on macOS, Landlock on Linux) resolved when the session was created and clamped against its creator, files on the active location, screen control (`control_screen`) against the local machine, MCP against the session's own connections (stateful connections and stdio subprocesses do not cross a process boundary, so a session connects its own rather than sharing the daemon's).
 5. Results stream back as structured events. The session posts them to the daemon, which is the only writer of `history.db`, and fans them out to whoever is attached.
 
 ## Where to go next

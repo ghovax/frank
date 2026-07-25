@@ -655,7 +655,13 @@ export interface Settings {
   firecrawl_api_key: string;
   // Optional proxy for the web-fetch direct tier and file downloads (IP-blocked sites).
   web_fetch_proxy_url: string;
-  sandbox_enabled: boolean;
+  // What a session's tool children may do, enforced by the operating system. The paths and
+  // limits live in the configuration file, where a person edits them the way they would edit
+  // any other Unix policy; what the app surfaces is whether it is enforced at all.
+  sandbox: SandboxSettings;
+  // What this machine can actually enforce with. Empty `backend` means the toggle cannot be
+  // honoured here, which the UI has to say rather than imply protection that is absent.
+  sandbox_backend: { backend: string; detail: string };
   // Opt-in: inject a snapshot of the user's machine habits (frequent folders, recent
   // files, installed/running apps, most-visited sites) into the system prompt. Off by default.
   user_context_enabled: boolean;
@@ -665,6 +671,17 @@ export interface Settings {
   compaction: CompactionSettings;
   providers: Record<string, ProviderCredential>;
 }
+
+// Only reached when the settings request fails outright. `required` matches the harness's own
+// default, so a client that cannot read the settings never implies less protection than there is.
+const DEFAULT_SANDBOX: SandboxSettings = {
+  enforce: "required",
+  network: true,
+  filesystem: { readable: [], writable: [], deny: [] },
+  limits: {},
+  umask: null,
+  nice: 0,
+};
 
 const DEFAULT_COMPACTION: CompactionSettings = {
   auto: false,
@@ -776,14 +793,14 @@ export interface ModelsResponse {
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
-    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox_enabled: true, user_context_enabled: false, computer_control_enabled: false, workspace_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
+    return { permission_mode: "default", exa_api_key: "", composio_api_key: "", jina_api_key: "", firecrawl_api_key: "", web_fetch_proxy_url: "", sandbox: DEFAULT_SANDBOX, sandbox_backend: { backend: "", detail: "" }, user_context_enabled: false, computer_control_enabled: false, workspace_strategy: "none", compaction: DEFAULT_COMPACTION, providers: {} };
   }
   return (await response.json()) as Settings;
 }
 
 export interface SaveSettingsPayload {
   permission_mode?: PermissionMode;
-  sandbox_enabled?: boolean;
+  sandbox?: Partial<SandboxSettings>;
   exa_api_key?: string;
   composio_api_key?: string;
   jina_api_key?: string;
@@ -1053,11 +1070,22 @@ export async function restoreArtifact(
   return response.ok;
 }
 
-export async function setSandboxEnabled(enabled: boolean): Promise<void> {
+export type SandboxEnforce = "required" | "preferred" | "off";
+
+export interface SandboxSettings {
+  enforce: SandboxEnforce;
+  network: boolean;
+  filesystem: { readable: string[]; writable: string[]; deny: string[] };
+  limits: Record<string, number>;
+  umask: string | null;
+  nice: number;
+}
+
+export async function setSandboxEnforce(enforce: SandboxEnforce): Promise<void> {
   await apiFetch(`/settings/sandbox`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify({ sandbox: { enforce } }),
   });
 }
 

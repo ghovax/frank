@@ -3,6 +3,7 @@
 from __future__ import annotations
 from fastapi import APIRouter
 from xeac.base.background_tasks import spawn_background_task
+import xeac.base.confinement as _confinement
 import xeac.base.configuration as _configuration
 from fastapi import HTTPException
 from xeac.base.credentials import ChatGPTLoginFlow
@@ -231,7 +232,8 @@ async def get_settings():
         "jina_api_key": state.global_configuration.jina.api_key,
         "firecrawl_api_key": state.global_configuration.firecrawl.api_key,
         "web_fetch_proxy_url": state.global_configuration.web_fetch.proxy_url,
-        "sandbox_enabled": state.global_configuration.sandbox.enabled,
+        "sandbox": state.global_configuration.sandbox.model_dump(mode="json"),
+        "sandbox_backend": _confinement.probe(),
         "workspace_strategy": state.global_configuration.workspace.strategy,
         "compaction": state.global_configuration.compaction.model_dump(),
         "user_context_enabled": state.global_configuration.user_context.enabled,
@@ -258,7 +260,7 @@ async def update_settings(request: SettingsUpdateRequest):
             jina_api_key=request.jina_api_key,
             firecrawl_api_key=request.firecrawl_api_key,
             web_fetch_proxy_url=request.web_fetch_proxy_url,
-            sandbox_enabled=request.sandbox_enabled,
+            sandbox=request.sandbox,
             provider_keys=request.provider_keys,
             provider_base_urls=request.provider_base_urls,
             workspace_strategy=request.workspace_strategy,
@@ -283,8 +285,10 @@ async def update_settings(request: SettingsUpdateRequest):
             configuration.firecrawl.api_key = request.firecrawl_api_key
         if request.web_fetch_proxy_url is not None:
             configuration.web_fetch.proxy_url = request.web_fetch_proxy_url
-        if request.sandbox_enabled is not None:
-            configuration.sandbox.enabled = request.sandbox_enabled
+        if request.sandbox is not None:
+            configuration.sandbox = _configuration.SandboxConfiguration.model_validate(
+                {**configuration.sandbox.model_dump(), **request.sandbox}
+            )
         if request.workspace_strategy is not None:
             configuration.workspace.strategy = request.workspace_strategy
         # Rebuild the providers map from the posted keys/base URLs, merging so a
@@ -309,14 +313,22 @@ async def update_settings(request: SettingsUpdateRequest):
 
 @router.post("/settings/sandbox")
 async def update_sandbox(request: SandboxUpdateRequest):
-    """Persist and apply the sandbox toggle independently from credentials."""
+    """Persist and apply confinement independently from credentials.
+
+    Only sessions created afterwards get the change. A running session keeps what it was built
+    with, exactly as its permission mode does, because a boundary that could be widened underneath
+    a live session would not be one."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
-        await _persist_configuration(sandbox_enabled=request.enabled)
-        state.global_configuration.sandbox.enabled = request.enabled
-        await state.reset_live_session_runtimes()
+        merged = {**state.global_configuration.sandbox.model_dump(), **request.sandbox}
+        state.global_configuration.sandbox = _configuration.SandboxConfiguration.model_validate(merged)
+        await _persist_configuration(sandbox=request.sandbox)
     _publish_broadcast({"type": "settings_changed"})
-    return {"status": "saved", "sandbox_enabled": state.global_configuration.sandbox.enabled}
+    return {
+        "status": "saved",
+        "sandbox": state.global_configuration.sandbox.model_dump(mode="json"),
+        "sandbox_backend": _confinement.probe(),
+    }
 
 
 @router.post("/settings/user-context")

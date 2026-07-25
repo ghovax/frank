@@ -58,7 +58,7 @@ There is **no bypass mode** and no standing "always allow": the only runtime dec
 
 ## Sandbox
 
-`sandbox.enabled` (default `true`) confines bash commands to the working directory; access outside it needs approval. Toggle it from the UI, with `xeac configure sandbox.enabled false`, or in the YAML — all live, and running sessions are asked to rebuild so it takes effect on their next turn.
+`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `xeac configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one — the same guarantee the permission mode carries.
 
 ## Agents
 

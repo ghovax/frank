@@ -99,6 +99,10 @@ class SessionLifecycle:
             # that when the session was created.
             "runtime_working_directory": record.runtime_working_directory or record.working_directory,
             "permission_mode": record.permission_mode,
+            # Already resolved and clamped by `session.create`. The worker applies it to every
+            # child it spawns and never widens it, so it travels with the session rather than
+            # being read again from a configuration file that may have changed since.
+            "sandbox": record.sandbox,
             "project_id": record.project_id,
             "parent": record.parent,
             "token": record.token,

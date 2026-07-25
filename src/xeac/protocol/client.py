@@ -164,7 +164,7 @@ def _assert_url_trusted(url: str, configuration: RemoteAgentConfiguration) -> No
     host = _host_of(url)
     if not host:
         raise RemoteAgentTrustError(f"Remote agent {configuration.name!r}: malformed URL {url!r}.")
-    allowed = {_host_of(configuration.card_url), *(h.lower() for h in configuration.allowed_hosts)}
+    allowed = {_host_of(configuration.card_url), *(host.lower() for host in configuration.allowed_hosts)}
     if host not in allowed:
         raise RemoteAgentTrustError(
             f"Remote agent {configuration.name!r}: card URL host {host!r} is not the registered "

@@ -257,21 +257,35 @@ function ToggleControl({
   );
 }
 
+// Confinement is a three-state setting in the configuration — refuse without a backend, run
+// without one, or do not confine — but only two of those are a choice a person makes from a
+// switch, so the switch is `required` against `off`. The paths and limits live in the
+// configuration file, where a person edits them the way they edit any other Unix policy.
+//
+// The third state shows rather than sets: when the machine has no backend, the control says so
+// instead of showing green, because a switch claiming protection that cannot be enforced is the
+// exact defect this whole mechanism was built to remove.
 export function SandboxToggleControl({
-  enabled,
+  enforce,
+  backend,
   onChange,
   layout = "chip",
 }: {
-  enabled: boolean;
-  onChange?: (enabled: boolean) => void;
+  enforce: "required" | "preferred" | "off";
+  backend?: string;
+  onChange?: (enforce: "required" | "preferred" | "off") => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
 }) {
   const translation = useTranslations("SessionControls");
-  const appearance: ToggleAppearance = enabled
-    ? { label: translation("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
-    : { label: translation("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+  const confining = enforce !== "off";
+  const enforceable = backend !== "";
+  const appearance: ToggleAppearance = !confining
+    ? { label: translation("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" }
+    : enforceable
+      ? { label: translation("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
+      : { label: translation("sandboxUnavailable"), icon: <LuGlobe size={13} />, color: "orange.fg", background: "orange.subtle", borderColor: "orange.muted", hover: "orange.muted" };
+  return <ToggleControl appearance={appearance} enabled={confining} onChange={onChange ? (next) => onChange(next ? "required" : "off") : undefined} layout={layout} />;
 }
 
 export function CompactionToggleControl({

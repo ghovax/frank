@@ -388,7 +388,7 @@ def _fuzzy_find_candidates(
                     if len(candidates) >= maximum_candidates:
                         break
 
-    candidates.sort(key=lambda x: -x["ratio"])
+    candidates.sort(key=lambda entry: -entry["ratio"])
     return candidates[:maximum_candidates]
 
 

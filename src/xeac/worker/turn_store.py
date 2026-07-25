@@ -56,7 +56,7 @@ class DaemonTurnStore(TaskStore):
             return None
         return response.json().get("result")
 
-    # --- the TaskStore interface -------------------------------------------------------
+    # The TaskStore interface a2a expects.
 
     # The context argument is part of the interface the A2A handler calls through; it carries
     # per-call server state this store has no use for, but the signature must accept it.
@@ -70,7 +70,7 @@ class DaemonTurnStore(TaskStore):
     async def delete(self, turn_id: str, context: Any = None) -> None:
         await self._call("turn.delete", turn_id=turn_id)
 
-    # --- the extra surface a turn uses -------------------------------------------------
+    # The extra surface a turn uses, beyond what a2a asks for.
 
     async def save_turn_state(
         self, session_id: str, turn_id: str, messages: list, session_state: Optional[dict] = None

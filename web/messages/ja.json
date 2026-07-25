@@ -83,7 +83,8 @@
     "restartTitle": "XEAC を再起動しますか？",
     "restartBody": "アクセシビリティ権限を反映するには XEAC の再起動が必要です。再起動すると、コンピュータ操作は自動的に有効になります。",
     "restartConfirm": "今すぐ再起動",
-    "restartLater": "後で"
+    "restartLater": "後で",
+    "filesystemProtectionUnavailable": "このマシンには制限を強制する仕組みがないため、これをオフにしない限りセッションは開始されません。"
   },
   "NewProjectDialog": {
     "title": "新規プロジェクト",
@@ -330,7 +331,8 @@
     "workspaceWorktreeDescription": "リポジトリのメインラインから xeac/session ブランチで独立したワークツリーを作成します",
     "workspaceWorktreeTitle": "リポジトリの main/デフォルトブランチから、別のワークツリーと xeac/session ブランチを作成します",
     "workspaceStrategyFallbackTitle": "セッション分離戦略",
-    "permissionFixedAtCreation": "このセッションの作成時に確定しています"
+    "permissionFixedAtCreation": "このセッションの作成時に確定しています",
+    "sandboxUnavailable": "この環境では強制できません"
   },
   "GitStatusBar": {
     "detached": "切り離し @ {ref}",

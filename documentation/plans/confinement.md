@@ -1,10 +1,14 @@
 ---
 created: 2026-07-25T16:06:37Z
-updated: 2026-07-25T16:22:00Z
-commit: c36b467
+updated: 2026-07-25T17:05:00Z
+commit: 01ba1d0
 ---
 
 # The Sandbox That Confines Nothing
+
+> Implemented in the commit that contains this revision of the file. The `commit` field above
+> names the revision the plan was finished at, because a plan cannot carry the hash of the commit
+> it is itself part of.
 
 `sandbox: { enabled: true }` is in the configuration, in the settings API, and in the documentation, where it is described as confining bash to the active workspace. It does not confine anything. What it does is split the command on shell separators, `shlex` the pieces, look for arguments that resemble paths, resolve them, and — if any land outside the working directory — raise an approval prompt. On approval the command runs with the user's full privileges, unrestricted. `cat $(echo /etc/passwd)` never produces a path-shaped token and sails through; so does any interpreter, any subshell, any command that builds its argument at runtime. It is a heuristic over source text presented as a boundary.
 
@@ -124,5 +128,9 @@ These are known gaps, listed because a design that pretends to have none is the 
 **Credentials stay readable, so exfiltration is not closed.** `~/.ssh` and its neighbours are in the default allowlist because the tools that need them must keep working. That means a session that is compromised, or merely careless, can still read a private key and send it somewhere the network policy allows. Read confinement here buys protection of personal data, not of secrets. Closing it properly means something other than filesystem ACLs — an agent that can `git push` without holding the key, through an ssh-agent socket or a credential helper that signs rather than reveals — and that is a different piece of work with its own design.
 
 **`sandbox-exec` is deprecated and this depends on it.** The alternatives and why each was rejected are recorded above; the short version is that nothing else on macOS confines a single child without either taking privileges the harness does not have or taking away the user's own files, which is what the harness is for. The plan is to depend on it, say so where it is defined and in the shipped documentation, and replace it if and when Apple ships something per-process. Verifying it still works on the target machine — `sandbox-exec -p '(version 1)(allow default)' /bin/echo ok` — is the first step of implementing this, because everything in row 3 rests on it and none of it can be tested from a Linux host.
+
+**`narrowed()` could widen, and was caught only by testing the thing it promised.** The method that derives the `control_screen` child's stricter profile fell back to the raw path it was handed when the intersection with the session's writable set came out empty — so a session permitted to write nowhere useful gave its child the system temporary directory, which the session itself had been refused. The intersection is now strict and `temporary_directory` returns nothing rather than the system default when a profile permits none, which is the honest answer: a child of a session that may not write should not be able to. It is recorded here rather than quietly fixed because it is the shape of mistake this whole module exists to prevent, made inside the module itself.
+
+**The Landlock backend is written but has never executed.** This kernel reports `ENOSYS` for `landlock_create_ruleset`, so the Linux path was built against the kernel's documented ABI and verified only for the things that can be checked without it: the syscall numbers, the packed layout of `landlock_path_beneath_attr` (12 bytes, not the 16 a naturally-aligned struct would be), and the variadic `syscall` calling convention. The first Linux host with Landlock is where it earns its keep. The macOS backend is in the same position from the other direction — its SBPL generation is verified, its execution is not, because `sandbox-exec` does not exist here.
 
 **`enforce: required` makes the harness refuse to run where no backend exists.** On Linux that means a kernel without Landlock — older than 5.13 — cannot create sessions at all until the operator sets `preferred`. That is the intended behaviour and it is still a sharp edge, and the refusal message has to be good enough that the fix is obvious from it alone.

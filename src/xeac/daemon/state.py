@@ -92,7 +92,7 @@ class SessionEventBus:
             self.complete(session_id)
 
 
-# --- singletons ------------------------------------------------------------------------
+# The singletons.
 
 registry: Any = None            # SessionRegistry
 pool: Any = None                # WorkerPool

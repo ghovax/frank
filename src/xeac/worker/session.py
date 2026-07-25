@@ -61,6 +61,7 @@ class SessionExecutor(AgentExecutor):
         working_directory: str,
         permission_mode: str,
         global_configuration: GlobalConfiguration,
+        sandbox: Optional[dict] = None,
         runtime_working_directory: str = "",
         project_id: str = "",
         parent: str = "",
@@ -75,6 +76,11 @@ class SessionExecutor(AgentExecutor):
         # session never has to work it out mid-turn.
         self._runtime_working_directory = runtime_working_directory or working_directory
         self._permission_mode = permission_mode
+        # Resolved and clamped by the daemon before this worker existed. Held as the profile the
+        # tool layer applies to every child it spawns; the worker never widens it.
+        from xeac.base.confinement import Profile
+
+        self._sandbox = Profile.from_dict(sandbox)
         self._project_id = project_id
         self._parent = parent
         self._token = token
@@ -491,6 +497,7 @@ class SessionExecutor(AgentExecutor):
             # result and given no way to find out which; the return path is a message, and a
             # message needs an address.
             parent_session=self._parent,
+            sandbox=self._sandbox,
         )
         stream_event_callback = self._on_stream_event
         if stream_event_callback is not None:
@@ -662,7 +669,7 @@ class SessionExecutor(AgentExecutor):
             updater = TaskUpdater(event_queue, context.current_task.id, context.current_task.context_id)
             await updater.cancel()
 
-    # --- the facade the session's socket serves ----------------------------------------
+    # The facade the session's socket serves.
     #
     # Everything above is the turn machinery, which still speaks in contexts because that is
     # the A2A shape. A worker only ever has one, so these methods bind that machinery to this
@@ -696,7 +703,11 @@ class SessionExecutor(AgentExecutor):
             set_jina_api_key,
             set_proxy_url,
         )
-        from xeac.runtime.tools.registry import set_exa_client, set_mcp_client_manager
+        from xeac.runtime.tools.registry import set_confinement, set_exa_client, set_mcp_client_manager
+
+        # What every tool child of this worker is confined to. Process-global because a
+        # worker serves exactly one session, so process scope is session scope.
+        set_confinement(self._sandbox, self._runtime_working_directory or self._working_directory)
         from xeac.runtime.tools.sessions import set_session_access
 
         configuration = self._global_configuration

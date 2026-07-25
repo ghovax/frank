@@ -16,8 +16,8 @@ import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-displ
 import { InlineMarkdown } from "./markdown-content";
 
 export function ToolCallLabel({ name, args }: { name: string; args?: Record<string, unknown> }) {
-  const t = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
-  const { label, mono, labelIsMarkdown } = getToolCallDisplay(name, args, t);
+  const translation = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
+  const { label, mono, labelIsMarkdown } = getToolCallDisplay(name, args, translation);
   if (mono) {
     return (
       <Code fontSize="0.9em" px={1} py={0} borderRadius="sm" fontFamily="var(--app-font-mono)" whiteSpace="nowrap">

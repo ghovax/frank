@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnabled, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, resolveReachableConnectionUrl, type ConnectionTarget } from "@/lib/connection";
@@ -122,7 +122,8 @@ function ProjectWorkspace() {
   // workspace/agent-resolution that still keys off a path).
   const [workingDirectory, setWorkingDirectory] = useState("");
   const [homeProject, setHomeProject] = useState<{ path: string; name: string } | null>(null);
-  const [sandboxEnabledState, setSandboxEnabledState] = useState(true);
+  const [sandboxEnforceState, setSandboxEnforceState] = useState<SandboxEnforce>("required");
+  const [sandboxBackend, setSandboxBackend] = useState({ backend: "", detail: "" });
   const [workspaceStrategy, setWorkspaceStrategy] = useState<"none" | "branch" | "worktree">("none");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
@@ -328,7 +329,8 @@ function ProjectWorkspace() {
       fetchSettings()
         .then((settings) => {
           setSelectedPermissionMode(settings.permission_mode ?? "default");
-          setSandboxEnabledState(settings.sandbox_enabled ?? true);
+          setSandboxEnforceState(settings.sandbox?.enforce ?? "required");
+          setSandboxBackend(settings.sandbox_backend ?? { backend: "", detail: "" });
           setWorkspaceStrategy(settings.workspace_strategy ?? "none");
           setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
         })
@@ -648,13 +650,13 @@ function ProjectWorkspace() {
     }
   }
 
-  async function handleSandboxEnabledChange(enabled: boolean) {
-    const previous = sandboxEnabledState;
-    setSandboxEnabledState(enabled);
+  async function handleSandboxEnforceChange(enforce: SandboxEnforce) {
+    const previous = sandboxEnforceState;
+    setSandboxEnforceState(enforce);
     try {
-      await setSandboxEnabled(enabled);
+      await setSandboxEnforce(enforce);
     } catch {
-      setSandboxEnabledState(previous);
+      setSandboxEnforceState(previous);
     }
   }
 
@@ -829,8 +831,9 @@ function ProjectWorkspace() {
           workingDirectory={workingDirectory}
           projectId={projectId}
           homeDirectory={homeProject?.path ?? ""}
-          sandboxEnabled={sandboxEnabledState}
-          onSandboxEnabledChange={handleSandboxEnabledChange}
+          sandboxEnforce={sandboxEnforceState}
+          sandboxBackend={sandboxBackend}
+          onSandboxEnforceChange={handleSandboxEnforceChange}
           workspaceStrategy={workspaceStrategy}
           onWorkspaceStrategyChange={handleWorkspaceStrategyChange}
           isConnected={isConnected && activeSessionConnectionReady}

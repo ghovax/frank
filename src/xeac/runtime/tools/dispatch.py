@@ -322,13 +322,19 @@ class _ToolsMixin:
         return ""
 
     def _outside_working_directory_reads(self, command: str, working_directory: str | None = None) -> list[str]:
-        """Best-effort static path boundary check for bash commands.
+        """Reads this command names that leave the session's working directory.
 
-        The shell remains too dynamic to prove every access, so this intentionally
-        catches explicit path arguments that leave the session working directory:
-        absolute paths, home paths, and parent-directory traversal.
+        Not a boundary and no longer pretending to be one. Writes are enforced by the operating
+        system now (see :mod:`xeac.base.confinement`); reads outside the workspace remain allowed
+        by design, because agents legitimately read system headers, sibling repositories and
+        toolchain configuration. What this does is *notice* them, so the permission classifier and
+        the person reading a prompt can see what a command reaches for — a prompt-injection
+        tripwire rather than the thing standing between a session and the disk.
+
+        It sees only literal path-shaped arguments. A path the shell computes is invisible to it,
+        which was the fatal objection when this was load-bearing and is merely a limitation now.
         """
-        if not self._global_configuration.sandbox.enabled:
+        if self._global_configuration.sandbox.enforce == "off":
             return []
         root = Path(working_directory or self._working_directory or Path.home()).expanduser()
         try:
@@ -552,8 +558,14 @@ class _ToolsMixin:
                         tool=tool_name,
                     )
                     return
-                tool_arguments = dict(tool_arguments)
-                tool_arguments["command"] = f"cd {shlex.quote(str(directory_path))} && {raw_command}"
+                # The directory reaches the command as the process's own `cwd`, set through the
+                # confinement recipe. It used to be prepended as `cd <dir> && …`, which made the
+                # working directory shell text inside a command the model wrote — and therefore
+                # something the same command could `cd` straight back out of.
+                from xeac.runtime.tools.registry import active_confinement, set_confinement
+
+                profile, _ = active_confinement()
+                set_confinement(profile, str(directory_path))
         read_only = tool_arguments.get("read_only", False)
         if isinstance(read_only, str):
             read_only = read_only.lower() == "true"
@@ -1423,7 +1435,12 @@ class _ToolsMixin:
                 return {key: value for key, value in outcome.items() if key != "ok"}
             return outcome
 
-        result = await control.run_control_script(script, dispatch)
+        from xeac.runtime.tools.registry import active_confinement
+
+        confinement_profile, confinement_workspace = active_confinement()
+        result = await control.run_control_script(
+            script, dispatch, profile=confinement_profile, workspace=confinement_workspace,
+        )
         if acted_on and isinstance(result, dict):
             result.setdefault("acted_on", acted_on)
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)

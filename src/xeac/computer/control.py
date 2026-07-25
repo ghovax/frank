@@ -17,6 +17,7 @@ import os
 import sys
 from typing import Any, Awaitable, Callable, Optional
 
+from xeac.base import confinement
 from xeac.computer.surface import message_loader
 from xeac.base.serialization import compact
 
@@ -38,6 +39,8 @@ async def run_control_script(
     *,
     timeout: float = _DEFAULT_TIMEOUT_SECONDS,
     address_space_bytes: int = _DEFAULT_ADDRESS_SPACE_BYTES,
+    profile: Any = None,
+    workspace: str = "",
 ) -> dict:
     """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
     return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
@@ -56,10 +59,29 @@ async def run_control_script(
     # fds are passed on argv (not via the environment, which would leak them into every subprocess);
     # the configuration is handed over on the reply pipe below.
     child_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "control_child.py")
+    # Strictly less than the session holds. Everything this child can do is bridged to this
+    # process over the two pipes below — a click, a find, an evaluate are all JSON requests the
+    # parent performs — so it needs no network at all and nowhere to write but a temporary
+    # directory. Derived from the session's profile rather than configured separately: two
+    # profiles to configure would be two profiles to get wrong.
+    scratch = confinement.temporary_directory(profile, workspace=workspace)
+    child_profile = (
+        profile.narrowed(writable=[scratch] if scratch else [], network=False)
+        if profile is not None else None
+    )
+    spawn = confinement.spawn_recipe(
+        child_profile, workspace=workspace,
+        # No permitted scratch means the child is told about none. A profile that grants no
+        # writable directory should produce a child that cannot write, not one pointed at a
+        # directory the session itself was refused.
+        extra_environment={"TMPDIR": scratch} if scratch else None,
+    )
     process = await asyncio.create_subprocess_exec(
-        sys.executable, child_path, str(request_write), str(reply_read),
+        *spawn.prefix, sys.executable, child_path, str(request_write), str(reply_read),
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         pass_fds=(request_write, reply_read),
+        env=spawn.environment,
+        preexec_fn=spawn.preexec,
     )
     # The parent keeps only its own ends; the child holds the others.
     os.close(request_write)

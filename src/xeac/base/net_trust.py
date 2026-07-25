@@ -112,7 +112,7 @@ def resolve_public_ips(url: str, *, allow_private: bool = False) -> tuple[str, l
     for address in addresses:
         if _is_blocked(address) and not allow_private:
             raise UntrustedHostError(f"host {host!r} resolves to non-public address {address}")
-    return host, [str(a) for a in addresses]
+    return host, [str(address) for address in addresses]
 
 
 def pin_to_ip(url: str, ip: str, hostname: str) -> tuple[str, dict, dict]:

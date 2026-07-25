@@ -121,6 +121,39 @@ def _public(record: SessionRecord) -> dict:
     return payload
 
 
+def _resolve_sandbox(agent: str, working_directory: str, parent) -> dict:
+    """The confinement a new session gets: the machine's, narrowed by the agent's, clamped by its
+    creator's.
+
+    Clamped rather than merely chosen, and for the same reason the permission mode is: without it
+    a confined session could create an unconfined peer and the boundary would be one call deep.
+    The refusal when no backend can enforce the profile happens here, at creation, because that is
+    the last moment it can be reported to whoever asked for the session rather than surfacing later
+    as a tool that mysteriously fails."""
+    from xeac.base import confinement
+    from xeac.daemon.services.agents import _agent_configuration_for_request
+
+    configured = getattr(state.global_configuration, "sandbox", None)
+    profile = configured.to_profile() if configured is not None else confinement.Profile()
+    try:
+        _, agent_configuration = _agent_configuration_for_request(agent, working_directory)
+        agent_profile = getattr(agent_configuration, "sandbox", None)
+    except Exception:  # noqa: BLE001 — an unreadable profile must not decide confinement
+        agent_profile = None
+    if agent_profile is not None:
+        profile = agent_profile.to_profile().clamp(profile)
+    if parent is not None:
+        profile = profile.clamp(confinement.Profile.from_dict(parent.sandbox))
+    if profile.enforce == confinement.ENFORCE_REQUIRED and not confinement.backend_name():
+        raise RpcError(
+            f"Confinement is required and this machine has no backend for it ({confinement.describe_backend()}). "
+            "Set sandbox.enforce to 'preferred' to run with resource limits only, or 'off' to disable it.",
+            status_code=503,
+            code="confinement_unavailable",
+        )
+    return profile.as_dict()
+
+
 async def _session_create(params: dict) -> dict:
     """Mint a session and hand back its handle.
 
@@ -157,10 +190,13 @@ async def _session_create(params: dict) -> dict:
     if parent is not None and not working_directory:
         working_directory = parent.working_directory
 
+    sandbox = _resolve_sandbox(agent, working_directory, parent)
+
     record = state.registry.create(
         agent=agent,
         working_directory=working_directory,
         permission_mode=str(mode),
+        sandbox=sandbox,
         project_id=str(params.get("project_id") or (parent.project_id if parent else "")),
         parent=parent_id,
         title=str(params.get("title") or ""),

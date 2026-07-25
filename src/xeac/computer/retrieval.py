@@ -68,11 +68,21 @@ class Hit:
 
 
 class _BM25:
-    """Okapi BM25. Pure Python, no dependency — this is the lexical half and the offline fallback."""
+    """Okapi BM25. Pure Python, no dependency — this is the lexical half and the offline fallback.
 
-    def __init__(self, corpus: list[list[str]], k1: float = 1.5, b: float = 0.75) -> None:
+    The two tuning constants are called ``k1`` and ``b`` in the literature; they are spelled out
+    here as what they do, since neither letter means anything to a reader who has not just come
+    from the paper."""
+
+    def __init__(
+        self,
+        corpus: list[list[str]],
+        saturation: float = 1.5,        # `k1`: how fast a repeated term stops adding score
+        length_scaling: float = 0.75,   # `b`: how much a document's length discounts its terms
+    ) -> None:
         self.corpus = corpus
-        self.k1, self.b = k1, b
+        self.saturation = saturation
+        self.length_scaling = length_scaling
         self.count = len(corpus)
         self.average_length = (sum(len(document) for document in corpus) / self.count) if self.count else 0.0
         document_frequency: dict[str, int] = {}
@@ -105,8 +115,10 @@ class _BM25:
                 if not frequency:
                     continue
                 idf = self.inverse_frequency.get(term, 0.0)
-                total += idf * (frequency * (self.k1 + 1)) / (
-                    frequency + self.k1 * (1 - self.b + self.b * length / self.average_length)
+                total += idf * (frequency * (self.saturation + 1)) / (
+                    frequency
+                    + self.saturation
+                    * (1 - self.length_scaling + self.length_scaling * length / self.average_length)
                 )
             out[index] = total
         return out
