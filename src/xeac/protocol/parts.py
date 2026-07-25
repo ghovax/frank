@@ -27,7 +27,13 @@ from xeac.protocol.events import (
     _EventBase,
 )
 from xeac.protocol.files import ingest_file_part
-from xeac.protocol.metadata import ARTIFACT_EVENT_KIND, INPUT_RESPONSE_KIND, PART_KIND
+from xeac.protocol.metadata import (
+    ARTIFACT_EVENT_KIND,
+    INPUT_RESPONSE_KIND,
+    PART_KIND,
+    part_payload,
+    wrap_part_payload,
+)
 
 
 def _artifact_event_payload(message) -> Optional[dict]:
@@ -36,12 +42,13 @@ def _artifact_event_payload(message) -> Optional[dict]:
     plain text input."""
     for part in (message.parts or []):
         root = getattr(part, "root", part)
-        if isinstance(root, DataPart) and root.data.get(PART_KIND) == ARTIFACT_EVENT_KIND:
+        payload = part_payload(root.data) if isinstance(root, DataPart) else {}
+        if payload.get(PART_KIND) == ARTIFACT_EVENT_KIND:
             return {
-                "artifact_id": root.data.get("artifactId", ""),
-                "title": root.data.get("title", ""),
-                "event": root.data.get("event", ""),
-                "data": root.data.get("data"),
+                "artifact_id": payload.get("artifactId", ""),
+                "title": payload.get("title", ""),
+                "event": payload.get("event", ""),
+                "data": payload.get("data"),
             }
     return None
 
@@ -55,8 +62,9 @@ def _input_response_payload(message) -> Optional[dict]:
     """The input-required answer this message carries, or ``None``."""
     for part in (message.parts or []):
         root = getattr(part, "root", part)
-        if isinstance(root, DataPart) and root.data.get(PART_KIND) == INPUT_RESPONSE_KIND:
-            return dict(root.data)
+        payload = part_payload(root.data) if isinstance(root, DataPart) else {}
+        if payload.get(PART_KIND) == INPUT_RESPONSE_KIND:
+            return dict(payload)
     return None
 
 
@@ -80,7 +88,7 @@ def _structured_data_payloads(message) -> list[dict]:
     for part in (message.parts or []):
         root = getattr(part, "root", part)
         if isinstance(root, DataPart):
-            data = root.data
+            data = part_payload(root.data)
             if data.get(PART_KIND) == ARTIFACT_EVENT_KIND:
                 continue
             payloads.append(dict(data))
@@ -177,7 +185,7 @@ def _event_part(event: _EventBase) -> Part:
     Pydantic model here, so a misnamed or missing field is a ``ValidationError`` at the emit
     site rather than an invisible wire drift the schema/TypeScript generation can never see
     (the emitter→contract edge, which raw-dict ``{kind, **fields}`` construction left on faith)."""
-    return Part(root=DataPart(data=event.model_dump(mode="json")))
+    return Part(root=DataPart(data=wrap_part_payload(event.model_dump(mode="json"))))
 
 
 def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:

@@ -1,6 +1,6 @@
 ---
 created: 2026-07-25T09:35:00Z
-updated: 2026-07-25T10:40:00Z
+updated: 2026-07-25T11:05:00Z
 commit: 881f6c2
 ---
 
@@ -55,6 +55,10 @@ A key carries the harness's name for exactly one reason: it shares a dict with s
 `Task.metadata` does not. Four keys sit at its top level and two of them wear a prefix: `pendingInteraction`, `referenceTurnIds`, `xeacTurnKind`, `xeacPeerSender`. That is the owner named twice in one place and not at all in the next, in the same dict, which is a convention nobody is applying. The module's own docstring admitted it and deferred the fix to a later plan; this is that plan, and the fix is small.
 
 So `Task.metadata` gets the same shape a message already has: one `urn:xeac:ext:turn:v1` key holding the whole record, with `kind`, `peerSender`, `pending` and `referenceTurnIds` inside it. An empty record removes the key rather than leaving a husk. Nothing outside that key is touched, so the record owns exactly its own slice.
+
+`DataPart.data` is the third dict with the same problem and the sharpest version of it. It is open, it reaches a session's own A2A socket, and the harness *dispatches* on `data.kind` for inbound messages — so a foreign implementation's unrelated `input_response` would be read as answering a permission gate. Every payload the harness puts in a `DataPart` therefore goes under the same key, written by `wrap_part_payload` and read by `part_payload` so there is one place each way. All of them, not the six the harness dispatches on: leaving the sixteen event kinds bare would put two conventions back in one dict, which is the defect this section exists to remove.
+
+The extension is declared on the agent card, which is the only place any of this is legible to a peer, and its description said the key carried "working directory, permission mode" — true when it was written and long since outgrown. It now names what is actually under there.
 
 The prefix survives where it is load-bearing and nowhere else. `urn:xeac:ext:turn:v1` keeps it, because that string's whole job is to be unique against another implementation's extension. The signed-file-link audience keeps it for the same reason and changes shape: `xeac-a2a-file` becomes `urn:xeac:a2a:file:v1`. An audience is what stops a token minted for one purpose being accepted for another, so it must be unique to that purpose — strip the name and it reads `a2a-file`, exactly the string another A2A implementation would reach for. What was wrong with it was the form, not the name: RFC 7519 types `aud` as StringOrURI precisely because URIs do not collide while chosen words do, and an ad-hoc hyphenated string sat beside a URN doing the same job, so the harness had two conventions for namespaced identifiers. The version is new, so a later change to the claim set can be rejected by verifiers rather than requiring the signing secret to be rotated. The `xeac` originator and user-agent the Codex client sends keep it, because they identify this client to a provider. Log channels, socket names, the pid file and the binary keep it for the same reason — they name the program. Field names inside a namespace we already own do not.
 

@@ -1285,7 +1285,10 @@ export async function sessionSend(
 export function messageParts(text: string, dataParts?: Record<string, unknown>[]): A2APart[] {
   const parts: A2APart[] = [];
   if (text) parts.push({ kind: "text", text });
-  for (const dataPart of dataParts ?? []) parts.push({ kind: "data", data: dataPart });
+  // Wrapped, like everything else the harness puts in a `DataPart`: that dict is open and
+  // reaches a session's own A2A socket, so one namespaced key keeps ours apart from a
+  // foreign implementation's.
+  for (const dataPart of dataParts ?? []) parts.push({ kind: "data", data: wrapPartPayload(dataPart) });
   if (parts.length === 0) parts.push({ kind: "text", text: "" });
   return parts;
 }
@@ -1607,6 +1610,17 @@ export interface TurnState {
   kind?: TurnKind;
   peerSender?: string;
   referenceTurnIds?: string[];
+}
+
+// The harness's payload inside a `DataPart`, or `{}` when the part is not ours. Same key as
+// the turn metadata, because it is the same extension.
+export function partPayload(data: Record<string, unknown> | undefined): Record<string, unknown> {
+  const payload = data?.[TURN_STATE_KEY];
+  return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+}
+
+export function wrapPartPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return { [TURN_STATE_KEY]: payload };
 }
 
 export function turnState(turn: { metadata?: Record<string, unknown> } | undefined): TurnState {

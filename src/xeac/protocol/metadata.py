@@ -75,8 +75,24 @@ def turn_metadata_envelope(fields: dict) -> dict:
     return {XEAC_METADATA_KEY: {key: value for key, value in fields.items() if value is not None}}
 
 
+def part_payload(data: dict | None) -> dict:
+    """The harness's payload inside a ``DataPart``, or ``{}`` when the part is not ours.
+
+    ``DataPart.data`` is an open dict on messages that reach a session's own A2A socket, so
+    the values in it are not all minted here. One namespaced key keeps ours apart from a
+    foreign implementation's — the same convention the turn metadata already uses, and the
+    reason a bare ``data.kind`` is not enough: this module *dispatches* on that value, so a
+    peer's unrelated ``input_response`` would be read as answering a permission gate."""
+    payload = (data or {}).get(XEAC_METADATA_KEY)
+    return payload if isinstance(payload, dict) else {}
+
+
+def wrap_part_payload(payload: dict) -> dict:
+    """The ``DataPart.data`` dict carrying ``payload`` as the harness's."""
+    return {XEAC_METADATA_KEY: payload}
+
+
 def envelope_part(kind: str, **fields) -> Part:
     """An internal marker part for the envelopes the harness sends itself (compaction,
-    autonomous resume, input response). These are not client-facing wire events, so they stay
-    a bare ``{kind, **fields}`` dict."""
-    return Part(root=DataPart(data={PART_KIND: kind, **fields}))
+    autonomous resume, input response, report reminder)."""
+    return Part(root=DataPart(data=wrap_part_payload({PART_KIND: kind, **fields})))

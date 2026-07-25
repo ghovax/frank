@@ -14,6 +14,7 @@ import {
   sessionCreate,
   sessionSend,
   CONTENT_BLOCK_METADATA_KEY,
+  partPayload,
   turnState,
   type A2AMessage,
   type A2ATurn as A2ATurnWire,
@@ -204,8 +205,9 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
 // raise a banner as well.
 function friendlyErrorFromMessage(message: A2AMessage | undefined): FriendlyError | null {
   for (const part of message?.parts ?? []) {
-    if (part.kind === "data" && part.data?.kind === "error" && !part.data.tool_call_id) {
-      return friendlyErrorFromData(part.data);
+    const payload = part.kind === "data" ? partPayload(part.data) : {};
+    if (payload.kind === "error" && !payload.tool_call_id) {
+      return friendlyErrorFromData(payload);
     }
   }
   return null;
@@ -618,7 +620,7 @@ function artifactAnnotationRecordFromData(data: Record<string, unknown> | undefi
 function attachmentsFromMessage(message: A2AMessage): MessageAttachment[] {
   const attachments: MessageAttachment[] = [];
   for (const part of message.parts ?? []) {
-    if (part.kind === "data") attachments.push(...attachmentsFromData(part.data));
+    if (part.kind === "data") attachments.push(...attachmentsFromData(partPayload(part.data)));
   }
   return attachments;
 }
@@ -627,7 +629,7 @@ function artifactAnnotationRecordsFromMessage(message: A2AMessage): ArtifactAnno
   const records: ArtifactAnnotationRecord[] = [];
   for (const part of message.parts ?? []) {
     if (part.kind !== "data") continue;
-    const record = artifactAnnotationRecordFromData(part.data);
+    const record = artifactAnnotationRecordFromData(partPayload(part.data));
     if (record) records.push(record);
   }
   return records;
@@ -678,14 +680,15 @@ function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
       continue;
     }
     if (part.kind !== "data" || !part.data) continue;
-    reduceDataPart(state, part.data, message.messageId);
+    reduceDataPart(state, partPayload(part.data), message.messageId);
   }
 }
 
 function steeringText(message: A2AMessage | undefined): string {
   for (const part of message?.parts ?? []) {
-    if (part.kind === "data" && part.data?.kind === "steering") {
-      return String(part.data.text ?? "").trim();
+    const payload = part.kind === "data" ? partPayload(part.data) : {};
+    if (payload.kind === "steering") {
+      return String(payload.text ?? "").trim();
     }
   }
   return "";

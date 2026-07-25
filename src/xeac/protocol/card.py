@@ -83,7 +83,12 @@ def build_agent_card(
             state_transition_history=True,
             extensions=[AgentExtension(
                 uri=XEAC_METADATA_KEY,
-                description="XEAC per-turn metadata (working directory, permission mode).",
+                description=(
+                    "XEAC turn state and envelopes. Under this key: a message's per-turn inputs "
+                    "(working directory, permission mode, peer sender), a task's durable "
+                    "control-state (turn kind, peer sender, pending interaction, referenced "
+                    "turns), and the payload of every DataPart the harness emits or reads."
+                ),
                 required=False,
             )],
         ),
