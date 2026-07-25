@@ -52,7 +52,7 @@ Isolation is a property of the process. A worker is assigned exactly once and be
 - the **lifecycle**: starting workers, watching for crashes, and reaping a subtree parent-last so a child never outlives its parent;
 - the **databases**, as the sole writer — workers persist by posting to the daemon's ingest surface, so there is exactly one process writing SQLite;
 - the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote agents — everything there can only sensibly be one of;
-- a **warm worker pool** with a floor and a ceiling, so spawning a session is a socket write rather than a Python cold start, and a fan-out of ten children does not serialise behind the floor.
+- a **warm worker pool**, so spawning a session is usually a socket write rather than a Python cold start. It parks **two** blank workers and tops back up after each claim; a claim against an empty pool spawns a fresh worker rather than queueing, so a wide fan-out is never refused — it just pays a cold start per child past the spares. A second constant, **eight**, counts warm and assigned workers together and stops the daemon pre-warming beyond it, so a machine already running eight sessions spends its memory on them rather than on spares. Both are fixed in `daemon/pool.py`; neither is configurable today.
 
 It serves one API two ways: a **unix socket** for the CLI and for sessions, and a **loopback TCP port** for the desktop client, which cannot open a unix socket from a webview. The port is ephemeral and chosen at boot; both listeners require the capability token the daemon writes `0600` into the runtime directory.
 

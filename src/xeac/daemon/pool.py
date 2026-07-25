@@ -11,8 +11,12 @@ never returned to the pool and never reused. That is what keeps the isolation ho
 is no path by which one session's state can reach another's — and it is why this is a spawn
 accelerator rather than a container pool.
 
-The pool is elastic: it holds a floor of warm workers, tops back up after a claim, and bursts
-to a ceiling under fan-out rather than making a wide spawn queue behind the floor.
+The pool holds a floor of warm workers and tops back up after each claim. It does not burst
+above that floor, and the ceiling is not a limit on sessions: `claim` spawns a fresh worker
+whenever the pool is empty, so a fan-out is never refused or queued — it simply pays a cold
+start for each child past the spares. What the ceiling bounds is how many workers the daemon
+will *pre-warm* into existence, so a machine already running seven sessions stops paying to
+keep spares it is unlikely to use.
 """
 
 from __future__ import annotations
@@ -27,9 +31,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# How many blank workers to keep parked, and how many may exist at once while a burst is
-# being served. The floor is small because a warm worker costs real memory; the ceiling
-# exists so a session that fans out ten children does not serialise them behind the floor.
+# How many blank workers to keep parked, and the point past which the daemon stops parking
+# more. The floor is small because a warm worker costs real memory — two covers the common
+# case of creating a session or two at a time. The ceiling counts warm *and* assigned workers
+# together, so it is a bound on pre-warming rather than on how many sessions may run: a
+# daemon already serving eight has better uses for the memory than more spares.
 DEFAULT_WARM_FLOOR = 2
 DEFAULT_WARM_CEILING = 8
 

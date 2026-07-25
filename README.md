@@ -4,6 +4,8 @@
 
 The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in XEAC all of it is yours to edit. Drive it from the terminal, from the bundled macOS app, or from another agent.
 
+**X, Executable, Addressable, Composable.** The X is a variable, left unbound on purpose — an agent, a model, a provider, a machine. XEAC is what the harness makes of whatever you substitute in: *executable*, because a session is a real OS process with a pid you can kill; *addressable*, because it has its own unix socket and its own capability token; *composable*, because sessions create and message each other through the same control plane you use. The prefix earns its keep twice over, as the placeholder in that sentence and as the ordinary Unix convention it shares with `xargs`, `xterm` and `xdg-open` — a name for something that applies to whatever you give it.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
 ## What it is
@@ -12,7 +14,7 @@ Everything in XEAC is a **session**: one OS process running one agent, created e
 
 Three parts, kept apart:
 
-- **`xeacd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and holds a pool of warm workers so spawning a session is a socket write rather than a Python cold start. It runs no agents itself.
+- **`xeacd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and parks a couple of warm workers so spawning a session is usually a socket write rather than a Python cold start. It runs no agents itself.
 - **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API.
 
