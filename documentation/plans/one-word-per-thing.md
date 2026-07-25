@@ -1,6 +1,6 @@
 ---
 created: 2026-07-25T09:35:00Z
-updated: 2026-07-25T10:20:00Z
+updated: 2026-07-25T10:32:00Z
 commit: 7c1a8bd
 ---
 
@@ -56,7 +56,7 @@ A key carries the harness's name for exactly one reason: it shares a dict with s
 
 So `Task.metadata` gets the same shape a message already has: one `urn:xeac:ext:turn:v1` key holding the whole record, with `kind`, `peerSender`, `pending` and `referenceTurnIds` inside it. An empty record removes the key rather than leaving a husk. Nothing outside that key is touched, so the record owns exactly its own slice.
 
-The prefix survives where it is load-bearing and nowhere else. `urn:xeac:ext:turn:v1` keeps it, because that string's whole job is to be unique against another implementation's extension. `xeac-a2a-file` keeps it: it is a JWT audience claim, and an audience that does not name its audience is not one. The `xeac` originator and user-agent the Codex client sends keep it, because they identify this client to a provider. Log channels, socket names, the pid file and the binary keep it for the same reason — they name the program. Field names inside a namespace we already own do not.
+The prefix survives where it is load-bearing and nowhere else. `urn:xeac:ext:turn:v1` keeps it, because that string's whole job is to be unique against another implementation's extension. The signed-file-link audience keeps it for the same reason and changes shape: `xeac-a2a-file` becomes `urn:xeac:a2a:file:v1`. An audience is what stops a token minted for one purpose being accepted for another, so it must be unique to that purpose — strip the name and it reads `a2a-file`, exactly the string another A2A implementation would reach for. What was wrong with it was the form, not the name: RFC 7519 types `aud` as StringOrURI precisely because URIs do not collide while chosen words do, and an ad-hoc hyphenated string sat beside a URN doing the same job, so the harness had two conventions for namespaced identifiers. The version is new, so a later change to the claim set can be rejected by verifiers rather than requiring the signing secret to be rotated. The `xeac` originator and user-agent the Codex client sends keep it, because they identify this client to a provider. Log channels, socket names, the pid file and the binary keep it for the same reason — they name the program. Field names inside a namespace we already own do not.
 
 ## `context_id`
 

@@ -132,7 +132,17 @@ class PathNotServableError(Exception):
     into a fetchable URL."""
 
 
-_FILE_TOKEN_AUDIENCE = "xeac-a2a-file"
+# Who a signed file link is for. An audience is what stops a token minted for one purpose
+# being accepted for another, so it has to be unique to this one — which is why the harness's
+# name belongs here even though it is noise on an ordinary field: strip it and you get
+# "a2a-file", exactly the string another A2A implementation would reach for.
+#
+# A URN rather than an ad-hoc hyphenated string. RFC 7519 types `aud` as StringOrURI, and the
+# reason that type exists is that URIs do not collide while chosen words do; it is also the
+# form this harness already uses for its A2A extension key, so there is one convention for
+# namespaced identifiers rather than two. The version is there so a future change to the claim
+# set can be rejected by verifiers instead of needing the signing secret rotated.
+_FILE_TOKEN_AUDIENCE = "urn:xeac:a2a:file:v1"
 
 
 class FileUrlSigner:
