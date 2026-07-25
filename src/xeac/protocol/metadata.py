@@ -33,6 +33,12 @@ AUTONOMOUS_RESUME_KIND = "autonomous_resume"
 # Answers an input-required pause, carrying the request id and the decision or answers.
 INPUT_RESPONSE_KIND = "input_response"
 
+# Opens a turn that exists only to remind a session it has not reported to the session that
+# created it. Modelled like an autonomous wake — an agent-role message with a prose-less part
+# — but a distinct kind, because a wake delivers a result that is waiting and this delivers
+# nothing at all; the autonomous path would close it as a no-op for exactly that reason.
+REPORT_REMINDER_KIND = "report_reminder"
+
 
 class Metadata:
     """Field names inside the turn-metadata object stored under :data:`XEAC_METADATA_KEY`.
@@ -51,6 +57,7 @@ class Metadata:
     # on-demand compaction pass.
     AUTONOMOUS_RESUME = "autonomousResume"
     COMPACTION = "compaction"
+    REPORT_REMINDER = "reportReminder"
     # Set by a session sending another session a message. Its presence is what makes the turn
     # a peer turn — the field carries who, and "who" and "not the user" are the same fact here.
     PEER_SENDER = "peerSender"

@@ -24,6 +24,7 @@ from langchain_core.messages import messages_to_dict
 
 from xeac.base import telemetry as _telemetry
 from xeac.base.background_store import get_background_job_store
+from xeac.base.background_tasks import spawn_background_task
 from xeac.base.configuration import PromptLoader
 from xeac.protocol.errors import _safe_turn_error
 from xeac.protocol.events import ErrorEvent, StatusEvent
@@ -102,6 +103,8 @@ class _Ingested:
     metadata: dict
     autonomous: bool
     compaction: bool
+    # Opened only to remind this session it has not answered the one that created it.
+    report_reminder: bool
     # The session that sent this message, when another session did. Empty for a person's
     # message and for a harness-initiated turn.
     peer_sender: str
@@ -184,6 +187,9 @@ class _TurnRunner:
         self._track_context_activity = False
         self._track_steerable_turn = False
         self._turn_has_images = False
+        # Set only when the turn closed as completed. A failed, stopped or input-required turn
+        # is not a session that finished and forgot to report; it is one that never got there.
+        self._completed = False
         self._context_serialization_lock: asyncio.Lock | None = None
         self._on_turn_state = executor._on_turn_state
         # Filled in by _ingest / _resolve_task / _open_turn_span / _compose_turn_input.
@@ -282,6 +288,7 @@ class _TurnRunner:
         self._permission_mode = str(self._metadata.get(Metadata.PERMISSION_MODE, ""))
         self._autonomous = bool(self._metadata.get(Metadata.AUTONOMOUS_RESUME))
         self._compaction = bool(self._metadata.get(Metadata.COMPACTION))
+        self._report_reminder = bool(self._metadata.get(Metadata.REPORT_REMINDER))
         self._peer_sender = str(self._metadata.get(Metadata.PEER_SENDER, ""))
         return _Ingested(
             message=message,
@@ -289,6 +296,7 @@ class _TurnRunner:
             metadata=self._metadata,
             autonomous=self._autonomous,
             compaction=self._compaction,
+            report_reminder=self._report_reminder,
             peer_sender=self._peer_sender,
             permission_mode=self._permission_mode,
             requested_working_directory=self._requested_working_directory,
@@ -385,7 +393,9 @@ class _TurnRunner:
         # message metadata) makes this turn nest under the peer that sent it.
         task, ingested = resolved.task, resolved.ingested
         self._turn_kind = (
-            TurnKind.AUTONOMOUS if ingested.autonomous
+            # The reminder is harness-initiated like a wake, and reads as one to a person
+            # scrolling the transcript; it differs only in having nothing to deliver.
+            TurnKind.AUTONOMOUS if ingested.autonomous or ingested.report_reminder
             else TurnKind.COMPACTION if ingested.compaction
             # A message from another session is not the user speaking. Getting this wrong is
             # not a labelling slip: the model would read a peer's report as an instruction
@@ -488,8 +498,12 @@ class _TurnRunner:
         # A render_error is injected as the model's own realization (a harness note
         # delivered in a <systemReminder> block), never as user prose; every other
         # artifact event is the turn's structured JSON input.
-        self._as_system_note = self._autonomous
-        if self._autonomous:
+        self._as_system_note = self._autonomous or self._report_reminder
+        if self._report_reminder:
+            # Same delivery as a wake — a <systemReminder> harness note, never user prose —
+            # because this is the harness speaking, not the person the session works for.
+            self._turn_input = _PROMPTS.load("report_reminder_note", {})
+        elif self._autonomous:
             # The wake message carries no prose (only an `autonomous_resume` part); the
             # framing note is supplied here and injected into the model as a
             # <systemReminder> harness note — cache-safe user-role delivery (see
@@ -582,6 +596,7 @@ class _TurnRunner:
             await self._updater.cancel()
         else:
             await self._updater.complete()
+            self._completed = True
 
     async def _fail(self, exception: Exception) -> None:
         await self._save_runtime_conversation()
@@ -639,3 +654,27 @@ class _TurnRunner:
         # turn used (not a cache lookup) so a reset that cleared the cache mid-turn cannot
         # strand the pending work.
         self._ex._arm_resume_pump(task.context_id, self._runtime)
+        self._maybe_nudge_to_report()
+
+    def _maybe_nudge_to_report(self) -> None:
+        """Remind the session, once, if a completed turn left the session that created it with
+        no answer.
+
+        Reporting cannot be enforced — only the model can decide what its answer is and when it
+        has one — so this is a nudge and not a gate. It fires at most once per session and only
+        after a turn that actually completed: a peer that failed, was stopped, or is parked on a
+        permission request has not finished and forgotten, it simply has not finished. The
+        daemon's notice when the session is eventually reaped stays the backstop for everything
+        this does not catch.
+
+        Spawned rather than awaited, because this runs inside the ending turn's teardown and the
+        reminder is itself a turn — driving it inline would re-enter the machinery that is
+        currently unwinding."""
+        peers = getattr(self._ex, "_peers", None)
+        if peers is None or not self._completed or self._report_reminder:
+            return
+        if not getattr(peers, "_parent_session", "") or peers.reported_to_parent:
+            return
+        if self._ex._nudged_to_report:
+            return
+        spawn_background_task(self._ex.nudge_to_report(self._task.context_id))

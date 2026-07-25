@@ -1,6 +1,6 @@
 ---
 created: 2026-07-25T08:53:51Z
-updated: 2026-07-25T09:16:00Z
+updated: 2026-07-25T10:45:00Z
 commit: 2f437dc
 ---
 
@@ -28,7 +28,9 @@ So `TurnKind.PEER` is not a nicety. `send_message` stamps it, the worker threads
 
 ## What the peer needs to know
 
-A session is currently told, in `agent_context.md`, that "another session may have created you, and may be waiting on your result" — and is given no way to find out which one. The parent id is in the worker's assignment and never reaches the model. So the turn context gains `parent_session`, and the agent context says plainly: when you are done, send your answer there. It cannot be enforced, and pretending otherwise would be worse than saying so; what can be done is to make the address available, name the obligation once, and make the failure visible through the termination notice rather than as an infinite wait.
+A session is currently told, in `agent_context.md`, that "another session may have created you, and may be waiting on your result" — and is given no way to find out which one. The parent id is in the worker's assignment and never reaches the model. So the turn context gains `parent_session`, and the agent context says plainly: when you are done, send your answer there. It cannot be enforced, and pretending otherwise would be worse than saying so; what can be done is to make the address available, name the obligation once, and make a failure visible rather than silent.
+
+Two things do that. When a turn *completes* and the session that created this one has still heard nothing, the harness drives one reminder turn — the same shape as an autonomous wake, an agent-role message with no prose whose framing note reaches the model as a `<systemReminder>`. It fires at most once per session, and only after a completed turn: a peer that failed, was stopped, or is parked on a permission request has not finished and forgotten, it simply has not finished. And when the session is eventually reaped having still said nothing, the daemon's notice to the parent is the backstop. A reminder on every turn would be worse than none, because a peer legitimately midway through a long job would be told it is late over and over.
 
 ## The frontend
 

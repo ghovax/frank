@@ -30,6 +30,7 @@ from xeac.base.workspaces import SessionWorkspace
 from xeac.protocol.metadata import (
     AUTONOMOUS_RESUME_KIND,
     COMPACTION_KIND,
+    REPORT_REMINDER_KIND,
     INPUT_RESPONSE_KIND,
     Metadata,
     envelope_part,
@@ -104,6 +105,7 @@ class SessionExecutor(AgentExecutor):
             session_id=session_id,
             working_directory=runtime_working_directory or working_directory,
             permission_mode=permission_mode,
+            parent_session=parent,
         )
 
         # A2A needs a handler to drive turns through; a worker serves exactly one session, so
@@ -137,6 +139,8 @@ class SessionExecutor(AgentExecutor):
         self._work_habits_acknowledged = False
         # A session is named after its first message, once.
         self._titled = False
+        # The report reminder fires at most once for a session's whole life.
+        self._nudged_to_report = False
         # This session's own MCP connections, and the task connecting them.
         self._mcp_manager = None
         self._mcp_connect: Optional[asyncio.Task] = None
@@ -210,6 +214,22 @@ class SessionExecutor(AgentExecutor):
         )
         async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
             pass
+
+    async def nudge_to_report(self, session_id: str) -> None:
+        """Drive one turn whose only purpose is to say "you have not answered yet".
+
+        Fired once per session, when a turn finishes and the session that created this one has
+        still heard nothing. Reporting back cannot be enforced — only the model can decide what
+        its answer is — so this is the one reminder, and the daemon's notice when the session is
+        finally reaped remains the backstop. Nudging on every turn would be worse than not
+        nudging at all: a peer legitimately mid-way through a long job would be told it is late
+        over and over."""
+        if self._nudged_to_report:
+            return
+        self._nudged_to_report = True
+        await self._drive_self_sent_turn(
+            session_id, REPORT_REMINDER_KIND, metadata_flags={Metadata.REPORT_REMINDER: True},
+        )
 
     async def _run_compaction_turn(self, session_id: str) -> None:
         """Drive one manual-compaction turn (a self-sent agent-role compaction message), so

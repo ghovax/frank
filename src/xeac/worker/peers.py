@@ -47,12 +47,18 @@ class PeerSessions:
         session_id: str,
         working_directory: str,
         permission_mode: str,
+        parent_session: str = "",
     ) -> None:
         self._socket_path = socket_path
         self._token = token
         self.session_id = session_id
         self.working_directory = working_directory
         self.permission_mode = permission_mode
+        self._parent_session = parent_session
+        # Whether this session has ever answered the one that created it. Tracked here
+        # because this is the only place a message can leave, so it cannot be missed — and it
+        # is what tells the harness whether a finished turn left somebody waiting.
+        self.reported_to_parent = False
         self._client: Optional[httpx.AsyncClient] = None
 
     def _http(self) -> httpx.AsyncClient:
@@ -113,6 +119,8 @@ class PeerSessions:
             parts=[{"kind": "text", "text": text}],
             metadata={Metadata.PEER_SENDER: self.session_id},
         )
+        if self._parent_session and session_id == self._parent_session:
+            self.reported_to_parent = True
 
     async def get(self, session_id: str) -> dict:
         result = await self._call("session.get", id=session_id)
