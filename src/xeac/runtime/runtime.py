@@ -49,6 +49,7 @@ from xeac.runtime.tools.registry import (
     load_skill as load_skill_tool,
     wait_for as wait_for_tool,
 )
+from xeac.runtime.tools.sessions import remote_agent_tools, session_tools
 from xeac.runtime.background import (
     BackgroundJobs,
     background_completion_event,
@@ -130,8 +131,9 @@ def build_chat_model(
 def _build_tools(
     agent_configuration: AgentConfiguration,
     global_configuration: GlobalConfiguration,
+    working_directory: str = "",
 ) -> list[BaseTool]:
-    tools = _all_available_tools(agent_configuration, global_configuration)
+    tools = _all_available_tools(agent_configuration, global_configuration, working_directory)
     allowed = _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in tools})
     return [tool for tool in tools if not allowed or tool.name in allowed]
 
@@ -140,17 +142,38 @@ def _live_allow_list(configured: list[str], existing: set[str]) -> set[str]:
     """An agent's tool allow-list, narrowed to tools that exist.
 
     A profile may name a tool that has since been removed — every shipped profile listed the
-    delegation tool that peer sessions replaced. Since an allow-list denies everything it does
-    not name, keeping a dead entry would leave a profile that permits nothing at all, and a
+    delegation tool the peer-session tools replaced. Since an allow-list denies everything it
+    does not name, keeping a dead entry would leave a profile that permits nothing at all, and a
     non-destructive seed means the stale copy in a user's home directory outlives the fix.
     Dropping the names that match nothing turns such a list back into what it plainly meant."""
     live = {name for name in configured if name in existing}
     return live
 
 
+def _installed_agent_names(global_configuration: GlobalConfiguration, working_directory: str) -> list[str]:
+    """The agent profiles a peer could be created with, here.
+
+    Read at build time so `create_session` can enumerate them in its schema rather than take a
+    free string: a name that does not exist becomes unrepresentable instead of being refused
+    after the call. Project-local profiles are resolved from the working directory, so a
+    session sees what its own project installs."""
+    from xeac.base.configuration import list_agents
+
+    directories = (
+        global_configuration.agent_directories_for(working_directory)
+        if working_directory
+        else global_configuration.agent_directories()
+    )
+    try:
+        return [entry["id"] for entry in list_agents(directories)]
+    except Exception:  # noqa: BLE001 — an unreadable profile directory must not fail the runtime
+        return []
+
+
 def _all_available_tools(
     agent_configuration: AgentConfiguration,
     global_configuration: GlobalConfiguration,
+    working_directory: str = "",
 ) -> list[BaseTool]:
     available = [
         bash_tool,
@@ -185,6 +208,14 @@ def _all_available_tools(
             list_mcp_resources_tool,
             read_mcp_resource_tool,
         ])
+    # Peer sessions: the one composition path. Offered only when there is a profile to run,
+    # since a `create_session` whose enumeration is empty is a tool that cannot succeed.
+    available.extend(session_tools(_installed_agent_names(global_configuration, working_directory)))
+    # Agents on other hosts are a different bargain — someone else's machine, someone else's
+    # cost, no access to this filesystem — so they are separate verbs, and they appear only
+    # when the user has actually registered one.
+    if global_configuration.remote_agents.agents:
+        available.extend(remote_agent_tools())
     return available
 
 
@@ -271,7 +302,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
 
     # Tool-name -> handler method. ``_execute_tool`` resolves permission, location, and
     # policy once (the shared preamble), then dispatches the call to its handler here.
-    # Grouped tools (edit/write, spawn/remote, the MCP queries, computer/browser) share
+    # Grouped tools (edit/write, the peer-session verbs, the MCP queries, computer/browser) share
     # one handler; an unmapped name is the "unknown tool" error.
     _TOOL_HANDLERS = {
         "bash": "_tool_bash",
@@ -295,6 +326,13 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         "search_web": "_tool_search_web",
         "read_task": "_tool_read_task",
         "control_screen": "_tool_control_screen",
+        "create_session": "_tool_session",
+        "send_to_session": "_tool_session",
+        "read_session": "_tool_session",
+        "list_sessions": "_tool_session",
+        "end_session": "_tool_session",
+        "list_remote_agents": "_tool_session",
+        "send_to_remote_agent": "_tool_session",
     }
 
     def __init__(
@@ -345,7 +383,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         )
 
         self._file_lease_manager = file_lease_manager
-        self._tools = _build_tools(agent_configuration, global_configuration)
+        self._tools = _build_tools(agent_configuration, global_configuration, self._working_directory)
         # Concrete tools are bound natively — the provider sees each tool's real
         # JSON schema and can constrain argument decoding to it, and it emits
         # several tool calls in one response when work is parallel. (The old

@@ -87,6 +87,25 @@ class SessionExecutor(AgentExecutor):
 
         self._task_store = DaemonTaskStore(str(daemon_socket_path()), session_id, daemon_token or token)
 
+        # The same daemon, reached for a different purpose: composing with other sessions.
+        # It carries this session's identity so every peer it creates is a child of this one —
+        # not because a caller remembered to say so, but because there is no way to say
+        # otherwise.
+        from xeac.worker.peers import PeerSessions
+
+        self._peers = PeerSessions(
+            socket_path=str(daemon_socket_path()),
+            # This session's own token, not the daemon's. The daemon token would work and say
+            # nothing about who is calling; this one identifies the session, which is what
+            # makes every peer it creates a child of this one and confines its reach to its
+            # own subtree. Falling back to the daemon token keeps a session with no token of
+            # its own (a bare worker in a test) able to compose at all.
+            token=token or daemon_token,
+            session_id=session_id,
+            working_directory=runtime_working_directory or working_directory,
+            permission_mode=permission_mode,
+        )
+
         # A2A needs a handler to drive turns through; a worker serves exactly one session, so
         # it builds its own rather than being handed a registry of them.
         self._registry = None
@@ -652,8 +671,14 @@ class SessionExecutor(AgentExecutor):
             set_proxy_url,
         )
         from xeac.runtime.tools.registry import set_exa_client, set_mcp_client_manager
+        from xeac.runtime.tools.sessions import set_session_access
 
         configuration = self._global_configuration
+
+        # The peer-session tools are declared in the runtime, which has no session identity of
+        # its own; this is what gives them one. Installed before the socket opens, so the very
+        # first turn can already compose.
+        set_session_access(self._peers)
         set_tuning(tuning_from_policy(configuration.tuning))
 
         telemetry = configuration.telemetry

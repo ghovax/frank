@@ -16,7 +16,7 @@ Three parts, kept apart:
 - **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the API does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API.
 
-Agents compose the same way you do. An agent that needs a peer runs `xeac create` and talks to the address it gets back — there is no `spawn_agent` tool, no in-process delegation, and no separate path for a remote agent. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.
+Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.
 
 ## Why own the harness
 
@@ -41,7 +41,7 @@ The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](
 Three design choices distinguish XEAC:
 
 - **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM, returning a few ranked elements where the rivals reason over screenshots — a query costs a handful of elements, not a downscaled image.
-- **A session is a process, not a coroutine.** Each session runs in its own OS process behind its own socket, so it is crash-isolated, addressable, and killable. Agents spawn peers by creating sessions and talking to them over the protocol — the same thing a person does — instead of through a bespoke delegation tool.
+- **A session is a process, not a coroutine.** Each session runs in its own OS process behind its own socket, so it is crash-isolated, addressable, and killable. A session creates a peer by creating another session and messaging it over the same API a person uses, instead of through a bespoke in-process delegation tool.
 - **A composed script, not a click-by-click loop.** `control_screen` runs a Python program whose primitives (`click`, `type`, `scroll`, `evaluate`, …) are the *same* on native apps and in the browser. A whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a screenshot‑decide‑act round trip per click. Far fewer model turns to finish the job.
 
 The trade-off: it needs an accessibility tree or DOM to read, where a screenshot approach works on anything drawn on screen. See [Tools](documentation/tools.md).
@@ -65,7 +65,7 @@ xeac ps                                                            # what is run
 xeac attach <id>                                                   # follow it live
 ```
 
-An agent composes the same way, from its own shell: `xeac create` a peer, `xeac send` it a brief, read what it produced. There is no second mechanism.
+A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `send_to_session` follows up, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it.
 
 The daemon starts itself on the first command. From the app:
 

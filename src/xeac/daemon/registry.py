@@ -155,6 +155,21 @@ class SessionRegistry:
                 frontier.append(child.id)
                 yield child
 
+    def session_for_token(self, token: str) -> Optional[SessionRecord]:
+        """Which session a token belongs to, if any.
+
+        The reverse of :meth:`authorize`, and the reason a control-plane call can be
+        attributed at all: the daemon token says a caller may drive the daemon, while a
+        session token says *which* session is driving it. Compared in constant time against
+        every live record — the set is small, and a token comparison that leaks timing is a
+        token comparison that leaks the token."""
+        if not token:
+            return None
+        for record in self._sessions.values():
+            if record.token and secrets.compare_digest(record.token, token):
+                return record
+        return None
+
     def authorize(self, session_id: str, token: str) -> Optional[SessionRecord]:
         """The session, if the token matches. A constant-time comparison, because this is the
         check that stands between one session and every other session on the machine."""

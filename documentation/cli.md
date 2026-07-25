@@ -2,6 +2,8 @@
 
 `xeac` is the primary way to drive XEAC. It adds nothing the API does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
 
+This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same API, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot.
+
 The daemon starts itself on your first command. There is no separate "start the service" step.
 
 ## The shape of it
@@ -28,7 +30,7 @@ xeac create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TIT
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
 | `-m`, `--mode` | `default`, `auto`, or `read_only`. Fixed for the session's life. |
 | `-p`, `--project` | The project this session belongs to. |
-| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. |
+| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$XEAC_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |
 
 This is the **only** place a session's configuration is set. Its agent, its directory and its permission mode cannot be changed afterwards — that immutability is what makes a session's authority something you can reason about, rather than something a later call might widen.

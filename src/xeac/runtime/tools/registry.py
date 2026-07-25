@@ -529,11 +529,11 @@ def open_artifact(
 
 @tool
 def read_task(task_id: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """Read another A2A task in this context — a sibling or agent task — by its id, returning its current status and artifact (deliverable).
+    """Read a sibling A2A task in this context by its id, returning its current status and artifact (deliverable).
 
     Use this to coordinate with externally supplied sibling A2A task ids: check whether a sibling has finished and read what it produced, then build on it.
 
-    This is NOT how you retrieve background results. A search_web ("search-…"), background-bash ("bg-…"), or spawned-agent ("agent-…") handle is not a readable task. Those results are delivered to you automatically when ready, so never call read_task on them and never use it to poll. Use ``cancel_agent`` only when a spawned agent should be stopped.
+    This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…"), background-bash ("bg-…"), or peer-session ("peer-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_task on one and never use it to poll. To look at a peer session, use read_session; to stop one, use end_session.
 
     Arguments:
         task_id: The id of an externally supplied sibling A2A task to read.
@@ -579,7 +579,7 @@ def update_goal(
 ) -> str:
     """Set, replace, satisfy, or clear the single active goal for this turn.
 
-    A goal is not a task list. It is the top-level completion contract the harness injects back into your context until you explicitly satisfy or clear it. Use it when a user request has a concrete outcome that must not be lost while you run tools, delegate, or continue across multiple model passes. Do not set a goal for a tiny one-shot answer. While a goal is active, keep working until it is satisfied, explicitly clear it if it becomes obsolete, or leave it active only when work genuinely remains.
+    A goal is not a task list. It is the top-level completion contract the harness injects back into your context until you explicitly satisfy or clear it. Use it when a user request has a concrete outcome that must not be lost while you run tools, hand work to a peer session, or continue across multiple model passes. Do not set a goal for a tiny one-shot answer. While a goal is active, keep working until it is satisfied, explicitly clear it if it becomes obsolete, or leave it active only when work genuinely remains.
 
     Arguments:
         goal: The goal text to set when status is "active". Leave empty when marking the current goal as "satisfied" or "cleared".

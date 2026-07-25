@@ -66,7 +66,7 @@ class ToolMetadata(BaseModel):
 # Streamed events (API -> client)
 #
 # Every event is a DataPart payload of the shape {kind, ...}, and the client discriminates
-# on `kind`. Events carry no tree position: a spawned agent is its own session with its own
+# on `kind`. Events carry no tree position: a peer is its own session with its own
 # stream, so there is no parent transcript for a child's events to be placed into.
 
 class _EventBase(BaseModel):

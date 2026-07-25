@@ -1,0 +1,1 @@
+The peer session is working. Its result will be delivered to you automatically as a 'peer_session_completed' message carrying this same task_identifier. Do NOT call read_task on this id and do NOT poll for it — carry on with what you can, or end your turn and you will be woken when it lands.

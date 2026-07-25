@@ -1,10 +1,16 @@
 """The daemon's control plane: what clients call to make sessions exist and to read them.
 
-One method surface, reached two ways. The CLI and agents connect over a unix socket in the
+One method surface, reached two ways. The CLI and sessions connect over a unix socket in the
 runtime directory; the desktop client connects over a loopback TCP port, because a webview
-cannot open a unix socket. Both carry the daemon's capability token, so the API is closed to
-anything that cannot read the 0600 token file — which is what finally puts authentication in
-front of a surface that executes tools.
+cannot open a unix socket. Both carry a capability token, so the API is closed to anything
+that cannot read the 0600 token file — which is what finally puts authentication in front of
+a surface that executes tools.
+
+Two kinds of token, and the difference matters. The daemon's says a caller may drive the
+daemon and nothing about who it is; a session's own says *which* session is calling. A caller
+identified that way is held to what a session may legitimately do — its own verbs, aimed at
+its own subtree — and its calls are attributed to it, which is what makes a peer it creates a
+child of it rather than whatever the request body claimed.
 
 Reads and lifecycle are served from here, because the daemon is the sole writer and therefore
 already holds everything, whether a session is alive or long since reaped. Commands are a
@@ -19,7 +25,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -119,7 +125,7 @@ async def _session_create(params: dict) -> dict:
     """Mint a session and hand back its handle.
 
     This is the only place a session's configuration is set. The mode is clamped against the
-    parent's, so a child can never be created looser than the session that spawned it — the
+    parent's, so a child can never be created looser than the session that created it — the
     clamp lives here rather than in the caller because the caller is often the model."""
     assert state.registry is not None and state.lifecycle is not None
     # No fallback: which agent a session runs is the one thing nothing can reasonably guess
@@ -127,7 +133,11 @@ async def _session_create(params: dict) -> dict:
     # silently produced a session doing work under a profile nobody chose.
     agent = _require(params, "agent")
     _assert_agent_exists(agent, str(params.get("working_directory") or ""))
-    parent_id = str(params.get("parent") or "").strip()
+    # A session that authenticated as itself is the parent, whatever it asked for. The clamp
+    # and the reaper both hang off this link, so leaving it to the caller to declare made both
+    # opt-out: a session could create a peer outside its own tree, at any mode, simply by not
+    # mentioning itself. An unattributed call (a person's client) still passes `parent`.
+    parent_id = str(params.get("calling_session") or params.get("parent") or "").strip()
     parent = state.registry.get(parent_id) if parent_id else None
     if parent_id and parent is None:
         raise RpcError(f"No parent session {parent_id!r}.", status_code=404, code="no_such_session")
@@ -185,8 +195,19 @@ async def _session_create(params: dict) -> dict:
             status_code=503,
             code="worker_unavailable",
         )
-    # The token is returned exactly once, here, to whoever asked for the session.
-    return {"id": record.id, "token": record.token, "socket": str(record.socket_path), "agent": record.agent}
+    # The token is returned exactly once, here, to whoever asked for the session. The parent
+    # and mode come back too because both may differ from what was asked for — a caller
+    # attributed by its token becomes the parent whatever it said, and the mode is clamped
+    # against that parent — and a creator that cannot see the difference cannot reason about
+    # what it just made.
+    return {
+        "id": record.id,
+        "token": record.token,
+        "socket": str(record.socket_path),
+        "agent": record.agent,
+        "parent": record.parent,
+        "permission_mode": record.permission_mode,
+    }
 
 
 async def _session_list(params: dict) -> dict:
@@ -204,8 +225,8 @@ async def _session_get(params: dict) -> dict:
 
 
 async def _session_tree(params: dict) -> dict:
-    """A session and everything under it, so a client can render the hierarchy that spawning
-    creates. Without this a fan-out just looks like a pile of unrelated sessions."""
+    """A session and everything under it, so a client can render the hierarchy that creating a
+    peer builds up. Without this a fan-out just looks like a pile of unrelated sessions."""
     assert state.registry is not None
     root = _session(_require(params, "id"))
     return {
@@ -428,6 +449,37 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
 }
 
 
+# What a session may ask the control plane for on its own behalf. Narrower than what a
+# person's client may do, and deliberately so: a session token is a capability for one
+# session's work, not a second daemon token. Everything absent here — reading another tree's
+# history, answering a permission request, compacting somebody else — stays with the human.
+_SESSION_CALLER_METHODS = frozenset({
+    "session.create", "session.send", "session.get", "session.tree",
+    "session.kill", "session.history", "remote.list", "remote.send",
+})
+
+
+def _refuse_session_caller(caller: str, method: str, params: dict) -> Optional[RpcError]:
+    """Whether an attributed session may make this call, and why not.
+
+    Two limits. A session may only use the verbs it composes with, and it may only aim them at
+    itself or something it created — its own subtree. Without the second, a session token
+    would be a handle on every other session on the machine, which is the opposite of what
+    minting one per session is for."""
+    if method not in _SESSION_CALLER_METHODS:
+        return RpcError(f"A session may not call {method!r}.", status_code=403, code="forbidden")
+    target = str(params.get("id") or "").strip()
+    if not target or target == caller:
+        return None
+    if state.registry is None:
+        return None
+    if any(record.id == target for record in state.registry.descendants_of(caller)):
+        return None
+    return RpcError(
+        f"Session {target!r} is not yours.", status_code=403, code="forbidden",
+    )
+
+
 @router.post("/rpc")
 async def rpc(request: Request) -> JSONResponse:
     """One entry point for every control-plane call."""
@@ -442,6 +494,15 @@ async def rpc(request: Request) -> JSONResponse:
     handler = METHODS.get(method)
     if handler is None:
         return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
+    # Who is calling, when the token said so. A session's own token identifies it; the daemon
+    # token does not, and leaves this empty. Overwriting rather than merging is the point: a
+    # caller must not be able to name itself something other than what its token proves.
+    caller = getattr(request.state, "calling_session", "")
+    if caller:
+        refusal = _refuse_session_caller(caller, method, params)
+        if refusal is not None:
+            return JSONResponse({"error": {"code": refusal.code, "message": refusal.message}}, status_code=refusal.status_code)
+        params = {**params, "calling_session": caller}
     try:
         return JSONResponse({"result": await handler(params)})
     except RpcError as error:
@@ -461,6 +522,14 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
     The snapshot comes first so a client that attaches mid-turn is not left guessing about
     what it missed, and the live tail continues from there."""
     _session(session_id)
+    # Same scoping as the control plane: a session's own token watches its own subtree, not
+    # every stream on the machine. A human's client presents the daemon token and is not
+    # narrowed — watching is what it exists to do.
+    caller = getattr(request.state, "calling_session", "")
+    if caller:
+        refusal = _refuse_session_caller(caller, "session.get", {"id": session_id})
+        if refusal is not None:
+            raise refusal
 
     async def stream():
         assert state.task_store is not None

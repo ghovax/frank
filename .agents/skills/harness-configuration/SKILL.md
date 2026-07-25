@@ -13,7 +13,7 @@ The authoritative models live in `src/xeac/base/configuration.py` (`GlobalConfig
 
 ## Where things live
 
-- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`. Note what is *not* there: no default agent. `xeac create --agent` is required, and no profile is nominated to stand in for an unstated one.
+- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
 - `~/.local/share/xeac/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `xeac daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
 - The rest is XDG too: logs in `~/.local/state/xeac/`, caches in `~/.cache/xeac/`, and sockets, the daemon's port and its token in the runtime directory.
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
@@ -66,7 +66,7 @@ One agent per directory: `.agents/agents/<name>/agent.md` (or `~/.agents/agents/
 
 ```markdown
 ---
-name: reviewer                       # slug — what `xeac create --agent` and the card name it by
+name: reviewer                       # slug — what `--agent`, `create_session` and the card name it by
 title: Reviewer                      # human label shown in the UI
 aliases: [code-reviewer]
 color: purple
@@ -180,7 +180,7 @@ Two things are deliberately **not** live, because they are fixed when a session 
 
 ## Verifying a change
 
-- Agents and skills: `xeac create --agent <name>` refuses an unknown profile and lists the ones that exist. The GUI reads the same catalogue from `GET /agents/cards`.
+- Agents and skills: `xeac create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
 - Configuration: `xeac configure` prints every setting as a JSON object of dotted path to value, credentials included — it reads a file the user owns.
 - Providers and models: `GET /models` lists them grouped by provider; a provider's models unlock once its key resolves.
 - MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools that folder sees. An unreachable server is listed with no tools and an `error` rather than failing the call.

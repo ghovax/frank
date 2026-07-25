@@ -199,7 +199,7 @@ class _ToolsMixin:
     ) -> AsyncIterator[TurnEvent]:
         """Run independent tool calls concurrently, yielding their events as they
         arrive (interleaved). The model emits several tool calls in one response
-        when work is parallel; they run concurrently so multiple spawned agents
+        when work is parallel; they run concurrently so multiple peer sessions
         and other independent tools progress together. ``decisions`` carries the
         preflight verdict for each call, so no tool prompts mid-batch."""
         if not tool_calls:
@@ -1211,6 +1211,35 @@ class _ToolsMixin:
             height=requested_height,
         )
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)
+
+
+    async def _tool_session(
+        self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
+        decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
+        resolved_location: ResolvedLocation | None,
+    ) -> AsyncIterator[TurnEvent]:
+        """Every peer-session and remote-agent verb.
+
+        One handler because they differ only in which call they make: there is no permission
+        gate to resolve and no location to apply. A peer cannot hold authority this session
+        lacks — the daemon clamps a child against its parent — so creating one grants nothing
+        that asking for it would not, and gating it would be ceremony rather than control."""
+        from xeac.runtime.tools import sessions
+
+        # The create tool is built per-runtime, with the installed profiles baked into its
+        # schema, so it is found among this runtime's tools rather than imported.
+        create_tool = next((tool for tool in self._tools if tool.name == "create_session"), None)
+        background_token = bind_background_jobs(self._background)
+        try:
+            result = await sessions.invoke(tool_name, tool_arguments, create_tool)
+        finally:
+            unbind_background_jobs(background_token)
+        result_data = _maybe_json(result)
+        if isinstance(result_data, dict) and result_data.get("code") == "peer_session_started":
+            # The "don't poll, you'll be woken" guidance, from a template — user-facing
+            # wording lives in prompts, not in tool code.
+            result_data["note"] = self._prompt_loader.load("peer_session_started_note", {})
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
 
     async def _tool_search_web(

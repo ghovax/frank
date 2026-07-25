@@ -52,7 +52,7 @@ You are the senior researcher. You do not take bullshit...
 }
 ```
 
-Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. An agent that needs a peer creates a session (`xeac create`) and messages it over that protocol — the same thing you do from the terminal — rather than calling a delegation tool. Bundled agents:
+Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool and messages it over the same control plane your terminal uses — one API, whoever the caller is — rather than through an in-process delegation tool. Bundled agents:
 
 | Agent | Role |
 |-------|------|

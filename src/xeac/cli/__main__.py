@@ -2,8 +2,9 @@
 
 The verbs mirror the API exactly — create a session, send it a message, read it, watch it,
 list what exists, kill a tree. The CLI adds no capability of its own; it is the ergonomic
-face of the same surface the desktop client and agents use, which is why an agent spawning a
-peer runs the same command a person would.
+face of the same surface the desktop client and sessions use. A session reaches that surface
+through its own tools rather than through this command — a typed call carries the caller's
+identity, which an argv string cannot — but it is the same API underneath.
 
 `create` is the only place a session's configuration is set. `send` only does work. That
 split is the permission model made visible: there is no verb that loosens a running session,
@@ -51,18 +52,23 @@ def _note(message: str) -> None:
 
 
 def _command_create(arguments: argparse.Namespace) -> int:
+    import os
+
     result = call(
         "session.create",
         agent=arguments.agent,
         working_directory=arguments.directory or "",
         permission_mode=arguments.mode or "",
         project_id=arguments.project or "",
-        parent=arguments.parent or "",
+        # Run from inside a session's shell, this command creates a *child* of that session by
+        # default. Without it a session that reached for the CLI created an orphan: outside the
+        # tree, outside the reaper, and outside the permission clamp, which is skipped entirely
+        # when there is no parent to clamp against.
+        parent=arguments.parent or os.environ.get("XEAC_SESSION_ID", ""),
         title=arguments.title or "",
     )
     # The bare id, because the answer is one value: this is what makes `id=$(xeac create …)`
-    # work, which is how an agent creates a peer from a shell. The token and socket are in
-    # `xeac get`.
+    # work in a shell script. The token and socket are in `xeac get`.
     print(result["id"])
     return 0
 
@@ -297,7 +303,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("-a", "--all", action="store_true", help="include sessions that have ended")
     ps.set_defaults(handler=_command_ps)
 
-    tree = add("tree", help="show a session and everything it spawned")
+    tree = add("tree", help="show a session and everything it created")
     tree.add_argument("session")
     tree.set_defaults(handler=_command_tree)
 

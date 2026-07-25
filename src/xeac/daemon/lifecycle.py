@@ -2,7 +2,7 @@
 
 Three things live here because they are the same concern seen from different ends: handing a
 warm worker its assignment so it becomes a session, noticing when a session's process dies
-without telling anyone, and taking a session down along with everything it spawned.
+without telling anyone, and taking a session down along with everything it created.
 
 Reaping is depth-first over the tree and always kills children before the parent, so a child
 is never briefly orphaned onto a dead parent. Each worker leads its own process group, so a

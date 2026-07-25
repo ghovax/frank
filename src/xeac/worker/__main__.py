@@ -65,6 +65,12 @@ async def run() -> int:
         logger.error("Assignment is missing the agent to run")
         return 1
 
+    # Every subprocess this session starts inherits its identity, so a session that reaches
+    # for the `xeac` command from a shell parents its peers correctly instead of orphaning
+    # them. The tools are the path meant to be taken and carry this themselves; this is what
+    # keeps the other path from being silently wrong.
+    os.environ["XEAC_SESSION_ID"] = session_id
+
     configuration = GlobalConfiguration.load()
     session = SessionExecutor(
         session_id=session_id,

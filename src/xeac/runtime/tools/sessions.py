@@ -1,0 +1,430 @@
+"""Peer sessions, as tools.
+
+A session composes with another session by messaging it. That is the harness's one
+composition path, and these tools are how a model walks it — the same control-plane API the
+`xeac` command and the desktop client call, reached directly instead of through a shell.
+
+Doing it through the shell was the earlier design, and it could not hold. A session that runs
+`xeac create` writes argv as free text, and free text cannot carry what makes a peer a *peer*:
+the caller's own identity. Nothing propagated a session id into the environment its `bash`
+tool ran in, so every peer created that way was born unparented — outside the tree, outside
+the reaper, and outside the permission clamp, which is skipped entirely when there is no
+parent to clamp against. A read-only session could create an unrestricted one. It was also
+not portable: in the packaged application the daemon re-execs a bundled helper, and there is
+no `xeac` on the path at all.
+
+A typed call fixes all of that by construction rather than by instruction. `parent` is not an
+argument here — it is the calling session, always, so the clamp and the reaper cannot be
+opted out of. The agent profile is an enumeration built from the live catalogue, so an
+invented name is unrepresentable rather than refused after the fact. And the working
+directory defaults to the caller's, which is what a peer working on the same problem needs
+and what a model would otherwise have to remember to pass.
+
+Waiting is not an argument either. A peer's turn behaves like every other slow thing here: it
+runs, it gets a short window to finish inline, and if it does not, its deliverable is
+delivered as its own message when it lands — so a caller ends its turn and is woken, rather
+than holding one open. This is the same contract `search_web` and a backgrounded `bash`
+already use.
+
+There is deliberately no permission gate on creating a peer. The clamp is the control: a
+child can never hold authority its parent lacks, so creating one grants nothing that asking
+for it would not. Sending to an agent on *another host* is a different matter — that leaves
+the machine — and stays governed by the per-profile authorization the remote agent registry
+already applies.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Literal, Optional, Protocol, runtime_checkable
+
+from langchain_core.tools import BaseTool, StructuredTool
+from pydantic import Field, create_model
+
+from xeac.base.configuration import PromptLoader
+from xeac.base.serialization import compact
+from xeac.base.tuning import Limit, active_tuning
+from xeac.runtime.background import current_background_jobs
+
+# A tool's description is the guidance a model reads to decide whether and how to call it —
+# model-facing prose, and so it lives in a prompt template like every other piece of it. The
+# field descriptions stay here: those are schema annotations naming what an argument is, not
+# advice about when to use it.
+_PROMPTS = PromptLoader(Path(__file__).resolve().parent.parent / "prompts")
+
+
+def _description(tool_name: str) -> str:
+    text = _PROMPTS.load(f"tool_{tool_name}", {}).strip()
+    if not text:
+        # The loader answers a missing template with an empty string, and an empty description
+        # is a tool the model is handed with no idea what it does. Fail at import instead of
+        # shipping one.
+        raise ValueError(f"No description template for the {tool_name!r} tool.")
+    return text
+
+
+@runtime_checkable
+class SessionAccess(Protocol):
+    """What a session needs in order to work with its peers.
+
+    Implemented by the worker, which is the layer that holds the session's identity and its
+    connection to the daemon; injected here so the runtime can offer the tools without
+    importing the layer above it."""
+
+    session_id: str
+    working_directory: str
+    permission_mode: str
+
+    async def create(self, *, agent: str, working_directory: str, permission_mode: str, title: str) -> dict: ...
+    async def send(self, session_id: str, text: str) -> str: ...
+    async def await_result(self, session_id: str, task_id: str = "") -> dict: ...
+    async def get(self, session_id: str) -> dict: ...
+    async def children(self) -> list[dict]: ...
+    async def end(self, session_id: str) -> dict: ...
+    async def remote_list(self) -> list[dict]: ...
+    async def remote_send(self, name: str, text: str) -> dict: ...
+
+
+_access: Optional[SessionAccess] = None
+
+
+def set_session_access(access: SessionAccess | None) -> None:
+    """Install the session's view of its peers. Called once by the worker at startup."""
+    global _access
+    _access = access
+
+
+def _unavailable(code: str) -> str:
+    return compact({
+        "code": code,
+        "status": "error",
+        "message": "Peer sessions are not available in this process.",
+    })
+
+
+async def _await_and_report(session_id: str, handle: str, task_id: str) -> str:
+    """Wait for a peer's turn to finish, then render what it produced.
+
+    Waiting is a subscription, not a poll: the daemon publishes a turn's start and end on the
+    session's stream, and this returns on the ending edge."""
+    access = _access
+    if access is None:
+        return _unavailable("peer_session_error")
+    try:
+        result = await access.await_result(session_id, task_id)
+    except Exception as exception:  # noqa: BLE001 — a peer's failure is this call's result
+        return compact({
+            "code": "peer_session_error",
+            "status": "error",
+            "task_identifier": handle,
+            "session": session_id,
+            "message": str(exception),
+        })
+    return compact({
+        "code": "peer_session_completed",
+        "status": "ok",
+        "task_identifier": handle,
+        "session": session_id,
+        "state": result.get("state", ""),
+        "result": result.get("text", ""),
+    })
+
+
+async def _start_and_settle(session_id: str, task_id: str, *, started_code: str, extra: dict) -> str:
+    """Run a peer's turn as a background job, giving it a short window to finish inline.
+
+    The common case is a short turn that returns its deliverable directly, so the model never
+    handles a pending identifier at all. A longer one returns an acknowledgement and arrives
+    later on its own."""
+    jobs = current_background_jobs()
+    handle = jobs.spawn(
+        "peer_session",
+        _await_and_report(session_id, _peer_handle(session_id), task_id),
+        identifier=_peer_handle(session_id),
+        arguments={"session": session_id},
+        # A peer outlives the turn that started it: it is its own process, and stopping this
+        # session must not discard work another one is already doing.
+        detached=True,
+    )
+    settled = await jobs.settle_inline(handle, active_tuning().duration(Limit.PEER_SYNC_WINDOW_SECONDS))
+    if settled is not None:
+        # The same facts either way. A peer that finished inline must not report less about
+        # itself than one that took longer — notably the mode it actually got, which may not
+        # be the mode that was asked for.
+        finished = _maybe_object(settled.result)
+        return compact({**finished, **extra}) if finished is not None else settled.result
+    return compact({
+        "code": started_code,
+        "status": "running",
+        "task_identifier": handle,
+        "session": session_id,
+        **extra,
+    })
+
+
+def _maybe_object(result: str) -> Optional[dict]:
+    import json
+
+    try:
+        parsed = json.loads(result)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _peer_handle(session_id: str) -> str:
+    """One handle per peer, derived from its id.
+
+    Derived rather than minted so a second message to the same peer reuses the handle instead
+    of leaving two jobs racing to report the same session's next idle edge."""
+    return f"peer-{session_id.removeprefix('session-')}"
+
+
+async def _create_session(
+    agent: str,
+    message: str,
+    working_directory: str = "",
+    permission_mode: str = "",
+    title: str = "",
+) -> str:
+    access = _access
+    if access is None:
+        return _unavailable("create_session_error")
+    try:
+        record = await access.create(
+            agent=agent,
+            working_directory=working_directory or access.working_directory,
+            permission_mode=permission_mode,
+            title=title,
+        )
+    except Exception as exception:  # noqa: BLE001 — surfaced to the model as a tool result
+        return compact({"code": "create_session_error", "status": "error", "message": str(exception)})
+    session_id = str(record.get("id") or "")
+    try:
+        task_id = await access.send(session_id, message)
+    except Exception as exception:  # noqa: BLE001
+        return compact({
+            "code": "create_session_error", "status": "error",
+            "session": session_id, "message": str(exception),
+        })
+    return await _start_and_settle(
+        session_id,
+        task_id,
+        started_code="peer_session_started",
+        # The mode the peer actually got, not the one asked for: it is clamped against this
+        # session's, and a caller that cannot see the clamp cannot reason about what it made.
+        extra={"agent": agent, "permission_mode": str(record.get("permission_mode") or "")},
+    )
+
+
+async def _send_to_session(session: str, message: str) -> str:
+    access = _access
+    if access is None:
+        return _unavailable("send_to_session_error")
+    try:
+        task_id = await access.send(session, message)
+    except Exception as exception:  # noqa: BLE001
+        return compact({
+            "code": "send_to_session_error", "status": "error",
+            "session": session, "message": str(exception),
+        })
+    return await _start_and_settle(session, task_id, started_code="peer_session_started", extra={})
+
+
+async def _read_session(session: str) -> str:
+    access = _access
+    if access is None:
+        return _unavailable("read_session_error")
+    try:
+        record = await access.get(session)
+    except Exception as exception:  # noqa: BLE001
+        return compact({
+            "code": "read_session_error", "status": "error",
+            "session": session, "message": str(exception),
+        })
+    return compact({"code": "session", "status": "ok", **record})
+
+
+async def _list_sessions() -> str:
+    access = _access
+    if access is None:
+        return _unavailable("list_sessions_error")
+    try:
+        records = await access.children()
+    except Exception as exception:  # noqa: BLE001
+        return compact({"code": "list_sessions_error", "status": "error", "message": str(exception)})
+    return compact({"code": "sessions", "status": "ok", "sessions": records})
+
+
+async def _end_session(session: str) -> str:
+    access = _access
+    if access is None:
+        return _unavailable("end_session_error")
+    try:
+        result = await access.end(session)
+    except Exception as exception:  # noqa: BLE001
+        return compact({
+            "code": "end_session_error", "status": "error",
+            "session": session, "message": str(exception),
+        })
+    return compact({"code": "session_ended", "status": "ok", "session": session, **result})
+
+
+async def _list_remote_agents() -> str:
+    access = _access
+    if access is None:
+        return _unavailable("list_remote_agents_error")
+    try:
+        agents = await access.remote_list()
+    except Exception as exception:  # noqa: BLE001
+        return compact({"code": "list_remote_agents_error", "status": "error", "message": str(exception)})
+    return compact({"code": "remote_agents", "status": "ok", "agents": agents})
+
+
+async def _send_to_remote_agent(name: str, message: str) -> str:
+    access = _access
+    if access is None:
+        return _unavailable("send_to_remote_agent_error")
+    try:
+        result = await access.remote_send(name, message)
+    except Exception as exception:  # noqa: BLE001
+        return compact({
+            "code": "send_to_remote_agent_error", "status": "error",
+            "agent": name, "message": str(exception),
+        })
+    return compact({"code": "remote_agent_replied", "status": "ok", "agent": name, **result})
+
+
+def build_create_session_tool(agent_names: list[str]) -> BaseTool:
+    """The create tool, with the installed agent profiles baked into its schema.
+
+    An enumeration rather than a free string, because "never invent a profile name" is an
+    instruction a model can disobey, while a schema it cannot satisfy is one it cannot get
+    wrong. The catalogue is read when the runtime is built, so a profile added while a session
+    is running appears on its next rebuild."""
+    names = tuple(sorted(agent_names))
+    arguments = create_model(
+        "CreateSessionArguments",
+        agent=(
+            Literal[names],  # type: ignore[valid-type]
+            Field(description="The agent profile the peer runs."),
+        ),
+        message=(str, Field(description="The brief to send it.")),
+        working_directory=(
+            str,
+            Field(default="", description="Where the peer works. Defaults to your working directory."),
+        ),
+        permission_mode=(
+            Literal["", "default", "auto", "read_only"],
+            Field(default="", description="The peer's permission mode. Defaults to yours."),
+        ),
+        title=(str, Field(default="", description="A short label for the session list.")),
+    )
+    return StructuredTool.from_function(
+        coroutine=_create_session,
+        name="create_session",
+        description=_description("create_session"),
+        args_schema=arguments,
+    )
+
+
+send_to_session_tool = StructuredTool.from_function(
+    coroutine=_send_to_session,
+    name="send_to_session",
+    description=_description("send_to_session"),
+    args_schema=create_model(
+        "SendToSessionArguments",
+        session=(str, Field(description="The session id.")),
+        message=(str, Field(description="The message to send.")),
+    ),
+)
+
+
+read_session_tool = StructuredTool.from_function(
+    coroutine=_read_session,
+    name="read_session",
+    description=_description("read_session"),
+    args_schema=create_model(
+        "ReadSessionArguments",
+        session=(str, Field(description="The session id.")),
+    ),
+)
+
+
+list_sessions_tool = StructuredTool.from_function(
+    coroutine=_list_sessions,
+    name="list_sessions",
+    description=_description("list_sessions"),
+    args_schema=create_model("ListSessionsArguments"),
+)
+
+
+end_session_tool = StructuredTool.from_function(
+    coroutine=_end_session,
+    name="end_session",
+    description=_description("end_session"),
+    args_schema=create_model(
+        "EndSessionArguments",
+        session=(str, Field(description="The session id.")),
+    ),
+)
+
+
+list_remote_agents_tool = StructuredTool.from_function(
+    coroutine=_list_remote_agents,
+    name="list_remote_agents",
+    description=_description("list_remote_agents"),
+    args_schema=create_model("ListRemoteAgentsArguments"),
+)
+
+
+send_to_remote_agent_tool = StructuredTool.from_function(
+    coroutine=_send_to_remote_agent,
+    name="send_to_remote_agent",
+    description=_description("send_to_remote_agent"),
+    args_schema=create_model(
+        "SendToRemoteAgentArguments",
+        name=(str, Field(description="The registered remote agent's name.")),
+        message=(str, Field(description="The message to send.")),
+    ),
+)
+
+
+def session_tools(agent_names: list[str]) -> list[BaseTool]:
+    """Every peer-session tool, or none at all when there are no profiles to run.
+
+    Offering `create_session` with an empty enumeration would be offering a tool that cannot
+    be called successfully, which costs context and invites an attempt."""
+    if not agent_names:
+        return []
+    return [
+        build_create_session_tool(agent_names),
+        send_to_session_tool,
+        read_session_tool,
+        list_sessions_tool,
+        end_session_tool,
+    ]
+
+
+def remote_agent_tools() -> list[BaseTool]:
+    return [list_remote_agents_tool, send_to_remote_agent_tool]
+
+
+_TOOLS_BY_NAME: dict[str, Any] = {
+    "send_to_session": send_to_session_tool,
+    "read_session": read_session_tool,
+    "list_sessions": list_sessions_tool,
+    "end_session": end_session_tool,
+    "list_remote_agents": list_remote_agents_tool,
+    "send_to_remote_agent": send_to_remote_agent_tool,
+}
+
+
+async def invoke(tool_name: str, tool_arguments: dict, create_tool: BaseTool | None) -> str:
+    """Run one session tool by name. `create_session` is passed in because its schema is built
+    per-runtime from the live agent catalogue rather than being a module-level singleton."""
+    if tool_name == "create_session":
+        if create_tool is None:
+            return _unavailable("create_session_error")
+        return await create_tool.ainvoke(tool_arguments)
+    return await _TOOLS_BY_NAME[tool_name].ainvoke(tool_arguments)

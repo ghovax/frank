@@ -1,8 +1,8 @@
 # Tools
 
-A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones pause for approval, which reaches you as a prompt in the app or as `xeac approve` in the terminal. Each built-in tool's docstring in `src/xeac/runtime/tools/registry.py` is the description the model reads, so the authoritative spec lives in the repo.
+A session acts through tools. Every tool call goes through the [permission engine](configuration.md#permission-modes); risky ones pause for approval, which reaches you as a prompt in the app or as `xeac approve` in the terminal. The description the model reads is in the repo: a docstring in `src/xeac/runtime/tools/registry.py` for most tools, a template in `src/xeac/runtime/prompts/tool_*.md` for the peer-session ones.
 
-There is no delegation tool. A session that needs a peer creates one — `xeac create` through `bash` — and messages it, which is the same thing you do from the terminal. See [Architecture](architecture.md#sessions).
+There is no delegation tool and no in-process sub-agent. A session that needs a peer creates one with `create_session`, which reaches the same control plane your terminal does. See [Architecture](architecture.md#sessions).
 
 ## The built-in surface
 
@@ -38,6 +38,24 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 | `ask_user` | Ask the user a question and wait for the answer. |
 | `wait_for` | Pause for a few seconds without a model round trip, to re-check something that was not ready. |
 
+**Peer sessions**
+
+| Tool | What it does |
+|------|--------------|
+| `create_session` | Create a peer session and give it work. Its `agent` argument enumerates the profiles actually installed, so an unknown name cannot be asked for. |
+| `send_to_session` | Send a peer another message. Delivered into its current turn if it is already working, rather than queued behind it. |
+| `read_session` | One session's state: its profile, whether its process is alive, whether a turn is in flight, whether it is waiting on a human. |
+| `list_sessions` | The sessions this one created. Its own subtree, not the machine's. |
+| `end_session` | End a peer and everything under it. |
+
+The caller is the parent, always — it is not an argument. That is what puts a peer inside the tree, inside the reaper, and under the permission clamp, so a peer can never hold authority the session that made it does not have.
+
+Waiting is not an argument either. A peer's turn gets a short window to finish inline; a longer one returns a `task_identifier` and its deliverable arrives later as its own message, so the caller ends its turn and is woken rather than holding one open.
+
+**Agents on other hosts**
+
+`list_remote_agents` and `send_to_remote_agent` — separate verbs, because a remote agent is a separate bargain: someone else's machine, someone else's cost, no shared history, and no access to this filesystem. Present only when one is registered.
+
 **MCP**
 
 `call_mcp_tool`, `list_mcp_tools`, `list_mcp_resources`, `read_mcp_resource` — bridge to any configured [MCP server](agents-and-skills.md#mcp-servers).
@@ -65,7 +83,7 @@ XEAC reads structure, not pixels: there is no screenshot path for computer use. 
 
 ## Where the definitions live
 
-- Descriptions the model reads: the tool docstrings in `src/xeac/runtime/tools/registry.py`
+- Descriptions the model reads: the tool docstrings in `src/xeac/runtime/tools/registry.py`, and `src/xeac/runtime/prompts/tool_*.md` for the peer-session tools
 - Implementations: `src/xeac/runtime/tools/` and `src/xeac/computer/`
 - Model-facing message templates: `src/xeac/runtime/prompts/` and `src/xeac/computer/messages/`
 - The guidance a session gets for screen control: `src/xeac/runtime/prompts/computer_control_guidance.md`

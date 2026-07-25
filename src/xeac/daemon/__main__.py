@@ -226,8 +226,19 @@ def build_app() -> FastAPI:
             header[len("Bearer "):] if header.startswith("Bearer ")
             else request.query_params.get("token", "")
         )
-        if not presented or not secrets.compare_digest(presented, state.daemon_token):
+        if presented and secrets.compare_digest(presented, state.daemon_token):
+            # The daemon token: a human's client, or a worker's persistence channel. It says
+            # "you may drive this daemon" and nothing about who is asking.
+            request.state.calling_session = ""
+            return await call_next(request)
+        # A session's own token identifies *which* session is calling, which the daemon token
+        # cannot. That attribution is what lets a session's control-plane calls be attributed
+        # to it — so a peer it creates is its child, and is clamped against it, whatever the
+        # request body claims.
+        caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
+        if caller is None:
             return JSONResponse({"error": {"code": "unauthorized", "message": "Bad or missing token."}}, status_code=401)
+        request.state.calling_session = caller.id
         return await call_next(request)
 
     @app.get("/health")

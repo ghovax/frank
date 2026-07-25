@@ -235,53 +235,6 @@ def _model_result_status(content: str, *, ok: bool, backgrounded: bool) -> tuple
     return tool_status_from_result(parsed).value, code
 
 
-def _spawned_agent_error(child_task: dict | None) -> dict | None:
-    """The safe error payload (code/title/message from ``_safe_turn_error``) a failed
-    child turn attached to its final status message, or ``None`` when the child did not
-    fail. Lets a delegation report *why* it failed (e.g. its model was rate-limited or
-    its provider rejected the credentials) instead of masquerading as an empty result."""
-    if not isinstance(child_task, dict):
-        return None
-    status = child_task.get("status") or {}
-    if str(status.get("state") or "") not in {"failed", "rejected", "canceled"}:
-        return None
-    parts = ((status.get("message") or {}).get("parts")) or []
-    for part in parts:
-        data = part.get("data") if isinstance(part, dict) else None
-        if isinstance(data, dict) and data.get("kind") == "error":
-            return {key: data[key] for key in ("code", "title", "message") if key in data}
-    return None
-
-
-def _spawned_agent_report(child_task: dict | None, agent_name: str) -> str:
-    """The agent's deliverable — its result artifact(s), exactly as the A2A
-    layer already serialized them — as the JSON injected into the parent's context.
-    Only the deliverable is passed back (never the agent's progress, transcript,
-    or task scaffolding), and the artifact JSON is passed through as-is rather than
-    re-extracted or re-joined by hand.
-
-    When the child produced no artifact, distinguish a *failed* turn (surface the real
-    reason so the parent can react — retry, switch the agent's model, ...) from one that
-    genuinely finished empty."""
-    artifacts = child_task.get("artifacts") if isinstance(child_task, dict) else None
-    if artifacts:
-        return compact(
-            {"code": "agent_report", "status": ToolStatus.OK.value, "agent": agent_name, "artifacts": artifacts},
-        )
-    error = _spawned_agent_error(child_task)
-    if error is not None:
-        return compact(
-            {"code": "agent_failed", "status": ToolStatus.ERROR.value, "agent": agent_name,
-             "reason": error.get("code") or "",
-             "title": error.get("title") or "Agent turn failed",
-             "message": error.get("message") or f"The '{agent_name}' agent's turn failed before it could report."},
-        )
-    return compact(
-        {"code": "agent_no_report", "status": ToolStatus.OK.value, "agent": agent_name,
-         "message": f"The '{agent_name}' agent finished without producing a report."},
-    )
-
-
 def _detect_workspace(working_directory: str) -> tuple[str, bool]:
     """Return ``(workspace_root, is_git_repo)``. Walks up from the working
     directory for a ``.git`` marker; if found the workspace root is the repo
