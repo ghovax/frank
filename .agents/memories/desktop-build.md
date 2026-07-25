@@ -32,7 +32,7 @@ Ad-hoc signing changes the cdhash every build, which invalidates the TCC grant. 
 
 ## Icon — Apple's own no-Xcode pipeline
 
-`packaging/export-icon.py` builds a full-bleed 1024² master (cool vertical gradient + the 🌼 emoji rendered via Core Text, centred at `COVERAGE`), then assembles `icon.icns` with **`sips` + `iconutil`** (renders each iconset size, `iconutil -c icns`) and writes the PNG sizes Tauri lists. No squircle/glass is hand-drawn — modern macOS applies the rounded-rect mask itself. Do NOT hand-roll the icon; this is the sanctioned pipeline (Icon Composer needs `actool` from full Xcode, absent here).
+`packaging/export-icon.py` drives Icon Composer's own `ictool` over `web/src-tauri/XEAC.icon`, exporting a 1024² macOS rendition; that export becomes `app-icon.png` for the non-macOS platform assets, `icon.icns` is written directly through Pillow at every size in `MACOS_ICON_SIZES`, and `tauri icon` generates the rest. No squircle or glass is hand-drawn — modern macOS applies the rounded-rect mask itself. Do NOT hand-roll the icon; the `.icon` document is the source of truth and this script is the sanctioned way to render it.
 
 ## Two packaging gotchas that bloated the app 1.8 GB → ~228 MB
 
