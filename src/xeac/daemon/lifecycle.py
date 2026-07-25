@@ -44,12 +44,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _close_watchers(session_id: str) -> None:
-    """Tell everyone attached to this session that it has ended.
+def _close_subscribers(session_id: str) -> None:
+    """Tell every subscriber of this session's stream that it has ended.
 
     Without it an `xeac attach` on a session that is killed — or that dies on its own — sits
     on a stream that will never produce another frame, because the only thing that ever closed
-    it was the session speaking. A watcher must learn about the deaths too."""
+    it was the session speaking. A subscriber must learn about the deaths too."""
     from xeac.daemon import state
 
     with contextlib.suppress(Exception):
@@ -70,7 +70,7 @@ class SessionLifecycle:
         self._pool = pool
         self._on_change = on_change
         self._processes: dict[str, WarmWorker] = {}
-        self._watchers: dict[str, asyncio.Task] = {}
+        self._supervisors: dict[str, asyncio.Task] = {}
 
     def _changed(self) -> None:
         if self._on_change is not None:
@@ -126,7 +126,7 @@ class SessionLifecycle:
 
         self._processes[record.id] = worker
         self._registry.mark(record.id, status=RUNNING, updated_at=_now(), pid=worker.pid)
-        self._watchers[record.id] = asyncio.get_running_loop().create_task(self._watch(record.id, worker))
+        self._supervisors[record.id] = asyncio.get_running_loop().create_task(self._supervise(record.id, worker))
         self._changed()
         return True
 
@@ -146,7 +146,7 @@ class SessionLifecycle:
         except (ValueError, UnicodeDecodeError):
             return False
 
-    async def _watch(self, session_id: str, worker: WarmWorker) -> None:
+    async def _supervise(self, session_id: str, worker: WarmWorker) -> None:
         """Notice a session's process ending, however it ends.
 
         A worker that exits on its own — a crash, an unhandled error, an OOM kill — would
@@ -178,7 +178,7 @@ class SessionLifecycle:
             ended = self._registry.get(session_id)
             if ended is not None:
                 await self._tell_parent(ended)
-        _close_watchers(session_id)
+        _close_subscribers(session_id)
         self._unlink_socket(session_id)
         self._changed()
 
@@ -242,14 +242,14 @@ class SessionLifecycle:
         return reaped
 
     async def _stop(self, session_id: str) -> None:
-        watcher = self._watchers.pop(session_id, None)
-        if watcher is not None and not watcher.done():
-            watcher.cancel()
+        supervisor = self._supervisors.pop(session_id, None)
+        if supervisor is not None and not supervisor.done():
+            supervisor.cancel()
         worker = self._processes.pop(session_id, None)
         if worker is not None:
             await self._terminate(worker)
             self._pool.release()
-        _close_watchers(session_id)
+        _close_subscribers(session_id)
         self._unlink_socket(session_id)
 
     async def _terminate(self, worker: WarmWorker) -> None:

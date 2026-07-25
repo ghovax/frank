@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
+import { hasBackgroundJobId } from "@/lib/tool-event";
 import { ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { Pill } from "./ui/pill";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
@@ -109,7 +109,7 @@ function resultRendersInside(name: string, content: string, status: ToolEventSta
     return true;
   }
   const record = asRecord(parsed);
-  if (status === "running" && hasBackgroundTaskIdentifier(record)) return false;
+  if (status === "running" && hasBackgroundJobId(record)) return false;
   const code = String(record.code ?? "");
   if (code === "empty_response" && !record.message) return false;
   return true;
@@ -162,7 +162,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, actio
   const { showArguments, showResult, collapsible } = toolCallDetail(name, toolArguments, result, status);
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A running call whose interim result says the work moved to the background.
-  const background = status === "running" && hasBackgroundTaskIdentifier(result);
+  const background = status === "running" && hasBackgroundJobId(result);
   const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments, tDisplay);
 

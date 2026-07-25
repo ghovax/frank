@@ -99,7 +99,8 @@ class ToolResult(TurnEvent):
     name: str = ""
     result: Any = None
     status: str = ""
-    task_id: str = ""
+    # Set when this result is a background job's completion, not a synchronous return.
+    job_id: str = ""
     # A tool result's payload is whatever the tool returned — genuinely open, so it rides a typed
     # envelope with an open tail rather than pretending to a fixed shape.
     extra: dict[str, Any] = field(default_factory=dict)

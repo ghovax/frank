@@ -51,14 +51,14 @@ Isolation is a property of the process. A worker is assigned exactly once and be
 - the **registry** of sessions (identity, parent, permission mode, capability token, status);
 - the **lifecycle**: starting workers, watching for crashes, and reaping a subtree parent-last so a child never outlives its parent;
 - the **databases**, as the sole writer — workers persist by posting to the daemon's ingest surface, so there is exactly one process writing SQLite;
-- the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote peers — everything there can only sensibly be one of;
+- the shared **brokers**: events, terminals, file leases, workspaces, signed file URLs, push notifications, and remote agents — everything there can only sensibly be one of;
 - a **warm worker pool** with a floor and a ceiling, so spawning a session is a socket write rather than a Python cold start, and a fan-out of ten children does not serialise behind the floor.
 
 It serves one API two ways: a **unix socket** for the CLI and for sessions, and a **loopback TCP port** for the desktop client, which cannot open a unix socket from a webview. The port is ephemeral and chosen at boot; both listeners require the capability token the daemon writes `0600` into the runtime directory.
 
 ## The CLI
 
-`xeac` adds nothing the API does not have — it is the ergonomic face of it. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` a pending tool call, `kill` a subtree, `remote` to reach a peer on another host, `configure` what the next session starts with. The [CLI guide](cli.md) is the reference.
+`xeac` adds nothing the control plane does not have — it is the ergonomic face of it. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` a pending tool call, `kill` a subtree, `remote` to reach an agent on another host, `configure` what the next session starts with. The [CLI guide](cli.md) is the reference.
 
 Lifecycle and reads go to the daemon; a data-plane message goes straight to the owning session's socket. Same API, different transport.
 

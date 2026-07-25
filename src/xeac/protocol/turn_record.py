@@ -9,7 +9,7 @@ backend site reads ``record.pending.gates[0].request_id`` rather than
 validation error at the boundary rather than a ``KeyError`` at the point of use.
 
 Serialization is deliberately byte-compatible with the historical flat keys (``pendingInteraction``,
-``xeacTurnKind``, ``referenceTaskIds``): they are
+``xeacTurnKind``, ``referenceTurnIds``): they are
 read by the web client off ``Task.metadata``, so the persisted/wire shape is unchanged — only the
 in-process access is now typed. Reshaping these under a single namespaced key is a later, separate
 step (see the typed-turn-core plan), not this one.
@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 # reads two of them there); these are the names the record (de)serializes to.
 PENDING_INTERACTION_KEY = "pendingInteraction"
 TURN_KIND_KEY = "xeacTurnKind"
-REFERENCE_TASK_IDS_KEY = "referenceTaskIds"
+REFERENCE_TURN_IDS_KEY = "referenceTurnIds"
 # Which session sent a peer turn's message. Carried beside the kind rather than folded into
 # it: "a peer wrote this" and "*which* peer wrote it" are different facts, and a reader that
 # wants to attribute a report needs the second one.
@@ -147,7 +147,7 @@ class TurnRecord(BaseModel):
                 kind = None
         raw_pending = data.get(PENDING_INTERACTION_KEY)
         pending = PendingInteraction.model_validate(raw_pending) if isinstance(raw_pending, dict) else None
-        raw_reference = data.get(REFERENCE_TASK_IDS_KEY)
+        raw_reference = data.get(REFERENCE_TURN_IDS_KEY)
         reference_task_ids = [str(item) for item in raw_reference] if isinstance(raw_reference, list) else []
         raw_sender = data.get(PEER_SENDER_KEY)
         peer_sender = raw_sender if isinstance(raw_sender, str) else ""
@@ -160,7 +160,7 @@ class TurnRecord(BaseModel):
         result = {
             key: value
             for key, value in (metadata or {}).items()
-            if key not in (PENDING_INTERACTION_KEY, TURN_KIND_KEY, REFERENCE_TASK_IDS_KEY, PEER_SENDER_KEY)
+            if key not in (PENDING_INTERACTION_KEY, TURN_KIND_KEY, REFERENCE_TURN_IDS_KEY, PEER_SENDER_KEY)
         }
         if self.kind is not None:
             result[TURN_KIND_KEY] = str(self.kind)
@@ -169,5 +169,5 @@ class TurnRecord(BaseModel):
         if self.pending is not None:
             result[PENDING_INTERACTION_KEY] = self.pending.model_dump()
         if self.reference_task_ids:
-            result[REFERENCE_TASK_IDS_KEY] = list(self.reference_task_ids)
+            result[REFERENCE_TURN_IDS_KEY] = list(self.reference_task_ids)
         return result

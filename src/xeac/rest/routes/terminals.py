@@ -15,10 +15,10 @@ from xeac.daemon import state
 router = APIRouter()
 
 @router.get("/terminals")
-async def list_terminals(context_id: str = "", working_directory: str = ""):
-    context_identifier = await _terminal_context_for_request(context_id, working_directory)
-    persisted = await asyncio.to_thread(_list_terminal_states, context_identifier)
-    live_keys = state.terminal_manager.live_keys(context_identifier) if state.terminal_manager is not None else set()
+async def list_terminals(session_id: str = "", working_directory: str = ""):
+    terminal_context = await _terminal_context_for_request(session_id, working_directory)
+    persisted = await asyncio.to_thread(_list_terminal_states, terminal_context)
+    live_keys = state.terminal_manager.live_keys(terminal_context) if state.terminal_manager is not None else set()
     terminals = [
         {"terminal_key": entry["terminal_key"], "cwd": entry["working_directory"], "running": entry["terminal_key"] in live_keys}
         for entry in persisted
@@ -32,21 +32,21 @@ async def list_terminals(context_id: str = "", working_directory: str = ""):
 
 
 @router.delete("/terminals/{terminal_key}")
-async def delete_terminal(terminal_key: str, context_id: str = "", working_directory: str = ""):
+async def delete_terminal(terminal_key: str, session_id: str = "", working_directory: str = ""):
     terminal_key = (terminal_key or "").strip()[:128]
     if not terminal_key:
         raise HTTPException(status_code=400, detail="A terminal key is required.")
-    context_identifier = await _terminal_context_for_request(context_id, working_directory)
+    terminal_context = await _terminal_context_for_request(session_id, working_directory)
     if state.terminal_manager is not None:
-        await state.terminal_manager.close_one(context_identifier, terminal_key)
-    await asyncio.to_thread(_delete_terminal_state, context_identifier, terminal_key)
+        await state.terminal_manager.close_one(terminal_context, terminal_key)
+    await asyncio.to_thread(_delete_terminal_state, terminal_context, terminal_key)
     return {"ok": True}
 
 
 @router.websocket("/terminal")
 async def terminal_websocket(
     websocket: WebSocket,
-    context_id: str = "",
+    session_id: str = "",
     working_directory: str = "",
     terminal_key: str = "main",
     # A remote-location terminal: an SSH login shell on this host, in `location_base_directory`.
@@ -79,8 +79,8 @@ async def terminal_websocket(
         elif location_base_directory.strip():
             directory = Path(location_base_directory.strip()).expanduser()
         else:
-            directory = _terminal_directory(context_id, working_directory)
-        session = await state.terminal_manager.get_or_create(context_id, directory, rows, columns, terminal_key=terminal_key, remote_host_alias=remote_alias)
+            directory = _terminal_directory(session_id, working_directory)
+        session = await state.terminal_manager.get_or_create(session_id, directory, rows, columns, terminal_key=terminal_key, remote_host_alias=remote_alias)
         subscriber = session.subscribe()
         await websocket.send_json({
             "type": "ready",

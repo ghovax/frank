@@ -2,21 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  abortSession,
+  cancelTurn,
   abortToolCall,
   attachSession,
   compactSession,
   messageParts,
   resolvePermission,
   resolveQuestion,
-  fetchSessionTasks,
-  fetchSessionTasksPage,
+  fetchSessionTurns,
+  fetchSessionTurnsPage,
   sessionCreate,
   sessionSend,
   CONTENT_BLOCK_METADATA_KEY,
   PEER_SENDER_KEY,
   type A2AMessage,
-  type A2ATask as A2ATaskWire,
+  type A2ATurn as A2ATurnWire,
   type PermissionMode,
   type WorkspaceStrategy,
 } from "./api";
@@ -28,7 +28,7 @@ import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@/lib/generated/events";
 
 // Re-export the A2A task shape so components can consume it from one place.
-export type A2ATask = A2ATaskWire;
+export type A2ATurn = A2ATurnWire;
 
 export type TaskState =
   | "submitted"
@@ -957,40 +957,40 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
 // as-is — no client-side compaction pass. Tasks that reference another task are a
 // peer's work, not this session's turns, and are filtered out: a peer is its own
 // session with its own transcript, never a lane inside this one.
-function replayTasks(tasks: A2ATask[]): {
+function replayTurns(turns: A2ATurn[]): {
   messages: ChatMessage[];
   tasks: ChatTask[];
   tokenUsage: TokenUsage | null;
   keyCounts: Map<string, number>;
 } {
-  const mainTasks = tasks
-    .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
+  const mainTurns = turns
+    .filter((turn) => !(turn.metadata && Array.isArray((turn.metadata as Record<string, unknown>).referenceTurnIds)))
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
   const state: ReduceState = newReduceState();
-  for (const task of mainTasks) {
+  for (const turn of mainTurns) {
     state.lane = null;
-    // A task's full message stream is its history PLUS its trailing status
+    // A turn's full message stream is its history PLUS its trailing status
     // message: the A2A TaskManager keeps the latest message on `status.message`
     // and only folds it into `history` on the *next* status update. A turn
     // suspended mid-flight (e.g. awaiting a permission) never gets that next
     // update, so its last message — the pending request — lives only there.
     // Reduce both so replay reproduces exactly what the live stream showed
     // instead of dropping the trailing message and leaving the card stuck.
-    const replayMessages = [...(task.history ?? [])];
-    const trailing = task.status?.message;
+    const replayMessages = [...(turn.history ?? [])];
+    const trailing = turn.status?.message;
     if (trailing && !replayMessages.some((message) => !!message.messageId && message.messageId === trailing.messageId)) {
       replayMessages.push(trailing);
     }
-    // Stamped on the task, not on the message, because it describes what opened the turn.
-    const peerSender = typeof (task.metadata as Record<string, unknown> | undefined)?.[PEER_SENDER_KEY] === "string"
-      ? String((task.metadata as Record<string, unknown>)[PEER_SENDER_KEY])
+    // Stamped on the turn, not on the message, because it describes what opened the turn.
+    const peerSender = typeof (turn.metadata as Record<string, unknown> | undefined)?.[PEER_SENDER_KEY] === "string"
+      ? String((turn.metadata as Record<string, unknown>)[PEER_SENDER_KEY])
       : "";
     for (const message of replayMessages) {
       if (message.role === "user") reduceInboundMessage(state, message, peerSender);
       else reduceAgentMessage(state, message);
     }
     if (!hasAssistantTextAfterLastUser(state)) {
-      for (const artifact of task.artifacts ?? []) {
+      for (const artifact of turn.artifacts ?? []) {
         for (const part of artifact.parts ?? []) {
           if (part.kind !== "text" || !part.text?.trim()) continue;
           pushAssistantText(
@@ -1002,7 +1002,7 @@ function replayTasks(tasks: A2ATask[]): {
         }
       }
     }
-    if (TERMINAL_STATES.has(task.status?.state as TaskState)) finishActiveTools(state);
+    if (TERMINAL_STATES.has(turn.status?.state as TaskState)) finishActiveTools(state);
   }
   return {
     messages: state.messages,
@@ -1048,7 +1048,7 @@ export function useChat(
   const stateRef = useRef<ReduceState>(newReduceState());
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
-  const historyFragmentsRef = useRef<A2ATask[]>([]);
+  const historyFragmentsRef = useRef<A2ATurn[]>([]);
   const historyPageCursorRef = useRef<number | null>(null);
   const hasOlderHistoryRef = useRef(false);
   const isOlderHistoryLoadingRef = useRef(false);
@@ -1116,7 +1116,7 @@ export function useChat(
   }, []);
 
   const applyHistoryFragments = useCallback(() => {
-    const replayed = replayTasks(historyFragmentsRef.current);
+    const replayed = replayTurns(historyFragmentsRef.current);
     stateRef.current = {
       messages: replayed.messages,
       tasks: replayed.tasks,
@@ -1194,9 +1194,9 @@ export function useChat(
     const loadHistory = async () => {
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         try {
-          const page = await fetchSessionTasksPage(initialSessionId, null, controller.signal, HISTORY_PAGE_LIMIT);
+          const page = await fetchSessionTurnsPage(initialSessionId, null, controller.signal, HISTORY_PAGE_LIMIT);
           if (cancelled) return;
-          historyFragmentsRef.current = page.tasks;
+          historyFragmentsRef.current = page.turns;
           historyPageCursorRef.current = page.next_before_row_id;
           hasOlderHistoryRef.current = page.has_more;
           setHasOlderHistory(page.has_more);
@@ -1248,9 +1248,9 @@ export function useChat(
       let cursor: number | null = historyPageCursorRef.current;
       while (cursor != null && hasOlderHistoryRef.current) {
         if (streamedLocallyRef.current || isStreamingRef.current) return;
-        const page = await fetchSessionTasksPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);
+        const page = await fetchSessionTurnsPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);
         if (sessionIdRef.current !== ctx) return;
-        historyFragmentsRef.current = [...page.tasks, ...historyFragmentsRef.current];
+        historyFragmentsRef.current = [...page.turns, ...historyFragmentsRef.current];
         historyPageCursorRef.current = page.next_before_row_id;
         hasOlderHistoryRef.current = page.has_more;
         cursor = page.next_before_row_id;
@@ -1294,8 +1294,8 @@ export function useChat(
     let subscription: { abort: () => void } | null = null;
     const controller = new AbortController();
 
-    const applySnapshot = (tasks: A2ATask[]) => {
-      const replayed = replayTasks(tasks);
+    const applySnapshot = (turns: A2ATurn[]) => {
+      const replayed = replayTurns(turns);
       stateRef.current = {
         messages: replayed.messages,
         tasks: replayed.tasks,
@@ -1315,7 +1315,7 @@ export function useChat(
         (frame) => {
           if (cancelled) return;
           if (frame.kind === "snapshot") {
-            applySnapshot(frame.tasks);
+            applySnapshot(frame.turns);
             setHistoryError(false);
             setIsHistoryLoading(false);
           } else if (frame.kind === "live") {
@@ -1329,7 +1329,7 @@ export function useChat(
             // instead of one poll interval after the work finished.
             void (async () => {
               try {
-                const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+                const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
                 if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
               } catch {
                 // transient — the sessionRunning path below still captures it
@@ -1349,7 +1349,7 @@ export function useChat(
       wasRunningRef.current = false;
       void (async () => {
         try {
-          const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+          const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
           if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
         } catch {
           // transient — leave the last live state in place
@@ -1740,7 +1740,7 @@ export function useChat(
     }
     // Tell the user if the stop request never reached the server — the turn may still
     // be running, and silently doing nothing would leave them stuck expecting it to end.
-    return abortSession(ctx).then((ok) => {
+    return cancelTurn(ctx).then((ok) => {
       if (!ok) {
         toaster.create({
           type: "error",

@@ -169,7 +169,7 @@
       "additionalProperties": false,
       "description": "The one-line JSON metadata header prepended to every tool result the model reads \u2014\ninline as a ToolMessage (``kind=\"tool_result\"``) or, for a background completion, as an\nappend-only system message (``kind=\"background_result\"``). The tool's raw output body\nfollows the header after a blank line, delivered **as-is**: prose stays prose (never\nre-encoded into an escaped JSON string), structured output stays JSON.",
       "properties": {
-        "background_task_identifier": {
+        "background_job_id": {
           "anyOf": [
             {
               "type": "string"
@@ -464,7 +464,7 @@
       "additionalProperties": false,
       "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
       "properties": {
-        "background_task_identifier": {
+        "background_job_id": {
           "anyOf": [
             {
               "type": "string"

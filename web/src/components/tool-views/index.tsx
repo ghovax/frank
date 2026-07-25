@@ -24,7 +24,7 @@ import {
 import { asArray, asRecord, asString } from "@/lib/coerce";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
-import { hasBackgroundTaskIdentifier, type ToolEventStatus } from "@/lib/tool-event";
+import { hasBackgroundJobId, type ToolEventStatus } from "@/lib/tool-event";
 
 function stripCdPrefix(command: string): string {
   const match = command.match(/^cd\s+'[^']*'\s+&&\s+(.*)/s);
@@ -242,7 +242,7 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   uri: "fieldUri",
   query: "query",
   result_count: "results",
-  task_identifier: "taskId",
+  job_id: "turnId",
   question: "question",
   code: "fieldStatus",
   // file / search tools (arguments)
@@ -2089,7 +2089,7 @@ export function ToolResultView({
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;
     const code = asString(data.code);
-    if (status === "running" && hasBackgroundTaskIdentifier(data)) return null;
+    if (status === "running" && hasBackgroundJobId(data)) return null;
     if (code === "tool_error") return null;
     if (code === "web_search_completed") return <SearchWebResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || translation("searchFailed")} />;

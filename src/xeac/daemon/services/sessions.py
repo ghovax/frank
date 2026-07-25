@@ -18,21 +18,21 @@ from xeac.daemon.persistence.database import SessionLifecycleRecord, SessionReco
 from xeac.daemon.services.broadcast import _publish_broadcast
 
 
-def _claim_work_habits_acknowledgement(context_id: str) -> bool:
+def _claim_work_habits_acknowledgement(session_id: str) -> bool:
     """Atomically claim the one-time work-habits acknowledgement for a session."""
-    if state.session_factory is None or not context_id:
+    if state.session_factory is None or not session_id:
         return False
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            record = database_session.get(SessionLifecycleRecord, context_id)
+            record = database_session.get(SessionLifecycleRecord, session_id)
             if record is not None and record.work_habits_acknowledged_at:
                 return False
             acknowledged_at = datetime.now(timezone.utc).isoformat()
             if record is None:
                 database_session.add(
                     SessionLifecycleRecord(
-                        context_id=context_id,
+                        session_id=session_id,
                         work_habits_acknowledged_at=acknowledged_at,
                     ),
                 )
@@ -44,7 +44,7 @@ def _claim_work_habits_acknowledgement(context_id: str) -> bool:
             database_session.rollback()
             logging.getLogger("xeac.daemon").exception(
                 "failed to claim work-habits acknowledgement for %s",
-                context_id,
+                session_id,
             )
             return False
         finally:
@@ -72,15 +72,15 @@ def _reset_work_habits_acknowledgements() -> None:
             database_session.close()
 
 
-def _session_agent_for(context_id: str) -> str:
+def _session_agent_for(session_id: str) -> str:
     """Read a session's owning agent from its record (``""`` when unknown). Lets an
     on-demand action reach the right executor even before that agent has a live
     runtime this process (e.g. a session reopened after a restart)."""
-    if state.session_factory is None or not context_id:
+    if state.session_factory is None or not session_id:
         return ""
     database_session = state.session_factory()
     try:
-        record = database_session.get(SessionRecord, context_id)
+        record = database_session.get(SessionRecord, session_id)
         return (record.agent or "") if record is not None else ""
     except Exception:
         return ""
@@ -88,13 +88,13 @@ def _session_agent_for(context_id: str) -> str:
         database_session.close()
 
 
-def _session_working_directory_for(context_id: str) -> str:
+def _session_working_directory_for(session_id: str) -> str:
     """Read a session's source working directory from its record."""
-    if state.session_factory is None or not context_id:
+    if state.session_factory is None or not session_id:
         return ""
     database_session = state.session_factory()
     try:
-        record = database_session.get(SessionRecord, context_id)
+        record = database_session.get(SessionRecord, session_id)
         return (record.working_directory or "") if record is not None else ""
     except Exception:
         return ""
@@ -104,7 +104,7 @@ def _session_working_directory_for(context_id: str) -> str:
 
 
 async def _resolve_pending_input(
-    context_id: str, request_id: str, *,
+    session_id: str, request_id: str, *,
     decision: str = "", answers: list | None = None, declined: bool = False,
 ) -> bool:
     """Deliver a human's answer — a permission decision or a question's answers — to the
@@ -113,7 +113,7 @@ async def _resolve_pending_input(
     Relayed rather than resolved here: the parked turn lives in the session's process, and
     only it can resume. This is the same call the CLI's `approve` makes and the same one an
     `input_response` message carries, so all three land on one resume path."""
-    record = state.registry.get(context_id) if state.registry is not None else None
+    record = state.registry.get(session_id) if state.registry is not None else None
     if record is None:
         return False
     payload: dict = {"request_id": request_id}
@@ -130,10 +130,10 @@ async def _resolve_pending_input(
     return bool(result.get("resolved"))
 
 
-async def _abort_pending_input(context_id: str) -> bool:
+async def _abort_pending_input(session_id: str) -> bool:
     """Deny every gate a session is parked on, so its turn resumes and records the denials
     rather than leaving a checkpoint no later turn could build on."""
-    record = state.registry.get(context_id) if state.registry is not None else None
+    record = state.registry.get(session_id) if state.registry is not None else None
     if record is None:
         return False
     try:
@@ -147,14 +147,14 @@ def _normalize_permission_mode(mode: str) -> str:
     return mode if mode in {"default", "auto", "read_only"} else "default"
 
 
-def _session_permission_mode_for(context_id: str) -> str:
+def _session_permission_mode_for(session_id: str) -> str:
     """Read a context's persisted permission mode for frontend hydration and
     runtime rebuilds. Missing/invalid values fall back to the agent default."""
-    if state.session_factory is None or not context_id:
+    if state.session_factory is None or not session_id:
         return "default"
     database_session = state.session_factory()
     try:
-        record = database_session.get(SessionRecord, context_id)
+        record = database_session.get(SessionRecord, session_id)
         return _normalize_permission_mode(record.permission_mode or "default") if record is not None else "default"
     except Exception:
         return "default"
@@ -162,15 +162,15 @@ def _session_permission_mode_for(context_id: str) -> str:
         database_session.close()
 
 
-def _set_session_permission_mode(context_id: str, mode: str) -> bool:
+def _set_session_permission_mode(session_id: str, mode: str) -> bool:
     """Persist a session permission mode. Returns whether the session exists."""
-    if state.session_factory is None or not context_id:
+    if state.session_factory is None or not session_id:
         return False
     normalized = _normalize_permission_mode(mode)
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            record = database_session.get(SessionRecord, context_id)
+            record = database_session.get(SessionRecord, session_id)
             if record is None:
                 return False
             record.permission_mode = normalized
@@ -201,12 +201,12 @@ def _session_workspace_from_record(record: SessionRecord) -> SessionWorkspace:
     )
 
 
-def _record_session_visible(context_id: str) -> None:
+def _record_session_visible(session_id: str) -> None:
     _publish_broadcast({"type": "sessions_changed"})
 
 
 def _ensure_session_workspace(
-    context_id: str,
+    session_id: str,
     agent: str,
     working_directory: str,
     workspace_strategy: str,
@@ -224,7 +224,7 @@ def _ensure_session_workspace(
 
     database_session = state.session_factory()
     try:
-        record = database_session.get(SessionRecord, context_id)
+        record = database_session.get(SessionRecord, session_id)
         if record is not None:
             workspace = _session_workspace_from_record(record)
             if workspace.runtime_working_directory:
@@ -235,7 +235,7 @@ def _ensure_session_workspace(
     requested_strategy = workspace_strategy if workspace_strategy in {"none", "branch", "worktree"} else ""
     strategy = cast(WorkspaceStrategy, requested_strategy or (state.global_configuration.workspace.strategy if state.global_configuration is not None else "none"))
     if state.workspace_manager is not None:
-        workspace = state.workspace_manager.prepare_sync(context_id, source_directory, strategy)
+        workspace = state.workspace_manager.prepare_sync(session_id, source_directory, strategy)
     else:
         resolved = str(Path(source_directory).expanduser().resolve(strict=False))
         workspace = SessionWorkspace(
@@ -248,7 +248,7 @@ def _ensure_session_workspace(
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            record = database_session.get(SessionRecord, context_id)
+            record = database_session.get(SessionRecord, session_id)
             if record is not None:
                 if not record.runtime_working_directory:
                     record.runtime_working_directory = workspace.runtime_working_directory
@@ -264,7 +264,7 @@ def _ensure_session_workspace(
             # No title yet: the session names itself once it has read its first message,
             # which is the only point anything knows what the session is for.
             database_session.add(SessionRecord(
-                id=context_id,
+                id=session_id,
                 agent=agent,
                 project_id=project_id,
                 working_directory=workspace.source_working_directory,
@@ -294,12 +294,12 @@ def _ensure_session_workspace(
 
 
 
-def _set_session_title(context_id: str, title: str) -> bool:
+def _set_session_title(session_id: str, title: str) -> bool:
     assert state.session_factory is not None
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            record = database_session.get(SessionRecord, context_id)
+            record = database_session.get(SessionRecord, session_id)
             if record is None or record.title == title:
                 return False
             record.title = title
@@ -352,11 +352,11 @@ def _sessions_payload() -> dict[str, list[dict[str, Any]]]:
         database_session.close()
 
 
-def _session_draft(context_id: str) -> str:
+def _session_draft(session_id: str) -> str:
     assert state.session_factory is not None
     database_session = state.session_factory()
     try:
-        record = database_session.get(SessionRecord, context_id)
+        record = database_session.get(SessionRecord, session_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Session not found.")
         return record.input_draft or ""
@@ -364,7 +364,7 @@ def _session_draft(context_id: str) -> str:
         database_session.close()
 
 
-def _update_session_draft(context_id: str, input_draft: str) -> None:
+def _update_session_draft(session_id: str, input_draft: str) -> None:
     """Synchronous draft write — MUST run off the event loop (dispatched via
     ``asyncio.to_thread``). It takes the synchronous history.db write lock, which the
     async task store holds across its transaction's ``await``; acquiring it on the loop
@@ -373,7 +373,7 @@ def _update_session_draft(context_id: str, input_draft: str) -> None:
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            record = database_session.get(SessionRecord, context_id)
+            record = database_session.get(SessionRecord, session_id)
             if record is None:
                 raise HTTPException(status_code=404, detail="Session not found.")
             record.input_draft = input_draft

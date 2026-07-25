@@ -65,7 +65,7 @@ class BackgroundJobStore:
 
     Charter: this store owns background-job lifecycle and OS process-group reaping — it is NOT
     turn state. A turn's durable control-state and conversation live in the
-    :class:`~xeac.daemon.persistence.task_store.AppendOnlyTaskStore` (as a :class:`~xeac.protocol.turn_record.TurnRecord`
+    :class:`~xeac.daemon.persistence.turn_store.AppendOnlyTaskStore` (as a :class:`~xeac.protocol.turn_record.TurnRecord`
     and a checkpoint). This is a deliberately separate subsystem — results-durable and
     execution-ephemeral, additionally recovering running jobs and reaping orphaned process groups
     on restart — so it is not folded into the task store, and the two are never confused for one."""
@@ -95,7 +95,7 @@ class BackgroundJobStore:
                     """
                     CREATE TABLE IF NOT EXISTS background_jobs (
                         job_id TEXT PRIMARY KEY,
-                        context_id TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
                         agent_name TEXT NOT NULL,
                         kind TEXT NOT NULL,
                         arguments_json TEXT NOT NULL,
@@ -120,15 +120,15 @@ class BackgroundJobStore:
                     connection.execute("ALTER TABLE background_jobs ADD COLUMN process_group INTEGER")
                 # Indices matched to the hot queries:
                 #  - undelivered_jobs / has_undelivered_jobs (run after every turn and
-                #    on startup) filter (context_id, agent_name, status);
+                #    on startup) filter (session_id, agent_name, status);
                 #  - running_jobs(agent) and contexts_with_undelivered filter
                 #    (agent_name, status);
                 #  - running_jobs() / orphaned_process_groups filter status alone.
-                # The first covers context_id-only prefixes too, so no separate
-                # (context_id, status) index is needed.
+                # The first covers session_id-only prefixes too, so no separate
+                # (session_id, status) index is needed.
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_context_agent_status "
-                    "ON background_jobs(context_id, agent_name, status)"
+                    "ON background_jobs(session_id, agent_name, status)"
                 )
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_background_jobs_agent_status "
@@ -142,7 +142,7 @@ class BackgroundJobStore:
         self,
         *,
         job_id: str,
-        context_id: str,
+        session_id: str,
         agent_name: str,
         kind: str,
         arguments: dict[str, Any],
@@ -153,13 +153,13 @@ class BackgroundJobStore:
                 connection.execute(
                     """
                     INSERT OR REPLACE INTO background_jobs (
-                        job_id, context_id, agent_name, kind, arguments_json, tool_call_id,
+                        job_id, session_id, agent_name, kind, arguments_json, tool_call_id,
                         status, result_json, created_at, completed_at, delivered_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL)
                     """,
                     (
                         job_id,
-                        context_id,
+                        session_id,
                         agent_name,
                         kind,
                         _json_dump(arguments),
@@ -220,19 +220,19 @@ class BackgroundJobStore:
             ).fetchall()
         return [row["process_group"] for row in rows if row["process_group"]]
 
-    def undelivered_jobs(self, context_id: str, agent_name: str) -> list[dict[str, Any]]:
+    def undelivered_jobs(self, session_id: str, agent_name: str) -> list[dict[str, Any]]:
         """A context's jobs that carry a result the model has not yet seen — whether
         they completed normally or were abandoned by a restart."""
         return self._rows_where(
-            "context_id = ? AND agent_name = ? AND status IN (?, ?)",
-            (context_id, agent_name, STATUS_COMPLETED, STATUS_ABANDONED),
+            "session_id = ? AND agent_name = ? AND status IN (?, ?)",
+            (session_id, agent_name, STATUS_COMPLETED, STATUS_ABANDONED),
         )
 
-    def has_undelivered_jobs(self, context_id: str, agent_name: str) -> bool:
+    def has_undelivered_jobs(self, session_id: str, agent_name: str) -> bool:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT 1 FROM background_jobs WHERE context_id = ? AND agent_name = ? AND status IN (?, ?) LIMIT 1",
-                (context_id, agent_name, STATUS_COMPLETED, STATUS_ABANDONED),
+                "SELECT 1 FROM background_jobs WHERE session_id = ? AND agent_name = ? AND status IN (?, ?) LIMIT 1",
+                (session_id, agent_name, STATUS_COMPLETED, STATUS_ABANDONED),
             ).fetchone()
         return row is not None
 
@@ -241,10 +241,10 @@ class BackgroundJobStore:
         result — the ones to wake on startup."""
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT DISTINCT context_id FROM background_jobs WHERE agent_name = ? AND status IN (?, ?)",
+                "SELECT DISTINCT session_id FROM background_jobs WHERE agent_name = ? AND status IN (?, ?)",
                 (agent_name, STATUS_COMPLETED, STATUS_ABANDONED),
             ).fetchall()
-        return [row["context_id"] for row in rows]
+        return [row["session_id"] for row in rows]
 
     def _rows_where(self, clause: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -257,7 +257,7 @@ class BackgroundJobStore:
     def _row_to_job(self, row: sqlite3.Row) -> dict[str, Any]:
         return {
             "job_id": row["job_id"],
-            "context_id": row["context_id"],
+            "session_id": row["session_id"],
             "agent_name": row["agent_name"],
             "kind": row["kind"],
             "arguments": _json_load(row["arguments_json"]),

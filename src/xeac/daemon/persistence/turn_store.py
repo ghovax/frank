@@ -4,7 +4,7 @@ Why this exists.
 A2A streams a turn as many small events (text-chunk flushes, thinking labels,
 tool calls/results, and — for the chat agent — every relayed agent event).
 The SDK's :class:`~a2a.server.tasks.TaskManager` appends each event's message to
-``task.history`` *in memory* and then calls ``task_store.save(task)`` for every
+``task.history`` *in memory* and then calls ``turn_store.save(task)`` for every
 event. The bundled :class:`~a2a.server.tasks.DatabaseTaskStore` persists a task
 by ``session.merge`` of the whole row — i.e. it re-serializes and rewrites the
 *entire, ever-growing* ``history`` JSON blob on every event.
@@ -218,13 +218,13 @@ class AppendOnlyTaskStore(TaskStore):
         # so it never collides with a pre-existing DatabaseTaskStore schema in an
         # older database; a context lookup reads one compact row per task.
         self._head = Table(
-            "task_head",
+            "turn_head",
             self._metadata,
             Column("id", String, primary_key=True),
-            Column("context_id", String),
+            Column("session_id", String),
             Column("kind", String),
             Column("status", Text),
-            Column("task_metadata", Text),
+            Column("turn_metadata", Text),
         )
         # Append-only history: one row per message, ordered by ``row_id`` — the database's
         # own autoincrement insert order. There is no hand-computed per-task position: an
@@ -233,23 +233,23 @@ class AppendOnlyTaskStore(TaskStore):
         # increment`` makes the id strictly increasing and never reused, so it stays a valid
         # ordering key even after compaction deletes the tail of a task's history.
         self._history = Table(
-            "task_history",
+            "turn_history",
             self._metadata,
             Column("row_id", Integer, primary_key=True, autoincrement=True),
-            Column("task_id", String),
+            Column("turn_id", String),
             Column("message", Text),
             sqlite_autoincrement=True,
         )
         # Artifacts are few and may be revised in place, so they upsert by id
         # (bounded by artifact count, never by history length).
         self._artifacts = Table(
-            "task_artifacts",
+            "turn_artifacts",
             self._metadata,
             Column("row_id", Integer, primary_key=True, autoincrement=True),
-            Column("task_id", String),
+            Column("turn_id", String),
             Column("artifact_id", String),
             Column("artifact", Text),
-            UniqueConstraint("task_id", "artifact_id", name="uq_task_artifact_id"),
+            UniqueConstraint("turn_id", "artifact_id", name="uq_task_artifact_id"),
         )
         # The turn's durable resume checkpoint: the model-facing LangChain conversation,
         # snapshotted (messages_to_dict) at each safe point of the running turn. One row
@@ -261,13 +261,13 @@ class AppendOnlyTaskStore(TaskStore):
         # interconvertible, so this snapshot is authoritative for resume. It lives in the
         # task store (the single durable surface) rather than a separate conversations
         # database, and NOT on the write-hot task head (which upserts per stream event) —
-        # it is written only at safe points, a few times per turn. ``task_id`` records
+        # it is written only at safe points, a few times per turn. ``turn_id`` records
         # which turn last wrote it, for reconciliation.
         self._checkpoint = Table(
             "turn_checkpoint",
             self._metadata,
-            Column("context_id", String, primary_key=True),
-            Column("task_id", String),
+            Column("session_id", String, primary_key=True),
+            Column("turn_id", String),
             Column("messages", Text),
             Column("updated_at", String),
         )
@@ -279,7 +279,7 @@ class AppendOnlyTaskStore(TaskStore):
         self._session_state = Table(
             "session_state",
             self._metadata,
-            Column("context_id", String, primary_key=True),
+            Column("session_id", String, primary_key=True),
             Column("state", Text),
             Column("updated_at", String),
         )
@@ -308,7 +308,7 @@ class AppendOnlyTaskStore(TaskStore):
         # already-merged messages and silently duplicate them. Terminal is the last save for a
         # task (a new turn is a new task id), so a non-terminal save after it is a real bug and
         # is rejected rather than corrupting the stored history.
-        self._terminal_tasks: set[str] = set()
+        self._terminal_turns: set[str] = set()
 
     async def initialize(self) -> None:
         write_lock = await acquire_sqlite_write_lock()
@@ -316,16 +316,16 @@ class AppendOnlyTaskStore(TaskStore):
             async with self._engine.begin() as connection:
                 await connection.run_sync(self._metadata.create_all)
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_task_head_context_id_id "
-                    "ON task_head(context_id, id)"
+                    "CREATE INDEX IF NOT EXISTS idx_turn_head_session_id_id "
+                    "ON turn_head(session_id, id)"
                 )
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_task_history_task_id_row_id "
-                    "ON task_history(task_id, row_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_turn_history_turn_id_row_id "
+                    "ON turn_history(turn_id, row_id)"
                 )
                 await connection.exec_driver_sql(
-                    "CREATE INDEX IF NOT EXISTS idx_task_artifacts_task_id_row_id "
-                    "ON task_artifacts(task_id, row_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_turn_artifacts_turn_id_row_id "
+                    "ON turn_artifacts(turn_id, row_id)"
                 )
                 await connection.exec_driver_sql(
                     "CREATE INDEX IF NOT EXISTS idx_user_message_history_working_directory_created_at "
@@ -365,22 +365,22 @@ class AppendOnlyTaskStore(TaskStore):
                     current_state = str(json.loads(head_row["status"]).get("state", ""))
                     if current_state in _TERMINAL_TASK_STATES:
                         continue
-                    metadata = json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else {}
+                    metadata = json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else {}
                     kind = TurnRecord.from_metadata(metadata).kind
                     if reconcile_action(kind, current_state, input_required=input_required) is ReconcileAction.PRESERVE:
                         continue
-                    task_id = str(head_row["id"])
-                    context_id = str(head_row["context_id"] or "")
+                    turn_id = str(head_row["id"])
+                    session_id = str(head_row["session_id"] or "")
                     interrupted_message = Message(
                         role=Role.agent,
                         parts=[Part(root=DataPart(data={
                             "kind": "error",
                             "code": "turn_interrupted",
-                            "message": "This task was interrupted because the server restarted.",
+                            "message": "This turn was interrupted because the server restarted.",
                         }))],
                         message_id=uuid.uuid4().hex,
-                        task_id=task_id,
-                        context_id=context_id or None,
+                        task_id=turn_id,
+                        context_id=session_id or None,
                     )
                     interrupted_status = TaskStatus(
                         state=TaskState.failed,
@@ -389,18 +389,18 @@ class AppendOnlyTaskStore(TaskStore):
                     )
                     await connection.execute(
                         update(self._head)
-                        .where(self._head.c.id == task_id)
+                        .where(self._head.c.id == turn_id)
                         .values(status=_dump(interrupted_status))
                     )
-                    failed_task_ids.append(task_id)
+                    failed_task_ids.append(turn_id)
         finally:
             release_sqlite_write_lock(write_lock)
         return failed_task_ids
 
     async def save_turn_state(
         self,
-        context_id: str,
-        task_id: str,
+        session_id: str,
+        turn_id: str,
         messages: list,
         session_state: dict | None = None,
     ) -> None:
@@ -416,23 +416,23 @@ class AppendOnlyTaskStore(TaskStore):
         across turns and compaction rewrites it in place, so a whole snapshot is the only
         representation that stays correct."""
         await self._ensure_initialized()
-        if not context_id:
+        if not session_id:
             return
         now = datetime.now(timezone.utc).isoformat()
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
                 checkpoint_insert = sqlite_insert(self._checkpoint).values(
-                    context_id=context_id,
-                    task_id=task_id,
+                    session_id=session_id,
+                    turn_id=turn_id,
                     messages=json.dumps(messages),
                     updated_at=now,
                 )
                 await connection.execute(
                     checkpoint_insert.on_conflict_do_update(
-                        index_elements=[self._checkpoint.c.context_id],
+                        index_elements=[self._checkpoint.c.session_id],
                         set_={
-                            "task_id": task_id,
+                            "turn_id": turn_id,
                             "messages": checkpoint_insert.excluded.messages,
                             "updated_at": now,
                         },
@@ -440,30 +440,30 @@ class AppendOnlyTaskStore(TaskStore):
                 )
                 if session_state is not None:
                     state_insert = sqlite_insert(self._session_state).values(
-                        context_id=context_id,
+                        session_id=session_id,
                         state=json.dumps(session_state),
                         updated_at=now,
                     )
                     await connection.execute(
                         state_insert.on_conflict_do_update(
-                            index_elements=[self._session_state.c.context_id],
+                            index_elements=[self._session_state.c.session_id],
                             set_={"state": state_insert.excluded.state, "updated_at": now},
                         )
                     )
         finally:
             release_sqlite_write_lock(write_lock)
 
-    async def load_checkpoint(self, context_id: str) -> list:
+    async def load_checkpoint(self, session_id: str) -> list:
         """The context's model-facing conversation snapshot (``messages_to_dict`` form),
         or ``[]`` when there is none. The caller rehydrates it with ``messages_from_dict``
         and repairs any dangling tool-call left by a mid-execution interruption."""
         await self._ensure_initialized()
-        if not context_id:
+        if not session_id:
             return []
         async with self._engine.connect() as connection:
             row = (
                 await connection.execute(
-                    select(self._checkpoint.c.messages).where(self._checkpoint.c.context_id == context_id)
+                    select(self._checkpoint.c.messages).where(self._checkpoint.c.session_id == session_id)
                 )
             ).scalar()
         if not row:
@@ -474,16 +474,16 @@ class AppendOnlyTaskStore(TaskStore):
         except (json.JSONDecodeError, TypeError):
             return []
 
-    async def load_session_state(self, context_id: str) -> dict:
+    async def load_session_state(self, session_id: str) -> dict:
         """The context's persisted goal/task state (:meth:`save_turn_state` form), or an
         empty dict when there is none — a fresh context or a pre-persistence session."""
         await self._ensure_initialized()
-        if not context_id:
+        if not session_id:
             return {}
         async with self._engine.connect() as connection:
             row = (
                 await connection.execute(
-                    select(self._session_state.c.state).where(self._session_state.c.context_id == context_id)
+                    select(self._session_state.c.state).where(self._session_state.c.session_id == session_id)
                 )
             ).scalar()
         if not row:
@@ -495,23 +495,23 @@ class AppendOnlyTaskStore(TaskStore):
             return {}
 
 
-    async def _persisted_count(self, connection, task_id: str) -> int:
+    async def _persisted_count(self, connection, turn_id: str) -> int:
         """How many history rows are already persisted for a task, so ``save`` appends only
         the suffix of the (only-ever-growing) ``task.history`` not yet stored. Authoritative
         in memory (guarded by the store's write lock, which admits one writer at a time),
         seeded once from a single COUNT the first time this process saves the task and kept
         current by every write thereafter — so a save is O(delta), never a COUNT-per-event."""
-        cached = self._persisted_counts.get(task_id)
+        cached = self._persisted_counts.get(turn_id)
         if cached is not None:
             return cached
         result = await connection.execute(
-            select(func.count()).select_from(self._history).where(self._history.c.task_id == task_id)
+            select(func.count()).select_from(self._history).where(self._history.c.turn_id == turn_id)
         )
         seeded = int(result.scalar() or 0)
-        self._persisted_counts[task_id] = seeded
+        self._persisted_counts[turn_id] = seeded
         return seeded
 
-    async def _compact_persisted_history(self, connection, task_id: str) -> int:
+    async def _compact_persisted_history(self, connection, turn_id: str) -> int:
         """Rewrite a task's *already-persisted* history in place with its compacted form,
         ordered by ``row_id``: overwrite the first M rows' messages (their row_ids — and so
         their global order — unchanged) and delete the tail rows the compaction dropped. It
@@ -524,14 +524,14 @@ class AppendOnlyTaskStore(TaskStore):
         existing_rows = (
             await connection.execute(
                 select(self._history.c.row_id, self._history.c.message)
-                .where(self._history.c.task_id == task_id)
+                .where(self._history.c.turn_id == turn_id)
                 .order_by(self._history.c.row_id)
             )
         ).all()
         compacted_messages = _compact_history([json.loads(row.message) for row in existing_rows])
         if len(compacted_messages) > len(existing_rows):  # pragma: no cover - invariant guard
             raise AssertionError(
-                f"compaction grew history for {task_id}: {len(existing_rows)} -> {len(compacted_messages)}"
+                f"compaction grew history for {turn_id}: {len(existing_rows)} -> {len(compacted_messages)}"
             )
         for message_index, message in enumerate(compacted_messages):
             await connection.execute(
@@ -551,7 +551,7 @@ class AppendOnlyTaskStore(TaskStore):
         history = task.history or []
         artifacts = task.artifacts or []
         terminal = _is_terminal_task(task)
-        if task.id in self._terminal_tasks and not terminal:
+        if task.id in self._terminal_turns and not terminal:
             # The persisted rows are the compacted merge of the whole history; re-appending the
             # raw suffix on top would duplicate already-merged messages. Terminal is the last
             # save for a task, so this is a wiring bug, not a state to tolerate.
@@ -564,20 +564,20 @@ class AppendOnlyTaskStore(TaskStore):
                 # Head: tiny upsert of the latest status + metadata.
                 head_values = {
                     "id": task.id,
-                    "context_id": task.context_id,
+                    "session_id": task.context_id,
                     "kind": task.kind,
                     "status": _dump(task.status),
-                    "task_metadata": json.dumps(task.metadata) if task.metadata is not None else None,
+                    "turn_metadata": json.dumps(task.metadata) if task.metadata is not None else None,
                 }
                 head_insert = sqlite_insert(self._head).values(**head_values)
                 await connection.execute(
                     head_insert.on_conflict_do_update(
                         index_elements=[self._head.c.id],
                         set_={
-                            "context_id": head_values["context_id"],
+                            "session_id": head_values["session_id"],
                             "kind": head_values["kind"],
                             "status": head_values["status"],
-                            "task_metadata": head_values["task_metadata"],
+                            "turn_metadata": head_values["turn_metadata"],
                         },
                     )
                 )
@@ -590,7 +590,7 @@ class AppendOnlyTaskStore(TaskStore):
                 if new_messages:
                     await connection.execute(
                         self._history.insert(),
-                        [{"task_id": task.id, "message": _dump(message)} for message in new_messages],
+                        [{"turn_id": task.id, "message": _dump(message)} for message in new_messages],
                     )
                     self._persisted_counts[task.id] = persisted + len(new_messages)
 
@@ -601,58 +601,58 @@ class AppendOnlyTaskStore(TaskStore):
                     # is caught rather than duplicating.
                     compacted_count = await self._compact_persisted_history(connection, task.id)
                     self._persisted_counts[task.id] = compacted_count
-                    self._terminal_tasks.add(task.id)
+                    self._terminal_turns.add(task.id)
 
                 # Artifacts: upsert each by id (replace-in-place is safe and bounded).
                 for artifact in artifacts:
                     artifact_json = _dump(artifact)
                     artifact_insert = sqlite_insert(self._artifacts).values(
-                        task_id=task.id,
+                        turn_id=task.id,
                         artifact_id=artifact.artifact_id,
                         artifact=artifact_json,
                     )
                     await connection.execute(
                         artifact_insert.on_conflict_do_update(
-                            index_elements=[self._artifacts.c.task_id, self._artifacts.c.artifact_id],
+                            index_elements=[self._artifacts.c.turn_id, self._artifacts.c.artifact_id],
                             set_={"artifact": artifact_json},
                         )
                     )
         finally:
             release_sqlite_write_lock(write_lock)
 
-    async def get(self, task_id: str, context: ServerCallContext | None = None) -> Optional[Task]:
+    async def get(self, turn_id: str, context: ServerCallContext | None = None) -> Optional[Task]:
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             head_row = (
-                await connection.execute(select(self._head).where(self._head.c.id == task_id))
+                await connection.execute(select(self._head).where(self._head.c.id == turn_id))
             ).mappings().first()
             if head_row is None:
                 return None
             history_rows = (
                 await connection.execute(
                     select(self._history.c.message)
-                    .where(self._history.c.task_id == task_id)
+                    .where(self._history.c.turn_id == turn_id)
                     .order_by(self._history.c.row_id)
                 )
             ).scalars().all()
             artifact_rows = (
                 await connection.execute(
-                    select(self._artifacts.c.artifact).where(self._artifacts.c.task_id == task_id)
+                    select(self._artifacts.c.artifact).where(self._artifacts.c.turn_id == turn_id)
                 )
             ).scalars().all()
 
         data = {
             "id": head_row["id"],
-            "context_id": head_row["context_id"],
+            "context_id": head_row["session_id"],
             "kind": head_row["kind"] or "task",
             "status": json.loads(head_row["status"]),
-            "metadata": json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else None,
+            "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
             "history": [json.loads(message) for message in history_rows],
             "artifacts": [json.loads(artifact) for artifact in artifact_rows] or None,
         }
         return Task.model_validate(data)
 
-    async def tasks_for_context(self, context_id: str) -> list[Task]:
+    async def turns_for_session(self, session_id: str) -> list[Task]:
         """All tasks in a context, loaded with one head/history/artifact pass.
 
         Session replay asks for every task in a context at once. Calling ``get``
@@ -665,54 +665,54 @@ class AppendOnlyTaskStore(TaskStore):
             head_rows = (
                 await connection.execute(
                     select(self._head)
-                    .where(self._head.c.context_id == context_id)
+                    .where(self._head.c.session_id == session_id)
                     .order_by(self._head.c.id)
                 )
             ).mappings().all()
-            task_ids = [str(row["id"]) for row in head_rows]
-            if not task_ids:
+            turn_ids = [str(row["id"]) for row in head_rows]
+            if not turn_ids:
                 return []
 
             history_rows = (
                 await connection.execute(
-                    select(self._history.c.task_id, self._history.c.message)
-                    .where(self._history.c.task_id.in_(task_ids))
-                    .order_by(self._history.c.task_id, self._history.c.row_id)
+                    select(self._history.c.turn_id, self._history.c.message)
+                    .where(self._history.c.turn_id.in_(turn_ids))
+                    .order_by(self._history.c.turn_id, self._history.c.row_id)
                 )
             ).all()
             artifact_rows = (
                 await connection.execute(
-                    select(self._artifacts.c.task_id, self._artifacts.c.artifact)
-                    .where(self._artifacts.c.task_id.in_(task_ids))
-                    .order_by(self._artifacts.c.task_id, self._artifacts.c.row_id)
+                    select(self._artifacts.c.turn_id, self._artifacts.c.artifact)
+                    .where(self._artifacts.c.turn_id.in_(turn_ids))
+                    .order_by(self._artifacts.c.turn_id, self._artifacts.c.row_id)
                 )
             ).all()
 
-        histories: dict[str, list[str]] = {task_id: [] for task_id in task_ids}
-        artifacts: dict[str, list[str]] = {task_id: [] for task_id in task_ids}
-        for task_id, message in history_rows:
-            histories[str(task_id)].append(message)
-        for task_id, artifact in artifact_rows:
-            artifacts[str(task_id)].append(artifact)
+        histories: dict[str, list[str]] = {turn_id: [] for turn_id in turn_ids}
+        artifacts: dict[str, list[str]] = {turn_id: [] for turn_id in turn_ids}
+        for turn_id, message in history_rows:
+            histories[str(turn_id)].append(message)
+        for turn_id, artifact in artifact_rows:
+            artifacts[str(turn_id)].append(artifact)
 
         tasks: list[Task] = []
         for head_row in head_rows:
-            task_id = str(head_row["id"])
+            turn_id = str(head_row["id"])
             data = {
-                "id": task_id,
-                "context_id": head_row["context_id"],
+                "id": turn_id,
+                "context_id": head_row["session_id"],
                 "kind": head_row["kind"] or "task",
                 "status": json.loads(head_row["status"]),
-                "metadata": json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else None,
-                "history": _compact_history([json.loads(message) for message in histories[task_id]]),
-                "artifacts": [json.loads(artifact) for artifact in artifacts[task_id]] or None,
+                "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
+                "history": _compact_history([json.loads(message) for message in histories[turn_id]]),
+                "artifacts": [json.loads(artifact) for artifact in artifacts[turn_id]] or None,
             }
             tasks.append(Task.model_validate(data))
         return tasks
 
-    async def task_page_for_context(
+    async def turn_page_for_session(
         self,
-        context_id: str,
+        session_id: str,
         *,
         before_row_id: int | None = None,
         limit: int = 400,
@@ -732,41 +732,41 @@ class AppendOnlyTaskStore(TaskStore):
         async with self._engine.connect() as connection:
             head_rows = (
                 await connection.execute(
-                    select(self._head).where(self._head.c.context_id == context_id)
+                    select(self._head).where(self._head.c.session_id == session_id)
                 )
             ).mappings().all()
             if not head_rows:
-                return {"tasks": [], "next_before_row_id": None, "has_more": False}
+                return {"turns": [], "next_before_row_id": None, "has_more": False}
 
             head_by_id = {str(row["id"]): row for row in head_rows}
-            task_ids: list[str] = []
+            turn_ids: list[str] = []
             related_head_rows: list = []
             for row in head_rows:
-                metadata = json.loads(row["task_metadata"]) if row["task_metadata"] else None
+                metadata = json.loads(row["turn_metadata"]) if row["turn_metadata"] else None
                 if TurnRecord.from_metadata(metadata).reference_task_ids:
                     related_head_rows.append(row)
                     continue
-                task_ids.append(str(row["id"]))
+                turn_ids.append(str(row["id"]))
             related_tasks = []
             if before_row_id is None:
                 related_tasks = [
                     Task.model_validate({
                         "id": str(row["id"]),
-                        "context_id": row["context_id"],
+                        "context_id": row["session_id"],
                         "kind": row["kind"] or "task",
                         "status": json.loads(row["status"]),
-                        "metadata": json.loads(row["task_metadata"]) if row["task_metadata"] else None,
+                        "metadata": json.loads(row["turn_metadata"]) if row["turn_metadata"] else None,
                         "history": [],
                         "artifacts": None,
                     })
                     for row in related_head_rows
                 ]
-            if not task_ids:
-                return {"tasks": related_tasks, "next_before_row_id": None, "has_more": False}
+            if not turn_ids:
+                return {"turns": related_tasks, "next_before_row_id": None, "has_more": False}
 
             history_query = (
-                select(self._history.c.row_id, self._history.c.task_id, self._history.c.message)
-                .where(self._history.c.task_id.in_(task_ids))
+                select(self._history.c.row_id, self._history.c.turn_id, self._history.c.message)
+                .where(self._history.c.turn_id.in_(turn_ids))
                 .order_by(self._history.c.row_id.desc())
                 .limit(page_limit + 1)
             )
@@ -776,77 +776,77 @@ class AppendOnlyTaskStore(TaskStore):
             has_more = len(fetched_rows) > page_limit
             page_rows = fetched_rows[:page_limit]
             if not page_rows:
-                return {"tasks": related_tasks, "next_before_row_id": None, "has_more": False}
+                return {"turns": related_tasks, "next_before_row_id": None, "has_more": False}
 
-            first_row_by_task: dict[str, int] = {}
+            first_row_by_turn: dict[str, int] = {}
             for row in page_rows:
-                task_id = str(row.task_id)
-                first_row_by_task[task_id] = min(first_row_by_task.get(task_id, int(row.row_id)), int(row.row_id))
-            page_task_ids = sorted(first_row_by_task, key=first_row_by_task.__getitem__)
+                turn_id = str(row.turn_id)
+                first_row_by_turn[turn_id] = min(first_row_by_turn.get(turn_id, int(row.row_id)), int(row.row_id))
+            page_turn_ids = sorted(first_row_by_turn, key=first_row_by_turn.__getitem__)
             maximum_row_rows = (
                 await connection.execute(
-                    select(self._history.c.task_id, func.max(self._history.c.row_id))
-                    .where(self._history.c.task_id.in_(page_task_ids))
-                    .group_by(self._history.c.task_id)
+                    select(self._history.c.turn_id, func.max(self._history.c.row_id))
+                    .where(self._history.c.turn_id.in_(page_turn_ids))
+                    .group_by(self._history.c.turn_id)
                 )
             ).all()
-            maximum_row_by_task = {str(task_id): int(maximum_row) for task_id, maximum_row in maximum_row_rows if maximum_row is not None}
+            maximum_row_by_turn = {str(turn_id): int(maximum_row) for turn_id, maximum_row in maximum_row_rows if maximum_row is not None}
             artifact_rows = (
                 await connection.execute(
-                    select(self._artifacts.c.task_id, self._artifacts.c.artifact)
-                    .where(self._artifacts.c.task_id.in_(page_task_ids))
-                    .order_by(self._artifacts.c.task_id, self._artifacts.c.row_id)
+                    select(self._artifacts.c.turn_id, self._artifacts.c.artifact)
+                    .where(self._artifacts.c.turn_id.in_(page_turn_ids))
+                    .order_by(self._artifacts.c.turn_id, self._artifacts.c.row_id)
                 )
             ).all()
 
-        histories: dict[str, list[tuple[int, str]]] = {task_id: [] for task_id in page_task_ids}
-        include_status_message: dict[str, bool] = {task_id: False for task_id in page_task_ids}
+        histories: dict[str, list[tuple[int, str]]] = {turn_id: [] for turn_id in page_turn_ids}
+        include_status_message: dict[str, bool] = {turn_id: False for turn_id in page_turn_ids}
         for row in sorted(page_rows, key=lambda value: value.row_id):
-            task_id = str(row.task_id)
-            histories[task_id].append((int(row.row_id), row.message))
-            if int(row.row_id) == maximum_row_by_task.get(task_id):
-                include_status_message[task_id] = True
+            turn_id = str(row.turn_id)
+            histories[turn_id].append((int(row.row_id), row.message))
+            if int(row.row_id) == maximum_row_by_turn.get(turn_id):
+                include_status_message[turn_id] = True
 
-        artifacts: dict[str, list[str]] = {task_id: [] for task_id in page_task_ids}
-        for task_id, artifact in artifact_rows:
-            artifacts[str(task_id)].append(artifact)
+        artifacts: dict[str, list[str]] = {turn_id: [] for turn_id in page_turn_ids}
+        for turn_id, artifact in artifact_rows:
+            artifacts[str(turn_id)].append(artifact)
 
         tasks: list[Task] = []
-        for task_id in page_task_ids:
-            head_row = head_by_id[task_id]
+        for turn_id in page_turn_ids:
+            head_row = head_by_id[turn_id]
             status = json.loads(head_row["status"])
-            if not include_status_message[task_id] and isinstance(status, dict):
+            if not include_status_message[turn_id] and isinstance(status, dict):
                 status = {key: value for key, value in status.items() if key != "message"}
             data = {
-                "id": task_id,
-                "context_id": head_row["context_id"],
+                "id": turn_id,
+                "context_id": head_row["session_id"],
                 "kind": head_row["kind"] or "task",
                 "status": status,
-                "metadata": json.loads(head_row["task_metadata"]) if head_row["task_metadata"] else None,
-                "history": _compact_history([json.loads(message) for _, message in histories[task_id]]),
-                "artifacts": [json.loads(artifact) for artifact in artifacts[task_id]] or None,
+                "metadata": json.loads(head_row["turn_metadata"]) if head_row["turn_metadata"] else None,
+                "history": _compact_history([json.loads(message) for _, message in histories[turn_id]]),
+                "artifacts": [json.loads(artifact) for artifact in artifacts[turn_id]] or None,
             }
             tasks.append(Task.model_validate(data))
 
         tasks.extend(related_tasks)
 
         next_before_row_id = min(int(row.row_id) for row in page_rows)
-        return {"tasks": tasks, "next_before_row_id": next_before_row_id, "has_more": has_more}
+        return {"turns": tasks, "next_before_row_id": next_before_row_id, "has_more": has_more}
 
-    async def delete(self, task_id: str, context: ServerCallContext | None = None) -> None:
+    async def delete(self, turn_id: str, context: ServerCallContext | None = None) -> None:
         await self._ensure_initialized()
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
-                await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
-                await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
-                await connection.execute(delete(self._head).where(self._head.c.id == task_id))
-            self._persisted_counts.pop(task_id, None)
-            self._terminal_tasks.discard(task_id)
+                await connection.execute(delete(self._history).where(self._history.c.turn_id == turn_id))
+                await connection.execute(delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id))
+                await connection.execute(delete(self._head).where(self._head.c.id == turn_id))
+            self._persisted_counts.pop(turn_id, None)
+            self._terminal_turns.discard(turn_id)
         finally:
             release_sqlite_write_lock(write_lock)
 
-    async def delete_context(self, context_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         """Drop every durable trace of a context — its tasks (head/history/artifacts), its
         conversation checkpoint, and its goal/task session state — when a session is
         deleted. The single place that knows the turn store's tables, so session deletion
@@ -855,53 +855,53 @@ class AppendOnlyTaskStore(TaskStore):
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
-                task_ids = (
+                turn_ids = (
                     await connection.execute(
-                        select(self._head.c.id).where(self._head.c.context_id == context_id)
+                        select(self._head.c.id).where(self._head.c.session_id == session_id)
                     )
                 ).scalars().all()
-                for task_id in task_ids:
-                    await connection.execute(delete(self._history).where(self._history.c.task_id == task_id))
-                    await connection.execute(delete(self._artifacts).where(self._artifacts.c.task_id == task_id))
-                await connection.execute(delete(self._head).where(self._head.c.context_id == context_id))
-                await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.context_id == context_id))
-                await connection.execute(delete(self._session_state).where(self._session_state.c.context_id == context_id))
-            for task_id in task_ids:
-                self._persisted_counts.pop(str(task_id), None)
-                self._terminal_tasks.discard(str(task_id))
+                for turn_id in turn_ids:
+                    await connection.execute(delete(self._history).where(self._history.c.turn_id == turn_id))
+                    await connection.execute(delete(self._artifacts).where(self._artifacts.c.turn_id == turn_id))
+                await connection.execute(delete(self._head).where(self._head.c.session_id == session_id))
+                await connection.execute(delete(self._checkpoint).where(self._checkpoint.c.session_id == session_id))
+                await connection.execute(delete(self._session_state).where(self._session_state.c.session_id == session_id))
+            for turn_id in turn_ids:
+                self._persisted_counts.pop(str(turn_id), None)
+                self._terminal_turns.discard(str(turn_id))
         finally:
             release_sqlite_write_lock(write_lock)
 
-    async def input_required_context_ids(self) -> list[str]:
+    async def input_required_session_ids(self) -> list[str]:
         """Context ids whose persisted task is input-required, so the sidebar's
         awaiting-input marker can be restored after a restart (the pause is durable)."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
-                await connection.execute(select(self._head.c.context_id, self._head.c.status))
+                await connection.execute(select(self._head.c.session_id, self._head.c.status))
             ).all()
         contexts: list[str] = []
-        for context_id, status in rows:
+        for session_id, status in rows:
             try:
                 state = str(json.loads(status).get("state", ""))
             except (json.JSONDecodeError, TypeError, AttributeError):
                 continue
-            if state == TaskState.input_required.value and context_id:
-                contexts.append(str(context_id))
+            if state == TaskState.input_required.value and session_id:
+                contexts.append(str(session_id))
         return contexts
 
-    async def task_ids_for_context(self, context_id: str) -> list[str]:
+    async def turn_ids_for_session(self, session_id: str) -> list[str]:
         """The ids of every task in a context — for replaying a session."""
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
                 await connection.execute(
-                    select(self._head.c.id).where(self._head.c.context_id == context_id)
+                    select(self._head.c.id).where(self._head.c.session_id == session_id)
                 )
             ).scalars().all()
         return list(rows)
 
-    async def context_message_texts(self, context_id: str) -> list[str]:
+    async def session_message_texts(self, session_id: str) -> list[str]:
         """Raw history-message JSON for every task in a context. Used to find the upload
         files a session references (attachment paths live in the message metadata) so they
         can be reclaimed when the session is deleted."""
@@ -910,8 +910,8 @@ class AppendOnlyTaskStore(TaskStore):
             rows = (
                 await connection.execute(
                     select(self._history.c.message)
-                    .select_from(self._history.join(self._head, self._history.c.task_id == self._head.c.id))
-                    .where(self._head.c.context_id == context_id)
+                    .select_from(self._history.join(self._head, self._history.c.turn_id == self._head.c.id))
+                    .where(self._head.c.session_id == session_id)
                 )
             ).scalars().all()
         return list(rows)

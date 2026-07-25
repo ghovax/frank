@@ -97,7 +97,7 @@ class SessionEventBus:
 registry: Any = None            # SessionRegistry
 pool: Any = None                # WorkerPool
 lifecycle: Any = None           # SessionLifecycle
-task_store: Any = None          # AppendOnlyTaskStore
+turn_store: Any = None          # AppendOnlyTaskStore
 global_configuration: Any = None
 session_factory: Any = None
 async_engine: Any = None

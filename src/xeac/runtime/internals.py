@@ -105,7 +105,7 @@ def _maybe_json(value: str) -> Any:
 
 # Background-task handles minted by the tool registries: search_web ids carry the
 # "search-" prefix, background bash the "bg-" prefix. These are NOT A2A tasks and
-# can never be read with read_task — their results are auto-delivered when ready.
+# can never be read with read_turn — their results are auto-delivered when ready.
 _BACKGROUND_HANDLE_PREFIXES = {
     "search-": "search_web",
     "bg-": "bash",
@@ -131,11 +131,11 @@ def _coerce_mcp_arguments(value: Any) -> dict:
     return {}
 
 
-def _background_handle_kind(task_id: str) -> str | None:
-    """The background-task kind if ``task_id`` is one of
+def _background_handle_kind(turn_id: str) -> str | None:
+    """The background-task kind if ``turn_id`` is one of
     those handles rather than a readable A2A task; otherwise ``None``."""
     for prefix, kind in _BACKGROUND_HANDLE_PREFIXES.items():
-        if task_id.startswith(prefix):
+        if turn_id.startswith(prefix):
             return kind
     return None
 
@@ -180,7 +180,7 @@ def _tool_timing_metadata(
     started_at: datetime,
     completed_at: datetime,
     duration_milliseconds: int,
-    background_task_identifier: str | None = None,
+    background_job_id: str | None = None,
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "tool_name": tool_name,
@@ -189,8 +189,8 @@ def _tool_timing_metadata(
         "completed_at": _utc_timestamp(completed_at),
         "duration_ms": duration_milliseconds,
     }
-    if background_task_identifier:
-        metadata["background_task_identifier"] = background_task_identifier
+    if background_job_id:
+        metadata["background_job_id"] = background_job_id
     return metadata
 
 
@@ -213,7 +213,7 @@ def _model_visible_tool_result(
         "status": status,
         "code": code,
     }
-    for key in ("started_at", "completed_at", "duration_ms", "background_task_identifier"):
+    for key in ("started_at", "completed_at", "duration_ms", "background_job_id"):
         value = metadata.get(key)
         if value is not None:
             header[key] = value

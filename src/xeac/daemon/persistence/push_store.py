@@ -57,7 +57,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
         self._table = Table(
             "push_notification_configurations",
             self._metadata,
-            Column("task_id", String, primary_key=True),
+            Column("turn_id", String, primary_key=True),
             Column("configuration_id", String, primary_key=True),
             Column("configuration", Text),
         )
@@ -82,7 +82,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
         if not self._initialized:
             await self.initialize()
 
-    async def set_info(self, task_id: str, notification_config: PushNotificationConfig) -> None:
+    async def set_info(self, turn_id: str, notification_config: PushNotificationConfig) -> None:
         await self._ensure_initialized()
         # Refuse a webhook the server must not be pointed at (internal/loopback) before it is
         # ever persisted or POSTed — the anti-SSRF guard on inbound-influenced fetch targets.
@@ -92,43 +92,43 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
             raise ValueError(f"push notification webhook refused: {exception}") from exception
         # The SDK defaults an unset configuration id to the task id.
         if notification_config.id is None:
-            notification_config.id = task_id
+            notification_config.id = turn_id
         serialized = json.dumps(notification_config.model_dump(mode="json"))
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
                 statement = sqlite_insert(self._table).values(
-                    task_id=task_id, configuration_id=notification_config.id, configuration=serialized,
+                    turn_id=turn_id, configuration_id=notification_config.id, configuration=serialized,
                 )
                 await connection.execute(statement.on_conflict_do_update(
-                    index_elements=[self._table.c.task_id, self._table.c.configuration_id],
+                    index_elements=[self._table.c.turn_id, self._table.c.configuration_id],
                     set_={"configuration": serialized},
                 ))
         finally:
             release_sqlite_write_lock(write_lock)
 
-    async def get_info(self, task_id: str) -> list[PushNotificationConfig]:
+    async def get_info(self, turn_id: str) -> list[PushNotificationConfig]:
         await self._ensure_initialized()
         async with self._engine.connect() as connection:
             rows = (
                 await connection.execute(
-                    select(self._table.c.configuration).where(self._table.c.task_id == task_id)
+                    select(self._table.c.configuration).where(self._table.c.turn_id == turn_id)
                 )
             ).scalars().all()
         return [PushNotificationConfig.model_validate(json.loads(row)) for row in rows]
 
-    async def delete_info(self, task_id: str, config_id: Optional[str] = None) -> None:
+    async def delete_info(self, turn_id: str, config_id: Optional[str] = None) -> None:
         await self._ensure_initialized()
         # The SDK defaults an unset configuration id to the task id (deleting that one),
         # rather than every configuration for the task.
         if config_id is None:
-            config_id = task_id
+            config_id = turn_id
         write_lock = await acquire_sqlite_write_lock()
         try:
             async with self._engine.begin() as connection:
                 await connection.execute(
                     delete(self._table).where(
-                        self._table.c.task_id == task_id,
+                        self._table.c.turn_id == turn_id,
                         self._table.c.configuration_id == config_id,
                     )
                 )
@@ -167,7 +167,7 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
             hostname, ips = resolve_public_ips(url, allow_private=self._allow_private)
         except UntrustedHostError as exception:
             logger.warning(
-                "Refusing push-notification for task_id=%s to untrusted URL %s: %s",
+                "Refusing push-notification for turn_id=%s to untrusted URL %s: %s",
                 task.id, url, exception,
             )
             return False
@@ -195,8 +195,8 @@ class PinnedPushNotificationSender(BasePushNotificationSender):
             response.raise_for_status()
         except Exception:
             logger.exception(
-                "Error sending push-notification for task_id=%s to URL: %s.", task.id, url,
+                "Error sending push-notification for turn_id=%s to URL: %s.", task.id, url,
             )
             return False
-        logger.info("Push-notification sent for task_id=%s to URL: %s", task.id, url)
+        logger.info("Push-notification sent for turn_id=%s to URL: %s", task.id, url)
         return True

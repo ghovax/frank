@@ -13,7 +13,7 @@ Everything in XEAC is a **session**: one OS process running one agent, created e
 Three parts, kept apart:
 
 - **`xeacd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and holds a pool of warm workers so spawning a session is a socket write rather than a Python cold start. It runs no agents itself.
-- **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the API does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
+- **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API.
 
 Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.

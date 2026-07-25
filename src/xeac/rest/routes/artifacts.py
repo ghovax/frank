@@ -26,43 +26,43 @@ from xeac.daemon.persistence.artifacts import _ARTIFACT_CONTEXT_PREFIX, _artifac
 
 router = APIRouter()
 
-@router.get("/sessions/{context_id}/artifacts")
-async def get_artifacts(context_id: str, scope: str = "session"):
+@router.get("/sessions/{session_id}/artifacts")
+async def get_artifacts(session_id: str, scope: str = "session"):
     """The file-history index for this session: every tracked file with its latest change
     and version count, plus which files are surfaced as artifact tabs. ``scope=full`` widens
     each file to its whole cross-session lineage."""
     return {
-        "artifacts": await asyncio.to_thread(_artifact_index, context_id, scope),
-        "surfaces": await asyncio.to_thread(_surface_records, context_id),
+        "artifacts": await asyncio.to_thread(_artifact_index, session_id, scope),
+        "surfaces": await asyncio.to_thread(_surface_records, session_id),
     }
 
 
-@router.get("/sessions/{context_id}/artifacts/versions")
-async def get_artifact_versions(context_id: str, git_directory: str, relative_path: str, scope: str = "session"):
+@router.get("/sessions/{session_id}/artifacts/versions")
+async def get_artifact_versions(session_id: str, git_directory: str, relative_path: str, scope: str = "session"):
     """Every captured version of one file (oldest → newest) — what the filmstrip walks."""
-    return {"versions": await asyncio.to_thread(_artifact_versions, context_id, git_directory, relative_path, scope)}
+    return {"versions": await asyncio.to_thread(_artifact_versions, session_id, git_directory, relative_path, scope)}
 
 
-@router.get("/sessions/{context_id}/artifacts/diff")
-async def get_artifact_diff(context_id: str, git_directory: str, relative_path: str, from_commit: str, to_commit: str, location: str = ""):
+@router.get("/sessions/{session_id}/artifacts/diff")
+async def get_artifact_diff(session_id: str, git_directory: str, relative_path: str, from_commit: str, to_commit: str, location: str = ""):
     """Unified diff of a file between two versions (commit shas)."""
     def _diff() -> str:
-        executor = _executor_for_location_uri(context_id, location)
+        executor = _executor_for_location_uri(session_id, location)
         if executor is None:
             raise HTTPException(status_code=404, detail="Location is unavailable.")
         return artifact_versioning.diff(executor, git_directory, relative_path, from_commit, to_commit)
     return {"diff": await asyncio.to_thread(_diff)}
 
 
-@router.post("/sessions/{context_id}/artifacts/restore")
-async def restore_artifact(context_id: str, request: ArtifactRestoreRequest):
+@router.post("/sessions/{session_id}/artifacts/restore")
+async def restore_artifact(session_id: str, request: ArtifactRestoreRequest):
     """Restore a file to a chosen version (append-only — the current on-disk state is
     snapshotted first, then the old bytes are written back and recorded as a new version)."""
     await asyncio.to_thread(
-        _restore_artifact, context_id, request.location_uri, request.git_directory,
+        _restore_artifact, session_id, request.location_uri, request.git_directory,
         request.work_tree, request.relative_path, request.commit_sha,
     )
-    return {"status": "restored", "session_id": context_id}
+    return {"status": "restored", "session_id": session_id}
 
 
 @router.get("/artifact-bytes")
@@ -86,26 +86,26 @@ async def artifact_bytes(location: str, git_directory: str, sha: str, download: 
     return Response(content=data, media_type=media_type or "application/octet-stream", headers=headers)
 
 
-@router.get("/sessions/{context_id}/artifact-annotations")
-async def get_artifact_annotations(context_id: str):
+@router.get("/sessions/{session_id}/artifact-annotations")
+async def get_artifact_annotations(session_id: str):
     """Image annotations saved for this session, keyed by (surface, version)."""
-    return {"records": await asyncio.to_thread(_artifact_annotation_records, context_id)}
+    return {"records": await asyncio.to_thread(_artifact_annotation_records, session_id)}
 
 
-@router.put("/sessions/{context_id}/artifact-annotations")
-async def save_artifact_annotations(context_id: str, request: ArtifactAnnotationSaveRequest):
+@router.put("/sessions/{session_id}/artifact-annotations")
+async def save_artifact_annotations(session_id: str, request: ArtifactAnnotationSaveRequest):
     """Create, update, or clear the annotation record for one artifact version."""
-    record = await asyncio.to_thread(_save_artifact_annotation_record, context_id, request)
-    _publish_broadcast({"type": "artifact_annotations_changed", "session_id": context_id})
+    record = await asyncio.to_thread(_save_artifact_annotation_record, session_id, request)
+    _publish_broadcast({"type": "artifact_annotations_changed", "session_id": session_id})
     return record
 
 
-@router.delete("/sessions/{context_id}/artifact-annotations")
-async def delete_artifact_annotations(context_id: str, surface_id: str, version_id: str):
+@router.delete("/sessions/{session_id}/artifact-annotations")
+async def delete_artifact_annotations(session_id: str, surface_id: str, version_id: str):
     """Delete the annotation record for one artifact version."""
-    deleted = await asyncio.to_thread(_delete_artifact_annotation_record, context_id, surface_id, version_id)
+    deleted = await asyncio.to_thread(_delete_artifact_annotation_record, session_id, surface_id, version_id)
     if deleted:
-        _publish_broadcast({"type": "artifact_annotations_changed", "session_id": context_id})
+        _publish_broadcast({"type": "artifact_annotations_changed", "session_id": session_id})
     return {"deleted": deleted}
 
 

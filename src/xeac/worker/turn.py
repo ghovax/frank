@@ -241,7 +241,7 @@ class _TurnRunner:
             # so they are as durable as the transcript without a write on every checkpoint. The
             # dirty flag is cleared only after the write commits — a failed write loses nothing.
             session_state = self._runtime.dirty_session_snapshot()
-            await self._ex._task_store.save_turn_state(
+            await self._ex._turn_store.save_turn_state(
                 self._task.context_id, self._task.id,
                 messages_to_dict(self._runtime.conversation), session_state,
             )
@@ -323,7 +323,7 @@ class _TurnRunner:
                 await self._updater.complete()
                 return self._DONE
             ready = self._ex._record_pending_answer(task, input_response)
-            await self._ex._task_store.save(task)
+            await self._ex._turn_store.save(task)
             if self._ex._on_permission_state is not None:
                 # Still awaiting while gates remain; cleared once this answer resumes.
                 self._ex._on_permission_state(task.context_id, ready is None)
@@ -338,7 +338,7 @@ class _TurnRunner:
             cleared = TurnRecord.from_metadata(task.metadata)
             cleared.pending = None
             task.metadata = cleared.apply_to(task.metadata)
-            await self._ex._task_store.save(task)
+            await self._ex._turn_store.save(task)
             self._is_resume = True
         elif not ingested.autonomous and not ingested.compaction and self._ex._on_permission_state is not None:
             # A fresh user turn supersedes any prior input-required pause for this context
@@ -453,7 +453,7 @@ class _TurnRunner:
             await asyncio.to_thread(self._ex._on_new_context, task.context_id)
         self._runtime = runtime
         self._ex._aborts[task.id] = runtime
-        runtime.set_a2a_task_id(task.id)
+        runtime.set_a2a_turn_id(task.id)
 
         # The consuming half of the one turn-event catalog: it owns the assistant-text
         # buffer and the turn telemetry span, translates every runtime event to its wire
@@ -615,7 +615,7 @@ class _TurnRunner:
             # checkpoint when they changed this turn, so a restart restores the objective too
             # and the two can never drift apart. Clear the dirty flag only after the commit.
             session_state = self._runtime.dirty_session_snapshot() if self._runtime is not None else None
-            await self._ex._task_store.save_turn_state(
+            await self._ex._turn_store.save_turn_state(
                 task.context_id, task.id, messages_to_dict(messages), session_state,
             )
             if session_state is not None and self._runtime is not None:

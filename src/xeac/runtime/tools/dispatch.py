@@ -100,7 +100,7 @@ class _ToolsMixin:
         })
 
         result_content: str = ""
-        background_task_identifier: str | None = None
+        background_job_id: str | None = None
         denied_commands: list[str] = []
         image_followups: list[dict[str, str]] = []
         tool_failed = False
@@ -127,13 +127,13 @@ class _ToolsMixin:
                         isinstance(result_str, dict)
                         and event.status == ToolStatus.RUNNING.value
                     ):
-                        raw_task_identifier = result_str.get("task_identifier")
-                        background_task_identifier = (
-                            raw_task_identifier if isinstance(raw_task_identifier, str) else None
+                        raw_job_id = result_str.get("job_id")
+                        background_job_id = (
+                            raw_job_id if isinstance(raw_job_id, str) else None
                         )
                         result_content = compact({
-                            "code": "background_task_scheduled",
-                            "task_identifier": background_task_identifier,
+                            "code": "background_job_scheduled",
+                            "job_id": background_job_id,
                         })
                         turn_tool_results_log.append({"name": tool_name, "result": compact(result_str)})
                     else:
@@ -177,13 +177,13 @@ class _ToolsMixin:
             started_at=started_at,
             completed_at=completed_at,
             duration_milliseconds=duration_milliseconds,
-            background_task_identifier=background_task_identifier,
+            background_job_id=background_job_id,
         )
 
         outcomes[tool_call_identifier] = {
             "content": result_content,
             "ok": not tool_failed,
-            "background_task_identifier": background_task_identifier,
+            "background_job_id": background_job_id,
             "denied_commands": denied_commands,
             "image_followups": image_followups,
             "metadata": timing_metadata,
@@ -380,7 +380,7 @@ class _ToolsMixin:
             result_status, result_code = _model_result_status(
                 content,
                 ok=outcome.get("ok", True),
-                backgrounded=bool(outcome.get("background_task_identifier")),
+                backgrounded=bool(outcome.get("background_job_id")),
             )
             model_visible_content = _model_visible_tool_result(
                 content,
@@ -397,10 +397,10 @@ class _ToolsMixin:
             self._conversation.append(
                 ToolMessage(content=model_visible_content, tool_call_id=tool_call_identifier)
             )
-            background_task_identifier = outcome.get("background_task_identifier")
-            if background_task_identifier:
+            background_job_id = outcome.get("background_job_id")
+            if background_job_id:
                 self._background.bind_tool_call(
-                    background_task_identifier, tool_call_identifier,
+                    background_job_id, tool_call_identifier,
                 )
             denied_commands = outcome.get("denied_commands", [])
             if denied_commands:
@@ -599,11 +599,11 @@ class _ToolsMixin:
                     tool_call_id=tool_call_identifier, message=f"bash: {raw_command[:80]}",
                 )
             if isinstance(result_data, dict) and result_data.get("code") == "bash_started":
-                task_identifier = result_data.get("task_identifier", "")
-                if task_identifier:
-                    self._record_event("background_bash_started", {"task_identifier": task_identifier, "command": raw_command})
+                job_id = result_data.get("job_id", "")
+                if job_id:
+                    self._record_event("background_bash_started", {"job_id": job_id, "command": raw_command})
                     if lease_token and self._background.add_done_callback(
-                        task_identifier,
+                        job_id,
                         lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
                     ):
                         lease_token = ""
@@ -692,19 +692,19 @@ class _ToolsMixin:
         the model's ``timeout`` tool parameter — a non-killing inline-wait window, the same
         meaning bash gives ``timeout`` — scaled by the tuning knob here. The coroutine must
         return the tool-result payload as a string (JSON or plain text)."""
-        task_identifier = self._background.spawn(
+        job_id = self._background.spawn(
             tool_name, coroutine, tool_call_identifier=tool_call_identifier,
         )
         settled = None
         if not background:
             settled = await self._background.settle_inline(
-                task_identifier, active_tuning().scale_timeout(sync_window)
+                job_id, active_tuning().scale_timeout(sync_window)
             )
         if settled is not None:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(settled.result))
         else:
             yield ToolResult(id=tool_call_identifier, name=tool_name, result={
-                "code": started_code, "status": "running", "task_identifier": task_identifier,
+                "code": started_code, "status": "running", "job_id": job_id,
             })
 
     async def _tool_fetch_url(
@@ -760,7 +760,7 @@ class _ToolsMixin:
                     message=str(exception), tool=tool_name)
                 return
         try:
-            backgrounded_task_id = ""
+            backgrounded_job_id = ""
             async for event in self._run_backgroundable_tool(
                 tool_name, tool_call_identifier, file_tools.download_file(executor, url, resolved, hard_deadline),
                 started_code="download_file_started", sync_window=sync_window, background=background,
@@ -769,10 +769,10 @@ class _ToolsMixin:
                     isinstance(event, ToolResult) and isinstance(event.result, dict)
                     and event.result.get("code") == "download_file_started"
                 ):
-                    backgrounded_task_id = str(event.result.get("task_identifier", ""))
+                    backgrounded_job_id = str(event.result.get("job_id", ""))
                 yield event
-            if lease_token and backgrounded_task_id and self._background.add_done_callback(
-                backgrounded_task_id,
+            if lease_token and backgrounded_job_id and self._background.add_done_callback(
+                backgrounded_job_id,
                 lambda _identifier, token=lease_token: self._release_filesystem_lease(token),
             ):
                 lease_token = ""
@@ -1249,35 +1249,35 @@ class _ToolsMixin:
             unbind_background_jobs(background_token)
         result_data = _maybe_json(result)
         if isinstance(result_data, dict) and result_data.get("code") == "web_search_started":
-            # Attach the "don't poll/read_task this" guidance from a prompt
+            # Attach the "don't poll/read_turn this" guidance from a prompt
             # template, keeping user-facing wording out of the tool code.
             result_data["note"] = self._prompt_loader.load("web_search_started_note", {})
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
 
 
-    async def _tool_read_task(
+    async def _tool_read_turn(
         self, tool_name: str, tool_arguments: dict, tool_call_identifier: str,
         decision: _ResolvedToolDecision, policy: CallExecutionPolicy,
         resolved_location: ResolvedLocation | None,
     ) -> AsyncIterator[TurnEvent]:
-        requested_task_id = tool_arguments.get("task_id", "")
+        requested_turn_id = tool_arguments.get("turn_id", "")
         # A web_search/background-bash handle ("search-…"/"bg-…") is not an A2A
         # task — its results are delivered automatically, never read. Catch the
         # mistake with a redirect instead of a bare "task_not_found" that just
         # invites the model to retry the same wrong poll.
-        background_kind = _background_handle_kind(requested_task_id)
-        if self._task_reader is None:
-            result = {"code": "read_task_unavailable", "message": "Reading tasks is not available in this context."}
+        background_kind = _background_handle_kind(requested_turn_id)
+        if self._turn_reader is None:
+            result = {"code": "read_turn_unavailable", "message": "Reading turns is not available in this session."}
         elif background_kind is not None:
             message = self._prompt_loader.load(
-                "read_task_background_handle",
-                {"task_id": requested_task_id, "kind": background_kind},
+                "read_turn_background_handle",
+                {"job_id": requested_turn_id, "kind": background_kind},
             )
-            result = {"code": "not_a_readable_task", "task_id": requested_task_id, "message": message}
+            result = {"code": "not_a_readable_turn", "turn_id": requested_turn_id, "message": message}
         else:
-            task = await self._task_reader(requested_task_id)
+            task = await self._turn_reader(requested_turn_id)
             if task is None:
-                result = {"code": "task_not_found", "task_id": requested_task_id}
+                result = {"code": "turn_not_found", "turn_id": requested_turn_id}
             else:
                 result = task
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=result)

@@ -63,6 +63,6 @@ export function toolStatus(status: unknown): ToolEventStatus | undefined {
     : undefined;
 }
 
-export function hasBackgroundTaskIdentifier(result: unknown): boolean {
-  return String(asRecord(result).task_identifier ?? "").trim().length > 0;
+export function hasBackgroundJobId(result: unknown): boolean {
+  return String(asRecord(result).job_id ?? "").trim().length > 0;
 }

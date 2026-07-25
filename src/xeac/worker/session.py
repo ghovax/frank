@@ -83,9 +83,9 @@ class SessionExecutor(AgentExecutor):
         # sole writer, so the append-only store keeps the single-writer property it was built
         # around. Live turn events ride the same channel and reach whoever is attached.
         from xeac.base.paths import daemon_socket_path
-        from xeac.worker.persistence import DaemonTaskStore
+        from xeac.worker.turn_store import DaemonTurnStore
 
-        self._task_store = DaemonTaskStore(str(daemon_socket_path()), session_id, daemon_token or token)
+        self._turn_store = DaemonTurnStore(str(daemon_socket_path()), session_id, daemon_token or token)
 
         # The same daemon, reached for a different purpose: composing with other sessions.
         # It carries this session's identity so every peer it creates is a child of this one —
@@ -141,27 +141,27 @@ class SessionExecutor(AgentExecutor):
         self._mcp_manager = None
         self._mcp_connect: Optional[asyncio.Task] = None
 
-    def _publish_stream_event(self, context_id: str, part) -> None:
+    def _publish_stream_event(self, session_id: str, part) -> None:
         """Forward a turn part to the daemon for fan-out. Best effort and fire-and-forget: a
         watcher missing a frame is a cosmetic loss, and the turn must not wait on it."""
         payload = part.model_dump(by_alias=True, exclude_none=True, mode="json") if hasattr(part, "model_dump") else part
-        spawn_background_task(self._task_store.publish_event({"context_id": context_id, "part": payload}))
+        spawn_background_task(self._turn_store.publish_event({"session_id": session_id, "part": payload}))
 
-    def _notify_turn_state(self, context_id: str, running: bool) -> None:
+    def _notify_turn_state(self, session_id: str, running: bool) -> None:
         """Tell the daemon whether a turn is in flight, so `ps` and the sidebar can show
         working rather than merely alive — a session's process outlives its turns."""
         spawn_background_task(
-            self._task_store.publish_event({"context_id": context_id, "running": running})
+            self._turn_store.publish_event({"session_id": session_id, "running": running})
         )
 
-    def _notify_permission_state(self, context_id: str, awaiting: bool) -> None:
+    def _notify_permission_state(self, session_id: str, awaiting: bool) -> None:
         """Tell the daemon this session is parked on a human, so `ps` can show it as waiting
         rather than working."""
         spawn_background_task(
-            self._task_store.publish_event({"context_id": context_id, "awaiting_input": awaiting})
+            self._turn_store.publish_event({"session_id": session_id, "awaiting_input": awaiting})
         )
 
-    def compact_context(self, context_id: str) -> bool:
+    def compact_context(self, session_id: str) -> bool:
         """Trigger a manual compaction of a context's conversation (the user pressed
         the compact button). Runs as a background turn — serialized behind any active
         turn via the per-context lock — so the endpoint returns immediately while the
@@ -174,7 +174,7 @@ class SessionExecutor(AgentExecutor):
         False only when there is no handler to drive the turn."""
         if self._agent_handler() is None:
             return False
-        task = asyncio.create_task(self._run_compaction_turn(context_id))
+        task = asyncio.create_task(self._run_compaction_turn(session_id))
         self._compaction_tasks.add(task)
         task.add_done_callback(self._compaction_tasks.discard)
         return True
@@ -187,11 +187,12 @@ class SessionExecutor(AgentExecutor):
         if self._handler is None:
             from a2a.server.request_handlers import DefaultRequestHandler
 
-            self._handler = DefaultRequestHandler(agent_executor=self, task_store=self._task_store)
+            # `task_store` is a2a's keyword, not ours — the object it takes is our turn store.
+            self._handler = DefaultRequestHandler(agent_executor=self, task_store=self._turn_store)
         return self._handler
 
     async def _drive_self_sent_turn(
-        self, context_id: str, envelope_kind: str, *, metadata_flags: dict,
+        self, session_id: str, envelope_kind: str, *, metadata_flags: dict,
     ) -> None:
         """Drive one harness-initiated turn through the ordinary turn path via a self-sent
         agent-role message carrying only a prose-less envelope part, so it is a real,
@@ -204,21 +205,21 @@ class SessionExecutor(AgentExecutor):
             role=Role.agent,
             parts=[envelope_part(envelope_kind)],
             message_id=uuid.uuid4().hex,
-            context_id=context_id,
+            context_id=session_id,
             metadata=turn_metadata_envelope(metadata_flags),
         )
         async for _event in handler.on_message_send_stream(MessageSendParams(message=message)):
             pass
 
-    async def _run_compaction_turn(self, context_id: str) -> None:
+    async def _run_compaction_turn(self, session_id: str) -> None:
         """Drive one manual-compaction turn (a self-sent agent-role compaction message), so
         it is a real, persisted, replayable task streamed to viewers like any other turn."""
-        await self._drive_self_sent_turn(context_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True})
+        await self._drive_self_sent_turn(session_id, COMPACTION_KIND, metadata_flags={Metadata.COMPACTION: True})
 
-    def abort_context(self, context_id: str) -> bool:
+    def abort_context(self, session_id: str) -> bool:
         # Stop is broadcast to every executor (chat.py), but only the one that actually
         # holds this context's state has anything to stop.
-        state = self._contexts.get(context_id)
+        state = self._contexts.get(session_id)
         if state is None or (state.runtime is None and state.resume_pump is None):
             return False
         # Mark Stopped so the turn's finally (and any later completion) cannot re-arm a
@@ -236,21 +237,21 @@ class SessionExecutor(AgentExecutor):
             handled = True
         return handled
 
-    def abort_tool(self, context_id: str, tool_call_identifier: str) -> bool:
-        state = self._contexts.get(context_id)
+    def abort_tool(self, session_id: str, tool_call_identifier: str) -> bool:
+        state = self._contexts.get(session_id)
         if state is None or state.runtime is None:
             return False
         return state.runtime.abort_tool(tool_call_identifier)
 
 
-    def send_tool_to_background(self, context_id: str, tool_call_identifier: str) -> bool:
-        state = self._contexts.get(context_id)
+    def send_tool_to_background(self, session_id: str, tool_call_identifier: str) -> bool:
+        state = self._contexts.get(session_id)
         if state is None or state.runtime is None:
             return False
         return state.runtime.send_tool_to_background(tool_call_identifier)
 
-    def background_snapshots(self, context_id: str) -> list[dict]:
-        state = self._contexts.get(context_id)
+    def background_snapshots(self, session_id: str) -> list[dict]:
+        state = self._contexts.get(session_id)
         if state is None or state.runtime is None:
             return []
         return state.runtime.background_snapshots()
@@ -264,12 +265,12 @@ class SessionExecutor(AgentExecutor):
         durable store is only replayed on startup / the next user turn, so dropping the
         runtime mid-flight would silently hang that session. In-flight turns keep their
         own runtime reference and are unaffected."""
-        for context_id, state in list(self._contexts.items()):
+        for session_id, state in list(self._contexts.items()):
             if state.runtime is not None:
                 state.pending_reset = True
-                self._maybe_evict(context_id)
+                self._maybe_evict(session_id)
 
-    async def _claim_work_habits_acknowledgement(self, context_id: str, **_flags) -> bool:
+    async def _claim_work_habits_acknowledgement(self, session_id: str, **_flags) -> bool:
         """Whether this turn should emit the once-per-session work-habits acknowledgement.
 
         A worker is created fresh per session and the acknowledgement is a user-facing nicety,
@@ -307,25 +308,25 @@ class SessionExecutor(AgentExecutor):
         return None
 
 
-    def steer_context(self, context_id: str, message: str) -> bool:
-        state = self._contexts.get(context_id)
+    def steer_context(self, session_id: str, message: str) -> bool:
+        state = self._contexts.get(session_id)
         if state is None or not state.running or state.runtime is None:
             return False
         return state.runtime.enqueue_steering(message)
 
-    def reset_runtime(self, context_id: str) -> None:
+    def reset_runtime(self, session_id: str) -> None:
         """Drop a single context's cached runtime so the next turn rebuilds it —
         used when the session's model override changes, so the new model takes
         effect without a server restart. Deferred while the context still has
         background work in flight, so evicting the runtime never strands a completed
         result the resume pump still needs to deliver (which would hang the session)."""
-        state = self._contexts.get(context_id)
+        state = self._contexts.get(session_id)
         if state is None:
             return
         state.pending_reset = True
-        self._maybe_evict(context_id)
+        self._maybe_evict(session_id)
 
-    def _maybe_evict(self, context_id: str) -> None:
+    def _maybe_evict(self, session_id: str) -> None:
         """Apply a deferred runtime reset once the runtime is idle. A reset requested
         while the context still had background work in flight is held back (the live
         resume pump must keep delivering results, since the durable store is only
@@ -333,7 +334,7 @@ class SessionExecutor(AgentExecutor):
         after its jobs have drained, lets the next turn rebuild with the new
         configuration without ever orphaning an undelivered result. The state (and its
         lock) survives — only the runtime slot is cleared."""
-        state = self._contexts.get(context_id)
+        state = self._contexts.get(session_id)
         if state is None or not state.pending_reset:
             return
         if state.runtime is not None and state.runtime.has_pending_jobs():
@@ -341,31 +342,31 @@ class SessionExecutor(AgentExecutor):
         state.runtime = None
         state.pending_reset = False
 
-    def _context(self, context_id: str) -> _ContextState:
+    def _context(self, session_id: str) -> _ContextState:
         """The per-context state, created on first access. Use this when a turn is about
         to establish state (acquire the lock, cache a runtime, set a flag); use
         ``self._contexts.get`` when merely inspecting a context that may not exist."""
-        state = self._contexts.get(context_id)
+        state = self._contexts.get(session_id)
         if state is None:
             state = _ContextState()
-            self._contexts[context_id] = state
+            self._contexts[session_id] = state
         return state
 
-    def teardown_context(self, context_id: str) -> None:
+    def teardown_context(self, session_id: str) -> None:
         """Release every trace of a deleted session: cancel its resume pump, abort a
         live runtime, drop its per-context state, and forget its shared conversation.
         The single point where a session's live state is freed, so deleting sessions can
         never accumulate orphaned runtimes, pumps, locks, or history. Idempotent and safe
         to broadcast to every executor (only the owner holds any state)."""
-        state = self._contexts.pop(context_id, None)
+        state = self._contexts.pop(session_id, None)
         if state is not None:
             if state.resume_pump is not None and not state.resume_pump.done():
                 state.resume_pump.cancel()
             if state.runtime is not None:
                 state.runtime.abort()
-        self._conversations.pop(context_id, None)
+        self._conversations.pop(session_id, None)
 
-    def _arm_resume_pump(self, context_id: str, runtime: Optional[AgentRuntime] = None) -> None:
+    def _arm_resume_pump(self, session_id: str, runtime: Optional[AgentRuntime] = None) -> None:
         """Ensure a resume pump watches this context while it has background work in
         flight. Idempotent — a live pump is left running. ``runtime`` is the runtime
         the just-finished turn actually used; it is passed explicitly rather than
@@ -378,7 +379,7 @@ class SessionExecutor(AgentExecutor):
         Only ever arms for a context that still has live state: a torn-down (deleted)
         session has none, so a late call from an ending turn's finally is a clean no-op
         that cannot resurrect a deleted session's pump."""
-        state = self._contexts.get(context_id)
+        state = self._contexts.get(session_id)
         # A Stopped or torn-down context stays quiet: don't arm a pump that would
         # autonomously wake the agent. Pending work is replayed on the next user turn.
         if state is None or state.aborted:
@@ -391,37 +392,37 @@ class SessionExecutor(AgentExecutor):
             state.pending_reset = True
         if state.resume_pump is not None and not state.resume_pump.done():
             return
-        state.resume_pump = asyncio.create_task(self._resume_pump(context_id))
+        state.resume_pump = asyncio.create_task(self._resume_pump(session_id))
 
-    async def _resume_pump(self, context_id: str) -> None:
+    async def _resume_pump(self, session_id: str) -> None:
         """Wait (event-driven, at zero cost) for each background result to land while
         the context is otherwise idle, driving an autonomous turn to deliver each. It
         loops until nothing is pending, then retires."""
         try:
             while True:
-                state = self._contexts.get(context_id)
+                state = self._contexts.get(session_id)
                 runtime = state.runtime if state is not None else None
                 if runtime is None or not runtime.has_pending_jobs():
                     return
                 await runtime.wait_for_jobs()
                 # A result landed — drive an autonomous turn to deliver it. If a
                 # concurrent user turn already drained it, that turn no-ops.
-                await self._run_autonomous_turn(context_id)
+                await self._run_autonomous_turn(session_id)
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Background-resume pump failed for context %s", context_id)
+            logger.exception("Background-resume pump failed for context %s", session_id)
         finally:
             # Clear the slot only if it still points at *this* pump — a freshly armed
             # pump (the user resumed) must not be dropped by a late-finishing finally.
-            state = self._contexts.get(context_id)
+            state = self._contexts.get(session_id)
             if state is not None and state.resume_pump is asyncio.current_task():
                 state.resume_pump = None
             # The context is idle now, so any reset deferred while it had work in
             # flight can finally take effect (rebuilding with the new configuration).
-            self._maybe_evict(context_id)
+            self._maybe_evict(session_id)
 
-    async def _run_autonomous_turn(self, context_id: str) -> None:
+    async def _run_autonomous_turn(self, session_id: str) -> None:
         """Start a turn the user did not initiate, to deliver a completed background
         result. It reuses the ordinary turn path via a self-sent A2A message, so the
         wake is a real, persisted, replayable task streamed to viewers like any other
@@ -433,10 +434,10 @@ class SessionExecutor(AgentExecutor):
         # executor re-checks this under the per-context lock (that's the authoritative
         # guard against the race); short-circuiting here just avoids creating an empty,
         # invisible wake task in the common case.
-        state = self._contexts.get(context_id)
+        state = self._contexts.get(session_id)
         runtime = state.runtime if state is not None else None
         has_live_result = runtime is not None and runtime.has_completed_undelivered_jobs()
-        has_stored_result = get_background_job_store().has_undelivered_jobs(context_id, self._agent_name)
+        has_stored_result = get_background_job_store().has_undelivered_jobs(session_id, self._agent_name)
         if not has_live_result and not has_stored_result:
             return
         # An agent-authored message (the agent resumed itself), carrying only the prose-less
@@ -444,11 +445,11 @@ class SessionExecutor(AgentExecutor):
         # persisted A2A task honest — no consumer sees a user message the user never sent —
         # and the part renders as nothing. The framing note reaches only the model, injected
         # as a system note in `execute`. Driven through the shared self-sent-turn path.
-        await self._drive_self_sent_turn(context_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True})
+        await self._drive_self_sent_turn(session_id, AUTONOMOUS_RESUME_KIND, metadata_flags={Metadata.AUTONOMOUS_RESUME: True})
 
     def _build_runtime(
         self,
-        context_id: str,
+        session_id: str,
         working_directory: str,
         project_directory: str,
         conversation: Optional[list] = None,
@@ -460,7 +461,7 @@ class SessionExecutor(AgentExecutor):
         runtime = AgentRuntime(
             agent_configuration=configuration,
             global_configuration=self._global_configuration,
-            session_id=context_id,
+            session_id=session_id,
             conversation=conversation,
             working_directory=working_directory or "",
             project_directory=project_directory or working_directory or "",
@@ -474,64 +475,64 @@ class SessionExecutor(AgentExecutor):
         stream_event_callback = self._on_stream_event
         if stream_event_callback is not None:
             runtime.set_agent_event_sink(lambda event: stream_event_callback(
-                context_id,
+                session_id,
                 Part(root=DataPart(data=event)),
             ))
-        runtime.set_task_reader(self._make_task_reader())
+        runtime.set_turn_reader(self._make_turn_reader())
         if self._capture_artifacts is not None:
             runtime.set_artifact_capture(self._capture_artifacts)
         return runtime
 
-    def _make_task_reader(self):
-        async def read_task(task_id: str):
-            if not task_id:
+    def _make_turn_reader(self):
+        async def read_turn(turn_id: str):
+            if not turn_id:
                 return None
-            task = await self._task_store.get(task_id)
+            task = await self._turn_store.get(turn_id)
             # Exclude `history` for the same reason as the delegate's done payload:
-            # read_task feeds a sibling/agent task straight into the caller's
+            # read_turn feeds a sibling/agent task straight into the caller's
             # model context, and the full transcript (incl. raw web-search text)
             # would overflow it. Only the status + deliverable artifact are needed.
             return task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"}) if task else None
-        return read_task
+        return read_turn
 
-    async def _runtime_for(self, context_id: str, workspace: SessionWorkspace) -> AgentRuntime:
+    async def _runtime_for(self, session_id: str, workspace: SessionWorkspace) -> AgentRuntime:
         # Apply any reset that was deferred while this context had background work in
         # flight: if the runtime has since gone idle, drop it now so this turn rebuilds
         # it with the new configuration rather than reusing the stale one.
-        self._maybe_evict(context_id)
-        state = self._context(context_id)
+        self._maybe_evict(session_id)
+        state = self._context(session_id)
         runtime = state.runtime
         if runtime is None:
             # Restore a persisted conversation the first time a context is seen this
             # process (e.g. a session reopened after a restart), so the agent resumes
             # with the same history the UI is replaying rather than a blank slate.
-            if context_id not in self._conversations:
+            if session_id not in self._conversations:
                 # The model-facing conversation is the task store's per-context checkpoint
                 # (the single durable turn surface); a reopened session resumes from it.
-                restored = messages_from_dict(await self._task_store.load_checkpoint(context_id))
+                restored = messages_from_dict(await self._turn_store.load_checkpoint(session_id))
                 if restored:
-                    self._conversations[context_id] = restored
+                    self._conversations[session_id] = restored
             # Seed from (and bind to) the process-wide dialogue history for this
             # context — the same list object another agent may have been writing
             # to — so a persona switch picks up exactly where the last turn left off.
-            conversation = self._conversations.setdefault(context_id, [])
+            conversation = self._conversations.setdefault(session_id, [])
             locations = None
             if self._resolve_locations is not None:
-                locations = await asyncio.to_thread(self._resolve_locations, context_id) or None
+                locations = await asyncio.to_thread(self._resolve_locations, session_id) or None
             runtime = self._build_runtime(
-                context_id,
+                session_id,
                 workspace.runtime_working_directory,
                 workspace.source_working_directory,
                 conversation=conversation,
                 locations=locations,
             )
             if self._session_permission_mode_for is not None:
-                runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, context_id))
+                runtime.set_permission_mode(await asyncio.to_thread(self._session_permission_mode_for, session_id))
             # Restore the agent's durable objective — its goal and task list — the first
             # time this process builds a runtime for the context (e.g. a session reopened
             # after a restart), alongside the conversation restored above, so a marathon run
             # never loses what it was working toward.
-            session_state = await self._task_store.load_session_state(context_id)
+            session_state = await self._turn_store.load_session_state(session_id)
             if session_state:
                 runtime.restore_session(session_state)
             state.runtime = runtime
@@ -539,14 +540,14 @@ class SessionExecutor(AgentExecutor):
             # background results the durable store holds but never delivered (e.g.
             # a parse that finished, or was interrupted, across a restart), so the
             # model sees them as soon as this — or the autonomous wake — runs.
-            self._replay_stored_background_results(context_id, runtime)
+            self._replay_stored_background_results(session_id, runtime)
         # A context's working directory is fixed at creation — a session stays
         # bound to the folder it was started in, so later turns never repoint it.
         return runtime
 
-    def _replay_stored_background_results(self, context_id: str, runtime: AgentRuntime) -> None:
+    def _replay_stored_background_results(self, session_id: str, runtime: AgentRuntime) -> None:
         store = get_background_job_store()
-        for job in store.undelivered_jobs(context_id, self._agent_name):
+        for job in store.undelivered_jobs(session_id, self._agent_name):
             runtime.inject_stored_background_result(
                 kind=job["kind"],
                 identifier=job["job_id"],
@@ -564,15 +565,15 @@ class SessionExecutor(AgentExecutor):
         for job in store.running_jobs(self._agent_name):
             store.mark_abandoned(job["job_id"], compact({
                 "code": f"{job['kind']}_interrupted",
-                "task_identifier": job["job_id"],
+                "job_id": job["job_id"],
                 "message": (
                     "This task was interrupted by a server restart before it finished. "
                     "Re-run it if the result is still needed."
                 ),
                 "arguments": job["arguments"],
             }))
-        for context_id in store.contexts_with_undelivered(self._agent_name):
-            wake_task = asyncio.create_task(self._run_autonomous_turn(context_id))
+        for session_id in store.contexts_with_undelivered(self._agent_name):
+            wake_task = asyncio.create_task(self._run_autonomous_turn(session_id))
             self._startup_resume_tasks.add(wake_task)
             wake_task.add_done_callback(self._startup_resume_tasks.discard)
 
@@ -623,7 +624,7 @@ class SessionExecutor(AgentExecutor):
         if self._on_permission_state is not None:
             self._on_permission_state(task.context_id, True)
         await save_conversation()
-        await self._task_store.save(task)
+        await self._turn_store.save(task)
         await updater.update_status(
             TaskState.input_required,
             updater.new_agent_message([_event_part(StatusEvent(code="input_required"))]),
@@ -632,8 +633,9 @@ class SessionExecutor(AgentExecutor):
         return True
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-        task_id = context.task_id or (context.current_task.id if context.current_task else "")
-        runtime = self._aborts.get(task_id)
+        # `context.task_id` is a2a's attribute, not ours to rename.
+        turn_id = context.task_id or (context.current_task.id if context.current_task else "")
+        runtime = self._aborts.get(turn_id)
         if runtime is not None:
             runtime.abort()
         if context.current_task:
@@ -744,11 +746,11 @@ class SessionExecutor(AgentExecutor):
             context_id=self._session_id,
             metadata=turn_metadata_envelope(metadata) if metadata else None,
         )
-        task_id = ""
+        turn_id = ""
         async for event in handler.on_message_send_stream(MessageSendParams(message=message)):
-            if isinstance(event, Task) and not task_id:
-                task_id = event.id
-        return task_id
+            if isinstance(event, Task) and not turn_id:
+                turn_id = event.id
+        return turn_id
 
     def _title_from_first_message(self, parts: list) -> None:
         """Name the session after what it was first asked to do.
@@ -805,7 +807,7 @@ class SessionExecutor(AgentExecutor):
                 return
             title = (SessionTitle.model_validate(response.tool_calls[0]["args"]).title or "").strip()
             if title:
-                await self._task_store.publish_title(title)
+                await self._turn_store.publish_title(title)
         except Exception:  # noqa: BLE001 — a session is not worth failing over its own name
             logger.debug("Could not generate a title for session %s", self._session_id, exc_info=True)
 
@@ -826,7 +828,7 @@ class SessionExecutor(AgentExecutor):
         handler = self._agent_handler()
         if handler is None:
             return False
-        tasks = await self._task_store.tasks_for_context(self._session_id)
+        tasks = await self._turn_store.turns_for_session(self._session_id)
         for task in tasks:
             pending = TurnRecord.from_metadata(task.metadata).pending
             if pending is None or pending.gate_for(str(payload.get("request_id", ""))) is None:
@@ -861,7 +863,7 @@ class SessionExecutor(AgentExecutor):
         The last denial resumes the turn, which records a denial for each blocked call — that
         is what keeps the conversation valid, since a tool call with no result is a message the
         next turn cannot build on. Returns whether anything was actually pending."""
-        tasks = await self._task_store.tasks_for_context(self._session_id)
+        tasks = await self._turn_store.turns_for_session(self._session_id)
         for task in tasks:
             pending = TurnRecord.from_metadata(task.metadata).pending
             if pending is None or not pending.gates:
@@ -952,6 +954,6 @@ class SessionExecutor(AgentExecutor):
         if self._mcp_manager is not None:
             with contextlib.suppress(Exception):
                 await self._mcp_manager.aclose()
-        close = getattr(self._task_store, "aclose", None)
+        close = getattr(self._turn_store, "aclose", None)
         if close is not None:
             await close()

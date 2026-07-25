@@ -113,7 +113,7 @@ async def bash(
         # crash-orphaned subtree (survived a SIGKILL of the server) is reaped on the
         # next startup. No-op UPDATE when the job is not durably tracked (no context).
         try:
-            get_background_job_store().record_process_group(task_identifier, os.getpgid(process_id))
+            get_background_job_store().record_process_group(job_id, os.getpgid(process_id))
         except (ProcessLookupError, OSError):
             pass
 
@@ -190,7 +190,7 @@ async def bash(
         })
 
     jobs = current_background_jobs()
-    task_identifier = jobs.spawn(
+    job_id = jobs.spawn(
         "bash", run(), output_path=output_path, cancel_callback=cancel_process,
         arguments={
             "command": command,
@@ -214,13 +214,13 @@ async def bash(
         # The ceiling only trips for a command that runs unexpectedly long without
         # being backgrounded; it then falls through to the background path below as
         # a safety net rather than holding the turn open indefinitely.
-        settled = await jobs.settle_inline(task_identifier, active_tuning().scale_timeout(timeout))
+        settled = await jobs.settle_inline(job_id, active_tuning().scale_timeout(timeout))
         if settled is not None:
             return settled.result
     return compact({
         "code": "bash_started",
         "status": "running",
-        "task_identifier": task_identifier,
+        "job_id": job_id,
         "output_file": str(output_path),
     })
 
@@ -233,7 +233,7 @@ async def search_web(
 ) -> str:
     """Search the web using Exa. Returns a ranked list of results with titles, URLs, and a summary of each — so you can often answer directly without fetching the page.
 
-    Most searches finish quickly and return their ``web_search_completed`` results directly from this call. A slow search returns a ``web_search_started`` acknowledgement instead; its results are then delivered to you automatically as a separate ``web_search_completed`` message carrying the same ``task_identifier`` — never call ``read_task`` on the identifier and never poll for it. Just keep working (you can start several searches at once); pending results appear on their own.
+    Most searches finish quickly and return their ``web_search_completed`` results directly from this call. A slow search returns a ``web_search_started`` acknowledgement instead; its results are then delivered to you automatically as a separate ``web_search_completed`` message carrying the same ``job_id`` — never call ``read_turn`` on the identifier and never poll for it. Just keep working (you can start several searches at once); pending results appear on their own.
 
     Use this when you need current information from the internet, recent events, changing documentation, standards, prices, schedules, or external knowledge not available in the training data. Use ``fetch_url`` when the URL is already known instead of searching for it.
 
@@ -249,8 +249,8 @@ async def search_web(
     # Mint the identifier up front so the eventual completed/error result can echo
     # it — the model correlates a delivered result to the search it started by
     # this id, instead of guessing whether its searches have finished.
-    task_identifier = new_id("search")
-    output_path = Path("/tmp") / f"{task_identifier}.log"
+    job_id = new_id("search")
+    output_path = Path("/tmp") / f"{job_id}.log"
 
     async def run() -> str:
         try:
@@ -271,7 +271,7 @@ async def search_web(
             payload = compact({
                 "code": "web_search_completed",
                 "status": "ok",
-                "task_identifier": task_identifier,
+                "job_id": job_id,
                 "query": query,
                 "results": entries,
             })
@@ -281,7 +281,7 @@ async def search_web(
             payload = compact({
                 "code": "web_search_error",
                 "status": "error",
-                "task_identifier": task_identifier,
+                "job_id": job_id,
                 "message": str(exception),
             })
             await asyncio.to_thread(output_path.write_text, payload)
@@ -289,7 +289,7 @@ async def search_web(
 
     jobs = current_background_jobs()
     jobs.spawn(
-        "search_web", run(), identifier=task_identifier, output_path=output_path,
+        "search_web", run(), identifier=job_id, output_path=output_path,
         arguments={"query": query, "justification": justification, "result_count": result_count},
         # A search that outlives the turn keeps running detached — a Stop ends the
         # turn but leaves it running, so its result still lands and wakes the agent.
@@ -297,18 +297,18 @@ async def search_web(
     )
     # Give the search a short window to finish inline. The common case returns the
     # real results directly, so the model never juggles a pending handle at all.
-    settled = await jobs.settle_inline(task_identifier, active_tuning().duration(Limit.WEB_SEARCH_SYNC_WINDOW_SECONDS))
+    settled = await jobs.settle_inline(job_id, active_tuning().duration(Limit.WEB_SEARCH_SYNC_WINDOW_SECONDS))
     if settled is not None:
         return settled.result
     # The started acknowledgement intentionally omits any file path or other
     # fetch-looking handle: the only thing the model needs is the id to match the
-    # auto-delivered result against. The "do not poll/read_task" guidance is
+    # auto-delivered result against. The "do not poll/read_turn" guidance is
     # attached by the runtime from a prompt template (user-facing wording lives in
     # prompts, not in tool code).
     return compact({
         "code": "web_search_started",
         "status": "running",
-        "task_identifier": task_identifier,
+        "job_id": job_id,
     })
 
 
@@ -528,15 +528,15 @@ def open_artifact(
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 @tool
-def read_task(task_id: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
-    """Read a sibling A2A task in this context by its id, returning its current status and artifact (deliverable).
+def read_turn(turn_id: str = "", justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required.")) -> str:
+    """Read a sibling turn in this session by its id, returning its current status and artifact (deliverable).
 
     Use this to coordinate with externally supplied sibling A2A task ids: check whether a sibling has finished and read what it produced, then build on it.
 
-    This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…") or background-bash ("bg-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_task on one and never use it to poll. To look at a peer session, use read_session; a peer's answer arrives on its own as a message.
+    This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…") or background-bash ("bg-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_turn on one and never use it to poll. To look at a peer session, use read_session; a peer's answer arrives on its own as a message.
 
     Arguments:
-        task_id: The id of an externally supplied sibling A2A task to read.
+        turn_id: The id of an externally supplied sibling turn to read.
         justification: A concise, user-facing description of why you are reading this task — shown as the label for this call.
     """
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
@@ -564,7 +564,7 @@ def update_tasks(updates: list[dict]) -> str:
 
     Arguments:
         updates: List of update objects. Each object has:
-            - task_id (required): The task identifier (e.g. "task-...").
+            - turn_id (required): The task identifier (e.g. "task-...").
             - status (required): One of 'pending', 'in_progress', 'completed', 'blocked'.
             - result (optional): Summary of what was accomplished when marking as completed.
     """

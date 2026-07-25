@@ -103,7 +103,7 @@ export interface McpEvent {
  * via the `definition` "ModelToolResult".
  */
 export interface ModelToolResult {
-  background_task_identifier?: string | null;
+  background_job_id?: string | null;
   code?: string | null;
   completed_at?: string | null;
   duration_ms?: number | null;
@@ -206,7 +206,7 @@ export interface ToolCallEvent {
  * via the `definition` "ToolMetadata".
  */
 export interface ToolMetadata {
-  background_task_identifier?: string | null;
+  background_job_id?: string | null;
   completed_at?: string | null;
   duration_ms?: number | null;
   started_at?: string | null;

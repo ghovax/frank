@@ -267,7 +267,7 @@
     "examples": "例",
     "toolCount": "{count, plural, other {# 個のツール}}"
   },
-  "BackgroundTasksPanel": {
+  "BackgroundJobsPanel": {
     "sending": "送信中",
     "sendToBackgroundHint": "このコマンドをバックグラウンドで実行し続け、ターンを続行します",
     "sendToBackground": "バックグラウンドに送る",
@@ -434,7 +434,7 @@
     "title": "タイトル",
     "source": "ソース",
     "summary": "概要",
-    "taskId": "タスクID",
+    "turnId": "ターン ID",
     "filePath": "ファイルパス",
     "offset": "オフセット",
     "limit": "上限",

@@ -235,7 +235,7 @@ async def _session_tree(params: dict) -> dict:
     }
 
 
-async def _session_kill(params: dict) -> dict:
+async def _session_end(params: dict) -> dict:
     assert state.lifecycle is not None
     record = _session(_require(params, "id"))
     reaped = await state.lifecycle.reap(record.id, reason=str(params.get("reason") or "killed by request"))
@@ -258,7 +258,7 @@ async def _session_send(params: dict) -> dict:
     return await state.relay_to_session(record, "message/send", params)
 
 
-async def _session_cancel(params: dict) -> dict:
+async def _turn_cancel(params: dict) -> dict:
     record = _session(_require(params, "id"))
     return await state.relay_to_session(record, "tasks/cancel", params)
 
@@ -276,18 +276,18 @@ async def _session_compact(params: dict) -> dict:
     return await state.relay_to_session(record, "session/compact", params)
 
 
-async def _session_background(params: dict) -> dict:
+async def _jobs_list(params: dict) -> dict:
     """What background work a session has in flight. Read from the session rather than the
     store: a background job lives in the process running it."""
     record = _session(_require(params, "id"))
-    return await state.relay_to_session(record, "session/background", params)
+    return await state.relay_to_session(record, "jobs/list", params)
 
 
-async def _session_tool_background(params: dict) -> dict:
+async def _jobs_detach(params: dict) -> dict:
     """Detach a still-blocking command so the session's turn can continue without it."""
     record = _session(_require(params, "id"))
     _require(params, "tool_call_id")
-    return await state.relay_to_session(record, "session/tool_background", params)
+    return await state.relay_to_session(record, "jobs/detach", params)
 
 
 async def _session_history(params: dict) -> dict:
@@ -299,44 +299,44 @@ async def _session_history(params: dict) -> dict:
     With a limit this pages backwards through the store, returning the cursor for the next page
     — which is what lets a client show a long session immediately and pull the rest behind it,
     rather than waiting on every turn it has ever had."""
-    assert state.task_store is not None
+    assert state.turn_store is not None
     session_id = _require(params, "id")
     limit = int(params.get("limit") or 0)
     if limit <= 0:
-        tasks = await state.task_store.tasks_for_context(session_id)
-        if not tasks:
+        turns = await state.turn_store.turns_for_session(session_id)
+        if not turns:
             _assert_session_known(session_id)
         return {
-            "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
+            "turns": [turn.model_dump(by_alias=True, exclude_none=True, mode="json") for turn in turns],
             "next_before_row_id": None,
             "has_more": False,
         }
     raw_cursor = params.get("before_row_id")
-    page = await state.task_store.task_page_for_context(
+    page = await state.turn_store.turn_page_for_session(
         session_id,
         limit=limit,
         before_row_id=int(raw_cursor) if raw_cursor is not None else None,
     )
-    tasks = page.get("tasks") or []
-    if not tasks and raw_cursor is None:
+    turns = page.get("turns") or []
+    if not turns and raw_cursor is None:
         _assert_session_known(session_id)
     return {
-        "tasks": [
-            task.model_dump(by_alias=True, exclude_none=True, mode="json")
-            if hasattr(task, "model_dump") else task
-            for task in tasks
+        "turns": [
+            turn.model_dump(by_alias=True, exclude_none=True, mode="json")
+            if hasattr(turn, "model_dump") else turn
+            for turn in turns
         ],
         "next_before_row_id": page.get("next_before_row_id"),
         "has_more": bool(page.get("has_more")),
     }
 
 
-async def _task_get(params: dict) -> dict:
-    assert state.task_store is not None
-    task = await state.task_store.get(_require(params, "task_id"))
-    if task is None:
-        raise RpcError("No such task.", status_code=404, code="no_such_task")
-    return {"task": task.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})}
+async def _turn_get(params: dict) -> dict:
+    assert state.turn_store is not None
+    turn = await state.turn_store.get(_require(params, "turn_id"))
+    if turn is None:
+        raise RpcError("No such turn.", status_code=404, code="no_such_turn")
+    return {"turn": turn.model_dump(by_alias=True, exclude_none=True, mode="json", exclude={"history"})}
 
 
 async def _remote_list(_params: dict) -> dict:
@@ -434,17 +434,17 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "session.list": _session_list,
     "session.get": _session_get,
     "session.tree": _session_tree,
-    "session.kill": _session_kill,
+    "session.end": _session_end,
     "session.send": _session_send,
-    "session.cancel": _session_cancel,
+    "turn.cancel": _turn_cancel,
     "session.respond": _session_respond,
     "session.compact": _session_compact,
-    "session.background": _session_background,
-    "session.tool_background": _session_tool_background,
+    "jobs.list": _jobs_list,
+    "jobs.detach": _jobs_detach,
     "session.history": _session_history,
     "remote.list": _remote_list,
     "remote.send": _remote_send,
-    "task.get": _task_get,
+    "turn.get": _turn_get,
     "daemon.status": _daemon_status,
 }
 
@@ -455,7 +455,7 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
 # history, answering a permission request, compacting somebody else — stays with the human.
 _SESSION_CALLER_METHODS = frozenset({
     "session.create", "session.send", "session.get", "session.tree",
-    "session.kill", "session.history", "remote.list", "remote.send",
+    "session.end", "session.history", "remote.list", "remote.send",
 })
 
 
@@ -543,14 +543,14 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
             raise refusal
 
     async def stream():
-        assert state.task_store is not None
+        assert state.turn_store is not None
         subscription = state.event_bus.subscribe(session_id)
         try:
-            tasks = await state.task_store.tasks_for_context(session_id)
+            turns = await state.turn_store.turns_for_session(session_id)
             yield {
                 "data": compact({
                     "kind": "snapshot",
-                    "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
+                    "turns": [turn.model_dump(by_alias=True, exclude_none=True, mode="json") for turn in turns],
                 })
             }
             while True:

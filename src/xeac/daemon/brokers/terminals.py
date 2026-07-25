@@ -26,12 +26,12 @@ from xeac.daemon import state
 from xeac.daemon.persistence.database import SessionRecord, TerminalStateRecord
 
 
-def _terminal_directory(context_id: str, working_directory: str) -> Path:
+def _terminal_directory(session_id: str, working_directory: str) -> Path:
     directory = working_directory.strip()
-    if context_id and state.session_factory is not None:
+    if session_id and state.session_factory is not None:
         database_session = state.session_factory()
         try:
-            record = database_session.get(SessionRecord, context_id)
+            record = database_session.get(SessionRecord, session_id)
             if record is not None:
                 directory = record.runtime_working_directory or record.working_directory or directory
         finally:
@@ -108,35 +108,35 @@ async def _read_pty(master_fd: int) -> bytes:
         loop.remove_reader(master_fd)
 
 
-def _terminal_context_identifier(context_id: str, directory: Path) -> str:
-    if context_id:
-        return context_id
+def _terminal_context_identifier(session_id: str, directory: Path) -> str:
+    if session_id:
+        return session_id
     digest = hashlib.sha256(str(directory).encode("utf-8")).hexdigest()[:16]
     return f"working-directory:{digest}"
 
 
-def _load_terminal_state(context_identifier: str, terminal_key: str) -> str:
+def _load_terminal_state(terminal_context: str, terminal_key: str) -> str:
     if state.session_factory is None:
         return ""
     database_session = state.session_factory()
     try:
-        record = database_session.get(TerminalStateRecord, (context_identifier, terminal_key))
+        record = database_session.get(TerminalStateRecord, (terminal_context, terminal_key))
         return record.scrollback if record is not None and record.scrollback else ""
     finally:
         database_session.close()
 
 
-def _save_terminal_state(context_identifier: str, terminal_key: str, directory: Path, scrollback: str) -> None:
+def _save_terminal_state(terminal_context: str, terminal_key: str, directory: Path, scrollback: str) -> None:
     if state.session_factory is None:
         return
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
             now = datetime.now(timezone.utc).isoformat()
-            record = database_session.get(TerminalStateRecord, (context_identifier, terminal_key))
+            record = database_session.get(TerminalStateRecord, (terminal_context, terminal_key))
             if record is None:
                 record = TerminalStateRecord(
-                    context_id=context_identifier,
+                    session_id=terminal_context,
                     terminal_key=terminal_key,
                     working_directory=str(directory),
                     scrollback=scrollback,
@@ -156,7 +156,7 @@ def _save_terminal_state(context_identifier: str, terminal_key: str, directory: 
             database_session.close()
 
 
-def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
+def _list_terminal_states(terminal_context: str) -> list[dict[str, str]]:
     """Persisted terminals for a context, ordered by creation so the client can rebuild
     a stable set of tabs. Runs off the event loop (synchronous history.db read)."""
     if state.session_factory is None:
@@ -165,7 +165,7 @@ def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
     try:
         records = (
             database_session.query(TerminalStateRecord)
-            .filter(TerminalStateRecord.context_id == context_identifier)
+            .filter(TerminalStateRecord.session_id == terminal_context)
             .order_by(TerminalStateRecord.created_at.asc(), TerminalStateRecord.terminal_key.asc())
             .all()
         )
@@ -183,13 +183,13 @@ def _list_terminal_states(context_identifier: str) -> list[dict[str, str]]:
     return entries
 
 
-def _delete_terminal_state(context_identifier: str, terminal_key: str) -> None:
+def _delete_terminal_state(terminal_context: str, terminal_key: str) -> None:
     if state.session_factory is None:
         return
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            record = database_session.get(TerminalStateRecord, (context_identifier, terminal_key))
+            record = database_session.get(TerminalStateRecord, (terminal_context, terminal_key))
             if record is not None:
                 database_session.delete(record)
                 database_session.commit()
@@ -203,7 +203,7 @@ def _delete_terminal_state(context_identifier: str, terminal_key: str) -> None:
 class TerminalSession:
     def __init__(
         self,
-        context_identifier: str,
+        terminal_context: str,
         terminal_key: str,
         directory: Path,
         rows: int,
@@ -211,7 +211,7 @@ class TerminalSession:
         persisted_scrollback: str,
         remote_host_alias: str = "",
     ):
-        self.context_identifier = context_identifier
+        self.terminal_context = terminal_context
         self.terminal_key = terminal_key
         self.directory = directory
         # When set, the terminal is an interactive login shell on this remote host (over
@@ -313,7 +313,7 @@ class TerminalSession:
     async def persist(self) -> None:
         await asyncio.to_thread(
             _save_terminal_state,
-            self.context_identifier,
+            self.terminal_context,
             self.terminal_key,
             self.directory,
             self.scrollback(),
@@ -394,35 +394,35 @@ class TerminalSessionManager:
 
     async def get_or_create(
         self,
-        context_id: str,
+        session_id: str,
         directory: Path,
         rows: int,
         columns: int,
         terminal_key: str = "main",
         remote_host_alias: str = "",
     ) -> TerminalSession:
-        context_identifier = _terminal_context_identifier(context_id, directory)
-        key = (context_identifier, terminal_key)
+        terminal_context = _terminal_context_identifier(session_id, directory)
+        key = (terminal_context, terminal_key)
         async with self._lock:
             existing = self._sessions.get(key)
             if existing is not None and existing.running:
                 existing.resize(rows, columns)
                 return existing
-            persisted_scrollback = await asyncio.to_thread(_load_terminal_state, context_identifier, terminal_key)
-            session = TerminalSession(context_identifier, terminal_key, directory, rows, columns, persisted_scrollback, remote_host_alias=remote_host_alias)
+            persisted_scrollback = await asyncio.to_thread(_load_terminal_state, terminal_context, terminal_key)
+            session = TerminalSession(terminal_context, terminal_key, directory, rows, columns, persisted_scrollback, remote_host_alias=remote_host_alias)
             self._sessions[key] = session
             await session.start()
             return session
 
-    def live_keys(self, context_identifier: str) -> set[str]:
+    def live_keys(self, terminal_context: str) -> set[str]:
         return {
             terminal_key
             for (identifier, terminal_key), session in self._sessions.items()
-            if identifier == context_identifier and session.running
+            if identifier == terminal_context and session.running
         }
 
-    async def close_one(self, context_identifier: str, terminal_key: str) -> None:
-        key = (context_identifier, terminal_key)
+    async def close_one(self, terminal_context: str, terminal_key: str) -> None:
+        key = (terminal_context, terminal_key)
         async with self._lock:
             session = self._sessions.pop(key, None)
         if session is not None:
@@ -434,15 +434,15 @@ class TerminalSessionManager:
         await asyncio.gather(*(session.close() for session in sessions), return_exceptions=True)
 
 
-async def _terminal_context_for_request(context_id: str, working_directory: str) -> str:
+async def _terminal_context_for_request(session_id: str, working_directory: str) -> str:
     """Resolve the identifier a context's terminals are stored under. For a persisted
     session the identifier is the context id itself, so we can answer even when the
     working directory no longer exists; otherwise it is derived from the resolved
     directory (which must exist)."""
     try:
-        directory = await asyncio.to_thread(_terminal_directory, context_id, working_directory)
+        directory = await asyncio.to_thread(_terminal_directory, session_id, working_directory)
     except ValueError:
-        if context_id:
-            return context_id
+        if session_id:
+            return session_id
         raise HTTPException(status_code=400, detail="Terminal directory does not exist.")
-    return _terminal_context_identifier(context_id, directory)
+    return _terminal_context_identifier(session_id, directory)

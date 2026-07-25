@@ -16,7 +16,7 @@ import { DropdownMenu } from "@/components/ui/menu";
 import { SegmentedToggle } from "./ui/segmented-toggle";
 import { InlineField } from "./ui/display";
 import { scrollFade } from "@/lib/scroll-fade";
-import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
+import { hasBackgroundJobId } from "@/lib/tool-event";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
@@ -24,7 +24,7 @@ import { Pill } from "./ui/pill";
 
 // A shell command surfaced from the transcript, carried in the exact shape the
 // ToolCall component consumes so each row renders as a real tool call.
-interface ShellTask {
+interface ShellJob {
   toolCallId: string;
   name: string;
   arguments: Record<string, unknown>;
@@ -38,8 +38,8 @@ interface ShellTask {
   backgrounded: boolean;
 }
 
-function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
-  const tasks: ShellTask[] = [];
+function shellJobsFromMessages(messages: ChatMessage[]): ShellJob[] {
+  const tasks: ShellJob[] = [];
   for (const message of messages) {
     if (message.role !== "tool_call" || message.content !== "bash") continue;
     const meta = message.meta ?? {};
@@ -54,7 +54,7 @@ function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
       timestamp: message.timestamp,
       running,
       canBackground: message.content === "bash",
-      backgrounded: running && hasBackgroundTaskIdentifier(meta.result),
+      backgrounded: running && hasBackgroundJobId(meta.result),
     });
   }
   // Newest first — the live tail of shell activity reads back in time.
@@ -63,12 +63,12 @@ function shellTasksFromMessages(messages: ChatMessage[]): ShellTask[] {
 
 function startedResultForJob(job: BackgroundJob): Record<string, unknown> {
   if (job.kind === "bash") {
-    return { code: "bash_started", task_identifier: job.job_id };
+    return { code: "bash_started", job_id: job.job_id };
   }
-  return { code: `${job.kind}_started`, task_identifier: job.job_id };
+  return { code: `${job.kind}_started`, job_id: job.job_id };
 }
 
-function shellTasksFromBackgroundJobs(jobs: BackgroundJob[]): ShellTask[] {
+function shellJobsFromBackgroundJobs(jobs: BackgroundJob[]): ShellJob[] {
   return jobs.map((job) => ({
     toolCallId: job.tool_call_id || job.job_id,
     name: job.kind,
@@ -82,8 +82,8 @@ function shellTasksFromBackgroundJobs(jobs: BackgroundJob[]): ShellTask[] {
   }));
 }
 
-function mergeTasks(messageTasks: ShellTask[], liveTasks: ShellTask[]): ShellTask[] {
-  const tasksByIdentifier = new Map<string, ShellTask>();
+function mergeTasks(messageTasks: ShellJob[], liveTasks: ShellJob[]): ShellJob[] {
+  const tasksByIdentifier = new Map<string, ShellJob>();
   const liveTaskIdentifiers = new Set(liveTasks.map((task) => task.toolCallId));
   for (const task of messageTasks) {
     if (task.running && task.backgrounded && !liveTaskIdentifiers.has(task.toolCallId)) {
@@ -105,8 +105,8 @@ function mergeTasks(messageTasks: ShellTask[], liveTasks: ShellTask[]): ShellTas
 // A running shell command: the tool card plus the actions that only make sense
 // while it is live — pushing a still-blocking foreground command to the
 // background, or stopping it outright.
-function RunningTaskRow({ task, sessionId }: { task: ShellTask; sessionId: string | null }) {
-  const translation = useTranslations("BackgroundTasksPanel");
+function RunningTaskRow({ task, sessionId }: { task: ShellJob; sessionId: string | null }) {
+  const translation = useTranslations("BackgroundJobsPanel");
   const [busy, setBusy] = useState<"stop" | "background" | null>(null);
 
   async function handleStop() {
@@ -178,7 +178,7 @@ function newTerminalKey(): string {
   return `terminal-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function BackgroundTasksPanel({
+export function BackgroundJobsPanel({
   onClose,
   messages,
   sessionId,
@@ -192,8 +192,8 @@ export function BackgroundTasksPanel({
   workingDirectory: string;
   locations?: Location[];
 }) {
-  const translation = useTranslations("BackgroundTasksPanel");
-  const tasks = useMemo(() => shellTasksFromMessages(messages), [messages]);
+  const translation = useTranslations("BackgroundJobsPanel");
+  const tasks = useMemo(() => shellJobsFromMessages(messages), [messages]);
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const [activeView, setActiveView] = useState<"terminal" | "processes">("terminal");
   // The set of terminals for this session's context, and which one is on top. Restored
@@ -207,7 +207,7 @@ export function BackgroundTasksPanel({
     const chosen = locations.find((location) => location.id === terminalLocations[key]);
     return chosen ?? locations[0];
   };
-  const liveTasks = useMemo(() => shellTasksFromBackgroundJobs(backgroundJobs), [backgroundJobs]);
+  const liveTasks = useMemo(() => shellJobsFromBackgroundJobs(backgroundJobs), [backgroundJobs]);
   const mergedTasks = useMemo(() => mergeTasks(tasks, liveTasks), [tasks, liveTasks]);
   const running = mergedTasks.filter((task) => task.running);
   const completed = mergedTasks.filter((task) => !task.running);

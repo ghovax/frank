@@ -128,7 +128,7 @@ class PeerSessions:
         return list(result.get("descendants") or [])
 
     async def end(self, session_id: str) -> dict:
-        return await self._call("session.kill", id=session_id)
+        return await self._call("session.end", id=session_id)
 
     async def remote_list(self) -> list[dict]:
         result = await self._call("remote.list")

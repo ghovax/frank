@@ -119,7 +119,7 @@ _active_job_runners: weakref.WeakSet[BackgroundJobs] = weakref.WeakSet()
 class BackgroundJobs:
     """One background-job runner, owned by a single agent runtime."""
 
-    def __init__(self, context_id: str = "", agent_name: str = "") -> None:
+    def __init__(self, session_id: str = "", agent_name: str = "") -> None:
         self._jobs: dict[str, _BackgroundJobRecord] = {}
         # Ids of jobs whose task has finished, pushed by the done-callback. This is
         # what makes completion event-driven instead of polled.
@@ -127,7 +127,7 @@ class BackgroundJobs:
         # Identity for the durable mirror. When a context is set, every job's
         # lifecycle is written to the durable store so a restart can deliver or
         # recover it; without one (e.g. in a test) durability is simply skipped.
-        self._context_id = context_id
+        self._session_id = session_id
         self._agent_name = agent_name
         _active_job_runners.add(self)
 
@@ -162,10 +162,10 @@ class BackgroundJobs:
             arguments=arguments or {},
             detached=detached,
         )
-        if self._context_id:
+        if self._session_id:
             get_background_job_store().record_started(
                 job_id=identifier,
-                context_id=self._context_id,
+                session_id=self._session_id,
                 agent_name=self._agent_name,
                 kind=kind,
                 arguments=arguments or {},
@@ -181,7 +181,7 @@ class BackgroundJobs:
         before it is delivered — so a crash between completion and delivery cannot
         lose it; then signal the (event-driven) waiters."""
         record = self._jobs.get(identifier)
-        if record is not None and self._context_id:
+        if record is not None and self._session_id:
             result = self._result_string(record)
             get_background_job_store().record_finished(identifier, result, status=STATUS_COMPLETED)
         self._completed_identifiers.put_nowait(identifier)
@@ -322,7 +322,7 @@ class BackgroundJobs:
         # (its own dedup), so the stale signal is harmless. Removing from `_jobs` is
         # what makes `has_pending()`/`has_completed_undelivered()` forget the job, so
         # no resume pump wakes for it.
-        if self._context_id:
+        if self._session_id:
             get_background_job_store().mark_delivered(identifier)
         return self._build_completion(record)
 
@@ -337,7 +337,7 @@ class BackgroundJobs:
             if record is None:  # already drained (deduplicates repeated signals)
                 continue
             completions.append(self._build_completion(record))
-            if self._context_id:
+            if self._session_id:
                 get_background_job_store().mark_delivered(identifier)
         return completions
 
@@ -365,8 +365,8 @@ class BackgroundJobs:
                 except Exception:
                     pass
             record.task.cancel()
-            if self._context_id:
-                result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+            if self._session_id:
+                result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
                 get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
             self._jobs.pop(identifier, None)
 
@@ -383,8 +383,8 @@ class BackgroundJobs:
                 except Exception:
                     pass
             record.task.cancel()
-            if self._context_id:
-                result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+            if self._session_id:
+                result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
                 get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
             self._jobs.pop(identifier, None)
             return True
@@ -405,8 +405,8 @@ class BackgroundJobs:
             except Exception:
                 pass
         record.task.cancel()
-        if self._context_id:
-            result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+        if self._session_id:
+            result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
             get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
         self._jobs.pop(identifier, None)
         return True
@@ -434,11 +434,11 @@ class BackgroundJobs:
         try:
             result: Any = record.task.result()
         except asyncio.CancelledError:
-            result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+            result = compact({"code": f"{record.kind}_cancelled", "job_id": record.identifier})
         except Exception as exception:
             result = compact({
                 "code": f"{record.kind}_error",
-                "task_identifier": record.identifier,
+                "job_id": record.identifier,
                 "message": str(exception),
             })
         if not isinstance(result, str):

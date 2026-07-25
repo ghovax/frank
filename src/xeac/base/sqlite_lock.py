@@ -47,7 +47,7 @@ _async_write_lock: asyncio.Lock | None = None
 # background.db — background-job bookkeeping. A dedicated lock, deliberately separate
 # from the history.db lock: background.db is a different database written only from the
 # event loop, and sharing the history lock (which the async task store holds across an
-# await) would deadlock the loop the instant a background-job write raced a task save.
+# await) would deadlock the loop the instant a background-job write raced a turn save.
 _background_write_lock = threading.Lock()
 _background_lock_path: Path | None = None
 

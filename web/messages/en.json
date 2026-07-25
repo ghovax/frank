@@ -267,7 +267,7 @@
     "examples": "Examples",
     "toolCount": "{count, plural, one {# tool} other {# tools}}"
   },
-  "BackgroundTasksPanel": {
+  "BackgroundJobsPanel": {
     "sending": "Sending",
     "sendToBackgroundHint": "Let this command keep running in the background and continue the turn",
     "sendToBackground": "Send to background",
@@ -434,7 +434,7 @@
     "title": "Title",
     "source": "Source",
     "summary": "Summary",
-    "taskId": "Task ID",
+    "turnId": "Turn ID",
     "filePath": "File path",
     "offset": "Offset",
     "limit": "Limit",

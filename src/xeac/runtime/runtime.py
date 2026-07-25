@@ -29,7 +29,7 @@ from xeac.locations.resolver import LocationAddress, executor_for, location_uri_
 from xeac.runtime.tools.registry import (
     bash as bash_tool,
     search_web as search_web_tool,
-    read_task as read_task_tool,
+    read_turn as read_turn_tool,
     set_tasks as set_tasks_tool,
     update_tasks as update_tasks_tool,
     update_goal as update_goal_tool,
@@ -189,7 +189,7 @@ def _all_available_tools(
         set_tasks_tool,
         update_tasks_tool,
         update_goal_tool,
-        read_task_tool,
+        read_turn_tool,
         # A session can always ask the user directly: the question parks the turn as a
         # human-in-the-loop gate and resumes on the answer. Every session is first-class and
         # attachable, so every session may drive the artifact surface too.
@@ -324,7 +324,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         "update_goal": "_tool_update_goal",
         "open_artifact": "_tool_open_artifact",
         "search_web": "_tool_search_web",
-        "read_task": "_tool_read_task",
+        "read_turn": "_tool_read_turn",
         "control_screen": "_tool_control_screen",
         "create_session": "_tool_session",
         "send_message": "_tool_session",
@@ -412,7 +412,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             })
         )
         self._background = BackgroundJobs(
-            context_id=session_id,
+            session_id=session_id,
             agent_name=agent_configuration.identifier,
         )
         # Command patterns the user chose to "always allow" this session — matching
@@ -454,10 +454,10 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         self._permission_mode: PermissionMode = PermissionMode.more_restrictive(
             permission_mode, agent_configuration.permission_policy
         ) if permission_mode else agent_configuration.permission_policy
-        self._a2a_task_id: str = ""
+        self._a2a_turn_id: str = ""
         # Reads another A2A task (sibling/agent) by id from the shared store,
         # so context-aware agents can coordinate. Injected by the executor.
-        self._task_reader: Optional[Callable] = None
+        self._turn_reader: Optional[Callable] = None
         # Enqueues a shadow-git capture of what a write-ish tool call produced (called after
         # edit/write/bash and on open_artifact). Injected by the executor; non-blocking and
         # best-effort so the runtime never waits on git or touches the database directly.
@@ -604,7 +604,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             started_at=datetime.now(timezone.utc),
             completed_at=datetime.now(timezone.utc),
             duration_milliseconds=0,
-            background_task_identifier=identifier,
+            background_job_id=identifier,
         )
         status, code = _model_result_status(capped_result, ok=True, backgrounded=False)
         self._conversation.append(self._harness_note_message(
@@ -743,14 +743,14 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
 
 
 
-    def set_a2a_task_id(self, task_id: str) -> None:
+    def set_a2a_turn_id(self, turn_id: str) -> None:
         """Record the A2A task id of the current turn, so work raised during it can name the
         turn it belongs to."""
-        self._a2a_task_id = task_id
+        self._a2a_turn_id = turn_id
 
-    def set_task_reader(self, task_reader: Callable) -> None:
-        """Install the reader `read_task` uses to fetch related A2A tasks from the store."""
-        self._task_reader = task_reader
+    def set_turn_reader(self, task_reader: Callable) -> None:
+        """Install the reader `read_turn` uses to fetch related turns from the store."""
+        self._turn_reader = task_reader
 
     def set_artifact_capture(self, artifact_capture: Callable) -> None:
         """Install the callback that enqueues a shadow-git capture after a write-ish tool
@@ -769,7 +769,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             return
         try:
             self._artifact_capture(
-                context_id=self._session_id,
+                session_id=self._session_id,
                 location_uri=resolved_location.uri,
                 executor=resolved_location.executor,
                 base_directory=resolved_location.base_directory,
@@ -845,7 +845,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
                 started_at=completion.started_at,
                 completed_at=completion.completed_at,
                 duration_milliseconds=duration_milliseconds,
-                background_task_identifier=completion.identifier,
+                background_job_id=completion.identifier,
             )
             # Append-only: the scheduled placeholder ToolMessage stays put and the
             # result lands as a *new* message (a user-role harness note — a system
@@ -870,9 +870,9 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
                 name=completion.kind,
                 result=_maybe_json(capped_result),
                 status=background_status,
-                task_id=completion.identifier,
+                job_id=completion.identifier,
             ))
-            completion_event_data: dict[str, Any] = {"task_identifier": completion.identifier}
+            completion_event_data: dict[str, Any] = {"job_id": completion.identifier}
             if background_include_result(completion.kind):
                 completion_event_data["result"] = capped_result
             self._record_event(background_completion_event(completion.kind), completion_event_data)

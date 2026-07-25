@@ -180,8 +180,8 @@ def _event_part(event: _EventBase) -> Part:
     return Part(root=DataPart(data=event.model_dump(mode="json")))
 
 
-def _work_habits_acknowledgement_parts(task_identifier: str) -> tuple[Part, Part]:
-    acknowledgement_identifier = f"work-habits-{task_identifier}"
+def _work_habits_acknowledgement_parts(job_id: str) -> tuple[Part, Part]:
+    acknowledgement_identifier = f"work-habits-{job_id}"
     metadata = {
         "tool_name": "work_habits",
         "tool_call_id": acknowledgement_identifier,

@@ -2,7 +2,7 @@
 
 A process-wide facade. When disabled (the default) every helper is a cheap no-op; when the
 user configures an OTLP endpoint, a turn becomes a trace (session grouped by the A2A
-``context_id``) carrying ``gen_ai.*`` usage attributes. Trace context rides the A2A message
+``session_id``) carrying ``gen_ai.*`` usage attributes. Trace context rides the A2A message
 metadata as a W3C ``traceparent`` so a delegation nests under its parent turn and a shared
 backend can stitch XEAC's trace to a remote agent's.
 

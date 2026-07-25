@@ -373,7 +373,7 @@ async def _open_stores() -> None:
     from xeac.base.sqlite_lock import configure_sqlite_lock, sqlite_write_lock
     from xeac.daemon import state
     from xeac.daemon.persistence.database import _apply_history_schema
-    from xeac.daemon.persistence.task_store import AppendOnlyTaskStore
+    from xeac.daemon.persistence.turn_store import AppendOnlyTaskStore
 
     database_path = database_file_path()
     configure_sqlite_lock(database_path)
@@ -403,11 +403,11 @@ async def _open_stores() -> None:
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
-    state.task_store = AppendOnlyTaskStore(state.async_engine)
-    await state.task_store.initialize()
+    state.turn_store = AppendOnlyTaskStore(state.async_engine)
+    await state.turn_store.initialize()
     # A turn that was mid-execution when the daemon last stopped cannot be resurrected — its
     # worker is gone — so it is marked interrupted rather than left claiming to be running.
-    interrupted = await state.task_store.reconcile_orphaned_turns()
+    interrupted = await state.turn_store.reconcile_orphaned_turns()
     if interrupted:
         logger.warning("Marked %d interrupted turn(s) from a previous run.", len(interrupted))
 

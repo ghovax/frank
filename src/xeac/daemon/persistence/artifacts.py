@@ -39,12 +39,12 @@ class CaptureRequest:
     external URL) — then only a tab is recorded, no git history."""
 
     def __init__(
-        self, *, context_id: str, location_uri: str, executor: LocationExecutor,
+        self, *, session_id: str, location_uri: str, executor: LocationExecutor,
         base_directory: str, changed_absolute_paths: list[str] | None,
         mode: str = "track", original_contents: dict[str, str] | None = None,
         tool_call_id: str = "", message: str = "capture", surface: dict | None = None,
     ):
-        self.context_id = context_id
+        self.session_id = session_id
         self.location_uri = location_uri
         self.executor = executor
         self.base_directory = base_directory
@@ -63,7 +63,7 @@ def _artifact_maximum_bytes() -> int:
 
 
 def _capture_artifacts(
-    *, context_id: str, location_uri: str, executor: LocationExecutor, base_directory: str,
+    *, session_id: str, location_uri: str, executor: LocationExecutor, base_directory: str,
     changed_absolute_paths: list[str] | None, mode: str = "track",
     original_contents: dict[str, str] | None = None, tool_call_id: str = "", message: str = "capture",
     surface: dict | None = None,
@@ -75,7 +75,7 @@ def _capture_artifacts(
     if state.capture_queue is None:
         return
     request = CaptureRequest(
-        context_id=context_id, location_uri=location_uri, executor=executor,
+        session_id=session_id, location_uri=location_uri, executor=executor,
         base_directory=base_directory, changed_absolute_paths=changed_absolute_paths,
         mode=mode, original_contents=original_contents,
         tool_call_id=tool_call_id, message=message, surface=surface,
@@ -86,7 +86,7 @@ def _capture_artifacts(
         try:
             state.capture_queue.put_nowait(request)
         except asyncio.QueueFull:
-            _artifact_logger.warning("capture queue full; dropped a capture for %s", context_id)
+            _artifact_logger.warning("capture queue full; dropped a capture for %s", session_id)
 
 
 async def _capture_worker() -> None:
@@ -96,17 +96,17 @@ async def _capture_worker() -> None:
         try:
             await asyncio.to_thread(_run_capture, request)
         except Exception:
-            _artifact_logger.exception("artifact capture failed for %s", request.context_id)
+            _artifact_logger.exception("artifact capture failed for %s", request.session_id)
         finally:
             state.capture_queue.task_done()
 
 
-def _project_id_for_context(context_id: str) -> str:
+def _project_id_for_session(session_id: str) -> str:
     if state.session_factory is None:
         return ""
     session = state.session_factory()
     try:
-        record = session.query(SessionRecord).filter(SessionRecord.id == context_id).first()
+        record = session.query(SessionRecord).filter(SessionRecord.id == session_id).first()
         return cast(str, record.project_id) if record is not None and record.project_id else ""
     finally:
         session.close()
@@ -132,7 +132,7 @@ def _group_work_trees(base_directory: str, changed_absolute_paths: list[str]) ->
 def _run_capture(request: CaptureRequest) -> None:
     """Off-loop: version exactly the files this request names (never a folder survey),
     record the index rows, upsert any surface, and broadcast if anything changed."""
-    project_id = _project_id_for_context(request.context_id)
+    project_id = _project_id_for_session(request.session_id)
     maximum_bytes = _artifact_maximum_bytes()
     location_home = request.executor.home_directory()
     changed_any = False
@@ -143,7 +143,7 @@ def _run_capture(request: CaptureRequest) -> None:
         git_directory = artifacts.git_directory_for(location_home, project_id, work_tree)
         try:
             result = artifacts.recheck_tracked(
-                request.executor, git_directory, work_tree, request.context_id,
+                request.executor, git_directory, work_tree, request.session_id,
                 maximum_bytes=maximum_bytes, message=request.message,
             )
         except artifacts.VersionStoreError:
@@ -153,7 +153,7 @@ def _run_capture(request: CaptureRequest) -> None:
             _record_capture(request, project_id, git_directory, work_tree, result)
             changed_any = True
         if changed_any:
-            _publish_broadcast({"type": "artifact_captured", "session_id": request.context_id})
+            _publish_broadcast({"type": "artifact_captured", "session_id": request.session_id})
         return
 
     # mode == "track": version each explicitly named path (grouped by its work-tree).
@@ -166,7 +166,7 @@ def _run_capture(request: CaptureRequest) -> None:
         }
         try:
             versions = artifacts.track_paths(
-                request.executor, git_directory, work_tree, request.context_id, relative_paths,
+                request.executor, git_directory, work_tree, request.session_id, relative_paths,
                 original_contents=original_contents or None, maximum_bytes=maximum_bytes, message=request.message,
             )
         except artifacts.VersionStoreError:
@@ -181,7 +181,7 @@ def _run_capture(request: CaptureRequest) -> None:
         _upsert_surface(request, project_id, location_home)
         changed_any = True
     if changed_any:
-        _publish_broadcast({"type": "artifact_captured", "session_id": request.context_id})
+        _publish_broadcast({"type": "artifact_captured", "session_id": request.session_id})
 
 
 def _record_capture(request: CaptureRequest, project_id: str, git_directory: str, work_tree: str, result: artifacts.CommitResult) -> None:
@@ -192,15 +192,15 @@ def _record_capture(request: CaptureRequest, project_id: str, git_directory: str
         session = state.session_factory()
         try:
             session.add(ArtifactVersionRecord(
-                id=version_id, context_id=request.context_id, project_id=project_id,
+                id=version_id, session_id=request.session_id, project_id=project_id,
                 location_uri=request.location_uri, git_directory=git_directory, work_tree=work_tree,
-                branch=artifacts.branch_reference(request.context_id), commit_sha=result.commit_sha,
+                branch=artifacts.branch_reference(request.session_id), commit_sha=result.commit_sha,
                 sequence=result.sequence, message=request.message,
                 tool_call_id=request.tool_call_id, created_at=now,
             ))
             for changed in result.files:
                 session.add(ArtifactFileRecord(
-                    id=str(uuid.uuid4()), version_id=version_id, context_id=request.context_id,
+                    id=str(uuid.uuid4()), version_id=version_id, session_id=request.session_id,
                     location_uri=request.location_uri, git_directory=git_directory, work_tree=work_tree,
                     commit_sha=result.commit_sha, relative_path=changed.relative_path, absolute_path=changed.absolute_path,
                     blob_sha=changed.blob_sha, change_type=changed.change_type, size=changed.size,
@@ -228,7 +228,7 @@ def _upsert_surface(request: CaptureRequest, project_id: str, location_home: str
         relative_path = posixpath.relpath(absolute_path, work_tree)
         # The tracking capture already ran for this path, so the file's latest version is
         # simply the branch head's blob for it.
-        latest_commit = artifacts.resolve_reference(request.executor, git_directory, artifacts.branch_reference(request.context_id))
+        latest_commit = artifacts.resolve_reference(request.executor, git_directory, artifacts.branch_reference(request.session_id))
         if latest_commit:
             latest_blob = artifacts.blob_at(request.executor, git_directory, latest_commit, relative_path)
     now = datetime.now(timezone.utc).isoformat()
@@ -241,7 +241,7 @@ def _upsert_surface(request: CaptureRequest, project_id: str, location_home: str
             surface_id = requested_surface_id or f"artifact-{uuid.uuid4().hex[:16]}"
             existing = session.get(ArtifactSurfaceRecord, surface_id)
             if existing is None:
-                existing = ArtifactSurfaceRecord(id=surface_id, context_id=request.context_id, created_at=now)
+                existing = ArtifactSurfaceRecord(id=surface_id, session_id=request.session_id, created_at=now)
                 session.add(existing)
             existing.location_uri = request.location_uri
             existing.git_directory = git_directory
@@ -275,12 +275,12 @@ def _kind_for_path(relative_path: str) -> str:
     return "file"
 
 
-def _annotation_counts_by_version(database_session, context_id: str) -> dict[str, int]:
+def _annotation_counts_by_version(database_session, session_id: str) -> dict[str, int]:
     """Pin counts keyed by version id (git commit sha)."""
     counts: dict[str, int] = {}
     for row in (
         database_session.query(ArtifactAnnotationRecord)
-        .filter(ArtifactAnnotationRecord.context_id == context_id)
+        .filter(ArtifactAnnotationRecord.session_id == session_id)
         .all()
     ):
         try:
@@ -291,7 +291,7 @@ def _annotation_counts_by_version(database_session, context_id: str) -> dict[str
     return counts
 
 
-def _artifact_index(context_id: str, scope: str = "session") -> list[dict]:
+def _artifact_index(session_id: str, scope: str = "session") -> list[dict]:
     """The file-history list: one entry per tracked ``(git_directory, relative_path)`` with its latest
     change and version count. ``scope='full'`` widens each file to its whole cross-session
     lineage (same location + relative_path), ``'session'`` shows only this session's versions."""
@@ -302,13 +302,13 @@ def _artifact_index(context_id: str, scope: str = "session") -> list[dict]:
         keys = {
             (cast(str, row.git_directory), cast(str, row.relative_path))
             for row in database_session.query(ArtifactFileRecord.git_directory, ArtifactFileRecord.relative_path)
-            .filter(ArtifactFileRecord.context_id == context_id)
+            .filter(ArtifactFileRecord.session_id == session_id)
             .distinct()
         }
         surfaces = {
             (cast(str, surface.git_directory), cast(str, surface.relative_path)): surface
             for surface in database_session.query(ArtifactSurfaceRecord)
-            .filter(ArtifactSurfaceRecord.context_id == context_id)
+            .filter(ArtifactSurfaceRecord.session_id == session_id)
             .all()
             if surface.relative_path
         }
@@ -318,7 +318,7 @@ def _artifact_index(context_id: str, scope: str = "session") -> list[dict]:
                 ArtifactFileRecord.git_directory == git_directory, ArtifactFileRecord.relative_path == relative_path
             )
             if scope != "full":
-                query = query.filter(ArtifactFileRecord.context_id == context_id)
+                query = query.filter(ArtifactFileRecord.session_id == session_id)
             rows = query.order_by(ArtifactFileRecord.created_at.asc()).all()
             if not rows:
                 continue
@@ -348,7 +348,7 @@ def _artifact_index(context_id: str, scope: str = "session") -> list[dict]:
         database_session.close()
 
 
-def _artifact_versions(context_id: str, git_directory: str, relative_path: str, scope: str = "session") -> list[dict]:
+def _artifact_versions(session_id: str, git_directory: str, relative_path: str, scope: str = "session") -> list[dict]:
     """Every captured version of one file, oldest → newest (what the filmstrip walks)."""
     if state.session_factory is None:
         return []
@@ -358,7 +358,7 @@ def _artifact_versions(context_id: str, git_directory: str, relative_path: str, 
             ArtifactFileRecord.git_directory == git_directory, ArtifactFileRecord.relative_path == relative_path
         )
         if scope != "full":
-            query = query.filter(ArtifactFileRecord.context_id == context_id)
+            query = query.filter(ArtifactFileRecord.session_id == session_id)
         rows = query.order_by(ArtifactFileRecord.created_at.asc()).all()
         version_ids = [cast(str, row.version_id) for row in rows]
         versions = {
@@ -367,7 +367,7 @@ def _artifact_versions(context_id: str, git_directory: str, relative_path: str, 
             .filter(ArtifactVersionRecord.id.in_(version_ids))
             .all()
         } if version_ids else {}
-        annotation_counts = _annotation_counts_by_version(database_session, context_id)
+        annotation_counts = _annotation_counts_by_version(database_session, session_id)
         payload: list[dict] = []
         for row in rows:
             version = versions.get(cast(str, row.version_id))
@@ -395,7 +395,7 @@ def _artifact_versions(context_id: str, git_directory: str, relative_path: str, 
         database_session.close()
 
 
-def _surface_records(context_id: str) -> list[dict]:
+def _surface_records(session_id: str) -> list[dict]:
     """The surfaced artifacts (artifacts-panel tabs) for a session."""
     if state.session_factory is None:
         return []
@@ -403,7 +403,7 @@ def _surface_records(context_id: str) -> list[dict]:
     try:
         rows = (
             database_session.query(ArtifactSurfaceRecord)
-            .filter(ArtifactSurfaceRecord.context_id == context_id)
+            .filter(ArtifactSurfaceRecord.session_id == session_id)
             .order_by(ArtifactSurfaceRecord.created_at.asc())
             .all()
         )
@@ -427,10 +427,10 @@ def _surface_records(context_id: str) -> list[dict]:
         database_session.close()
 
 
-def _executor_for_location_uri(context_id: str, location_uri: str) -> LocationExecutor | None:
+def _executor_for_location_uri(session_id: str, location_uri: str) -> LocationExecutor | None:
     """Resolve the executor for one of a session's locations by URI (for serve/restore),
     rebuilding it from the session's location records so it works after a restart."""
-    for entry in (_resolve_session_locations(context_id) or []):
+    for entry in (_resolve_session_locations(session_id) or []):
         if entry.get("uri") == location_uri:
             address = LocationAddress(
                 kind=entry.get("kind", "local"),
@@ -443,26 +443,26 @@ def _executor_for_location_uri(context_id: str, location_uri: str) -> LocationEx
     return None
 
 
-def _restore_artifact(context_id: str, location_uri: str, git_directory: str, work_tree: str, relative_path: str, commit_sha: str) -> None:
+def _restore_artifact(session_id: str, location_uri: str, git_directory: str, work_tree: str, relative_path: str, commit_sha: str) -> None:
     """Restore ``relative_path`` to ``commit_sha`` (append-only), then re-index the new versions."""
-    executor = _executor_for_location_uri(context_id, location_uri)
+    executor = _executor_for_location_uri(session_id, location_uri)
     if executor is None:
         raise HTTPException(status_code=404, detail="Location is unavailable for restore.")
     maximum_bytes = _artifact_maximum_bytes()
-    project_id = _project_id_for_context(context_id)
+    project_id = _project_id_for_session(session_id)
     versions = artifacts.restore(
-        executor, git_directory, work_tree, context_id, relative_path, commit_sha,
+        executor, git_directory, work_tree, session_id, relative_path, commit_sha,
         maximum_bytes=maximum_bytes,
     )
     request = CaptureRequest(
-        context_id=context_id, location_uri=location_uri, executor=executor,
+        session_id=session_id, location_uri=location_uri, executor=executor,
         base_directory=work_tree, changed_absolute_paths=[posixpath.join(work_tree, relative_path)],
         message=f"restore {relative_path}",
     )
     for version in versions:
         if version.files:
             _record_capture(request, project_id, git_directory, work_tree, version)
-    _publish_broadcast({"type": "artifact_captured", "session_id": context_id})
+    _publish_broadcast({"type": "artifact_captured", "session_id": session_id})
 
 
 def _artifact_annotation_payload(row: ArtifactAnnotationRecord, surface: ArtifactSurfaceRecord | None = None) -> dict:
@@ -497,21 +497,21 @@ def _artifact_annotation_payload(row: ArtifactAnnotationRecord, surface: Artifac
     }
 
 
-def _artifact_annotation_records(context_id: str) -> list[dict]:
+def _artifact_annotation_records(session_id: str) -> list[dict]:
     if state.session_factory is None:
         return []
     database_session = state.session_factory()
     try:
         rows = (
             database_session.query(ArtifactAnnotationRecord)
-            .filter(ArtifactAnnotationRecord.context_id == context_id)
+            .filter(ArtifactAnnotationRecord.session_id == session_id)
             .order_by(ArtifactAnnotationRecord.updated_at.desc())
             .all()
         )
         surfaces = {
             cast(str, surface.id): surface
             for surface in database_session.query(ArtifactSurfaceRecord)
-            .filter(ArtifactSurfaceRecord.context_id == context_id)
+            .filter(ArtifactSurfaceRecord.session_id == session_id)
             .all()
         }
         return [_artifact_annotation_payload(row, surfaces.get(cast(str, row.surface_id))) for row in rows]
@@ -519,7 +519,7 @@ def _artifact_annotation_records(context_id: str) -> list[dict]:
         database_session.close()
 
 
-def _save_artifact_annotation_record(context_id: str, request: ArtifactAnnotationSaveRequest) -> dict:
+def _save_artifact_annotation_record(session_id: str, request: ArtifactAnnotationSaveRequest) -> dict:
     if state.session_factory is None:
         raise HTTPException(status_code=503, detail="Database is not ready.")
     surface_id = (request.surface_id or "").strip()
@@ -527,11 +527,11 @@ def _save_artifact_annotation_record(context_id: str, request: ArtifactAnnotatio
     if not surface_id or not version_id:
         raise HTTPException(status_code=400, detail="Annotation surface_id and version_id are required.")
     updated_at = request.updated_at or datetime.now(timezone.utc).isoformat()
-    key = {"context_id": context_id, "surface_id": surface_id, "version_id": version_id}
+    key = {"session_id": session_id, "surface_id": surface_id, "version_id": version_id}
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
-            if database_session.get(SessionRecord, context_id) is None:
+            if database_session.get(SessionRecord, session_id) is None:
                 raise HTTPException(status_code=404, detail="Session not found.")
             if not request.annotations:
                 row = database_session.get(ArtifactAnnotationRecord, key)
@@ -540,7 +540,7 @@ def _save_artifact_annotation_record(context_id: str, request: ArtifactAnnotatio
                 database_session.commit()
                 return {"deleted": True}
             row = ArtifactAnnotationRecord(
-                context_id=context_id,
+                session_id=session_id,
                 surface_id=surface_id,
                 version_id=version_id,
                 annotations=json.dumps(request.annotations),
@@ -560,10 +560,10 @@ def _save_artifact_annotation_record(context_id: str, request: ArtifactAnnotatio
             database_session.close()
 
 
-def _delete_artifact_annotation_record(context_id: str, surface_id: str, version_id: str) -> bool:
+def _delete_artifact_annotation_record(session_id: str, surface_id: str, version_id: str) -> bool:
     if state.session_factory is None:
         return False
-    key = {"context_id": context_id, "surface_id": surface_id, "version_id": version_id}
+    key = {"session_id": session_id, "surface_id": surface_id, "version_id": version_id}
     with sqlite_write_lock():
         database_session = state.session_factory()
         try:
@@ -595,7 +595,7 @@ def _decode_artifact_context(segment: str) -> tuple[str, str]:
         return "", ""
 
 
-def _prune_session_artifacts(context_id: str) -> None:
+def _prune_session_artifacts(session_id: str) -> None:
     """Retention on session delete: drop this session's branch in every shadow repo it
     touched, then delete its artifact index rows (versions/files/surfaces/annotations) and
     its persisted conversation and lifecycle facts. Runs off the event loop. Best-effort
@@ -609,16 +609,16 @@ def _prune_session_artifacts(context_id: str) -> None:
             (cast(str, location_uri), cast(str, git_directory))
             for location_uri, git_directory in database_session.query(
                 ArtifactVersionRecord.location_uri, ArtifactVersionRecord.git_directory
-            ).filter(ArtifactVersionRecord.context_id == context_id).distinct()
+            ).filter(ArtifactVersionRecord.session_id == session_id).distinct()
         }
     finally:
         database_session.close()
     for location_uri, git_directory in repositories:
-        executor = _executor_for_location_uri(context_id, location_uri)
+        executor = _executor_for_location_uri(session_id, location_uri)
         if executor is None:
             continue
         try:
-            artifacts.prune_session(executor, git_directory, context_id)
+            artifacts.prune_session(executor, git_directory, session_id)
         except Exception:
             _artifact_logger.exception("failed to prune session branch in %s", git_directory)
     with sqlite_write_lock():
@@ -631,7 +631,7 @@ def _prune_session_artifacts(context_id: str) -> None:
                 ArtifactAnnotationRecord,
                 SessionLifecycleRecord,
             ):
-                database_session.query(model).filter(model.context_id == context_id).delete(synchronize_session=False)
+                database_session.query(model).filter(model.session_id == session_id).delete(synchronize_session=False)
             database_session.commit()
         except Exception:
             database_session.rollback()

@@ -151,7 +151,7 @@ export function getApiBase(): string {
 
 export function terminalWebSocketUrl(options: { sessionId?: string | null; workingDirectory?: string; terminalKey?: string; locationKind?: string; locationBaseDirectory?: string; locationHostAlias?: string; rows?: number; columns?: number } = {}): string {
   const params = new URLSearchParams();
-  if (options.sessionId) params.set("context_id", options.sessionId);
+  if (options.sessionId) params.set("session_id", options.sessionId);
   if (options.workingDirectory) params.set("working_directory", options.workingDirectory);
   if (options.terminalKey) params.set("terminal_key", options.terminalKey);
   if (options.locationKind) params.set("location_kind", options.locationKind);
@@ -171,7 +171,7 @@ export interface TerminalInfo {
 
 function terminalContextQuery(sessionId: string | null | undefined, workingDirectory: string | undefined): string {
   const params = new URLSearchParams();
-  if (sessionId) params.set("context_id", sessionId);
+  if (sessionId) params.set("session_id", sessionId);
   if (workingDirectory) params.set("working_directory", workingDirectory);
   const query = params.toString();
   return query ? `?${query}` : "";
@@ -1292,11 +1292,11 @@ export function messageParts(text: string, dataParts?: Record<string, unknown>[]
 
 // One turn, read from the store — so it answers whether the session that ran it is alive
 // or long since reaped.
-export async function taskGet(taskId: string): Promise<A2ATask | null> {
-  if (!taskId) return null;
+export async function turnGet(turnId: string): Promise<A2ATurn | null> {
+  if (!turnId) return null;
   try {
-    const data = await rpc<{ task: A2ATask }>("task.get", { task_id: taskId });
-    return data.task ?? null;
+    const data = await rpc<{ turn: A2ATurn }>("turn.get", { turn_id: turnId });
+    return data.turn ?? null;
   } catch {
     return null;
   }
@@ -1317,13 +1317,13 @@ export async function daemonStatus(options?: ApiRequestOptions & { signal?: Abor
 // Every turn a session has taken, replayed from the daemon's store — so it answers
 // whether the session is alive or long since reaped. Throws on failure so callers can
 // distinguish a transient error (worth a retry) from a genuinely empty session.
-export async function fetchSessionTasks(sessionId: string, signal?: AbortSignal): Promise<A2ATask[]> {
-  const data = await rpc<{ tasks?: A2ATask[] }>("session.history", { id: sessionId }, { signal });
-  return data.tasks ?? [];
+export async function fetchSessionTurns(sessionId: string, signal?: AbortSignal): Promise<A2ATurn[]> {
+  const data = await rpc<{ turns?: A2ATurn[] }>("session.history", { id: sessionId }, { signal });
+  return data.turns ?? [];
 }
 
-export interface SessionTasksPage {
-  tasks: A2ATask[];
+export interface SessionTurnsPage {
+  turns: A2ATurn[];
   next_before_row_id: number | null;
   has_more: boolean;
 }
@@ -1344,19 +1344,19 @@ export async function saveSessionDraft(sessionId: string, inputDraft: string): P
   });
 }
 
-export async function fetchSessionTasksPage(
+export async function fetchSessionTurnsPage(
   sessionId: string,
   beforeRowId?: number | null,
   signal?: AbortSignal,
   limit = 400
-): Promise<SessionTasksPage> {
-  const data = await rpc<{ tasks?: A2ATask[]; next_before_row_id?: number | null; has_more?: boolean }>(
+): Promise<SessionTurnsPage> {
+  const data = await rpc<{ turns?: A2ATurn[]; next_before_row_id?: number | null; has_more?: boolean }>(
     "session.history",
     { id: sessionId, limit, ...(beforeRowId != null ? { before_row_id: beforeRowId } : {}) },
     { signal },
   );
   return {
-    tasks: data.tasks ?? [],
+    turns: data.turns ?? [],
     next_before_row_id: data.next_before_row_id ?? null,
     has_more: !!data.has_more,
   };
@@ -1414,9 +1414,9 @@ export async function resolveQuestion(
 // Returns whether the cancel actually reached the session. A false result means the
 // turn may still be running, so the caller can tell the user rather than leave them
 // believing they stopped it.
-export async function abortSession(sessionId: string): Promise<boolean> {
+export async function cancelTurn(sessionId: string): Promise<boolean> {
   try {
-    await rpc("session.cancel", { id: sessionId });
+    await rpc("turn.cancel", { id: sessionId });
     return true;
   } catch {
     return false;
@@ -1427,7 +1427,7 @@ export async function abortSession(sessionId: string): Promise<boolean> {
 // so killing a parent takes the work it created with it.
 export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
-    await rpc("session.kill", { id: sessionId });
+    await rpc("session.end", { id: sessionId });
     return true;
   } catch {
     return false;
@@ -1448,7 +1448,7 @@ export async function compactSession(sessionId: string): Promise<boolean> {
 // that is still mid-batch drops only that call.
 export async function abortToolCall(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
-    await rpc("session.cancel", { id: sessionId, tool_call_id: toolCallId });
+    await rpc("turn.cancel", { id: sessionId, tool_call_id: toolCallId });
     return true;
   } catch {
     return false;
@@ -1460,7 +1460,7 @@ export async function abortToolCall(sessionId: string, toolCallId: string): Prom
 // learns the command was backgrounded rather than finished).
 export async function sendToolToBackground(sessionId: string, toolCallId: string): Promise<boolean> {
   try {
-    const result = await rpc<{ backgrounded?: boolean }>("session.tool_background", {
+    const result = await rpc<{ backgrounded?: boolean }>("jobs.detach", {
       id: sessionId,
       tool_call_id: toolCallId,
     });
@@ -1481,7 +1481,7 @@ export interface BackgroundJob {
 
 export async function fetchBackgroundJobs(sessionId: string): Promise<BackgroundJob[]> {
   try {
-    const result = await rpc<{ jobs?: BackgroundJob[] }>("session.background", { id: sessionId });
+    const result = await rpc<{ jobs?: BackgroundJob[] }>("jobs.list", { id: sessionId });
     return Array.isArray(result?.jobs) ? result.jobs : [];
   } catch {
     return [];
@@ -1607,8 +1607,8 @@ export interface A2AMessage {
   parts: A2APart[];
   messageId?: string;
   contextId?: string;
-  taskId?: string;
-  referenceTaskIds?: string[];
+  turnId?: string;
+  referenceTurnIds?: string[];
   metadata?: Record<string, unknown>;
 }
 
@@ -1618,17 +1618,17 @@ export interface A2AArtifact {
   parts: A2APart[];
 }
 
-export interface A2ATaskStatus {
+export interface A2ATurnStatus {
   state: string;
   message?: A2AMessage;
   timestamp?: string;
 }
 
-export interface A2ATask {
+export interface A2ATurn {
   id: string;
   contextId: string;
   kind?: string;
-  status: A2ATaskStatus;
+  status: A2ATurnStatus;
   artifacts?: A2AArtifact[];
   history?: A2AMessage[];
   metadata?: Record<string, unknown>;
@@ -1704,7 +1704,7 @@ function openEventStream(path: string, onData: (raw: string) => void): { close: 
 }
 
 // A live view of a session: `session.attach`. The daemon sends a `snapshot` frame (the
-// compacted transcript, same shape as fetchSessionTasks), then a `live` tail of one
+// compacted transcript, same shape as fetchSessionTurns), then a `live` tail of one
 // frame per emitted part, then `done` when the turn ends. This is the only response
 // path — a turn is driven by `sessionSend` and observed here, whether this client sent
 // the message or another one did.
@@ -1712,7 +1712,7 @@ function openEventStream(path: string, onData: (raw: string) => void): { close: 
 // many times over its life, and `done` is the session itself ending. A reader that conflated
 // them would either stop watching after the first turn or wait for a process to die.
 export type SessionStreamFrame =
-  | { kind: "snapshot"; tasks: A2ATask[] }
+  | { kind: "snapshot"; turns: A2ATurn[] }
   | { kind: "live"; seq: number; message: A2AMessage }
   | { kind: "turn"; seq: number; running: boolean }
   | { kind: "done" };

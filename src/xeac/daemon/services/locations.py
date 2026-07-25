@@ -149,7 +149,7 @@ def _add_location_row(database_session, project_id: str, location_input: Locatio
     return record
 
 
-def _resolve_session_locations(context_id: str) -> list[dict[str, Any]] | None:
+def _resolve_session_locations(session_id: str) -> list[dict[str, Any]] | None:
     """The runtime-shaped locations for a session's project: each entry carries the
     generated URI and the *effective* execution settings (own value, else project
     default). Returns ``None`` when the session has no project (so the runtime falls back
@@ -158,7 +158,7 @@ def _resolve_session_locations(context_id: str) -> list[dict[str, Any]] | None:
         return None
     database_session = state.session_factory()
     try:
-        session = database_session.get(SessionRecord, context_id)
+        session = database_session.get(SessionRecord, session_id)
         if session is None or not session.project_id:
             return None
         project = database_session.get(ProjectRecord, session.project_id)

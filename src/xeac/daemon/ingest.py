@@ -29,26 +29,26 @@ router = APIRouter()
 _SEQUENCE: dict[str, int] = {}
 
 
-async def _task_save(params: dict) -> dict:
+async def _turn_save(params: dict) -> dict:
     task = Task.model_validate(params.get("task") or {})
-    await state.task_store.save(task)
+    await state.turn_store.save(task)
     return {"saved": task.id}
 
 
-async def _task_get(params: dict) -> dict:
-    task = await state.task_store.get(str(params.get("task_id") or ""))
+async def _turn_get(params: dict) -> dict:
+    task = await state.turn_store.get(str(params.get("turn_id") or ""))
     return task.model_dump(by_alias=True, exclude_none=True, mode="json") if task else None
 
 
-async def _task_delete(params: dict) -> dict:
-    await state.task_store.delete(str(params.get("task_id") or ""))
+async def _turn_delete(params: dict) -> dict:
+    await state.turn_store.delete(str(params.get("turn_id") or ""))
     return {"deleted": True}
 
 
 async def _turn_save_state(params: dict) -> dict:
-    await state.task_store.save_turn_state(
-        str(params.get("context_id") or ""),
-        str(params.get("task_id") or ""),
+    await state.turn_store.save_turn_state(
+        str(params.get("session_id") or ""),
+        str(params.get("turn_id") or ""),
         params.get("messages") or [],
         params.get("session_state"),
     )
@@ -56,15 +56,15 @@ async def _turn_save_state(params: dict) -> dict:
 
 
 async def _turn_load_checkpoint(params: dict) -> Any:
-    return await state.task_store.load_checkpoint(str(params.get("context_id") or ""))
+    return await state.turn_store.load_checkpoint(str(params.get("session_id") or ""))
 
 
 async def _turn_load_session_state(params: dict) -> Any:
-    return await state.task_store.load_session_state(str(params.get("context_id") or ""))
+    return await state.turn_store.load_session_state(str(params.get("session_id") or ""))
 
 
-async def _turn_tasks_for_context(params: dict) -> Any:
-    tasks = await state.task_store.tasks_for_context(str(params.get("context_id") or ""))
+async def _turn_list_for_session(params: dict) -> Any:
+    tasks = await state.turn_store.turns_for_session(str(params.get("session_id") or ""))
     return [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks]
 
 
@@ -95,7 +95,7 @@ def _set_turn_state(session_id: str, running: bool) -> None:
 async def _session_event(params: dict) -> dict:
     """A live turn event, or a change in whether the session is waiting on a human."""
     event = params.get("event") or {}
-    session_id = str(event.get("context_id") or params.get("session_id") or "")
+    session_id = str(event.get("session_id") or params.get("session_id") or "")
     if "running" in event:
         # Whether a turn is in flight, which the registry cannot infer: a session's process
         # is alive for its whole life, including while it sits idle between messages.
@@ -139,13 +139,13 @@ async def _session_title(params: dict) -> dict:
 
 
 _METHODS = {
-    "task.save": _task_save,
-    "task.get": _task_get,
-    "task.delete": _task_delete,
+    "turn.save": _turn_save,
+    "turn.get": _turn_get,
+    "turn.delete": _turn_delete,
     "turn.save_state": _turn_save_state,
     "turn.load_checkpoint": _turn_load_checkpoint,
     "turn.load_session_state": _turn_load_session_state,
-    "turn.tasks_for_context": _turn_tasks_for_context,
+    "turn.list_for_session": _turn_list_for_session,
     "session.event": _session_event,
     "session.title": _session_title,
 }

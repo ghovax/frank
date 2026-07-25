@@ -77,11 +77,11 @@ def _command_send(arguments: argparse.Namespace) -> int:
     text = sys.stdin.read() if arguments.message == "-" else arguments.message
     result = call("session.send", id=arguments.session, parts=[{"kind": "text", "text": text}])
     if arguments.wait:
-        # Waiting on *this* task, not merely on the session going quiet: a session can have a
+        # Waiting on *this* turn, not merely on the session going quiet: a session can have a
         # compaction or an autonomous wake open alongside the message just sent, and returning
         # when one of those ends would hand back a turn the caller never asked about.
         return _follow(arguments.session, until_idle=True, frames=False,
-                       task_id=str(result.get("task_id") or ""))
+                       turn_id=str(result.get("turn_id") or ""))
     _emit(result)
     return 0
 
@@ -99,17 +99,17 @@ def _command_attach(arguments: argparse.Namespace) -> int:
     return _follow(arguments.session, until_idle=False, frames=True)
 
 
-# A task the session is still driving on its own. Anything else — completed, failed,
+# A turn the session is still driving on its own. Anything else — completed, failed,
 # canceled, or parked on a human with `input-required` — means it will not progress without
 # something happening, which is exactly when a waiter should be handed back control.
 _IN_FLIGHT = {"submitted", "working"}
 
 
-def _still_working(task: dict) -> bool:
-    return str((task.get("status") or {}).get("state") or "") in _IN_FLIGHT
+def _still_working(turn: dict) -> bool:
+    return str((turn.get("status") or {}).get("state") or "") in _IN_FLIGHT
 
 
-def _follow(session_id: str, *, until_idle: bool, frames: bool, task_id: str = "") -> int:
+def _follow(session_id: str, *, until_idle: bool, frames: bool, turn_id: str = "") -> int:
     """Watch a session's stream.
 
     `attach` prints every frame and follows until the session ends or you interrupt it.
@@ -128,13 +128,13 @@ def _follow(session_id: str, *, until_idle: bool, frames: bool, task_id: str = "
                 continue
             kind = frame.get("kind")
             if kind == "snapshot":
-                tasks = frame.get("tasks") or []
-                if task_id and not any(task.get("id") == task_id for task in tasks):
+                turns = frame.get("turns") or []
+                if turn_id and not any(turn.get("id") == turn_id for turn in turns):
                     # Our own turn has not been persisted yet. It is in flight by definition —
                     # the send was accepted — so keep waiting rather than reading its absence
                     # as an idle session and returning somebody else's last turn.
                     continue
-                if not any(_still_working(task) for task in tasks):
+                if not any(_still_working(turn) for turn in turns):
                     break
             elif kind == "turn" and not frame.get("running"):
                 break
@@ -144,7 +144,7 @@ def _follow(session_id: str, *, until_idle: bool, frames: bool, task_id: str = "
         return 130
     if until_idle:
         result = call("session.history", id=session_id, limit=1)
-        _emit(result.get("tasks") or [])
+        _emit(result.get("turns") or [])
     return 0
 
 
@@ -165,12 +165,12 @@ def _command_approve(arguments: argparse.Namespace) -> int:
 
 
 def _command_kill(arguments: argparse.Namespace) -> int:
-    _emit(call("session.kill", id=arguments.session))
+    _emit(call("session.end", id=arguments.session))
     return 0
 
 
 def _command_history(arguments: argparse.Namespace) -> int:
-    _emit(call("session.history", id=arguments.session, limit=arguments.limit or 0)["tasks"])
+    _emit(call("session.history", id=arguments.session, limit=arguments.limit or 0)["turns"])
     return 0
 
 

@@ -178,9 +178,9 @@ Memories are persistent project/user context (`.agents/memories/*.md`, `~/.agent
 **`bash` runs synchronously by default and returns real output** — you decide when to background with `background=true`; the harness never does it on its own (`search_web` likewise returns directly, backgrounding only when slow).
 
 - **Background only work whose result you don't need now** — a long build, a full test suite, a dev server, a broad scan. Everything else (quick git/`gh`, network, package commands) runs synchronously; wait and read the output.
-- A backgrounded command returns a `task_identifier` and is **started, not completed** — no facts yet, so don't summarize or act on it.
+- A backgrounded command returns a `job_id` and is **started, not completed** — no facts yet, so don't summarize or act on it.
 - **You can finish your turn and be woken later.** When everything left depends on a pending result, end your turn; the harness starts a fresh turn and re-engages you the moment it lands, even minutes later. So a slow job never forces you to keep a turn busy.
-- **Never re-run a command you just backgrounded** and never poll — it's already running, and its result is injected automatically. A `bg-…`/`search-…` handle is not a readable task: never `read_task` on it.
+- **Never re-run a command you just backgrounded** and never poll — it's already running, and its result is injected automatically. A `bg-…`/`search-…` job handle is not a turn: never `read_turn` on it.
 
 ## Making Progress and Waiting
 

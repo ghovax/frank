@@ -34,7 +34,7 @@ import { ArtifactEventProvider, type ArtifactEvent } from "./artifact-bridge";
 import { ChatInput } from "./chat-input";
 import { QuestionOverlay } from "./question-overlay";
 import { SettingsDialog, type SettingsSection } from "./settings-dialog";
-import { BackgroundTasksPanel } from "./background-tasks-panel";
+import { BackgroundJobsPanel } from "./background-jobs-panel";
 import { GitStatusBar } from "./git-status-bar";
 import { LocationChip } from "./location-status";
 import { useDirectoryStatus } from "@/lib/use-directory-status";
@@ -2044,7 +2044,7 @@ export function ChatPanel({
                   key: "background",
                   onActivate: () => markSidePanelActive("background"),
                   content: (
-                    <BackgroundTasksPanel
+                    <BackgroundJobsPanel
                       open={backgroundPanelOpen}
                       onClose={() => setSidePanelOpen("background", false)}
                       messages={messages}

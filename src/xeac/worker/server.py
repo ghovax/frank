@@ -72,9 +72,9 @@ def build_app(session) -> FastAPI:
                 return JSONResponse({"result": {"aborted": await session.abort_pending_input()}})
             if method == "session/compact":
                 return JSONResponse({"result": {"compacting": session.compact()}})
-            if method == "session/background":
+            if method == "jobs/list":
                 return JSONResponse({"result": {"jobs": session.background_jobs()}})
-            if method == "session/tool_background":
+            if method == "jobs/detach":
                 identifier = str(params.get("tool_call_id") or "")
                 return JSONResponse({"result": {"backgrounded": session.background_tool_call(identifier)}})
             if method == "session/reset":
@@ -128,8 +128,8 @@ async def _send(session, params: dict) -> dict:
             return {"accepted": True, "injected": True}
         # The turn ended between the check and the injection; fall through and start a fresh
         # one rather than silently dropping the message.
-    task_id = await session.start_turn(_message_parts(params), dict(params.get("metadata") or {}))
-    return {"accepted": True, "injected": False, "task_id": task_id}
+    turn_id = await session.start_turn(_message_parts(params), dict(params.get("metadata") or {}))
+    return {"accepted": True, "injected": False, "turn_id": turn_id}
 
 
 async def _respond(session, params: dict) -> dict:

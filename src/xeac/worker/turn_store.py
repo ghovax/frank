@@ -22,7 +22,7 @@ from a2a.types import Task
 logger = logging.getLogger(__name__)
 
 
-class DaemonTaskStore(TaskStore):
+class DaemonTurnStore(TaskStore):
     """A :class:`TaskStore` whose writes are performed by the daemon."""
 
     def __init__(self, socket_path: str, session_id: str, token: str) -> None:
@@ -61,33 +61,33 @@ class DaemonTaskStore(TaskStore):
     # The context argument is part of the interface the A2A handler calls through; it carries
     # per-call server state this store has no use for, but the signature must accept it.
     async def save(self, task: Task, context: Any = None) -> None:
-        await self._call("task.save", task=task.model_dump(by_alias=True, exclude_none=True, mode="json"))
+        await self._call("turn.save", task=task.model_dump(by_alias=True, exclude_none=True, mode="json"))
 
-    async def get(self, task_id: str, context: Any = None) -> Optional[Task]:
-        raw = await self._call("task.get", task_id=task_id)
+    async def get(self, turn_id: str, context: Any = None) -> Optional[Task]:
+        raw = await self._call("turn.get", turn_id=turn_id)
         return Task.model_validate(raw) if raw else None
 
-    async def delete(self, task_id: str, context: Any = None) -> None:
-        await self._call("task.delete", task_id=task_id)
+    async def delete(self, turn_id: str, context: Any = None) -> None:
+        await self._call("turn.delete", turn_id=turn_id)
 
     # --- the extra surface a turn uses -------------------------------------------------
 
     async def save_turn_state(
-        self, context_id: str, task_id: str, messages: list, session_state: Optional[dict] = None
+        self, session_id: str, turn_id: str, messages: list, session_state: Optional[dict] = None
     ) -> None:
         await self._call(
             "turn.save_state",
-            context_id=context_id, task_id=task_id, messages=messages, session_state=session_state,
+            session_id=session_id, turn_id=turn_id, messages=messages, session_state=session_state,
         )
 
-    async def load_checkpoint(self, context_id: str) -> list:
-        return await self._call("turn.load_checkpoint", context_id=context_id) or []
+    async def load_checkpoint(self, session_id: str) -> list:
+        return await self._call("turn.load_checkpoint", session_id=session_id) or []
 
-    async def load_session_state(self, context_id: str) -> dict:
-        return await self._call("turn.load_session_state", context_id=context_id) or {}
+    async def load_session_state(self, session_id: str) -> dict:
+        return await self._call("turn.load_session_state", session_id=session_id) or {}
 
-    async def tasks_for_context(self, context_id: str) -> list[Task]:
-        raw = await self._call("turn.tasks_for_context", context_id=context_id) or []
+    async def turns_for_session(self, session_id: str) -> list[Task]:
+        raw = await self._call("turn.list_for_session", session_id=session_id) or []
         return [Task.model_validate(entry) for entry in raw]
 
     async def publish_event(self, event: dict) -> None:

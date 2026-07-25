@@ -63,7 +63,7 @@ class SessionLifecycleRecord(Base):
 
     __tablename__ = "session_lifecycle"
 
-    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
     work_habits_acknowledged_at: Mapped[str] = mapped_column(String, default="")
 
 
@@ -127,7 +127,7 @@ class ArtifactVersionRecord(Base):
     __tablename__ = "artifact_versions"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    context_id: Mapped[str] = mapped_column(String, nullable=False)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
     project_id: Mapped[str] = mapped_column(String, default="")
     location_uri: Mapped[str] = mapped_column(String, default="")
     git_directory: Mapped[str] = mapped_column(String, nullable=False)
@@ -139,7 +139,7 @@ class ArtifactVersionRecord(Base):
     tool_call_id: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
-    __table_args__ = (Index("idx_artifact_versions_context", "context_id", "created_at"),)
+    __table_args__ = (Index("idx_artifact_versions_session", "session_id", "created_at"),)
 
 
 class ArtifactFileRecord(Base):
@@ -153,7 +153,7 @@ class ArtifactFileRecord(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     version_id: Mapped[str] = mapped_column(String, nullable=False)
-    context_id: Mapped[str] = mapped_column(String, nullable=False)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
     location_uri: Mapped[str] = mapped_column(String, default="")
     git_directory: Mapped[str] = mapped_column(String, nullable=False)
     work_tree: Mapped[str] = mapped_column(String, nullable=False)
@@ -166,7 +166,7 @@ class ArtifactFileRecord(Base):
     is_placeholder: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
-    __table_args__ = (Index("idx_artifact_files_context_path", "context_id", "relative_path"),)
+    __table_args__ = (Index("idx_artifact_files_session_path", "session_id", "relative_path"),)
 
 
 class ArtifactSurfaceRecord(Base):
@@ -180,7 +180,7 @@ class ArtifactSurfaceRecord(Base):
     __tablename__ = "artifact_surfaces"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    context_id: Mapped[str] = mapped_column(String, nullable=False)
+    session_id: Mapped[str] = mapped_column(String, nullable=False)
     location_uri: Mapped[str] = mapped_column(String, default="")
     git_directory: Mapped[str] = mapped_column(String, default="")
     work_tree: Mapped[str] = mapped_column(String, default="")
@@ -195,7 +195,7 @@ class ArtifactSurfaceRecord(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
-    __table_args__ = (Index("idx_artifact_surfaces_context", "context_id", "created_at"),)
+    __table_args__ = (Index("idx_artifact_surfaces_session", "session_id", "created_at"),)
 
 
 class ArtifactAnnotationRecord(Base):
@@ -205,13 +205,13 @@ class ArtifactAnnotationRecord(Base):
 
     __tablename__ = "artifact_annotations"
 
-    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
     surface_id: Mapped[str] = mapped_column(String, primary_key=True)
     version_id: Mapped[str] = mapped_column(String, primary_key=True)
     annotations: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[str] = mapped_column(String, nullable=False)
 
-    __table_args__ = (Index("idx_artifact_annotations_context_updated", "context_id", "updated_at"),)
+    __table_args__ = (Index("idx_artifact_annotations_context_updated", "session_id", "updated_at"),)
 
 
 class TerminalStateRecord(Base):
@@ -219,7 +219,7 @@ class TerminalStateRecord(Base):
 
     __tablename__ = "terminal_states"
 
-    context_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
     terminal_key: Mapped[str] = mapped_column(String, primary_key=True)
     working_directory: Mapped[str] = mapped_column(Text, default="")
     scrollback: Mapped[str] = mapped_column(Text, default="")

@@ -1,8 +1,8 @@
 # The `xeac` command
 
-`xeac` is the primary way to drive XEAC. It adds nothing the API does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
+`xeac` is the primary way to drive XEAC. It adds nothing the control plane does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
 
-This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same API, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
+This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same control plane, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
 
 The daemon starts itself on your first command. There is no separate "start the service" step.
 
@@ -52,7 +52,7 @@ without a test, and say what you would add.
 EOF
 ```
 
-`send` returns as soon as the message is accepted, printing the accepted task. With `--wait` it follows the session until it goes idle and then prints the last turn — what the session produced, not its transcript.
+`send` returns as soon as the message is accepted, printing the accepted turn. With `--wait` it follows the session until it goes idle and then prints the last turn — what the session produced, not its transcript.
 
 A message that arrives while the session is mid-turn is **injected into that turn** at its next safe point rather than starting a second one. That is what lets you (or a peer) redirect a session that is already working instead of waiting for it to finish.
 
@@ -83,7 +83,7 @@ xeac ps | jq -r '.[] | select(.awaiting_input) | .id'
 
 | `kind` | What it is |
 |--------|------------|
-| `snapshot` | The session's tasks so far, sent first, so a watcher that attaches mid-turn is not guessing about what it missed. |
+| `snapshot` | The session's turns so far, sent first, so a watcher that attaches mid-turn is not guessing about what it missed. |
 | `live` | One part of a turn as it is persisted — text, a tool call, a tool result, a permission request. |
 | `turn` | A turn started or ended (`running`). This is what `wait` waits for: parts alone just stop arriving, which is indistinguishable from a model still thinking. |
 | `done` | The session itself ended. Distinct from a turn ending — a session goes idle many times over its life. |
@@ -112,16 +112,16 @@ xeac kill <session>
 
 Ends the session and everything under it, children first, so a child never observes a dead parent. Each session leads its own process group, so a session that started a dev server takes that dev server with it.
 
-## Peers on other hosts
+## Agents on other hosts
 
 ```
-xeac remote                        # the registered peers, with their live health
+xeac remote                        # the registered remote agents, with their live health
 xeac remote <name> <message>       # hand one a message and print what it produced
 ```
 
-A remote agent is not a session: it runs on someone else's machine, at their cost, with no shared history and no access to this filesystem. That is a different bargain from a local peer, so it is a different verb — you should never be unsure which side of the wire your work went to.
+A remote agent is not a session: it runs on someone else's machine, at their cost, with no shared history and no access to this filesystem. That is a different bargain from a peer session, so it is a different verb — you should never be unsure which side of the wire your work went to.
 
-Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a peer's own card cannot be used to point XEAC at something inside your network.
+Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point XEAC at something inside your network.
 
 ## Configuration
 
@@ -159,7 +159,7 @@ ssh workstation xeac daemon endpoint
 
 ## Output, exit codes, and pipes
 
-**Everything on stdout is plumbing.** A read prints the API's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(xeac create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
+**Everything on stdout is plumbing.** A read prints the control plane's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(xeac create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
 
 It is minified, and every JSON object is exactly one line — no indentation, and real UTF-8 rather than `\uXXXX` escapes. Agents drive these verbs constantly and pay for indentation by the token; pipe through `jq .` when you want it laid out for a person.
 
@@ -172,6 +172,24 @@ Diagnostics go to stderr and outcomes go to the exit code, so neither can contam
 | `2` | The arguments were wrong (argparse). |
 | `130` | Interrupted with Ctrl-C. |
 | `141` | A pipe closed under it (`xeac ps \| head`). |
+
+## What each verb calls
+
+The CLI is the ergonomic face of the control plane, and it is allowed to be idiomatic where the idiom is strong — `ps` and `kill` are what a shell user reaches for. Everywhere the names differ, this is why:
+
+| Verb | Control-plane method |
+|------|----------------------|
+| `create` | `session.create` |
+| `send` | `session.send` |
+| `get` | `session.get` |
+| `ps` | `session.list` |
+| `tree` | `session.tree` |
+| `history` | `session.history` |
+| `attach` / `wait` | `GET /sessions/{id}/attach` |
+| `approve` | `session.respond` |
+| `kill` | `session.end` |
+| `remote` | `remote.list` / `remote.send` |
+| `daemon status` | `daemon.status` |
 
 ## Talking to a session directly
 
