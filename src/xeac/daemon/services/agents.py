@@ -37,9 +37,6 @@ def _catalogue_base_url() -> str:
     return f"http://127.0.0.1:{state.daemon_port}"
 
 
-AGENT_CARD_PATH = "/.well-known/agent-card.json"
-
-
 def _path_scope(path_value: str, home_root: Path) -> str:
     """Whether a discovered file is ``global`` (under ``~/.agents``) or
     ``project`` (the selected folder's own ``.agents``)."""

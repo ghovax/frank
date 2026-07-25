@@ -16,6 +16,7 @@ import {
 import { LuAppWindow, LuArrowDown, LuChevronLeft, LuChevronRight, LuClock, LuDownload, LuEllipsis, LuFile, LuFolderOpen, LuHistory, LuMaximize2, LuMinimize2, LuMessageSquare, LuMousePointerClick, LuNavigation, LuNetwork, LuPanelLeftClose, LuPanelLeftOpen, LuRotateCcw, LuRotateCw, LuSettings, LuTerminal, LuTrash2, LuTriangleAlert, LuX } from "react-icons/lu";
 import { AnimatePresence, motion } from "motion/react";
 import { useFormatter, useTranslations } from "next-intl";
+import { toaster } from "@/components/ui/toaster";
 import { PanelTiles, type TilePanel } from "./panel-tiles";
 import { useColorMode } from "./ui/color-mode";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
@@ -631,6 +632,17 @@ export function ChatPanel({
   }, []);
 
   const handleSend = useCallback((text: string, dataParts?: Record<string, unknown>[]) => {
+    // Which agent runs is never assumed. A session cannot be created without one, and there
+    // is no default to reach for, so an unchosen agent is asked for rather than guessed at.
+    if (!agent && !initialSessionId) {
+      toaster.create({
+        type: "error",
+        title: translation("chooseAnAgent"),
+        description: translation("chooseAnAgentDescription"),
+        closable: true,
+      });
+      return undefined;
+    }
     scrollToBottom();
     // Queue (never steer) while a decision prompt is outstanding — see hasInputRequiredRef.
     const result = send(text, dataParts, hasInputRequiredRef.current);
@@ -651,7 +663,7 @@ export function ChatPanel({
     }
     scrollToBottom();
     return result;
-  }, [scrollToBottom, send]);
+  }, [agent, initialSessionId, scrollToBottom, send, translation]);
 
   const openSettings = useCallback((section: SettingsSection) => {
     setSettingsSection(section);

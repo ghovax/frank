@@ -122,7 +122,10 @@ async def _session_create(params: dict) -> dict:
     parent's, so a child can never be created looser than the session that spawned it — the
     clamp lives here rather than in the caller because the caller is often the model."""
     assert state.registry is not None and state.lifecycle is not None
-    agent = str(params.get("agent") or "").strip() or state.default_agent()
+    # No fallback: which agent a session runs is the one thing nothing can reasonably guess
+    # on the caller's behalf. A default here would mean a mistyped or forgotten `--agent`
+    # silently produced a session doing work under a profile nobody chose.
+    agent = _require(params, "agent")
     _assert_agent_exists(agent, str(params.get("working_directory") or ""))
     parent_id = str(params.get("parent") or "").strip()
     parent = state.registry.get(parent_id) if parent_id else None

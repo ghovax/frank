@@ -54,14 +54,20 @@ async def run() -> int:
 
     session_id = str(assignment.get("session_id") or "")
     socket_path = Path(str(assignment.get("socket") or ""))
+    agent_name = str(assignment.get("agent") or "")
     if not session_id or not str(socket_path):
         logger.error("Assignment is missing a session id or socket path")
+        return 1
+    if not agent_name:
+        # There is no default to fall back to, and running an unnamed profile would mean a
+        # session whose behaviour nobody chose. Refusing is the only honest answer.
+        logger.error("Assignment is missing the agent to run")
         return 1
 
     configuration = GlobalConfiguration.load()
     session = SessionExecutor(
         session_id=session_id,
-        agent_name=str(assignment.get("agent") or configuration.default_agent),
+        agent_name=agent_name,
         working_directory=str(assignment.get("working_directory") or ""),
         runtime_working_directory=str(assignment.get("runtime_working_directory") or ""),
         permission_mode=str(assignment.get("permission_mode") or "default"),

@@ -38,7 +38,11 @@ def build_app(session) -> FastAPI:
     @app.get("/.well-known/agent-card.json")
     async def agent_card() -> JSONResponse:
         """Discovery stays open: a card says what this session is, and a peer has to be able
-        to read it before it has been handed anything. It carries no conversation content."""
+        to read it before it has been handed anything. It carries no conversation content.
+
+        This is the only well-known card XEAC serves. The daemon does not have one, because
+        the daemon is not an agent — answering there would mean electing some profile to
+        speak for it, which is a default agent by another name."""
         return JSONResponse(session.card_payload())
 
     @app.post("/rpc")

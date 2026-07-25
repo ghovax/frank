@@ -178,14 +178,12 @@ function ProjectWorkspace() {
   }, []);
   const loadAgents = useCallback(() => {
     fetchAgents(workingDirectoryRef.current)
-      .then(({ agents: agentList, defaultAgent }) => {
+      .then((agentList) => {
         setAgents(agentList);
-        // Keep the current selection if it's still available in this folder,
-        // otherwise fall back to the server's configured default agent (and only
-        // then to the first listed agent).
-        setSelectedAgent((current) =>
-          agentList.some((agent) => agent.id === current) ? current : (defaultAgent || agentList[0]?.id || "")
-        );
+        // Keep the current selection when the folder still offers it; otherwise clear it and
+        // let the picker ask. There is no configured default to fall back to, and quietly
+        // substituting some other profile would run the work under an agent nobody chose.
+        setSelectedAgent((current) => (agentList.some((agent) => agent.id === current) ? current : ""));
         setIsConnected(true);
       })
       .catch(() => setIsConnected(false));

@@ -82,7 +82,7 @@ async def _reload_configuration_from_disk() -> None:
     configuration.computer_control = fresh.computer_control
     configuration.tuning = fresh.tuning
     configuration.providers = fresh.providers
-    configuration.default_agent = fresh.default_agent
+    configuration.agent = fresh.agent
     await _apply_live_credentials()
     if user_context_setting_changed:
         await asyncio.to_thread(_reset_work_habits_acknowledgements)

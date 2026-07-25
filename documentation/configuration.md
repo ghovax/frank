@@ -53,7 +53,7 @@ Around forty providers are registered, including Cerebras, Together, Fireworks, 
 
 You can also **sign in with a ChatGPT subscription** instead of pasting a key (Settings → Providers). That provider is not a LiteLLM route: it calls Codex's endpoint directly with an OAuth token from the shared token store.
 
-**Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for falls back to the default agent's model rather than failing on its first call.
+**Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call rather than borrowing another profile's model: an agent is defined by its own configuration and nothing else.
 
 ## Web search and retrieval
 
@@ -165,13 +165,12 @@ telemetry:
   sample_ratio: 1.0
 ```
 
-## Agents and history
+## History
 
 ```yaml
-default_agent: "general-assistant"
 maximum_history_age_days: 30
 ```
 
-`default_agent` is used when `xeac create` is given no `--agent`. Bundled options: `general-assistant`, `senior-researcher`, `code-investigator`, `code-implementer`. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).
+How long a finished session's transcript is kept.
 
-`maximum_history_age_days` bounds how long a finished session's transcript is kept.
+**There is no default agent setting**, here or anywhere. `xeac create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).

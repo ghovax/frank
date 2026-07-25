@@ -17,7 +17,6 @@ from xeac.runtime.internals import _STREAM_EXHAUSTED
 from xeac.runtime.internals import _ToolPlan
 from xeac.runtime.internals import _detect_workspace
 from xeac.runtime.internals import _stream_next
-from xeac.base.configuration import describe_available_agents
 from xeac.runtime.prompt.environment import probe_local_environment
 from xeac.runtime.prompt.environment import probe_user_context
 from xeac.protocol.events import TurnContext
@@ -79,14 +78,15 @@ class _TurnLoopMixin:
     def _build_static_system_prompt(self) -> str:
         """Build the static portion of the system prompt (cached across calls).
 
-        Every agent — main or spawned — is built through this same path, so they
-        all share the baseline system prompt, the working-directory/agents
-        context, and the available-skills awareness.
+        Every session is built through this same path, so they share the baseline prompt, the
+        working-directory context, and the awareness of their own skills.
+
+        What a session is deliberately *not* told is which other agent profiles exist. An
+        agent is independent: it is defined by its own profile and nothing else, and a roster
+        of its siblings would both couple them together and invite it to hand work to one it
+        was never asked to involve. A caller that wants a peer names the profile.
         """
         if self._cached_system_prompt is None:
-            available_agents = describe_available_agents(
-                self._global_configuration.agent_directories_for(self._project_directory)
-            )
             all_skills = enabled_skills(load_skills(self._global_configuration.skill_directories_for(self._project_directory)))
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
@@ -99,7 +99,6 @@ class _TurnLoopMixin:
                 "session_workspace_strategy": self._global_configuration.workspace.strategy,
                 "platform": platform.system(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-                "available_agents": available_agents,
                 # The project's locations. Filesystem/shell tools take a `location` (its
                 # URI); it is required when there is more than one, optional when one.
                 "locations": self._locations_summary(),

@@ -148,12 +148,6 @@ configuration_lock = asyncio.Lock()
 last_written_configuration_digest: Optional[str] = None
 
 
-def default_agent() -> str:
-    if global_configuration is None:
-        return "assistant"
-    return getattr(global_configuration, "default_agent", "assistant")
-
-
 async def reset_live_session_runtimes() -> None:
     """Tell every running session to rebuild its runtime on the next turn.
 

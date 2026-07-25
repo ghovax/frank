@@ -24,7 +24,7 @@ xeac create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TIT
 
 | Flag | What it does |
 |------|--------------|
-| `-a`, `--agent` | The agent profile to run. Defaults to `default_agent` from the configuration. |
+| `-a`, `--agent` | **Required.** The agent profile to run. There is no default: which agent does the work is the one thing nothing can guess for you. |
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
 | `-m`, `--mode` | `default`, `auto`, or `read_only`. Fixed for the session's life. |
 | `-p`, `--project` | The project this session belongs to. |

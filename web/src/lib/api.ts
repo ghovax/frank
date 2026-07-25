@@ -570,14 +570,14 @@ export interface SaveAgentConfigurationPayload {
 // profiles are always present as a base, then home globals, then that folder's
 // own `.agents/agents` (deduped), so passing `workingDirectory` is what makes
 // the list track the chosen folder rather than the server's launch directory.
-export async function fetchAgents(workingDirectory?: string): Promise<{ agents: AgentSummary[]; defaultAgent: string }> {
+export async function fetchAgents(workingDirectory?: string): Promise<AgentSummary[]> {
   const query = workingDirectory
     ? `?working_directory=${encodeURIComponent(workingDirectory)}`
     : "";
   const data = await cachedDiscovery(discoveryKey("/agents", workingDirectory), () =>
-    fetchJson<{ agents: AgentSummary[]; defaultAgent?: string }>(`/agents${query}`)
+    fetchJson<{ agents: AgentSummary[] }>(`/agents${query}`)
   );
-  return { agents: data.agents, defaultAgent: data.defaultAgent ?? "" };
+  return data.agents;
 }
 
 export async function fetchAgentConfiguration(agent: string, workingDirectory?: string): Promise<AgentConfiguration> {

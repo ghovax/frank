@@ -496,7 +496,6 @@ class GlobalConfiguration(BaseModel):
     remote_agents: RemoteAgentsConfiguration = RemoteAgentsConfiguration()
     a2a: A2AServerConfiguration = A2AServerConfiguration()
     telemetry: TelemetryConfiguration = TelemetryConfiguration()
-    default_agent: str = "general-assistant"
     # What a session runs under when its creator does not say. An agent profile that declares
     # its own stricter mode still wins: this is a floor for sessions created without one, not
     # a way to loosen a profile that was written to be careful.
@@ -1093,10 +1092,6 @@ def agent_configuration_path(
     return path
 
 
-def list_available_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[str]:
-    return sorted(_agent_paths(agents_directory))
-
-
 def list_agent_route_names(agents_directory: str | Path | Iterable[str | Path]) -> list[str]:
     return sorted(_agent_paths(agents_directory, include_aliases=True))
 
@@ -1119,32 +1114,6 @@ def list_agents(agents_directory: str | Path | Iterable[str | Path]) -> list[dic
         except Exception:
             agents.append({"id": name, "name": name, "title": name, "description": "", "model": ""})
     return agents
-
-
-def describe_available_agents(
-    agents_directory: str | Path | Iterable[str | Path]
-) -> list[dict[str, str]]:
-    """Available agent profiles, with the metadata needed to choose between them.
-
-    Bare ids tell a session *that* it can create a peer but not *for what*, so it cannot match
-    a task to the right specialist and tends to do everything itself. This carries each
-    profile's human title, its `description` (what it is for), and its declared `role` —
-    `primary` for a profile meant to be talked to directly, `peer` for one meant to be handed
-    a scoped task — so the choice can be deliberate.
-    """
-    described = []
-    for name, path in sorted(_agent_paths(agents_directory).items()):
-        try:
-            config = AgentConfiguration.from_markdown(path)
-            described.append({
-                "id": config.identifier,
-                "title": config.display_name,
-                "description": config.description,
-                "role": config.role,
-            })
-        except Exception:
-            described.append({"id": name, "title": name, "description": "", "role": ""})
-    return described
 
 
 class _SidecarPreset(BaseModel):

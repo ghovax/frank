@@ -20,7 +20,6 @@ from xeac.base.configuration import (
     GlobalConfiguration,
     PermissionEvaluator,
     PromptLoader,
-    load_agent_configuration,
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from xeac.runtime.models.litellm import ChatLiteLLMModel
@@ -90,25 +89,7 @@ from xeac.runtime.internals import (
     _model_visible_tool_result,
     _tool_timing_metadata,
     _utc_timestamp,
-    model_is_authorized,
 )
-
-
-def _authorized_default_model(global_configuration: GlobalConfiguration) -> str:
-    """The default agent's model, when there are credentials for it.
-
-    Returns "" when even the default is unauthorized: there is nothing better to offer, and
-    substituting a model that also cannot run would only move the failure."""
-    try:
-        default_configuration = load_agent_configuration(
-            global_configuration.default_agent, global_configuration.agent_directories()
-        )
-    except Exception:  # noqa: BLE001 — a missing or broken default simply means no fallback
-        return ""
-    candidate = default_configuration.model_identifier
-    if candidate and model_is_authorized(candidate, global_configuration):
-        return candidate
-    return ""
 
 
 def build_chat_model(
@@ -352,16 +333,11 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
             raise ValueError(
                 f"Agent '{agent_configuration.identifier}' must configure both provider and model."
             )
-        # A profile pinned to a provider the user never keyed — a shipped `opencode/*`
-        # default, say, on a machine that signed in with ChatGPT instead — would build a
-        # client that 401s on its first call, so the session would die the moment it was
-        # messaged. Fall back to the default agent's model when that one is authorized, so
-        # a peer created from such a profile inherits a model that actually works. A no-op
-        # for the default agent itself, whose model is already what we would fall back to.
-        if not model_is_authorized(effective_model, global_configuration):
-            fallback_model = _authorized_default_model(global_configuration)
-            if fallback_model:
-                effective_model = fallback_model
+        # A profile pinned to a provider the user never keyed fails on its first call, and
+        # that is the honest outcome: there is nothing to fall back to. Borrowing another
+        # profile's model would make one agent's behaviour depend on a second one it never
+        # named — the coupling every agent is defined to be free of — and would quietly run
+        # the work on a model nobody chose for it.
         self._effective_model_identifier = effective_model
 
         self._llm = build_chat_model(

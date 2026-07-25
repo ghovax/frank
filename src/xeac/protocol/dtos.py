@@ -70,10 +70,10 @@ class AgentConfigurationUpdateRequest(BaseModel):
 
 
 class AgentsList(BaseModel):
+    """The agent profiles a folder resolves. Deliberately without a default: nothing here
+    ranks one profile above another, because which agent runs is always an explicit choice."""
+
     agents: list[AgentInfo]
-    # The server's configured default agent id, so the UI can fall back to it
-    # (rather than an arbitrary first entry) when a folder's agents load.
-    defaultAgent: str = ""
 
 
 class DirectoryValidationRequest(BaseModel):

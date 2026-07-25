@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from xeac.base.credentials import ChatGPTLoginFlow
 from xeac.base.credentials import clear_tokens
 from xeac.base.credentials import load_tokens
-from xeac.base.configuration import load_agent_configuration
 from xeac.base.models import MODELS
 from xeac.base.models import ModelDefinition
 from xeac.base.models import available_models
@@ -26,7 +25,7 @@ from xeac.rest.services import filesystem as _system
 from xeac.daemon import state
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.services.sessions import _normalize_permission_mode, _reset_work_habits_acknowledgements
-from xeac.daemon.services.agents import _agent_configuration_for_request, _load_agent_sidecar, _recent_models, _save_agent_sidecar
+from xeac.daemon.services.agents import _recent_models
 from xeac.daemon.services.settings import _apply_live_credentials, _persist_configuration
 from xeac.daemon.services.projects import _reset_all_runtimes
 
@@ -221,17 +220,10 @@ async def get_settings():
     """Return the API credentials stored in ~/.xeac/configuration.yaml so the
     settings dialog can pre-fill them, including per-provider keys."""
     assert state.global_configuration is not None
-    try:
-        default_agent_configuration = load_agent_configuration(
-            state.global_configuration.default_agent,
-            state.global_configuration.agent_directories(),
-        )
-        permission_mode = _normalize_permission_mode(default_agent_configuration.permission_mode)
-    except FileNotFoundError:
-        # No default agent is installed (a fresh machine before seeding, or a stale
-        # default_agent id). Settings must still load — the credentials it holds are
-        # independent of any agent — so fall back to the default permission mode.
-        permission_mode = _normalize_permission_mode("")
+    # The configured floor, not some agent's own setting: this is what a session gets when its
+    # creator does not say, and reading it off a nominated profile would make that profile a
+    # default agent in everything but name.
+    permission_mode = _normalize_permission_mode(state.global_configuration.agent.permission_mode)
     return {
         "permission_mode": permission_mode,
         "exa_api_key": state.global_configuration.exa.api_key,
@@ -270,24 +262,17 @@ async def update_settings(request: SettingsUpdateRequest):
             provider_keys=request.provider_keys,
             provider_base_urls=request.provider_base_urls,
             workspace_strategy=request.workspace_strategy,
+            permission_mode=(
+                _normalize_permission_mode(request.permission_mode)
+                if request.permission_mode is not None else None
+            ),
         )
-        # The default (global) approval policy lives on the default agent's sidecar —
-        # that is the single source GET /settings reads back. Writing it into the
-        # dead configuration.yaml `agent:` key (as the old permission_mode arg did)
-        # never round-tripped, so the picker snapped back to the default on the
-        # settings_changed refetch. Persist it where it is actually read.
+        # `agent.permission_mode` in the configuration file, which is where it is read from
+        # too. It used to be written onto a nominated profile's sidecar — which made that one
+        # profile the global default, and any agent's own setting a global setting.
         if request.permission_mode is not None:
-            try:
-                agent_markdown_path, _ = _agent_configuration_for_request(
-                    configuration.default_agent, ""
-                )
-            except FileNotFoundError:
-                agent_markdown_path = None
-            if agent_markdown_path is not None:
-                sidecar = _load_agent_sidecar(agent_markdown_path)
-                sidecar["permissionMode"] = _normalize_permission_mode(request.permission_mode)
-                _save_agent_sidecar(agent_markdown_path, sidecar)
-                await state.reset_live_session_runtimes()
+            configuration.agent.permission_mode = _normalize_permission_mode(request.permission_mode)
+            await state.reset_live_session_runtimes()
         if request.exa_api_key is not None:
             configuration.exa.api_key = request.exa_api_key
         if request.composio_api_key is not None:

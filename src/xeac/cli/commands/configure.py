@@ -109,6 +109,41 @@ def _parse(raw: str) -> Any:
         return raw
 
 
+def _is_known(path: str) -> bool:
+    """Whether the schema defines this dotted path.
+
+    Without this, a typo — or a setting that has since been removed, like the default agent —
+    is written to the file, listed back, and silently does nothing, because a configuration
+    model ignores keys it does not know. A setting that cannot take effect should be refused
+    at the point it is set, not discovered when the behaviour never changes.
+
+    Open-ended maps (`providers`, `mcp.servers`) accept any key at their level and are walked
+    through into the model of their values, so `providers.anthropic.api_key` resolves."""
+    import typing
+
+    from pydantic import BaseModel
+
+    from xeac.base.configuration import GlobalConfiguration
+
+    def descend(annotation: Any, segments: list[str]) -> bool:
+        if not segments:
+            return True
+        origin = typing.get_origin(annotation)
+        if origin is dict:
+            # Any key is valid here; the value type decides what may follow it.
+            value_type = typing.get_args(annotation)[1]
+            return descend(value_type, segments[1:])
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            field = annotation.model_fields.get(segments[0])
+            if field is None:
+                return False
+            return descend(field.annotation, segments[1:])
+        # A scalar: nothing may follow it.
+        return False
+
+    return descend(GlobalConfiguration, path.split("."))
+
+
 def _validates(data: dict) -> str:
     """Whether the configuration would still load, and what is wrong if not.
 
@@ -145,14 +180,23 @@ def run(arguments) -> int:
         width = max(len(path) for path, _ in entries)
         for path, value in entries:
             shown = _mask(value) if _is_secret(path) else value
-            print(f"{path.ljust(width)}  {shown}")
+            # A key the schema no longer defines is inert. Saying so is the difference between
+            # a setting that does nothing and a setting that appears to be doing something.
+            stale = "" if _is_known(path) else "   (not a setting; ignored)"
+            print(f"{path.ljust(width)}  {shown}{stale}")
         return 0
 
     if arguments.value is None:
         try:
             value = _read(data, arguments.setting)
         except KeyError:
-            print(f"xeac: no setting named {arguments.setting!r}")
+            # Two different absences, and conflating them was confusing: a real setting that
+            # simply is not in the file runs on the schema's default, while a name the schema
+            # does not have will never do anything at all.
+            if _is_known(arguments.setting):
+                print(f"{arguments.setting} is not set; its built-in default applies")
+                return 0
+            print(f"xeac: no setting named {arguments.setting!r}", file=sys.stderr)
             return 1
         shown = _mask(value) if _is_secret(arguments.setting) else value
         print(json.dumps(shown, indent=2) if isinstance(shown, (dict, list)) else shown)
@@ -162,6 +206,12 @@ def run(arguments) -> int:
         print("xeac: pass either a value or --unset, not both")
         return 1
 
+    if not _is_known(arguments.setting):
+        print(
+            f"xeac: no setting named {arguments.setting!r} — it would be written and ignored",
+            file=sys.stderr,
+        )
+        return 1
     _write(data, arguments.setting, _parse(arguments.value))
     invalid = _validates(data)
     if invalid:

@@ -47,7 +47,6 @@ workspace:
 
 # Directory roots are fixed in code: ~/.agents globally and .agents inside the
 # selected working directory. Only the default primary agent is configurable.
-default_agent: "general-assistant"
 
 # How large, how many, and how patient the tools are. Size and count caps are token
 # budgets that scale with the live model context window (a small model gets tighter

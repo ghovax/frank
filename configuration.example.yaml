@@ -169,12 +169,12 @@ telemetry:
   sample_ratio: 1.0
 
 # ---------------------------------------------------------------------------
-# Agents and history
+# History
 #
-# default_agent is used when `xeac create` is given no --agent. Bundled options:
-# general-assistant, senior-researcher, code-investigator, code-implementer. Add your
-# own under ~/.agents/agents/<id>/ or .agents/agents/<id>/ in a working directory.
-default_agent: "general-assistant"
-
 # How long a finished session's transcript is kept.
 maximum_history_age_days: 30
+
+# There is deliberately no default agent setting. `xeac create --agent` is required,
+# and no profile is nominated to stand in for an unstated one: a default would mean
+# work running under an agent nobody chose. Add your own profiles under
+# ~/.agents/agents/<id>/ or .agents/agents/<id>/ in a working directory.

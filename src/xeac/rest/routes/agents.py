@@ -13,7 +13,7 @@ from xeac.protocol.dtos import (
 )
 from xeac.daemon import state
 from xeac.daemon.services.broadcast import _publish_broadcast
-from xeac.daemon.services.agents import AGENT_CARD_PATH, _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
+from xeac.daemon.services.agents import _agent_configuration_for_request, _agent_configuration_payload, _apply_agent_configuration_update, _card_for, _load_agent_sidecar, _path_scope, _record_model_selection, _reload_agent_cards, _save_agent_sidecar
 
 router = APIRouter()
 
@@ -28,14 +28,20 @@ async def agents(working_directory: str = ""):
         directories = state.global_configuration.agent_directories_for(working_directory)
     else:
         directories = state.global_configuration.agent_directories()
+    # The bundled agents are always present, so a folder with no ``.agents`` of its own still
+    # sees the shipped profiles. No profile is singled out as a default: which agent to run is
+    # a choice, and offering one pre-made is how a person ends up not making it.
     agent_data = list_agents(directories)
-    # The bundled agents are always present, so a folder with no ``.agents`` of
-    # its own still sees the shipped profiles. The configured default agent is
-    # only offered as the selection fallback when it is actually available in
-    # this folder's resolved set.
-    available_ids = {agent["id"] for agent in agent_data}
-    default_agent = state.global_configuration.default_agent if state.global_configuration.default_agent in available_ids else (agent_data[0]["id"] if agent_data else "")
-    return AgentsList(agents=[AgentInfo(id=agent["id"], name=agent["name"], title=agent.get("title", agent["name"]), description=agent.get("description", ""), model=agent.get("model", "")) for agent in agent_data], defaultAgent=default_agent)
+    return AgentsList(agents=[
+        AgentInfo(
+            id=agent["id"],
+            name=agent["name"],
+            title=agent.get("title", agent["name"]),
+            description=agent.get("description", ""),
+            model=agent.get("model", ""),
+        )
+        for agent in agent_data
+    ])
 
 
 @router.get("/agents/{agent_name}/configuration")
@@ -140,16 +146,3 @@ async def skills(working_directory: str = ""):
             for skill in all_skills
         ]
     }
-
-
-@router.get(AGENT_CARD_PATH)
-async def default_agent_card():
-    """Serve the default agent's card at the well-known path for spec compliance."""
-    assert state.global_configuration is not None
-    catalogue = state.agent_cards
-    card = catalogue.get(state.global_configuration.default_agent)
-    if card is None:
-        card = next(iter(catalogue.values()), None)
-    if card is None:
-        return {}
-    return card.model_dump(by_alias=True, exclude_none=True, mode="json")

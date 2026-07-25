@@ -33,7 +33,7 @@ def _print(payload: Any, as_json: bool, renderer=None) -> None:
 def _command_create(arguments: argparse.Namespace) -> int:
     result = call(
         "session.create",
-        agent=arguments.agent or "",
+        agent=arguments.agent,
         working_directory=arguments.directory or "",
         permission_mode=arguments.mode or "",
         project_id=arguments.project or "",
@@ -230,7 +230,8 @@ def build_parser() -> argparse.ArgumentParser:
         return subparser
 
     create = add("create", "create a session (the only place its configuration is set)")
-    create.add_argument("-a", "--agent", help="agent profile to run")
+    create.add_argument("-a", "--agent", required=True,
+                        help="agent profile to run; required, because nothing can guess it for you")
     create.add_argument("-C", "--directory", help="working directory")
     create.add_argument("-m", "--mode", choices=["default", "auto", "read_only"],
                         help="permission mode, fixed for the session's life")

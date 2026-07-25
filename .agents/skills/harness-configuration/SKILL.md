@@ -13,7 +13,7 @@ The authoritative models live in `src/xeac/base/configuration.py` (`GlobalConfig
 
 ## Where things live
 
-- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry, the default agent. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`.
+- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`. Note what is *not* there: no default agent. `xeac create --agent` is required, and no profile is nominated to stand in for an unstated one.
 - `~/.local/share/xeac/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `xeac daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
 - The rest is XDG too: logs in `~/.local/state/xeac/`, caches in `~/.cache/xeac/`, and sockets, the daemon's port and its token in the runtime directory.
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
@@ -44,7 +44,7 @@ providers:
 
 **Three ways to change this, all live:** `xeac configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
 
-A profile pinned to a provider you have no credentials for falls back to the default agent's model rather than failing on its first call.
+A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model: an agent is defined by its own configuration, and nothing else's.
 
 ## Permission modes
 
