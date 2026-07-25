@@ -22,18 +22,27 @@ it must stop there: a `setsid` would have bought the same reaping and cost the a
 The one way out is for a caller to `setsid` itself, which detaches it from the session's
 process session entirely — as an MCP stdio server does, since the client library spawns it
 detached, so a server that shells out to `xeac` calls as nobody. It is worth being plain about
-the shape of that: a process outside the session's process session is outside the process
-group `xeac kill` signals and outside the tree the reaper walks. It has stopped being the
-session rather than escaped as it.
+the shape of that: a process outside the session's process session is also outside what
+`xeac kill` signals and outside the tree the reaper walks. It has stopped being the session
+rather than escaped as it.
+
+The same fact is read in both directions here. :func:`session_for_process` answers "which session
+is this caller", for attribution on the socket; :func:`session_process_groups` answers "what
+belongs to this session", for reaping it. Keeping them together is deliberate — they must agree
+about what membership means, and they only do so as long as both ask the kernel.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
 import struct
+import subprocess
 import sys
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Linux hands back (pid, uid, gid) as three ints; macOS has no SO_PEERCRED and exposes the
 # peer's pid on its own option under SOL_LOCAL.
@@ -83,6 +92,59 @@ def session_for_process(process_id: int) -> Optional[str]:
     return None
 
 
+def _all_process_ids() -> list[int]:
+    """Every pid on this machine.
+
+    Only the *list* comes from outside, because only the list is portable: `ps -A -o pid=` is
+    POSIX, while the session id is not — Linux spells it `sid`, and BSD `ps` prints `sess` as a
+    kernel pointer rather than a pid. `os.getsid` supplies the part that has to be right. On Linux
+    `/proc` answers the same question without spawning anything, so it is tried first."""
+    try:
+        return [int(entry) for entry in os.listdir("/proc") if entry.isdigit()]
+    except OSError:
+        pass
+    try:
+        listing = subprocess.run(
+            ["ps", "-A", "-o", "pid="], capture_output=True, text=True, timeout=5, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    process_ids = []
+    for line in listing.stdout.split():
+        try:
+            process_ids.append(int(line))
+        except ValueError:
+            continue
+    return process_ids
+
+
+def session_process_groups(leader_pid: int) -> list[int]:
+    """Every process group inside one session's process session, the leader's own included.
+
+    This is the other direction of the same fact :func:`session_for_process` reads. A worker is a
+    process-session leader, so `getsid` on any of its descendants returns its pid — which is what
+    identifies a caller on the socket, and equally what identifies everything a session left
+    running. The group is the wrong unit for that: the bash tool puts each command in a group of
+    its own so one job can be cancelled with its subtree, and that same property puts it outside
+    the group a session-wide signal would reach.
+
+    The daemon's own group is excluded on principle rather than necessity — a worker is spawned
+    into its own session, so the daemon is never in it — because a sweep that signals process
+    groups should not depend on that staying true."""
+    own_group = os.getpgid(0)
+    groups: dict[int, None] = {}
+    for process_id in _all_process_ids():
+        try:
+            if os.getsid(process_id) != leader_pid:
+                continue
+            group = os.getpgid(process_id)
+        except (OSError, ProcessLookupError):
+            continue  # exited between the listing and the question
+        if group != own_group:
+            groups.setdefault(group, None)
+    return list(groups)
+
+
 def unix_peer_protocol():
     """uvicorn's HTTP protocol, taught to record who connected.
 
@@ -116,5 +178,6 @@ __all__ = [
     "calling_session",
     "peer_process_id",
     "session_for_process",
+    "session_process_groups",
     "unix_peer_protocol",
 ]

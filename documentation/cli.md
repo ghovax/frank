@@ -112,9 +112,11 @@ There is no "always allow" and no bypass mode: every decision is allow-once or d
 xeac kill <session>
 ```
 
-Ends the session and everything under it, children first, so a child never observes a dead parent. The worker's own process group goes down with it.
+Ends the session and everything under it, children first, so a child never observes a dead parent.
 
-Commands the session ran through `bash` do **not**: each one is put in its own process group so that cancelling a single job reaps its subtree, which also means the session's group signal never reaches it. A long-running process a session left behind — a dev server holding a port — survives `xeac kill`. Backgrounded jobs are the covered case: their process groups are recorded durably and swept on the next start. If you asked a session to start something that outlives a command, stop it yourself.
+"Everything under it" means the session's whole **process session**, not just the worker. Each session is spawned as a process-session leader, so every shell command it ran, and everything those commands started, carries its session id — a dev server a session left holding a port goes down with the session that started it. The process *group* is the wrong unit for this and used to be what was signalled: the `bash` tool deliberately puts each command in a group of its own so that cancelling one job reaps that job's subtree, which by construction put it outside a group-wide kill.
+
+The one way to survive is for a process to call `setsid` and leave the session, which also takes it out of everything else the harness tracks. If you want something to outlive the session that started it, that is how — and it is then yours to stop.
 
 ## Agents on other hosts
 

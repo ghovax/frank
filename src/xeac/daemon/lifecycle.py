@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from xeac.base.paths import session_socket_path
+from xeac.daemon.peer_identity import session_process_groups
 from xeac.daemon.pool import WarmWorker, WorkerPool
 from xeac.daemon.registry import EXITED, FAILED, RUNNING, SessionRecord, SessionRegistry
 from xeac.daemon.state import relay_to_session
@@ -253,24 +254,38 @@ class SessionLifecycle:
         self._unlink_socket(session_id)
 
     async def _terminate(self, worker: WarmWorker) -> None:
-        """SIGTERM the worker's whole process group, then SIGKILL what is left.
+        """SIGTERM everything in the worker's process session, then SIGKILL what is left.
 
-        This does *not* reach the commands the session ran through `bash`. Each of those is put in
-        a process group of its own so a single job can be cancelled with its subtree, which by
-        construction puts it outside the group signalled here — so a dev server a session started
-        keeps its port after the session is gone. Backgrounded jobs are the covered case: their
-        groups are recorded in the job store and swept on the next start.
+        The unit here has to be the process *session*, not the process group. A worker is spawned
+        as a session leader, and everything it runs inherits that session id — but the bash tool
+        puts each command in a group of its own, deliberately, so one job can be cancelled with its
+        whole subtree. Signalling only the worker's group therefore missed every command a session
+        ran: end a session that started a dev server and the port stayed held.
 
-        Closing that gap is possible but is not what this does. Every worker leads its own process
-        *session* and, since the bash tool stopped calling `setsid`, so does everything it spawns —
-        so the descendants are identifiable by `getsid`. Killing by that would mean enumerating
-        processes rather than signalling a group, and it would kill strictly more than this does,
-        which is a decision worth making deliberately rather than inside a docstring."""
+        So the groups are enumerated by session membership and each is signalled. The enumeration
+        happens once, before anything is signalled, because a worker's children are reparented the
+        moment it dies — they keep the session id, so a later sweep would still find them, but
+        there is no reason to make correctness depend on that."""
         if not worker.alive:
             return
-        try:
-            os.killpg(os.getpgid(worker.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
+        groups = await asyncio.to_thread(session_process_groups, worker.pid)
+        if not groups:
+            # No listing available (an unexpected platform, `ps` missing). Falling back to the
+            # worker's own group keeps the session's own death reliable, and says why it is less
+            # than it should be rather than silently reaping too little.
+            logger.warning("Could not enumerate the process session of worker %d; signalling its group only", worker.pid)
+            with contextlib.suppress(OSError):
+                groups = [os.getpgid(worker.pid)]
+
+        def signal_groups(number: int) -> None:
+            for group in groups:
+                try:
+                    os.killpg(group, number)
+                except (ProcessLookupError, PermissionError):
+                    continue
+
+        signal_groups(signal.SIGTERM)
+        if not groups:
             with contextlib.suppress(ProcessLookupError):
                 worker.process.terminate()
         try:
@@ -278,11 +293,9 @@ class SessionLifecycle:
             return
         except asyncio.TimeoutError:
             pass
-        try:
-            os.killpg(os.getpgid(worker.pid), signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            with contextlib.suppress(ProcessLookupError):
-                worker.process.kill()
+        signal_groups(signal.SIGKILL)
+        with contextlib.suppress(ProcessLookupError):
+            worker.process.kill()
         with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
             await asyncio.wait_for(worker.process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
 

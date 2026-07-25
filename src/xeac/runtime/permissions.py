@@ -40,18 +40,71 @@ _MUTATING_SCREEN_PRIMITIVES = frozenset({
 })
 
 
+# What a control_screen script is allowed to import and still be judged on its primitives alone.
+# Pure computation over what a `find` returned: no filesystem, no network, no subprocesses. A script
+# that reaches outside this is not read-only in any sense this module can establish, whatever
+# primitives it does or does not call.
+_SCRIPT_SAFE_MODULES = frozenset({
+    "base64", "collections", "datetime", "decimal", "difflib", "fractions", "functools",
+    "hashlib", "html", "itertools", "json", "math", "operator", "random", "re", "statistics",
+    "string", "textwrap", "unicodedata", "urllib",
+})
+
+# The names that turn "arbitrary expression" into "arbitrary authority". `open` and `__import__`
+# are the direct routes; `eval`/`exec`/`compile` reconstruct source the AST never sees; `getattr`
+# and friends walk to the same place by string. None of them has an honest use in a script whose
+# whole job is to drive elements a find returned.
+_SCRIPT_FORBIDDEN_NAMES = frozenset({
+    "__import__", "breakpoint", "compile", "delattr", "eval", "exec", "exit", "getattr",
+    "globals", "input", "locals", "memoryview", "open", "quit", "setattr", "vars",
+})
+
+
 def _control_script_assessment(script: str) -> tuple[str, str]:
-    """Classify a control_screen script as ``read_only``, ``mutating``, or ``unknown`` by scanning
-    its calls for a state-changing primitive, so the permission classifier gets the same static
-    signal bash gets. ``unknown`` when the script does not parse (the classifier escalates on doubt)."""
+    """Classify a control_screen script as ``read_only``, ``mutating``, or ``unknown``.
+
+    The thing this has to get right is what a script *is*. It is not a list of primitive calls —
+    it is arbitrary Python, executed in a child process that has the user's full privileges, whose
+    only bounds are a wall-clock timeout and rlimits. Bounding runaway resource use is not bounding
+    authority. So a scan that looked only for state-changing primitive names and called everything
+    else read-only was answering a different question than the one asked: `import os` followed by
+    `os.system("rm -rf ~")` names no primitive, and so classified read-only, passed a read-only
+    policy, and at `risk: low` raised no gate at all — routing around every bash rule, the working
+    directory check, and the mode the session was created with.
+
+    So the vocabulary is inverted. A script is read-only when everything in it is drawn from what
+    this tool is for — the primitives, control flow, and computation over their results — and
+    ``unknown`` the moment it reaches for anything else. ``unknown`` is not a refusal; it escalates,
+    so a script that genuinely needs `subprocess` can still be approved by the person whose machine
+    it is. Under a read-only policy it is refused, which is the honest reading of a script whose
+    authority cannot be established.
+
+    This is a gate, not a boundary. It reasons about source, and source can be obscured. The
+    boundary is the child process not having the authority in the first place."""
     try:
         tree = ast.parse(script)
     except SyntaxError:
         return "unknown", "the script could not be parsed"
+    mutating_detail = ""
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _MUTATING_SCREEN_PRIMITIVES:
-            return "mutating", f"calls {node.func.id}()"
-    return "read_only", ""
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(node, ast.ImportFrom):
+                roots = [(node.module or "").split(".")[0]]
+            else:
+                roots = [alias.name.split(".")[0] for alias in node.names]
+            outside = [root for root in roots if root not in _SCRIPT_SAFE_MODULES]
+            if outside:
+                return "unknown", f"imports {outside[0]}"
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("__") and node.attr.endswith("__"):
+            # `().__class__.__subclasses__()` and the rest of the walk back up to the interpreter.
+            return "unknown", f"reaches for {node.attr}"
+        elif isinstance(node, ast.Name) and node.id in _SCRIPT_FORBIDDEN_NAMES:
+            return "unknown", f"uses {node.id}"
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _MUTATING_SCREEN_PRIMITIVES:
+            # Recorded rather than returned: a later node may still prove the script `unknown`,
+            # which is the stricter verdict and must win however the walk happens to be ordered.
+            mutating_detail = mutating_detail or f"calls {node.func.id}()"
+    return ("mutating", mutating_detail) if mutating_detail else ("read_only", "")
 
 
 
