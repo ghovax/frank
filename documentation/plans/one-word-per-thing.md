@@ -1,6 +1,6 @@
 ---
 created: 2026-07-25T09:35:00Z
-updated: 2026-07-25T09:58:00Z
+updated: 2026-07-25T10:20:00Z
 commit: 7c1a8bd
 ---
 
@@ -46,6 +46,18 @@ A **peer** is another session on this machine that you can address — the one t
 
 `agent` alone always means the profile. A running thing is a session. "Remote agent" stays a compound proper noun for the external case, and `send_to_remote_agent` keeps its asymmetry with `send_message` deliberately: a remote agent runs on someone else's machine at their cost, and a caller should never be unsure which side of the wire its work went to. That asymmetry is currently just a fact of the code; it becomes a stated one.
 
+## The harness's name, and where it belongs
+
+A key carries the harness's name for exactly one reason: it shares a dict with somebody else's keys, and the name says whose these are. Everywhere else it is noise on a field that already had a perfectly good name.
+
+`Message.metadata` gets this right. Everything the harness adds to a message lives under `urn:xeac:ext:turn:v1`, which is the convention A2A defines for an extension, and the fields inside it are plain — `workingDirectory`, `permissionMode`, `peerSender`. The name is stated once, at the boundary, where it means "these are XEAC's attributes".
+
+`Task.metadata` does not. Four keys sit at its top level and two of them wear a prefix: `pendingInteraction`, `referenceTurnIds`, `xeacTurnKind`, `xeacPeerSender`. That is the owner named twice in one place and not at all in the next, in the same dict, which is a convention nobody is applying. The module's own docstring admitted it and deferred the fix to a later plan; this is that plan, and the fix is small.
+
+So `Task.metadata` gets the same shape a message already has: one `urn:xeac:ext:turn:v1` key holding the whole record, with `kind`, `peerSender`, `pending` and `referenceTurnIds` inside it. An empty record removes the key rather than leaving a husk. Nothing outside that key is touched, so the record owns exactly its own slice.
+
+The prefix survives where it is load-bearing and nowhere else. `urn:xeac:ext:turn:v1` keeps it, because that string's whole job is to be unique against another implementation's extension. `xeac-a2a-file` keeps it: it is a JWT audience claim, and an audience that does not name its audience is not one. The `xeac` originator and user-agent the Codex client sends keep it, because they identify this client to a provider. Log channels, socket names, the pid file and the binary keep it for the same reason — they name the program. Field names inside a namespace we already own do not.
+
 ## `context_id`
 
 The same identifier is `session_id` in the daemon, `context_id` in the REST routes, and `contextId` on the A2A wire. The middle one is ours and has no reason to differ. It becomes `session_id`, including in the route paths the desktop client calls. `contextId` survives only where the A2A field is literally being read or written.
@@ -66,6 +78,10 @@ The same identifier is `session_id` in the daemon, `context_id` in the REST rout
 
 | Now | Becomes |
 |---|---|
+| `Task.metadata.xeacTurnKind` | `Task.metadata["urn:xeac:ext:turn:v1"].kind` |
+| `Task.metadata.xeacPeerSender` | `…["urn:xeac:ext:turn:v1"].peerSender` |
+| `Task.metadata.pendingInteraction` | `…["urn:xeac:ext:turn:v1"].pending` |
+| `Task.metadata.referenceTurnIds` | `…["urn:xeac:ext:turn:v1"].referenceTurnIds` |
 | `session.send` response `task_id` | `turn_id` |
 | `session.history` response `tasks` | `turns` |
 | attach `snapshot` frame `tasks` | `turns` |
@@ -80,7 +96,11 @@ The same identifier is `session_id` in the daemon, `context_id` in the REST rout
 | Now | Becomes |
 |---|---|
 | `read_task` | `read_turn` |
+| `send_message` | `message_session` |
+| `send_to_remote_agent` | `message_remote_agent` |
 | `set_tasks` / `update_tasks` | unchanged — the to-do list keeps the word |
+
+`send_message` was the one verb in the peer-session set that did not name what it operates on, beside `create_session`, `read_session`, `list_sessions` and `end_session`. Not `steer_session`: steering is already a named mechanism here — `enqueue_steering`, a `SteeringEvent` on the wire — meaning a message injected into a turn *already running*, at its next safe point. The tool also delivers to an idle session, which is not steering, so the name would put one word on two things. And steer is directional, while a peer reporting up to the session that created it is not steering it.
 
 ### Backend files
 

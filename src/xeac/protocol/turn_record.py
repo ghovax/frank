@@ -8,11 +8,12 @@ backend site reads ``record.pending.gates[0].request_id`` rather than
 ``metadata["pendingInteraction"]["gates"][0]["request_id"]``, and a missing or misshapen field is a
 validation error at the boundary rather than a ``KeyError`` at the point of use.
 
-Serialization is deliberately byte-compatible with the historical flat keys (``pendingInteraction``,
-``xeacTurnKind``, ``referenceTurnIds``): they are
-read by the web client off ``Task.metadata``, so the persisted/wire shape is unchanged — only the
-in-process access is now typed. Reshaping these under a single namespaced key is a later, separate
-step (see the typed-turn-core plan), not this one.
+Serialization puts the whole record under one URI-namespaced key in ``Task.metadata``, which is
+the convention A2A defines for an extension and the one a message's turn metadata already
+followed. The keys inside it are plain — ``kind``, ``peerSender`` — because the namespace has
+already said whose they are. Spelling the harness's name into each field as well
+(``xeacTurnKind`` beside an unprefixed ``pendingInteraction``) named the owner twice in one
+place and not at all in the next, which is the shape of a convention nobody is applying.
 
 The large, write-hot conversation checkpoint stays out of this record — it lives in its own table,
 keyed by context — so a ``TurnRecord`` is small and cheap to rewrite on every turn.
@@ -25,15 +26,21 @@ from typing import Any, Optional, Literal
 
 from pydantic import BaseModel, Field
 
-# Every turn-state key still lives at the top level of ``Task.metadata`` for now (the web client
-# reads two of them there); these are the names the record (de)serializes to.
-PENDING_INTERACTION_KEY = "pendingInteraction"
-TURN_KIND_KEY = "xeacTurnKind"
-REFERENCE_TURN_IDS_KEY = "referenceTurnIds"
+# One key in ``Task.metadata`` holds the whole record — the same extension URI a message's turn
+# metadata uses, because it is the same extension. The harness's name belongs here, once, where
+# it means "these are XEAC's attributes"; it does not belong in the field names underneath.
+from xeac.protocol.metadata import XEAC_METADATA_KEY
+
+TURN_STATE_KEY = XEAC_METADATA_KEY
+
+# The field names inside that object. Plain, because the namespace already answered whose.
+PENDING_INTERACTION_FIELD = "pending"
+TURN_KIND_FIELD = "kind"
+REFERENCE_TURN_IDS_FIELD = "referenceTurnIds"
 # Which session sent a peer turn's message. Carried beside the kind rather than folded into
 # it: "a peer wrote this" and "*which* peer wrote it" are different facts, and a reader that
 # wants to attribute a report needs the second one.
-PEER_SENDER_KEY = "xeacPeerSender"
+PEER_SENDER_FIELD = "peerSender"
 
 
 class TurnKind(StrEnum):
@@ -136,38 +143,40 @@ class TurnRecord(BaseModel):
     @classmethod
     def from_metadata(cls, metadata: dict[str, Any] | None) -> TurnRecord:
         """Read the turn-state out of a task's metadata. Absent or malformed pieces yield an empty
-        record rather than raising, so a task written before any state was stamped still loads."""
-        data = metadata or {}
-        raw_kind = data.get(TURN_KIND_KEY)
+        record rather than raising, so a task carrying no state at all still loads."""
+        data = (metadata or {}).get(TURN_STATE_KEY)
+        if not isinstance(data, dict):
+            return cls()
+        raw_kind = data.get(TURN_KIND_FIELD)
         kind = None
         if isinstance(raw_kind, str) and raw_kind:
             try:
                 kind = TurnKind(raw_kind)
             except ValueError:
                 kind = None
-        raw_pending = data.get(PENDING_INTERACTION_KEY)
+        raw_pending = data.get(PENDING_INTERACTION_FIELD)
         pending = PendingInteraction.model_validate(raw_pending) if isinstance(raw_pending, dict) else None
-        raw_reference = data.get(REFERENCE_TURN_IDS_KEY)
+        raw_reference = data.get(REFERENCE_TURN_IDS_FIELD)
         reference_task_ids = [str(item) for item in raw_reference] if isinstance(raw_reference, list) else []
-        raw_sender = data.get(PEER_SENDER_KEY)
+        raw_sender = data.get(PEER_SENDER_FIELD)
         peer_sender = raw_sender if isinstance(raw_sender, str) else ""
         return cls(kind=kind, peer_sender=peer_sender, pending=pending, reference_task_ids=reference_task_ids)
 
     def apply_to(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
-        """A new metadata dict: a copy of ``metadata`` with the turn-state keys set to this record's
-        contents and any turn-state key this record does not carry removed. Non-turn keys pass
-        through untouched, so this owns exactly the turn-state slice of the task's metadata."""
-        result = {
-            key: value
-            for key, value in (metadata or {}).items()
-            if key not in (PENDING_INTERACTION_KEY, TURN_KIND_KEY, REFERENCE_TURN_IDS_KEY, PEER_SENDER_KEY)
-        }
+        """A new metadata dict: a copy of ``metadata`` whose turn-state key holds this record.
+
+        Everything outside that one key passes through untouched, so this owns exactly its own
+        slice — and an empty record removes the key rather than leaving an empty object behind."""
+        result = {key: value for key, value in (metadata or {}).items() if key != TURN_STATE_KEY}
+        state: dict[str, Any] = {}
         if self.kind is not None:
-            result[TURN_KIND_KEY] = str(self.kind)
+            state[TURN_KIND_FIELD] = str(self.kind)
         if self.peer_sender:
-            result[PEER_SENDER_KEY] = self.peer_sender
+            state[PEER_SENDER_FIELD] = self.peer_sender
         if self.pending is not None:
-            result[PENDING_INTERACTION_KEY] = self.pending.model_dump()
+            state[PENDING_INTERACTION_FIELD] = self.pending.model_dump()
         if self.reference_task_ids:
-            result[REFERENCE_TURN_IDS_KEY] = list(self.reference_task_ids)
+            state[REFERENCE_TURN_IDS_FIELD] = list(self.reference_task_ids)
+        if state:
+            result[TURN_STATE_KEY] = state
         return result

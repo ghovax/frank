@@ -1594,13 +1594,25 @@ export interface A2APart {
   metadata?: Record<string, unknown>;
 }
 
-// A turn's control-state keys, as the backend stamps them onto `Task.metadata`.
-export const TURN_KIND_KEY = "xeacTurnKind";
-export const PEER_SENDER_KEY = "xeacPeerSender";
+// A turn's control-state lives under one URI-namespaced key in `Task.metadata`, which is
+// A2A's convention for an extension's attributes. The names inside it are plain: the
+// namespace has already said whose they are.
+export const TURN_STATE_KEY = "urn:xeac:ext:turn:v1";
 
 // What opened a turn. `peer` is a message from another session — a peer reporting its
 // result, or a parent following up — and is emphatically not the user speaking.
 export type TurnKind = "user" | "peer" | "autonomous" | "compaction";
+
+export interface TurnState {
+  kind?: TurnKind;
+  peerSender?: string;
+  referenceTurnIds?: string[];
+}
+
+export function turnState(turn: { metadata?: Record<string, unknown> } | undefined): TurnState {
+  const state = turn?.metadata?.[TURN_STATE_KEY];
+  return state && typeof state === "object" ? (state as TurnState) : {};
+}
 
 export interface A2AMessage {
   role: "user" | "agent";

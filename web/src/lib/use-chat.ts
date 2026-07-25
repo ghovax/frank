@@ -14,7 +14,7 @@ import {
   sessionCreate,
   sessionSend,
   CONTENT_BLOCK_METADATA_KEY,
-  PEER_SENDER_KEY,
+  turnState,
   type A2AMessage,
   type A2ATurn as A2ATurnWire,
   type PermissionMode,
@@ -964,7 +964,7 @@ function replayTurns(turns: A2ATurn[]): {
   keyCounts: Map<string, number>;
 } {
   const mainTurns = turns
-    .filter((turn) => !(turn.metadata && Array.isArray((turn.metadata as Record<string, unknown>).referenceTurnIds)))
+    .filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length)
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
   const state: ReduceState = newReduceState();
   for (const turn of mainTurns) {
@@ -982,9 +982,7 @@ function replayTurns(turns: A2ATurn[]): {
       replayMessages.push(trailing);
     }
     // Stamped on the turn, not on the message, because it describes what opened the turn.
-    const peerSender = typeof (turn.metadata as Record<string, unknown> | undefined)?.[PEER_SENDER_KEY] === "string"
-      ? String((turn.metadata as Record<string, unknown>)[PEER_SENDER_KEY])
-      : "";
+    const peerSender = turnState(turn).peerSender ?? "";
     for (const message of replayMessages) {
       if (message.role === "user") reduceInboundMessage(state, message, peerSender);
       else reduceAgentMessage(state, message);
