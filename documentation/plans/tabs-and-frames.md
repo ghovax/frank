@@ -1,6 +1,6 @@
 ---
 created: 2026-07-25T13:13:38Z
-updated: 2026-07-25T13:13:38Z
+updated: 2026-07-25T13:30:00Z
 commit: 7e0062f
 ---
 
@@ -36,6 +36,10 @@ Four primitives, all of them thin over the registry that already exists.
 
 `_pick_page` stays exactly as it is. It is the right answer to "nothing has been chosen yet"; it was only ever wrong as the answer to "which tab am I on", and that question now has a primitive.
 
+`tabs()` lists every tab in the browser, including the ones the user opened and the session had nothing to do with. This is a genuine widening of what a session can see — the titles and URLs of a person's whole open browsing session, where nothing else in the harness reads past the active page — and it is the right one, because the tool already drives that browser with that person's real credentials and a tab's title is less than a single `read` of it returns. Filtering to what the session opened would be a privacy gesture rather than a privacy measure, and it would make the common case — the user says "the invoice in my other tab" — unreachable.
+
+`close_tab` refuses nothing, for the same reason: a session that can act as the user can close a tab as the user, and a rule that it may only close what it opened would fail exactly when the task is about a tab the user opened. What replaces the refusal is instruction. The tool description states that the browser is the user's own and its tabs are their working state, that a tab the session did not open should be left alone unless the task is about it, and that closing one can lose an unsubmitted form with no undo. That is a real constraint expressed where the model will read it, rather than a check that would block the legitimate case to prevent a careless one.
+
 ## Frames
 
 `frames()` returns `{id, url, name, parent, element}` for every frame in the page — `id` the same `f1`/`f2` the element references already use, `parent` the frame that owns it (empty for a frame directly in the main document), and `element` the reference of the `iframe` element itself, so a model that wants to scroll the frame into view or read its surroundings can act on the frame as an element too. The identifiers are Playwright's, taken from the snapshot rather than minted here, which is a deliberate coupling: one vocabulary across elements and frames is worth more than independence from a numbering scheme, and inventing a second set of frame names when the element references already carry one would guarantee they drift.
@@ -60,7 +64,8 @@ Four primitives, all of them thin over the registry that already exists.
 | 10 | `documents()` payload gains `frame` for elements inside one | `computer/web.py:509` | Answers what `f1` is at the moment the model first sees `f1e3` |
 | 11 | `_PRIMITIVES` gains `tabs`, `tab`, `new_tab`, `close_tab`, `frames`; none of them join `targeting_verbs` | `computer/control_child.py:34`, `runtime/tools/dispatch.py:1322` | The injection allowlist. A tab id is not an element query and must not be resolved as one |
 | 12 | Correct `_locator`'s docstring: references survive re-snapshotting; a dead one costs a timeout, not an error | `computer/web.py:493` | It currently promises the opposite of what the snapshot does |
-| 13 | Rewrite the tool description and the screen-control section of the docs | `runtime/tools/registry.py:744`, `documentation/tools.md:67` | Both describe a browser with one page and no frames |
+| 13 | The tool description states that the tabs are the user's working state: leave one alone unless the task is about it, and closing it can lose an unsubmitted form | `runtime/tools/registry.py:744` | `close_tab` refuses nothing, so the constraint has to live where the model reads it |
+| 14 | Rewrite the tool description and the screen-control section of the docs | `runtime/tools/registry.py:744`, `documentation/tools.md:67` | Both describe a browser with one page and no frames |
 
 ## What is deliberately not changing
 
@@ -72,10 +77,12 @@ The desktop client needs no changes, which is worth stating because the last fou
 
 Nothing here adds a wait, a timeout, or a CDP call. Those are the other two groups and they both touch the permission classifier and the timeout stack; keeping them out means this change can be judged on its own.
 
-## Open questions
+## Decided
 
-**Should `tabs()` list tabs the model did not open?** `context.pages` is every tab in the user's real Chrome, so the honest implementation hands a session the titles and URLs of the user's entire open browsing session — banking, mail, whatever is behind them. Nothing else in the harness exposes that today: `documents()` reads only the active page. The alternatives are to list everything (most useful, and consistent with a tool whose premise is acting as the user), to list only pages the session itself opened plus the one it started on (narrowest, and makes a user-opened tab unreachable even when the task is about it), or to list everything but return only the identifier and let the model spend a switch to see what a tab holds. I lean to listing everything, on the grounds that the tool already drives that browser with the user's real credentials and a URL is less than what a single `read` returns — but it is a genuine widening of what a session can see, and it is your call.
+**`tabs()` lists everything.** The argument is above; the alternatives considered were listing only what the session opened, and listing identifiers without titles so a model had to spend a switch to see what a tab held. Both trade a real capability for the appearance of a boundary.
 
-**Should `close_tab` refuse a tab the session did not open?** Same shape as the question above, narrower blast radius, and the failure is worse: closing the user's tab can lose an unsubmitted form with no undo. A rule that a session may only close what it opened is cheap to enforce with the registry this plan already builds.
+**`close_tab` refuses nothing, and the tool description carries the constraint instead.** The check that would have prevented a careless close would also have blocked the legitimate one, and the legitimate one is common.
 
-**Is `navigate` mutating?** I have proposed yes, and it is the one item here with real blast radius: a read-only session would lose browser navigation entirely and be left with whatever page happens to be open, plus `fetch_url` for anything unauthenticated. The argument for is that a name-based classifier cannot distinguish reading a page from firing a URL that is a command. The argument against is that read-only sessions exist for investigation, and investigation on the web means moving between pages. A third option is to classify `navigate` by its argument when the argument is a literal string in the AST, and treat it as mutating only when it is computed — which is more precision than the rest of the classifier has, and would be the only argument-sensitive rule in it.
+**`navigate` is mutating.** What that changes is smaller than it sounds for most sessions and total for one kind. In an ordinary session, a script containing `navigate` stops being waved through and starts being examined: with `auto_permissions` on, the whole script goes to the classifier, which can and usually will auto-approve a benign navigation, so the cost is one classifier call rather than a prompt; in manual mode it is a prompt. In a read-only session the whole script is denied outright, with no human in the loop, because that is what `policy.read_only` does with a mutating classification. That second consequence is the price, and it is the correct one: read-only exists to hard-block every write, and a classifier that reads primitive names cannot tell fetching a page from firing a URL that is a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` are all just `navigate` in the AST. A read-only session keeps `fetch_url` for anything unauthenticated and keeps every read of the page that is already open.
+
+The precision that was considered and rejected: classify `navigate` by its argument when the argument is a string literal, and treat it as mutating only when computed. It would be the only argument-sensitive rule in a classifier that is otherwise purely name-based, it would be defeated by any variable, and it would put the harness in the business of deciding which URLs are safe to visit — a judgement no static rule can make, since whether a GET has a side effect is a property of the server.
