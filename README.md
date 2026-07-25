@@ -65,7 +65,7 @@ xeac ps                                                            # what is run
 xeac attach <id>                                                   # follow it live
 ```
 
-A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `send_message` reaches a session in either direction, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it, and its answer comes back as a message.
+A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `message_session` reaches a session in either direction, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it, and its answer comes back as a message.
 
 The daemon starts itself on the first command. From the app:
 

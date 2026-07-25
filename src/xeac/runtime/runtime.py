@@ -327,12 +327,12 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         "read_turn": "_tool_read_turn",
         "control_screen": "_tool_control_screen",
         "create_session": "_tool_session",
-        "send_message": "_tool_session",
+        "message_session": "_tool_session",
         "read_session": "_tool_session",
         "list_sessions": "_tool_session",
         "end_session": "_tool_session",
         "list_remote_agents": "_tool_session",
-        "send_to_remote_agent": "_tool_session",
+        "message_remote_agent": "_tool_session",
     }
 
     def __init__(

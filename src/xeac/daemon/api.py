@@ -383,7 +383,7 @@ async def _remote_send(params: dict) -> dict:
     )
     collected: list[str] = []
     try:
-        async for event in manager.send_message(name, message):
+        async for event in manager.message_session(name, message):
             for part in _remote_text_parts(event):
                 collected.append(part)
     except LookupError as error:

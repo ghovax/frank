@@ -360,7 +360,7 @@ class RemoteAgentManager:
                 self._agents[name] = _RemoteAgent(configuration)
         await self.start()
 
-    async def send_message(self, name: str, message: Message) -> AsyncIterator[ClientEvent | Message]:
+    async def message_session(self, name: str, message: Message) -> AsyncIterator[ClientEvent | Message]:
         """Stream a message to a remote agent, yielding the A2A client's ``(Task, Update)``
         pairs (or a final ``Message``). Raises ``LookupError`` if the agent is unknown and
         ``RuntimeError`` if it cannot currently be reached (unresolved/untrusted card)."""
@@ -370,7 +370,7 @@ class RemoteAgentManager:
         client = await agent.client()
         if client is None:
             raise RuntimeError(f"Remote agent {name!r} is not reachable ({agent.health}: {agent.error}).")
-        async for event in client.send_message(message):
+        async for event in client.message_session(message):
             yield event
 
     async def aclose(self) -> None:

@@ -21,7 +21,7 @@ directory defaults to the caller's, which is what a peer working on the same pro
 and what a model would otherwise have to remember to pass.
 
 There is no waiting, either as an argument or behind the scenes. A peer *answers* — it calls
-`send_message` on the session that created it, and its answer arrives there as an ordinary
+`message_session` on the session that created it, and its answer arrives there as an ordinary
 inbound message. So a caller starts the work, carries on with whatever does not depend on it,
 and ends its turn; the peer's reply wakes it the way a person's message would.
 
@@ -143,15 +143,15 @@ async def _create_session(
     })
 
 
-async def _send_message(session: str, message: str) -> str:
+async def _message_session(session: str, message: str) -> str:
     access = _access
     if access is None:
-        return _unavailable("send_message_error")
+        return _unavailable("message_session_error")
     try:
         await access.send(session, message)
     except Exception as exception:  # noqa: BLE001
         return compact({
-            "code": "send_message_error", "status": "error",
+            "code": "message_session_error", "status": "error",
             "session": session, "message": str(exception),
         })
     return compact({"code": "message_sent", "status": "ok", "session": session})
@@ -207,15 +207,15 @@ async def _list_remote_agents() -> str:
     return compact({"code": "remote_agents", "status": "ok", "agents": agents})
 
 
-async def _send_to_remote_agent(name: str, message: str) -> str:
+async def _message_remote_agent(name: str, message: str) -> str:
     access = _access
     if access is None:
-        return _unavailable("send_to_remote_agent_error")
+        return _unavailable("message_remote_agent_error")
     try:
         result = await access.remote_send(name, message)
     except Exception as exception:  # noqa: BLE001
         return compact({
-            "code": "send_to_remote_agent_error", "status": "error",
+            "code": "message_remote_agent_error", "status": "error",
             "agent": name, "message": str(exception),
         })
     return compact({"code": "remote_agent_replied", "status": "ok", "agent": name, **result})
@@ -254,12 +254,12 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
     )
 
 
-send_message_tool = StructuredTool.from_function(
-    coroutine=_send_message,
-    name="send_message",
-    description=_description("send_message"),
+message_session_tool = StructuredTool.from_function(
+    coroutine=_message_session,
+    name="message_session",
+    description=_description("message_session"),
     args_schema=create_model(
-        "SendMessageArguments",
+        "MessageSessionArguments",
         session=(str, Field(description="The recipient session id.")),
         message=(str, Field(description="The message to send.")),
     ),
@@ -304,12 +304,12 @@ list_remote_agents_tool = StructuredTool.from_function(
 )
 
 
-send_to_remote_agent_tool = StructuredTool.from_function(
-    coroutine=_send_to_remote_agent,
-    name="send_to_remote_agent",
-    description=_description("send_to_remote_agent"),
+message_remote_agent_tool = StructuredTool.from_function(
+    coroutine=_message_remote_agent,
+    name="message_remote_agent",
+    description=_description("message_remote_agent"),
     args_schema=create_model(
-        "SendToRemoteAgentArguments",
+        "MessageRemoteAgentArguments",
         name=(str, Field(description="The registered remote agent's name.")),
         message=(str, Field(description="The message to send.")),
     ),
@@ -325,7 +325,7 @@ def session_tools(agent_names: list[str]) -> list[BaseTool]:
         return []
     return [
         build_create_session_tool(agent_names),
-        send_message_tool,
+        message_session_tool,
         read_session_tool,
         list_sessions_tool,
         end_session_tool,
@@ -333,16 +333,16 @@ def session_tools(agent_names: list[str]) -> list[BaseTool]:
 
 
 def remote_agent_tools() -> list[BaseTool]:
-    return [list_remote_agents_tool, send_to_remote_agent_tool]
+    return [list_remote_agents_tool, message_remote_agent_tool]
 
 
 _TOOLS_BY_NAME: dict[str, Any] = {
-    "send_message": send_message_tool,
+    "message_session": message_session_tool,
     "read_session": read_session_tool,
     "list_sessions": list_sessions_tool,
     "end_session": end_session_tool,
     "list_remote_agents": list_remote_agents_tool,
-    "send_to_remote_agent": send_to_remote_agent_tool,
+    "message_remote_agent": message_remote_agent_tool,
 }
 
 

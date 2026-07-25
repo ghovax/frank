@@ -662,7 +662,7 @@ function CreateSessionCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function SendMessageCallView({ args }: { args: Record<string, unknown> }) {
+function MessageSessionCallView({ args }: { args: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
   const message = asString(args.message);
   return (
@@ -769,8 +769,8 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
         return <AskUserCallView args={args} />;
       case "create_session":
         return <CreateSessionCallView args={args} />;
-      case "send_message":
-        return <SendMessageCallView args={args} />;
+      case "message_session":
+        return <MessageSessionCallView args={args} />;
       case "read_session":
       case "end_session":
         return <SessionReferenceCallView args={args} />;
@@ -2110,9 +2110,9 @@ export function ToolResultView({
     if (name === "create_session" || name === "read_session" || name === "end_session") {
       return <SessionResultView data={data} />;
     }
-    // `send_message` reports only that it was accepted. There is nothing to show: the reply,
+    // `message_session` reports only that it was accepted. There is nothing to show: the reply,
     // when there is one, arrives as its own message in the transcript.
-    if (name === "send_message") return null;
+    if (name === "message_session") return null;
     return <GenericView data={data} />;
   }
 
