@@ -2,7 +2,7 @@
 
 // The chat-history sidebar as a self-contained unit: the projects list, a new-session
 // row, and each project's sorted sessions (status dot + marquee title + options menu),
-// nested as a tree so the sessions an agent spawns sit under the one that spawned them.
+// nested as a tree so the sessions a session creates sit under the one that created them.
 // It owns nothing about layout (the
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
@@ -28,7 +28,7 @@ export type SessionStatus = "starting" | "running" | "exited" | "failed";
 
 export interface SessionEntry {
   sessionId: string;
-  // The session that spawned this one, empty for a session the user started. An agent
+  // The session that created this one, empty for a session the user started. A session
   // composes by creating peers, so its children are ordinary sessions that would land
   // flat in this list unless they are nested under the row that created them.
   parentSessionId: string;
@@ -86,7 +86,7 @@ const STATUS_LABEL_KEY: Record<SessionStatus, string> = {
   failed: "statusFailed",
 };
 
-// A session and everything it spawned. The daemon hands the registry out flat (each row
+// A session and everything it created. The daemon hands the registry out flat (each row
 // carrying its parent), so the nesting is derived here rather than being a shape the
 // sidebar has to flatten again to search or sort.
 interface SessionTreeNode {
@@ -172,7 +172,7 @@ function MarqueeTitle({ text }: { text: string }) {
 }
 
 // One session row, plus — nested beneath it, behind a chevron — the sessions it
-// spawned. Children start collapsed: a task that fans out puts one row in the list, not
+// created. Children start collapsed: a task that fans out puts one row in the list, not
 // one per child, which is the whole reason the hierarchy is rendered at all. The row
 // itself always resumes the session; only the chevron toggles the subtree, so the two
 // gestures never compete for the same click.
@@ -232,7 +232,7 @@ function SessionTreeRow({
           {hasChildren ? (
             <Button
               type="button"
-              aria-label={expanded ? translation("hideSpawnedSessions") : translation("showSpawnedSessions")}
+              aria-label={expanded ? translation("hideChildSessions") : translation("showChildSessions")}
               variant="plain"
               h={5}
               minW={0}
@@ -321,7 +321,7 @@ function SessionTreeRow({
       </Box>
 
       {/* The children hang off the same hairline rule every other disclosure body uses,
-          so a spawned subtree reads as part of its parent rather than as a new list. */}
+          so a created subtree reads as part of its parent rather than as a new list. */}
       {hasChildren && expanded ? (
         <Box ml={1.5} pl={3.5} py={1} borderLeft="2px solid" borderColor="border.muted">
           <VStack gap={1} align="stretch">
@@ -381,7 +381,7 @@ export function SessionsSidebar({
   const [loadedSshHostsConnectionId, setLoadedSshHostsConnectionId] = useState<string | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [projectOpenOverrides, setProjectOpenOverrides] = useState<Record<string, boolean>>({});
-  // Which parents have their spawned sessions showing. Collapsed is the default and the
+  // Which parents have their child sessions showing. Collapsed is the default and the
   // state is additive (an id is present only once opened), so a session that fans out
   // mid-view never expands the list under the reader.
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set());

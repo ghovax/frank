@@ -465,7 +465,14 @@ def _refuse_session_caller(caller: str, method: str, params: dict) -> Optional[R
     Two limits. A session may only use the verbs it composes with, and it may only aim them at
     itself or something it created — its own subtree. Without the second, a session token
     would be a handle on every other session on the machine, which is the opposite of what
-    minting one per session is for."""
+    minting one per session is for.
+
+    One exception, and it is the return path: a session may `session.send` to its own parent.
+    A peer that cannot answer the session that created it is not a peer, it is a fire-and-
+    forget job, and the alternative — the caller reconstructing an answer out of the peer's
+    durable record — is what this exception exists to have deleted. It is deliberately the
+    narrowest widening that makes a reply possible: one verb, one recipient, and nothing else
+    moves upward. A session still cannot read its parent's history or end it."""
     if method not in _SESSION_CALLER_METHODS:
         return RpcError(f"A session may not call {method!r}.", status_code=403, code="forbidden")
     target = str(params.get("id") or "").strip()
@@ -475,6 +482,10 @@ def _refuse_session_caller(caller: str, method: str, params: dict) -> Optional[R
         return None
     if any(record.id == target for record in state.registry.descendants_of(caller)):
         return None
+    if method == "session.send":
+        own = state.registry.get(caller)
+        if own is not None and own.parent and own.parent == target:
+            return None
     return RpcError(
         f"Session {target!r} is not yours.", status_code=403, code="forbidden",
     )

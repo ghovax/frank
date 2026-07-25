@@ -14,6 +14,7 @@ import {
   sessionCreate,
   sessionSend,
   CONTENT_BLOCK_METADATA_KEY,
+  PEER_SENDER_KEY,
   type A2AMessage,
   type A2ATask as A2ATaskWire,
   type PermissionMode,
@@ -80,11 +81,14 @@ export interface MessageMeta {
   durationMs?: number;
   artifactAnnotationRecords?: ArtifactAnnotationRecord[];
   attachments?: MessageAttachment[];
+  // On a `peer` message: which session sent it. The transcript shows a report as coming
+  // from somewhere, and "somewhere" has an id.
+  peerSender?: string;
 }
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
+  role: "user" | "peer" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
   content: string;
   timestamp: string;
   meta?: MessageMeta;
@@ -629,7 +633,11 @@ function artifactAnnotationRecordsFromMessage(message: A2AMessage): ArtifactAnno
   return records;
 }
 
-function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
+// A message a session received from outside itself: the user typed it, or another session
+// sent it. `peerSender` is set only in the second case, and telling them apart is not
+// cosmetic — a peer's report rendered as a user message attributes words to a person who
+// never wrote them.
+function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSender = ""): void {
   const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
   const attachments = attachmentsFromMessage(message);
   const artifactAnnotationRecords = artifactAnnotationRecordsFromMessage(message);
@@ -644,12 +652,13 @@ function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   const meta = {
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(artifactAnnotationRecords.length > 0 ? { artifactAnnotationRecords } : {}),
+    ...(peerSender ? { peerSender } : {}),
   };
   state.messages = [
     ...state.messages,
     {
-      id: stableMessageId(state, "user", message.messageId),
-      role: "user",
+      id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
+      role: peerSender ? "peer" : "user",
       content: text,
       timestamp: new Date().toISOString(),
       ...(Object.keys(meta).length > 0 ? { meta } : {}),
@@ -683,8 +692,8 @@ function steeringText(message: A2AMessage | undefined): string {
 }
 
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
-  // Every event on this stream belongs to this session. A spawned agent is a session of
-  // its own with its own stream, so there is no longer a foreign lane to route away.
+  // Every event on this stream belongs to this session. A peer is a session of its own
+  // with its own stream, so there is no longer a foreign lane to route away.
   // The one typed reader of a root wire event: switch on the generated union's
   // discriminant so a renamed kind or field is a compile error, not a silent "".
   // `data` stays in scope for the few helpers that take a raw record.
@@ -946,8 +955,8 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
 // Reconstruct messages from a session's persisted A2A tasks. The history arrives
 // already compacted server-side (adjacent same-kind deltas merged), so it is reduced
 // as-is — no client-side compaction pass. Tasks that reference another task are a
-// peer's work, not this session's turns, and are filtered out: a spawned agent is its
-// own session with its own transcript now, never a lane inside this one.
+// peer's work, not this session's turns, and are filtered out: a peer is its own
+// session with its own transcript, never a lane inside this one.
 function replayTasks(tasks: A2ATask[]): {
   messages: ChatMessage[];
   tasks: ChatTask[];
@@ -972,8 +981,12 @@ function replayTasks(tasks: A2ATask[]): {
     if (trailing && !replayMessages.some((message) => !!message.messageId && message.messageId === trailing.messageId)) {
       replayMessages.push(trailing);
     }
+    // Stamped on the task, not on the message, because it describes what opened the turn.
+    const peerSender = typeof (task.metadata as Record<string, unknown> | undefined)?.[PEER_SENDER_KEY] === "string"
+      ? String((task.metadata as Record<string, unknown>)[PEER_SENDER_KEY])
+      : "";
     for (const message of replayMessages) {
-      if (message.role === "user") reduceUserMessage(state, message);
+      if (message.role === "user") reduceInboundMessage(state, message, peerSender);
       else reduceAgentMessage(state, message);
     }
     if (!hasAssistantTextAfterLastUser(state)) {
@@ -1044,7 +1057,7 @@ export function useChat(
   // current stream finishes. Kept separate from the user-visible text queue.
   const queuedArtifactEventsRef = useRef<ArtifactEvent[]>([]);
   // Render errors fire automatically when an artifact mounts, so a broken artifact
-  // (including on session replay) must not spawn the same turn twice. Tracked by
+  // (including on session replay) must not start the same turn twice. Tracked by
   // artifact + message; user-driven events (clicks) are never deduped.
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
@@ -1308,6 +1321,20 @@ export function useChat(
           } else if (frame.kind === "live") {
             reduceAgentMessage(stateRef.current, frame.message);
             flush();
+          } else if (frame.kind === "turn" && !frame.running) {
+            // The turn ended, said by the session itself. The `sessionRunning` flip below
+            // learns the same thing from a polled listing a moment later; this arrives on
+            // the stream we are already holding, so the result artifact — written only as
+            // the task closes, and therefore never on the live tail — lands immediately
+            // instead of one poll interval after the work finished.
+            void (async () => {
+              try {
+                const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+                if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
+              } catch {
+                // transient — the sessionRunning path below still captures it
+              }
+            })();
           }
         },
         () => {

@@ -20,11 +20,17 @@ invented name is unrepresentable rather than refused after the fact. And the wor
 directory defaults to the caller's, which is what a peer working on the same problem needs
 and what a model would otherwise have to remember to pass.
 
-Waiting is not an argument either. A peer's turn behaves like every other slow thing here: it
-runs, it gets a short window to finish inline, and if it does not, its deliverable is
-delivered as its own message when it lands — so a caller ends its turn and is woken, rather
-than holding one open. This is the same contract `search_web` and a backgrounded `bash`
-already use.
+There is no waiting, either as an argument or behind the scenes. A peer *answers* — it calls
+`send_message` on the session that created it, and its answer arrives there as an ordinary
+inbound message. So a caller starts the work, carries on with whatever does not depend on it,
+and ends its turn; the peer's reply wakes it the way a person's message would.
+
+That replaced a mechanism worth naming, because its absence is the point. The caller used to
+subscribe to the peer's event stream, wait for the edge where its turn stopped running, read
+its last task out of the store, and reconstruct prose by walking the result artifact and then
+the final status message for text parts. It reached into another session's durable record to
+recover something the peer already knew, and it decided by string surgery which fragments of
+a transcript constituted "the answer" — a judgement only the peer can honestly make.
 
 There is deliberately no permission gate on creating a peer. The clamp is the control: a
 child can never hold authority its parent lacks, so creating one grants nothing that asking
@@ -43,8 +49,6 @@ from pydantic import Field, create_model
 
 from xeac.base.configuration import PromptLoader
 from xeac.base.serialization import compact
-from xeac.base.tuning import Limit, active_tuning
-from xeac.runtime.background import current_background_jobs
 
 # A tool's description is the guidance a model reads to decide whether and how to call it —
 # model-facing prose, and so it lives in a prompt template like every other piece of it. The
@@ -76,8 +80,7 @@ class SessionAccess(Protocol):
     permission_mode: str
 
     async def create(self, *, agent: str, working_directory: str, permission_mode: str, title: str) -> dict: ...
-    async def send(self, session_id: str, text: str) -> str: ...
-    async def await_result(self, session_id: str, task_id: str = "") -> dict: ...
+    async def send(self, session_id: str, text: str) -> None: ...
     async def get(self, session_id: str) -> dict: ...
     async def children(self) -> list[dict]: ...
     async def end(self, session_id: str) -> dict: ...
@@ -102,84 +105,6 @@ def _unavailable(code: str) -> str:
     })
 
 
-async def _await_and_report(session_id: str, handle: str, task_id: str) -> str:
-    """Wait for a peer's turn to finish, then render what it produced.
-
-    Waiting is a subscription, not a poll: the daemon publishes a turn's start and end on the
-    session's stream, and this returns on the ending edge."""
-    access = _access
-    if access is None:
-        return _unavailable("peer_session_error")
-    try:
-        result = await access.await_result(session_id, task_id)
-    except Exception as exception:  # noqa: BLE001 — a peer's failure is this call's result
-        return compact({
-            "code": "peer_session_error",
-            "status": "error",
-            "task_identifier": handle,
-            "session": session_id,
-            "message": str(exception),
-        })
-    return compact({
-        "code": "peer_session_completed",
-        "status": "ok",
-        "task_identifier": handle,
-        "session": session_id,
-        "state": result.get("state", ""),
-        "result": result.get("text", ""),
-    })
-
-
-async def _start_and_settle(session_id: str, task_id: str, *, started_code: str, extra: dict) -> str:
-    """Run a peer's turn as a background job, giving it a short window to finish inline.
-
-    The common case is a short turn that returns its deliverable directly, so the model never
-    handles a pending identifier at all. A longer one returns an acknowledgement and arrives
-    later on its own."""
-    jobs = current_background_jobs()
-    handle = jobs.spawn(
-        "peer_session",
-        _await_and_report(session_id, _peer_handle(session_id), task_id),
-        identifier=_peer_handle(session_id),
-        arguments={"session": session_id},
-        # A peer outlives the turn that started it: it is its own process, and stopping this
-        # session must not discard work another one is already doing.
-        detached=True,
-    )
-    settled = await jobs.settle_inline(handle, active_tuning().duration(Limit.PEER_SYNC_WINDOW_SECONDS))
-    if settled is not None:
-        # The same facts either way. A peer that finished inline must not report less about
-        # itself than one that took longer — notably the mode it actually got, which may not
-        # be the mode that was asked for.
-        finished = _maybe_object(settled.result)
-        return compact({**finished, **extra}) if finished is not None else settled.result
-    return compact({
-        "code": started_code,
-        "status": "running",
-        "task_identifier": handle,
-        "session": session_id,
-        **extra,
-    })
-
-
-def _maybe_object(result: str) -> Optional[dict]:
-    import json
-
-    try:
-        parsed = json.loads(result)
-    except (TypeError, ValueError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _peer_handle(session_id: str) -> str:
-    """One handle per peer, derived from its id.
-
-    Derived rather than minted so a second message to the same peer reuses the handle instead
-    of leaving two jobs racing to report the same session's next idle edge."""
-    return f"peer-{session_id.removeprefix('session-')}"
-
-
 async def _create_session(
     agent: str,
     message: str,
@@ -201,34 +126,35 @@ async def _create_session(
         return compact({"code": "create_session_error", "status": "error", "message": str(exception)})
     session_id = str(record.get("id") or "")
     try:
-        task_id = await access.send(session_id, message)
+        await access.send(session_id, message)
     except Exception as exception:  # noqa: BLE001
         return compact({
             "code": "create_session_error", "status": "error",
             "session": session_id, "message": str(exception),
         })
-    return await _start_and_settle(
-        session_id,
-        task_id,
-        started_code="peer_session_started",
+    return compact({
+        "code": "session_created",
+        "status": "ok",
+        "session": session_id,
+        "agent": agent,
         # The mode the peer actually got, not the one asked for: it is clamped against this
         # session's, and a caller that cannot see the clamp cannot reason about what it made.
-        extra={"agent": agent, "permission_mode": str(record.get("permission_mode") or "")},
-    )
+        "permission_mode": str(record.get("permission_mode") or ""),
+    })
 
 
-async def _send_to_session(session: str, message: str) -> str:
+async def _send_message(session: str, message: str) -> str:
     access = _access
     if access is None:
-        return _unavailable("send_to_session_error")
+        return _unavailable("send_message_error")
     try:
-        task_id = await access.send(session, message)
+        await access.send(session, message)
     except Exception as exception:  # noqa: BLE001
         return compact({
-            "code": "send_to_session_error", "status": "error",
+            "code": "send_message_error", "status": "error",
             "session": session, "message": str(exception),
         })
-    return await _start_and_settle(session, task_id, started_code="peer_session_started", extra={})
+    return compact({"code": "message_sent", "status": "ok", "session": session})
 
 
 async def _read_session(session: str) -> str:
@@ -328,13 +254,13 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
     )
 
 
-send_to_session_tool = StructuredTool.from_function(
-    coroutine=_send_to_session,
-    name="send_to_session",
-    description=_description("send_to_session"),
+send_message_tool = StructuredTool.from_function(
+    coroutine=_send_message,
+    name="send_message",
+    description=_description("send_message"),
     args_schema=create_model(
-        "SendToSessionArguments",
-        session=(str, Field(description="The session id.")),
+        "SendMessageArguments",
+        session=(str, Field(description="The recipient session id.")),
         message=(str, Field(description="The message to send.")),
     ),
 )
@@ -399,7 +325,7 @@ def session_tools(agent_names: list[str]) -> list[BaseTool]:
         return []
     return [
         build_create_session_tool(agent_names),
-        send_to_session_tool,
+        send_message_tool,
         read_session_tool,
         list_sessions_tool,
         end_session_tool,
@@ -411,7 +337,7 @@ def remote_agent_tools() -> list[BaseTool]:
 
 
 _TOOLS_BY_NAME: dict[str, Any] = {
-    "send_to_session": send_to_session_tool,
+    "send_message": send_message_tool,
     "read_session": read_session_tool,
     "list_sessions": list_sessions_tool,
     "end_session": end_session_tool,

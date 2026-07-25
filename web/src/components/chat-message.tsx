@@ -3,7 +3,7 @@
 import { Box, Button, Flex, Separator, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
+import { LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ArtifactAnnotationRecord } from "@/lib/artifact-annotations";
 import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
@@ -201,11 +201,55 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
+// A message another session sent this one — a peer reporting its result, or a parent
+// following up. Deliberately not the user's card: it is left-aligned, labelled with the
+// session it came from, and never wears the right-aligned bubble that means "you said
+// this". Rendering it as a user message would attribute a peer's words to the person
+// watching, who did not write them.
+function PeerMessageCard({ message }: { message: ChatMessage }) {
+  const translation = useTranslations("ChatMessage");
+  const sender = message.meta?.peerSender ?? "";
+  return (
+    <Flex direction="column" alignSelf="flex-start" gap={1.5} maxW="80%" w="100%">
+      <Flex align="center" gap={1.5}>
+        <ActivityIcon><LuMessagesSquare /></ActivityIcon>
+        <Text fontSize="xs" color="fg.muted" fontWeight="medium">
+          {translation("fromPeerSession")}
+        </Text>
+        {sender && (
+          <Text fontSize="xs" color="fg.subtle" fontFamily="mono" truncate>
+            {sender}
+          </Text>
+        )}
+      </Flex>
+      {message.content.trim() && (
+        <Box
+          minW={0}
+          bg="bg.subtle"
+          borderLeft="2px solid"
+          borderColor="border.emphasized"
+          px={2.5}
+          py={1.5}
+          borderRadius="md"
+          maxW="100%"
+        >
+          <MarkdownContent content={message.content} />
+        </Box>
+      )}
+    </Flex>
+  );
+}
+
+
 export const ChatMessageItem = memo(function ChatMessageItem({ message, activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
   const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
       return <UserMessageCard message={message} />;
+    }
+
+    case "peer": {
+      return <PeerMessageCard message={message} />;
     }
 
     case "assistant": {

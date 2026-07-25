@@ -60,24 +60,12 @@ BACKGROUND_PRESENTATION: dict[str, dict[str, Any]] = {
         "completed_event": "background_web_search_completed",
         "include_result": False,
     },
-    # A peer session's turn. The result *is* included, unlike bash and search: those write
-    # their output to a file the model re-reads on its own terms, while a peer's deliverable
-    # is a message with nowhere else to live — dropping it would leave the session that
-    # asked for the work with a completion notice and no work.
-    "peer_session": {
-        "active_context_key": "pending_peer_sessions",
-        "completed_event": "peer_session_completed",
-        "include_result": True,
-    },
 }
 
 # Identifier prefix per kind, so a job id is self-describing (e.g. ``bg-…``).
 _KIND_IDENTIFIER_PREFIX: dict[str, str] = {
     "bash": "bg",
     "search_web": "search",
-    # Not `session-`: that prefix belongs to session ids themselves, and a handle a model
-    # could mistake for an address is a handle it will try to send to.
-    "peer_session": "peer",
 }
 
 

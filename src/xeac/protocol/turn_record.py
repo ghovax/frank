@@ -30,12 +30,23 @@ from pydantic import BaseModel, Field
 PENDING_INTERACTION_KEY = "pendingInteraction"
 TURN_KIND_KEY = "xeacTurnKind"
 REFERENCE_TASK_IDS_KEY = "referenceTaskIds"
+# Which session sent a peer turn's message. Carried beside the kind rather than folded into
+# it: "a peer wrote this" and "*which* peer wrote it" are different facts, and a reader that
+# wants to attribute a report needs the second one.
+PEER_SENDER_KEY = "xeacPeerSender"
 
 
 class TurnKind(StrEnum):
-    """What opened a turn: a person, a background result waking the session, or compaction."""
+    """What opened a turn: a person, another session, a background result waking this one, or
+    compaction."""
 
     USER = "user"
+    # A message from another session — a peer reporting its result, or a parent following up.
+    # Distinct from USER because it is not the user speaking, and the difference is not
+    # cosmetic: without it a peer's report reaches the model as an instruction from the person
+    # the session is working for, and reaches the desktop client as a message rendered in the
+    # user's own style, attributing words to someone who never wrote them.
+    PEER = "peer"
     AUTONOMOUS = "autonomous"
     COMPACTION = "compaction"
 
@@ -115,6 +126,10 @@ class TurnRecord(BaseModel):
     any non-turn keys the dict happens to carry."""
 
     kind: Optional[TurnKind] = None
+    # Set only on a PEER turn: the session that sent the message. Durable, because a person
+    # reading the transcript later needs to know a report came from a peer as much as one
+    # watching it arrive does.
+    peer_sender: str = ""
     pending: Optional[PendingInteraction] = None
     reference_task_ids: list[str] = Field(default_factory=list)
 
@@ -134,7 +149,9 @@ class TurnRecord(BaseModel):
         pending = PendingInteraction.model_validate(raw_pending) if isinstance(raw_pending, dict) else None
         raw_reference = data.get(REFERENCE_TASK_IDS_KEY)
         reference_task_ids = [str(item) for item in raw_reference] if isinstance(raw_reference, list) else []
-        return cls(kind=kind, pending=pending, reference_task_ids=reference_task_ids)
+        raw_sender = data.get(PEER_SENDER_KEY)
+        peer_sender = raw_sender if isinstance(raw_sender, str) else ""
+        return cls(kind=kind, peer_sender=peer_sender, pending=pending, reference_task_ids=reference_task_ids)
 
     def apply_to(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
         """A new metadata dict: a copy of ``metadata`` with the turn-state keys set to this record's
@@ -143,10 +160,12 @@ class TurnRecord(BaseModel):
         result = {
             key: value
             for key, value in (metadata or {}).items()
-            if key not in (PENDING_INTERACTION_KEY, TURN_KIND_KEY, REFERENCE_TASK_IDS_KEY)
+            if key not in (PENDING_INTERACTION_KEY, TURN_KIND_KEY, REFERENCE_TASK_IDS_KEY, PEER_SENDER_KEY)
         }
         if self.kind is not None:
             result[TURN_KIND_KEY] = str(self.kind)
+        if self.peer_sender:
+            result[PEER_SENDER_KEY] = self.peer_sender
         if self.pending is not None:
             result[PENDING_INTERACTION_KEY] = self.pending.model_dump()
         if self.reference_task_ids:

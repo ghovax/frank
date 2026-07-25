@@ -100,7 +100,8 @@
     "showMore": "もっと見る",
     "compactedTooltip": "{before, plural, other {# 件のメッセージを {after} 件に要約しました}}",
     "compactingContext": "コンテキストを要約しています…",
-    "contextCompacted": "コンテキストを要約しました"
+    "contextCompacted": "コンテキストを要約しました",
+    "fromPeerSession": "ピアセッションから"
   },
   "ChatPanel": {
     "allSessions": "すべてのセッション",
@@ -205,8 +206,8 @@
     "statusExited": "終了",
     "statusFailed": "失敗",
     "awaitingInput": "あなたの応答を待っています",
-    "showSpawnedSessions": "このセッションが起動したセッションを表示",
-    "hideSpawnedSessions": "このセッションが起動したセッションを非表示"
+    "showChildSessions": "このセッションが作成したセッションを表示",
+    "hideChildSessions": "このセッションが作成したセッションを非表示"
   },
   "PermissionOverlay": {
     "approvalNeeded": "承認が必要です",
@@ -520,7 +521,17 @@
     "controlScript": "スクリプト",
     "controlReturn": "戻り値",
     "controlActedOn": "実行した操作",
-    "controlTraceback": "トレースバック"
+    "controlTraceback": "トレースバック",
+    "peerAgent": "エージェント",
+    "peerMode": "権限",
+    "peerDirectory": "ディレクトリ",
+    "peerBrief": "指示",
+    "peerSession": "セッション",
+    "peerMessage": "メッセージ",
+    "peerStatus": "状態",
+    "peerBusy": "実行中",
+    "peerWaiting": "待機中",
+    "noPeerSessions": "ピアセッションはありません"
   },
   "ChatGPTAuthControl": {
     "signInError": "サインインを開始できませんでした。",

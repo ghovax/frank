@@ -633,6 +633,110 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+// --- Peer sessions -----------------------------------------------------------------
+//
+// The most consequential calls a session makes, and until now the least legible: they fell
+// through to the raw argument dump, so a `create_session` brief — often several paragraphs —
+// landed in the transcript as an unformatted blob.
+
+function CreateSessionCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const message = asString(args.message);
+  return (
+    <FieldList>
+      <InlineField label={translation("peerAgent")}>{asString(args.agent)}</InlineField>
+      {asString(args.permission_mode) && (
+        <InlineField label={translation("peerMode")}>{asString(args.permission_mode)}</InlineField>
+      )}
+      {asString(args.working_directory) && (
+        <InlineField label={translation("peerDirectory")}>
+          <Mono>{asString(args.working_directory)}</Mono>
+        </InlineField>
+      )}
+      {message && (
+        <Field label={translation("peerBrief")}>
+          <MarkdownContent content={message} />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function SendMessageCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const message = asString(args.message);
+  return (
+    <FieldList>
+      <InlineField label={translation("peerSession")}>
+        <Mono>{asString(args.session)}</Mono>
+      </InlineField>
+      {message && (
+        <Field label={translation("peerMessage")}>
+          <MarkdownContent content={message} />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function SessionReferenceCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const session = asString(args.session);
+  if (!session) return null;
+  return (
+    <FieldList>
+      <InlineField label={translation("peerSession")}>
+        <Mono>{session}</Mono>
+      </InlineField>
+    </FieldList>
+  );
+}
+
+// One row per session, so a listing reads as a list of peers rather than as nested JSON.
+function SessionListResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const sessions = asArray(data.sessions).map(asRecord);
+  if (sessions.length === 0) return <EmptyHint>{translation("noPeerSessions")}</EmptyHint>;
+  return (
+    <FieldList>
+      {sessions.map((session, index) => (
+        <InlineField key={index} label={asString(session.agent)}>
+          <Flex align="center" gap={1.5} wrap="wrap">
+            <Mono>{asString(session.id)}</Mono>
+            <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(session.status))]}>
+              {asString(session.status)}
+            </Pill>
+            {session.busy ? <Pill colorPalette="blue">{translation("peerBusy")}</Pill> : null}
+            {session.awaiting_input ? <Pill colorPalette="orange">{translation("peerWaiting")}</Pill> : null}
+          </Flex>
+        </InlineField>
+      ))}
+    </FieldList>
+  );
+}
+
+function SessionResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      <InlineField label={translation("peerSession")}>
+        <Mono>{asString(data.session) || asString(data.id)}</Mono>
+      </InlineField>
+      {asString(data.agent) && <InlineField label={translation("peerAgent")}>{asString(data.agent)}</InlineField>}
+      {asString(data.permission_mode) && (
+        <InlineField label={translation("peerMode")}>{asString(data.permission_mode)}</InlineField>
+      )}
+      {asString(data.status) && (
+        <InlineField label={translation("peerStatus")}>
+          <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(data.status))]}>
+            {asString(data.status)}
+          </Pill>
+        </InlineField>
+      )}
+    </FieldList>
+  );
+}
+
 export function ToolCallView({ name, args }: { name: string; args?: Record<string, unknown> }) {
   if (!args) return null;
   const specificView = (() => {
@@ -663,6 +767,13 @@ export function ToolCallView({ name, args }: { name: string; args?: Record<strin
         return <LoadSkillCallView args={args} />;
       case "ask_user":
         return <AskUserCallView args={args} />;
+      case "create_session":
+        return <CreateSessionCallView args={args} />;
+      case "send_message":
+        return <SendMessageCallView args={args} />;
+      case "read_session":
+      case "end_session":
+        return <SessionReferenceCallView args={args} />;
       default: {
         // The justification is already the collapsed heading (the tool-call title);
         // strip it so the expanded body never repeats it. MCP calls fall here too.
@@ -1995,6 +2106,13 @@ export function ToolResultView({
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;
+    if (name === "list_sessions") return <SessionListResultView data={data} />;
+    if (name === "create_session" || name === "read_session" || name === "end_session") {
+      return <SessionResultView data={data} />;
+    }
+    // `send_message` reports only that it was accepted. There is nothing to show: the reply,
+    // when there is one, arrives as its own message in the transcript.
+    if (name === "send_message") return null;
     return <GenericView data={data} />;
   }
 

@@ -114,7 +114,6 @@ class Limit(Enum):
     BASH_SYNC_WINDOW_SECONDS = (60.0, _Scale.TIMEOUT)        # bash: sync by default, long window
     SLOW_TOOL_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)   # fetch_url / download_file: short window
     WEB_SEARCH_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)  # web_search: short window
-    PEER_SYNC_WINDOW_SECONDS = (15.0, _Scale.TIMEOUT)        # a peer session's turn: short window
     AX_MESSAGING_SECONDS = (2.0, _Scale.TIMEOUT)             # per-AX-message ceiling against a hung app
     SCREENCAPTURE_SECONDS = (15.0, _Scale.TIMEOUT)
     OPEN_URL_SECONDS = (5.0, _Scale.TIMEOUT)

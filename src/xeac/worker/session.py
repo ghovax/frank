@@ -466,6 +466,10 @@ class SessionExecutor(AgentExecutor):
             project_directory=project_directory or working_directory or "",
             file_lease_manager=self._file_lease_manager,
             locations=locations,
+            # Who to answer. A session was already told another one might be waiting on its
+            # result and given no way to find out which; the return path is a message, and a
+            # message needs an address.
+            parent_session=self._parent,
         )
         stream_event_callback = self._on_stream_event
         if stream_event_callback is not None:

@@ -3,9 +3,7 @@
 from __future__ import annotations
 from fastapi import APIRouter
 from xeac.daemon.persistence.database import SessionRecord
-from fastapi import Request
 from xeac.base.paths import uploads_directory
-from sse_starlette.sse import EventSourceResponse
 import asyncio
 import re
 from xeac.protocol.dtos import (
@@ -15,7 +13,6 @@ from xeac.daemon import state
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.persistence.artifacts import _prune_session_artifacts
 from xeac.daemon.services.sessions import _abort_pending_input, _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
-from xeac.base.serialization import compact
 
 router = APIRouter()
 
@@ -68,79 +65,6 @@ async def session_task_page(context_id: str, before_row_id: int | None = None, l
         "next_before_row_id": page["next_before_row_id"],
         "has_more": page["has_more"],
     }
-
-
-@router.get("/sessions/{context_id}/stream")
-async def session_stream(context_id: str, request: Request):
-    """Live SSE stream of a session's structured parts for a non-driving viewer.
-
-    Emits one ``snapshot`` frame (the compacted transcript, same shape as
-    /sessions/{id}/tasks) then a ``live`` tail — one frame per part the turn emits,
-    in the same agent-message shape the driver's message/stream uses, so the client
-    feeds them to the same reducer. Replaces per-second polling + full re-replay
-    (O(N)/s) with O(delta) live updates.
-
-    A ``done`` frame ends the stream when the turn completes (or if it already had
-    by the time the viewer connected)."""
-    assert state.task_store is not None
-    task_store = state.task_store
-
-    async def generate():
-        # Subscribe before reading the baseline so every part published from here on
-        # lands on our queue; the snapshot then covers everything up to the baseline.
-        queue = state.event_bus.subscribe(context_id)
-        baseline = state.event_bus.high_seq(context_id)
-        try:
-            tasks = await task_store.tasks_for_context(context_id)
-            yield {"data": compact({
-                "kind": "snapshot",
-                "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
-            })}
-
-            for sequence, part in state.event_bus.agent_events_through(context_id, baseline):
-                yield {"data": compact({
-                    "kind": "live",
-                    "seq": sequence,
-                    "message": {"role": "agent", "parts": [part]},
-                })}
-
-            # Drain anything queued between subscribe and now. Events with seq <=
-            # baseline are already in the snapshot; only newer ones are sent live.
-            done = False
-            while not queue.empty():
-                item = queue.get_nowait()
-                if item is state.ContextEventBus._DONE:
-                    done = True
-                    break
-                seq, part = item
-                if seq <= baseline:
-                    continue
-                yield {"data": compact({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
-
-            if done or state._running_contexts.get(context_id, 0) == 0:
-                yield {"data": compact({"kind": "done"})}
-                return
-
-            # Live tail. The wait_for timeout lets us notice a client disconnect
-            # promptly; the library's ping keeps the connection alive between events.
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    item = await asyncio.wait_for(queue.get(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    continue
-                if item is state.ContextEventBus._DONE:
-                    yield {"data": compact({"kind": "done"})}
-                    break
-                seq, part = item
-                yield {"data": compact({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
-        except asyncio.CancelledError:
-            raise
-        finally:
-            state.event_bus.unsubscribe(context_id, queue)
-
-    return EventSourceResponse(generate(), ping=15)
 
 
 @router.delete("/sessions/{context_id}")

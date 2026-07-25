@@ -23,6 +23,8 @@ from typing import Callable, Optional
 from xeac.base.paths import session_socket_path
 from xeac.daemon.pool import WarmWorker, WorkerPool
 from xeac.daemon.registry import EXITED, FAILED, RUNNING, SessionRecord, SessionRegistry
+from xeac.daemon.state import relay_to_session
+from xeac.protocol.metadata import Metadata
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +173,43 @@ class SessionLifecycle:
             )
             # A dead parent takes its children with it, exactly as an explicit kill would.
             await self.reap(session_id, reason="parent session ended", skip_self=True)
+            # Read back rather than reused: `mark` is what put the terminal status and reason
+            # on the record, and the notice reports those.
+            ended = self._registry.get(session_id)
+            if ended is not None:
+                await self._tell_parent(ended)
         _close_watchers(session_id)
         self._unlink_socket(session_id)
         self._changed()
+
+    async def _tell_parent(self, record) -> None:
+        """Tell a session that one of its children is over.
+
+        A peer reports its own result by messaging the session that created it, which is the
+        whole return path — so a peer that crashes, is killed, or exits mid-turn leaves its
+        caller waiting for a message that will never be sent. Only the daemon can close that
+        gap, because a session cannot report its own death.
+
+        Deliberately the only message the harness writes on a session's behalf. Everything a
+        peer *can* say, it says itself; this covers exactly the case where it cannot. Best
+        effort, and quiet on failure: a parent that has itself gone is the common reason this
+        does not land, and it is not an error."""
+        parent = self._registry.get(record.parent) if record.parent else None
+        if parent is None or not parent.is_live or parent.status != RUNNING:
+            return
+        outcome = record.exit_reason or ("finished" if record.status == EXITED else record.status)
+        text = (
+            f"Session {record.id} ({record.agent}), which you created, has ended without "
+            f"reporting back: {outcome}."
+        )
+        try:
+            await relay_to_session(parent, "message/send", {
+                "id": parent.id,
+                "parts": [{"kind": "text", "text": text}],
+                "metadata": {Metadata.PEER_SENDER: record.id},
+            })
+        except Exception:  # noqa: BLE001 — a notice that cannot be delivered is not a failure
+            logger.debug("Could not tell %s that %s ended", parent.id, record.id, exc_info=True)
 
     async def reap(self, session_id: str, *, reason: str = "", skip_self: bool = False) -> int:
         """Take a session and everything under it down.
@@ -198,6 +234,11 @@ class SessionLifecycle:
             await self._stop(session_id)
             reaped += 1
         self._changed()
+        # After the stops, so the notice describes a session that is actually over. Only for
+        # the session that was asked about: a descendant's parent is inside this same subtree
+        # and is going down with it, so telling it would be writing to a corpse.
+        if not skip_self:
+            await self._tell_parent(self._registry.get(session_id) or record)
         return reaped
 
     async def _stop(self, session_id: str) -> None:

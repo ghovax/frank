@@ -327,7 +327,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         "read_task": "_tool_read_task",
         "control_screen": "_tool_control_screen",
         "create_session": "_tool_session",
-        "send_to_session": "_tool_session",
+        "send_message": "_tool_session",
         "read_session": "_tool_session",
         "list_sessions": "_tool_session",
         "end_session": "_tool_session",
@@ -348,8 +348,12 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         permission_mode: str = "",
         file_lease_manager: FileLeaseManager | None = None,
         locations: list[dict] | None = None,
+        parent_session: str = "",
     ):
         self._session_id = session_id
+        # The session that created this one, empty when a person did. Reaches the model in the
+        # turn context, because reporting back is sending it a message and that needs an id.
+        self._parent_session = parent_session
         self._agent_configuration = agent_configuration
         self._global_configuration = global_configuration
         self._on_record_event = on_record_event

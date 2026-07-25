@@ -533,7 +533,7 @@ def read_task(task_id: str = "", justification: str = Field(..., description="A 
 
     Use this to coordinate with externally supplied sibling A2A task ids: check whether a sibling has finished and read what it produced, then build on it.
 
-    This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…"), background-bash ("bg-…"), or peer-session ("peer-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_task on one and never use it to poll. To look at a peer session, use read_session; to stop one, use end_session.
+    This is NOT how you retrieve background results, and it is not how you read a peer session. A search_web ("search-…") or background-bash ("bg-…") handle is not a readable task — those results are delivered to you automatically when ready, so never call read_task on one and never use it to poll. To look at a peer session, use read_session; a peer's answer arrives on its own as a message.
 
     Arguments:
         task_id: The id of an externally supplied sibling A2A task to read.

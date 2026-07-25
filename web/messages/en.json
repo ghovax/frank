@@ -100,7 +100,8 @@
     "showMore": "Show more",
     "compactedTooltip": "{before, plural, =1 {Compacted # message down to {after}} other {Compacted # messages down to {after}}}",
     "compactingContext": "Compacting context…",
-    "contextCompacted": "Context compacted"
+    "contextCompacted": "Context compacted",
+    "fromPeerSession": "From a peer session"
   },
   "ChatPanel": {
     "allSessions": "All sessions",
@@ -205,8 +206,8 @@
     "statusExited": "Finished",
     "statusFailed": "Failed",
     "awaitingInput": "Waiting for you",
-    "showSpawnedSessions": "Show the sessions this one spawned",
-    "hideSpawnedSessions": "Hide the sessions this one spawned"
+    "showChildSessions": "Show the sessions this one created",
+    "hideChildSessions": "Hide the sessions this one created"
   },
   "PermissionOverlay": {
     "approvalNeeded": "Approval needed",
@@ -520,7 +521,17 @@
     "controlScript": "Script",
     "controlReturn": "Return value",
     "controlActedOn": "Acted on",
-    "controlTraceback": "Traceback"
+    "controlTraceback": "Traceback",
+    "peerAgent": "Agent",
+    "peerMode": "Permissions",
+    "peerDirectory": "Directory",
+    "peerBrief": "Brief",
+    "peerSession": "Session",
+    "peerMessage": "Message",
+    "peerStatus": "Status",
+    "peerBusy": "working",
+    "peerWaiting": "waiting",
+    "noPeerSessions": "No peer sessions"
   },
   "ChatGPTAuthControl": {
     "signInError": "Could not start sign-in.",

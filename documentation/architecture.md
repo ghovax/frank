@@ -40,7 +40,7 @@ flowchart LR
 
 A **session** is one OS process running one agent. It is created empty and then driven by messages over its life — creation and work are separate steps, so the same session can be sent a second task, attached to, and inspected between them.
 
-Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory. Anything holding that address can talk to it: you from the terminal, the desktop app, or another session. There is no in-process delegation — a session that needs a peer creates one through the same control plane a person's client calls, using its `create_session` tool. A child appears in `xeac ps`, can be attached to, and is reaped when its parent ends.
+Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory. Anything holding that address can talk to it: you from the terminal, the desktop app, or another session. There is no in-process delegation — a session that needs a peer creates one through the same control plane a person's client calls, using its `create_session` tool, and the peer answers by messaging it back. A child appears in `xeac ps`, can be attached to, and is reaped when its parent ends.
 
 Isolation is a property of the process. A worker is assigned exactly once and becomes that session for the rest of its life; it is never returned to the pool and never serves a second session, so there is no path by which one session's state can reach another's.
 

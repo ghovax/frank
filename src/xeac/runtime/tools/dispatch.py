@@ -1234,12 +1234,7 @@ class _ToolsMixin:
             result = await sessions.invoke(tool_name, tool_arguments, create_tool)
         finally:
             unbind_background_jobs(background_token)
-        result_data = _maybe_json(result)
-        if isinstance(result_data, dict) and result_data.get("code") == "peer_session_started":
-            # The "don't poll, you'll be woken" guidance, from a template — user-facing
-            # wording lives in prompts, not in tool code.
-            result_data["note"] = self._prompt_loader.load("peer_session_started_note", {})
-        yield ToolResult(id=tool_call_identifier, name=tool_name, result=result_data)
+        yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result))
 
 
     async def _tool_search_web(

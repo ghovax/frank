@@ -16,7 +16,7 @@ Three parts, kept apart:
 - **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what spawned what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the API does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
 - **The app** — a native macOS client (Tauri + Next.js) over the same API.
 
-Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.
+Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.
 
 ## Why own the harness
 
@@ -65,7 +65,7 @@ xeac ps                                                            # what is run
 xeac attach <id>                                                   # follow it live
 ```
 
-A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `send_to_session` follows up, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it.
+A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `send_message` reaches a session in either direction, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it, and its answer comes back as a message.
 
 The daemon starts itself on the first command. From the app:
 

@@ -2,7 +2,7 @@
 
 `xeac` is the primary way to drive XEAC. It adds nothing the API does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
 
-This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same API, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot.
+This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same API, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
 
 The daemon starts itself on your first command. There is no separate "start the service" step.
 
@@ -16,7 +16,7 @@ xeac send "$id" "what does this project do?" --wait
 xeac ps
 ```
 
-`create` prints the bare session id on stdout, which is what makes `id=$(xeac create …)` work — including from inside an agent's own `bash` tool, which is how a session creates a peer.
+`create` prints the bare session id on stdout, which is what makes `id=$(xeac create …)` work in a shell script.
 
 ## Creating a session
 

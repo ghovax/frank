@@ -92,6 +92,11 @@ class _TurnLoopMixin:
             memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
             workspace_root, is_git_repo = _detect_workspace(self._working_directory)
             context_json = compact({
+                "session": self._session_id,
+                # Present only when another session created this one. Its presence is the
+                # obligation: there is somebody waiting for an answer, and this is where to
+                # send it.
+                **({"parent_session": self._parent_session} if self._parent_session else {}),
                 "working_directory": self._working_directory,
                 "project_directory": self._project_directory,
                 "workspace_root": workspace_root,

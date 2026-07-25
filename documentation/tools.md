@@ -42,15 +42,19 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 
 | Tool | What it does |
 |------|--------------|
-| `create_session` | Create a peer session and give it work. Its `agent` argument enumerates the profiles actually installed, so an unknown name cannot be asked for. |
-| `send_to_session` | Send a peer another message. Delivered into its current turn if it is already working, rather than queued behind it. |
+| `create_session` | Create a peer session and give it work. Its `agent` argument enumerates the profiles actually installed, so an unknown name cannot be asked for. Returns as soon as the peer exists. |
+| `send_message` | Send a message to another session — one you created, or the one that created you. Delivered into its current turn if it is already working, rather than queued behind it. |
 | `read_session` | One session's state: its profile, whether its process is alive, whether a turn is in flight, whether it is waiting on a human. |
 | `list_sessions` | The sessions this one created. Its own subtree, not the machine's. |
 | `end_session` | End a peer and everything under it. |
 
 The caller is the parent, always — it is not an argument. That is what puts a peer inside the tree, inside the reaper, and under the permission clamp, so a peer can never hold authority the session that made it does not have.
 
-Waiting is not an argument either. A peer's turn gets a short window to finish inline; a longer one returns a `task_identifier` and its deliverable arrives later as its own message, so the caller ends its turn and is woken rather than holding one open.
+**A peer answers by messaging.** When it is done it calls `send_message` on the session that created it, whose id is in its context as `parent_session`, and that message lands in the caller's context the way any inbound message does. So `create_session` does not wait, there is no handle to hold, and nothing reconstructs a result: the peer decides what its answer is, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
+
+That message arrives as a **peer turn**, not a user turn. The distinction is carried on the wire (`xeacTurnKind`, plus `xeacPeerSender` naming the sender) because without it a peer's report would reach the model as an instruction from the person it works for, and would appear in the transcript as words the user never wrote.
+
+A peer that dies before reporting cannot say so, which is the one thing the harness says on its behalf: the daemon tells the parent when it reaps a child, with the child's id and why it ended.
 
 **Agents on other hosts**
 

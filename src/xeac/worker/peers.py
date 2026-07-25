@@ -18,17 +18,17 @@ went wrong.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, Optional
 
 import httpx
 
+from xeac.protocol.metadata import Metadata
+
 logger = logging.getLogger(__name__)
 
-# A peer's turn can be long. There is no deadline on waiting for one — the wait is a
-# subscription to the daemon's stream, and the stream is idle while the peer thinks, so a
-# read timeout here would abort a turn that is simply taking its time.
+# Every call here is a control-plane round trip — create, send, read, kill — and none of them
+# waits on a peer's *work*. Nothing in this module blocks on another session thinking.
 _CALL_TIMEOUT_SECONDS = 60.0
 
 
@@ -101,16 +101,18 @@ class PeerSessions:
         )
         return result.get("session") or result
 
-    async def send(self, session_id: str, text: str) -> str:
-        """Hand a peer a message and return the task id it was accepted as.
+    async def send(self, session_id: str, text: str) -> None:
+        """Hand another session a message, as a peer turn.
 
-        The id is what makes the wait that follows race-free: without it, a turn that finished
-        between the send and the subscription is indistinguishable from one that never
-        started."""
-        result = await self._call(
-            "session.send", id=session_id, parts=[{"kind": "text", "text": text}]
+        The kind matters. Without it the message arrives with `role: "user"`, and both the
+        model and the desktop client read it as the person speaking — a peer's report would be
+        attributed to the user who never wrote it."""
+        await self._call(
+            "session.send",
+            id=session_id,
+            parts=[{"kind": "text", "text": text}],
+            metadata={Metadata.PEER_SENDER: self.session_id},
         )
-        return str(result.get("task_id") or "")
 
     async def get(self, session_id: str) -> dict:
         result = await self._call("session.get", id=session_id)
@@ -134,104 +136,3 @@ class PeerSessions:
 
     async def remote_send(self, name: str, text: str) -> dict:
         return await self._call("remote.send", name=name, text=text)
-
-    async def await_result(self, session_id: str, task_id: str = "") -> dict:
-        """Block until a peer's turn ends, then return what it produced.
-
-        A subscription, not a poll. The daemon publishes a turn's start and end on the
-        session's stream; this returns on the ending edge and then reads the turn from the
-        store. The snapshot the stream opens with is sent after the subscription exists, so a
-        turn that finished in the meantime is visible there rather than waited for forever."""
-        await self._await_idle(session_id, task_id)
-        result = await self._call("session.history", id=session_id, limit=1)
-        tasks = result.get("tasks") or []
-        if not tasks:
-            return {"state": "unknown", "text": ""}
-        task = tasks[-1]
-        return {
-            "state": str(((task.get("status") or {}).get("state")) or ""),
-            "text": _deliverable(task),
-        }
-
-    async def _await_idle(self, session_id: str, task_id: str = "") -> None:
-        headers = {"Authorization": f"Bearer {self._token}"}
-        transport = httpx.AsyncHTTPTransport(uds=self._socket_path)
-        # No timeout on the stream itself: it is quiet while the peer works, and a read
-        # deadline would end the wait rather than the turn.
-        async with httpx.AsyncClient(transport=transport, timeout=None, headers=headers) as client:
-            async with client.stream("GET", f"http://daemon/sessions/{session_id}/attach") as response:
-                if response.status_code >= 400:
-                    raise PeerSessionError(f"could not watch {session_id} ({response.status_code})")
-                buffer = ""
-                async for chunk in response.aiter_text():
-                    buffer += chunk.replace("\r\n", "\n")
-                    while "\n\n" in buffer:
-                        frame, buffer = buffer.split("\n\n", 1)
-                        for line in frame.splitlines():
-                            if not line.startswith("data:"):
-                                continue
-                            try:
-                                event = json.loads(line[5:].strip())
-                            except ValueError:
-                                continue
-                            if event.get("kind") == "snapshot":
-                                # The turn may already be over. The snapshot is sent after the
-                                # subscription exists, so anything ending from here on still
-                                # reaches us — which makes reading it here a check rather than
-                                # a guess. Without this a peer that answered inside the
-                                # round-trip was waited on until it died.
-                                if _finished(event.get("tasks") or [], task_id):
-                                    return
-                            elif _is_turn_end(event) or event.get("kind") == "done":
-                                return
-
-
-# A task the peer is still driving. Anything else — completed, failed, canceled, or parked on
-# a human — will not move again on its own, which is when a waiter should be handed its answer.
-_IN_FLIGHT = frozenset({"submitted", "working"})
-
-
-def _is_turn_end(event: dict) -> bool:
-    return event.get("kind") == "turn" and not event.get("running")
-
-
-def _finished(tasks: list, task_id: str) -> bool:
-    """Whether the turn we are waiting on is already over, judged from a snapshot."""
-    if task_id and not any(task.get("id") == task_id for task in tasks):
-        # Ours has not been persisted yet. It is in flight by definition — the send was
-        # accepted — so its absence must not read as an idle peer.
-        return False
-    return not any(
-        str((task.get("status") or {}).get("state") or "") in _IN_FLIGHT for task in tasks
-    )
-
-
-def _deliverable(task: dict) -> str:
-    """What a peer produced, as prose.
-
-    The result artifact first: that is the turn's deliverable, written once when the turn
-    closes. Its final status message is the fallback, because a turn that failed or parked has
-    no artifact but still has something worth saying — and returning nothing at all would read
-    as a peer that did the work and declined to report it."""
-    for artifact in task.get("artifacts") or []:
-        if artifact.get("name") == "result":
-            text = _text_of(artifact.get("parts") or [])
-            if text:
-                return text
-    message = (task.get("status") or {}).get("message") or {}
-    return _text_of(message.get("parts") or [])
-
-
-def _text_of(parts: list) -> str:
-    collected: list[str] = []
-    for part in parts:
-        if not isinstance(part, dict):
-            continue
-        if part.get("kind") == "text" and part.get("text"):
-            collected.append(str(part["text"]))
-        data = part.get("data")
-        if isinstance(data, dict) and data.get("message"):
-            # A structured event (a failure, a permission stop) whose message is the only
-            # human-readable thing the turn left behind.
-            collected.append(str(data["message"]))
-    return "\n".join(collected).strip()

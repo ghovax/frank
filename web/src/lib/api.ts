@@ -449,7 +449,7 @@ export async function deleteLocation(locationId: string): Promise<void> {
   await apiFetch(`/locations/${encodeURIComponent(locationId)}`, { method: "DELETE" });
 }
 
-// External A2A agents (remote agents this harness can delegate to).
+// External A2A agents: peers on other hosts, reached by message rather than created here.
 
 export interface RemoteAgent {
   name: string;
@@ -1170,8 +1170,8 @@ export async function fetchHostHomeDirectory(alias: string): Promise<string> {
   }
 }
 
-// A session as the daemon's registry knows it. `parent` is the session that spawned this
-// one — a spawned agent is an ordinary session now, so the hierarchy belongs in the
+// A session as the daemon's registry knows it. `parent` is the session that created this
+// one — a peer is an ordinary session, so the hierarchy belongs in the
 // sidebar rather than in a separate agents panel. The capability token is never listed:
 // it is handed to the creator once, at `create`.
 export interface SessionSummary {
@@ -1210,7 +1210,7 @@ export async function fetchSession(sessionId: string, options?: ApiRequestOption
   }
 }
 
-// A session and everything spawned beneath it. The daemon returns the descendants flat,
+// A session and everything created beneath it. The daemon returns the descendants flat,
 // each carrying its `parent`, so a caller nests them itself rather than being handed a
 // shape it would have to flatten to search.
 export interface SessionTree {
@@ -1243,8 +1243,20 @@ export interface SessionCreateInput {
   parent?: string;
 }
 
-export async function sessionCreate(input: SessionCreateInput, options?: ApiRequestOptions): Promise<{ id: string; token: string }> {
-  return rpc<{ id: string; token: string }>("session.create", {
+// `parent` and `permissionMode` come back because either may differ from what was asked
+// for: a caller identified by its own token becomes the parent whatever it passed, and the
+// mode is clamped against that parent. A creator that cannot see the clamp cannot reason
+// about what it just made.
+export interface SessionCreated {
+  id: string;
+  token: string;
+  agent?: string;
+  parent?: string;
+  permission_mode?: PermissionMode;
+}
+
+export async function sessionCreate(input: SessionCreateInput, options?: ApiRequestOptions): Promise<SessionCreated> {
+  return rpc<SessionCreated>("session.create", {
     agent: input.agent,
     working_directory: input.workingDirectory ?? "",
     workspace_strategy: input.workspaceStrategy ?? "none",
@@ -1412,7 +1424,7 @@ export async function abortSession(sessionId: string): Promise<boolean> {
 }
 
 // Terminate a session and reap its subtree — children are sessions of their own now,
-// so killing a parent takes the work it spawned with it.
+// so killing a parent takes the work it created with it.
 export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
     await rpc("session.kill", { id: sessionId });
@@ -1582,6 +1594,14 @@ export interface A2APart {
   metadata?: Record<string, unknown>;
 }
 
+// A turn's control-state keys, as the backend stamps them onto `Task.metadata`.
+export const TURN_KIND_KEY = "xeacTurnKind";
+export const PEER_SENDER_KEY = "xeacPeerSender";
+
+// What opened a turn. `peer` is a message from another session — a peer reporting its
+// result, or a parent following up — and is emphatically not the user speaking.
+export type TurnKind = "user" | "peer" | "autonomous" | "compaction";
+
 export interface A2AMessage {
   role: "user" | "agent";
   parts: A2APart[];
@@ -1688,9 +1708,13 @@ function openEventStream(path: string, onData: (raw: string) => void): { close: 
 // frame per emitted part, then `done` when the turn ends. This is the only response
 // path — a turn is driven by `sessionSend` and observed here, whether this client sent
 // the message or another one did.
+// `turn` and `done` are different events and the difference matters: a session goes idle
+// many times over its life, and `done` is the session itself ending. A reader that conflated
+// them would either stop watching after the first turn or wait for a process to die.
 export type SessionStreamFrame =
   | { kind: "snapshot"; tasks: A2ATask[] }
   | { kind: "live"; seq: number; message: A2AMessage }
+  | { kind: "turn"; seq: number; running: boolean }
   | { kind: "done" };
 
 export function attachSession(

@@ -51,6 +51,9 @@ class Metadata:
     # on-demand compaction pass.
     AUTONOMOUS_RESUME = "autonomousResume"
     COMPACTION = "compaction"
+    # Set by a session sending another session a message. Its presence is what makes the turn
+    # a peer turn — the field carries who, and "who" and "not the user" are the same fact here.
+    PEER_SENDER = "peerSender"
 
 
 def turn_metadata(message) -> dict:

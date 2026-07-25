@@ -102,6 +102,9 @@ class _Ingested:
     metadata: dict
     autonomous: bool
     compaction: bool
+    # The session that sent this message, when another session did. Empty for a person's
+    # message and for a harness-initiated turn.
+    peer_sender: str
     permission_mode: str
     requested_working_directory: str
     requested_workspace_strategy: str
@@ -279,12 +282,14 @@ class _TurnRunner:
         self._permission_mode = str(self._metadata.get(Metadata.PERMISSION_MODE, ""))
         self._autonomous = bool(self._metadata.get(Metadata.AUTONOMOUS_RESUME))
         self._compaction = bool(self._metadata.get(Metadata.COMPACTION))
+        self._peer_sender = str(self._metadata.get(Metadata.PEER_SENDER, ""))
         return _Ingested(
             message=message,
             user_text=self._user_text,
             metadata=self._metadata,
             autonomous=self._autonomous,
             compaction=self._compaction,
+            peer_sender=self._peer_sender,
             permission_mode=self._permission_mode,
             requested_working_directory=self._requested_working_directory,
             requested_workspace_strategy=self._requested_workspace_strategy,
@@ -382,6 +387,11 @@ class _TurnRunner:
         self._turn_kind = (
             TurnKind.AUTONOMOUS if ingested.autonomous
             else TurnKind.COMPACTION if ingested.compaction
+            # A message from another session is not the user speaking. Getting this wrong is
+            # not a labelling slip: the model would read a peer's report as an instruction
+            # from the person it works for, and the transcript would show a person words they
+            # never wrote.
+            else TurnKind.PEER if ingested.peer_sender
             else TurnKind.USER
         )
         # Stamp the kind onto the task so the restart reconciliation reads a real field:
@@ -389,6 +399,7 @@ class _TurnRunner:
         # mid-execution turn are failed. Persisted with the head on the next save.
         stamped = TurnRecord.from_metadata(task.metadata)
         stamped.kind = self._turn_kind
+        stamped.peer_sender = ingested.peer_sender
         task.metadata = stamped.apply_to(task.metadata)
         parent_context = _telemetry.context_from_traceparent((ingested.message.metadata or {}).get("traceparent", ""))
         self._turn_span_context = _telemetry.span("agent.turn", {
