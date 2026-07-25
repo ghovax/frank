@@ -1,6 +1,6 @@
 ---
 created: 2026-07-25T16:06:37Z
-updated: 2026-07-25T16:06:37Z
+updated: 2026-07-25T16:22:00Z
 commit: c36b467
 ---
 
@@ -21,6 +21,23 @@ Two things have no POSIX spelling: which files a process may read and write, and
 On macOS the mechanism is `sandbox-exec` with a generated SBPL profile. It is the only per-command sandbox the platform offers, it is present on every current release, and it is what browsers and other agent harnesses use in production. It is also deprecated, and this plan treats it as deprecated rather than pretending otherwise: the module says so, the documentation says so, and replacing it is listed below as the future direction it is. Rule order in SBPL is last-match-wins, so the generator emits the permissive rules first and the denials last, and the denial list is what a reader should check when a profile behaves unexpectedly.
 
 On Linux the filesystem is Landlock, applied through `ctypes` because there is no stdlib binding, and network denial is `unshare(CLONE_NEWUSER|CLONE_NEWNET)`. Landlock is chosen over `bubblewrap` for a reason worth stating: Landlock's path-beneath rules are the same shape as the configuration, so the translation is direct, while bubblewrap's model is bind mounts, which would mean expressing "deny this subtree" as "do not bind it" and rebuilding a filesystem view rather than restricting one. It also avoids depending on an external binary being installed.
+
+## Why `sandbox-exec`, when Apple says not to
+
+The decision is to depend on it, and it is worth writing down why, because the deprecation notice is the first thing anyone reviewing this will find. On macOS the choice is binary: `sandbox-exec` is the mechanism, or there is no mechanism and the platform gets the POSIX half only — resource limits, mask, priority, a scoped environment — which is hygiene rather than a boundary. Since macOS is the platform this harness actually targets, that would mean writing a confinement design whose central promise does not apply where it runs.
+
+| Mechanism | Confines files and network | Applies to one child | Needs root | Why not |
+|---|---|---|---|---|
+| `sandbox-exec` (Seatbelt, SBPL) | Yes | Yes | No | **Chosen.** Deprecated by Apple since 10.15 |
+| App Sandbox (entitlements) | Yes | No — the whole signed application | No | Would confine the harness itself out of the user's files, which is the thing it exists to reach |
+| Endpoint Security | No — it observes | n/a | Apple-granted entitlement | An auditing interface, not a boundary |
+| A separate uid per session | Yes, through ordinary file modes | Per session | Yes, to provision | The agent could no longer read the user's repository or use their credentials — it stops acting as the user |
+| `chroot` | Partly | Yes | Yes | Same loss as above, and requires privilege the harness does not have |
+| A container | Yes | Yes | No | No access to the user's real files or logins, and it cannot drive the browser the user is signed into |
+
+The deprecation is a known risk with a bounded blast radius rather than a reason to stop. It was marked deprecated around 10.15 and has shipped and worked in every release since; Chrome's renderer sandbox is built on Seatbelt, as are other agent harnesses. If Apple removes it, the capability probe fails, confinement degrades to the `enforce` setting's chosen behaviour, and nothing else in this design changes — which is precisely why the probe and the `enforce` levels exist rather than being an afterthought.
+
+This reasoning belongs in the shipped documentation too, not only here. A person reading `configuration.md` and finding that their agent harness depends on a deprecated Apple interface deserves to find the alternatives and their costs in the same place, rather than concluding it was chosen carelessly.
 
 ## Confinement belongs to the session
 
@@ -88,6 +105,7 @@ sandbox:
 | 14 | Replace `sandbox_enabled` in the settings DTO and route | `protocol/dtos.py:137`, `rest/routes/settings.py` | The desktop app never rendered a toggle, so this is API-only |
 | 15 | Session `public()` gains the resolved profile; regenerate the event schema | `daemon/registry.py`, `web/src/lib/generated/` | `check:events` diffs them; a protocol change without a regenerate fails |
 | 16 | Rewrite `configuration.md:85` and `SECURITY.md:21`; add the model to `architecture.md` | `documentation/`, `SECURITY.md` | Both currently assert enforcement that does not exist |
+| 17 | Carry the mechanism table above into `SECURITY.md`, and name the `sandbox-exec` dependency and its deprecation in `configuration.md` | `SECURITY.md`, `documentation/configuration.md` | Someone discovering the dependency should find the alternatives and their costs in the same place, not conclude it was chosen carelessly |
 
 ## What is deliberately not changing
 
@@ -105,6 +123,6 @@ These are known gaps, listed because a design that pretends to have none is the 
 
 **Credentials stay readable, so exfiltration is not closed.** `~/.ssh` and its neighbours are in the default allowlist because the tools that need them must keep working. That means a session that is compromised, or merely careless, can still read a private key and send it somewhere the network policy allows. Read confinement here buys protection of personal data, not of secrets. Closing it properly means something other than filesystem ACLs — an agent that can `git push` without holding the key, through an ssh-agent socket or a credential helper that signs rather than reveals — and that is a different piece of work with its own design.
 
-**`sandbox-exec` is deprecated and this depends on it.** Apple has marked it so since 10.15 and could remove it in any release. There is no supported per-process replacement: App Sandbox confines a whole application rather than one child, and using it would confine the harness itself out of the file access it exists to provide. The plan is to depend on it, say so where it is defined, and replace it if and when Apple ships something per-process.
+**`sandbox-exec` is deprecated and this depends on it.** The alternatives and why each was rejected are recorded above; the short version is that nothing else on macOS confines a single child without either taking privileges the harness does not have or taking away the user's own files, which is what the harness is for. The plan is to depend on it, say so where it is defined and in the shipped documentation, and replace it if and when Apple ships something per-process. Verifying it still works on the target machine — `sandbox-exec -p '(version 1)(allow default)' /bin/echo ok` — is the first step of implementing this, because everything in row 3 rests on it and none of it can be tested from a Linux host.
 
 **`enforce: required` makes the harness refuse to run where no backend exists.** On Linux that means a kernel without Landlock — older than 5.13 — cannot create sessions at all until the operator sets `preferred`. That is the intended behaviour and it is still a sharp edge, and the refusal message has to be good enough that the fix is obvious from it alone.
