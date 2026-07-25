@@ -1318,8 +1318,13 @@ class _ToolsMixin:
         control_message = message_loader("control")
         known_ids: dict[str, dict[str, str]] = {}   # id -> {id, name, role, context}, from find_* results
         acted_on: list[dict[str, str]] = []
-        mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
-        targeting_verbs = mutating_verbs | frozenset({"read", "hover", "scroll"})
+        # Not the permission classifier's mutating set, though it currently reads the same. This one
+        # answers a narrower question: which verbs take an *element* as their first argument and
+        # change it — those get unique-or-raise resolution and a line in `acted_on`. `evaluate`,
+        # `navigate` and the tab verbs change state without naming an element, so they belong in the
+        # classifier's set and not in this one.
+        element_mutating_verbs = frozenset({"click", "type", "choose", "upload", "drag"})
+        targeting_verbs = element_mutating_verbs | frozenset({"read", "hover", "scroll"})
 
         def _rank(query: str, limit: int, everything: bool) -> list:
             raw = surface.documents(app) if surface_name == "computer" else surface.documents()
@@ -1384,7 +1389,7 @@ class _ToolsMixin:
                 return [target["id"], *args[1:]]
             if not isinstance(target, str) or target in known_ids:
                 return args
-            if verb in mutating_verbs:
+            if verb in element_mutating_verbs:
                 resolved = find_one(target)["id"]  # unique-or-raise
             else:  # read / hover / scroll: a wrong non-mutating target is self-correcting, so top-1
                 hits = _rank(target, 1, False)
@@ -1407,7 +1412,7 @@ class _ToolsMixin:
                 if outcome.get("ok") is False:
                     # Surface a primitive failure into the script as a raised error it can try/except.
                     raise RuntimeError(outcome.get("error", f"{name} failed"))
-                if name in mutating_verbs and args and isinstance(args[0], str):
+                if name in element_mutating_verbs and args and isinstance(args[0], str):
                     acted_on.append({"action": name, **known_ids.get(args[0], {"id": args[0]})})
                 # Hand the script the useful value directly: evaluate's result or read's text is the
                 # value itself (structured and queryable), an action is its confirmation minus `ok`.

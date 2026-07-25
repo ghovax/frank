@@ -35,6 +35,7 @@ _PRIMITIVES = (
     "find_one", "find_many",
     "click", "type", "press", "hover", "scroll", "choose", "upload",
     "drag", "select", "caret", "read", "evaluate", "navigate",
+    "tabs", "tab", "new_tab", "close_tab", "frames",
 )
 
 # The request/reply pipes to the parent, opened in ``main`` so importing this module (it never

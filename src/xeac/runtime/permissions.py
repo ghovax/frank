@@ -20,9 +20,24 @@ import uuid
 from xeac.base.serialization import compact
 
 # The state-changing control_screen primitives. A script that calls any of them is mutating; one that
-# only reads (find_one/find_many/read/hover/scroll) is read-only. This is the structural analogue of
-# the bash read-only assessment — a scan of the primitive names the script calls, not a regex.
-_MUTATING_SCREEN_PRIMITIVES = frozenset({"click", "type", "choose", "upload", "drag"})
+# only reads (find_one/find_many/read/hover/scroll/tabs/tab/frames) is read-only. This is the
+# structural analogue of the bash read-only assessment — a scan of the primitive names the script
+# calls, not a regex.
+#
+# `evaluate` belongs here and was missing, which meant a script whose only act was running arbitrary
+# JavaScript inside the user's signed-in page classified read-only: it passed a read-only policy and,
+# at `risk: low`, raised no gate at all. `press` is here for the reason the tool's own description
+# gives — `press("Enter")` posts a form. `navigate` is here because on a great many sites a URL is a
+# command rather than an address (`/logout`, `/unsubscribe?token=…`, `/items/12/delete`), and nothing
+# reading primitive names can tell those from a page worth reading.
+#
+# Switching tabs and listing tabs or frames are reads, and stay out: moving attention to a tab the
+# user already had open changes nothing about it.
+_MUTATING_SCREEN_PRIMITIVES = frozenset({
+    "click", "type", "choose", "upload", "drag",
+    "evaluate", "press", "navigate",
+    "new_tab", "close_tab",
+})
 
 
 def _control_script_assessment(script: str) -> tuple[str, str]:

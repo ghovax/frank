@@ -105,6 +105,10 @@ class Limit(Enum):
     DRAG_TIMEOUT_MS = (8_000, _Scale.TIMEOUT)
     SCREENSHOT_TIMEOUT_MS = (20_000, _Scale.TIMEOUT)
     READ_TEXT_TIMEOUT_MS = (10_000, _Scale.TIMEOUT)
+    # Resolving a frame id to its live frame. Deliberately far below the action timeout: a stale
+    # aria-ref does not error, it waits, and `frames()` resolves every iframe it found — so one that
+    # has gone would otherwise hold up the whole listing.
+    FRAME_RESOLVE_TIMEOUT_MS = (2_000, _Scale.TIMEOUT)
     SIGTERM_GRACE_SECONDS = (2.0, _Scale.TIMEOUT)            # after SIGTERM, before SIGKILL, on cancel
     RIPGREP_SECONDS = (30.0, _Scale.TIMEOUT)
     # How long a backgroundable tool waits inline before it hands the work to the background

@@ -72,6 +72,10 @@ XEAC drives the live screen — native macOS apps and **your own Chrome** — th
 
 **Acting — a composed script of trusted-input primitives.** The same script drives the elements a find returned (by `id`, or by a query resolved the same way) with **trusted input** — click, type, scroll, `evaluate`, and the like. Because it is ordinary Python, a whole task — loop over rows, branch on what you find, call the page's own API in one line — is a single call, not a round trip per action. On the browser, `evaluate` can **replay the page's own authenticated API in-page**, reusing the logged-in session instead of re-authenticating. Actions run against the real surface (browser clicks go through Playwright's actionability checks), and the result reports what each action touched (`acted_on`) so the agent sees what changed.
 
+**Tabs.** The browser has more than one page and the script chooses which one it is on: `tabs()` lists every open tab as `{id, title, url, active}`, `tab(id)` switches to one and brings it to the front, `new_tab(url)` opens one and returns its id, and `close_tab(id)` closes it. The listing covers **all** of your tabs, not only the ones the agent opened — filtering it would make the ordinary request ("the invoice in my other tab") impossible to serve, and the tool is already driving that browser with your logins. Nothing stops an agent closing a tab it did not open, either; what it has instead is an instruction, in the tool description, that these are your working state and that closing one can lose a half-filled form with no undo.
+
+**Frames.** An `iframe` is its own document with its own origin and its own session — the embedded checkout, the OAuth consent screen, the document viewer. Element ids are already frame-scoped, so `f1e3` is the third element of frame `f1` and clicking or typing into it needs no extra step. `frames()` lists them as `{id, url, name, parent, element}`, and `evaluate(..., frame="f1")` and `read(frame="f1")` run **inside** that document, which is the only way to reach one through the credentials it actually holds.
+
 Because XEAC attaches to **the Chrome you already use** — your real logins and sessions, not a throwaway profile — it only ever *connects* to the browser: it never launches, quits, or copies it.
 
 XEAC reads structure, not pixels: there is no screenshot path for computer use. A surface that is drawn rather than structured (a canvas, WebGL) exposes nothing to find — a structured visual fallback is planned but not yet built (see [the plan](plans/visual-fallback.md)).
@@ -84,6 +88,8 @@ XEAC reads structure, not pixels: there is no screenshot path for computer use. 
 
 > [!NOTE]
 > Typing fills a field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
+
+**What counts as changing something.** The permission classifier reads the script and decides whether it only looks or also acts, by scanning for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side because it runs arbitrary JavaScript in a page you are signed in to, and `navigate` because on a great many sites a URL *is* a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` — and nothing that reads primitive names can tell those from a page worth reading. In an ordinary session a script that acts is examined rather than blocked; in a [read-only session](configuration.md#execution-and-permissions) it is refused outright.
 
 ## Where the definitions live
 

@@ -141,6 +141,10 @@ class _Session:
         self._websocket_counter = count(1)
         # Dialogs auto-handled and downloads captured since the last result, drained into it.
         self.events: deque[dict] = deque(maxlen=8)
+        # Frame id (``f1``) → the aria-ref of the ``iframe`` element that owns it, read out of the
+        # last snapshot. The snapshot states this ownership itself, so it is recorded rather than
+        # inferred from the order Playwright happens to list frames in.
+        self.frame_owners: dict[str, str] = {}
 
     def tab_id(self, page) -> str:
         if page not in self.tab_ids:
@@ -148,6 +152,29 @@ class _Session:
             self.tab_ids[page] = identifier
             self.pages_by_id[identifier] = page
         return self.tab_ids[page]
+
+    def forget(self, page) -> None:
+        """Drop a closed page from both directions of the registry."""
+        identifier = self.tab_ids.pop(page, None)
+        if identifier is not None:
+            self.pages_by_id.pop(identifier, None)
+
+    def live_pages(self) -> list:
+        """The tabs still open, in the browser's own order, pruning the registry as it goes.
+
+        Nothing removed a closed page before this existed, so both dictionaries grew for the life
+        of the connection and every id they held had to be treated as a maybe."""
+        for page in list(self.tab_ids):
+            if page.is_closed():
+                self.forget(page)
+        pages = [page for page in self.context.pages if not page.is_closed()]
+        for page in pages:
+            # Should already be covered — every page is adopted at connect or by the context's
+            # `page` event. A tab that slipped through gets adopted rather than merely numbered, so
+            # it is never listed as reachable while its dialogs would freeze it unanswered.
+            if page not in self.tab_ids:
+                self.adopt(page)
+        return pages
 
     def adopt(self, page) -> None:
         """Track a page and wire its dialog/download/network handling. Dialogs are answered
@@ -266,6 +293,10 @@ _SURFACED_FLAGS = ("checked", "disabled", "expanded", "selected", "pressed", "ac
 _SNAPSHOT_LINE = re.compile(r"^(\s*)-\s+(?P<head>[^\s\[\":]+)(?P<rest>.*)$")
 _SNAPSHOT_NAME = re.compile(r'"((?:[^"\\]|\\.)*)"')
 _SNAPSHOT_ATTRS = re.compile(r"\[([a-zA-Z-]+)(?:=([^\]]*))?\]")
+# An aria-ref inside an iframe is prefixed with the frame it belongs to: ``f1e3`` is the third
+# element of the first frame. The prefix is Playwright's, and it is reused as the frame's id rather
+# than being paired with a second numbering of our own, which would only ever drift from it.
+_FRAME_PREFIX = re.compile(r"^(f\d+)e\d+$")
 
 _LIVE_REGION_ROLES = frozenset({"alert", "status"})
 _STRUCTURAL_ROLES = frozenset({
@@ -276,13 +307,27 @@ _STRUCTURAL_ROLES = frozenset({
 _LABEL_ROLES = _STRUCTURAL_ROLES | frozenset({"heading", "link"})
 
 
-def _parse_snapshot(snapshot: str) -> list[Element]:
+def _frame_of(reference: Optional[str]) -> str:
+    """The frame an aria-ref belongs to (``f1e3`` → ``f1``), or ``""`` for the main document."""
+    match = _FRAME_PREFIX.match(reference or "")
+    return match.group(1) if match else ""
+
+
+def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
     """Parse the ai-mode aria snapshot (YAML-shaped, one node per line, ``[ref=...]`` markers,
     iframe contents inlined with frame-scoped refs) into shared ``Element`` objects, each carrying
     its aria-ref as ``token`` and the ``context`` of its nearest labelling ancestor. Every element
-    is kept — a ``find`` ranks the whole surface, so nothing is capped or budgeted out."""
+    is kept — a ``find`` ranks the whole surface, so nothing is capped or budgeted out.
+
+    Also returns the frame ownership the snapshot states: contents of the first iframe are numbered
+    ``f1…``, the second ``f2…``, and each frame's nodes are indented under the ``iframe`` element
+    that holds them — so the innermost open iframe at the moment a new frame prefix first appears is
+    the element that owns it. This is read rather than inferred because the alternative, matching
+    ``page.frames`` order against prefix order, is an assumption about two orderings agreeing."""
     elements: list[Element] = []
     labels: dict[int, str] = {}
+    frame_owners: dict[str, str] = {}
+    open_iframes: list[tuple[int, str]] = []   # (depth, the iframe element's own ref)
     for line in snapshot.splitlines():
         match = _SNAPSHOT_LINE.match(line)
         if match is None:
@@ -308,6 +353,16 @@ def _parse_snapshot(snapshot: str) -> list[Element]:
             labels[depth] = name
 
         reference = attributes.get("ref") or None
+        # Frame bookkeeping runs before the filter below, because an ``iframe`` node carries no
+        # name, no value and no pointer cursor, so it is exactly the kind of node that filter drops.
+        while open_iframes and open_iframes[-1][0] >= depth:
+            open_iframes.pop()
+        frame = _frame_of(reference)
+        if frame and frame not in frame_owners:
+            frame_owners[frame] = open_iframes[-1][1] if open_iframes else ""
+        if role == "iframe" and reference:
+            open_iframes.append((depth, reference))
+
         clickable = role in _INTERACTIVE_ROLES or attributes.get("cursor") == "pointer"
         if not (name or value or clickable):
             continue
@@ -316,7 +371,7 @@ def _parse_snapshot(snapshot: str) -> list[Element]:
             if flag in attributes:
                 element.flags[flag] = attributes[flag] if attributes[flag] else True
         elements.append(element)
-    return elements
+    return elements, frame_owners
 
 
 def _snapshot(page) -> str:
@@ -348,7 +403,7 @@ def _element_signature(page) -> int:
     """A cheap signature of what is on the page (its element count) — fed to ``settle`` so an action
     that reveals content is waited out until the count stops changing, not a blind fixed sleep."""
     try:
-        return len(_parse_snapshot(_snapshot(page)))
+        return len(_parse_snapshot(_snapshot(page))[0])
     except Exception:
         return -1
 
@@ -491,9 +546,14 @@ class WebSurface(Surface):
         self.worker.stop()
 
     def _locator(self, page, ref: Optional[str]):
-        """The Playwright locator for an element id from a recent search. The id is Playwright's own
-        aria-ref, valid until the next snapshot on the page; a locator whose element has since left
-        surfaces as an ordinary action failure, which is the cue to search again."""
+        """The Playwright locator for an element id from a recent search.
+
+        The id is Playwright's own aria-ref, and it survives re-reading: snapshotting an unchanged
+        page yields the same refs, and new content is numbered around what is already there rather
+        than renumbering it. A ref for an element that has *left* the page does not fail fast — the
+        selector simply matches nothing and waits out the context's action timeout, which is right
+        for an action whose target may be about to appear and wrong for anything enumerating, so a
+        caller that is listing rather than acting passes a shorter timeout of its own."""
         if not ref:
             raise ToolFailure({"ok": False, "error": "This action needs an element id from a find (find_one or find_many)."})
         return page.locator(f"aria-ref={ref}")
@@ -503,6 +563,35 @@ class WebSurface(Surface):
             return locator.input_value()
         except Exception:
             return locator.text_content() or ""
+
+    def _frame(self, session: _Session, page, identifier: str):
+        """The live Playwright ``Frame`` a frame id names.
+
+        Resolved through the ``iframe`` element the snapshot said owns it, rather than by indexing
+        ``page.frames`` — the snapshot states the ownership, and matching two orderings would be a
+        guess that happens to be right most of the time."""
+        if not session.frame_owners:
+            _, session.frame_owners = _parse_snapshot(_snapshot(page))
+        element_ref = session.frame_owners.get(identifier)
+        if element_ref is None:
+            known = ", ".join(sorted(session.frame_owners)) or "none"
+            raise ToolFailure({"ok": False, "error": f"No frame {identifier!r} on this page (frames here: {known}). Call frames() for what is there."})
+        if not element_ref:
+            return page.main_frame
+        frame = None
+        try:
+            handle = page.locator(f"aria-ref={element_ref}").element_handle(
+                timeout=active_tuning().amount(Limit.FRAME_RESOLVE_TIMEOUT_MS)
+            )
+            frame = handle.content_frame() if handle is not None else None
+        except Exception:
+            frame = None
+        if frame is None:
+            raise ToolFailure({"ok": False, "error": f"Frame {identifier!r} is no longer on the page. Read the page again to get current frames."})
+        return frame
+
+    def _frame_or_page(self, session: _Session, page, identifier: str):
+        return self._frame(session, page, identifier) if identifier else page
 
     # Perceiving — find.
 
@@ -515,9 +604,15 @@ class WebSurface(Surface):
             session = self.session(browser)
             page = self.page(session)
             documents: list[Document] = []
-            for element in _parse_snapshot(_snapshot(page)):
+            elements, session.frame_owners = _parse_snapshot(_snapshot(page))
+            for element in elements:
                 text = element_text(name=element.name, value=element.value, context=element.context)
                 payload: dict[str, Any] = {"role": element.role}
+                # Which frame the element sits in, so a model meeting `f1e3` for the first time is
+                # not left to guess what `f1` is or to spend a call asking.
+                frame = _frame_of(element.token if isinstance(element.token, str) else None)
+                if frame:
+                    payload["frame"] = frame
                 if element.name:
                     payload["name"] = element.name
                 if isinstance(element.value, str):
@@ -728,25 +823,31 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_read(self, ref: Optional[str] = None, **_: Any) -> dict:
+    def _primitive_read(self, ref: Optional[str] = None, *, frame: str = "", **_: Any) -> dict:
         def run() -> dict:
-            _, page = self._live()
+            session, page = self._live()
+            timeout = active_tuning().amount(Limit.READ_TEXT_TIMEOUT_MS)
             if ref is not None:
-                source = self._locator(page, ref).inner_text(timeout=active_tuning().amount(Limit.READ_TEXT_TIMEOUT_MS))
+                # An element id already names its own frame, so `frame` adds nothing here.
+                source = self._locator(page, ref).inner_text(timeout=timeout)
             else:
-                source = page.inner_text("body", timeout=active_tuning().amount(Limit.READ_TEXT_TIMEOUT_MS))
+                source = self._frame_or_page(session, page, frame).inner_text("body", timeout=timeout)
             return {"ok": True, "text": _clean_page_text(source), "url": _safe_url(page)}
 
         return self.guard(run)
 
-    def _primitive_evaluate(self, expression: str, argument: Any = None, **_: Any) -> dict:
+    def _primitive_evaluate(self, expression: str, argument: Any = None, *, frame: str = "", **_: Any) -> dict:
         def run() -> dict:
-            _, page = self._live()
+            session, page = self._live()
             expression_text = expression.strip()
             if not expression_text:
                 return {"ok": False, "error": "evaluate needs a JavaScript expression to run."}
+            # A frame is its own origin with its own session. Running in one is what lets the
+            # embedded checkout, consent screen or document viewer be scripted through the
+            # credentials it actually holds, instead of the top document's.
+            target = self._frame_or_page(session, page, frame)
             try:
-                value = page.evaluate(expression_text, argument)
+                value = target.evaluate(expression_text, argument)
             except Exception as error:
                 return {"ok": False, "error": f"Evaluation failed: {str(error).splitlines()[0]}"}
             # Playwright already deserialized the JS result into native Python; return it as-is and
@@ -756,15 +857,115 @@ class WebSurface(Surface):
 
         return self.guard(run)
 
-    def _primitive_navigate(self, url: str = "", *, history: str = "", new_tab: bool = False, browser: str = "chrome", **_: Any) -> dict:
+    # Tabs and frames — the browser's own structure, named.
+
+    def _primitive_tabs(self, **_: Any) -> dict:
+        def run() -> dict:
+            session = self.session()
+            active = self.page(session)
+            return {"ok": True, "tabs": [
+                {
+                    "id": session.tab_id(page), "title": _safe_title(page),
+                    "url": _safe_url(page), "active": page is active,
+                }
+                for page in session.live_pages()
+            ]}
+
+        return self.guard(run)
+
+    def _primitive_tab(self, tab: str, **_: Any) -> dict:
+        def run() -> dict:
+            session = self.session()
+            session.live_pages()
+            page = session.pages_by_id.get(tab)
+            if page is None or page.is_closed():
+                raise ToolFailure({"ok": False, "error": f"No open tab {tab!r}. Call tabs() for what is there."})
+            session.page = page
+            # Raises the window on the user's own screen. That is the point: this tool acts as the
+            # user, and a tab being driven invisibly behind the one they are looking at would be
+            # the surprising behaviour, not this.
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            return {"ok": True, "did": f"Switched to {tab}", "url": _safe_url(page), "title": _safe_title(page)}
+
+        return self.guard(run)
+
+    def _primitive_new_tab(self, url: str = "", **_: Any) -> dict:
+        def run() -> dict:
+            session = self.session()
+            page = session.context.new_page()
+            # `context.on("page", adopt)` normally gets there first; adopting twice would double
+            # every dialog, download and response handler on the page, so this only covers the case
+            # where it did not.
+            if page not in session.tab_ids:
+                session.adopt(page)
+            session.page = page
+            if url:
+                try:
+                    page.goto(url, wait_until="domcontentloaded")
+                except Exception:
+                    pass  # a busy SPA may still be usable; the next read decides what is there
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            identifier = session.tab_id(page)
+            return {"ok": True, "did": f"Opened {identifier}", "id": identifier,
+                    "url": _safe_url(page), "title": _safe_title(page)}
+
+        return self.guard(run)
+
+    def _primitive_close_tab(self, tab: str = "", **_: Any) -> dict:
+        def run() -> dict:
+            session = self.session()
+            session.live_pages()
+            page = session.pages_by_id.get(tab) if tab else self.page(session)
+            if page is None or page.is_closed():
+                raise ToolFailure({"ok": False, "error": f"No open tab {tab!r}. Call tabs() for what is there."})
+            identifier = session.tab_ids.get(page, tab)
+            was_active = page is session.page
+            page.close()
+            session.forget(page)
+            if was_active:
+                # Left for `page()` to heal on next use rather than picked here, so closing a tab
+                # never has opening one as a side effect.
+                session.page = None
+            return {"ok": True, "did": f"Closed {identifier}"}
+
+        return self.guard(run)
+
+    def _primitive_frames(self, **_: Any) -> dict:
+        def run() -> dict:
+            session, page = self._live()
+            _, session.frame_owners = _parse_snapshot(_snapshot(page))
+            listing: list[dict] = []
+            for identifier in sorted(session.frame_owners, key=lambda name: int(name[1:])):
+                element_ref = session.frame_owners[identifier]
+                record: dict[str, Any] = {"id": identifier, "element": element_ref,
+                                          "parent": _frame_of(element_ref)}
+                try:
+                    frame = self._frame(session, page, identifier)
+                except ToolFailure:
+                    # One iframe that has gone must not cost the listing; a dead ref does not error,
+                    # it waits out its timeout, which is why this one is short.
+                    record["unavailable"] = True
+                else:
+                    record["url"] = frame.url
+                    if frame.name:
+                        record["name"] = frame.name
+                listing.append(record)
+            return {"ok": True, "frames": listing}
+
+        return self.guard(run)
+
+    def _primitive_navigate(self, url: str = "", *, history: str = "", browser: str = "chrome", **_: Any) -> dict:
+        # Opening a tab is not a way of navigating, so it is `new_tab` that does it and says what it
+        # made. This used to carry a `new_tab` flag that created a page and told the caller nothing.
         def run() -> dict:
             session = self.session(browser)
-            if new_tab:
-                page = session.context.new_page()
-                session.page = page
-                page.bring_to_front()
-            else:
-                page = self.page(session)
+            page = self.page(session)
             try:
                 if history == "back":
                     page.go_back(wait_until="domcontentloaded")
