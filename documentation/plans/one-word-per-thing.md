@@ -1,7 +1,7 @@
 ---
 created: 2026-07-25T09:35:00Z
-updated: 2026-07-25T10:32:00Z
-commit: 7c1a8bd
+updated: 2026-07-25T10:40:00Z
+commit: 881f6c2
 ---
 
 # One Word Per Thing
@@ -44,7 +44,7 @@ A **peer** is another session on this machine that you can address — the one t
 
 "The API" names three surfaces depending on the sentence: the daemon's `/rpc` control plane, the `rest/` HTTP surface the desktop client uses, and a session's own A2A socket. They get their names used — **control plane**, **GUI surface**, **session socket** — and "the API" stops being a term.
 
-`agent` alone always means the profile. A running thing is a session. "Remote agent" stays a compound proper noun for the external case, and `send_to_remote_agent` keeps its asymmetry with `send_message` deliberately: a remote agent runs on someone else's machine at their cost, and a caller should never be unsure which side of the wire its work went to. That asymmetry is currently just a fact of the code; it becomes a stated one.
+`agent` alone always means the profile. A running thing is a session. "Remote agent" stays a compound proper noun for the external case, and it is the *noun* that carries the distinction: a remote agent runs on someone else's machine at their cost, and a caller should never be unsure which side of the wire its work went to. Since the noun already says it, the verb does not have to — `message_session` and `message_remote_agent` share one, and the difference lives where it is actually visible.
 
 ## The harness's name, and where it belongs
 
