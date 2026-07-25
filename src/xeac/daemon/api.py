@@ -505,9 +505,10 @@ async def rpc(request: Request) -> JSONResponse:
     handler = METHODS.get(method)
     if handler is None:
         return JSONResponse({"error": {"code": "no_such_method", "message": f"Unknown method {method!r}."}}, status_code=404)
-    # Who is calling, when the token said so. A session's own token identifies it; the daemon
-    # token does not, and leaves this empty. Overwriting rather than merging is the point: a
-    # caller must not be able to name itself something other than what its token proves.
+    # Who is calling, according to the kernel and the token — never according to the body. The
+    # key is stripped before anything reads it, so `calling_session` inside a handler can only
+    # ever be what the middleware put there; a caller cannot name itself.
+    params.pop("calling_session", None)
     caller = getattr(request.state, "calling_session", "")
     if caller:
         refusal = _refuse_session_caller(caller, method, params)

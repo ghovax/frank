@@ -4,6 +4,8 @@
 
 This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same control plane, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
 
+That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `xeac` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `xeac ps` from inside a session comes back `403 forbidden` — `xeac tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
+
 The daemon starts itself on your first command. There is no separate "start the service" step.
 
 ## The shape of it

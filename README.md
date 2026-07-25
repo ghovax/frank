@@ -82,7 +82,7 @@ The screen-control tools need a one-time Accessibility grant and Chrome's remote
 
 XEAC follows the XDG convention rather than a single dot-directory: configuration in `~/.config/xeac`, durable state in `~/.local/share/xeac`, sockets in the runtime directory (which the OS clears on logout, so a crashed daemon leaves nothing behind), logs in `~/.local/state/xeac`, and caches in `~/.cache/xeac`.
 
-Sessions are reachable only by whoever holds their handle: `create` mints a capability token, and every call to a session's socket must present it. The daemon's own API is guarded the same way, by a token it writes 0600 into the runtime directory.
+Sessions are reachable only by whoever holds their handle: `create` mints a capability token, and every call to a session's socket must present it. The daemon's own API is guarded the same way, by a token it writes 0600 into the runtime directory. *Which* session is calling is not left to that token, though — a session runs as the same user and could read the file. On the unix socket the daemon asks the kernel for the peer's pid and resolves it to a session through the process session every worker leads, so a call is attributed to whoever actually made it.
 
 > [!NOTE]
 > A session's permission mode is fixed when it is created and cannot be changed afterwards, and a child is clamped to no looser a mode than its parent. There is no bypass mode and no standing "always allow" — the only runtime decisions are allow-once and deny. See the [Security notes](SECURITY.md).

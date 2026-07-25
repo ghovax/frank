@@ -104,14 +104,20 @@ async def bash(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
+            # A new process *group*, not a new process session. The group is what `killpg`
+            # needs to reap the whole subtree, and it is all that was ever wanted here — but
+            # `start_new_session` also detached the shell from the worker's process session,
+            # which is how the daemon recognises a caller on its socket as this session. A
+            # command that had left the session could hold the daemon's token and create peers
+            # outside the tree; staying in the session is what makes it attributable.
+            process_group=0,
         )
         process_holder["process"] = process
         process_id = process.pid
-        # start_new_session=True makes this shell a session/group leader, so its
-        # pgid == pid and killpg reaps the whole subtree. Persist the group id so a
-        # crash-orphaned subtree (survived a SIGKILL of the server) is reaped on the
-        # next startup. No-op UPDATE when the job is not durably tracked (no context).
+        # `process_group=0` puts the shell in its own group with pgid == pid, so killpg reaps
+        # the whole subtree. Persist the group id so a crash-orphaned subtree (survived a
+        # SIGKILL of the server) is reaped on the next startup. No-op UPDATE when the job is
+        # not durably tracked (no context).
         try:
             get_background_job_store().record_process_group(job_id, os.getpgid(process_id))
         except (ProcessLookupError, OSError):

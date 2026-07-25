@@ -188,6 +188,7 @@ def build_app() -> FastAPI:
     from xeac.daemon.api import RpcError
     from xeac.daemon.api import router as control_router
     from xeac.daemon.ingest import router as ingest_router
+    from xeac.daemon.peer_identity import calling_session
     from xeac.rest.app import mount as mount_gui_routes
 
     app = FastAPI(title="xeacd")
@@ -226,10 +227,17 @@ def build_app() -> FastAPI:
             header[len("Bearer "):] if header.startswith("Bearer ")
             else request.query_params.get("token", "")
         )
+        # Who the *kernel* says is calling, which no token can contradict. A session's own
+        # shell can read the daemon's 0600 token file — same user, same machine — so a token
+        # alone could never establish that a caller was not a session. This can.
+        peer_session = calling_session(request.scope)
+
         if presented and secrets.compare_digest(presented, state.daemon_token):
-            # The daemon token: a human's client, or a worker's persistence channel. It says
-            # "you may drive this daemon" and nothing about who is asking.
-            request.state.calling_session = ""
+            # The daemon token says "you may drive this daemon" and nothing about who is
+            # asking — so a caller the kernel identified as a session is still that session,
+            # holding this token or not. That is what closes the escape hatch: reading the
+            # token buys a session no anonymity.
+            request.state.calling_session = peer_session or ""
             return await call_next(request)
         # A session's own token identifies *which* session is calling, which the daemon token
         # cannot. That attribution is what lets a session's control-plane calls be attributed
@@ -238,7 +246,9 @@ def build_app() -> FastAPI:
         caller = state.registry.session_for_token(presented) if (presented and state.registry) else None
         if caller is None:
             return JSONResponse({"error": {"code": "unauthorized", "message": "Bad or missing token."}}, status_code=401)
-        request.state.calling_session = caller.id
+        # The kernel's answer wins over the token's when both are available: a session holding
+        # another session's token is still itself.
+        request.state.calling_session = peer_session or caller.id
         return await call_next(request)
 
     @app.get("/health")
@@ -260,6 +270,7 @@ async def _serve() -> int:
     from xeac.daemon import state
     from xeac.daemon.composition import close_shared_resources, open_shared_resources
     from xeac.daemon.lifecycle import SessionLifecycle
+    from xeac.daemon.peer_identity import unix_peer_protocol
     from xeac.daemon.pool import WorkerPool
     from xeac.daemon.registry import SessionRegistry
 
@@ -289,7 +300,13 @@ async def _serve() -> int:
     app = build_app()
     announcing = _announcing_server_class()
     socket_server = announcing(
-        uvicorn.Config(app, uds=state.daemon_socket, log_level="warning", access_log=False)
+        uvicorn.Config(
+            app, uds=state.daemon_socket, log_level="warning", access_log=False,
+            # Only the unix listener: the kernel can name the process on the other end of a
+            # local socket, and that is what identifies a session. The loopback listener is
+            # the desktop client and has no such identity to offer.
+            http=unix_peer_protocol(),
+        )
     )
     tcp_server = announcing(
         uvicorn.Config(app, host=LOOPBACK_HOST, port=state.daemon_port, log_level="warning", access_log=False)

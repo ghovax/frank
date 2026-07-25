@@ -419,8 +419,15 @@ function ProjectWorkspace() {
   // from its own endpoint when a session is opened. The composer accepts it whenever it
   // lands, as long as the user has not started typing over it.
   const [activeSessionDraft, setActiveSessionDraft] = useState("");
-  useEffect(() => {
+  // Cleared while rendering rather than in the effect below, which is React's own answer to
+  // "reset state when something changes": an effect runs after the paint, so opening a
+  // session would show the previous session's draft in its composer for a frame first.
+  const [draftBelongsTo, setDraftBelongsTo] = useState(activeSessionId);
+  if (draftBelongsTo !== activeSessionId) {
+    setDraftBelongsTo(activeSessionId);
     setActiveSessionDraft("");
+  }
+  useEffect(() => {
     if (!activeSessionId) return;
     let cancelled = false;
     fetchSessionDraft(activeSessionId)
