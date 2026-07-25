@@ -18,7 +18,7 @@ flowchart LR
     end
 
     subgraph Session["A session — one OS process"]
-        Executor["Agent loop<br/>(LangChain / LangGraph)"]
+        Executor["Agent loop<br/>(LangChain)"]
         Permissions["Permission engine"]
         Tools["Tools: shell, files, web,<br/>screen control, MCP"]
     end

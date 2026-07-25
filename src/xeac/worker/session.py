@@ -646,6 +646,11 @@ class SessionExecutor(AgentExecutor):
         module state and a tool must never run against defaults the user did not choose."""
         from xeac.base.telemetry import configure as configure_telemetry
         from xeac.base.tuning import set_tuning, tuning_from_policy
+        from xeac.runtime.tools.file_operations import (
+            set_firecrawl_client,
+            set_jina_api_key,
+            set_proxy_url,
+        )
         from xeac.runtime.tools.registry import set_exa_client, set_mcp_client_manager
 
         configuration = self._global_configuration
@@ -664,6 +669,22 @@ class SessionExecutor(AgentExecutor):
             from exa_py import Exa
 
             set_exa_client(Exa(api_key=exa_key))
+
+        # `fetch_url` reads a page through tiers — Jina, then Firecrawl, then a direct fetch —
+        # and each tier is engaged by a client installed here. Without this the two keyed tiers
+        # were never wired at all, so a configured Jina or Firecrawl key silently bought
+        # nothing and every fetch fell through to the direct path.
+        set_jina_api_key(configuration.jina.effective_api_key)
+        set_proxy_url(configuration.web_fetch.effective_proxy_url)
+        firecrawl_key = configuration.firecrawl.effective_api_key
+        if firecrawl_key:
+            from firecrawl import AsyncFirecrawl
+
+            api_url = configuration.firecrawl.effective_api_url
+            set_firecrawl_client(
+                AsyncFirecrawl(api_key=firecrawl_key, api_url=api_url) if api_url
+                else AsyncFirecrawl(api_key=firecrawl_key)
+            )
 
         # Each session connects its own MCP servers. The daemon keeps a pool of its own for
         # the GUI's server browser, but connections are stateful and a session's tool calls
