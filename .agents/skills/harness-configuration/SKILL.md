@@ -181,7 +181,7 @@ Two things are deliberately **not** live, because they are fixed when a session 
 ## Verifying a change
 
 - Agents and skills: `xeac create --agent <name>` refuses an unknown profile and lists the ones that exist. The GUI reads the same catalogue from `GET /agents/cards`.
-- Configuration: `xeac configure` lists every setting as a dotted path, with secrets masked.
+- Configuration: `xeac configure` prints every setting as a JSON object of dotted path to value, credentials included — it reads a file the user owns.
 - Providers and models: `GET /models` lists them grouped by provider; a provider's models unlock once its key resolves.
 - MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools that folder sees. An unreachable server is listed with no tools and an `error` rather than failing the call.
 - End to end: `xeac create`, then `xeac send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.

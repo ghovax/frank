@@ -157,7 +157,12 @@ def stream(path: str):
                 raise DaemonError(message)
             buffer = ""
             for chunk in response.iter_text():
-                buffer += chunk
+                # Server-sent events separate frames with a blank line, and the wire form of
+                # that is CRLF — which is what the server actually sends. Splitting on "\n\n"
+                # alone matched nothing at all against "\r\n\r\n", so every frame stayed in the
+                # buffer and `attach` sat silent for the life of the stream. Normalising first
+                # accepts either spelling, which is what the format allows.
+                buffer += chunk.replace("\r\n", "\n")
                 while "\n\n" in buffer:
                     frame, buffer = buffer.split("\n\n", 1)
                     for line in frame.splitlines():

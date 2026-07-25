@@ -7,6 +7,11 @@ by dotted path, so a setting can be inspected, changed, and scripted without eit
 Changes apply to what starts *next*. A running session keeps the configuration it was built
 with — the same guarantee its permission mode carries — so nothing here can reach into work
 already in flight and change the rules underneath it.
+
+Output is plumbing, like every other verb: a listing is a JSON object of dotted path to
+value, and reading one setting prints that value bare. Values are printed as they are stored,
+credentials included — this reads a file the user owns, and deciding on their behalf what
+they may see of their own configuration is not this command's business.
 """
 
 from __future__ import annotations
@@ -19,22 +24,11 @@ import yaml
 
 from xeac.base.paths import configuration_file_path
 
-# Values that must never be printed in full. A configuration dump is something people paste
-# into issues, and an API key that survives that trip is a leaked API key.
-_SECRET_MARKERS = ("api_key", "token", "secret", "password")
 
-
-def _is_secret(path: str) -> bool:
-    leaf = path.rsplit(".", 1)[-1].lower()
-    return any(marker in leaf for marker in _SECRET_MARKERS)
-
-
-def _mask(value: Any) -> Any:
-    """A secret, shown as evidence that it is set without disclosing it."""
-    text = str(value)
-    if not text:
-        return ""
-    return f"…{text[-4:]} (set)" if len(text) > 4 else "(set)"
+def _note(message: str) -> None:
+    """A diagnostic. Never stdout — that carries the setting's value, and a reader must not
+    have to tell one from the other."""
+    print(message, file=sys.stderr)
 
 
 def _load() -> dict:
@@ -94,14 +88,16 @@ def _parse(raw: str) -> Any:
     `none` is deliberately *not* one of the null spellings, even though YAML accepts it as one.
     It is a real value here — `workspace.strategy: none` is the default — and coercing it to
     null wrote a configuration the schema rejects, which stopped the daemon from starting at
-    all. Removing a setting is what `--unset` is for; `null` and `~` still spell null for the
-    fields that genuinely take one."""
+    all. Neither is the empty string: most settings that can be blank are typed as strings, so
+    coercing `""` to null made clearing one impossible — it was refused by the very schema the
+    blank value satisfies. Removing a setting is what `--unset` is for; `null` and `~` still
+    spell null for the fields that genuinely take one."""
     lowered = raw.strip().lower()
     if lowered in {"true", "yes", "on"}:
         return True
     if lowered in {"false", "no", "off"}:
         return False
-    if lowered in {"null", "~", ""}:
+    if lowered in {"null", "~"}:
         return None
     try:
         return json.loads(raw)
@@ -167,23 +163,11 @@ def run(arguments) -> int:
     data = _load()
 
     if arguments.setting is None:
-        # No argument: show everything, so a person can discover what there is to change.
-        entries = sorted(_flatten(data))
-        if arguments.json:
-            print(json.dumps({
-                path: (_mask(value) if _is_secret(path) else value) for path, value in entries
-            }, indent=2))
-            return 0
-        if not entries:
-            print(f"no settings yet ({configuration_file_path()})")
-            return 0
-        width = max(len(path) for path, _ in entries)
-        for path, value in entries:
-            shown = _mask(value) if _is_secret(path) else value
-            # A key the schema no longer defines is inert. Saying so is the difference between
-            # a setting that does nothing and a setting that appears to be doing something.
-            stale = "" if _is_known(path) else "   (not a setting; ignored)"
-            print(f"{path.ljust(width)}  {shown}{stale}")
+        # No argument: everything, as one object, so a person can discover what there is to
+        # change and a script can read it without parsing columns. A key the schema no longer
+        # defines is inert; it is still listed, because it is in the file and hiding it would
+        # make an unremovable setting invisible. `--unset` is how it goes away.
+        print(json.dumps(dict(sorted(_flatten(data))), indent=2))
         return 0
 
     if arguments.value is None:
@@ -192,37 +176,29 @@ def run(arguments) -> int:
         except KeyError:
             # Two different absences, and conflating them was confusing: a real setting that
             # simply is not in the file runs on the schema's default, while a name the schema
-            # does not have will never do anything at all.
+            # does not have will never do anything at all. Neither prints to stdout — there is
+            # no value to print, and a reader must not mistake an explanation for one.
             if _is_known(arguments.setting):
-                print(f"{arguments.setting} is not set; its built-in default applies")
+                _note(f"{arguments.setting} is not set; its built-in default applies")
                 return 0
-            print(f"xeac: no setting named {arguments.setting!r}", file=sys.stderr)
+            _note(f"xeac: no setting named {arguments.setting!r}")
             return 1
-        shown = _mask(value) if _is_secret(arguments.setting) else value
-        print(json.dumps(shown, indent=2) if isinstance(shown, (dict, list)) else shown)
+        print(json.dumps(value, indent=2) if isinstance(value, (dict, list)) else value)
         return 0
 
-    if arguments.unset:
-        print("xeac: pass either a value or --unset, not both")
-        return 1
-
     if not _is_known(arguments.setting):
-        print(
-            f"xeac: no setting named {arguments.setting!r} — it would be written and ignored",
-            file=sys.stderr,
-        )
+        _note(f"xeac: no setting named {arguments.setting!r} — it would be written and ignored")
         return 1
     _write(data, arguments.setting, _parse(arguments.value))
     invalid = _validates(data)
     if invalid:
-        print(f"xeac: {arguments.setting} would not be valid: {invalid}", file=sys.stderr)
+        _note(f"xeac: {arguments.setting} would not be valid: {invalid}")
         return 1
     _save(data)
     # Echoing the stored value rather than the argument shows how it was interpreted, so a
     # `true` that landed as a string is visible immediately instead of at the next boot.
     stored = _read(data, arguments.setting)
-    print(f"{arguments.setting} = {_mask(stored) if _is_secret(arguments.setting) else stored}")
-    print("applies to sessions and daemons started from now on")
+    print(json.dumps(stored, indent=2) if isinstance(stored, (dict, list)) else stored)
     return 0
 
 
@@ -232,18 +208,19 @@ def run_unset(arguments) -> int:
     node = data
     for part in parts[:-1]:
         if not isinstance(node, dict) or part not in node:
-            print(f"xeac: no setting named {arguments.setting!r}")
+            _note(f"xeac: no setting named {arguments.setting!r}")
             return 1
         node = node[part]
     if not isinstance(node, dict) or parts[-1] not in node:
-        print(f"xeac: no setting named {arguments.setting!r}")
+        _note(f"xeac: no setting named {arguments.setting!r}")
         return 1
     removed = node.pop(parts[-1])
     invalid = _validates(data)
     if invalid:
         node[parts[-1]] = removed
-        print(f"xeac: {arguments.setting} cannot be removed: {invalid}", file=sys.stderr)
+        _note(f"xeac: {arguments.setting} cannot be removed: {invalid}")
         return 1
     _save(data)
-    print(f"unset {arguments.setting}")
+    # Nothing on stdout: removing a setting has no value to report, and the exit code already
+    # says whether it happened.
     return 0

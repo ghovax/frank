@@ -1,6 +1,6 @@
 # Plans
 
-Design plans for the Daisy harness, built sequentially — each plan is a self-contained Markdown document describing one body of work and is associated with the commit it landed in. There is no manifest and no folder nesting: the plans are a flat, append-only sequence, read in creation order.
+Design plans for the XEAC harness, built sequentially — each plan is a self-contained Markdown document describing one body of work and is associated with the commit it landed in. There is no manifest and no folder nesting: the plans are a flat, append-only sequence, read in creation order.
 
 Each plan carries a small YAML frontmatter block as its metadata (the title is the document's H1, not repeated here):
 

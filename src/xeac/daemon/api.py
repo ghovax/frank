@@ -486,6 +486,17 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                 if event is None:
                     yield {"data": json.dumps({"kind": "done"})}
                     break
+                if "turn" in event:
+                    # A turn started or ended. Distinct from `done`, which is the session
+                    # itself ending: a session goes idle many times over its life, and a
+                    # watcher that conflated the two would either stop after the first turn
+                    # or wait for a process to die.
+                    yield {"data": json.dumps({
+                        "kind": "turn",
+                        "seq": event.get("seq", 0),
+                        "running": bool((event.get("turn") or {}).get("running")),
+                    })}
+                    continue
                 yield {"data": json.dumps({"kind": "live", "seq": event.get("seq", 0), "message": event.get("part")})}
         finally:
             state.event_bus.unsubscribe(session_id, subscription)

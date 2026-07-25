@@ -82,6 +82,14 @@ def _set_turn_state(session_id: str, running: bool) -> None:
         state._running_contexts.pop(session_id, None)
     if (previous == 0) != (updated == 0):
         state.broadcaster.publish({"type": "sessions_changed"})
+        # The same edge on the session's own stream, so a watcher learns the turn ended
+        # without polling. Turn parts alone never say this — they stop arriving, which is
+        # indistinguishable from a model thinking — so `xeac wait` had nothing to wait for
+        # and blocked until the session died instead of until it went idle.
+        _SEQUENCE[session_id] = _SEQUENCE.get(session_id, 0) + 1
+        state.event_bus.publish(
+            session_id, {"seq": _SEQUENCE[session_id], "turn": {"running": bool(updated)}}
+        )
 
 
 async def _session_event(params: dict) -> dict:

@@ -50,7 +50,7 @@ without a test, and say what you would add.
 EOF
 ```
 
-`send` returns as soon as the message is accepted, printing the task id. With `--wait` it follows the session until it goes idle and prints the deliverable — what the session produced, not its transcript.
+`send` returns as soon as the message is accepted, printing the accepted task. With `--wait` it follows the session until it goes idle and then prints the last turn — what the session produced, not its transcript.
 
 A message that arrives while the session is mid-turn is **injected into that turn** at its next safe point rather than starting a second one. That is what lets you (or a peer) redirect a session that is already working instead of waiting for it to finish.
 
@@ -65,28 +65,36 @@ xeac wait <session>         # block until idle, then print the result
 xeac history <session> [-n N]
 ```
 
-`ps` shows a state per session, in the order you need it:
+`ps` prints the session records as a JSON array. Three fields between them say what a session is doing, and they are separate because they answer different questions:
 
-| State | Meaning |
+| Field | Meaning |
 |-------|---------|
-| `waiting` | Parked on a permission request or a question. It needs *you*. |
-| `working` | A turn is in flight. |
-| `idle` | Alive, with nothing in flight. Send it something. |
-| `starting` | Created; its socket is not yet accepting connections. |
-| `exited` / `failed` | Over. `--all` shows these; `xeac get` says why. |
+| `status` | The *process*: `starting` while its socket is not yet accepting connections, `running` once it is, `exited` or `failed` when it is over. `--all` includes the terminal ones; `exit_reason` says why. |
+| `busy` | Whether a turn is actually in flight. A session's process outlives its turns, so `running` alone cannot tell a working session from an idle one. |
+| `awaiting_input` | Parked on a permission request or a question. It needs *you*. |
 
-`working` and `idle` are both a live process — a session's process outlives its turns, so "running" alone could not tell them apart.
+```sh
+xeac ps | jq -r '.[] | select(.awaiting_input) | .id'
+```
 
-`attach` prints the session's prose as it streams, plus what it is doing and anything it needs from you. It ends when the session does; interrupt it with Ctrl-C to stop watching without affecting the session.
+`attach` prints one JSON object per line as the session streams. Each carries a `kind`:
+
+| `kind` | What it is |
+|--------|------------|
+| `snapshot` | The session's tasks so far, sent first, so a watcher that attaches mid-turn is not guessing about what it missed. |
+| `live` | One part of a turn as it is persisted — text, a tool call, a tool result, a permission request. |
+| `turn` | A turn started or ended (`running`). This is what `wait` waits for: parts alone just stop arriving, which is indistinguishable from a model still thinking. |
+| `done` | The session itself ended. Distinct from a turn ending — a session goes idle many times over its life. |
+
+It ends when the session does; interrupt it with Ctrl-C to stop watching without affecting the session. Because each frame is a complete line, `jq` and friends consume it incrementally:
+
+```sh
+xeac attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
+```
 
 ## Answering a session
 
-When a session needs permission, `attach` prints the request and the exact command to answer it:
-
-```
-! needs approval: rm -rf build/
-  xeac approve session-1a2b… req-7f3c
-```
+When a session needs permission it parks, `awaiting_input` goes true, and `attach` emits a frame carrying the request and its id. Answer it with that id:
 
 ```
 xeac approve <session> <request> [-d|--deny]
@@ -122,7 +130,9 @@ xeac configure agent.permission_mode read_only
 xeac configure agent.permission_mode --unset
 ```
 
-Values are interpreted the way the file holds them: `true`, `8` and `[]` land as a boolean, a number and a list rather than as the strings your shell handed over. `null` spells null; `none` does not, because it is a real value (`workspace.strategy: none` is the default) — use `--unset` to remove a setting. Secrets are masked in listings, so a configuration dump you paste into an issue does not leak an API key.
+With no argument it prints a JSON object of dotted path to value; with a setting it prints that setting's value bare. Values are printed as they are stored, credentials included: this reads a file you own, and deciding on your behalf what you may see of your own configuration is not this command's business.
+
+Values are interpreted the way the file holds them: `true`, `8` and `[]` land as a boolean, a number and a list rather than as the strings your shell handed over. `null` spells null; `none` does not, because it is a real value (`workspace.strategy: none` is the default) — use `--unset` to remove a setting.
 
 A value the schema would reject is refused with the reason, and the file is left as it was. The daemon reads this file at startup, so an invalid value would not fail the command that set it — it would fail every command after, including the one that would put it back.
 
@@ -145,13 +155,11 @@ xeac daemon endpoint    # the loopback port and capability token
 ssh workstation xeac daemon endpoint
 ```
 
-## JSON, exit codes, and pipes
+## Output, exit codes, and pipes
 
-Every command takes `-j`/`--json`, before or after the verb, and emits the raw payload instead of formatted output. Anything scripted should read that rather than parsing the human format, which is free to change.
+**Everything on stdout is plumbing.** A read prints the API's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(xeac create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
 
-```sh
-xeac ps --json | jq -r '.[] | select(.awaiting_input) | .id'
-```
+Diagnostics go to stderr and outcomes go to the exit code, so neither can contaminate the data. `xeac configure some.setting` on a stderr-suppressed pipeline prints the value or nothing at all; it never prints an apology you would then have to parse around.
 
 | Exit code | Meaning |
 |-----------|---------|
