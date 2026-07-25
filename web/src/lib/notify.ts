@@ -17,7 +17,7 @@
 // the request is resolved from anywhere, so stale "Approval needed" toasts
 // never linger in the notification center.
 
-const PERMISSION_TAG_PREFIX = "daisy-permission-";
+const PERMISSION_TAG_PREFIX = "xeac-permission-";
 const APPROVE_ACTION = "approve";
 
 type PermissionActionHandler = (requestId: string) => void;
@@ -54,11 +54,11 @@ async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
       listenerAttached = true;
       navigator.serviceWorker.addEventListener("message", (event) => {
         const payload = event.data as { type?: string; action?: string; data?: { requestId?: string } } | null;
-        if (payload?.type !== "daisy-notification-click") return;
+        if (payload?.type !== "xeac-notification-click") return;
         const requestId = payload.data?.requestId;
         if (payload.action === APPROVE_ACTION && requestId) actionHandler?.(requestId);
         // A body click just focuses the app (the worker already did); the
-        // overlay is on screen with the full context and all three choices.
+        // overlay is on screen with the full context and both choices.
       });
     }
     return registration;

@@ -12,7 +12,7 @@ self.addEventListener("notificationclick", (event) => {
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const client of clients) {
         client.postMessage({
-          type: "daisy-notification-click",
+          type: "xeac-notification-click",
           action: event.action || "",
           data: event.notification.data || {},
         });

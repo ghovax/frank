@@ -34,7 +34,9 @@ import { InlineField } from "./ui/display";
 import { Strong } from "./ui/semantic";
 
 interface ChatInputProps {
-  onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void>;
+  // Returns the session id when the send created one, which the composer ignores — it is
+  // the caller's business, not the input's.
+  onSend: (text: string, dataParts?: Record<string, unknown>[]) => void | Promise<void | string>;
   onAbort: () => void | Promise<void>;
   isStreaming: boolean;
   disabled?: boolean;
@@ -176,20 +178,6 @@ function ContextUsageChip({
         )}
         <InlineField label={translation("modelCalls")}><Text>{tokenUsage.modelCalls}</Text></InlineField>
       </Flex>
-      {tokenUsage.agentTotalTokens > 0 && (
-        <>
-          <Separator my={2} />
-          <Text fontWeight="semibold" mb={1} color="fg">
-            {translation("agents")}
-          </Text>
-          <Flex direction="column" ps={2} gap={1}>
-            <InlineField label={translation("input")}><Text>{tokenUsage.agentInputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={translation("output")}><Text>{tokenUsage.agentOutputTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={translation("total")}><Text>{tokenUsage.agentTotalTokens.toLocaleString()}</Text></InlineField>
-            <InlineField label={translation("modelCalls")}><Text>{tokenUsage.agentModelCalls}</Text></InlineField>
-          </Flex>
-        </>
-      )}
       <Separator my={2} />
       <Text fontWeight="semibold" mb={1} color="fg">
         {translation("usageThisTurn")}
@@ -335,8 +323,14 @@ export function ChatInput({
     latestInputValueRef.current = inputValue;
   }, [inputValue]);
 
+  // Seed the composer from the session's stored draft. The draft is fetched from its own
+  // endpoint now (the session registry no longer carries it), so it can land after this
+  // composer has already mounted for the session — hence the second condition, which
+  // accepts a late arrival only while the box is still untouched and never overwrites
+  // what the user has begun typing.
   useEffect(() => {
-    if (persistedDraftKeyRef.current === draftKey) return;
+    const isNewSession = persistedDraftKeyRef.current !== draftKey;
+    if (!isNewSession && !(initialDraft && latestInputValueRef.current === "")) return;
     persistedDraftKeyRef.current = draftKey;
     const restoredDraft = sessionId ? initialDraft : "";
     setInputValue(restoredDraft);
@@ -823,7 +817,14 @@ export function ChatInput({
             compact
             responsiveCompact
           />
-          <PermissionModeControl value={permissionMode} onChange={(mode) => onPermissionModeChange?.(mode)} responsiveCompact />
+          {/* The mode is fixed when the session is created, so the chip only stays a
+              picker until there is a session — after that it reports what was chosen. */}
+          <PermissionModeControl
+            value={permissionMode}
+            onChange={(mode) => onPermissionModeChange?.(mode)}
+            responsiveCompact
+            readOnly={!!sessionId}
+          />
         </Flex>
         <Flex align="center" gap={2} flexShrink={0} justify="flex-end">
           {onCompact && !!sessionId && !!tokenUsage && tokenUsage.contextTokens > 0 && (isCompacting || compactionUserCount > compactionKeepRecentTurns) && (

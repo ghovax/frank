@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Flex } from "@chakra-ui/react";
-import { SessionsSidebar, type SessionEntry, type SessionSort } from "@/components/sessions-sidebar";
+import { SessionsSidebar, type SessionEntry, type SessionSort, type SessionStatus } from "@/components/sessions-sidebar";
 import { AnimatePresence, motion } from "motion/react";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Point
 // animate its open/close (opacity + slide) without losing its flex-layout props.
 const MotionFlex = motion.create(Flex);
 import { useRouter, useSearchParams } from "next/navigation";
-import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnabled, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption } from "@/lib/api";
+import { deleteSession, fetchAccessibility, fetchAgents, fetchAgentCards, fetchHomeDirectory, fetchModels, fetchRecentModels, fetchSessionDraft, fetchSessions, fetchSettings, getProject, listProjects, saveAgentConfiguration, saveSettings, setSandboxEnforce, subscribeEvents, updateComputerControlSetting, type AgentCard, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type SandboxEnforce } from "@/lib/api";
 import { ChatPanel } from "@/components/chat-panel";
 import { useTray } from "@/lib/use-tray";
 import { activateConnectionTarget, checkConnection, getApiBase, getLastTargetId, listConnectionTargets, LOCAL_CONNECTION_TARGET, LOCAL_TARGET_ID, resolveReachableConnectionUrl, type ConnectionTarget } from "@/lib/connection";
@@ -22,7 +22,7 @@ import { playAttentionSound, playTurnEndSound, primeSounds } from "@/lib/sounds"
 // The last project the user was in, remembered so a fresh launch reopens it (there is no
 // landing page to pick from). Best-effort localStorage — a cleared/absent value just falls
 // back to the first available project.
-const LAST_PROJECT_KEY = "daisy:lastProject";
+const LAST_PROJECT_KEY = "xeac:lastProject";
 function readLastProject(): string | null {
   try { return localStorage.getItem(LAST_PROJECT_KEY); } catch { return null; }
 }
@@ -30,6 +30,13 @@ function writeLastProject(projectId: string): void {
   try { localStorage.setItem(LAST_PROJECT_KEY, projectId); } catch { /* ignore */ }
 }
 
+
+// A session that is actually working, as opposed to one whose process is merely up. A
+// session outlives its turns — created empty, messaged, idle again — so the process
+// lifecycle alone would report every live session as busy forever.
+function isSessionBusy(session: SessionEntry): boolean {
+  return session.status === "starting" || session.busy;
+}
 
 function ProjectWorkspace() {
   const router = useRouter();
@@ -46,12 +53,12 @@ function ProjectWorkspace() {
   // the grant to the freshly-started server, so this runs on launch (not while the previous
   // instance was live) and only when the permission is actually present.
   useEffect(() => {
-    if (typeof window === "undefined" || localStorage.getItem("daisy:pendingComputerControlEnable") !== "1") return;
+    if (typeof window === "undefined" || localStorage.getItem("xeac:pendingComputerControlEnable") !== "1") return;
     let cancelled = false;
     void fetchAccessibility().then(async (granted) => {
       if (cancelled || !granted) return;
       await updateComputerControlSetting(true);
-      localStorage.removeItem("daisy:pendingComputerControlEnable");
+      localStorage.removeItem("xeac:pendingComputerControlEnable");
     });
     return () => { cancelled = true; };
   }, []);
@@ -115,7 +122,8 @@ function ProjectWorkspace() {
   // workspace/agent-resolution that still keys off a path).
   const [workingDirectory, setWorkingDirectory] = useState("");
   const [homeProject, setHomeProject] = useState<{ path: string; name: string } | null>(null);
-  const [sandboxEnabledState, setSandboxEnabledState] = useState(true);
+  const [sandboxEnforceState, setSandboxEnforceState] = useState<SandboxEnforce>("required");
+  const [sandboxBackend, setSandboxBackend] = useState({ backend: "", detail: "" });
   const [workspaceStrategy, setWorkspaceStrategy] = useState<"none" | "branch" | "worktree">("none");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelProviders, setModelProviders] = useState<ProviderOption[]>([]);
@@ -171,14 +179,12 @@ function ProjectWorkspace() {
   }, []);
   const loadAgents = useCallback(() => {
     fetchAgents(workingDirectoryRef.current)
-      .then(({ agents: agentList, defaultAgent }) => {
+      .then((agentList) => {
         setAgents(agentList);
-        // Keep the current selection if it's still available in this folder,
-        // otherwise fall back to the server's configured default agent (and only
-        // then to the first listed agent).
-        setSelectedAgent((current) =>
-          agentList.some((agent) => agent.id === current) ? current : (defaultAgent || agentList[0]?.id || "")
-        );
+        // Keep the current selection when the folder still offers it; otherwise clear it and
+        // let the picker ask. There is no configured default to fall back to, and quietly
+        // substituting some other profile would run the work under an agent nobody chose.
+        setSelectedAgent((current) => (agentList.some((agent) => agent.id === current) ? current : ""));
         setIsConnected(true);
       })
       .catch(() => setIsConnected(false));
@@ -196,7 +202,8 @@ function ProjectWorkspace() {
 
   const mapSessions = useCallback((serverSessions: Awaited<ReturnType<typeof fetchSessions>>, target: ConnectionTarget, apiBase: string): SessionEntry[] => {
     return serverSessions.map((session) => ({
-      sessionId: session.session_id,
+      sessionId: session.id,
+      parentSessionId: session.parent ?? "",
       projectId: session.project_id ?? "",
       connectionId: target.id,
       connectionName: target.name,
@@ -206,36 +213,37 @@ function ProjectWorkspace() {
       title: session.title,
       createdAt: session.created_at,
       workingDirectory: session.working_directory ?? "",
-      runtimeWorkingDirectory: session.runtime_working_directory ?? session.working_directory ?? "",
-      workspaceStrategy: session.workspace_strategy ?? "none",
-      workspaceBranch: session.workspace_branch ?? "",
-      workspaceError: session.workspace_error ?? "",
-      running: session.running ?? false,
+      status: (session.status || "starting") as SessionStatus,
+      busy: session.busy ?? false,
       awaitingInput: session.awaiting_input ?? false,
-      filesystemLeases: session.filesystem_leases ?? [],
-      inputDraft: session.input_draft ?? "",
+      exitReason: session.exit_reason ?? "",
       permissionMode: session.permission_mode ?? "default",
     }));
   }, []);
 
-  const sessionTargetUrl = useCallback(async (target: ConnectionTarget): Promise<string | null> => {
+  // Where a target answers, and the token that authorises talking to it. The two travel
+  // together because the session list is fetched from every known daemon at once, and each
+  // one holds a different secret — presenting the active connection's token to the others
+  // would come back 401 and read as "that host is down".
+  const sessionTargetEndpoint = useCallback(async (target: ConnectionTarget): Promise<{ url: string; token?: string } | null> => {
     const activeTarget = currentConnectionRef.current?.id === target.id;
     const url = activeTarget || target.kind === "ssh" ? await resolveReachableConnectionUrl(target) : target.url;
-    const ok = await checkConnection(url, activeTarget ? 2000 : 900);
-    return ok ? url : null;
+    const token = target.kind === "local" ? undefined : target.token ?? "";
+    const ok = await checkConnection(url, { token, timeoutMs: activeTarget ? 2000 : 900 });
+    return ok ? { url, token } : null;
   }, []);
 
   const loadSessions = useCallback(async (targetsOverride?: ConnectionTarget[]) => {
     const targets = targetsOverride ?? (connectionTargetsRef.current.length > 0 ? connectionTargetsRef.current : [currentConnectionRef.current ?? LOCAL_CONNECTION_TARGET]);
     const rows = await Promise.all(targets.map(async (target) => {
       try {
-        const apiBase = await sessionTargetUrl(target);
-        if (!apiBase) return { target, sessions: null as SessionEntry[] | null };
-        const serverSessions = await fetchSessions({ apiBase });
+        const endpoint = await sessionTargetEndpoint(target);
+        if (!endpoint) return { target, sessions: null as SessionEntry[] | null };
+        const serverSessions = await fetchSessions({ apiBase: endpoint.url, token: endpoint.token });
         for (const session of serverSessions) {
-          void setSessionConnection(session.session_id, target.id);
+          void setSessionConnection(session.id, target.id);
         }
-        return { target, sessions: mapSessions(serverSessions, target, apiBase) };
+        return { target, sessions: mapSessions(serverSessions, target, endpoint.url) };
       } catch {
         return { target, sessions: null as SessionEntry[] | null };
       }
@@ -269,9 +277,8 @@ function ProjectWorkspace() {
     const finishedUnviewed = mapped
       .filter((session) => {
         const previous = previousById.get(session.sessionId);
-        const wasBusy = !!previous && (previous.running || previous.filesystemLeases.length > 0);
-        const isBusy = session.running || session.filesystemLeases.length > 0;
-        return wasBusy && !isBusy && session.sessionId !== activeId && !session.awaitingInput && !session.workspaceError;
+        const wasBusy = !!previous && isSessionBusy(previous);
+        return wasBusy && !isSessionBusy(session) && session.sessionId !== activeId && !session.awaitingInput && session.status !== "failed";
       })
       .map((session) => session.sessionId);
     if (finishedUnviewed.length > 0) {
@@ -290,8 +297,7 @@ function ProjectWorkspace() {
     let shouldPlayAttentionSound = false;
     for (const session of mapped) {
       const previous = previousById.get(session.sessionId);
-      const isBusy = session.running || session.filesystemLeases.length > 0;
-      if (!isBusy) attentionPlayedForRunRef.current.delete(session.sessionId);
+      if (!isSessionBusy(session)) attentionPlayedForRunRef.current.delete(session.sessionId);
       if (
         session.awaitingInput
         && !!previous
@@ -307,7 +313,7 @@ function ProjectWorkspace() {
     sessionsRef.current = mapped;
     setSessions(mapped);
     setSessionsLoaded(true);
-  }, [mapSessions, sessionTargetUrl]);
+  }, [mapSessions, sessionTargetEndpoint]);
 
   // Coalesce the burst of sessions_changed events a single turn emits (running→true, title
   // generated, message saved, running→false) into one trailing refetch, so the session list
@@ -323,7 +329,8 @@ function ProjectWorkspace() {
       fetchSettings()
         .then((settings) => {
           setSelectedPermissionMode(settings.permission_mode ?? "default");
-          setSandboxEnabledState(settings.sandbox_enabled ?? true);
+          setSandboxEnforceState(settings.sandbox?.enforce ?? "required");
+          setSandboxBackend(settings.sandbox_backend ?? { backend: "", detail: "" });
           setWorkspaceStrategy(settings.workspace_strategy ?? "none");
           setCompactionKeepRecentTurns(settings.compaction?.keep_recent_turns ?? 6);
         })
@@ -358,7 +365,7 @@ function ProjectWorkspace() {
         // also drives Settings — refetch it so the dialog reflects the on-disk change.
         loadSettings();
       }
-      if (event.type === "sessions_changed" || event.type === "filesystem_leases_changed") scheduleSessionsReload();
+      if (event.type === "sessions_changed") scheduleSessionsReload();
       if (event.type === "settings_changed") {
         loadSettings();
         loadModelCatalog();
@@ -408,8 +415,28 @@ function ProjectWorkspace() {
   const activeSession = sessions.find((entry) => entry.sessionId === activeSessionId);
   const activeSessionConnectionReady =
     !activeSessionId || (!sessionsLoaded && !activeSession ? false : !activeSession || activeSession.connectionId === currentConnectionId);
-  const activeSessionRunning = activeSession?.running ?? false;
-  const displayedWorkspaceStrategy = activeSession?.workspaceStrategy ?? workspaceStrategy;
+  const activeSessionRunning = activeSession ? isSessionBusy(activeSession) : false;
+
+  // The composer draft belongs to the session, not to the registry listing, so it is read
+  // from its own endpoint when a session is opened. The composer accepts it whenever it
+  // lands, as long as the user has not started typing over it.
+  const [activeSessionDraft, setActiveSessionDraft] = useState("");
+  // Cleared while rendering rather than in the effect below, which is React's own answer to
+  // "reset state when something changes": an effect runs after the paint, so opening a
+  // session would show the previous session's draft in its composer for a frame first.
+  const [draftBelongsTo, setDraftBelongsTo] = useState(activeSessionId);
+  if (draftBelongsTo !== activeSessionId) {
+    setDraftBelongsTo(activeSessionId);
+    setActiveSessionDraft("");
+  }
+  useEffect(() => {
+    if (!activeSessionId) return;
+    let cancelled = false;
+    fetchSessionDraft(activeSessionId)
+      .then((draft) => { if (!cancelled) setActiveSessionDraft(draft); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (!activeSession || activeSession.connectionId === currentConnectionId) return;
@@ -434,7 +461,7 @@ function ProjectWorkspace() {
   const sortedSessions = useMemo(() => {
     if (sessionSort !== "active") return sessions;
     const rank = (session: SessionEntry) =>
-      session.awaitingInput ? 0 : session.running || session.filesystemLeases.length > 0 ? 1 : 2;
+      session.awaitingInput ? 0 : isSessionBusy(session) ? 1 : 2;
     return [...sessions].sort((left, right) => rank(left) - rank(right) || right.createdAt.localeCompare(left.createdAt));
   }, [sessions, sessionSort]);
   const projectSessions = useMemo(
@@ -623,13 +650,13 @@ function ProjectWorkspace() {
     }
   }
 
-  async function handleSandboxEnabledChange(enabled: boolean) {
-    const previous = sandboxEnabledState;
-    setSandboxEnabledState(enabled);
+  async function handleSandboxEnforceChange(enforce: SandboxEnforce) {
+    const previous = sandboxEnforceState;
+    setSandboxEnforceState(enforce);
     try {
-      await setSandboxEnabled(enabled);
+      await setSandboxEnforce(enforce);
     } catch {
-      setSandboxEnabledState(previous);
+      setSandboxEnforceState(previous);
     }
   }
 
@@ -793,7 +820,7 @@ function ProjectWorkspace() {
           initialSessionId={activeSessionConnectionReady ? activeSessionId : null}
           initialPermissionMode={activeSession?.permissionMode ?? selectedPermissionMode}
           sessionTitle={activeSession?.title}
-          initialInputDraft={activeSession?.inputDraft ?? ""}
+          initialInputDraft={activeSessionDraft}
           onDeleteSession={activeSessionId ? handleDeleteSession : undefined}
           currentConnectionId={currentConnectionId}
           onConnectionChange={handleConnectionChange}
@@ -804,10 +831,10 @@ function ProjectWorkspace() {
           workingDirectory={workingDirectory}
           projectId={projectId}
           homeDirectory={homeProject?.path ?? ""}
-          sandboxEnabled={sandboxEnabledState}
-          onSandboxEnabledChange={handleSandboxEnabledChange}
-          workspaceStrategy={displayedWorkspaceStrategy}
-          workspaceRuntimeDirectory={activeSession?.runtimeWorkingDirectory ?? ""}
+          sandboxEnforce={sandboxEnforceState}
+          sandboxBackend={sandboxBackend}
+          onSandboxEnforceChange={handleSandboxEnforceChange}
+          workspaceStrategy={workspaceStrategy}
           onWorkspaceStrategyChange={handleWorkspaceStrategyChange}
           isConnected={isConnected && activeSessionConnectionReady}
           onStreamingChange={handleStreamingChange}

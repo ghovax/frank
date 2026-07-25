@@ -21,7 +21,7 @@ function columnCounts(count: number): number[] {
   const cols = Math.ceil(count / maxColumnHeight);
   const base = Math.floor(count / cols);
   const extra = count % cols;
-  return Array.from({ length: cols }, (_, index) => base + (index < extra ? 1 : 0)).filter((n) => n > 0);
+  return Array.from({ length: cols }, (_, index) => base + (index < extra ? 1 : 0)).filter((columnCount) => columnCount > 0);
 }
 
 const RESIZE_THICKNESS = 8; // px hit area for a handle (its visible line is 1px, centered)
@@ -33,9 +33,9 @@ export function PanelTiles({ panels, gap = 8 }: { panels: TilePanel[]; gap?: num
   const columns: TilePanel[][] = [];
   {
     let index = 0;
-    for (const n of columnCounts(panels.length)) {
-      columns.push(panels.slice(index, index + n));
-      index += n;
+    for (const columnCount of columnCounts(panels.length)) {
+      columns.push(panels.slice(index, index + columnCount));
+      index += columnCount;
     }
   }
 

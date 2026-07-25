@@ -1,19 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Daisy",
+  "productName": "XEAC",
   "version": "0.1.0",
-  "identifier": "com.ghovax.daisy",
+  "identifier": "com.ghovax.xeac",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "../.venv/bin/python ../packaging/export-icon.py --macos-only && bash ../packaging/build-sidecar.sh && bun run build",
+    "beforeBuildCommand": "uv run --project .. python ../packaging/export-icon.py --macos-only && bash ../packaging/build-sidecar.sh && bun run build",
     "frontendDist": "../out"
   },
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "Daisy",
+        "title": "XEAC",
         "width": 1320,
         "height": 860,
         "minWidth": 840,

@@ -74,7 +74,7 @@ export function ConnectionSwitcher({
     let cancelled = false;
     async function refreshStatus() {
       setStatus("checking");
-      const ok = await checkConnection(getApiBase(), 1800);
+      const ok = await checkConnection(getApiBase(), { timeoutMs: 1800 });
       if (!cancelled) setStatus(ok ? "online" : "offline");
     }
     void refreshStatus();
@@ -119,9 +119,10 @@ export function ConnectionSwitcher({
     setSwitchingTarget(targetId);
     try {
       const url = await resolveReachableConnectionUrl(target);
+      const token = target.kind === "local" ? undefined : target.token ?? "";
       const ok = (target.kind === "local" || target.kind === "ssh") && isTauri()
-        ? await waitForConnection(url)
-        : await checkConnection(url);
+        ? await waitForConnection(url, { token })
+        : await checkConnection(url, { token });
       if (!ok) {
         toaster.create({
           type: "error",

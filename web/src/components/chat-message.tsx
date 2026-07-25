@@ -3,7 +3,7 @@
 import { Box, Button, Flex, Separator, Text } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { memo, useLayoutEffect, useRef, useState } from "react";
-import { LuFoldVertical, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
+import { LuFoldVertical, LuMessagesSquare, LuRotateCw, LuTriangleAlert } from "react-icons/lu";
 import type { ChatMessage, MessageAttachment } from "@/lib/use-chat";
 import type { ArtifactAnnotationRecord } from "@/lib/artifact-annotations";
 import type { ToolEvent, ToolPermission, ToolQuestion } from "@/lib/tool-event";
@@ -16,7 +16,6 @@ import { ActivityIcon, ActivitySpinner } from "./ui/activity-icon";
 
 interface ChatMessageProps {
   message: ChatMessage;
-  agents?: { id: string; name: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
   // Re-run the turn that produced a server error (resends the last user message).
@@ -122,7 +121,7 @@ function WarningMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-function ToolMessageCard({ message, agents = [], activeArtifactId, onActivateArtifact }: ChatMessageProps) {
+function ToolMessageCard({ message, activeArtifactId, onActivateArtifact }: ChatMessageProps) {
   return (
     <ToolCall
       name={message.content}
@@ -132,7 +131,6 @@ function ToolMessageCard({ message, agents = [], activeArtifactId, onActivateArt
       permission={message.meta?.permission as ToolPermission | undefined}
       question={message.meta?.question as ToolQuestion | undefined}
       toolCallId={message.meta?.toolCallId as string | undefined}
-      agents={agents}
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
     />
@@ -203,11 +201,55 @@ function UserMessageCard({ message }: { message: ChatMessage }) {
   );
 }
 
-export const ChatMessageItem = memo(function ChatMessageItem({ message, agents = [], activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
+// A message another session sent this one — a peer reporting its result, or a parent
+// following up. Deliberately not the user's card: it is left-aligned, labelled with the
+// session it came from, and never wears the right-aligned bubble that means "you said
+// this". Rendering it as a user message would attribute a peer's words to the person
+// watching, who did not write them.
+function PeerMessageCard({ message }: { message: ChatMessage }) {
+  const translation = useTranslations("ChatMessage");
+  const sender = message.meta?.peerSender ?? "";
+  return (
+    <Flex direction="column" alignSelf="flex-start" gap={1.5} maxW="80%" w="100%">
+      <Flex align="center" gap={1.5}>
+        <ActivityIcon><LuMessagesSquare /></ActivityIcon>
+        <Text fontSize="xs" color="fg.muted" fontWeight="medium">
+          {translation("fromPeerSession")}
+        </Text>
+        {sender && (
+          <Text fontSize="xs" color="fg.subtle" fontFamily="mono" truncate>
+            {sender}
+          </Text>
+        )}
+      </Flex>
+      {message.content.trim() && (
+        <Box
+          minW={0}
+          bg="bg.subtle"
+          borderLeft="2px solid"
+          borderColor="border.emphasized"
+          px={2.5}
+          py={1.5}
+          borderRadius="md"
+          maxW="100%"
+        >
+          <MarkdownContent content={message.content} />
+        </Box>
+      )}
+    </Flex>
+  );
+}
+
+
+export const ChatMessageItem = memo(function ChatMessageItem({ message, activeArtifactId, onActivateArtifact, onRetry, streaming = false }: ChatMessageProps) {
   const translation = useTranslations("ChatMessage");
   switch (message.role) {
     case "user": {
       return <UserMessageCard message={message} />;
+    }
+
+    case "peer": {
+      return <PeerMessageCard message={message} />;
     }
 
     case "assistant": {
@@ -218,8 +260,8 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, agents =
       if (contentBlocks.length === 0) return null;
       return (
         // No horizontal inset: the assistant's prose shares the same left edge as the
-        // tool-activity lines (which have none), so text and tools line up — matching
-        // the agents panel. A stray px here pushed the markdown ~4px inward of them.
+        // tool-activity lines (which have none), so text and tools line up. A stray px
+        // here pushed the markdown ~4px inward of them.
         <Box alignSelf="flex-start">
           <Flex direction="column" gap={3}>
             {contentBlocks.map((contentBlock, contentBlockIndex) => (
@@ -241,7 +283,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, agents =
     case "tool_call": {
       return (
         <Box alignSelf="flex-start" w="100%">
-          <ToolMessageCard message={message} agents={agents} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
+          <ToolMessageCard message={message} activeArtifactId={activeArtifactId} onActivateArtifact={onActivateArtifact} />
         </Box>
       );
     }
@@ -300,15 +342,14 @@ export const ChatMessageItem = memo(function ChatMessageItem({ message, agents =
 
 interface ChatToolGroupProps {
   messages: ChatMessage[];
-  agents?: { id: string; name: string }[];
   activeArtifactId?: string | null;
   onActivateArtifact?: (id: string) => void;
   keepOpen?: boolean;
 }
 
-export const ChatToolGroup = memo(function ChatToolGroup({ messages, agents = [], activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
+export const ChatToolGroup = memo(function ChatToolGroup({ messages, activeArtifactId, onActivateArtifact, keepOpen }: ChatToolGroupProps) {
   // Map the persisted tool-call messages to the ToolEvent shape the shared
-  // ToolGroup renders, so the chat timeline and the agents panel stay in lockstep.
+  // ToolGroup renders.
   const tools: ToolEvent[] = messages.map((message) => ({
     name: message.content,
     arguments: message.meta?.arguments as Record<string, unknown> | undefined,
@@ -321,7 +362,6 @@ export const ChatToolGroup = memo(function ChatToolGroup({ messages, agents = []
   return (
     <ToolGroup
       tools={tools}
-      agents={agents}
       activeArtifactId={activeArtifactId}
       onActivateArtifact={onActivateArtifact}
       keepOpen={keepOpen}

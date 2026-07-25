@@ -7,10 +7,10 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 // Tauri sets TAURI_DEV_HOST when serving the dev UI to a device on the LAN
 // (e.g. mobile); assets must then resolve against that host rather than localhost.
-// DAISY_PORT lets a developer run the dev server on a different port (default
+// XEAC_PORT lets a developer run the dev server on a different port (default
 // 3000); assets must use the same port the server is bound to.
 const internalHost = process.env.TAURI_DEV_HOST || "localhost";
-const devPort = process.env.DAISY_PORT || "3000";
+const devPort = process.env.XEAC_PORT || "3000";
 
 const nextConfig: NextConfig = {
   output: "export",

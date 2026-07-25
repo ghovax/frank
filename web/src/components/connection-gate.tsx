@@ -32,7 +32,7 @@ import { toaster } from "@/components/ui/toaster";
 // Marks that the imminent reload is a deliberate connection switch (not a fresh
 // launch), so the reloaded gate auto-connects to the just-chosen backend instead of
 // showing the picker. A fresh launch has no flag and shows the picker on failure.
-export const RECONNECT_FLAG = "daisy.reconnect";
+export const RECONNECT_FLAG = "xeac.reconnect";
 
 export function reloadIntoConnection(): void {
   try {
@@ -65,7 +65,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
       const url = await startLocalServer();
       const ok = isTauri()
         ? await waitForConnection(url)
-        : await checkConnection(url, 2000);
+        : await checkConnection(url, { timeoutMs: 2000 });
       if (!ok) {
         toaster.create({
           type: "error",
@@ -94,8 +94,8 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
     try {
       const url = await resolveReachableConnectionUrl(profile);
       const ok = profile.kind === "ssh"
-        ? await waitForConnection(url)
-        : await checkConnection(url);
+        ? await waitForConnection(url, { token: profile.token ?? "" })
+        : await checkConnection(url, { token: profile.token ?? "" });
       if (!ok) {
         toaster.create({
           type: "error",
@@ -105,7 +105,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
         });
         return false;
       }
-      await activateConnection(url, profile.id, profile.id);
+      await activateConnection(url, profile.id, { token: profile.token ?? "", profileId: profile.id });
       return true;
     } catch (caught) {
       toaster.create({

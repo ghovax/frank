@@ -2,7 +2,7 @@
 name: code-implementer
 title: Code implementer
 description: Implements focused code changes, coordinates targeted investigation, and verifies the result before reporting.
-role: delegation-target
+role: peer
 enabled: true
 connection-type: internal
 ---

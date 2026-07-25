@@ -35,14 +35,14 @@ export function locationConflict(
     path: location.base_directory.trim().replace(/\/+$/, ""),
     raw: location.base_directory.trim(),
   }));
-  for (let i = 0; i < normalized.length; i += 1) {
-    for (let j = i + 1; j < normalized.length; j += 1) {
-      const a = normalized[i];
-      const b = normalized[j];
-      if (a.machine !== b.machine || !a.path || !b.path) continue;
-      if (a.path === b.path) return { key: "conflictSameDirectory", values: { directory: a.raw } };
-      if (b.path.startsWith(`${a.path}/`)) return { key: "conflictNested", values: { inner: b.raw, outer: a.raw } };
-      if (a.path.startsWith(`${b.path}/`)) return { key: "conflictNested", values: { inner: a.raw, outer: b.raw } };
+  for (let outerIndex = 0; outerIndex < normalized.length; outerIndex += 1) {
+    for (let innerIndex = outerIndex + 1; innerIndex < normalized.length; innerIndex += 1) {
+      const first = normalized[outerIndex];
+      const second = normalized[innerIndex];
+      if (first.machine !== second.machine || !first.path || !second.path) continue;
+      if (first.path === second.path) return { key: "conflictSameDirectory", values: { directory: first.raw } };
+      if (second.path.startsWith(`${first.path}/`)) return { key: "conflictNested", values: { inner: second.raw, outer: first.raw } };
+      if (first.path.startsWith(`${second.path}/`)) return { key: "conflictNested", values: { inner: first.raw, outer: second.raw } };
     }
   }
   return null;
@@ -74,7 +74,6 @@ export function LocationForm({
       { value: "default", label: translation("permissionManual") },
       { value: "auto", label: translation("permissionAuto") },
       { value: "read_only", label: translation("permissionReadOnly") },
-      { value: "bypass", label: translation("permissionBypass") },
     ],
     [translation],
   );

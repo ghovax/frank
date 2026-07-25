@@ -79,7 +79,7 @@ function draftToInput(draft: Draft): RemoteAgentInput {
   };
 }
 
-// External A2A agents this harness can delegate to. Lists the registered agents with a
+// Agents on other hosts, reached by message rather than created here. Lists them with a
 // live health pill and an inline form to add one. Secrets are write-only (never returned),
 // and remote-agents.json is the source of truth, so hand-editing that file works too.
 export function RemoteAgentsPanel() {
@@ -95,11 +95,27 @@ export function RemoteAgentsPanel() {
     }
   }, []);
 
+  // Read the list once, then follow the daemon. The first read is awaited here rather than
+  // handed to `reload`, so the state lands after the round trip and can be dropped when the
+  // panel is closed before it answers — the version that fired `reload` and forgot about it
+  // would set state on an unmounted panel.
   useEffect(() => {
-    void reload();
-    return subscribeEvents((event) => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const loaded = await listRemoteAgents();
+        if (!cancelled) setAgents(loaded);
+      } catch {
+        if (!cancelled) toaster.create({ title: "Could not load external agents", type: "error" });
+      }
+    })();
+    const unsubscribe = subscribeEvents((event) => {
       if (event.type === "remote_agents_changed") void reload();
     });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [reload]);
 
   const save = useCallback(async () => {

@@ -6,9 +6,7 @@
   },
   "permissionMode": "read_only",
   "tools": {
-    "enabledBuiltinTools": [
-      "spawn_agent"
-    ],
+    "enabledBuiltinTools": [],
     "bash": {
       "enabled": true,
       "backgroundAllowed": true,
@@ -26,10 +24,6 @@
         "kill *": "ask",
         "gh *": "ask"
       }
-    },
-    "spawnAgent": {
-      "enabled": true
     }
-  },
-  "streamAgentProgress": true
+  }
 }

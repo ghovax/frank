@@ -1,6 +1,6 @@
 # Agents, skills, memory, and MCP
 
-Everything that shapes how Daisy behaves — its agents, their reusable skills, its memory, and its tool servers — is **plain Markdown and JSON on disk**. There are two layers, and they merge by name:
+Everything that shapes how XEAC behaves — its agents, their reusable skills, its memory, and its tool servers — is **plain Markdown and JSON on disk**. There are two layers, and they merge by name:
 
 - **Global:** `~/.agents/` — available everywhere.
 - **Project-local:** `.agents/` in the working directory you point an agent at.
@@ -52,7 +52,7 @@ You are the senior researcher. You do not take bullshit...
 }
 ```
 
-Each agent is served as its own [A2A](https://github.com/google/A2A) endpoint, and an agent can **delegate** a sub-task to another agent (the `spawn_agent` tool). Bundled agents:
+Each agent is a profile a session can be created with, and a running session serves [A2A](https://github.com/google/A2A) on its own socket. A session that needs a peer creates one with its `create_session` tool and messages it over the same control plane your terminal uses — one API, whoever the caller is — rather than through an in-process delegation tool. The peer answers the same way, by messaging the session that created it. Bundled agents:
 
 | Agent | Role |
 |-------|------|

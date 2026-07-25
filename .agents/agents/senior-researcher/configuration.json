@@ -24,10 +24,6 @@
         "kill *": "ask",
         "gh *": "ask"
       }
-    },
-    "spawnAgent": {
-      "enabled": true
     }
-  },
-  "streamAgentProgress": true
+  }
 }

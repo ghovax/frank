@@ -2,24 +2,26 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  streamA2A,
-  abortSession,
+  cancelTurn,
   abortToolCall,
-  steerSession,
+  attachSession,
   compactSession,
+  messageParts,
   resolvePermission,
   resolveQuestion,
-  fetchSessionTasks,
-  fetchSessionTasksPage,
-  subscribeSessionStream,
+  fetchSessionTurns,
+  fetchSessionTurnsPage,
+  sessionCreate,
+  sessionSend,
   CONTENT_BLOCK_METADATA_KEY,
-  type A2AStreamResult,
+  partPayload,
+  turnState,
   type A2AMessage,
-  type A2ATask as A2ATaskWire,
+  type A2ATurn as A2ATurnWire,
   type PermissionMode,
   type WorkspaceStrategy,
 } from "./api";
-import { isSameToolEvent, type PermissionDecision, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
+import { isSameToolEvent, type QuestionAnswer, type QuestionItem, type ToolEvent, type ToolEventStatus, type ToolPermission, type ToolQuestion } from "./tool-event";
 import { artifactImageKey, type ArtifactAnnotationRecord, type ArtifactImageAnnotation } from "./artifact-annotations";
 import type { ArtifactEvent } from "@/components/artifact-bridge";
 import { toaster } from "@/components/ui/toaster";
@@ -27,7 +29,7 @@ import { asArray, asRecord } from "@/lib/coerce";
 import type { WireEvent } from "@/lib/generated/events";
 
 // Re-export the A2A task shape so components can consume it from one place.
-export type A2ATask = A2ATaskWire;
+export type A2ATurn = A2ATurnWire;
 
 export type TaskState =
   | "submitted"
@@ -77,15 +79,17 @@ export interface MessageMeta {
   reason?: string;
   messagesBefore?: number;
   messagesAfter?: number;
-  groupId?: string;
   durationMs?: number;
   artifactAnnotationRecords?: ArtifactAnnotationRecord[];
   attachments?: MessageAttachment[];
+  // On a `peer` message: which session sent it. The transcript shows a report as coming
+  // from somewhere, and "somewhere" has an id.
+  peerSender?: string;
 }
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
+  role: "user" | "peer" | "assistant" | "tool_call" | "thinking" | "error" | "warning" | "compaction";
   content: string;
   timestamp: string;
   meta?: MessageMeta;
@@ -117,12 +121,6 @@ export interface TokenUsage {
   contextInputTokens: number;
   contextOutputTokens: number;
   contextWindow: number;
-  // Combined spend of agents spawned this session — a separate bucket (agents
-  // run in their own context; only their deliverable returns to the parent).
-  agentInputTokens: number;
-  agentOutputTokens: number;
-  agentTotalTokens: number;
-  agentModelCalls: number;
 }
 
 // A turn's input: either typed text or a structured artifact interaction. Both
@@ -137,143 +135,6 @@ export interface QueuedMessage {
   text: string;
   steering: boolean;
   dataParts?: Record<string, unknown>[];
-}
-
-// An agent step's ordered timeline — prose, reasoning, and tool calls
-// interleaved, mirroring the main chat. Built from that agent's path-tagged events
-// (the same unified vocabulary as the root agent). Reasoning is captured here for
-// fidelity but, like the main chat, is surfaced by the agents panel as a live status.
-export type AgentPart =
-  | { kind: "text"; content: string; blockIdentifier: string }
-  | { kind: "thinking"; content: string; status: ToolEventStatus; durationMs?: number }
-  | ({ kind: "tool" } & ToolEvent);
-
-type ThinkingPart = Extract<AgentPart, { kind: "thinking" }>;
-type ToolPart = Extract<AgentPart, { kind: "tool" }>;
-
-export interface AgentStep {
-  stepId: string;
-  agent: string;
-  goal: string;
-  childTaskId: string;
-  parts: AgentPart[];
-  state: TaskState;
-  task?: A2ATask;
-}
-
-export interface AgentGroup {
-  groupId: string;
-  toolCallId: string;
-  steps: AgentStep[];
-}
-
-export function isStepDone(step: AgentStep): boolean {
-  return TERMINAL_STATES.has(step.state);
-}
-
-// Concatenate the text parts of an A2A task's artifacts.
-export function taskArtifactText(task: A2ATask | undefined): string {
-  if (!task?.artifacts) return "";
-  const texts: string[] = [];
-  for (const artifact of task.artifacts) {
-    for (const part of artifact.parts ?? []) {
-      if (part.kind === "text" && part.text) texts.push(part.text);
-    }
-  }
-  return texts.join("\n");
-}
-
-function emptyStep(stepId: string, agent = "", goal = "", childTaskId = ""): AgentStep {
-  return { stepId, agent, goal, childTaskId, parts: [], state: "working" };
-}
-
-// One place that knows a thinking part's shape, so call sites spell out only what
-// differs (reasoning text, a finished status). Defaults to a running placeholder
-// with no body.
-function thinkingPart(fields: Partial<ThinkingPart> = {}): ThinkingPart {
-  return { kind: "thinking", content: "", status: "running", ...fields };
-}
-
-function isThinkingPart(part: AgentPart): part is ThinkingPart {
-  return part.kind === "thinking";
-}
-
-function isRunningThinking(part: AgentPart): part is ThinkingPart {
-  return isThinkingPart(part) && part.status === "running";
-}
-
-function isToolPart(part: AgentPart): part is ToolPart {
-  return part.kind === "tool";
-}
-
-// Close out any in-flight thinking part (mark it done). Called before a new
-// prose block, tool call, or the step finishing. Parts persist — a finished
-// "Thinking" stays as the marker for that reasoning phase.
-function finishAgentThinking(step: AgentStep): AgentStep {
-  if (!step.parts.some(isRunningThinking)) return step;
-  return { ...step, parts: step.parts.map((part) => (isRunningThinking(part) ? { ...part, status: "done" } : part)) };
-}
-
-// Close the in-flight thinking part and stamp how long it ran, so the timeline
-// shows "Thought for Ns". The server measures the duration; here it's just recorded.
-function finishAgentThinkingWithDuration(step: AgentStep, durationMs: number): AgentStep {
-  if (!step.parts.some(isRunningThinking)) return step;
-  return { ...step, parts: step.parts.map((part) => (isRunningThinking(part) ? { ...part, status: "done", durationMs } : part)) };
-}
-
-function finishRunningAgentTools(step: AgentStep): AgentStep {
-  if (!step.parts.some((part) => isToolPart(part) && part.status === "running")) return step;
-  return {
-    ...step,
-    parts: step.parts.map((part) =>
-      isToolPart(part) && part.status === "running"
-        ? { ...part, status: "completed" as const }
-        : part
-    ),
-  };
-}
-
-// The single path for the thinking signal — the iteration-start ping and any
-// streamed reasoning. Ensures a running thinking part exists, then appends the
-// reasoning text. A bare ping just keeps the part alive (no body, no second
-// placeholder stacked).
-function applyAgentThinking(step: AgentStep, text: string): AgentStep {
-  let index = step.parts.findLastIndex(isRunningThinking);
-  let parts = step.parts;
-  if (index === -1) {
-    parts = [...parts, thinkingPart()];
-    index = parts.length - 1;
-  }
-  if (!text) return { ...step, parts };
-  return {
-    ...step,
-    parts: parts.map((part, partIndex) =>
-      partIndex === index && isThinkingPart(part) ? { ...part, content: part.content + text } : part
-    ),
-  };
-}
-
-function appendAgentText(step: AgentStep, text: string, blockIdentifier: string): AgentStep {
-  if (!text) return step;
-  step = finishAgentThinking(step);
-  const last = step.parts[step.parts.length - 1];
-  if (last && last.kind === "text" && last.blockIdentifier === blockIdentifier) {
-    const parts = step.parts.slice(0, -1);
-    parts.push({ kind: "text", content: last.content + text, blockIdentifier });
-    return { ...step, parts };
-  }
-  return { ...step, parts: [...step.parts, { kind: "text", content: text, blockIdentifier }] };
-}
-
-function appendAgentToolCall(step: AgentStep, name: string, toolArguments: Record<string, unknown> | undefined, toolCallId: string): AgentStep {
-  if (toolCallId && step.parts.some((part) => isToolPart(part) && part.toolCallId === toolCallId)) {
-    return step;
-  }
-  step = finishAgentThinking(step);
-  return {
-    ...step,
-    parts: [...step.parts, { kind: "tool", name, arguments: toolArguments, toolCallId, status: "running" }],
-  };
 }
 
 // The explicit ToolStatus from the wire mapped to the UI lifecycle. `input_required`
@@ -291,71 +152,10 @@ function statusFromWire(wireStatus: unknown): ToolEventStatus {
   }
 }
 
-function upsertAgentToolResult(step: AgentStep, name: string, toolCallId: string, result: unknown, status: ToolEventStatus): AgentStep {
-  let matched = false;
-  const parts = step.parts.map((part) => {
-    if (!isToolPart(part) || !isSameToolEvent(part, name, toolCallId)) return part;
-    matched = true;
-    return { ...part, result, status };
-  });
-  if (matched) return { ...step, parts };
-  // No matching call (result arrived first / orphaned) — record it as a finished tool.
-  return {
-    ...step,
-    parts: [...step.parts, { kind: "tool", name: name || "unknown", toolCallId, result, status }],
-  };
-}
-
-// A delegated agent parked on a human-in-the-loop gate: flip the tool part that raised it
-// to `input_required` and attach the prompt, so the agents-panel card renders the same
-// inline approve/deny (or question) UI as the root transcript. The resolve routes by
-// request id to the parked delegated agent runtime, which resumes in place on the answer.
-function applyAgentToolPermission(step: AgentStep, toolCallId: string, permission: ToolPermission): AgentStep {
-  if (!toolCallId) return step;
-  return {
-    ...step,
-    parts: step.parts.map((part) =>
-      isToolPart(part) && part.toolCallId === toolCallId
-        ? { ...part, status: "input_required" as const, permission }
-        : part
-    ),
-  };
-}
-
-function applyAgentToolQuestion(step: AgentStep, toolCallId: string, question: ToolQuestion): AgentStep {
-  if (!toolCallId) return step;
-  return {
-    ...step,
-    parts: step.parts.map((part) =>
-      isToolPart(part) && part.toolCallId === toolCallId
-        ? { ...part, status: "input_required" as const, question }
-        : part
-    ),
-  };
-}
-
-// The result currently stored for a tool part, located by its call id across all
-// agent steps — so a streamed/MCP update merges into what is already there.
-function agentToolResult(agentGroups: AgentGroup[], toolCallId: string): unknown {
-  for (const group of agentGroups) {
-    for (const step of group.steps) {
-      const part = step.parts.find((candidate) => isToolPart(candidate) && candidate.toolCallId === toolCallId);
-      if (part && isToolPart(part)) return part.result;
-    }
-  }
-  return undefined;
-}
-
 function requiredContentBlockIdentifier(metadata: Record<string, unknown> | undefined): string {
   const extension = asRecord(metadata?.[CONTENT_BLOCK_METADATA_KEY]);
   const identifier = String(extension.id ?? "");
   if (!identifier) throw new Error("Assistant text is missing its content-block identity.");
-  return identifier;
-}
-
-function requiredEventBlockIdentifier(value: unknown): string {
-  const identifier = String(value ?? "");
-  if (!identifier) throw new Error("Assistant stream event is missing its content-block identity.");
   return identifier;
 }
 
@@ -381,7 +181,7 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
       case "network_error":
         return { title: "Connection interrupted", message: "The model connection dropped before the turn finished. Check the connection and retry." };
       case "server_error":
-        return { title: "Server request failed", message: "Daisy could not start the turn. Check the server log and try again." };
+        return { title: "Server request failed", message: "XEAC could not start the turn. Check the daemon log and try again." };
       case "request_too_large":
         return { title: "Request is too large", message: "The agent's model could not accept this much context. Start a smaller follow-up or configure a model with more capacity." };
       case "request_rejected":
@@ -400,10 +200,14 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
   };
 }
 
+// A turn-level failure worth a toast. A tool-scoped error (one carrying a tool call id)
+// is already delivered to the model and rendered on that tool's card, so it must not
+// raise a banner as well.
 function friendlyErrorFromMessage(message: A2AMessage | undefined): FriendlyError | null {
   for (const part of message?.parts ?? []) {
-    if (part.kind === "data" && part.data?.kind === "error") {
-      return friendlyErrorFromData(part.data);
+    const payload = part.kind === "data" ? partPayload(part.data) : {};
+    if (payload.kind === "error" && !payload.tool_call_id) {
+      return friendlyErrorFromData(payload);
     }
   }
   return null;
@@ -553,70 +357,11 @@ function applyArtifactUpdates(
   return { messages: nextMessages, result: withResultArtifacts(result, remainingArtifacts) };
 }
 
-function applyArtifactUpdatesToAgentGroups(
-  agentGroups: AgentGroup[],
-  result: unknown,
-  currentToolCallId: string
-): { agentGroups: AgentGroup[]; result: unknown } {
-  const artifacts = resultArtifacts(result);
-  if (artifacts.length === 0) return { agentGroups, result };
-
-  let nextAgentGroups = agentGroups;
-  const remainingArtifacts: unknown[] = [];
-
-  for (const artifact of artifacts) {
-    const mode = artifactUpdateMode(artifact);
-    const updateTargetId = artifactTargetIdentifier(artifact) || artifactIdentifier(artifact);
-    if (!updateTargetId || !["replace", "update", "upsert"].includes(mode)) {
-      remainingArtifacts.push(artifact);
-      continue;
-    }
-
-    let didReplace = false;
-    nextAgentGroups = nextAgentGroups.map((group) => ({
-      ...group,
-      steps: group.steps.map((step) => ({
-        ...step,
-        parts: step.parts.map((part) => {
-          if (didReplace || part.kind !== "tool" || part.toolCallId === currentToolCallId) return part;
-          const replacement = replaceArtifactInResult(part.result, updateTargetId, artifact);
-          if (!replacement.replaced) return part;
-          didReplace = true;
-          return { ...part, result: replacement.result };
-        }),
-      })),
-    }));
-
-    if (!didReplace && mode === "upsert") {
-      remainingArtifacts.push(artifact);
-    }
-  }
-
-  return { agentGroups: nextAgentGroups, result: withResultArtifacts(result, remainingArtifacts) };
-}
-
-function withStep(
-  list: AgentGroup[],
-  groupId: string,
-  stepId: string,
-  updater: (step: AgentStep) => AgentStep
-): AgentGroup[] {
-  return list.map((group) => {
-    if (group.groupId !== groupId) return group;
-    const hasStep = group.steps.some((step) => step.stepId === stepId);
-    const steps = hasStep
-      ? group.steps.map((step) => (step.stepId === stepId ? updater(step) : step))
-      : [...group.steps, updater(emptyStep(stepId))];
-    return { ...group, steps };
-  });
-}
-
-// A2A stream reduction — turn agent message parts into chat + group UI
-// state. Shared by the live stream and the replay path so both render identically.
+// A2A stream reduction — turn agent message parts into chat UI state. Shared by the
+// attach stream and the replay path so both render identically.
 
 interface ReduceState {
   messages: ChatMessage[];
-  agentGroups: AgentGroup[];
   tasks: ChatTask[];
   lane: string | null; // id of the open assistant prose block, if any
   tokenUsage: TokenUsage | null; // latest cumulative token totals, if any reported
@@ -625,18 +370,15 @@ interface ReduceState {
   // older pages prepend without re-keying — and thus without remounting/re-animating
   // — the messages already on screen.
   keyCounts: Map<string, number>;
-  agentEventIdentifiers: Set<string>;
 }
 
 function newReduceState(): ReduceState {
   return {
     messages: [],
-    agentGroups: [],
     tasks: [],
     lane: null,
     tokenUsage: null,
     keyCounts: new Map(),
-    agentEventIdentifiers: new Set(),
   };
 }
 
@@ -878,7 +620,7 @@ function artifactAnnotationRecordFromData(data: Record<string, unknown> | undefi
 function attachmentsFromMessage(message: A2AMessage): MessageAttachment[] {
   const attachments: MessageAttachment[] = [];
   for (const part of message.parts ?? []) {
-    if (part.kind === "data") attachments.push(...attachmentsFromData(part.data));
+    if (part.kind === "data") attachments.push(...attachmentsFromData(partPayload(part.data)));
   }
   return attachments;
 }
@@ -887,13 +629,17 @@ function artifactAnnotationRecordsFromMessage(message: A2AMessage): ArtifactAnno
   const records: ArtifactAnnotationRecord[] = [];
   for (const part of message.parts ?? []) {
     if (part.kind !== "data") continue;
-    const record = artifactAnnotationRecordFromData(part.data);
+    const record = artifactAnnotationRecordFromData(partPayload(part.data));
     if (record) records.push(record);
   }
   return records;
 }
 
-function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
+// A message a session received from outside itself: the user typed it, or another session
+// sent it. `peerSender` is set only in the second case, and telling them apart is not
+// cosmetic — a peer's report rendered as a user message attributes words to a person who
+// never wrote them.
+function reduceInboundMessage(state: ReduceState, message: A2AMessage, peerSender = ""): void {
   const text = (message.parts ?? []).filter((part) => part.kind === "text").map((part) => part.text ?? "").join("");
   const attachments = attachmentsFromMessage(message);
   const artifactAnnotationRecords = artifactAnnotationRecordsFromMessage(message);
@@ -908,12 +654,13 @@ function reduceUserMessage(state: ReduceState, message: A2AMessage): void {
   const meta = {
     ...(attachments.length > 0 ? { attachments } : {}),
     ...(artifactAnnotationRecords.length > 0 ? { artifactAnnotationRecords } : {}),
+    ...(peerSender ? { peerSender } : {}),
   };
   state.messages = [
     ...state.messages,
     {
-      id: stableMessageId(state, "user", message.messageId),
-      role: "user",
+      id: stableMessageId(state, peerSender ? "peer" : "user", message.messageId),
+      role: peerSender ? "peer" : "user",
       content: text,
       timestamp: new Date().toISOString(),
       ...(Object.keys(meta).length > 0 ? { meta } : {}),
@@ -933,167 +680,23 @@ function reduceAgentMessage(state: ReduceState, message: A2AMessage): void {
       continue;
     }
     if (part.kind !== "data" || !part.data) continue;
-    reduceDataPart(state, part.data, message.messageId);
+    reduceDataPart(state, partPayload(part.data), message.messageId);
   }
-}
-
-function isImmediateAgentEventMessage(message: A2AMessage): boolean {
-  return (message.parts ?? []).some((part) => (
-    part.kind === "data"
-    && Array.isArray(part.data?.path)
-    && part.data.path.length > 0
-    && Boolean(part.data.event_id)
-  ));
 }
 
 function steeringText(message: A2AMessage | undefined): string {
   for (const part of message?.parts ?? []) {
-    if (part.kind === "data" && part.data?.kind === "steering") {
-      return String(part.data.text ?? "").trim();
+    const payload = part.kind === "data" ? partPayload(part.data) : {};
+    if (payload.kind === "steering") {
+      return String(payload.text ?? "").trim();
     }
   }
   return "";
 }
 
-// Mark an agent step terminal: close its thinking/tools and stamp the task state.
-function finishAgentStepState(step: AgentStep, taskState: string): AgentStep {
-  const next = finishRunningAgentTools(finishAgentThinking(step));
-  return { ...next, state: (taskState as TaskState) || "completed" };
-}
-
-// Ensure the group + step for a lane exist (events can arrive before group_started),
-// and link the spawning tool-call card in the transcript to this group.
-function ensureLaneGroup(state: ReduceState, groupId: string, stepId: string, agent?: string, goal?: string, toolCallId?: string): void {
-  const group = state.agentGroups.find((candidate) => candidate.groupId === groupId);
-  if (!group) {
-    state.agentGroups = [...state.agentGroups, { groupId, toolCallId: toolCallId ?? "", steps: [emptyStep(stepId, agent ?? "", goal ?? "")] }];
-  } else if (!group.steps.some((step) => step.stepId === stepId)) {
-    state.agentGroups = state.agentGroups.map((candidate) =>
-      candidate.groupId === groupId ? { ...candidate, steps: [...candidate.steps, emptyStep(stepId, agent ?? "", goal ?? "")] } : candidate
-    );
-  } else if (agent) {
-    state.agentGroups = withStep(state.agentGroups, groupId, stepId, (step) => ({ ...step, agent: agent || step.agent, goal: goal || step.goal }));
-  }
-  if (toolCallId) {
-    state.messages = state.messages.map((message) =>
-      message.role === "tool_call" && String(message.meta?.toolCallId ?? "") === toolCallId
-        ? { ...message, meta: { ...message.meta, groupId, status: "running" } }
-        : message
-    );
-  }
-}
-
-// A path-tagged event (path non-empty) belongs to an agent. It uses the SAME
-// unified vocabulary as the root agent; we route it into the agents panel keyed by the
-// deepest path segment. An agent is just an agent at a deeper path — there is no
-// separate sub_task_* vocabulary any more.
-function reduceAgentLaneEvent(state: ReduceState, data: Record<string, unknown>): void {
-  const path = Array.isArray(data.path) ? (data.path as Array<Record<string, unknown>>) : [];
-  const segment = path[path.length - 1] ?? {};
-  const groupId = String(segment.group_id ?? "");
-  const stepId = String(segment.step_id ?? "");
-  if (!groupId || !stepId) return;
-  const apply = (updater: (step: AgentStep) => AgentStep) => {
-    state.agentGroups = withStep(state.agentGroups, groupId, stepId, updater);
-  };
-  // Typed against the same generated union as the root reducer; `data` stays in scope for the
-  // few helpers that take a raw record and for `block_id`, which rides a relayed text event and
-  // is not on the text model.
-  const event = data as unknown as WireEvent;
-  switch (event.kind) {
-    case "group_started":
-      ensureLaneGroup(state, groupId, stepId, event.agent_name ?? "", event.title ?? "", event.tool_call_id ?? "");
-      break;
-    case "text":
-      ensureLaneGroup(state, groupId, stepId);
-      apply((step) => appendAgentText(
-        step,
-        event.text,
-        requiredEventBlockIdentifier(data.block_id),
-      ));
-      break;
-    case "thinking":
-      ensureLaneGroup(state, groupId, stepId);
-      apply((step) => applyAgentThinking(step, event.text ?? ""));
-      break;
-    case "thinking_done":
-      apply((step) => finishAgentThinkingWithDuration(step, event.duration_ms ?? 0));
-      break;
-    case "status":
-      if (event.code === "waiting_for_tools") apply(finishAgentThinking);
-      break;
-    case "tool_call":
-      ensureLaneGroup(state, groupId, stepId);
-      apply((step) => appendAgentToolCall(step, event.tool_name || "unknown", event.arguments, event.tool_call_id));
-      break;
-    case "tool_result": {
-      const toolName = event.tool_name || "unknown";
-      const toolCallId = event.tool_call_id;
-      const mergedResult = toolName === "call_mcp_tool" ? mergeMcpFinalResult(agentToolResult(state.agentGroups, toolCallId), event.display) : event.display;
-      const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
-      const status = statusFromWire(event.status);
-      state.agentGroups = withStep(artifactUpdate.agentGroups, groupId, stepId, (step) => upsertAgentToolResult(step, toolName, toolCallId, artifactUpdate.result, status));
-      break;
-    }
-    case "mcp_event": {
-      const toolCallId = event.tool_call_id;
-      const mergedResult = mergeMcpResult(agentToolResult(state.agentGroups, toolCallId), streamedMcpResult(data));
-      const artifactUpdate = applyArtifactUpdatesToAgentGroups(state.agentGroups, mergedResult, toolCallId);
-      state.agentGroups = withStep(artifactUpdate.agentGroups, groupId, stepId, (step) => upsertAgentToolResult(step, "call_mcp_tool", toolCallId, artifactUpdate.result, "running"));
-      break;
-    }
-    case "permission_request": {
-      ensureLaneGroup(state, groupId, stepId);
-      const toolCallId = event.tool_call_id ?? "";
-      const permission: ToolPermission = {
-        requestId: event.request_id,
-        justification: event.justification || undefined,
-        risk: event.risk || undefined,
-      };
-      apply((step) => applyAgentToolPermission(step, toolCallId, permission));
-      break;
-    }
-    case "question": {
-      ensureLaneGroup(state, groupId, stepId);
-      const toolCallId = event.tool_call_id ?? "";
-      const question: ToolQuestion = {
-        requestId: event.request_id,
-        questions: (event.questions as unknown as QuestionItem[]) ?? [],
-      };
-      apply((step) => applyAgentToolQuestion(step, toolCallId, question));
-      break;
-    }
-    case "done":
-      apply((step) => finishAgentStepState(step, event.state ?? "completed"));
-      break;
-    case "compaction":
-    case "steering":
-    case "token_usage":
-    case "warning":
-    case "error":
-      // Root-transcript-only kinds; an agent lane never renders these.
-      break;
-    default: {
-      // Exhaustiveness: a new WireEvent kind not handled above is a compile error.
-      const _exhaustive: never = event;
-      void _exhaustive;
-      break;
-    }
-  }
-}
-
 function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourceId?: string): void {
-  // An agent event (non-empty path) is routed to the agents panel; the root
-  // agent's own events (empty path) drive the main transcript below.
-  if (Array.isArray(data.path) && data.path.length > 0) {
-    const eventIdentifier = String(data.event_id ?? "");
-    if (eventIdentifier) {
-      if (state.agentEventIdentifiers.has(eventIdentifier)) return;
-      state.agentEventIdentifiers.add(eventIdentifier);
-    }
-    reduceAgentLaneEvent(state, data);
-    return;
-  }
+  // Every event on this stream belongs to this session. A peer is a session of its own
+  // with its own stream, so there is no longer a foreign lane to route away.
   // The one typed reader of a root wire event: switch on the generated union's
   // discriminant so a renamed kind or field is a compile error, not a silent "".
   // `data` stays in scope for the few helpers that take a raw record.
@@ -1163,7 +766,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
       // Per-call (latest) figures — this is the actual current context, not a sum.
       const contextInputTokens = event.input_tokens ?? 0;
       const contextOutputTokens = event.output_tokens ?? 0;
-      const agents = event.agents;
       state.tokenUsage = {
         inputTokens: cumulative?.input_tokens ?? 0,
         outputTokens: cumulative?.output_tokens ?? 0,
@@ -1175,10 +777,6 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
         contextOutputTokens,
         contextTokens: contextInputTokens + contextOutputTokens,
         contextWindow: event.context_window ?? 0,
-        agentInputTokens: agents?.input_tokens ?? 0,
-        agentOutputTokens: agents?.output_tokens ?? 0,
-        agentTotalTokens: agents?.total_tokens ?? 0,
-        agentModelCalls: agents?.model_calls ?? 0,
       };
       break;
     }
@@ -1345,8 +943,8 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
     }
     case "text":
     case "done":
-    case "group_started":
-      // The root transcript ignores these (streamed text and agent-panel lifecycle live elsewhere).
+      // Streamed prose arrives as A2A text parts, not as a wire event, and a turn's end
+      // is signalled by the attach stream's own `done` frame — neither is reduced here.
       break;
     default: {
       // Exhaustiveness: a new WireEvent kind that is not handled above is a compile error.
@@ -1357,61 +955,43 @@ function reduceDataPart(state: ReduceState, data: Record<string, unknown>, sourc
   }
 }
 
-function reduceArtifactUpdate(state: ReduceState, result: Extract<A2AStreamResult, { kind: "artifact-update" }>): void {
-  if (hasAssistantTextAfterLastUser(state)) return;
-  for (const part of result.artifact?.parts ?? []) {
-    if (part.kind !== "text" || !part.text?.trim()) continue;
-    pushAssistantText(
-      state,
-      part.text,
-      requiredContentBlockIdentifier(part.metadata),
-      result.artifact.artifactId,
-    );
-  }
-}
-
-function reduceFinalStatus(state: ReduceState, result: Extract<A2AStreamResult, { kind: "status-update" }>): void {
-  if (result.final || TERMINAL_STATES.has(result.status?.state as TaskState)) {
-    finishRunningThinking(state);
-    finishActiveTools(state);
-  }
-}
-
-// Reconstruct messages + agentGroups from a session's persisted A2A tasks. The
-// history arrives already compacted server-side (adjacent same-kind deltas merged),
-// so it is reduced as-is — no client-side compaction pass.
-function replayTasks(tasks: A2ATask[]): {
+// Reconstruct messages from a session's persisted A2A tasks. The history arrives
+// already compacted server-side (adjacent same-kind deltas merged), so it is reduced
+// as-is — no client-side compaction pass. Tasks that reference another task are a
+// peer's work, not this session's turns, and are filtered out: a peer is its own
+// session with its own transcript, never a lane inside this one.
+function replayTurns(turns: A2ATurn[]): {
   messages: ChatMessage[];
-  agentGroups: AgentGroup[];
   tasks: ChatTask[];
   tokenUsage: TokenUsage | null;
   keyCounts: Map<string, number>;
-  agentEventIdentifiers: Set<string>;
 } {
-  const mainTasks = tasks
-    .filter((task) => !(task.metadata && Array.isArray((task.metadata as Record<string, unknown>).referenceTaskIds)))
+  const mainTurns = turns
+    .filter((turn) => !(turnState(turn).referenceTurnIds ?? []).length)
     .sort((first, second) => String(first.status?.timestamp ?? "").localeCompare(String(second.status?.timestamp ?? "")));
   const state: ReduceState = newReduceState();
-  for (const task of mainTasks) {
+  for (const turn of mainTurns) {
     state.lane = null;
-    // A task's full message stream is its history PLUS its trailing status
+    // A turn's full message stream is its history PLUS its trailing status
     // message: the A2A TaskManager keeps the latest message on `status.message`
     // and only folds it into `history` on the *next* status update. A turn
     // suspended mid-flight (e.g. awaiting a permission) never gets that next
     // update, so its last message — the pending request — lives only there.
     // Reduce both so replay reproduces exactly what the live stream showed
     // instead of dropping the trailing message and leaving the card stuck.
-    const replayMessages = [...(task.history ?? [])];
-    const trailing = task.status?.message;
+    const replayMessages = [...(turn.history ?? [])];
+    const trailing = turn.status?.message;
     if (trailing && !replayMessages.some((message) => !!message.messageId && message.messageId === trailing.messageId)) {
       replayMessages.push(trailing);
     }
+    // Stamped on the turn, not on the message, because it describes what opened the turn.
+    const peerSender = turnState(turn).peerSender ?? "";
     for (const message of replayMessages) {
-      if (message.role === "user") reduceUserMessage(state, message);
+      if (message.role === "user") reduceInboundMessage(state, message, peerSender);
       else reduceAgentMessage(state, message);
     }
     if (!hasAssistantTextAfterLastUser(state)) {
-      for (const artifact of task.artifacts ?? []) {
+      for (const artifact of turn.artifacts ?? []) {
         for (const part of artifact.parts ?? []) {
           if (part.kind !== "text" || !part.text?.trim()) continue;
           pushAssistantText(
@@ -1423,34 +1003,13 @@ function replayTasks(tasks: A2ATask[]): {
         }
       }
     }
-    if (TERMINAL_STATES.has(task.status?.state as TaskState)) finishActiveTools(state);
-  }
-  // Related child tasks are not transcript turns, but their persisted terminal
-  // state is authoritative for the exact agents-panel lane they own. This closes
-  // a lane even when its live `done` event was missed because the parent was
-  // stopped, the viewer disconnected, or the server restarted.
-  for (const task of tasks) {
-    const metadata = task.metadata as Record<string, unknown> | undefined;
-    if (!metadata || !Array.isArray(metadata.referenceTaskIds)) continue;
-    const lane = metadata.agentLane as Record<string, unknown> | undefined;
-    const groupId = String(lane?.groupId ?? "");
-    const stepId = String(lane?.stepId ?? "");
-    const taskState = task.status?.state as TaskState;
-    if (!groupId || !stepId || !TERMINAL_STATES.has(taskState)) continue;
-    state.agentGroups = withStep(
-      state.agentGroups,
-      groupId,
-      stepId,
-      (step) => finishAgentStepState(step, taskState),
-    );
+    if (TERMINAL_STATES.has(turn.status?.state as TaskState)) finishActiveTools(state);
   }
   return {
     messages: state.messages,
-    agentGroups: state.agentGroups,
     tasks: state.tasks,
     tokenUsage: state.tokenUsage,
     keyCounts: state.keyCounts,
-    agentEventIdentifiers: state.agentEventIdentifiers,
   };
 }
 
@@ -1469,7 +1028,6 @@ export function useChat(
   projectId: string = ""
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [agentGroups, setAgentGroups] = useState<AgentGroup[]>([]);
   const [tasks, setTasks] = useState<ChatTask[]>([]);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -1485,11 +1043,13 @@ export function useChat(
   const [historyReloadNonce, setHistoryReloadNonce] = useState(0);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
+  // This hook's own attach subscription while it is driving a turn. A turn is sent
+  // and then observed here; closing it only drops the client end.
+  const attachRef = useRef<{ abort: () => void } | null>(null);
   const stateRef = useRef<ReduceState>(newReduceState());
   const sessionIdRef = useRef<string | null>(initialSessionId);
   const historyLoadedForRef = useRef<string | null>(null);
-  const historyFragmentsRef = useRef<A2ATask[]>([]);
+  const historyFragmentsRef = useRef<A2ATurn[]>([]);
   const historyPageCursorRef = useRef<number | null>(null);
   const hasOlderHistoryRef = useRef(false);
   const isOlderHistoryLoadingRef = useRef(false);
@@ -1498,7 +1058,7 @@ export function useChat(
   // current stream finishes. Kept separate from the user-visible text queue.
   const queuedArtifactEventsRef = useRef<ArtifactEvent[]>([]);
   // Render errors fire automatically when an artifact mounts, so a broken artifact
-  // (including on session replay) must not spawn the same turn twice. Tracked by
+  // (including on session replay) must not start the same turn twice. Tracked by
   // artifact + message; user-driven events (clicks) are never deduped.
   const seenRenderErrorsRef = useRef<Set<string>>(new Set());
   const isStreamingRef = useRef(false);
@@ -1536,7 +1096,6 @@ export function useChat(
       flushFrameRef.current = null;
     }
     setMessages(stateRef.current.messages);
-    setAgentGroups(stateRef.current.agentGroups);
     setTasks(stateRef.current.tasks);
     setTokenUsage(stateRef.current.tokenUsage);
   }, []);
@@ -1544,7 +1103,6 @@ export function useChat(
   const flush = useCallback(() => {
     if (typeof window === "undefined") {
       setMessages(stateRef.current.messages);
-      setAgentGroups(stateRef.current.agentGroups);
       setTasks(stateRef.current.tasks);
       setTokenUsage(stateRef.current.tokenUsage);
       return;
@@ -1553,30 +1111,27 @@ export function useChat(
     flushFrameRef.current = window.requestAnimationFrame(() => {
       flushFrameRef.current = null;
       setMessages(stateRef.current.messages);
-      setAgentGroups(stateRef.current.agentGroups);
       setTasks(stateRef.current.tasks);
       setTokenUsage(stateRef.current.tokenUsage);
     });
   }, []);
 
   const applyHistoryFragments = useCallback(() => {
-    const replayed = replayTasks(historyFragmentsRef.current);
+    const replayed = replayTurns(historyFragmentsRef.current);
     stateRef.current = {
       messages: replayed.messages,
-      agentGroups: replayed.agentGroups,
       tasks: replayed.tasks,
       lane: null,
       tokenUsage: replayed.tokenUsage,
       keyCounts: replayed.keyCounts,
-      agentEventIdentifiers: replayed.agentEventIdentifiers,
     };
     flushNow();
   }, [flushNow]);
 
-  const notifyTurnError = useCallback((taskId: string, message: A2AMessage | undefined) => {
+  const notifyTurnError = useCallback((message: A2AMessage | undefined) => {
     const error = friendlyErrorFromMessage(message);
     if (!error) return;
-    const key = `${taskId || sessionIdRef.current || "turn"}:${error.code}:${error.status ?? ""}`;
+    const key = `${sessionIdRef.current || "turn"}:${error.code}:${error.status ?? ""}`;
     if (errorToastKeysRef.current.has(key)) return;
     errorToastKeysRef.current.add(key);
     toaster.create({
@@ -1598,7 +1153,7 @@ export function useChat(
         window.cancelAnimationFrame(flushFrameRef.current);
         flushFrameRef.current = null;
       }
-      abortControllerRef.current?.abort();
+      attachRef.current?.abort();
     };
   }, []);
 
@@ -1640,9 +1195,9 @@ export function useChat(
     const loadHistory = async () => {
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         try {
-          const page = await fetchSessionTasksPage(initialSessionId, null, controller.signal, HISTORY_PAGE_LIMIT);
+          const page = await fetchSessionTurnsPage(initialSessionId, null, controller.signal, HISTORY_PAGE_LIMIT);
           if (cancelled) return;
-          historyFragmentsRef.current = page.tasks;
+          historyFragmentsRef.current = page.turns;
           historyPageCursorRef.current = page.next_before_row_id;
           hasOlderHistoryRef.current = page.has_more;
           setHasOlderHistory(page.has_more);
@@ -1694,9 +1249,9 @@ export function useChat(
       let cursor: number | null = historyPageCursorRef.current;
       while (cursor != null && hasOlderHistoryRef.current) {
         if (streamedLocallyRef.current || isStreamingRef.current) return;
-        const page = await fetchSessionTasksPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);
+        const page = await fetchSessionTurnsPage(ctx, cursor, undefined, HISTORY_PAGE_LIMIT);
         if (sessionIdRef.current !== ctx) return;
-        historyFragmentsRef.current = [...page.tasks, ...historyFragmentsRef.current];
+        historyFragmentsRef.current = [...page.turns, ...historyFragmentsRef.current];
         historyPageCursorRef.current = page.next_before_row_id;
         hasOlderHistoryRef.current = page.has_more;
         cursor = page.next_before_row_id;
@@ -1727,13 +1282,12 @@ export function useChat(
     void drainOlderHistory();
   }, [isHistoryLoading, isOlderHistoryLoading, isStreaming, hasOlderHistory, drainOlderHistory]);
 
-  // Live updates for a session that is running on the server.
-  // Subscribes to the server's per-context event stream: one compacted snapshot
-  // (catch-up) then a live tail of each emitted part, applied as O(delta) updates
-  // through the same reducer the driver uses — instead of polling and re-replaying
-  // the whole transcript every second. While this hook drives the root turn, this
-  // stream carries only identified agent-lane events; the root message stream stays
-  // authoritative for everything else.
+  // Live updates for a session that is running but which this hook is not driving.
+  // Attaches to the session: one compacted snapshot (catch-up) then a live tail of each
+  // emitted part, applied as O(delta) updates through the same reducer the driver uses —
+  // instead of polling and re-replaying the whole transcript every second. While this
+  // hook drives a turn it holds its own attach, so this one stays closed rather than
+  // opening a second stream onto the same session.
   useEffect(() => {
     if (!initialSessionId) return;
 
@@ -1741,38 +1295,47 @@ export function useChat(
     let subscription: { abort: () => void } | null = null;
     const controller = new AbortController();
 
-    const applySnapshot = (tasks: A2ATask[]) => {
-      const replayed = replayTasks(tasks);
+    const applySnapshot = (turns: A2ATurn[]) => {
+      const replayed = replayTurns(turns);
       stateRef.current = {
         messages: replayed.messages,
-        agentGroups: replayed.agentGroups,
         tasks: replayed.tasks,
         lane: null,
         tokenUsage: replayed.tokenUsage,
         keyCounts: replayed.keyCounts,
-        agentEventIdentifiers: replayed.agentEventIdentifiers,
       };
       sessionIdRef.current = initialSessionId;
       setSessionId(initialSessionId);
       flushNow();
     };
 
-    if (sessionRunning) {
+    if (sessionRunning && !isStreamingRef.current && !streamedLocallyRef.current) {
       wasRunningRef.current = true;
-      subscription = subscribeSessionStream(
+      subscription = attachSession(
         initialSessionId,
         (frame) => {
           if (cancelled) return;
-          const drivingRootTurn = isStreamingRef.current || streamedLocallyRef.current;
           if (frame.kind === "snapshot") {
-            if (drivingRootTurn) return;
-            applySnapshot(frame.tasks);
+            applySnapshot(frame.turns);
             setHistoryError(false);
             setIsHistoryLoading(false);
           } else if (frame.kind === "live") {
-            if (drivingRootTurn && !isImmediateAgentEventMessage(frame.message)) return;
             reduceAgentMessage(stateRef.current, frame.message);
             flush();
+          } else if (frame.kind === "turn" && !frame.running) {
+            // The turn ended, said by the session itself. The `sessionRunning` flip below
+            // learns the same thing from a polled listing a moment later; this arrives on
+            // the stream we are already holding, so the result artifact — written only as
+            // the task closes, and therefore never on the live tail — lands immediately
+            // instead of one poll interval after the work finished.
+            void (async () => {
+              try {
+                const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
+                if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
+              } catch {
+                // transient — the sessionRunning path below still captures it
+              }
+            })();
           }
         },
         () => {
@@ -1780,14 +1343,14 @@ export function useChat(
           // false re-runs this effect and the else branch captures final state.
         },
       );
-    } else if (wasRunningRef.current) {
-      // The turn just finished — capture its terminal state once (the live tail
-      // misses the final artifact, which arrives as a separate artifact-update),
-      // then stop.
+    } else if (!sessionRunning && wasRunningRef.current) {
+      // The turn just finished — capture its terminal state once (the live tail misses
+      // the turn's result artifact, which is only written as the task completes), then
+      // stop.
       wasRunningRef.current = false;
       void (async () => {
         try {
-          const tasks = await fetchSessionTasks(initialSessionId, controller.signal);
+          const tasks = await fetchSessionTurns(initialSessionId, controller.signal);
           if (!cancelled && !isStreamingRef.current && !streamedLocallyRef.current) applySnapshot(tasks);
         } catch {
           // transient — leave the last live state in place
@@ -1860,95 +1423,102 @@ export function useChat(
           }]
         : input.dataParts;
 
-      abortControllerRef.current = streamA2A(
-        text,
-        agent,
-        sessionIdRef.current,
-        (result: A2AStreamResult) => {
-          const kind = (result as { kind?: string }).kind;
-          if (kind === "status-update") {
-            const update = result as Extract<A2AStreamResult, { kind: "status-update" }>;
-            if (update.status?.state === "failed") {
-              notifyTurnError(update.taskId, update.status.message);
-            }
-            if (update.contextId && !sessionIdRef.current) {
-              sessionIdRef.current = update.contextId;
-              setSessionId(update.contextId);
-            }
-            if (update.status?.message) {
-              acknowledgeSteering(steeringText(update.status.message));
-              reduceAgentMessage(stateRef.current, update.status.message);
-            }
-            reduceFinalStatus(stateRef.current, update);
+      const finishTurn = () => {
+        stateRef.current.lane = null;
+        // The attach stream has closed. A clean turn already settled its cards from the
+        // events it emitted; but a Stop, or a connection that drops mid-turn (daemon
+        // stall, network loss), closes the stream with no terminal event, which would
+        // otherwise leave every in-flight tool/thinking card spinning forever. Sweep
+        // here as the single catch-all so a card can never outlive its stream.
+        finishRunningThinking(stateRef.current);
+        finishActiveTools(stateRef.current);
+        // A message still flagged `steering` was already delivered by `send`: a message
+        // to a live session is safe-point injected, so it is never dropped and must not
+        // be sent a second time. Retire the chip — if the turn ended before the
+        // injection landed, that same message simply starts the next turn and comes
+        // back over attach.
+        const pendingText = queuedMessagesRef.current.filter((message) => !message.steering);
+        if (pendingText.length !== queuedMessagesRef.current.length) setQueue(pendingText);
+        flush();
+        const pendingArtifact = queuedArtifactEventsRef.current;
+        // A user Stop closes the stream; do not immediately relaunch a queued
+        // message as a new turn — that is exactly the "Stop didn't stop" symptom.
+        // Consume the one-shot flag and fall through to idle, leaving the queue for
+        // the user to send deliberately.
+        const abortedByUser = abortedByUserRef.current;
+        abortedByUserRef.current = false;
+        if (!abortedByUser && pendingText.length > 0) {
+          const next = pendingText[0];
+          setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
+          runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
+        } else if (!abortedByUser && pendingArtifact.length > 0) {
+          const [next, ...rest] = pendingArtifact;
+          queuedArtifactEventsRef.current = rest;
+          runStreamRef.current({ kind: "artifact", event: next });
+        } else {
+          isStreamingRef.current = false;
+          setIsStreaming(false);
+          // Our locally-driven turn is over. Return to viewer mode so that if the
+          // harness later wakes this session on its own (an autonomous background
+          // resume), the read-only attach picks the new turn up live instead of the
+          // wake only appearing on a manual reload.
+          streamedLocallyRef.current = false;
+        }
+      };
+
+      let observing = false;
+      const observe = (sessionIdentifier: string) => {
+        observing = true;
+        attachRef.current = attachSession(
+          sessionIdentifier,
+          (frame) => {
+            // A snapshot is the attach stream's catch-up for a viewer joining mid-turn.
+            // We are driving, so our own state already includes the message we just
+            // sent and replacing it would drop it from view until it persists.
+            if (frame.kind !== "live") return;
+            acknowledgeSteering(steeringText(frame.message));
+            notifyTurnError(frame.message);
+            reduceAgentMessage(stateRef.current, frame.message);
             flush();
-          } else if (kind === "artifact-update") {
-            reduceArtifactUpdate(stateRef.current, result as Extract<A2AStreamResult, { kind: "artifact-update" }>);
-            flush();
-          } else if (!kind || kind === "task") {
-            const task = result as A2ATask;
-            if (task.contextId && !sessionIdRef.current) {
-              sessionIdRef.current = task.contextId;
-              setSessionId(task.contextId);
-            }
-          } else if (kind === "message") {
-            const message = result as unknown as A2AMessage;
-            acknowledgeSteering(steeringText(message));
-            reduceAgentMessage(stateRef.current, message);
-            flush();
+          },
+          finishTurn,
+        );
+      };
+
+      // A turn is two calls: make sure a session exists, then send it a message. The
+      // session is where the agent, the directory, the workspace and the permission mode
+      // are fixed — `send` carries none of them, and can therefore never change them.
+      void (async () => {
+        try {
+          let sessionIdentifier = sessionIdRef.current;
+          if (!sessionIdentifier) {
+            const created = await sessionCreate({
+              agent,
+              workingDirectory,
+              workspaceStrategy,
+              permissionMode,
+              projectId,
+            });
+            sessionIdentifier = created.id;
+            sessionIdRef.current = created.id;
+            setSessionId(created.id);
           }
-        },
-        () => {
-          stateRef.current.lane = null;
-          // The turn's stream has closed. A clean turn already settled its cards via
-          // the terminal status-update; but an abort (Stop) or a connection that drops
-          // mid-turn (server stall, network loss) closes the stream with no terminal
-          // status, which would otherwise leave every in-flight tool/thinking card
-          // spinning forever. Sweep here as the single catch-all so a card can never
-          // outlive its stream.
-          finishRunningThinking(stateRef.current);
-          finishActiveTools(stateRef.current);
-          flush();
-          // Drain queued text first (user intent), then any artifact events that
-          // arrived mid-turn. A message still flagged `steering` here was accepted by
-          // the backend but never echoed back (`acknowledgeSteering` clears the flag
-          // when steering is honored mid-turn) — the turn ended, failed, or raced past
-          // its last drain before applying it. It was NOT applied, so treat it exactly
-          // like any other pending message and send it as a fresh turn, rather than
-          // stranding it forever as a "Steering next opening" chip. The backend
-          // discards its own copy on stream close, so this can't double-apply.
-          const pendingText = queuedMessagesRef.current;
-          const pendingArtifact = queuedArtifactEventsRef.current;
-          // A user Stop closes the stream; do not immediately relaunch a queued
-          // message as a new turn — that is exactly the "Stop didn't stop" symptom.
-          // Consume the one-shot flag and fall through to idle, leaving the queue for
-          // the user to send deliberately.
-          const abortedByUser = abortedByUserRef.current;
-          abortedByUserRef.current = false;
-          if (!abortedByUser && pendingText.length > 0) {
-            const next = pendingText[0];
-            setQueue(queuedMessagesRef.current.filter((message) => message.id !== next.id));
-            runStreamRef.current({ kind: "text", text: next.text, dataParts: next.dataParts });
-          } else if (!abortedByUser && pendingArtifact.length > 0) {
-            const [next, ...rest] = pendingArtifact;
-            queuedArtifactEventsRef.current = rest;
-            runStreamRef.current({ kind: "artifact", event: next });
-          } else {
-            isStreamingRef.current = false;
-            setIsStreaming(false);
-            // Our locally-driven turn is over. Return to viewer mode so that if the
-            // harness later wakes this session on its own (an autonomous background
-            // resume), the read-only subscribe stream picks the new turn up live
-            // instead of the wake only appearing on a manual reload.
-            streamedLocallyRef.current = false;
-          }
-        },
-        workingDirectory,
-        workspaceStrategy,
-        permissionMode,
-        userMessageId,
-        dataParts,
-        projectId
-      );
+          // Attach before sending: the worker starts emitting the moment it accepts the
+          // message, and a subscription opened afterwards would miss the opening frames.
+          observe(sessionIdentifier);
+          await sessionSend(sessionIdentifier, messageParts(text, dataParts), { messageId: userMessageId });
+        } catch {
+          pushErrorMessage(stateRef.current, {
+            code: "server_error",
+            title: "Server request failed",
+            message: "XEAC could not start the turn. Check the daemon log and try again.",
+          });
+          // Let the attach close drive the wind-down when there is one, so the queue is
+          // drained exactly once however the turn failed.
+          if (observing) attachRef.current?.abort();
+          else finishTurn();
+        }
+      })();
     },
     [agent, workingDirectory, workspaceStrategy, permissionMode, projectId, flush, setQueue, acknowledgeSteering, notifyTurnError]
   );
@@ -1964,25 +1534,22 @@ export function useChat(
       if (isStreamingRef.current) {
         const pending = { id: crypto.randomUUID(), text: trimmed, steering: false, dataParts };
         const ctx = sessionIdRef.current;
+        // Steering is no longer a separate call: a message to a live session is sent the
+        // same way as any other and injected at the next safe point. The chip says so
+        // until the session echoes the steering event back.
         // While the turn is paused on a pending decision (a permission or question
-        // prompt), a new message can only be plain-queued — never steered. Steering
-        // could not be honored until the decision is resolved anyway, and a "Steering
-        // next opening" chip would misrepresent that. It drains when the turn ends.
+        // prompt), a new message is plain-queued instead — it could not be injected
+        // until the decision is resolved anyway, and a "Steering next opening" chip
+        // would misrepresent that. It drains when the turn ends.
         if (ctx && !queueOnly && dataParts.length === 0) {
           setQueue([...queuedMessagesRef.current, { ...pending, steering: true }]);
-          return steerSession(ctx, trimmed)
-            .then((queued) => {
-              if (!queued) {
-                setQueue(queuedMessagesRef.current.map((message) =>
-                  message.id === pending.id ? { ...message, steering: false } : message
-                ));
-              }
-            })
-            .catch(() => {
-              setQueue(queuedMessagesRef.current.map((message) =>
-                message.id === pending.id ? { ...message, steering: false } : message
-              ));
-            });
+          return sessionSend(ctx, messageParts(trimmed), { messageId: pending.id }).catch(() => {
+            // The send never reached the daemon, so nothing was injected. Keep it as an
+            // ordinary queued message so it drives its own turn instead of vanishing.
+            setQueue(queuedMessagesRef.current.map((message) =>
+              message.id === pending.id ? { ...message, steering: false } : message
+            ));
+          });
         }
         setQueue([...queuedMessagesRef.current, pending]);
         return Promise.resolve();
@@ -2046,8 +1613,10 @@ export function useChat(
     flush();
   }, [flush]);
 
+  // Allow-always is gone with the mid-session policy it used to write: a decision is
+  // per call, and the mode it would have amended is fixed when the session is created.
   const handlePermission = useCallback(
-    async (requestId: string, decision: PermissionDecision) => {
+    async (requestId: string, decision: "deny" | "allow_once") => {
       const ctx = sessionIdRef.current;
       if (!ctx) return;
       const result = await resolvePermission(ctx, requestId, decision);
@@ -2136,7 +1705,9 @@ export function useChat(
     // trigger, so Stop halts everything instead of relaunching a queued follow-up.
     abortedByUserRef.current = true;
     if (!ctx) {
-      abortControllerRef.current?.abort();
+      // The session was never created (Stop landed while `create` was still in flight);
+      // there is nothing to cancel, so just close whatever stream is open.
+      attachRef.current?.abort();
       return Promise.resolve();
     }
     // A Stop while the turn is paused on a decision auto-settles that decision:
@@ -2170,7 +1741,7 @@ export function useChat(
     }
     // Tell the user if the stop request never reached the server — the turn may still
     // be running, and silently doing nothing would leave them stuck expecting it to end.
-    return abortSession(ctx).then((ok) => {
+    return cancelTurn(ctx).then((ok) => {
       if (!ok) {
         toaster.create({
           type: "error",
@@ -2229,7 +1800,6 @@ export function useChat(
     abort();
     stateRef.current = newReduceState();
     setMessages([]);
-    setAgentGroups([]);
     setTasks([]);
     setTokenUsage(null);
     setSessionId(null);
@@ -2242,7 +1812,6 @@ export function useChat(
 
   return {
     messages,
-    agentGroups,
     tasks,
     tokenUsage,
     queuedMessages,

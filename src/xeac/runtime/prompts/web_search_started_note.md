@@ -1,0 +1,1 @@
+Search is running in the background. Its results will be delivered to you automatically as a 'web_search_completed' message carrying this same job_id when ready. Do NOT call read_turn on it and do NOT poll for it — just continue; the results arrive on their own.

@@ -4,7 +4,6 @@ import { Box, Button, Flex, IconButton, Image, Link, Text, Textarea } from "@cha
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 import { useTranslations } from "next-intl";
 import { LuAppWindow, LuCheck, LuExternalLink, LuImageOff, LuRotateCw, LuTrash2 } from "react-icons/lu";
-import { type A2ATask, taskArtifactText } from "@/lib/use-chat";
 import { artifactPageUrl, artifactProxyUrl, openAccessibilitySettings, openBrowserRemoteDebugging } from "@/lib/api";
 import { imageIdentityForArtifact, type ArtifactImageAnnotation, type ArtifactImageIdentity } from "@/lib/artifact-annotations";
 import { useArtifactEvent } from "../artifact-bridge";
@@ -25,7 +24,7 @@ import {
 import { asArray, asRecord, asString } from "@/lib/coerce";
 import { Pill } from "../ui/pill";
 import { STATUS_PALETTE, taskLifecycleKind } from "@/lib/status";
-import { hasBackgroundTaskIdentifier, type ToolEventStatus } from "@/lib/tool-event";
+import { hasBackgroundJobId, type ToolEventStatus } from "@/lib/tool-event";
 
 function stripCdPrefix(command: string): string {
   const match = command.match(/^cd\s+'[^']*'\s+&&\s+(.*)/s);
@@ -107,54 +106,6 @@ function ControlScreenCallView({ args }: { args: Record<string, unknown> }) {
       {asString(args.surface) && <InlineField label={translation("searchSurface")}>{asString(args.surface)}</InlineField>}
       <Field label={translation("controlScript")}>
         <MonoBlock>{asString(args.script)}</MonoBlock>
-      </Field>
-    </FieldList>
-  );
-}
-
-function agentLabelFor(agentName: string, agents: { id: string; name: string; title?: string }[]): string {
-  const agent = agents.find((candidate) => candidate.id === agentName);
-  return agent?.title || agent?.name || agentName || "Agent";
-}
-
-function SpawnAgentCallView({ args, agents }: { args: Record<string, unknown>; agents: { id: string; name: string; title?: string }[] }) {
-  const translation = useTranslations("ToolViews");
-  const agentName = asString(args.agent) || "assistant";
-  return (
-    <FieldList>
-      <InlineField label={translation("agent")}>
-        <Pill colorPalette="purple">{agentLabelFor(agentName, agents)}</Pill>
-      </InlineField>
-      <Field label={translation("prompt")}>
-        <MarkdownContent content={asString(args.prompt)} fontSize="xs" />
-      </Field>
-    </FieldList>
-  );
-}
-
-function AskAgentCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("taskId")}>
-        <Mono>{asString(args.task_identifier)}</Mono>
-      </InlineField>
-      <Field label={translation("question")}>
-        <MarkdownContent content={asString(args.question)} fontSize="xs" />
-      </Field>
-    </FieldList>
-  );
-}
-
-function RespondAgentCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  return (
-    <FieldList>
-      <InlineField label={translation("messageId")}>
-        <Mono>{asString(args.message_identifier)}</Mono>
-      </InlineField>
-      <Field label={translation("response")}>
-        <MarkdownContent content={asString(args.response)} fontSize="xs" />
       </Field>
     </FieldList>
   );
@@ -263,16 +214,6 @@ function OpenArtifactCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
-function ReadTaskCallView({ args }: { args: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const taskId = asString(args.task_id);
-  return (
-    <FieldList>
-      <InlineField label={translation("taskId")}>{taskId || "—"}</InlineField>
-    </FieldList>
-  );
-}
-
 // Fields whose values are human prose (not identifiers/data) — rendered with the
 // markdown renderer in the normal font rather than monospace.
 const PROSE_FIELD_KEYS = new Set([
@@ -301,13 +242,8 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
   uri: "fieldUri",
   query: "query",
   result_count: "results",
-  agent: "agent",
-  prompt: "prompt",
-  task_id: "taskId",
-  task_identifier: "taskId",
-  message_identifier: "messageId",
+  job_id: "turnId",
   question: "question",
-  response: "response",
   code: "fieldStatus",
   // file / search tools (arguments)
   file_path: "filePath",
@@ -507,8 +443,7 @@ function ControlScreenResultView({ data }: { data: Record<string, unknown> }) {
     if (asString(data.code) === "browser_remote_debugging_off") {
       return <BrowserRemoteDebuggingAlert address={asString(data.enable_url)} />;
     }
-    const neededPermission = asString(data.needs_permission);
-    if (neededPermission) return <PermissionGrantAlert kind={neededPermission} />;
+    if (asString(data.needs_permission)) return <PermissionGrantAlert />;
     const traceback = asString(data.traceback);
     return (
       <FieldList>
@@ -698,7 +633,111 @@ function GenericView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-export function ToolCallView({ name, args, agents = [] }: { name: string; args?: Record<string, unknown>; agents?: { id: string; name: string; title?: string }[] }) {
+// The peer-session tools.
+//
+// The most consequential calls a session makes, and until now the least legible: they fell
+// through to the raw argument dump, so a `create_session` brief — often several paragraphs —
+// landed in the transcript as an unformatted blob.
+
+function CreateSessionCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const message = asString(args.message);
+  return (
+    <FieldList>
+      <InlineField label={translation("peerAgent")}>{asString(args.agent)}</InlineField>
+      {asString(args.permission_mode) && (
+        <InlineField label={translation("peerMode")}>{asString(args.permission_mode)}</InlineField>
+      )}
+      {asString(args.working_directory) && (
+        <InlineField label={translation("peerDirectory")}>
+          <Mono>{asString(args.working_directory)}</Mono>
+        </InlineField>
+      )}
+      {message && (
+        <Field label={translation("peerBrief")}>
+          <MarkdownContent content={message} />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function MessageSessionCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const message = asString(args.message);
+  return (
+    <FieldList>
+      <InlineField label={translation("peerSession")}>
+        <Mono>{asString(args.session)}</Mono>
+      </InlineField>
+      {message && (
+        <Field label={translation("peerMessage")}>
+          <MarkdownContent content={message} />
+        </Field>
+      )}
+    </FieldList>
+  );
+}
+
+function SessionReferenceCallView({ args }: { args: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const session = asString(args.session);
+  if (!session) return null;
+  return (
+    <FieldList>
+      <InlineField label={translation("peerSession")}>
+        <Mono>{session}</Mono>
+      </InlineField>
+    </FieldList>
+  );
+}
+
+// One row per session, so a listing reads as a list of peers rather than as nested JSON.
+function SessionListResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  const sessions = asArray(data.sessions).map(asRecord);
+  if (sessions.length === 0) return <EmptyHint>{translation("noPeerSessions")}</EmptyHint>;
+  return (
+    <FieldList>
+      {sessions.map((session, index) => (
+        <InlineField key={index} label={asString(session.agent)}>
+          <Flex align="center" gap={1.5} wrap="wrap">
+            <Mono>{asString(session.id)}</Mono>
+            <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(session.status))]}>
+              {asString(session.status)}
+            </Pill>
+            {session.busy ? <Pill colorPalette="blue">{translation("peerBusy")}</Pill> : null}
+            {session.awaiting_input ? <Pill colorPalette="orange">{translation("peerWaiting")}</Pill> : null}
+          </Flex>
+        </InlineField>
+      ))}
+    </FieldList>
+  );
+}
+
+function SessionResultView({ data }: { data: Record<string, unknown> }) {
+  const translation = useTranslations("ToolViews");
+  return (
+    <FieldList>
+      <InlineField label={translation("peerSession")}>
+        <Mono>{asString(data.session) || asString(data.id)}</Mono>
+      </InlineField>
+      {asString(data.agent) && <InlineField label={translation("peerAgent")}>{asString(data.agent)}</InlineField>}
+      {asString(data.permission_mode) && (
+        <InlineField label={translation("peerMode")}>{asString(data.permission_mode)}</InlineField>
+      )}
+      {asString(data.status) && (
+        <InlineField label={translation("peerStatus")}>
+          <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(data.status))]}>
+            {asString(data.status)}
+          </Pill>
+        </InlineField>
+      )}
+    </FieldList>
+  );
+}
+
+export function ToolCallView({ name, args }: { name: string; args?: Record<string, unknown> }) {
   if (!args) return null;
   const specificView = (() => {
     switch (name) {
@@ -706,18 +745,10 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <BashCallView args={args} />;
       case "search_web":
         return <SearchWebCallView args={args} />;
-      case "spawn_agent":
-        return <SpawnAgentCallView args={args} agents={agents} />;
-      case "ask_agent":
-        return <AskAgentCallView args={args} />;
-      case "respond_agent":
-        return <RespondAgentCallView args={args} />;
       case "set_tasks":
         return <WriteTasksCallView args={args} />;
       case "update_tasks":
         return <UpdateTasksCallView args={args} />;
-      case "read_task":
-        return <ReadTaskCallView args={args} />;
       case "open_artifact":
         return <OpenArtifactCallView args={args} />;
       case "read_file":
@@ -736,6 +767,13 @@ export function ToolCallView({ name, args, agents = [] }: { name: string; args?:
         return <LoadSkillCallView args={args} />;
       case "ask_user":
         return <AskUserCallView args={args} />;
+      case "create_session":
+        return <CreateSessionCallView args={args} />;
+      case "message_session":
+        return <MessageSessionCallView args={args} />;
+      case "read_session":
+      case "end_session":
+        return <SessionReferenceCallView args={args} />;
       default: {
         // The justification is already the collapsed heading (the tool-call title);
         // strip it so the expanded body never repeats it. MCP calls fall here too.
@@ -770,32 +808,6 @@ function BashResultView({ data }: { data: Record<string, unknown> }) {
       ) : null}
       {output && outputFile ? <InlineField label={translation("fullOutput")}><Mono>{outputFile}</Mono></InlineField> : null}
       {asString(data.full_output_file) ? <InlineField label={translation("fullOutput")}><Mono>{asString(data.full_output_file)}</Mono></InlineField> : null}
-    </FieldList>
-  );
-}
-
-function AgentMessageResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const code = asString(data.code);
-  const successful = code === "agent_question_queued" || code === "agent_response_delivered";
-  if (!successful) return <ErrorView message={asString(data.message) || translation("agentMessageFailed")} />;
-  return (
-    <FieldList>
-      <InlineField label={translation("fieldStatus")}>
-        <Pill colorPalette="green">
-          {code === "agent_question_queued" ? translation("agentQuestionQueued") : translation("agentResponseDelivered")}
-        </Pill>
-      </InlineField>
-      {asString(data.agent) && (
-        <InlineField label={translation("agent")}>
-          <Pill colorPalette="purple">{asString(data.agent)}</Pill>
-        </InlineField>
-      )}
-      {asString(data.message_identifier) && (
-        <InlineField label={translation("messageId")}>
-          <Mono>{asString(data.message_identifier)}</Mono>
-        </InlineField>
-      )}
     </FieldList>
   );
 }
@@ -844,20 +856,6 @@ function SearchWebResultView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// A spawned agent returns its A2A task as the tool result; show its
-// deliverable (artifact).
-function AgentTaskResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const task = data as unknown as A2ATask;
-  return (
-    <FieldList>
-      <Field label={translation("response")}>
-        <MarkdownContent content={taskArtifactText(task)} />
-      </Field>
-    </FieldList>
-  );
-}
-
 // One shared in-chat alert surface — a tinted, bordered box with unified padding.
 // The palette drives the background/border tint (red for errors, yellow for the
 // fixable permission/debugging prompts); callers supply the body.
@@ -903,10 +901,11 @@ function BrowserRemoteDebuggingAlert({ address, browserName }: { address: string
   );
 }
 
-// Shown when a tool needs the macOS Accessibility grant: the same in-chat alert language as the
-// remote-debugging one, with a brief message and a one-click button that surfaces the system
-// prompt and opens the right System Settings pane.
-function PermissionGrantAlert({ kind: _kind }: { kind: string }) {
+// Shown when a tool needs the macOS Accessibility grant — the only grant a tool can be
+// missing now. Same in-chat alert language as the remote-debugging one: a brief message
+// and a one-click button that surfaces the system prompt and opens the right System
+// Settings pane.
+function PermissionGrantAlert() {
   const translation = useTranslations("ToolViews");
   const [opened, setOpened] = useState(false);
   return (
@@ -934,19 +933,6 @@ function PermissionGrantAlert({ kind: _kind }: { kind: string }) {
       {opened && <Text fontSize="2xs" color="green.fg" mt={1.5}>{translation("permissionOpened")}</Text>}
     </AlertBox>
   );
-}
-
-// read_task returns either an error code (no id match / unavailable) or the
-// task object itself (kind === "task"). The id is already shown on the call
-// card, so the result only surfaces the outcome — it never re-renders the id.
-function ReadTaskResultView({ data }: { data: Record<string, unknown> }) {
-  const translation = useTranslations("ToolViews");
-  const code = asString(data.code);
-  if (code === "task_not_found") return <ErrorView message={translation("taskNotFound")} />;
-  if (code === "read_task_unavailable") {
-    return <EmptyHint>{translation("readTaskUnavailable")}</EmptyHint>;
-  }
-  return <AgentTaskResultView data={data} />;
 }
 
 const IFRAME_SANDBOX_TOKENS = new Set([
@@ -2103,24 +2089,16 @@ export function ToolResultView({
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const data = parsed as Record<string, unknown>;
     const code = asString(data.code);
-    if (status === "running" && hasBackgroundTaskIdentifier(data)) return null;
+    if (status === "running" && hasBackgroundJobId(data)) return null;
     if (code === "tool_error") return null;
     if (code === "web_search_completed") return <SearchWebResultView data={data} />;
     if (code === "web_search_error") return <ErrorView message={asString(data.message) || translation("searchFailed")} />;
     if (code.startsWith("bash")) return <BashResultView data={data} />;
     if (name === "call_mcp_tool" || name === "read_mcp_resource") return <McpResultView data={data} />;
-    if (name === "ask_agent" || name === "respond_agent") return <AgentMessageResultView data={data} />;
-    if (asString(data.kind) === "task") return <AgentTaskResultView data={data} />;
-    // A spawned agent's turn failed before it could report — surface the real reason
-    // (e.g. its model was rate-limited) rather than a bland field dump.
-    if (code === "agent_failed") return <ErrorView message={asString(data.message) || asString(data.title) || translation("agentFailed")} />;
-    // A spawned agent that genuinely finished with nothing to hand back.
-    if (code === "agent_no_report") return <EmptyHint>{asString(data.message) || translation("agentNoReport")}</EmptyHint>;
     if (code === "empty_response") {
       const message = asString(data.message);
       return message ? <EmptyHint>{message}</EmptyHint> : null;
     }
-    if (name === "read_task") return <ReadTaskResultView data={data} />;
     if (name === "read_file") return <ReadFileResultView data={data} />;
     if (name === "search_code") return <SearchCodeResultView data={data} />;
     if (name === "control_screen") return <ControlScreenResultView data={data} />;
@@ -2128,9 +2106,16 @@ export function ToolResultView({
     if (name === "fetch_url") return <FetchUrlResultView data={data} />;
     if (name === "load_skill") return <LoadSkillResultView data={data} />;
     if (name === "ask_user") return <AskUserResultView data={data} />;
+    if (name === "list_sessions") return <SessionListResultView data={data} />;
+    if (name === "create_session" || name === "read_session" || name === "end_session") {
+      return <SessionResultView data={data} />;
+    }
+    // `message_session` reports only that it was accepted. There is nothing to show: the reply,
+    // when there is one, arrives as its own message in the transcript.
+    if (name === "message_session") return null;
     return <GenericView data={data} />;
   }
 
-  // Non-JSON results (e.g. a spawned agent's final text) render as prose.
+  // Non-JSON results (a tool that answers in prose rather than a payload) render as markdown.
   return <MarkdownContent content={content} />;
 }

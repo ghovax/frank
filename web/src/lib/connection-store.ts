@@ -1,7 +1,7 @@
 // The front-end-local store. This holds state that belongs to *this client* — which
 // backends it knows how to reach and which one it used last — as opposed to the
-// harness server's own history.db (sessions, transcripts, provider secrets), which
-// is per-backend and travels with the server.
+// daemon's own history.db (sessions, transcripts, provider secrets), which is
+// per-backend and travels with the daemon.
 //
 // Inside the Tauri desktop app it persists to a dedicated SQLite database
 // (`sqlite:internal.db`, tables created by the Rust migration). In a plain browser it
@@ -18,6 +18,11 @@ export interface ConnectionProfile {
   kind: ConnectionKind;
   createdAt: string;
   lastUsedAt: string | null;
+  // The capability token of the daemon this profile points at. Each `xeacd` mints its
+  // own on startup and publishes it in its runtime directory, so a remote host's token
+  // is not something this machine can read — the user copies it in when saving the
+  // profile, and it is stored here beside the address it belongs to.
+  token?: string;
   sshHostAlias?: string;
   sshHostName?: string;
   sshUser?: string;
@@ -29,9 +34,9 @@ export interface ConnectionProfile {
 }
 
 const DATABASE_NAME = "sqlite:internal.db";
-const LOCAL_STORAGE_CONNECTIONS = "daisy.connections";
-const LOCAL_STORAGE_APP_STATE = "daisy.appState";
-const LOCAL_STORAGE_SESSION_CONNECTIONS = "daisy.sessionConnections";
+const LOCAL_STORAGE_CONNECTIONS = "xeac.connections";
+const LOCAL_STORAGE_APP_STATE = "xeac.appState";
+const LOCAL_STORAGE_SESSION_CONNECTIONS = "xeac.sessionConnections";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -131,6 +136,7 @@ export async function listConnections(): Promise<ConnectionProfile[]> {
       kind: string;
       created_at: string;
       last_used_at: string | null;
+      token: string | null;
       ssh_host_alias: string | null;
       ssh_host_name: string | null;
       ssh_user: string | null;
@@ -141,7 +147,7 @@ export async function listConnections(): Promise<ConnectionProfile[]> {
       ssh_context: string | null;
     }[]
   >(
-    "SELECT id, name, url, kind, created_at, last_used_at, ssh_host_alias, ssh_host_name, ssh_user, ssh_port, ssh_identity_file, ssh_local_port, ssh_remote_port, ssh_context FROM connections \
+    "SELECT id, name, url, kind, created_at, last_used_at, token, ssh_host_alias, ssh_host_name, ssh_user, ssh_port, ssh_identity_file, ssh_local_port, ssh_remote_port, ssh_context FROM connections \
      ORDER BY COALESCE(last_used_at, created_at) DESC"
   );
   return rows.map((row) => ({
@@ -151,6 +157,7 @@ export async function listConnections(): Promise<ConnectionProfile[]> {
     kind: (row.kind as ConnectionKind) ?? "remote",
     createdAt: row.created_at,
     lastUsedAt: row.last_used_at,
+    token: row.token ?? undefined,
     sshHostAlias: row.ssh_host_alias ?? undefined,
     sshHostName: row.ssh_host_name ?? undefined,
     sshUser: row.ssh_user ?? undefined,
@@ -171,9 +178,9 @@ export async function saveConnection(profile: ConnectionProfile): Promise<void> 
   }
   const database = await getDatabase();
   await database.execute(
-    "INSERT INTO connections (id, name, url, kind, created_at, last_used_at, ssh_host_alias, ssh_host_name, ssh_user, ssh_port, ssh_identity_file, ssh_local_port, ssh_remote_port, ssh_context) \
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) \
-     ON CONFLICT(id) DO UPDATE SET name = $2, url = $3, kind = $4, ssh_host_alias = $7, ssh_host_name = $8, ssh_user = $9, ssh_port = $10, ssh_identity_file = $11, ssh_local_port = $12, ssh_remote_port = $13, ssh_context = $14",
+    "INSERT INTO connections (id, name, url, kind, created_at, last_used_at, token, ssh_host_alias, ssh_host_name, ssh_user, ssh_port, ssh_identity_file, ssh_local_port, ssh_remote_port, ssh_context) \
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+     ON CONFLICT(id) DO UPDATE SET name = $2, url = $3, kind = $4, token = $7, ssh_host_alias = $8, ssh_host_name = $9, ssh_user = $10, ssh_port = $11, ssh_identity_file = $12, ssh_local_port = $13, ssh_remote_port = $14, ssh_context = $15",
     [
       profile.id,
       profile.name,
@@ -181,6 +188,7 @@ export async function saveConnection(profile: ConnectionProfile): Promise<void> 
       profile.kind,
       profile.createdAt,
       profile.lastUsedAt,
+      profile.token ?? null,
       profile.sshHostAlias ?? null,
       profile.sshHostName ?? null,
       profile.sshUser ?? null,

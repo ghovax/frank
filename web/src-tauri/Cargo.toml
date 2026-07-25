@@ -1,24 +1,24 @@
 [package]
-name = "daisy"
+name = "xeac"
 version = "0.1.0"
-description = "Daisy desktop app — native shell for the Daisy chat UI"
+description = "XEAC desktop app — native shell for the XEAC session UI"
 authors = ["ghovax"]
 edition = "2021"
-default-run = "Daisy"
+default-run = "XEAC"
 rust-version = "1.77.2"
 
-# The binary is named "Daisy" (capitalized) so the built executable — and therefore
-# CFBundleExecutable — reads "Daisy". The macOS Automation / Apple-Events permission prompt
-# shows the sending process's executable name, so a lowercase "daisy" there would not match
-# the "Daisy" the Accessibility pane shows; naming the binary properly keeps both consistent.
+# The binary is named "XEAC" (capitalized) so the built executable — and therefore
+# CFBundleExecutable — reads "XEAC". The macOS Automation / Apple-Events permission prompt
+# shows the sending process's executable name, so a lowercase "xeac" there would not match
+# the "XEAC" the Accessibility pane shows; naming the binary properly keeps both consistent.
 [[bin]]
-name = "Daisy"
+name = "XEAC"
 path = "src/main.rs"
 
 # The Rust code compiles to a library so the same `run()` entry point is shared by
 # the desktop binary (main.rs) and mobile builds.
 [lib]
-name = "daisy_lib"
+name = "xeac_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

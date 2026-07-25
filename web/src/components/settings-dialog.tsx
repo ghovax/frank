@@ -3,7 +3,7 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
-import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel } from "@/lib/api";
+import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
 import { ConnectionSwitcher } from "./connection-switcher";
@@ -82,10 +82,11 @@ export function SettingsDialog({
   selectedAgent = "",
   onAgentChange,
   livePermissionMode = "default",
-  liveSandboxEnabled = true,
+  liveSandboxEnforce = "required" as SandboxEnforce,
+  sandboxBackend = { backend: "", detail: "" },
   liveWorkspaceStrategy = "none",
   onPermissionModeChange,
-  onSandboxEnabledChange,
+  onSandboxEnforceChange,
   onWorkspaceStrategyChange,
 }: {
   open: boolean;
@@ -103,18 +104,19 @@ export function SettingsDialog({
   selectedAgent?: string;
   onAgentChange?: (agent: string) => void;
   livePermissionMode?: PermissionMode;
-  liveSandboxEnabled?: boolean;
+  liveSandboxEnforce?: SandboxEnforce;
+  sandboxBackend?: { backend: string; detail: string };
   liveWorkspaceStrategy?: WorkspaceStrategyValue;
   onPermissionModeChange?: (mode: PermissionMode) => void;
-  onSandboxEnabledChange?: (enabled: boolean) => void | Promise<void>;
+  onSandboxEnforceChange?: (enforce: SandboxEnforce) => void | Promise<void>;
   onWorkspaceStrategyChange?: (strategy: WorkspaceStrategyValue) => void | Promise<void>;
 }) {
   const translation = useTranslations("SettingsDialog");
   const tc = useTranslations("Common");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(livePermissionMode);
   const [savedPermissionMode, setSavedPermissionMode] = useState<PermissionMode>(livePermissionMode);
-  const [sandboxEnabled, setSandboxEnabled] = useState(liveSandboxEnabled);
-  const [savedSandboxEnabled, setSavedSandboxEnabled] = useState(liveSandboxEnabled);
+  const [sandboxEnforce, setSandboxEnforce] = useState<SandboxEnforce>(liveSandboxEnforce);
+  const [savedSandboxEnforce, setSavedSandboxEnforce] = useState<SandboxEnforce>(liveSandboxEnforce);
   const [workspaceStrategy, setWorkspaceStrategy] = useState<WorkspaceStrategyValue>(liveWorkspaceStrategy);
   const [savedWorkspaceStrategy, setSavedWorkspaceStrategy] = useState<WorkspaceStrategyValue>(liveWorkspaceStrategy);
   const [autoCompaction, setAutoCompaction] = useState(false);
@@ -161,7 +163,7 @@ export function SettingsDialog({
     || firecrawlApiKey !== savedFirecrawlApiKey
     || webFetchProxyUrl !== savedWebFetchProxyUrl
     || permissionMode !== savedPermissionMode
-    || sandboxEnabled !== savedSandboxEnabled
+    || sandboxEnforce !== savedSandboxEnforce
     || workspaceStrategy !== savedWorkspaceStrategy
     || autoCompaction !== savedAutoCompaction
     || userContextEnabled !== savedUserContextEnabled
@@ -181,8 +183,8 @@ export function SettingsDialog({
         if (cancelled) return;
         setPermissionMode(settings.permission_mode ?? "default");
         setSavedPermissionMode(settings.permission_mode ?? "default");
-        setSandboxEnabled(settings.sandbox_enabled ?? true);
-        setSavedSandboxEnabled(settings.sandbox_enabled ?? true);
+        setSandboxEnforce(settings.sandbox?.enforce ?? "required");
+        setSavedSandboxEnforce(settings.sandbox?.enforce ?? "required");
         setWorkspaceStrategy(settings.workspace_strategy ?? "none");
         setSavedWorkspaceStrategy(settings.workspace_strategy ?? "none");
         setAutoCompaction(settings.compaction?.auto ?? false);
@@ -257,7 +259,7 @@ export function SettingsDialog({
   // Latest field values, mirrored into a ref so the live-sync subscription below can
   // read them without re-subscribing on every keystroke.
   const fieldsRef = useRef({
-    permissionMode, savedPermissionMode, sandboxEnabled, savedSandboxEnabled,
+    permissionMode, savedPermissionMode, sandboxEnforce, savedSandboxEnforce,
     workspaceStrategy, savedWorkspaceStrategy, autoCompaction, savedAutoCompaction,
     userContextEnabled, savedUserContextEnabled,
     computerControlEnabled, savedComputerControlEnabled,
@@ -267,7 +269,7 @@ export function SettingsDialog({
   });
   useEffect(() => {
     fieldsRef.current = {
-      permissionMode, savedPermissionMode, sandboxEnabled, savedSandboxEnabled,
+      permissionMode, savedPermissionMode, sandboxEnforce, savedSandboxEnforce,
       workspaceStrategy, savedWorkspaceStrategy, autoCompaction, savedAutoCompaction,
       userContextEnabled, savedUserContextEnabled,
       computerControlEnabled, savedComputerControlEnabled,
@@ -294,7 +296,7 @@ export function SettingsDialog({
             if (current === saved) setCurrent(next);
           };
           reconcile(settings.permission_mode ?? "default", fields.permissionMode, fields.savedPermissionMode, setPermissionMode, setSavedPermissionMode);
-          reconcile(settings.sandbox_enabled ?? true, fields.sandboxEnabled, fields.savedSandboxEnabled, setSandboxEnabled, setSavedSandboxEnabled);
+          reconcile(settings.sandbox?.enforce ?? "required", fields.sandboxEnforce, fields.savedSandboxEnforce, setSandboxEnforce, setSavedSandboxEnforce);
           reconcile((settings.workspace_strategy ?? "none") as WorkspaceStrategyValue, fields.workspaceStrategy, fields.savedWorkspaceStrategy, setWorkspaceStrategy, setSavedWorkspaceStrategy);
           reconcile(settings.compaction?.auto ?? false, fields.autoCompaction, fields.savedAutoCompaction, setAutoCompaction, setSavedAutoCompaction);
           reconcile(settings.user_context_enabled ?? false, fields.userContextEnabled, fields.savedUserContextEnabled, setUserContextEnabled, setSavedUserContextEnabled);
@@ -383,7 +385,7 @@ export function SettingsDialog({
       if (generalDirty) {
         await saveSettings({
           permission_mode: permissionMode,
-          sandbox_enabled: sandboxEnabled,
+          sandbox: { enforce: sandboxEnforce },
           exa_api_key: nextExaApiKey,
           composio_api_key: nextComposioApiKey,
           jina_api_key: nextJinaApiKey,
@@ -404,10 +406,10 @@ export function SettingsDialog({
         setWebFetchProxyUrl(nextWebFetchProxyUrl);
         setSavedWebFetchProxyUrl(nextWebFetchProxyUrl);
         setSavedPermissionMode(permissionMode);
-        setSavedSandboxEnabled(sandboxEnabled);
+        setSavedSandboxEnforce(sandboxEnforce);
         setSavedWorkspaceStrategy(workspaceStrategy);
         onPermissionModeChange?.(permissionMode);
-        void onSandboxEnabledChange?.(sandboxEnabled);
+        void onSandboxEnforceChange?.(sandboxEnforce);
         void onWorkspaceStrategyChange?.(workspaceStrategy);
       }
       if (autoCompaction !== savedAutoCompaction) {
@@ -428,10 +430,8 @@ export function SettingsDialog({
           model: agentConfiguration.model,
           provider: agentConfiguration.provider,
           reasoning_effort: agentConfiguration.reasoning_effort,
-          stream_agent_progress: agentConfiguration.stream_agent_progress,
           tools_enabled: agentConfiguration.tools_enabled,
           bash: agentConfiguration.bash,
-          spawn_agent: agentConfiguration.spawn_agent,
         }, workingDirectory);
         setAgentConfiguration(savedConfiguration);
         setSavedAgentConfiguration(savedConfiguration);
@@ -462,7 +462,7 @@ export function SettingsDialog({
     setFirecrawlApiKey(savedFirecrawlApiKey);
     setWebFetchProxyUrl(savedWebFetchProxyUrl);
     setPermissionMode(savedPermissionMode);
-    setSandboxEnabled(savedSandboxEnabled);
+    setSandboxEnforce(savedSandboxEnforce);
     setWorkspaceStrategy(savedWorkspaceStrategy);
     setAutoCompaction(savedAutoCompaction);
     setUserContextEnabled(savedUserContextEnabled);
@@ -507,7 +507,7 @@ export function SettingsDialog({
             <Alert.Description fontSize="xs">{translation("computerControlBody")}</Alert.Description>
           </Alert.Content>
           <Button colorPalette="orange" variant="solid" flexShrink={0} onClick={() => {
-            try { localStorage.setItem("daisy:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
+            try { localStorage.setItem("xeac:pendingComputerControlEnable", "1"); } catch { /* private mode */ }
             setAwaitingGrantReturn(true);
             void openAccessibilitySettings();
           }}>
@@ -536,7 +536,7 @@ export function SettingsDialog({
           title: translation("runtime"),
           rows: [
             { key: "approvalMode", title: translation("approvalMode"), control: <PermissionModeControl value={permissionMode} onChange={setPermissionMode} /> },
-            { key: "filesystemProtection", title: translation("filesystemProtection"), control: <SandboxToggleControl enabled={sandboxEnabled} onChange={setSandboxEnabled} /> },
+            { key: "filesystemProtection", title: translation("filesystemProtection"), description: sandboxBackend.backend ? undefined : translation("filesystemProtectionUnavailable"), control: <SandboxToggleControl enforce={sandboxEnforce} backend={sandboxBackend.backend} onChange={setSandboxEnforce} /> },
             { key: "gitWorkspace", title: translation("gitWorkspace"), control: <WorkspaceStrategyControl value={workspaceStrategy} onChange={setWorkspaceStrategy} /> },
             { key: "compaction", title: translation("compaction"), control: <CompactionToggleControl enabled={autoCompaction} onChange={setAutoCompaction} /> },
             { key: "userContext", title: translation("userContext"), description: translation("userContextHint"), control: <UserContextToggleControl enabled={userContextEnabled} onChange={setUserContextEnabled} /> },
@@ -841,7 +841,6 @@ function AgentPermissionsEditor({
     [translation],
   );
   const rules = Object.entries(configuration.bash.permissions).sort(([leftPattern], [rightPattern]) => leftPattern.localeCompare(rightPattern));
-  const toolsEnabled = new Set(configuration.tools_enabled);
 
   function updateConfiguration(nextConfiguration: Partial<AgentConfiguration>) {
     onChange({ ...configuration, ...nextConfiguration });
@@ -857,19 +856,6 @@ function AgentPermissionsEditor({
 
   function updateBash(nextBash: Partial<AgentConfiguration["bash"]>) {
     updateConfiguration({ bash: { ...configuration.bash, ...nextBash } });
-  }
-
-  function updateSpawnAgent(enabled: boolean) {
-    const nextToolsEnabled = new Set(configuration.tools_enabled);
-    if (enabled) {
-      nextToolsEnabled.add("spawn_agent");
-    } else {
-      nextToolsEnabled.delete("spawn_agent");
-    }
-    updateConfiguration({
-      tools_enabled: Array.from(nextToolsEnabled),
-      spawn_agent: { ...configuration.spawn_agent, enabled },
-    });
   }
 
   function updateRulePattern(previousPattern: string, nextPattern: string) {
@@ -945,17 +931,6 @@ function AgentPermissionsEditor({
                 {configuration.bash.background_allowed ? translation("backgroundAllowed") : translation("backgroundBlocked")}
               </Button>
             </Flex>
-          </SettingField>
-          <SettingField label={translation("spawnAgents")}>
-            <Button
-              h={8}
-              justifyContent="flex-start"
-              variant={configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? "subtle" : "outline"}
-              colorPalette={configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? "purple" : "gray"}
-              onClick={() => updateSpawnAgent(!(configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent")))}
-            >
-              {configuration.spawn_agent.enabled && toolsEnabled.has("spawn_agent") ? translation("enabled") : translation("disabled")}
-            </Button>
           </SettingField>
         </Flex>
       </SettingsGroup>

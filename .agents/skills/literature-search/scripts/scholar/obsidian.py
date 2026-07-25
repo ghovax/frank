@@ -2,10 +2,10 @@
 import pathlib
 
 import frontmatter
-import mistletoe
 from mistletoe.block_token import Document, Heading, Paragraph
 from mistletoe.markdown_renderer import MarkdownRenderer
 from mistletoe.span_token import RawText
+from .zotero import zotero_get
 
 
 class _SpacedMarkdownRenderer(MarkdownRenderer):
@@ -21,7 +21,6 @@ class _SpacedMarkdownRenderer(MarkdownRenderer):
                 token, max_line_length=max_line_length
             )
 
-from .zotero import zotero_get
 
 # Vault is at the repo root, five levels above this file:
 # obsidian.py → scholar/ → scripts/ → literature-search/ → skills/ → .claude/ → repo root

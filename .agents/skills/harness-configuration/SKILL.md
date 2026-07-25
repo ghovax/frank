@@ -7,19 +7,20 @@ enabled: true
 
 # Configure the Agentic Harness
 
-Use this skill when the user wants to change how the harness itself is set up. The harness has **two configuration surfaces**: the YAML file (`~/.daisy/configuration.yaml`) and the running UI (Settings + model picker), which writes back to that file for live changes. Always read the relevant existing file before editing.
+Use this skill when the user wants to change how the harness itself is set up. There are **three surfaces onto one file** (`~/.config/xeac/configuration.yaml`): `xeac configure` from the terminal, Settings in the desktop app, and editing the file directly — the daemon watches it and picks up a hand edit live. Always read the relevant existing file before editing.
 
-The authoritative models live in `src/harness/core/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`), `src/harness/core/providers.py` (the provider registry + key/base-url resolution), and `server.py` (`lifespan`, where it is all wired up).
+The authoritative models live in `src/xeac/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/xeac/base/providers.py` (the provider registry and key/base-url resolution). The daemon's composition root — where the shared resources are wired up — is `src/xeac/daemon/composition.py`.
 
 ## Where things live
 
-- `~/.daisy/configuration.yaml` — runtime configuration: provider credentials, selected model/provider, Exa, sandbox, Composio, default agent, and discovery directories. Seeded on first run from the packaged `src/harness/core/configuration.yaml`. The UI writes settings back here.
-- `~/.daisy/history.db` — chat history (SQLite, WAL mode). Not configuration; never edit by hand. If its schema ever goes stale after an upgrade, stop the server and delete it — it rebuilds on next start (history is replayable transcripts, not irreplaceable state).
+- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
+- `~/.local/share/xeac/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `xeac daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
+- The rest is XDG too: logs in `~/.local/state/xeac/`, caches in `~/.cache/xeac/`, and sockets, the daemon's port and its token in the runtime directory.
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
 
 ## Providers, credentials, and the model
 
-The harness is multi-provider. Credentials are keyed by **provider id** under a top-level `providers:` map; the selected model is the pair `selected_provider` + `selected_model` (the factory recombines them into the `provider/model` form LiteLLM expects).
+The harness is multi-provider. Credentials are keyed by **provider id** under a top-level `providers:` map. Which model a session runs is **not** set here — it belongs to the agent profile, under `preset` in that agent's `configuration.json`, as a `provider` + `model` pair the factory recombines into the `provider/model` form LiteLLM expects.
 
 ```yaml
 providers:
@@ -37,31 +38,27 @@ providers:
   custom:                            # any other OpenAI-compatible endpoint
     api_key: ""
     base_url: ""
-
-selected_model: "deepseek-v4-flash"
-selected_provider: "opencode"
 ```
 
 **Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). `base_url` only matters for the OpenAI-compatible providers (`opencode`, `custom`); first-party clouds ignore it.
 
-**Two ways to change this at runtime, both live (no restart):**
-- The **Settings** dialog writes credentials and the selected model into the YAML and reloads.
-- The **model picker** (provider dropdown → model dropdown, with a per-provider API-key field) sets a **per-session model override** (`PUT /sessions/{id}/model`). A session runs on its override, falling back to the globally selected model.
+**Three ways to change this, all live:** `xeac configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
 
-Editing `configuration.yaml` on disk by hand needs a server restart.
+A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model: an agent is defined by its own configuration, and nothing else's.
 
 ## Permission modes
 
-Permission behavior is one of four modes, set per-agent in frontmatter (`permission_mode:`) and overridable per-session from the UI:
+Permission behaviour is one of **three** modes, defaulted per-agent in frontmatter (`permission_mode:`) and fixed for a session when it is created:
 
-- `default` — user-configured per-command permission rules (allow / ask / deny) from the bash allow-rules.
-- `auto` — the user-configured rules **plus** an LLM classifier that auto-approves bash calls it judges safe and escalates the rest to the user. It is permission-rule-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — classifier failure falls back to escalation. The classifier prompt lives in `src/harness/core/prompts/bash_permission_classifier.md`.
-- `read_only` — hard-block every write (investigation/review agents).
-- `bypass` — allow everything.
+- `default` — the user-configured per-command rules (allow / ask / deny) from the bash allow-rules.
+- `auto` — those rules **plus** a classifier that auto-approves bash calls it judges safe and escalates the rest. It is rule-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — a classifier failure falls back to escalation. Its prompt is `src/xeac/runtime/prompts/permission_classifier.md`.
+- `read_only` — hard-block every write (investigation and review sessions).
+
+There is **no bypass mode** and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode cannot be changed after creation, and a session created by another is clamped to no looser a mode than its parent — so a peer can never be used to escape the mode you are in.
 
 ## Sandbox
 
-`sandbox.enabled` (default `true`) confines bash commands to the working directory; access outside it needs approval. Toggle it from the UI (live) or the YAML (`sandbox: { enabled: true }`, restart).
+`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `xeac configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one — the same guarantee the permission mode carries.
 
 ## Agents
 
@@ -69,28 +66,29 @@ One agent per directory: `.agents/agents/<name>/agent.md` (or `~/.agents/agents/
 
 ```markdown
 ---
-name: reviewer                       # route/slug — used for A2A routing and spawn_agent
+name: reviewer                       # slug — what `--agent`, `create_session` and the card name it by
 title: Reviewer                      # human label shown in the UI
 aliases: [code-reviewer]
 color: purple
 description: Reviews a diff for correctness and risk, read-only
-role: delegation-target              # or "primary" for a default chat agent
+role: peer                           # "primary" to be talked to directly, "peer" for scoped work
 enabled: true
 connection_type: internal
 skills: []                           # skill slugs this agent may use; empty = all
 model: null                          # override the global default (provider/model)
 provider: null
 reasoning_effort: high               # minimal | low | medium | high
-maximum_iterations: 25               # safety bound on the per-turn tool-calling loop
-permission_mode: read_only           # default | auto | read_only | bypass
-tools_enabled: []                    # restrict the built-in tools; empty = all
+permission_mode: read_only           # default | auto | read_only
+tools_enabled: []                    # allow-list over the WHOLE tool surface; empty = no restriction
 system_prompt: ""
 ---
 
 You are the reviewer. ...
 ```
 
-Optional runtime overrides can live in a sibling `config.json` (`model`/`provider`, `reasoningEffort`, `permissionMode`, `toolsEnabled`). Agents reload live — no restart needed.
+Runtime overrides live in a sibling **`configuration.json`** (not `config.json`): `preset` (`model`, `provider`, `reasoningEffort`), `permissionMode`, and `tools` (`enabledBuiltinTools`, `bash`). This is the file the UI writes when you pick a model for an agent. Agents reload live — the daemon watches the `.agents` roots.
+
+`enabledBuiltinTools` is an allow-list over the **whole** tool surface: empty means no restriction, and naming one tool denies every other. It is narrowed at load to tools that exist, so an entry for a removed tool does not silently disarm the profile.
 
 ## Skills
 
@@ -133,7 +131,7 @@ Remote (HTTP):
 }
 ```
 
-`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **MCP config is read once at startup** (the live watcher does not watch `mcp.json`), so adding or changing a server requires a **server restart**. Discovery/connection live in `src/harness/core/mcp_client.py`.
+`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **`mcp.json` is watched and reloads live** — the daemon watches the `.agents` roots recursively, so adding or changing a server takes effect without restarting anything. Discovery and connection live in `src/xeac/base/mcp_client.py`. Note that the daemon keeps its own pool for the GUI's server browser while each session connects its own for its tool calls: connections are stateful, and a stdio server cannot be shared across processes.
 
 ### MCP render artifacts
 
@@ -174,14 +172,16 @@ composio:
 
 Durable project/user context: `.agents/memories/*.md` and `~/.agents/memories/*.md`, injected into agent prompts. Use for stable facts, not commands.
 
-## What reloads live vs. needs a restart
+## What reaches a running session, and what does not
 
-- **Live (no restart):** agent files, skill files, memories, API keys/base-url/model set via the Settings dialog or model picker, per-session model overrides, and the sandbox toggle.
-- **Restart required:** `mcp.json` changes, Composio changes, and `configuration.yaml` edits made directly on disk (directory roots, default agent, delegation depth, etc.).
+The daemon watches the configuration file and the `.agents` roots, so **everything reloads live** — agents, skills, memories, `mcp.json`, `remote-agents.json`, credentials, and the sandbox, computer-control and user-context toggles, whether changed through `xeac configure`, the Settings dialog, or a hand edit. A change that affects a session's runtime asks live sessions to rebuild it on their next turn.
+
+Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **permission mode** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's authority is decided once, in the open, at `xeac create`.
 
 ## Verifying a change
 
-- Agents/skills: confirm they appear via `GET /agents/cards` (or the UI capabilities panel).
-- Providers/model: `GET /models` lists available models grouped by provider; a provider's models are unlocked once its key resolves.
-- MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools the folder sees.
-- Credentials/model end-to-end: send a message and confirm the turn completes (a missing/empty key fails the turn with a credentials error rather than silently hanging).
+- Agents and skills: `xeac create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
+- Configuration: `xeac configure` prints every setting as a JSON object of dotted path to value, credentials included — it reads a file the user owns.
+- Providers and models: `GET /models` lists them grouped by provider; a provider's models unlock once its key resolves.
+- MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools that folder sees. An unreachable server is listed with no tools and an `error` rather than failing the call.
+- End to end: `xeac create`, then `xeac send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.

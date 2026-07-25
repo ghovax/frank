@@ -6,7 +6,7 @@
   },
   "permissionMode": "default",
   "tools": {
-    "enabledBuiltinTools": ["spawn_agent"],
+    "enabledBuiltinTools": [],
     "bash": {
       "enabled": true,
       "backgroundAllowed": true,
@@ -24,9 +24,6 @@
         "kill *": "ask",
         "gh *": "ask"
       }
-    },
-    "spawnAgent": {
-      "enabled": true
     }
   }
 }

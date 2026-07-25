@@ -1,6 +1,6 @@
 "use client";
 
-// The desktop app delegates cues to macOS so they sound native and follow the
+// The desktop app hands cues to macOS so they sound native and follow the
 // system output settings. Browser and non-macOS builds retain two quiet Web Audio
 // motifs as a portable fallback:
 //   • turn end — a rising fourth (D5 → G5), "your result is ready";

@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { getToolCallDisplay, type ToolDisplayTranslator } from "@/lib/tool-display";
 import { ToolCallLabel } from "./tool-label";
 import type { ToolEvent, ToolEventStatus } from "@/lib/tool-event";
-import { hasBackgroundTaskIdentifier } from "@/lib/tool-event";
+import { hasBackgroundJobId } from "@/lib/tool-event";
 import { ToolCallView, ToolResultView, extractToolArtifacts } from "./tool-views";
 import { Pill } from "./ui/pill";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
@@ -77,7 +77,6 @@ export function collapsedHeadingLocation(argumentsList: (Record<string, unknown>
 export { ToolLocationBadge };
 
 interface ToolCallProps extends ToolEvent {
-  agents?: { id: string; name: string; title?: string }[];
   actions?: ReactNode;
   // The single live artifact id (owned by ChatPanel). Only the matching
   // iframe-type artifact mounts its frame; the rest collapse to a placeholder.
@@ -110,7 +109,7 @@ function resultRendersInside(name: string, content: string, status: ToolEventSta
     return true;
   }
   const record = asRecord(parsed);
-  if (status === "running" && hasBackgroundTaskIdentifier(record)) return false;
+  if (status === "running" && hasBackgroundJobId(record)) return false;
   const code = String(record.code ?? "");
   if (code === "empty_response" && !record.message) return false;
   return true;
@@ -155,7 +154,7 @@ export function toolCallDetail(
 // hangs the structured detail off a hairline left rule — the same visual grammar
 // as a blockquote — so a run of calls reads as an annotated ledger inside the
 // prose rather than a stack of boxes interrupting it.
-export function ToolCall({ name, arguments: toolArguments, result, status, agents = [], actions }: ToolCallProps) {
+export function ToolCall({ name, arguments: toolArguments, result, status, actions }: ToolCallProps) {
   const translation = useTranslations("ToolCall");
   // One decision, shared with every other tool-line surface: what (if anything) this
   // line expands into. A line with nothing to show is not collapsible (DisclosureRow
@@ -163,7 +162,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
   const { showArguments, showResult, collapsible } = toolCallDetail(name, toolArguments, result, status);
   const resultContent = result == null ? null : typeof result === "string" ? result : JSON.stringify(result);
   // A running call whose interim result says the work moved to the background.
-  const background = status === "running" && hasBackgroundTaskIdentifier(result);
+  const background = status === "running" && hasBackgroundJobId(result);
   const tDisplay = useTranslations("ToolDisplay") as unknown as ToolDisplayTranslator;
   const { icon: Icon, iconColor } = getToolCallDisplay(name, toolArguments, tDisplay);
 
@@ -193,7 +192,7 @@ export function ToolCall({ name, arguments: toolArguments, result, status, agent
         // gap matches FieldList's own field spacing so the call's last field (e.g. Risk)
         // and the result's first (e.g. PID) read as one list.
         <Flex direction="column" gap={2} align="stretch">
-          {showArguments && <ToolCallView name={name} args={toolArguments} agents={agents} />}
+          {showArguments && <ToolCallView name={name} args={toolArguments} />}
           {showResult && <ToolResultView name={name} content={resultContent ?? ""} status={status} />}
         </Flex>
       ) : undefined}

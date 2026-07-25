@@ -2,8 +2,6 @@ import type { IconType } from "react-icons";
 import {
   LuGlobe,
   LuTerminal,
-  LuUsers,
-  LuNetwork,
   LuPuzzle,
   LuWrench,
   LuLayoutDashboard,
@@ -17,10 +15,7 @@ import {
   LuListChecks,
   LuTarget,
   LuMousePointerClick,
-  LuCircleStop,
   LuUserSearch,
-  LuMessageSquareShare,
-  LuMessageSquareReply,
 } from "react-icons/lu";
 
 interface ToolDisplayInfo {
@@ -42,7 +37,7 @@ interface ToolDisplayInfo {
 // Every tool that has a first-class icon/label below. Anything else is "unknown"
 // and surfaces its raw name in monospace.
 const KNOWN_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "search_web", "bash", "spawn_agent", "cancel_agent", "ask_agent", "respond_agent", "read_task", "read_file",
+  "search_web", "bash", "read_file",
   "search_code", "control_screen",
   "edit_file", "write_file", "fetch_url", "ask_user", "load_skill",
   "set_tasks", "update_tasks", "update_goal",
@@ -62,16 +57,6 @@ function iconForTool(name: string): { icon: IconType; iconColor: string } {
       return { icon: LuGlobe, iconColor: "blue.fg" };
     case "bash":
       return { icon: LuTerminal, iconColor: "green.fg" };
-    case "spawn_agent":
-      return { icon: LuUsers, iconColor: "purple.fg" };
-    case "cancel_agent":
-      return { icon: LuCircleStop, iconColor: "red.fg" };
-    case "ask_agent":
-      return { icon: LuMessageSquareShare, iconColor: "purple.fg" };
-    case "respond_agent":
-      return { icon: LuMessageSquareReply, iconColor: "blue.fg" };
-    case "read_task":
-      return { icon: LuNetwork, iconColor: "orange.fg" };
     case "read_file":
       return { icon: LuFileText, iconColor: "blue.fg" };
     case "search_code":
@@ -118,16 +103,6 @@ function fallbackLabel(name: string, args: Record<string, unknown> | undefined, 
       return args?.query ? t("webSearch", { query: String(args.query) }) : t("webSearchBare");
     case "bash":
       return args?.command ? stripCdPrefix(String(args.command)) : t("bashBare");
-    case "spawn_agent":
-      return args?.agent ? t("spawnAgent", { agent: String(args.agent) }) : t("spawnAgentBare");
-    case "cancel_agent":
-      return t("cancelAgent");
-    case "ask_agent":
-      return t("askAgent");
-    case "respond_agent":
-      return t("respondAgent");
-    case "read_task":
-      return t("readTask");
     case "read_file":
       return args?.file_path ? readFileLabel(String(args.file_path), args, t) : t("readFileBare");
     case "search_code":

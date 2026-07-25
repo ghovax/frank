@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Freeze the harness server (server.py) into a self-contained background helper bundle
-# ("Daisy Computer Use.app") and place it where the Tauri app bundles it from
+# ("XEAC Computer Use.app") and place it where the Tauri app bundles it from
 # (web/src-tauri/server-bin/). The .app wrapper gives the server a real bundle identity — the
 # same CFBundleName/identifier as the desktop app — so it folds into the app's single
-# "Daisy" macOS Accessibility entry instead of showing a bare "daisy-server".
+# "XEAC" macOS Accessibility entry instead of showing a bare helper name.
 #
 # This is invoked automatically by the desktop build via `beforeBuildCommand` in
 # tauri.conf.json — it is NOT a manual step. It lives in its own script (rather than
@@ -17,13 +17,13 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-target="web/src-tauri/server-bin/Daisy Computer Use.app/Contents/MacOS/daisy"
+target="web/src-tauri/server-bin/XEAC Computer Use.app/Contents/MacOS/xeac"
 
 # Freshness guard: skip the freeze when the installed binary already exists and no
-# server source (server.py, the daisy package, the spec, or the locked deps) is
+# server source (server.py, the xeac package, the spec, or the locked deps) is
 # newer than it. `find -newer` prints the first newer file, so empty means fresh.
 if [ -z "${FORCE:-}" ] && [ -x "$target" ]; then
-  newer_source="$(find server.py packaging/daisy-server.spec pyproject.toml uv.lock src/daisy \
+  newer_source="$(find server.py packaging/xeac-server.spec pyproject.toml uv.lock src/xeac \
     -type f -newer "$target" -print -quit 2>/dev/null || true)"
   if [ -z "$newer_source" ]; then
     echo "sidecar up to date; skipping freeze (set FORCE=1 to rebuild)"
@@ -37,32 +37,41 @@ uv run pyinstaller \
   --clean --noconfirm \
   --distpath packaging/dist \
   --workpath packaging/build \
-  packaging/daisy-server.spec
+  packaging/xeac-server.spec
 
-echo "smoke-testing the frozen server"
-"./packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy" >/tmp/daisy-server-smoke.log 2>&1 &
-server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-# Poll for readiness rather than a single fixed sleep: a frozen binary's first boot
-# (PyInstaller unpacking + the heavy import graph) can take well over 8s, so a fixed
-# wait produces false failures. Retry for up to ~40s, and bail early if the process dies.
+echo "smoke-testing the frozen daemon"
+# The binary is a single image with three entry points, so the daemon has to be asked for by
+# name; launching it bare would land in the CLI and exit immediately.
+"./packaging/dist/XEAC Computer Use.app/Contents/MacOS/xeac" xeacd >/tmp/xeac-daemon-smoke.log 2>&1 &
+daemon_pid=$!
+trap 'kill "$daemon_pid" 2>/dev/null || true' EXIT
+# Readiness is the daemon publishing its handshake in the runtime directory and answering on
+# its socket — not a fixed port, because the loopback port is chosen at startup. Poll rather
+# than sleeping once: a frozen binary's first boot unpacks itself and imports a heavy graph,
+# which can take far longer than any fixed wait.
+runtime_directory="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/xeac"
+[ -d "$runtime_directory" ] || runtime_directory="${TMPDIR:-/tmp}/xeac-$(id -u)"
 ready=""
 for _ in $(seq 1 40); do
   sleep 1
-  if curl -fsS -m 5 http://127.0.0.1:8822/home >/dev/null 2>&1; then ready=1; break; fi
-  kill -0 "$server_pid" 2>/dev/null || break
+  if [ -S "$runtime_directory/xeacd.sock" ] \
+     && curl -fsS -m 5 --unix-socket "$runtime_directory/xeacd.sock" http://daemon/health >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  kill -0 "$daemon_pid" 2>/dev/null || break
 done
 if [ -n "$ready" ]; then
-  echo "ok: server responds on :8822"
+  echo "ok: xeacd answers on its socket"
 else
-  echo "failed: server did not respond; see /tmp/daisy-server-smoke.log" >&2
+  echo "failed: xeacd did not become ready; see /tmp/xeac-daemon-smoke.log" >&2
   exit 1
 fi
-kill "$server_pid" 2>/dev/null || true
+kill "$daemon_pid" 2>/dev/null || true
 trap - EXIT
 
-echo "installing into web/src-tauri/server-bin/Daisy Computer Use.app"
-rm -rf web/src-tauri/server-bin/daisy-server "web/src-tauri/server-bin/Daisy Computer Use.app"
-cp -R "packaging/dist/Daisy Computer Use.app" "web/src-tauri/server-bin/Daisy Computer Use.app"
+echo "installing into web/src-tauri/server-bin/XEAC Computer Use.app"
+rm -rf web/src-tauri/server-bin/xeac "web/src-tauri/server-bin/XEAC Computer Use.app"
+cp -R "packaging/dist/XEAC Computer Use.app" "web/src-tauri/server-bin/XEAC Computer Use.app"
 
 echo "done; the desktop build will now bundle the local server"

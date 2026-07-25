@@ -3,8 +3,9 @@
 import { Box, Button, createListCollection, Flex, Portal, Select, Span, Text } from "@chakra-ui/react";
 import { type ReactNode } from "react";
 import { useTranslations } from "next-intl";
-import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMousePointerClick, LuShieldOff, LuUserSearch, LuZap } from "react-icons/lu";
+import { LuBadgeCheck, LuBox, LuCircleSlash, LuEye, LuGitBranch, LuGitFork, LuGlobe, LuHand, LuHardDrive, LuMousePointerClick, LuUserSearch, LuZap } from "react-icons/lu";
 import type { PermissionMode } from "@/lib/api";
+import { Tooltip } from "./ui/tooltip";
 
 export type WorkspaceStrategyValue = "none" | "branch" | "worktree";
 
@@ -48,13 +49,6 @@ function permissionAppearance(permissionMode: PermissionMode) {
       borderColor: "green.muted",
       colorPalette: "green",
     },
-    bypass: {
-      icon: <LuShieldOff size={13} />,
-      color: "red.fg",
-      background: "red.subtle",
-      borderColor: "red.muted",
-      colorPalette: "red",
-    },
   }[permissionMode] ?? {
     icon: <LuHand size={13} />,
     color: "fg.subtle",
@@ -72,30 +66,63 @@ function workspaceAppearance(workspaceStrategy: WorkspaceStrategyValue) {
   }[workspaceStrategy];
 }
 
+// The permission mode is fixed when a session is created and never changes over its
+// life, so this control only ever configures a session that does not exist yet. Once
+// one does, `readOnly` renders the very same chip as a settled fact — the user still
+// sees which mode the conversation runs under, but there is nothing left to choose.
 export function PermissionModeControl({
   value,
   onChange,
   layout = "chip",
   responsiveCompact = false,
+  readOnly = false,
 }: {
   value: PermissionMode;
   onChange: (mode: PermissionMode) => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
   responsiveCompact?: boolean;
+  readOnly?: boolean;
 }) {
   const translation = useTranslations("SessionControls");
-  const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" | "red" }[] = [
+  const permissionChoices: { value: PermissionMode; label: string; description: string; icon: ReactNode; colorPalette?: "blue" | "green" }[] = [
     { value: "default", label: translation("permissionDefaultLabel"), description: translation("permissionDefaultDescription"), icon: <LuHand size={13} /> },
     { value: "auto", label: translation("permissionAutoLabel"), description: translation("permissionAutoDescription"), icon: <LuBadgeCheck size={13} />, colorPalette: "blue" },
     { value: "read_only", label: translation("permissionReadOnlyLabel"), description: translation("permissionReadOnlyDescription"), icon: <LuEye size={13} />, colorPalette: "green" },
-    { value: "bypass", label: translation("permissionBypassLabel"), description: translation("permissionBypassDescription"), icon: <LuShieldOff size={13} />, colorPalette: "red" },
   ];
   const permissionItems = permissionChoices.map(({ value: itemValue, label }) => ({ value: itemValue, label }));
   const metrics = controlMetrics(layout);
   const collection = createListCollection({ items: permissionItems });
   const selectedAppearance = permissionAppearance(value);
   const selectedLabel = permissionItems.find((item) => item.value === value)?.label ?? translation("permissionDefaultLabel");
+
+  if (readOnly) {
+    return (
+      <Tooltip content={translation("permissionFixedAtCreation")} openDelay={350}>
+        <Flex
+          data-composer-permission-control={responsiveCompact ? "" : undefined}
+          align="center"
+          gap={metrics.gap}
+          h={8}
+          w={metrics.width}
+          minW={layout === "field" ? 0 : "max-content"}
+          px={metrics.paddingX}
+          borderRadius={metrics.borderRadius}
+          border="1px solid"
+          borderColor={selectedAppearance.borderColor}
+          bg={selectedAppearance.background}
+          flexShrink={0}
+        >
+          <Box display="flex" alignItems="center" justifyContent="center" boxSize="3.5" color={selectedAppearance.color} flexShrink={0}>
+            {selectedAppearance.icon}
+          </Box>
+          <Text data-composer-permission-label={responsiveCompact ? "" : undefined} fontSize={metrics.contentFontSize} fontWeight="medium" lineHeight="1" whiteSpace="nowrap" color="fg.muted">
+            {selectedLabel}
+          </Text>
+        </Flex>
+      </Tooltip>
+    );
+  }
 
   return (
     <Select.Root
@@ -230,21 +257,35 @@ function ToggleControl({
   );
 }
 
+// Confinement is a three-state setting in the configuration — refuse without a backend, run
+// without one, or do not confine — but only two of those are a choice a person makes from a
+// switch, so the switch is `required` against `off`. The paths and limits live in the
+// configuration file, where a person edits them the way they edit any other Unix policy.
+//
+// The third state shows rather than sets: when the machine has no backend, the control says so
+// instead of showing green, because a switch claiming protection that cannot be enforced is the
+// exact defect this whole mechanism was built to remove.
 export function SandboxToggleControl({
-  enabled,
+  enforce,
+  backend,
   onChange,
   layout = "chip",
 }: {
-  enabled: boolean;
-  onChange?: (enabled: boolean) => void;
+  enforce: "required" | "preferred" | "off";
+  backend?: string;
+  onChange?: (enforce: "required" | "preferred" | "off") => void;
   size?: "xs" | "sm";
   layout?: "chip" | "field";
 }) {
   const translation = useTranslations("SessionControls");
-  const appearance: ToggleAppearance = enabled
-    ? { label: translation("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
-    : { label: translation("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" };
-  return <ToggleControl appearance={appearance} enabled={enabled} onChange={onChange} layout={layout} />;
+  const confining = enforce !== "off";
+  const enforceable = backend !== "";
+  const appearance: ToggleAppearance = !confining
+    ? { label: translation("sandboxGlobal"), icon: <LuGlobe size={13} />, color: "red.fg", background: "red.subtle", borderColor: "red.muted", hover: "red.muted" }
+    : enforceable
+      ? { label: translation("sandboxRestricted"), icon: <LuBox size={13} />, color: "green.fg", background: "green.subtle", borderColor: "green.muted", hover: "green.muted" }
+      : { label: translation("sandboxUnavailable"), icon: <LuGlobe size={13} />, color: "orange.fg", background: "orange.subtle", borderColor: "orange.muted", hover: "orange.muted" };
+  return <ToggleControl appearance={appearance} enabled={confining} onChange={onChange ? (next) => onChange(next ? "required" : "off") : undefined} layout={layout} />;
 }
 
 export function CompactionToggleControl({

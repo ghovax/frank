@@ -1,1 +1,0 @@
-Search is running in the background. Its results will be delivered to you automatically as a 'web_search_completed' message with this same task_identifier when ready. Do NOT call read_task on this id and do NOT poll for it — just continue; the results arrive on their own.

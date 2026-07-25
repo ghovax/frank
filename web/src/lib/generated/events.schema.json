@@ -1,45 +1,5 @@
 {
   "$defs": {
-    "AgentPathSegment": {
-      "additionalProperties": false,
-      "description": "One hop from an agent to a child agent it spawned. A full ``path`` is the\nchain of these from the root; the UI groups by ``group_id`` (one spawn_agent\ninvocation) and orders by ``step_id`` (one child turn within it).",
-      "properties": {
-        "group_id": {
-          "type": "string"
-        },
-        "step_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "group_id",
-        "step_id"
-      ],
-      "type": "object"
-    },
-    "AgentUsage": {
-      "additionalProperties": false,
-      "description": "Combined token spend of every agent this agent spawned this session. Kept in a\nseparate bucket from the parent's own usage \u2014 agents run in their own context and\nonly their deliverable returns to the parent, so their tokens are a distinct cost, not\npart of the parent's context fill.",
-      "properties": {
-        "input_tokens": {
-          "default": 0,
-          "type": "integer"
-        },
-        "model_calls": {
-          "default": 0,
-          "type": "integer"
-        },
-        "output_tokens": {
-          "default": 0,
-          "type": "integer"
-        },
-        "total_tokens": {
-          "default": 0,
-          "type": "integer"
-        }
-      },
-      "type": "object"
-    },
     "CompactionEvent": {
       "additionalProperties": false,
       "properties": {
@@ -59,12 +19,6 @@
         "ok": {
           "default": true,
           "type": "boolean"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "reason": {
           "default": "",
@@ -127,12 +81,6 @@
           "default": "done",
           "type": "string"
         },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
-        },
         "state": {
           "default": "completed",
           "type": "string"
@@ -158,12 +106,6 @@
         "message": {
           "default": "",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "status": {
           "anyOf": [
@@ -194,39 +136,6 @@
       ],
       "type": "object"
     },
-    "GroupStartedEvent": {
-      "additionalProperties": false,
-      "description": "A spawn_agent invocation begins. ``path`` already includes the new child\nsegment, so the client can create the group/step nodes lazily from any event \u2014\nthis only carries the human-facing label (which agent) up front.",
-      "properties": {
-        "agent_name": {
-          "type": "string"
-        },
-        "kind": {
-          "const": "group_started",
-          "default": "group_started",
-          "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
-        },
-        "title": {
-          "default": "",
-          "type": "string"
-        },
-        "tool_call_id": {
-          "default": "",
-          "type": "string"
-        }
-      },
-      "required": [
-        "agent_name",
-        "kind"
-      ],
-      "type": "object"
-    },
     "McpEvent": {
       "additionalProperties": false,
       "properties": {
@@ -237,12 +146,6 @@
           "const": "mcp_event",
           "default": "mcp_event",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "server": {
           "default": "",
@@ -266,7 +169,7 @@
       "additionalProperties": false,
       "description": "The one-line JSON metadata header prepended to every tool result the model reads \u2014\ninline as a ToolMessage (``kind=\"tool_result\"``) or, for a background completion, as an\nappend-only system message (``kind=\"background_result\"``). The tool's raw output body\nfollows the header after a blank line, delivered **as-is**: prose stays prose (never\nre-encoded into an escaped JSON string), structured output stays JSON.",
       "properties": {
-        "background_task_identifier": {
+        "background_job_id": {
           "anyOf": [
             {
               "type": "string"
@@ -363,12 +266,6 @@
           "default": "permission_request",
           "type": "string"
         },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
-        },
         "request_id": {
           "type": "string"
         },
@@ -394,12 +291,6 @@
           "const": "question",
           "default": "question",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "questions": {
           "items": {
@@ -432,12 +323,6 @@
           "const": "status",
           "default": "status",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         }
       },
       "required": [
@@ -452,12 +337,6 @@
           "const": "steering",
           "default": "steering",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "text": {
           "default": "",
@@ -476,12 +355,6 @@
           "const": "text",
           "default": "text",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "text": {
           "type": "string"
@@ -504,12 +377,6 @@
           "const": "thinking_done",
           "default": "thinking_done",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         }
       },
       "required": [
@@ -529,12 +396,6 @@
           "default": "thinking",
           "type": "string"
         },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
-        },
         "text": {
           "default": "",
           "type": "string"
@@ -548,9 +409,6 @@
     "TokenUsageEvent": {
       "additionalProperties": false,
       "properties": {
-        "agents": {
-          "$ref": "#/$defs/AgentUsage"
-        },
         "context_window": {
           "default": 0,
           "type": "integer"
@@ -570,12 +428,6 @@
         "output_tokens": {
           "default": 0,
           "type": "integer"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         }
       },
       "required": [
@@ -593,12 +445,6 @@
           "const": "tool_call",
           "default": "tool_call",
           "type": "string"
-        },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
         },
         "tool_call_id": {
           "type": "string"
@@ -618,7 +464,7 @@
       "additionalProperties": false,
       "description": "Correlational + timing facts about a tool call. Shown in the UI and \u2014 per the\nproduct decision \u2014 kept visible to the model too, so it can reason about what it\nran and when.",
       "properties": {
-        "background_task_identifier": {
+        "background_job_id": {
           "anyOf": [
             {
               "type": "string"
@@ -701,12 +547,6 @@
         "metadata": {
           "$ref": "#/$defs/ToolMetadata"
         },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
-        },
         "status": {
           "$ref": "#/$defs/ToolStatus"
         },
@@ -738,15 +578,6 @@
       "additionalProperties": false,
       "description": "The structured per-turn context injected at the end of the message list: the current time,\nwhere the agent is, its goal, its tasks, and its background work.",
       "properties": {
-        "active_agents": {
-          "items": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "type": "array"
-        },
         "active_goal": {
           "default": "",
           "type": "string"
@@ -787,12 +618,6 @@
           "default": "",
           "type": "string"
         },
-        "path": {
-          "items": {
-            "$ref": "#/$defs/AgentPathSegment"
-          },
-          "type": "array"
-        },
         "title": {
           "default": "",
           "type": "string"
@@ -809,7 +634,6 @@
           "compaction": "#/$defs/CompactionEvent",
           "done": "#/$defs/DoneEvent",
           "error": "#/$defs/ErrorEvent",
-          "group_started": "#/$defs/GroupStartedEvent",
           "mcp_event": "#/$defs/McpEvent",
           "permission_request": "#/$defs/PermissionRequestEvent",
           "question": "#/$defs/QuestionEvent",
@@ -848,9 +672,6 @@
           "$ref": "#/$defs/StatusEvent"
         },
         {
-          "$ref": "#/$defs/GroupStartedEvent"
-        },
-        {
           "$ref": "#/$defs/DoneEvent"
         },
         {
@@ -879,6 +700,6 @@
   },
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "title": "DaisyEvents",
+  "title": "XeacEvents",
   "type": "object"
 }

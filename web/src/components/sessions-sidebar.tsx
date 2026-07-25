@@ -1,7 +1,8 @@
 "use client";
 
 // The chat-history sidebar as a self-contained unit: the projects list, a new-session
-// row, and each project's sorted sessions (status dot + marquee title + options menu).
+// row, and each project's sorted sessions (status dot + marquee title + options menu),
+// nested as a tree so the sessions a session creates sit under the one that created them.
 // It owns nothing about layout (the
 // page wraps it in the resizable panel, and the collapsed state wraps the very same component
 // in a hover popover), so the list looks and behaves identically wherever it is shown.
@@ -9,21 +10,28 @@
 import { Box, Button, Flex, IconButton, Image, Input, Kbd, Menu, Span, Text, VStack } from "@chakra-ui/react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LuArrowDownUp, LuChevronDown, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
-import daisyIcon from "@/app/icon.png";
+import { LuArrowDownUp, LuChevronDown, LuChevronRight, LuEllipsis, LuFolderOpen, LuFolderPlus, LuMessageSquare, LuSearch, LuSettings, LuSquarePen, LuTrash2 } from "react-icons/lu";
+import xeacIcon from "@/app/icon.png";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenu, MenuOption } from "@/components/ui/menu";
 import { PanelBody, PanelCard } from "@/components/ui/panel";
 import { Tooltip } from "@/components/ui/tooltip";
-import { deleteProject, listProjects, listSshHosts, revealInFinder, subscribeEvents, type FilesystemLease, type PermissionMode, type Project, type SshHost } from "@/lib/api";
+import { deleteProject, listProjects, listSshHosts, revealInFinder, subscribeEvents, type PermissionMode, type Project, type SshHost } from "@/lib/api";
 import type { ConnectionKind } from "@/lib/connection-store";
 import { locationTargetAddress, locationTargetLabel } from "./location-status";
 import { NewProjectDialog } from "./new-project-dialog";
 import { DisclosureLabel, DisclosureRow } from "./ui/disclosure-row";
 import { toaster } from "./ui/toaster";
 
+// A session's process lifecycle, as the daemon's registry reports it — not the turn's.
+export type SessionStatus = "starting" | "running" | "exited" | "failed";
+
 export interface SessionEntry {
   sessionId: string;
+  // The session that created this one, empty for a session the user started. A session
+  // composes by creating peers, so its children are ordinary sessions that would land
+  // flat in this list unless they are nested under the row that created them.
+  parentSessionId: string;
   projectId: string;
   connectionId: string;
   connectionName: string;
@@ -33,23 +41,23 @@ export interface SessionEntry {
   title: string;
   createdAt: string;
   workingDirectory: string;
-  runtimeWorkingDirectory: string;
-  workspaceStrategy: "none" | "branch" | "worktree";
-  workspaceBranch: string;
-  workspaceError: string;
-  running: boolean;
+  status: SessionStatus;
+  // Whether a turn is in flight. Distinct from `status`, which describes the process: a
+  // session stays "running" between messages, so only this means it is working.
+  busy: boolean;
   awaitingInput: boolean;
-  filesystemLeases: FilesystemLease[];
-  inputDraft: string;
+  // Why an exited/failed session ended, when the daemon knows — shown on the status dot.
+  exitReason: string;
   permissionMode: PermissionMode;
 }
 
 export type SessionSort = "recent" | "active";
 
-// The status a session's dot reflects. "working" means the session is still doing
-// something — a soft pulsing gray dot, shown even while it's the active session ("not
-// finished yet"). "done" means it finished since you last looked — a solid blue dot,
-// suppressed for the active session (you're already looking at it). Plus the two alerts.
+// The status a session's dot reflects. "working" means the process is still up and
+// doing something — a soft pulsing gray dot, shown even while it's the active session
+// ("not finished yet"). "done" means it finished since you last looked — a solid blue
+// dot, suppressed for the active session (you're already looking at it). Plus the two
+// alerts: a crashed process, and a session parked on a decision only you can make.
 type SessionIndicator = "working" | "problem" | "attention" | "done";
 
 function sessionIndicator(
@@ -57,9 +65,9 @@ function sessionIndicator(
   isActive: boolean,
   unseenCompletions: Set<string>,
 ): SessionIndicator | null {
-  if (entry.workspaceError) return "problem";
+  if (entry.status === "failed") return "problem";
   if (entry.awaitingInput) return "attention";
-  if (entry.running) return "working";
+  if (entry.status === "starting" || entry.status === "running") return "working";
   if (!isActive && unseenCompletions.has(entry.sessionId)) return "done";
   return null;
 }
@@ -70,6 +78,41 @@ const INDICATOR_COLOR: Record<SessionIndicator, string> = {
   attention: "yellow.solid",
   done: "blue.solid",
 };
+
+const STATUS_LABEL_KEY: Record<SessionStatus, string> = {
+  starting: "statusStarting",
+  running: "statusRunning",
+  exited: "statusExited",
+  failed: "statusFailed",
+};
+
+// A session and everything it created. The daemon hands the registry out flat (each row
+// carrying its parent), so the nesting is derived here rather than being a shape the
+// sidebar has to flatten again to search or sort.
+interface SessionTreeNode {
+  entry: SessionEntry;
+  children: SessionTreeNode[];
+}
+
+function buildSessionTree(entries: SessionEntry[]): SessionTreeNode[] {
+  const nodes = new Map(entries.map((entry) => [entry.sessionId, { entry, children: [] as SessionTreeNode[] }]));
+  const roots: SessionTreeNode[] = [];
+  for (const node of nodes.values()) {
+    // A child whose parent is not in this list (filtered out by the search, or living in
+    // another project) is promoted to a root rather than dropped — a session is never
+    // unreachable because of where its parent happens to be.
+    const parent = node.entry.parentSessionId ? nodes.get(node.entry.parentSessionId) : undefined;
+    if (parent && parent !== node) parent.children.push(node);
+    else roots.push(node);
+  }
+  return roots;
+}
+
+// Every session in a subtree, including its root — so a collapsed parent can still say
+// what is hiding inside it.
+function collectEntries(node: SessionTreeNode): SessionEntry[] {
+  return [node.entry, ...node.children.flatMap(collectEntries)];
+}
 
 // Row geometry, shared by the New-session row, the session rows, and the footer so their
 // leading glyphs, text, and left edge all line up on one grid — the reference sidebar's
@@ -128,6 +171,179 @@ function MarqueeTitle({ text }: { text: string }) {
   );
 }
 
+// One session row, plus — nested beneath it, behind a chevron — the sessions it
+// created. Children start collapsed: a task that fans out puts one row in the list, not
+// one per child, which is the whole reason the hierarchy is rendered at all. The row
+// itself always resumes the session; only the chevron toggles the subtree, so the two
+// gestures never compete for the same click.
+function SessionTreeRow({
+  node,
+  activeSessionId,
+  unseenCompletions,
+  expandedSessions,
+  onToggleExpanded,
+  onResume,
+  onRequestDelete,
+}: {
+  node: SessionTreeNode;
+  activeSessionId: string | null;
+  unseenCompletions: Set<string>;
+  expandedSessions: Set<string>;
+  onToggleExpanded: (sessionId: string) => void;
+  onResume: (entry: SessionEntry) => void;
+  onRequestDelete: (entry: SessionEntry) => void;
+}) {
+  const translation = useTranslations("SessionsSidebar");
+  const entry = node.entry;
+  const isActive = entry.sessionId === activeSessionId;
+  const indicator = sessionIndicator(entry, isActive, unseenCompletions);
+  const title = entry.title || translation("untitledConversation");
+  const hasChildren = node.children.length > 0;
+  const expanded = expandedSessions.has(entry.sessionId);
+  // What a collapsed parent is hiding. Without this the tree would swallow exactly the
+  // signals the sidebar exists to raise — a child parked on a permission prompt, or one
+  // that crashed — behind a chevron the user has no reason to open.
+  const hidden = hasChildren && !expanded ? node.children.flatMap(collectEntries) : [];
+  const hiddenAttention = hidden.some((child) => child.awaitingInput);
+  const hiddenProblem = hidden.some((child) => child.status === "failed");
+  const statusLabel = translation((STATUS_LABEL_KEY[entry.status] ?? "statusStarting") as Parameters<typeof translation>[0]);
+  const statusTooltip = (
+    <Box>
+      <Text color="fg">{entry.awaitingInput ? translation("awaitingInput") : statusLabel}</Text>
+      {entry.exitReason ? <Text color="fg.muted">{entry.exitReason}</Text> : null}
+    </Box>
+  );
+
+  return (
+    <Box minW={0}>
+      <Box
+        className="sidebar-row"
+        borderRadius={ROW_RADIUS}
+        bg={isActive ? SELECTED_BG : undefined}
+        _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
+        transition="background-color 0.12s"
+        css={{
+          "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
+          "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+          "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
+        }}
+      >
+        <Flex align="center" gap={0.5} minW={0}>
+          {hasChildren ? (
+            <Button
+              type="button"
+              aria-label={expanded ? translation("hideChildSessions") : translation("showChildSessions")}
+              variant="plain"
+              h={5}
+              minW={0}
+              px={1}
+              gap={0.5}
+              flexShrink={0}
+              color={hiddenProblem ? "red.fg" : hiddenAttention ? "yellow.fg" : "fg.subtle"}
+              _hover={{ bg: "transparent", color: "fg" }}
+              _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
+              onClick={() => onToggleExpanded(entry.sessionId)}
+            >
+              {expanded ? <LuChevronDown size={12} /> : <LuChevronRight size={12} />}
+              {expanded ? null : <Text fontSize="2xs" lineHeight="1">{hidden.length}</Text>}
+            </Button>
+          ) : null}
+          <Box flex={1} minW={0}>
+            <DisclosureRow
+              fill
+              tone={isActive ? "active" : "muted"}
+              onActivate={() => onResume(entry)}
+              icon={
+                <Tooltip content={statusTooltip} rich openDelay={350} positioning={{ placement: "right" }}>
+                  <Box position="relative" color={isActive ? "blue.fg" : "fg.muted"}>
+                    <LuMessageSquare />
+                    {indicator ? (
+                      <Box
+                        position="absolute"
+                        right="-2px"
+                        bottom="-2px"
+                        boxSize="1.5"
+                        borderRadius="full"
+                        bg={INDICATOR_COLOR[indicator]}
+                        outline="1px solid"
+                        outlineColor="bg.panel"
+                        className={indicator === "working" ? "status-dot-pulse" : undefined}
+                      />
+                    ) : null}
+                  </Box>
+                </Tooltip>
+              }
+              title={
+                <Tooltip content={title} openDelay={350} positioning={{ placement: "right" }}>
+                  <Box minW={0} color={isActive ? "blue.fg" : undefined}>
+                    <MarqueeTitle text={title} />
+                  </Box>
+                </Tooltip>
+              }
+              actions={
+                <Box data-row-actions opacity={0} pointerEvents="none" transition="opacity 0.12s">
+                  <DropdownMenu
+                    trigger={
+                      <IconButton
+                        aria-label={translation("sessionOptions")}
+                        variant="plain"
+                        boxSize={5}
+                        color="fg.subtle"
+                        _hover={{ bg: "transparent", color: "fg" }}
+                        _active={{ bg: "transparent" }}
+                        _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
+                        css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
+                      >
+                        <LuEllipsis size={13} />
+                      </IconButton>
+                    }
+                    minW="180px"
+                    positioning={{ placement: "bottom-end" }}
+                  >
+                    <Menu.Item
+                      value="reveal"
+                      fontSize="xs"
+                      disabled={!entry.workingDirectory}
+                      onClick={() => { if (entry.workingDirectory) void revealInFinder(entry.workingDirectory); }}
+                    >
+                      <LuFolderOpen size={14} />
+                      <Box flex={1}>{translation("openFolder")}</Box>
+                    </Menu.Item>
+                    <MenuOption value="delete" danger icon={<LuTrash2 size={14} />} onClick={() => onRequestDelete(entry)}>
+                      {translation("deleteSession")}
+                    </MenuOption>
+                  </DropdownMenu>
+                </Box>
+              }
+            />
+          </Box>
+        </Flex>
+      </Box>
+
+      {/* The children hang off the same hairline rule every other disclosure body uses,
+          so a created subtree reads as part of its parent rather than as a new list. */}
+      {hasChildren && expanded ? (
+        <Box ml={1.5} pl={3.5} py={1} borderLeft="2px solid" borderColor="border.muted">
+          <VStack gap={1} align="stretch">
+            {node.children.map((child) => (
+              <SessionTreeRow
+                key={child.entry.sessionId}
+                node={child}
+                activeSessionId={activeSessionId}
+                unseenCompletions={unseenCompletions}
+                expandedSessions={expandedSessions}
+                onToggleExpanded={onToggleExpanded}
+                onResume={onResume}
+                onRequestDelete={onRequestDelete}
+              />
+            ))}
+          </VStack>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 export function SessionsSidebar({
   sessions,
   sessionsLoaded,
@@ -165,6 +381,17 @@ export function SessionsSidebar({
   const [loadedSshHostsConnectionId, setLoadedSshHostsConnectionId] = useState<string | null>(null);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [projectOpenOverrides, setProjectOpenOverrides] = useState<Record<string, boolean>>({});
+  // Which parents have their child sessions showing. Collapsed is the default and the
+  // state is additive (an id is present only once opened), so a session that fans out
+  // mid-view never expands the list under the reader.
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set());
+  const toggleSessionExpanded = useCallback((sessionId: string) => {
+    setExpandedSessions((current) => {
+      const next = new Set(current);
+      if (!next.delete(sessionId)) next.add(sessionId);
+      return next;
+    });
+  }, []);
   const [search, setSearch] = useState("");
   const searchQuery = search.trim().toLowerCase();
   const connectionSessions = connectionId
@@ -239,8 +466,8 @@ export function SessionsSidebar({
   return (
     <PanelCard flex={1}>
       <Flex align="center" gap={2} px={3} pt={3} pb={2} flexShrink={0}>
-        <Image src={daisyIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
-        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">Daisy</Text>
+        <Image src={xeacIcon.src} alt="" boxSize="26px" borderRadius="md" flexShrink={0} />
+        <Text fontFamily="var(--font-display)" fontSize="2xl" lineHeight="1" fontWeight="bold" letterSpacing="tight">XEAC</Text>
       </Flex>
 
       {/* "New session" reads as the first row of the list, not a separate button — a
@@ -423,92 +650,18 @@ export function SessionsSidebar({
                   >
                     {projectSessions.length > 0 ? (
                       <VStack gap={1} align="stretch">
-                        {projectSessions.map((entry) => {
-                          const isActive = entry.sessionId === activeSessionId;
-                          const indicator = sessionIndicator(entry, isActive, unseenCompletions);
-                          const title = entry.title || translation("untitledConversation");
-                          return (
-                            <Box
-                              key={entry.sessionId}
-                              className="sidebar-row"
-                              borderRadius={ROW_RADIUS}
-                              bg={isActive ? SELECTED_BG : undefined}
-                              _hover={{ bg: isActive ? SELECTED_HOVER_BG : HOVER_BG }}
-                              transition="background-color 0.12s"
-                              css={{
-                                "& [data-row-actions]": { opacity: 0, pointerEvents: "none" },
-                                "&:hover [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
-                                "&:focus-within [data-row-actions]": { opacity: 1, pointerEvents: "auto" },
-                              }}
-                            >
-                              <DisclosureRow
-                                fill
-                                tone={isActive ? "active" : "muted"}
-                                onActivate={() => onResume(entry)}
-                                icon={
-                                  <Box position="relative" color={isActive ? "blue.fg" : "fg.muted"}>
-                                    <LuMessageSquare />
-                                    {indicator ? (
-                                      <Box
-                                        position="absolute"
-                                        right="-2px"
-                                        bottom="-2px"
-                                        boxSize="1.5"
-                                        borderRadius="full"
-                                        bg={INDICATOR_COLOR[indicator]}
-                                        outline="1px solid"
-                                        outlineColor="bg.panel"
-                                        className={indicator === "working" ? "status-dot-pulse" : undefined}
-                                      />
-                                    ) : null}
-                                  </Box>
-                                }
-                                title={
-                                  <Tooltip content={title} openDelay={350} positioning={{ placement: "right" }}>
-                                    <Box minW={0} color={isActive ? "blue.fg" : undefined}>
-                                      <MarqueeTitle text={title} />
-                                    </Box>
-                                  </Tooltip>
-                                }
-                                actions={
-                                  <Box data-row-actions opacity={0} pointerEvents="none" transition="opacity 0.12s">
-                                    <DropdownMenu
-                                      trigger={
-                                        <IconButton
-                                          aria-label={translation("sessionOptions")}
-                                          variant="plain"
-                                          boxSize={5}
-                                          color="fg.subtle"
-                                          _hover={{ bg: "transparent", color: "fg" }}
-                                          _active={{ bg: "transparent" }}
-                                          _focusVisible={{ outline: "none", boxShadow: "none", color: "fg" }}
-                                          css={{ "&[data-state=open]": { background: "transparent", color: "var(--chakra-colors-fg)" } }}
-                                        >
-                                          <LuEllipsis size={13} />
-                                        </IconButton>
-                                      }
-                                      minW="180px"
-                                      positioning={{ placement: "bottom-end" }}
-                                    >
-                                      <Menu.Item
-                                        value="reveal"
-                                        fontSize="xs"
-                                        disabled={!entry.workingDirectory}
-                                        onClick={() => { if (entry.workingDirectory) void revealInFinder(entry.workingDirectory); }}
-                                      >
-                                        <LuFolderOpen size={14} />
-                                        <Box flex={1}>{translation("openFolder")}</Box>
-                                      </Menu.Item>
-                                      <MenuOption value="delete" danger icon={<LuTrash2 size={14} />} onClick={() => setPendingDelete(entry)}>
-                                        {translation("deleteSession")}
-                                      </MenuOption>
-                                    </DropdownMenu>
-                                  </Box>
-                                }
-                              />
-                            </Box>
-                          );
-                        })}
+                        {buildSessionTree(projectSessions).map((node) => (
+                          <SessionTreeRow
+                            key={node.entry.sessionId}
+                            node={node}
+                            activeSessionId={activeSessionId}
+                            unseenCompletions={unseenCompletions}
+                            expandedSessions={expandedSessions}
+                            onToggleExpanded={toggleSessionExpanded}
+                            onResume={onResume}
+                            onRequestDelete={setPendingDelete}
+                          />
+                        ))}
                       </VStack>
                     ) : undefined}
                   </DisclosureRow>

@@ -1,1 +1,0 @@
-The ID `{{ task_id }}` is a background *{{ kind }}* handle, not a readable A2A task. Its results are delivered to you automatically as a separate completed message when ready — do not read_task or poll for it. If the result has not arrived yet, just continue; it will appear on its own. read_task is only for sibling/agent tasks you spawned.
