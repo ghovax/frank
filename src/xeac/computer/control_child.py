@@ -122,9 +122,15 @@ def main() -> None:
     if output:
         result["stdout"] = output
     try:
-        sys.stdout.write(json.dumps(result, default=str))
+        # Compact, like every other payload that ends up in front of a model — spelled out
+        # here rather than imported from `base`, because this file is launched by path and
+        # holds no XEAC code. One helper's worth of duplication is the price of that.
+        sys.stdout.write(json.dumps(result, default=str, ensure_ascii=False, separators=(",", ":")))
     except Exception:
-        sys.stdout.write(json.dumps({"ok": False, "error": "control_screen: the result was not serialisable."}))
+        sys.stdout.write(json.dumps(
+            {"ok": False, "error": "control_screen: the result was not serialisable."},
+            separators=(",", ":"),
+        ))
     sys.stdout.flush()
 
 

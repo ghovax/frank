@@ -9,7 +9,6 @@ failed — runs through one teardown exactly once.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -52,6 +51,7 @@ from xeac.runtime.annotation_stamping import annotation_image_blocks, normalize_
 from xeac.runtime.runtime import AgentRuntime
 from xeac.runtime.turn_events import SuspensionGate
 from xeac.worker.sink import _TurnEventSink
+from xeac.base.serialization import compact
 
 if TYPE_CHECKING:
     # Imported for the annotation only: `session` imports this module, so a real import here
@@ -486,7 +486,7 @@ class _TurnRunner:
             # transcript.
             self._turn_input = _PROMPTS.load("background_resume_note", {})
         elif self._artifact_payload is not None:
-            payload_json = json.dumps({"artifact_event": self._artifact_payload}, ensure_ascii=False)
+            payload_json = compact({"artifact_event": self._artifact_payload})
             if self._artifact_payload.get("event") == "render_error":
                 # The same JSON payload, wrapped in a self-realization note and injected as
                 # a harness note rather than user input.
@@ -502,10 +502,10 @@ class _TurnRunner:
             # the UI receives a non-fatal warning. The model-facing copy of the data parts
             # keeps annotation positions on the normalized 0-999 grid documented in the
             # system prompt.
-            text_payload = json.dumps({
+            text_payload = compact({
                 "text": self._user_text,
                 "data_parts": normalize_annotation_payloads(self._structured_payloads),
-            }, ensure_ascii=False)
+            })
             image_attachments = _image_attachments(self._structured_payloads)
             model_identifier = runtime.effective_model_identifier if runtime is not None else ""
             image_blocks = []

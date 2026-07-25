@@ -51,10 +51,10 @@ from typing import AsyncIterator
 from typing import Optional
 from typing import cast
 import asyncio
-import json
 import platform
 import time
 import uuid
+from xeac.base.serialization import compact
 
 
 
@@ -91,7 +91,7 @@ class _TurnLoopMixin:
             agent_skills = skills_for_agent(all_skills, self._agent_configuration.skills)
             memories = load_memories(self._global_configuration.memory_directories_for(self._project_directory))
             workspace_root, is_git_repo = _detect_workspace(self._working_directory)
-            context_json = json.dumps({
+            context_json = compact({
                 "working_directory": self._working_directory,
                 "project_directory": self._project_directory,
                 "workspace_root": workspace_root,
@@ -126,8 +126,8 @@ class _TurnLoopMixin:
                 "system_environment": probe_local_environment(),
                 "user_environment": user_environment,
                 "instructions": load_instructions(self._project_directory),
-                "skills": json.dumps(skills_payload(agent_skills)),
-                "memories": json.dumps(memories_payload(memories)),
+                "skills": compact(skills_payload(agent_skills)),
+                "memories": compact(memories_payload(memories)),
                 "agent_context": agent_context,
                 "computer_control_guidance": computer_control_guidance,
             })
@@ -154,7 +154,7 @@ class _TurnLoopMixin:
     def _record_turn(self, user_message: str, tool_calls: list, tool_results: list, final_response: str):
         self._record_message("human", user_message)
         for tool_call_entry in tool_calls:
-            self._record_message("tool", json.dumps(tool_call_entry.get("args", {})), tool_call_entry.get("name", ""))
+            self._record_message("tool", compact(tool_call_entry.get("args", {})), tool_call_entry.get("name", ""))
         for tool_result_entry in tool_results:
             self._record_message("tool", str(tool_result_entry.get("result", "")), tool_result_entry.get("name", ""))
         if final_response:

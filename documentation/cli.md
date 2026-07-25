@@ -159,6 +159,8 @@ ssh workstation xeac daemon endpoint
 
 **Everything on stdout is plumbing.** A read prints the API's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(xeac create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
 
+It is minified, and every JSON object is exactly one line — no indentation, and real UTF-8 rather than `\uXXXX` escapes. Agents drive these verbs constantly and pay for indentation by the token; pipe through `jq .` when you want it laid out for a person.
+
 Diagnostics go to stderr and outcomes go to the exit code, so neither can contaminate the data. `xeac configure some.setting` on a stderr-suppressed pipeline prints the value or nothing at all; it never prints an apology you would then have to parse around.
 
 | Exit code | Meaning |

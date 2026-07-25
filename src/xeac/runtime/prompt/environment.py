@@ -16,13 +16,13 @@ field redaction, wider opt-in). See the privacy section of SECURITY.md.
 
 from __future__ import annotations
 
-import json
 import os
 from xeac.base import environment_variables
 import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
+from xeac.base.serialization import compact
 
 
 # Command-line wrappers/keywords to skip when finding the real command a history line ran.
@@ -231,7 +231,7 @@ def probe_local_environment() -> str:
         "path": [entry for entry in os.environ.get(environment_variables.PATH, "").split(os.pathsep) if entry],
         "env": environment,
     }
-    return json.dumps(payload)
+    return compact(payload)
 
 
 def _iter_history_lines() -> Iterator[str]:
@@ -1213,4 +1213,4 @@ def probe_user_context() -> str:
             payload[key] = value
     payload.update(_browser_site_activity())
 
-    return json.dumps(payload)
+    return compact(payload)

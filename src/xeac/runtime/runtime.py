@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -82,6 +81,7 @@ from xeac.runtime.compaction import (
 )
 
 
+from xeac.base.serialization import compact
 from xeac.runtime.internals import (
     _cap_model_result_payload,
     _maybe_json,
@@ -244,7 +244,7 @@ class TaskManager:
     def render_json(self) -> str:
         if not self._tasks:
             return ""
-        return json.dumps([task.model_dump() for task in self._tasks])
+        return compact([task.model_dump() for task in self._tasks])
 
     def to_dict_list(self) -> list[dict]:
         return [task.model_dump() for task in self._tasks]

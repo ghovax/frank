@@ -3,7 +3,7 @@ r"""Concrete implementations of the file/search/edit tools.
 These are plain functions (synchronous for filesystem work, async for HTTP) that
 the agent runtime dispatches to from ``_execute_tool``. They mirror opencode's
 tool semantics but follow this harness's convention of returning results as
-``json.dumps({...})`` payloads with a ``code`` discriminator — the same shape
+``compact({...})`` payloads with a ``code`` discriminator — the same shape
 ``bash`` and ``web_search`` already use. Errors are raised so the runtime's
 tool-call wrapper surfaces them as ERROR events to the model.
 
@@ -20,7 +20,6 @@ import ast
 import asyncio
 import base64
 import hashlib
-import json
 import re
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING
@@ -34,6 +33,7 @@ from xeac.base.configuration import PromptLoader as _PromptLoader
 from xeac.base.tuning import Limit, active_tuning, clip_to_tokens
 from xeac.base.identifiers import new_id
 from xeac.locations.executor import LocationExecutor
+from xeac.base.serialization import compact
 
 _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
@@ -157,7 +157,7 @@ def _context_diff_window(before: str, after: str, context_lines: int = 4) -> tup
 
 def _payload(code: str, **fields) -> str:
     """Build a JSON tool-result payload with the given ``code`` discriminator."""
-    return json.dumps({"code": code, **fields})
+    return compact({"code": code, **fields})
 
 
 def content_sha256(content: str) -> str:
@@ -397,7 +397,7 @@ def _edit_failure(code: str, message: str, **data: object) -> str:
     real structured fields (``candidates``, ``occurrences``, ``diagnostic``, ``path``) —
     never stitched into the message. The same payload serves the model and the UI, so there
     is no prose/data split to reconcile. ``status="error"`` marks the call failed for both."""
-    return json.dumps({"code": code, "status": "error", "message": message.strip(), **data})
+    return compact({"code": code, "status": "error", "message": message.strip(), **data})
 
 
 def _match_find_text(before: str, find: str, replace: str) -> tuple[str, str, str, int] | None:
@@ -542,7 +542,7 @@ def edit_file(
     diff_before, diff_after = _context_diff_window(before, after, context_lines=4)
     summary["before"] = diff_before
     summary["after"] = diff_after
-    return json.dumps(summary)
+    return compact(summary)
 
 
 _LANGUAGE_PARSERS: dict[
@@ -690,7 +690,7 @@ def _edit_payload(
         "created": created,
         "characters": len(after),
     }
-    return json.dumps(
+    return compact(
         {
             **summary,
             "before": before,

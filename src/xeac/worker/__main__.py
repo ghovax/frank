@@ -23,6 +23,7 @@ import os
 import signal
 import sys
 from pathlib import Path
+from xeac.base.serialization import compact
 
 logger = logging.getLogger("xeac.worker")
 
@@ -141,7 +142,7 @@ async def run() -> int:
         ready_wait.cancel()
         await session.aclose()
         return 1
-    sys.stdout.write(json.dumps({"ready": True, "pid": os.getpid()}) + "\n")
+    sys.stdout.write(compact({"ready": True, "pid": os.getpid()}) + "\n")
     sys.stdout.flush()
 
     try:

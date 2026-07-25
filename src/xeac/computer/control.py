@@ -18,6 +18,7 @@ import sys
 from typing import Any, Awaitable, Callable, Optional
 
 from xeac.computer.surface import message_loader
+from xeac.base.serialization import compact
 
 # Model-facing control messages live in messages/control/*.md, loaded here so the child (which
 # holds no XEAC code) can report bare facts and leave the prose to the loader.
@@ -66,7 +67,7 @@ async def run_control_script(
     requests = os.fdopen(request_read, "r")
     replies = os.fdopen(reply_write, "w", buffering=1)
     # The configuration is the first line the child reads on the reply pipe; primitive replies follow.
-    _write_line(replies, json.dumps(configuration))
+    _write_line(replies, compact(configuration))
 
     async def pump() -> None:
         """Service one primitive call at a time until the child closes the request pipe."""
@@ -81,7 +82,7 @@ async def run_control_script(
                 reply: Any = {"value": value}
             except Exception as error:  # a failed primitive is raised into the script, not fatal here
                 reply = {"error": f"{type(error).__name__}: {error}"}
-            await loop.run_in_executor(None, _write_line, replies, json.dumps(reply, default=str))
+            await loop.run_in_executor(None, _write_line, replies, compact(reply, default=str))
 
     pump_task = asyncio.create_task(pump())
     try:

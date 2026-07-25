@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 
 from xeac.base.paths import configuration_file_path
+from xeac.base.serialization import compact
 
 
 def _note(message: str) -> None:
@@ -167,7 +168,7 @@ def run(arguments) -> int:
         # change and a script can read it without parsing columns. A key the schema no longer
         # defines is inert; it is still listed, because it is in the file and hiding it would
         # make an unremovable setting invisible. `--unset` is how it goes away.
-        print(json.dumps(dict(sorted(_flatten(data))), indent=2))
+        print(compact(dict(sorted(_flatten(data)))))
         return 0
 
     if arguments.value is None:
@@ -183,7 +184,7 @@ def run(arguments) -> int:
                 return 0
             _note(f"xeac: no setting named {arguments.setting!r}")
             return 1
-        print(json.dumps(value, indent=2) if isinstance(value, (dict, list)) else value)
+        print(compact(value) if isinstance(value, (dict, list)) else value)
         return 0
 
     if not _is_known(arguments.setting):
@@ -198,7 +199,7 @@ def run(arguments) -> int:
     # Echoing the stored value rather than the argument shows how it was interpreted, so a
     # `true` that landed as a string is visible immediately instead of at the next boot.
     stored = _read(data, arguments.setting)
-    print(json.dumps(stored, indent=2) if isinstance(stored, (dict, list)) else stored)
+    print(compact(stored) if isinstance(stored, (dict, list)) else stored)
     return 0
 
 

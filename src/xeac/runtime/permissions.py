@@ -16,8 +16,8 @@ from langchain_core.messages import SystemMessage
 from typing import Any
 from typing import Optional
 import ast
-import json
 import uuid
+from xeac.base.serialization import compact
 
 # The state-changing control_screen primitives. A script that calls any of them is mutating; one that
 # only reads (find_one/find_many/read/hover/scroll) is read-only. This is the structural analogue of
@@ -61,7 +61,7 @@ class _PermissionsMixin:
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
     ) -> PermissionDecision:
-        context = json.dumps(
+        context = compact(
             {
                 "tool_kind": tool_kind,
                 "working_directory": self._working_directory,
@@ -76,7 +76,6 @@ class _PermissionsMixin:
                 "outside_working_directory_reads": outside_reads or [],
                 "allowed_actions": ["auto_approve", "escalate"],
             },
-            ensure_ascii=False,
         )
         prompt = self._prompt_loader.load("permission_classifier", {"context": context})
         try:
@@ -113,7 +112,7 @@ class _PermissionsMixin:
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
     ) -> PermissionDecision:
-        context = json.dumps(
+        context = compact(
             {
                 "tool_kind": tool_kind,
                 "working_directory": self._working_directory,
@@ -128,7 +127,6 @@ class _PermissionsMixin:
                 "outside_working_directory_reads": outside_reads or [],
                 "allowed_actions": ["auto_approve", "escalate"],
             },
-            ensure_ascii=False,
         )
         prompt = self._prompt_loader.load("permission_classifier", {"context": context})
         try:
@@ -165,7 +163,7 @@ class _PermissionsMixin:
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
     ) -> PermissionDecision:
-        context = json.dumps(
+        context = compact(
             {
                 "tool_kind": tool_kind,
                 "working_directory": self._working_directory,
@@ -180,7 +178,6 @@ class _PermissionsMixin:
                 "outside_working_directory_reads": outside_reads or [],
                 "allowed_actions": ["auto_approve", "escalate"],
             },
-            ensure_ascii=False,
         )
         prompt = self._prompt_loader.load("permission_classifier", {"context": context})
         try:
@@ -217,7 +214,7 @@ class _PermissionsMixin:
         static_detail: str = "",
         outside_reads: Optional[list[str]] = None,
     ) -> PermissionDecision:
-        context = json.dumps(
+        context = compact(
             {
                 "tool_kind": tool_kind,
                 "working_directory": self._working_directory,
@@ -232,7 +229,6 @@ class _PermissionsMixin:
                 "outside_working_directory_reads": outside_reads or [],
                 "allowed_actions": ["auto_approve", "escalate"],
             },
-            ensure_ascii=False,
         )
         prompt = self._prompt_loader.load("permission_classifier", {"context": context})
         try:
@@ -437,7 +433,7 @@ class _PermissionsMixin:
                 if policy.auto_permissions:
                     decision = await self._classify_permission(
                         tool_kind="mcp", command=action,
-                        raw_command=json.dumps(tool_arguments.get("arguments") or {}, ensure_ascii=False),
+                        raw_command=compact(tool_arguments.get("arguments") or {}),
                         default_decision="ask", read_only=False, risk=risk, justification=justification,
                     )
                     if decision.action == "auto_approve":

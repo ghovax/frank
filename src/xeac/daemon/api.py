@@ -16,7 +16,6 @@ out of the path between two peers; it only carries what a human's client cannot 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -29,6 +28,7 @@ from sse_starlette.sse import EventSourceResponse
 from xeac.base.permission_mode import PermissionMode
 from xeac.daemon import state
 from xeac.daemon.registry import RUNNING, SessionRecord
+from xeac.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
@@ -468,7 +468,7 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
         try:
             tasks = await state.task_store.tasks_for_context(session_id)
             yield {
-                "data": json.dumps({
+                "data": compact({
                     "kind": "snapshot",
                     "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
                 })
@@ -484,20 +484,20 @@ async def attach(session_id: str, request: Request) -> EventSourceResponse:
                     yield {"comment": "keepalive"}
                     continue
                 if event is None:
-                    yield {"data": json.dumps({"kind": "done"})}
+                    yield {"data": compact({"kind": "done"})}
                     break
                 if "turn" in event:
                     # A turn started or ended. Distinct from `done`, which is the session
                     # itself ending: a session goes idle many times over its life, and a
                     # watcher that conflated the two would either stop after the first turn
                     # or wait for a process to die.
-                    yield {"data": json.dumps({
+                    yield {"data": compact({
                         "kind": "turn",
                         "seq": event.get("seq", 0),
                         "running": bool((event.get("turn") or {}).get("running")),
                     })}
                     continue
-                yield {"data": json.dumps({"kind": "live", "seq": event.get("seq", 0), "message": event.get("part")})}
+                yield {"data": compact({"kind": "live", "seq": event.get("seq", 0), "message": event.get("part")})}
         finally:
             state.event_bus.unsubscribe(session_id, subscription)
 
@@ -524,7 +524,7 @@ async def events(request: Request) -> EventSourceResponse:
                     # it finish: a server draining its connections cannot outwait a stream that
                     # is waiting on the server.
                     break
-                yield {"data": json.dumps(event)}
+                yield {"data": compact(event)}
         finally:
             state.broadcaster.unsubscribe(subscription)
 

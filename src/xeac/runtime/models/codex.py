@@ -49,6 +49,7 @@ from xeac.base.credentials import (
     valid_tokens,
 )
 from xeac.base.message_content import content_blocks_to_message_content, message_text
+from xeac.base.serialization import compact
 
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 # The account's live, plan-specific model catalog. Same host/auth as the responses
@@ -161,7 +162,7 @@ class ChatCodexModel(BaseChatModel):
                     })
                 for call in message.tool_calls or []:
                     arguments = call.get("args")
-                    serialized = arguments if isinstance(arguments, str) else json.dumps(arguments)
+                    serialized = arguments if isinstance(arguments, str) else compact(arguments)
                     items.append({
                         "type": "function_call",
                         "call_id": call.get("id"),

@@ -7,7 +7,6 @@ from fastapi import Request
 from xeac.base.paths import uploads_directory
 from sse_starlette.sse import EventSourceResponse
 import asyncio
-import json
 import re
 from xeac.protocol.dtos import (
     SessionDraftRequest,
@@ -16,6 +15,7 @@ from xeac.daemon import state
 from xeac.daemon.services.broadcast import _publish_broadcast
 from xeac.daemon.persistence.artifacts import _prune_session_artifacts
 from xeac.daemon.services.sessions import _abort_pending_input, _remove_upload_file, _session_draft, _sessions_payload, _update_session_draft
+from xeac.base.serialization import compact
 
 router = APIRouter()
 
@@ -92,13 +92,13 @@ async def session_stream(context_id: str, request: Request):
         baseline = state.event_bus.high_seq(context_id)
         try:
             tasks = await task_store.tasks_for_context(context_id)
-            yield {"data": json.dumps({
+            yield {"data": compact({
                 "kind": "snapshot",
                 "tasks": [task.model_dump(by_alias=True, exclude_none=True, mode="json") for task in tasks],
             })}
 
             for sequence, part in state.event_bus.agent_events_through(context_id, baseline):
-                yield {"data": json.dumps({
+                yield {"data": compact({
                     "kind": "live",
                     "seq": sequence,
                     "message": {"role": "agent", "parts": [part]},
@@ -115,10 +115,10 @@ async def session_stream(context_id: str, request: Request):
                 seq, part = item
                 if seq <= baseline:
                     continue
-                yield {"data": json.dumps({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
+                yield {"data": compact({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
 
             if done or state._running_contexts.get(context_id, 0) == 0:
-                yield {"data": json.dumps({"kind": "done"})}
+                yield {"data": compact({"kind": "done"})}
                 return
 
             # Live tail. The wait_for timeout lets us notice a client disconnect
@@ -131,10 +131,10 @@ async def session_stream(context_id: str, request: Request):
                 except asyncio.TimeoutError:
                     continue
                 if item is state.ContextEventBus._DONE:
-                    yield {"data": json.dumps({"kind": "done"})}
+                    yield {"data": compact({"kind": "done"})}
                     break
                 seq, part = item
-                yield {"data": json.dumps({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
+                yield {"data": compact({"kind": "live", "seq": seq, "message": {"role": "agent", "parts": [part]}})}
         except asyncio.CancelledError:
             raise
         finally:

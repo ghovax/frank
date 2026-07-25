@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
 import logging
 import uuid
 from pathlib import Path
@@ -42,6 +41,7 @@ from xeac.protocol.turn_record import PendingInteraction, ToolGate, TurnRecord
 from xeac.runtime.runtime import AgentRuntime
 from xeac.runtime.turn_events import SuspensionGate
 from xeac.worker.turn import _ContextState, _TurnRunner
+from xeac.base.serialization import compact
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +539,7 @@ class SessionExecutor(AgentExecutor):
         then every context that now has a deliverable result is woken autonomously."""
         store = get_background_job_store()
         for job in store.running_jobs(self._agent_name):
-            store.mark_abandoned(job["job_id"], json.dumps({
+            store.mark_abandoned(job["job_id"], compact({
                 "code": f"{job['kind']}_interrupted",
                 "task_identifier": job["job_id"],
                 "message": (

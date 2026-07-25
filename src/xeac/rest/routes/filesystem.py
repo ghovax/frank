@@ -8,7 +8,6 @@ from sse_starlette.sse import EventSourceResponse
 from typing import cast
 from watchfiles import awatch
 import asyncio
-import json
 import subprocess
 from xeac.protocol.dtos import (
     DirectoryRevealRequest,
@@ -16,6 +15,7 @@ from xeac.protocol.dtos import (
 )
 from xeac.daemon import state
 from xeac.rest.services.filesystem import _GIT_STATUS_WATCH_FILTER, _git_status_changes_relevant, _git_status_key, _git_status_watch_paths, _open_folder_picker, _validate_directory_payload
+from xeac.base.serialization import compact
 
 router = APIRouter()
 
@@ -54,7 +54,7 @@ async def git_status_stream(directory: str, request: Request):
     async def event_generator():
         payload = await asyncio.to_thread(_validate_directory_payload, directory)
         previous_key = _git_status_key(payload)
-        yield {"event": "message", "data": json.dumps(payload)}
+        yield {"event": "message", "data": compact(payload)}
 
         watch_paths = _git_status_watch_paths(directory, payload)
         if not watch_paths:
@@ -74,7 +74,7 @@ async def git_status_stream(directory: str, request: Request):
                 if next_key == previous_key:
                     continue
                 previous_key = next_key
-                yield {"event": "message", "data": json.dumps(payload)}
+                yield {"event": "message", "data": compact(payload)}
         except asyncio.CancelledError:
             pass
 

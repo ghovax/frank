@@ -15,27 +15,32 @@ bare, so `id=$(xeac create …)` works. There is no formatting layer, no colour,
 alternate human mode to choose between — anything that wants a table can pipe to `jq`, and
 anything that wants to parse this never has to guess which mode it is in. Diagnostics go to
 stderr and outcomes go to the exit code, so neither can ever contaminate the data.
+
+It is minified, and every JSON object is exactly one line. Pretty-printing exists for a reader
+who does not have `jq`, and this output has no such reader: agents drive these verbs constantly
+and pay for the indentation by the token. `jq .` puts it back for a person.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from typing import Any
 
 from xeac.cli.client import DaemonError, call, daemon_is_up, ensure_daemon, stream
+from xeac.base.serialization import compact
 
 
 def _emit(payload: Any) -> None:
-    """One structured answer on stdout."""
-    print(json.dumps(payload, indent=2))
+    """One structured answer on stdout, on one line."""
+    print(compact(payload))
 
 
 def _emit_line(payload: Any) -> None:
-    """One frame of a stream: a single JSON object on its own line, so a reader can consume
-    the stream incrementally rather than waiting for a document to close."""
-    print(json.dumps(payload))
+    """One frame of a stream. Identical to `_emit` but flushed, so a reader consumes the
+    stream as it arrives rather than in whatever chunks the buffer decides on — which is the
+    whole point of watching a session live."""
+    _emit(payload)
     sys.stdout.flush()
 
 

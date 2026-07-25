@@ -26,6 +26,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import SecretStr
 
+from xeac.base.serialization import compact
 from xeac.base.message_content import (
     content_blocks_to_message_content,
     message_reasoning_text,
@@ -146,14 +147,13 @@ class ChatLiteLLMModel(BaseChatModel):
 
     @staticmethod
     def _tool_calls_to_openai(tool_calls: Sequence[Any]) -> list[dict[str, Any]]:
-        import json as _json
 
         rendered: list[dict[str, Any]] = []
         for call in tool_calls:
             # LangChain ToolCall stores the parsed arguments under ``args``; the
             # OpenAI wire format we serialize back to uses ``arguments``.
             arguments = call.get("args")
-            serialized = arguments if isinstance(arguments, str) else _json.dumps(arguments)
+            serialized = arguments if isinstance(arguments, str) else compact(arguments)
             rendered.append({
                 "id": call.get("id"),
                 "type": "function",

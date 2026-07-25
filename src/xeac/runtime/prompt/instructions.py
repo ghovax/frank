@@ -11,8 +11,8 @@ hand-assembled in code.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+from xeac.base.serialization import compact
 
 # Global instruction files, loaded in order. These are the well-known locations
 # for user-wide rules on this setup: opencode's own global AGENTS.md, Claude
@@ -77,4 +77,4 @@ def load_instructions(working_directory: str) -> str:
         if resolved not in seen:
             entries.append({"path": str(resolved), "content": resolved.read_text(errors="ignore").strip()})
 
-    return json.dumps(entries)
+    return compact(entries)

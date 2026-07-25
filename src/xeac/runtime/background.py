@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-import json
 import logging
 import os
 import signal
@@ -39,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from xeac.base.identifiers import new_id
+from xeac.base.serialization import compact
 from xeac.base.background_store import (
     get_background_job_store,
     STATUS_COMPLETED,
@@ -366,7 +366,7 @@ class BackgroundJobs:
                     pass
             record.task.cancel()
             if self._context_id:
-                result = json.dumps({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+                result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
                 get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
             self._jobs.pop(identifier, None)
 
@@ -384,7 +384,7 @@ class BackgroundJobs:
                     pass
             record.task.cancel()
             if self._context_id:
-                result = json.dumps({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+                result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
                 get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
             self._jobs.pop(identifier, None)
             return True
@@ -406,7 +406,7 @@ class BackgroundJobs:
                 pass
         record.task.cancel()
         if self._context_id:
-            result = json.dumps({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+            result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
             get_background_job_store().record_finished(identifier, result, status=STATUS_DELIVERED)
         self._jobs.pop(identifier, None)
         return True
@@ -434,15 +434,15 @@ class BackgroundJobs:
         try:
             result: Any = record.task.result()
         except asyncio.CancelledError:
-            result = json.dumps({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
+            result = compact({"code": f"{record.kind}_cancelled", "task_identifier": record.identifier})
         except Exception as exception:
-            result = json.dumps({
+            result = compact({
                 "code": f"{record.kind}_error",
                 "task_identifier": record.identifier,
                 "message": str(exception),
             })
         if not isinstance(result, str):
-            result = json.dumps(result, ensure_ascii=False)
+            result = compact(result)
         return result
 
     def _build_completion(self, record: _BackgroundJobRecord) -> BackgroundCompletion:

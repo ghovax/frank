@@ -56,9 +56,9 @@ from typing import Any
 from typing import AsyncIterator
 from typing import cast
 import asyncio
-import json
 import shlex
 import time
+from xeac.base.serialization import compact
 
 
 
@@ -131,11 +131,11 @@ class _ToolsMixin:
                         background_task_identifier = (
                             raw_task_identifier if isinstance(raw_task_identifier, str) else None
                         )
-                        result_content = json.dumps({
+                        result_content = compact({
                             "code": "background_task_scheduled",
                             "task_identifier": background_task_identifier,
                         })
-                        turn_tool_results_log.append({"name": tool_name, "result": json.dumps(result_str)})
+                        turn_tool_results_log.append({"name": tool_name, "result": compact(result_str)})
                     else:
                         if isinstance(result_str, dict):
                             # A structured result that reports an error status marks the
@@ -147,7 +147,7 @@ class _ToolsMixin:
                             # place every structured tool result (e.g. the computer tool's element
                             # list) is serialized for the model; the UI receives the dict on a
                             # separate path and prettifies it there, so this never affects display.
-                            result_str = json.dumps(result_str, ensure_ascii=False, separators=(",", ":"))
+                            result_str = compact(result_str)
                         result_content = _cap_model_result_payload(str(result_str))
                         turn_tool_results_log.append({"name": tool_name, "result": result_content})
                 elif isinstance(event, Error):
@@ -832,7 +832,7 @@ class _ToolsMixin:
             else:
                 content = tool_arguments.get("content", "")
                 if not isinstance(content, str):
-                    content = json.dumps(content)
+                    content = compact(content)
                 result = await asyncio.to_thread(
                     file_tools.write_file,
                     executor,
@@ -893,7 +893,7 @@ class _ToolsMixin:
                 tool=tool_name,
             )
             return
-        result = json.dumps({
+        result = compact({
             "code": "skill_loaded",
             "name": match.identifier,
             "title": match.display_title,
@@ -960,7 +960,7 @@ class _ToolsMixin:
         # the tool finish recording its result first, then the stream loop stops
         # the turn; background work the user chose to keep running is untouched.
         if isinstance(answers, dict) and answers.get("__declined__"):
-            result = json.dumps({
+            result = compact({
                 "code": "user_declined",
                 "message": (
                     "The user dismissed the question without answering and chose to stop here. "
@@ -971,7 +971,7 @@ class _ToolsMixin:
             )
             self._abort_event.set()
             return
-        result = json.dumps({"code": "user_answered", "answers": answers})
+        result = compact({"code": "user_answered", "answers": answers})
         yield ToolResult(id=tool_call_identifier, name=tool_name, result=_maybe_json(result),
         )
 

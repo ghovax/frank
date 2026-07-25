@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import atexit
-import json
 import os
 import signal
 import sys
@@ -17,6 +16,7 @@ from xeac.base.identifiers import new_id
 from xeac.runtime.background import current_background_jobs, cancel_all_background_jobs, current_tool_call_id
 from xeac.base.background_store import get_background_job_store
 from xeac.base.tuning import Limit, active_tuning, clip_to_tokens
+from xeac.base.serialization import compact
 
 _exa_client: Exa | None = None
 _mcp_client_manager: Any | None = None
@@ -166,7 +166,7 @@ async def bash(
                 "size": len(output),
                 "returncode": process.returncode,
             }
-            return json.dumps(payload)
+            return compact(payload)
         # Off the loop: a multi-megabyte command output must not stall the event loop
         # (and every other session on it) while this coroutine reads it back.
         output = await asyncio.to_thread(output_path.read_text)
@@ -176,9 +176,9 @@ async def bash(
         result_code = "bash_completed" if return_code == 0 else "bash_failed"
         result_status = "ok" if return_code == 0 else "error"
         if not output:
-            return json.dumps({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
+            return compact({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
         inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
-        return json.dumps({
+        return compact({
             "code": result_code,
             "status": result_status,
             "output": inline_output,
@@ -217,7 +217,7 @@ async def bash(
         settled = await jobs.settle_inline(task_identifier, active_tuning().scale_timeout(timeout))
         if settled is not None:
             return settled.result
-    return json.dumps({
+    return compact({
         "code": "bash_started",
         "status": "running",
         "task_identifier": task_identifier,
@@ -244,7 +244,7 @@ async def search_web(
     """
     client = _exa_client
     if client is None:
-        return json.dumps({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
+        return compact({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
 
     # Mint the identifier up front so the eventual completed/error result can echo
     # it — the model correlates a delivered result to the search it started by
@@ -268,7 +268,7 @@ async def search_web(
                 if result.published_date:
                     entry["published_date"] = result.published_date
                 entries.append(entry)
-            payload = json.dumps({
+            payload = compact({
                 "code": "web_search_completed",
                 "status": "ok",
                 "task_identifier": task_identifier,
@@ -278,7 +278,7 @@ async def search_web(
             await asyncio.to_thread(output_path.write_text, payload)
             return payload
         except Exception as exception:
-            payload = json.dumps({
+            payload = compact({
                 "code": "web_search_error",
                 "status": "error",
                 "task_identifier": task_identifier,
@@ -305,7 +305,7 @@ async def search_web(
     # auto-delivered result against. The "do not poll/read_task" guidance is
     # attached by the runtime from a prompt template (user-facing wording lives in
     # prompts, not in tool code).
-    return json.dumps({
+    return compact({
         "code": "web_search_started",
         "status": "running",
         "task_identifier": task_identifier,
@@ -324,9 +324,9 @@ async def list_mcp_tools(server: str = "", justification: str = Field(..., descr
     """
     try:
         result = await _require_mcp_client_manager().list_tools(server)
-        return json.dumps(result)
+        return compact(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_list_tools_error", "status": "error", "message": str(exception)})
+        return compact({"code": "mcp_list_tools_error", "status": "error", "message": str(exception)})
 
 
 @tool
@@ -352,9 +352,9 @@ async def call_mcp_tool(
     """
     try:
         result = await _require_mcp_client_manager().call_tool(server, tool_name, arguments or {})
-        return json.dumps(result)
+        return compact(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_call_tool_error", "status": "error", "message": str(exception)})
+        return compact({"code": "mcp_call_tool_error", "status": "error", "message": str(exception)})
 
 
 async def call_mcp_tool_with_events(
@@ -383,9 +383,9 @@ async def list_mcp_resources(server: str = "", justification: str = Field(..., d
     """
     try:
         result = await _require_mcp_client_manager().list_resources(server)
-        return json.dumps(result)
+        return compact(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_list_resources_error", "status": "error", "message": str(exception)})
+        return compact({"code": "mcp_list_resources_error", "status": "error", "message": str(exception)})
 
 
 @tool
@@ -401,9 +401,9 @@ async def read_mcp_resource(server: str, uri: str, justification: str = Field(..
     """
     try:
         result = await _require_mcp_client_manager().read_resource(server, uri)
-        return json.dumps(result)
+        return compact(result)
     except Exception as exception:
-        return json.dumps({"code": "mcp_read_resource_error", "status": "error", "message": str(exception)})
+        return compact({"code": "mcp_read_resource_error", "status": "error", "message": str(exception)})
 
 
 

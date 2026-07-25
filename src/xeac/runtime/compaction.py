@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
 from typing import AsyncIterator
-import json
+from xeac.base.serialization import compact
 
 
 
@@ -57,7 +57,7 @@ class _CompactionMixin:
         """The observation log the main agent passively reads: the structured entries
         dumped as JSON into the render template. The list itself rides in
         ``additional_kwargs`` so a later pass appends to structured data, not to prose."""
-        rendered = json.dumps(observations, ensure_ascii=False, separators=(",", ":"))
+        rendered = compact(observations)
         return SystemMessage(
             content=self._prompt_loader.load("observation_log", {"observations": rendered}),
             additional_kwargs={"observation_log": True, "observations": observations},
@@ -95,7 +95,7 @@ class _CompactionMixin:
         """Fold the older messages into new structured observations to append. The
         messages are handed to the model as-is; the existing memory is shown so it does
         not duplicate what is already recorded."""
-        existing_json = json.dumps(existing, ensure_ascii=False, separators=(",", ":")) if existing else "[]"
+        existing_json = compact(existing) if existing else "[]"
         instructions = self._prompt_loader.load("observer", {"existing_observations": existing_json})
         return await self._emit_observations([
             SystemMessage(content=instructions),
@@ -107,7 +107,7 @@ class _CompactionMixin:
         """Merge and condense the structured memory. Keeps the original entries if
         reflection returns nothing, so it never loses memory."""
         instructions = self._prompt_loader.load(
-            "reflector", {"observations": json.dumps(observations, ensure_ascii=False, separators=(",", ":"))}
+            "reflector", {"observations": compact(observations)}
         )
         reflected = await self._emit_observations([
             SystemMessage(content=instructions),
@@ -148,7 +148,7 @@ class _CompactionMixin:
             return
         merged = [*existing, *new_observations]
         compaction = self._global_configuration.compaction
-        merged_tokens = self._estimate_tokens(json.dumps(merged, ensure_ascii=False))
+        merged_tokens = self._estimate_tokens(compact(merged))
         if self._context_window > 0 and merged_tokens > compaction.reflector_observation_fraction * self._context_window:
             merged = await self._reflect(merged)
         # Replace in place: the conversation list object is shared with the executor's

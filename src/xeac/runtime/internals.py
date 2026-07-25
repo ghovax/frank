@@ -28,6 +28,7 @@ from typing import AsyncIterator
 from typing import Literal
 from typing import Optional
 import json
+from xeac.base.serialization import compact
 
 
 
@@ -158,14 +159,14 @@ def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated
         for large_key in ("output", "content", "summary", "results"):
             if large_key in payload:
                 payload.pop(large_key, None)
-        return json.dumps(payload, ensure_ascii=False)
-    return json.dumps({
+        return compact(payload)
+    return compact({
         "code": code,
         "truncated": True,
         "full_output_file": str(output_path),
         "output_excerpt": excerpt,
         "size": len(result),
-    }, ensure_ascii=False)
+    })
 
 
 def _utc_timestamp(datetime_value: datetime) -> str:
@@ -217,7 +218,7 @@ def _model_visible_tool_result(
         if value is not None:
             header[key] = value
     return _MODEL_PROMPT_LOADER.load("model_tool_result", {
-        "header": json.dumps(header, ensure_ascii=False),
+        "header": compact(header),
         "content": content,
     })
 
@@ -264,23 +265,20 @@ def _spawned_agent_report(child_task: dict | None, agent_name: str) -> str:
     genuinely finished empty."""
     artifacts = child_task.get("artifacts") if isinstance(child_task, dict) else None
     if artifacts:
-        return json.dumps(
+        return compact(
             {"code": "agent_report", "status": ToolStatus.OK.value, "agent": agent_name, "artifacts": artifacts},
-            ensure_ascii=False,
         )
     error = _spawned_agent_error(child_task)
     if error is not None:
-        return json.dumps(
+        return compact(
             {"code": "agent_failed", "status": ToolStatus.ERROR.value, "agent": agent_name,
              "reason": error.get("code") or "",
              "title": error.get("title") or "Agent turn failed",
              "message": error.get("message") or f"The '{agent_name}' agent's turn failed before it could report."},
-            ensure_ascii=False,
         )
-    return json.dumps(
+    return compact(
         {"code": "agent_no_report", "status": ToolStatus.OK.value, "agent": agent_name,
          "message": f"The '{agent_name}' agent finished without producing a report."},
-        ensure_ascii=False,
     )
 
 
