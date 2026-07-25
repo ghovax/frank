@@ -255,8 +255,17 @@ class SessionLifecycle:
     async def _terminate(self, worker: WarmWorker) -> None:
         """SIGTERM the worker's whole process group, then SIGKILL what is left.
 
-        Signalling the group rather than the pid is what reaches the shell commands a session
-        started; without it a killed session can leave a dev server holding a port."""
+        This does *not* reach the commands the session ran through `bash`. Each of those is put in
+        a process group of its own so a single job can be cancelled with its subtree, which by
+        construction puts it outside the group signalled here — so a dev server a session started
+        keeps its port after the session is gone. Backgrounded jobs are the covered case: their
+        groups are recorded in the job store and swept on the next start.
+
+        Closing that gap is possible but is not what this does. Every worker leads its own process
+        *session* and, since the bash tool stopped calling `setsid`, so does everything it spawns —
+        so the descendants are identifiable by `getsid`. Killing by that would mean enumerating
+        processes rather than signalling a group, and it would kill strictly more than this does,
+        which is a decision worth making deliberately rather than inside a docstring."""
         if not worker.alive:
             return
         try:

@@ -52,7 +52,7 @@ The caller is the parent, always — it is not an argument. That is what puts a 
 
 **A peer answers by messaging.** When it is done it calls `message_session` on the session that created it, whose id is in its context as `parent_session`, and that message lands in the caller's context the way any inbound message does. So `create_session` does not wait, there is no handle to hold, and nothing reconstructs a result: the peer decides what its answer is, in its own words, at the moment it knows. A caller starts the work, carries on with whatever does not depend on it, and ends its turn — the reply wakes it.
 
-That message arrives as a **peer turn**, not a user turn. The distinction is carried on the wire (`xeacTurnKind`, plus `xeacPeerSender` naming the sender) because without it a peer's report would reach the model as an instruction from the person it works for, and would appear in the transcript as words the user never wrote.
+That message arrives as a **peer turn**, not a user turn. The distinction is carried on the wire under the harness's one extension key, `urn:xeac:ext:turn:v1`, as `kind` plus `peerSender` naming the sender — without it a peer's report would reach the model as an instruction from the person it works for, and would appear in the transcript as words the user never wrote.
 
 A peer that dies before reporting cannot say so, which is the one thing the harness says on its behalf: the daemon tells the parent when it reaps a child, with the child's id and why it ended.
 
@@ -89,7 +89,7 @@ XEAC reads structure, not pixels: there is no screenshot path for computer use. 
 > [!NOTE]
 > Typing fills a field without submitting unless the agent explicitly asks to — so it never posts a form by accident.
 
-**What counts as changing something.** The permission classifier reads the script and decides whether it only looks or also acts, by scanning for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side because it runs arbitrary JavaScript in a page you are signed in to, and `navigate` because on a great many sites a URL *is* a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` — and nothing that reads primitive names can tell those from a page worth reading. In an ordinary session a script that acts is examined rather than blocked; in a [read-only session](configuration.md#execution-and-permissions) it is refused outright.
+**What counts as changing something.** The permission classifier reads the script and decides whether it only looks or also acts, by scanning for the primitives that change state: `click`, `type`, `choose`, `upload`, `drag`, `evaluate`, `press`, `navigate`, `new_tab` and `close_tab`. Finding, reading, listing tabs and frames, and switching between tabs are all reads. `evaluate` is on the acting side because it runs arbitrary JavaScript in a page you are signed in to, and `navigate` because on a great many sites a URL *is* a command — `/logout`, `/unsubscribe?token=…`, `/items/12/delete` — and nothing that reads primitive names can tell those from a page worth reading. In an ordinary session a script that acts is examined rather than blocked; in a [read-only session](configuration.md#permission-modes) it is refused outright.
 
 ## Where the definitions live
 

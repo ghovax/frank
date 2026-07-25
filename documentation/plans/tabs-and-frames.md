@@ -1,7 +1,7 @@
 ---
 created: 2026-07-25T13:13:38Z
-updated: 2026-07-25T13:30:00Z
-commit: 7e0062f
+updated: 2026-07-25T13:55:00Z
+commit: 0b7eea7
 ---
 
 # The Browser Has Tabs and Frames the Model Cannot Name
@@ -74,6 +74,8 @@ The native macOS surface gains nothing. It has no tabs and no frames, and the sh
 The desktop client needs no changes, which is worth stating because the last four plans all touched it. `controlScreenLabel` summarises a call by its script's first line and never enumerates primitives; `ControlScreenCallView` renders the surface and the script; `ControlScreenResultView` renders `value`, `stdout`, `acted_on` and errors generically. A list of tabs or frames is the script's return value and renders as one without knowing what it is.
 
 `acted_on` is left alone. It records which *element* each mutating action touched, and a tab switch touches no element; adding a different kind of entry to it would blur what it means for the one consumer that reads it.
+
+The dispatcher's own set of mutating verbs stays separate from the classifier's, and is renamed `element_mutating_verbs` to say why. The two happen to have held the same five names, which reads like duplication and is not: the classifier's set answers "does this script change anything", and the dispatcher's answers "does this verb take an element as its first argument and change it", which is what earns unique-or-raise target resolution and a line in `acted_on`. `evaluate`, `navigate` and the tab verbs change state without naming an element, so they belong in the first and not the second, and once they diverge the name has to explain the divergence or someone will helpfully collapse it back.
 
 Nothing here adds a wait, a timeout, or a CDP call. Those are the other two groups and they both touch the permission classifier and the timeout stack; keeping them out means this change can be judged on its own.
 

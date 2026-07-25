@@ -2,7 +2,7 @@
 
 `xeac` is the primary way to drive XEAC. It adds nothing the control plane does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
 
-This command is for people. A session composes with its peers through [tools](tools.md#peer-sessions) over the same control plane, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
+This command is for people. A session composes with its peers through [tools](tools.md#the-built-in-surface) over the same control plane, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
 
 That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `xeac` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `xeac ps` from inside a session comes back `403 forbidden` — `xeac tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
 
@@ -112,7 +112,9 @@ There is no "always allow" and no bypass mode: every decision is allow-once or d
 xeac kill <session>
 ```
 
-Ends the session and everything under it, children first, so a child never observes a dead parent. Each session leads its own process group, so a session that started a dev server takes that dev server with it.
+Ends the session and everything under it, children first, so a child never observes a dead parent. The worker's own process group goes down with it.
+
+Commands the session ran through `bash` do **not**: each one is put in its own process group so that cancelling a single job reaps its subtree, which also means the session's group signal never reaches it. A long-running process a session left behind — a dev server holding a port — survives `xeac kill`. Backgrounded jobs are the covered case: their process groups are recorded durably and swept on the next start. If you asked a session to start something that outlives a command, stop it yourself.
 
 ## Agents on other hosts
 
