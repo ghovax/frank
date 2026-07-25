@@ -10,7 +10,7 @@ The harness is the code between the model and your machine — turn loop, tools,
 
 ## What it is
 
-Everything in XEAC is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket, so anything holding its address can talk to it — you from the terminal, the desktop app, or another session.
+Everything in XEAC is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket, and every client — you from the terminal, the desktop app, another session — reaches it through the daemon, which relays. One path in, so a caller is identified and scoped in exactly one place.
 
 Three parts, kept apart:
 

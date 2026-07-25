@@ -199,6 +199,6 @@ The CLI is the ergonomic face of the control plane, and it is allowed to be idio
 
 ## Talking to a session directly
 
-`xeac` reaches the daemon over its unix socket, and a data-plane command goes straight to the owning session's own socket. You can do the same thing yourself: each session serves [A2A](https://github.com/google/A2A) on `$XDG_RUNTIME_DIR/xeac/sessions/<id>.sock`, and `create` returns the capability token that authorises driving it. Discovery is open — a session's card at `/.well-known/agent-card.json` says what it is — but every other call must present the token.
+`xeac` reaches the daemon over its unix socket and posts every command to it, `send` included; the daemon relays to the owning session. You can also address a session yourself, which is what makes the relay a hop rather than a wall: each one serves [A2A](https://github.com/google/A2A) on `$XDG_RUNTIME_DIR/xeac/sessions/<id>.sock`, and `create` returns the capability token that authorises driving it. Discovery is open — a session's card at `/.well-known/agent-card.json` says what it is — but every other call must present the token.
 
 That is the whole composition model. A peer is not a special kind of thing; it is a session, addressed the way you address any session.

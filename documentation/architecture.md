@@ -27,10 +27,10 @@ flowchart LR
 
     Cli -->|unix socket| Daemon
     App -->|loopback TCP + token| Daemon
+    Peer -->|unix socket| Daemon
     Daemon --> Registry & Lifecycle & Pool & Stores
     Lifecycle -->|assigns a worker| Session
-    Cli -->|A2A over the session socket| Session
-    Peer -->|A2A over the session socket| Session
+    Daemon -->|relays A2A to its socket| Session
     Session -->|writes through the daemon| Stores
     Executor --> Permissions --> Tools
     Executor <--> ModelProvider
@@ -40,7 +40,9 @@ flowchart LR
 
 A **session** is one OS process running one agent. It is created empty and then driven by messages over its life — creation and work are separate steps, so the same session can be sent a second task, attached to, and inspected between them.
 
-Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory. Anything holding that address can talk to it: you from the terminal, the desktop app, or another session. There is no in-process delegation — a session that needs a peer creates one through the same control plane a person's client calls, using its `create_session` tool, and the peer answers by messaging it back. A child appears in `xeac ps`, can be attached to, and is reaped when its parent ends.
+Each session serves [A2A](https://github.com/google/A2A) (JSON-RPC) on **its own unix socket** in the runtime directory, and the daemon is what talks to it. Every client — the terminal, the desktop app, another session — reaches the daemon and the daemon relays, so there is one place where a caller is identified, scoped to its own subtree, and recorded. A session's socket being real and addressable is what makes that relay a thin hop rather than a reimplementation, but nothing bypasses it today.
+
+There is no in-process delegation — a session that needs a peer creates one through the same control plane a person's client calls, using its `create_session` tool, and the peer answers by messaging it back. A child appears in `xeac ps`, can be attached to, and is reaped when its parent ends.
 
 Isolation is a property of the process. A worker is assigned exactly once and becomes that session for the rest of its life; it is never returned to the pool and never serves a second session, so there is no path by which one session's state can reach another's.
 
@@ -62,7 +64,7 @@ A token says a caller may drive the daemon; it does not say *who* is calling, an
 
 `xeac` adds nothing the control plane does not have — it is the ergonomic face of it. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` a pending tool call, `kill` a subtree, `remote` to reach an agent on another host, `configure` what the next session starts with. The [CLI guide](cli.md) is the reference.
 
-Lifecycle and reads go to the daemon; a data-plane message goes straight to the owning session's socket. Same API, different transport.
+Everything goes to the daemon, `send` included — `xeac` opens the daemon's unix socket and posts to `/rpc`, and the daemon relays to the owning session. One path, so a call is attributed and scoped in exactly one place whoever made it.
 
 ## The app
 
