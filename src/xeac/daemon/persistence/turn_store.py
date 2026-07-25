@@ -666,6 +666,9 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     select(self._head)
                     .where(self._head.c.session_id == session_id)
+                    # Ordered below by when each turn actually started. A turn's id is a
+                    # random UUID, so ordering by it returned a session's turns shuffled —
+                    # and anything reading "the last turn" off the end got an arbitrary one.
                     .order_by(self._head.c.id)
                 )
             ).mappings().all()
@@ -677,7 +680,9 @@ class AppendOnlyTaskStore(TaskStore):
                 await connection.execute(
                     select(self._history.c.turn_id, self._history.c.message)
                     .where(self._history.c.turn_id.in_(turn_ids))
-                    .order_by(self._history.c.turn_id, self._history.c.row_id)
+                    # Globally by row_id, not grouped by turn: the append order *is* the
+                    # chronology, so first appearance of a turn id here is when it began.
+                    .order_by(self._history.c.row_id)
                 )
             ).all()
             artifact_rows = (
@@ -695,8 +700,14 @@ class AppendOnlyTaskStore(TaskStore):
         for turn_id, artifact in artifact_rows:
             artifacts[str(turn_id)].append(artifact)
 
-        tasks: list[Task] = []
-        for head_row in head_rows:
+        # When each turn began, from the order its first message was appended. A turn with no
+        # history yet sorts last, which is where a just-opened turn belongs.
+        started: dict[str, int] = {}
+        for position, (turn_id, _message) in enumerate(history_rows):
+            started.setdefault(str(turn_id), position)
+
+        turns: list[Task] = []
+        for head_row in sorted(head_rows, key=lambda row: started.get(str(row["id"]), len(history_rows))):
             turn_id = str(head_row["id"])
             data = {
                 "id": turn_id,
@@ -707,8 +718,8 @@ class AppendOnlyTaskStore(TaskStore):
                 "history": _compact_history([json.loads(message) for message in histories[turn_id]]),
                 "artifacts": [json.loads(artifact) for artifact in artifacts[turn_id]] or None,
             }
-            tasks.append(Task.model_validate(data))
-        return tasks
+            turns.append(Task.model_validate(data))
+        return turns
 
     async def turn_page_for_session(
         self,
