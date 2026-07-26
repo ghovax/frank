@@ -29,7 +29,7 @@ import sys
 from dataclasses import dataclass
 from typing import Optional
 
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ class WorkerPool:
     async def _await_exit(worker: WarmWorker) -> None:
         try:
             await asyncio.wait_for(
-                worker.process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS)
+                worker.process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds)
             )
         except (asyncio.TimeoutError, ProcessLookupError):
             with contextlib.suppress(ProcessLookupError):

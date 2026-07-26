@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Optional
 from xeac.base import confinement
 from xeac.computer.surface import message_loader
 from xeac.base.serialization import compact
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # Model-facing control messages live in messages/control/*.md, loaded here so the child (which
 # holds no XEAC code) can report bare facts and leave the prose to the loader.
@@ -33,7 +33,7 @@ def _script_ceiling() -> float:
     never outlive the machinery waiting on it. They used to be three independent constants that
     happened to be equal, which meant raising one made the guard fire first, drop the connection
     and leave the surface half-dead."""
-    return active_tuning().duration(Limit.CONTROL_SCRIPT_SECONDS)
+    return active_tuning().duration(Tunable.control_script_seconds)
 
 Dispatch = Callable[[str, list, dict], Awaitable[Any]]
 

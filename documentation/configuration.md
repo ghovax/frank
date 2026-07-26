@@ -4,7 +4,7 @@ Runtime configuration lives in **`$XDG_CONFIG_HOME/xeac/configuration.yaml`** (`
 
 Three ways to change it, all writing the same file:
 
-- `xeac configure` from the terminal — `xeac configure` lists everything, `xeac configure <setting>` reads one, `xeac configure <setting> <value>` sets it, `xeac configure <setting> --unset` removes it. A value the schema would reject is refused with the reason rather than written;
+- `xeac configure` from the terminal — `xeac configure --all` lists every setting that exists with what it is for, what it ships at, and what this machine runs on; `xeac configure` alone lists only what you have changed; `xeac configure <setting>` reads one; `xeac configure <setting> <value>` sets it; `xeac configure <setting> --unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
 - **Settings** in the desktop app;
 - editing the file directly, which the daemon watches and picks up live.
 
@@ -15,7 +15,9 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with — the same guarantee its permission mode carries — except for settings the daemon explicitly pushes out (the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild).
 
-A fully-commented template lives at [Example configuration](../configuration.example.yaml).
+The complete reference — every setting, its default, and what it is for — lives at [Example configuration](../configuration.example.yaml). That file is *generated* from the schema by `scripts/generate_configuration_reference.py`, so it cannot describe a setting the code does not have or miss one it does; the explanations in it come from the same `Field(description=...)` that `xeac configure` prints. It is a reference, not a starting point: copying it wholesale would pin every value to this release's defaults, which is exactly what the short seeded file avoids.
+
+Names the schema does not define are **refused**, not ignored. A setting that cannot take effect should say so where it is written, rather than being discovered when the behaviour never changes.
 
 ## Where everything lives
 
@@ -85,7 +87,7 @@ When enabled, Composio is folded into the ordinary MCP set rather than being a s
 sandbox:   { enforce: "required" }   # what a tool child may do — see below
 workspace: { strategy: "none", artifact_maximum_bytes: 134217728 }
 agent:     { permission_mode: "default" }
-computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in
+computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in — see below
 user_context:     { enabled: false } # a snapshot of how you work, in the prompt; opt-in
 ```
 
@@ -150,21 +152,38 @@ compaction:
 
 ## Tool tuning
 
-How much of a model's context tool output may occupy, and how patient the tools are. Raise `timeout_scale` on a slow machine or a slow network; lower the fractions to spend less context on tool results.
+How much of a model's context tool output may occupy, and how patient the tools are. Size and count caps are token budgets derived from the **live** model context window, so a small model gets tight caps and a large one gets room; `context_share` says what proportion of that window one result may fill. Timeouts do not depend on the window and answer only to `timeout_multiplier`.
 
 ```yaml
 tuning:
-  output_fraction: 0.25             # share of context one tool result may fill
-  listing_fraction: 0.15            # share for a directory or search listing
-  settle_interval_seconds: 0.05     # how often a screen action re-checks for settling
-  settle_ceiling_seconds: 1.5       # how long it waits before giving up on settling
-  timeout_scale: 1.0                # multiplier over every tool's default timeout
-  limits:                           # override one value, by its own name and in its own unit
-    ACTION_TIMEOUT_MS: 10000
-    GREP_RESULTS: 1024
+  context_share:
+    text: 0.25                      # share one result's text may fill — output, fetched pages
+    results: 0.15                   # share a set of results may fill — matches, lines, records
+  timeout_multiplier: 1.0           # 2.0 doubles every wait for a slow machine; 1.0 is neutral
+  defaults:                         # override one value, by its own name and in its own unit
+    action_timeout_ms: 10000
+    grep_results: 1024
 ```
 
-The five knobs above scale whole families. `limits` is the escape hatch for a single value: keys are the names in `xeac.base.tuning.Limit` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the *baseline*, so the fractions and `timeout_scale` still apply on top: `ACTION_TIMEOUT_MS: 10000` under `timeout_scale: 2.0` resolves to twenty seconds. `xeac configure tuning.limits` lists what exists.
+Those three move whole families. `defaults` is the escape hatch for a single value: the keys are the names in `xeac.base.tuning.Tunable` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
+
+The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
+
+`xeac configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on.
+
+Settling — how long a screen surface is given to stop changing after an action — lives with the surface rather than here, under [`computer_control.settle`](#screen-control).
+
+## Screen control
+
+```yaml
+computer_control:
+  enabled: false                    # drive native macOS apps and your own Chrome; opt-in
+  settle:
+    poll_seconds: 0.05              # how often to re-check whether the surface has settled
+    give_up_seconds: 1.5            # the longest to wait before reading it anyway
+```
+
+After an action, a surface is *polled* until it stops changing rather than slept on for a fixed guess: a fast page costs one interval and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
 
 ## The daemon
 

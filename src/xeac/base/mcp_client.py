@@ -21,7 +21,7 @@ from pydantic import AnyUrl
 # so a single unresponsive server can never freeze the whole harness boot.
 
 from xeac.base.configuration import MCPServerConfiguration
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +85,13 @@ class MCPClientManager:
                     if connection is None:
                         connection = _StatefulStdioSession(name, configuration)
                         self._stdio_sessions[name] = connection
-                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Limit.MCP_CONNECT_SECONDS))
+                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
                 elif configuration.transport == "streamable_http":
                     connection = self._streamable_sessions.get(name)
                     if connection is None:
                         connection = _StatefulStreamableHTTPSession(name, configuration)
                         self._streamable_sessions[name] = connection
-                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Limit.MCP_CONNECT_SECONDS))
+                    await asyncio.wait_for(connection._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
             except (Exception, asyncio.TimeoutError) as exception:
                 logger.warning("MCP server %r failed to start; skipping it: %s", name, exception)
                 self._stdio_sessions.pop(name, None)
@@ -314,7 +314,7 @@ class _StatefulStdioSession:
         # Bounded like the startup connect: an endpoint that accepts the connection and then
         # never completes the handshake would otherwise hold the caller open indefinitely,
         # and a settings panel listing tools is not something to hang a request on.
-        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Limit.MCP_CONNECT_SECONDS))
+        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)
@@ -394,7 +394,7 @@ class _StatefulStreamableHTTPSession:
         # Bounded like the startup connect: an endpoint that accepts the connection and then
         # never completes the handshake would otherwise hold the caller open indefinitely,
         # and a settings panel listing tools is not something to hang a request on.
-        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Limit.MCP_CONNECT_SECONDS))
+        session = await asyncio.wait_for(self._connect(), timeout=active_tuning().duration(Tunable.mcp_connect_seconds))
         async with self._operation_lock:
             if event_callback is not None:
                 self._callbacks.add(event_callback)

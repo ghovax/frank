@@ -15,7 +15,7 @@ from xeac.base.configuration import PromptLoader
 from xeac.protocol.events import ToolStatus
 from xeac.protocol.events import tool_status_from_result
 from xeac.base.providers import resolve_api_key
-from xeac.base.tuning import Limit
+from xeac.base.tuning import Tunable
 from xeac.base.tuning import active_tuning
 from xeac.base.tuning import clip_to_tokens
 from xeac.base.identifiers import new_id
@@ -143,7 +143,7 @@ def _background_handle_kind(turn_id: str) -> str | None:
 def _cap_model_result_payload(result: str, *, code: str = "tool_result_truncated") -> str:
     """Keep model-facing tool results bounded while preserving a full-output file. The cap is the
     window-scaled output budget, so a larger model may hold a larger result inline."""
-    excerpt, was_truncated = clip_to_tokens(result, active_tuning().amount(Limit.OUTPUT_TOKENS))
+    excerpt, was_truncated = clip_to_tokens(result, active_tuning().amount(Tunable.output_tokens))
     if not was_truncated:
         return result
     output_path = Path("/tmp") / f"{new_id('tool-result')}.json"

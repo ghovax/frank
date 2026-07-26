@@ -30,7 +30,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # Baseline command and connect ceilings. These are safety valves against a dead process or link,
 # not accuracy caps; the active timeout knob scales them at each subprocess boundary
@@ -120,7 +120,7 @@ def _prune_gitignored(base: Path, paths: list[Path]) -> list[Path]:
             input="\n".join(str(path) for path in paths),
             capture_output=True,
             text=True,
-            timeout=active_tuning().duration(Limit.RIPGREP_SECONDS),
+            timeout=active_tuning().duration(Tunable.ripgrep_seconds),
             check=False,
         )
     except (subprocess.SubprocessError, FileNotFoundError):
@@ -259,7 +259,7 @@ class LocalExecutor(LocationExecutor):
                 cwd=str(base),
                 capture_output=True,
                 text=True,
-                timeout=active_tuning().duration(Limit.RIPGREP_SECONDS),
+                timeout=active_tuning().duration(Tunable.ripgrep_seconds),
             )
             # rg exits 1 when the tree has no files, >1 on a real error (IO failure).
             if result.returncode not in (0, 1):
@@ -291,14 +291,14 @@ class LocalExecutor(LocationExecutor):
     def _grep_with_ripgrep(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         command = [
             "rg", "--line-number", "--no-heading", "--color=never",
-            "--max-count", str(active_tuning().amount(Limit.GREP_PER_FILE)),
+            "--max-count", str(active_tuning().amount(Tunable.grep_per_file)),
         ]
         if include_ignored:
             command += ["--no-ignore", "--hidden"]  # reach gitignored + hidden files; .git stays out
         if include:
             command += ["--glob", include]
         command += ["-e", pattern, "--", target]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=active_tuning().duration(Limit.RIPGREP_SECONDS))
+        result = subprocess.run(command, capture_output=True, text=True, timeout=active_tuning().duration(Tunable.ripgrep_seconds))
         # rg exits 1 on "no matches", 2 on a real error (bad pattern, IO failure).
         if result.returncode not in (0, 1):
             raise ValueError((result.stderr or "").strip() or "search failed")
@@ -306,7 +306,7 @@ class LocalExecutor(LocationExecutor):
 
     def _grep_python(self, pattern: str, target: str, include: str | None, maximum_results: int, include_ignored: bool = False) -> list[str]:
         """Fallback grep using a pure-Python walk (used when ripgrep is unavailable)."""
-        per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
+        per_file_limit = active_tuning().amount(Tunable.grep_per_file)
         try:
             regex = re.compile(pattern)
         except re.error as exception:
@@ -476,7 +476,7 @@ class SshExecutor(LocationExecutor):
         # Fallback without ripgrep: list the tree with find (.git excluded) and glob-match
         # locally. Without ripgrep the rest of the .gitignore chain is not applied.
         listing = self.run(
-            f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{active_tuning().amount(Limit.REMOTE_LISTING)}",
+            f"find . -type f -not -path '*/.git/*' 2>/dev/null | head -{active_tuning().amount(Tunable.remote_listing)}",
             base_directory,
         )
         if listing.returncode != 0 and not listing.stdout:
@@ -506,7 +506,7 @@ class SshExecutor(LocationExecutor):
         # BRE, whose unescaped `+`/`?` silently match nothing and read as false "not found").
         quoted_pattern = shlex.quote(pattern)
         quoted_target = shlex.quote(target)
-        per_file_limit = active_tuning().amount(Limit.GREP_PER_FILE)
+        per_file_limit = active_tuning().amount(Tunable.grep_per_file)
         if self._has_ripgrep():
             include_flag = f"--glob {shlex.quote(include)} " if include else ""
             no_ignore = "--no-ignore --hidden " if include_ignored else ""

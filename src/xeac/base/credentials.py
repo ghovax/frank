@@ -43,7 +43,7 @@ from typing import Optional
 import httpx
 
 from xeac.base.paths import data_directory
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # Codex's public OAuth client and endpoints. The client id is not a secret — it is
 # the same value the Codex CLI ships — and reusing it is exactly what makes the
@@ -79,7 +79,7 @@ class ChatGPTTokens:
     email: str
     expires_at: float
 
-    def is_expired(self, leeway_seconds: float = active_tuning().duration(Limit.CREDENTIAL_REFRESH_LEEWAY_SECONDS)) -> bool:
+    def is_expired(self, leeway_seconds: float = active_tuning().duration(Tunable.credential_refresh_leeway_seconds)) -> bool:
         return time.time() >= (self.expires_at - leeway_seconds)
 
 

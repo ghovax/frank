@@ -24,7 +24,7 @@ from typing import Any, Optional
 import httpx
 
 from xeac.protocol.metadata import Metadata
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class PeerSessions:
             self._client = httpx.AsyncClient(
                 transport=httpx.AsyncHTTPTransport(uds=self._socket_path),
                 base_url="http://daemon",
-                timeout=active_tuning().duration(Limit.CONTROL_PLANE_CALL_SECONDS),
+                timeout=active_tuning().duration(Tunable.control_plane_call_seconds),
                 headers={"Authorization": f"Bearer {self._token}"},
             )
         return self._client

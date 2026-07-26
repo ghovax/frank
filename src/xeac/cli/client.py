@@ -18,7 +18,7 @@ from typing import Any, Optional
 import httpx
 
 from xeac.base.paths import daemon_socket_path, daemon_token_path
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 
 class DaemonError(RuntimeError):
@@ -95,7 +95,7 @@ def _await_announcement(daemon: subprocess.Popen) -> Optional[dict]:
     with ThreadPoolExecutor(max_workers=1) as pool:
         pending = pool.submit(daemon.stdout.readline)
         try:
-            line = pending.result(timeout=active_tuning().duration(Limit.DAEMON_STARTUP_SECONDS))
+            line = pending.result(timeout=active_tuning().duration(Tunable.daemon_startup_seconds))
         except FuturesTimeout:
             return None
     if not line:

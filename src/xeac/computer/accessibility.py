@@ -39,7 +39,7 @@ import Quartz
 from CoreFoundation import kCFBooleanTrue
 from Foundation import NSMakeRange
 
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # Attribute names. The kAX* symbols resolve to exactly these strings.
 ROLE = "AXRole"
@@ -294,7 +294,7 @@ def window_titles(pid: int) -> list[str]:
     or reader window vs. the main window) and target it by name, instead of assuming the focused
     window is the one it wants."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
     windows = _single(root, WINDOWS) or []
     titles = [_string(_single(window, TITLE)) for window in windows]
     return [title for title in titles if title]
@@ -324,7 +324,7 @@ def prime_accessibility(pid: int) -> None:
     AXManualAccessibility again is a no-op once the tree is up); called by the pre-warm watcher when
     an app comes to the front. Best-effort: an app that ignores the handshake is left as it was."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
     enable_rich_accessibility(root)
 
 
@@ -349,7 +349,7 @@ class _Prewarmer:
                     prime_accessibility(pid)
             except Exception:
                 pass
-            time.sleep(active_tuning().duration(Limit.AX_PREWARM_INTERVAL_SECONDS))
+            time.sleep(active_tuning().duration(Tunable.ax_prewarm_interval_seconds))
 
 
 _prewarmer = _Prewarmer()
@@ -518,7 +518,7 @@ def snapshot_app(
     model can drill into it."""
     started = time.perf_counter()
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
     enable_rich_accessibility(root)
     app_name = app_name_for_pid(pid)
 
@@ -563,7 +563,7 @@ def resolve_from_path(pid: int, path: tuple[int, ...]) -> Any:
     beat after the observe still lands on the right control. Uses the same visible-child
     traversal that produced the path."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
     if not path:
         return root
     windows = _single(root, WINDOWS) or []
@@ -637,5 +637,5 @@ def set_selected_text(element: Any, text: str) -> bool:
 def focused_element(pid: int) -> Optional[Any]:
     """The app's currently focused UI element (the field the caret is in), or None."""
     root = AS.AXUIElementCreateApplication(pid)
-    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Limit.AX_MESSAGING_SECONDS))
+    AS.AXUIElementSetMessagingTimeout(root, active_tuning().duration(Tunable.ax_messaging_seconds))
     return _single(root, FOCUSED_ELEMENT)

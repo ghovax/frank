@@ -16,7 +16,7 @@ from pydantic import Field
 from xeac.base.identifiers import new_id
 from xeac.runtime.background import current_background_jobs, cancel_all_background_jobs, current_tool_call_id
 from xeac.base.background_store import get_background_job_store
-from xeac.base.tuning import Limit, active_tuning, clip_to_tokens
+from xeac.base.tuning import Tunable, active_tuning, clip_to_tokens
 from xeac.base.serialization import compact
 
 _exa_client: Exa | None = None
@@ -32,8 +32,9 @@ _mcp_client_manager: Any | None = None
 # old 2s auto-background window is exactly what surprised the model into re-running
 # mutating commands (a `gh pr merge` that crossed the threshold looked unfinished and got
 # issued twice). Genuinely long work is the model's cue to pass background=true or raise
-# timeout. The default windows live centrally in Limit (BASH_/SLOW_TOOL_/WEB_SEARCH_SYNC_
-# WINDOW_SECONDS) and are scaled by the tuning timeout knob at each call site.
+# timeout. The default windows live centrally in Tunable (bash_sync_window_seconds,
+# slow_tool_sync_window_seconds, web_search_sync_window_seconds) and are scaled by the
+# tuning timeout multiplier at each call site.
 
 
 def set_exa_client(client: Exa | None) -> None:
@@ -78,7 +79,7 @@ async def bash(
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
     risk: Literal["low", "medium", "high"] = "low",
     background: bool = False,
-    timeout: float = Limit.BASH_SYNC_WINDOW_SECONDS.baseline,
+    timeout: float = Tunable.bash_sync_window_seconds.default,
 ) -> str:
     """Execute a bash command and return its output.
 
@@ -176,7 +177,7 @@ async def bash(
         except asyncio.CancelledError:
             cancel_process()
             try:
-                await asyncio.wait_for(process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS))
+                await asyncio.wait_for(process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds))
             except asyncio.TimeoutError:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -195,7 +196,7 @@ async def bash(
                 if output_path.exists()
                 else ""
             )
-            inline_output, output_truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
+            inline_output, output_truncated = clip_to_tokens(output, active_tuning().amount(Tunable.output_tokens))
             payload = {
                 "code": "bash_cancelled",
                 "status": "error",
@@ -217,7 +218,7 @@ async def bash(
         result_status = "ok" if return_code == 0 else "error"
         if not output:
             return compact({"code": result_code, "status": result_status, "output": "", "output_file": str(output_path), "truncated": False, "pid": process_id, "size": 0, "returncode": return_code})
-        inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Limit.OUTPUT_TOKENS))
+        inline_output, truncated = clip_to_tokens(output, active_tuning().amount(Tunable.output_tokens))
         return compact({
             "code": result_code,
             "status": result_status,
@@ -297,7 +298,7 @@ async def search_web(
             results = await asyncio.to_thread(
                 client.search,
                 query,
-                num_results=min(result_count, active_tuning().amount(Limit.WEB_SEARCH_MAXIMUM)),
+                num_results=min(result_count, active_tuning().amount(Tunable.web_search_maximum)),
                 contents={"text": True},
             )
             entries = []
@@ -337,7 +338,7 @@ async def search_web(
     )
     # Give the search a short window to finish inline. The common case returns the
     # real results directly, so the model never juggles a pending handle at all.
-    settled = await jobs.settle_inline(job_id, active_tuning().duration(Limit.WEB_SEARCH_SYNC_WINDOW_SECONDS))
+    settled = await jobs.settle_inline(job_id, active_tuning().duration(Tunable.web_search_sync_window_seconds))
     if settled is not None:
         return settled.result
     # The started acknowledgement intentionally omits any file path or other
@@ -725,7 +726,7 @@ def write_file(
 async def fetch_url(
     url: str,
     format: Literal["markdown", "text", "html"] = "markdown",
-    timeout: float = Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline,
+    timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 30,
     background: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),
@@ -752,7 +753,7 @@ async def download_file(
     url: str,
     path: str,
     location: str = "",
-    timeout: float = Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline,
+    timeout: float = Tunable.slow_tool_sync_window_seconds.default,
     hard_deadline: float = 120,
     background: bool = False,
     justification: str = Field(..., description="A concise, user-facing reason this action is needed for the current task. Always required."),

@@ -25,7 +25,7 @@ import jwt
 from a2a.types import FilePart, FileWithBytes, FileWithUri, Part
 
 from xeac.base.net_trust import UntrustedHostError, pin_to_ip, resolve_public_ips
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # Ceiling on a single ingested file so a hostile or buggy peer cannot exhaust disk with one
 # part; larger files are refused.
@@ -181,7 +181,7 @@ class FileUrlSigner:
         return self._within_root(file_path)
 
     def sign(self, file_path: str, *, ttl_seconds: Optional[int] = None) -> str:
-        ttl_seconds = ttl_seconds if ttl_seconds is not None else active_tuning().amount(Limit.FILE_URL_TTL_SECONDS)
+        ttl_seconds = ttl_seconds if ttl_seconds is not None else active_tuning().amount(Tunable.file_url_ttl_seconds)
         if not self._within_root(file_path):
             raise PathNotServableError(f"{file_path!r} is outside the servable file root")
         token = jwt.encode(

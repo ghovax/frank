@@ -15,7 +15,7 @@ from contextlib import suppress
 
 import ApplicationServices as AS
 
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 
 def accessibility_granted() -> bool:
@@ -36,4 +36,4 @@ def open_accessibility_settings() -> None:
 
 def _open(url: str) -> None:
     with suppress(OSError, subprocess.SubprocessError):
-        subprocess.run(["open", url], check=False, timeout=active_tuning().duration(Limit.OPEN_URL_SECONDS))
+        subprocess.run(["open", url], check=False, timeout=active_tuning().duration(Tunable.open_url_seconds))

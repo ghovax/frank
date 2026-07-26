@@ -52,6 +52,8 @@ Useful scripts (in `web/`):
 
 Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime) and the invariant that `computer/` is never imported at module level — a parked worker that has loaded PyObjC is not safe to fork.
 
+`scripts/generate_configuration_reference.py` writes `configuration.example.yaml` from the configuration schema, and `--check` fails when the committed file has drifted from it. Run it after adding a setting, renaming one, changing a default, or editing a `Field(description=...)` or a `Default(...)` — the reference is generated precisely so it cannot describe a setting the code does not have.
+
 ## Running the desktop app in dev
 
 ```sh

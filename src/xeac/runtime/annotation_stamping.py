@@ -20,7 +20,7 @@ import base64
 import io
 from pathlib import Path
 from typing import Any, Optional
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # Sources the stamper can read pixels from: a local file path (the common case —
 # artifact images reference files on the server) or an inline data URI.
@@ -115,8 +115,8 @@ def stamp_annotations(image_bytes: bytes, annotations: list[dict]) -> Optional[b
     except Exception:
         return None
     image = image.convert("RGBA")
-    if max(image.size) > active_tuning().amount(Limit.STAMPED_IMAGE_SIDE):
-        image.thumbnail((active_tuning().amount(Limit.STAMPED_IMAGE_SIDE), active_tuning().amount(Limit.STAMPED_IMAGE_SIDE)), Image.LANCZOS)
+    if max(image.size) > active_tuning().amount(Tunable.stamped_image_side):
+        image.thumbnail((active_tuning().amount(Tunable.stamped_image_side), active_tuning().amount(Tunable.stamped_image_side)), Image.LANCZOS)
     width, height = image.size
     diameter = max(_MARKER_REFERENCE_DIAMETER, round(min(width, height) * 0.066))
     radius = diameter // 2

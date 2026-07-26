@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 from markdownify import markdownify as _markdownify
 
 from xeac.base.configuration import PromptLoader as _PromptLoader
-from xeac.base.tuning import Limit, active_tuning, clip_to_tokens
+from xeac.base.tuning import Tunable, active_tuning, clip_to_tokens
 from xeac.base.identifiers import new_id
 from xeac.locations.executor import LocationExecutor
 from xeac.base.serialization import compact
@@ -190,11 +190,11 @@ def read_file(
         raise IsADirectoryError(f"Path is a directory, not a file: {resolved_path}")
 
     tuning = active_tuning()
-    line_clip = tuning.amount(Limit.MAXIMUM_LINE_CHARS)
+    line_clip = tuning.amount(Tunable.maximum_line_chars)
     file_content = executor.read_text(resolved_path)
     file_lines = file_content.split("\n")
     start_line_index = max(1, offset)
-    effective_limit = limit if (limit is None or limit > 0) else tuning.amount(Limit.READ_LINES)
+    effective_limit = limit if (limit is None or limit > 0) else tuning.amount(Tunable.read_lines)
     end_line_index = len(file_lines) if effective_limit is None else min(len(file_lines), start_line_index - 1 + effective_limit)
     selected_lines = file_lines[start_line_index - 1 : end_line_index]
     long_lines_truncated = [
@@ -745,7 +745,7 @@ async def fetch_url(url: str, fmt: str = "markdown", timeout: int = 30) -> str:
 
     content, engine = await _fetch_through_engines(url, fmt, timeout)
 
-    inline_content, truncated = clip_to_tokens(content, active_tuning().amount(Limit.FETCH_TOKENS))
+    inline_content, truncated = clip_to_tokens(content, active_tuning().amount(Tunable.fetch_tokens))
     fields: dict[str, object] = {"url": url, "format": fmt, "engine": engine, "truncated": truncated}
     if truncated:
         output_path = Path("/tmp") / f"{new_id('fetch')}.log"

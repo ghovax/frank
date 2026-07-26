@@ -32,7 +32,7 @@ import Quartz
 # The few-millisecond pacing an OS needs for a synthesized click, keystroke, or drag step to
 # register as a real gesture lives in the central tuning policy (fixed, not window-scaled), read
 # through the one tuning surface like every other tunable.
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 # ABI-stable virtual key codes for the named, non-printing physical keys. These map to a
 # fixed physical key regardless of the user's keyboard layout, so they are safe to name
@@ -109,7 +109,7 @@ def click(pid: int, point_x: float, point_y: float, *, clicks: int = 1, button: 
         Quartz.CGEventSetIntegerValueField(up, Quartz.kCGMouseEventClickState, click_index + 1)
         Quartz.CGEventPostToPid(pid, down)
         Quartz.CGEventPostToPid(pid, up)
-        time.sleep(active_tuning().duration(Limit.CLICK_INTERVAL_SECONDS))
+        time.sleep(active_tuning().duration(Tunable.click_interval_seconds))
 
 
 def move(pid: int, point_x: float, point_y: float) -> None:
@@ -134,10 +134,10 @@ def drag(pid: int, start_x: float, start_y: float, end_x: float, end_y: float, *
         Quartz.CGEventPostToPid(pid, Quartz.CGEventCreateMouseEvent(None, event_type, (point_x, point_y), button_code))
 
     tuning = active_tuning()
-    step_interval = tuning.duration(Limit.DRAG_STEP_INTERVAL_SECONDS)
+    step_interval = tuning.duration(Tunable.drag_step_interval_seconds)
     post(down_type, start_x, start_y)
     time.sleep(step_interval)
-    steps = tuning.amount(Limit.DRAG_STEPS)
+    steps = tuning.amount(Tunable.drag_steps)
     for step in range(1, steps + 1):
         fraction = step / steps
         post(drag_type, start_x + (end_x - start_x) * fraction, start_y + (end_y - start_y) * fraction)
@@ -155,8 +155,8 @@ def type_text(pid: int, text: str) -> None:
     whole Python characters, which never splits a code point, and each chunk's length is
     its true UTF-16 unit count."""
     tuning = active_tuning()
-    chunk_size = tuning.amount(Limit.TYPE_CHUNK_SIZE)
-    chunk_interval = tuning.duration(Limit.TYPE_CHUNK_INTERVAL_SECONDS)
+    chunk_size = tuning.amount(Tunable.type_chunk_size)
+    chunk_interval = tuning.duration(Tunable.type_chunk_interval_seconds)
     for chunk_start in range(0, len(text), chunk_size):
         chunk = text[chunk_start:chunk_start + chunk_size]
         utf16_length = len(chunk.encode("utf-16-le")) // 2

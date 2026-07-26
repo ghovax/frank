@@ -31,7 +31,7 @@ from xeac.runtime.locations import CallExecutionPolicy
 from xeac.runtime.locations import ResolvedLocation
 from xeac.runtime.locations import ToolLocationError
 from xeac.runtime.locations import _LOCATION_TOOLS
-from xeac.base.tuning import Limit
+from xeac.base.tuning import Tunable
 from xeac.base.tuning import active_tuning
 from xeac.base.tuning import current_context_window
 from xeac.runtime.turn_events import DeniedInjection
@@ -726,7 +726,7 @@ class _ToolsMixin:
     ) -> AsyncIterator[TurnEvent]:
         url = str(tool_arguments.get("url", ""))
         fmt = str(tool_arguments.get("format", "markdown") or "markdown")
-        sync_window = float(tool_arguments.get("timeout", Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline) or Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline)
+        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window_seconds.default) or Tunable.slow_tool_sync_window_seconds.default)
         hard_deadline = int(tool_arguments.get("hard_deadline", 30) or 30)
         background = bool(tool_arguments.get("background", False))
         async for event in self._run_backgroundable_tool(
@@ -750,7 +750,7 @@ class _ToolsMixin:
         executor = resolved_location.executor
         url = str(tool_arguments.get("url", ""))
         destination = str(tool_arguments.get("path", ""))
-        sync_window = float(tool_arguments.get("timeout", Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline) or Limit.SLOW_TOOL_SYNC_WINDOW_SECONDS.baseline)
+        sync_window = float(tool_arguments.get("timeout", Tunable.slow_tool_sync_window_seconds.default) or Tunable.slow_tool_sync_window_seconds.default)
         hard_deadline = int(tool_arguments.get("hard_deadline", 120) or 120)
         background = bool(tool_arguments.get("background", False))
         resolved = await asyncio.to_thread(executor.resolve, resolved_location.base_directory, destination)

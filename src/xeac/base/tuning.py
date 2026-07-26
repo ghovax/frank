@@ -12,11 +12,11 @@ policy that answers two kinds of question:
   a real tokenizer (:func:`clip_to_tokens`), never a fixed characters-per-token guess.
 
 * **How long may one action wait, and how does a surface settle?** Timeouts scale only with the
-  ``timeout_scale`` knob (time does not depend on the context window). Settlement is not a fixed
+  ``timeout_multiplier`` knob (time does not depend on the context window). Settlement is not a fixed
   sleep at all: :func:`settle` polls a surface until it stops changing, bounded by the configured
   interval and ceiling.
 
-Every tunable value is defined **exactly once** as a member of :class:`Limit`, carrying its
+Every tunable value is defined **exactly once** as a member of :class:`Tunable`, carrying its
 baseline and how it scales — no parallel wall of module constants and one-line accessor methods.
 Two typed getters resolve any of them against the live window: :meth:`Tuning.amount` (an integer:
 tokens, counts, milliseconds, characters) and :meth:`Tuning.duration` (a float of seconds).
@@ -35,7 +35,7 @@ import contextvars
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Iterable, Optional, TypeVar
+from typing import Callable, Iterable, NamedTuple, Optional, TypeVar
 
 # The live model context window (in tokens) for the tool call currently executing. The agent
 # runtime sets this around each tool dispatch and resets it after; ``asyncio.to_thread`` copies
@@ -59,125 +59,225 @@ _MINIMUM_WINDOW = 16_000
 _MAXIMUM_WINDOW = 2_000_000
 
 # The knob values the baselines are calibrated against: at these fractions the family multiplier is
-# 1.0, so raising ``output_fraction`` above 0.25 enlarges every text budget proportionally, and so on.
-_DEFAULT_OUTPUT_FRACTION = 0.25
-_DEFAULT_LISTING_FRACTION = 0.15
+# 1.0, so raising ``context_share.text`` above 0.25 enlarges every text budget proportionally, and so on.
+_DEFAULT_TEXT_SHARE = 0.25
+_DEFAULT_RESULTS_SHARE = 0.15
 
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-class _Scale(Enum):
-    """How a :class:`Limit`'s baseline is scaled to its live value."""
-    OUTPUT = "output"    # a token/char budget: window * output_fraction
-    LISTING = "listing"  # an item count: window * listing_fraction
-    TIMEOUT = "timeout"  # a ceiling: timeout_scale only (time does not depend on the window)
-    FIXED = "fixed"      # a physical/clip constant: not scaled at all
+class Scaling(Enum):
+    """How a tunable's shipped default becomes its live value.
+
+    Each family answers to exactly one knob, named the same thing here and in the configuration,
+    so a reader can tell what a setting moves without consulting a table."""
+
+    TEXT = "text"        # a token or character budget: window * context_share.text
+    RESULTS = "results"  # how many entries come back: window * context_share.results
+    TIME = "time"        # a wait: timeout_multiplier only — time does not depend on the window
+    NONE = "none"        # physical pacing, fixed shapes, pixel sizes: not scaled at all
 
 
-class Limit(Enum):
-    """Every tunable value, defined once as ``(baseline, scaling)``. Resolve one with
-    :meth:`Tuning.amount` (integer values: tokens, counts, milliseconds, characters) or
+@dataclass(frozen=True)
+class Default:
+    """One tunable's shipped value, how it scales, and what it is for.
+
+    ``about`` is carried rather than left in a comment because `xeac configure` renders it and the
+    configuration reference is generated from it — an explanation only a reader can see is one that
+    drifts from the value beside it."""
+
+    value: float
+    scaling: Scaling
+    about: str = ""
+
+
+class Tunable(Enum):
+    """Every value a user may tune, with what it ships at and how that ships-at value scales.
+
+    Deliberately lowercase. These are not constants — each is a *default* the configuration may
+    replace under ``tuning.defaults``, and the casing is the first thing that says so. The member
+    name is the configuration key verbatim, so there is one vocabulary rather than two.
+
+    Resolve one with :meth:`Tuning.amount` (integers: tokens, counts, milliseconds, characters) or
     :meth:`Tuning.duration` (seconds), which apply the scaling for its family."""
 
-    # Text budgets, in TOKENS unless a character clip, scaled by the window and output_fraction.
-    # As a share of a 200K window: 16K ≈ 8% for one command's output, 4K ≈ 2% for a read window,
-    # 24K ≈ 12% for a whole fetched page (the rest overflows to a file). Enforced by clip_to_tokens.
-    OUTPUT_TOKENS = (16_000, _Scale.OUTPUT)        # one tool's inline output (bash, model result)
-    FETCH_TOKENS = (24_000, _Scale.OUTPUT)         # a fetched web page's inline text
-    MAXIMUM_LINE_CHARS = (2_048, _Scale.OUTPUT)    # a single over-long line clipped (minified blob)
-    STAMPED_IMAGE_SIDE = (2_048, _Scale.OUTPUT)    # longest side of an annotated screenshot
+    # Text budgets, in TOKENS unless a character clip, scaled by the window and context_share.text.
+    # As a share of a 200K window: 16K ≈ 8% for one command's output, 24K ≈ 12% for a whole fetched
+    # page (the rest overflows to a file). Enforced by clip_to_tokens.
+    output_tokens = Default(
+        16_000, Scaling.TEXT,
+        "Tokens of inline output one tool may return before the rest overflows to a file.",
+    )
+    fetch_tokens = Default(
+        24_000, Scaling.TEXT,
+        "Tokens of a fetched web page's text kept inline.",
+    )
+    maximum_line_chars = Default(
+        2_048, Scaling.TEXT,
+        "Characters of a single over-long line kept before it is clipped, so one minified blob "
+        "cannot fill a result on its own.",
+    )
 
-    # Listing budgets, in item COUNTS, scaled by the window and listing_fraction.
-    READ_LINES = (2_000, _Scale.LISTING)           # lines a read returns on a non-positive limit
-    GREP_RESULTS = (512, _Scale.LISTING)           # total grep matches
-    GREP_PER_FILE = (512, _Scale.LISTING)          # grep matches per file
-    GLOB_RESULTS = (1_000, _Scale.LISTING)         # files a glob returns
-    WEB_SEARCH_MAXIMUM = (10, _Scale.LISTING)      # ceiling on requested web-search results
-    REMOTE_LISTING = (32_768, _Scale.LISTING)      # remote paths listed before glob matching
+    # Listing budgets, in item COUNTS, scaled by the window and context_share.results.
+    read_lines = Default(
+        2_000, Scaling.RESULTS,
+        "Lines a file read returns when no explicit limit is given.",
+    )
+    grep_results = Default(512, Scaling.RESULTS, "Total matches one search returns.")
+    grep_per_file = Default(512, Scaling.RESULTS, "Matches one search returns from any single file.")
+    glob_results = Default(1_000, Scaling.RESULTS, "Paths one glob returns.")
+    web_search_maximum = Default(
+        10, Scaling.RESULTS,
+        "Ceiling on the result count a web search may ask for, however many it requests.",
+    )
+    remote_listing = Default(
+        32_768, Scaling.RESULTS,
+        "Paths listed on a remote machine before glob matching is applied locally.",
+    )
     # What a browser session keeps of the page's own traffic, so a `find` can surface the API
     # behind a rendered view. Budgets like any other listing: a bigger window affords more.
-    WEB_EXCHANGES = (250, _Scale.LISTING)          # recent request/response pairs held per session
-    WEB_WEBSOCKETS = (32, _Scale.LISTING)          # live sockets tracked at once
-    WEB_WEBSOCKET_FRAMES = (200, _Scale.LISTING)   # frames retained per socket
+    web_exchanges = Default(
+        250, Scaling.RESULTS,
+        "Recent request/response pairs a browser session keeps, so a search can surface the API "
+        "behind a rendered view.",
+    )
+    web_websockets = Default(32, Scaling.RESULTS, "Live websockets a browser session tracks at once.")
+    web_websocket_frames = Default(200, Scaling.RESULTS, "Frames retained per tracked websocket.")
 
     # Timeouts. Milliseconds (read with amount) for Playwright, seconds (read with duration) for the
-    # subprocess/AX/settle IO; both scale only with timeout_scale.
-    ACTION_TIMEOUT_MS = (5_000, _Scale.TIMEOUT)
-    NAVIGATION_TIMEOUT_MS = (20_000, _Scale.TIMEOUT)
-    SNAPSHOT_TIMEOUT_MS = (10_000, _Scale.TIMEOUT)
-    CONNECT_TIMEOUT_MS = (10_000, _Scale.TIMEOUT)
-    DRAG_TIMEOUT_MS = (8_000, _Scale.TIMEOUT)
-    SCREENSHOT_TIMEOUT_MS = (20_000, _Scale.TIMEOUT)
-    READ_TEXT_TIMEOUT_MS = (10_000, _Scale.TIMEOUT)
+    # subprocess/AX/settle IO; both scale only with timeout_multiplier.
+    action_timeout_ms = Default(
+        5_000, Scaling.TIME,
+        "How long one browser action (click, type, hover) waits for its element.",
+    )
+    navigation_timeout_ms = Default(20_000, Scaling.TIME, "How long a page load or navigation waits.")
+    snapshot_timeout_ms = Default(10_000, Scaling.TIME, "How long an accessibility snapshot of a page waits.")
+    connect_timeout_ms = Default(10_000, Scaling.TIME, "How long attaching to a browser waits.")
+    drag_timeout_ms = Default(8_000, Scaling.TIME, "How long a drag between two elements waits.")
+    screenshot_timeout_ms = Default(20_000, Scaling.TIME, "How long capturing a page screenshot waits.")
+    read_text_timeout_ms = Default(10_000, Scaling.TIME, "How long reading a page's text waits.")
     # Resolving a frame id to its live frame. Deliberately far below the action timeout: a stale
     # aria-ref does not error, it waits, and `frames()` resolves every iframe it found — so one that
     # has gone would otherwise hold up the whole listing.
-    FRAME_RESOLVE_TIMEOUT_MS = (2_000, _Scale.TIMEOUT)
+    frame_resolve_timeout_ms = Default(
+        2_000, Scaling.TIME,
+        "How long resolving a frame reference waits. Deliberately well below the action timeout: a "
+        "frame that has gone waits out its budget rather than erroring, and listing every frame "
+        "would otherwise stall on the one that left.",
+    )
     # After SIGTERM, before SIGKILL — for a cancelled command and for a reaped session alike.
     # `daemon/lifecycle.py` used to carry its own `_TERMINATE_GRACE_SECONDS = 3.0` for the second
     # case, which was the same concept under a second name, at a different value, and outside the
     # timeout scale. The more generous of the two won: a session being wound down has more to
     # flush than a single command being cancelled.
-    SIGTERM_GRACE_SECONDS = (3.0, _Scale.TIMEOUT)
-    RIPGREP_SECONDS = (30.0, _Scale.TIMEOUT)
+    sigterm_grace_seconds = Default(
+        3.0, Scaling.TIME,
+        "How long a cancelled command or a reaped session has after SIGTERM before SIGKILL.",
+    )
+    ripgrep_seconds = Default(30.0, Scaling.TIME, "How long one content search may run.")
     # How long a backgroundable tool waits inline before it hands the work to the background
     # runner (a non-killing wait window, the model-overridable `timeout` tool parameter's
     # default — NOT a network deadline). Central so the three tools' defaults live in one place
     # rather than as scattered private module constants.
-    BASH_SYNC_WINDOW_SECONDS = (60.0, _Scale.TIMEOUT)        # bash: sync by default, long window
-    SLOW_TOOL_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)   # fetch_url / download_file: short window
-    WEB_SEARCH_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)  # web_search: short window
-    AX_MESSAGING_SECONDS = (2.0, _Scale.TIMEOUT)             # per-AX-message ceiling against a hung app
+    bash_sync_window_seconds = Default(
+        60.0, Scaling.TIME,
+        "How long a shell command runs inline before it moves to the background. It is not killed "
+        "at this point, only handed off, and the model can override it per call.",
+    )
+    slow_tool_sync_window_seconds = Default(
+        10.0, Scaling.TIME,
+        "The same inline window for fetching a URL or downloading a file.",
+    )
+    web_search_sync_window_seconds = Default(10.0, Scaling.TIME, "The same inline window for a web search.")
+    ax_messaging_seconds = Default(
+        2.0, Scaling.TIME,
+        "How long one accessibility message to an application waits, so a hung application costs a "
+        "moment rather than the whole action.",
+    )
 
     # The control plane and the processes it supervises.
-    WORKER_READY_SECONDS = (60.0, _Scale.TIMEOUT)            # a warm worker reporting its socket
-    WORKER_ASSIGNMENT_SECONDS = (60.0, _Scale.TIMEOUT)       # a worker accepting its assignment
-    DAEMON_STARTUP_SECONDS = (45.0, _Scale.TIMEOUT)          # `xeac` waiting for a daemon it started
-    CONTROL_PLANE_CALL_SECONDS = (60.0, _Scale.TIMEOUT)      # one session's call to the daemon
-    MODEL_CATALOGUE_TTL_SECONDS = (60.0, _Scale.TIMEOUT)     # before re-fetching the model list
-    CREDENTIAL_REFRESH_LEEWAY_SECONDS = (300.0, _Scale.TIMEOUT)  # refresh a token this long before expiry
-    FILE_URL_TTL_SECONDS = (600.0, _Scale.TIMEOUT)           # how long a signed file URL stays valid
-    MCP_CONNECT_SECONDS = (20.0, _Scale.TIMEOUT)             # connecting to one MCP server
-    CARD_RESOLVE_SECONDS = (20.0, _Scale.TIMEOUT)            # fetching a remote agent's card
+    worker_ready_seconds = Default(60.0, Scaling.TIME, "How long the daemon waits for a fresh worker to start.")
+    worker_assignment_seconds = Default(
+        60.0, Scaling.TIME,
+        "How long the daemon waits for a worker to accept its assignment and open its socket.",
+    )
+    daemon_startup_seconds = Default(
+        45.0, Scaling.TIME,
+        "How long a command waits for a daemon it just started to become reachable.",
+    )
+    control_plane_call_seconds = Default(60.0, Scaling.TIME, "How long one call to the daemon waits.")
+    model_catalogue_ttl_seconds = Default(60.0, Scaling.TIME, "How long the list of available models is cached.")
+    credential_refresh_leeway_seconds = Default(
+        300.0, Scaling.TIME,
+        "How far ahead of its expiry an access token is refreshed.",
+    )
+    file_url_ttl_seconds = Default(600.0, Scaling.TIME, "How long a signed file URL stays valid.")
+    mcp_connect_seconds = Default(20.0, Scaling.TIME, "How long connecting to one MCP server waits.")
+    card_resolve_seconds = Default(20.0, Scaling.TIME, "How long fetching a remote agent's card waits.")
 
     # Commands on another machine, where patience is a property of the network.
-    REMOTE_COMMAND_SECONDS = (120.0, _Scale.TIMEOUT)
-    REMOTE_CONNECT_SECONDS = (16.0, _Scale.TIMEOUT)
-    REMOTE_CONTROL_PERSIST_SECONDS = (120.0, _Scale.TIMEOUT)  # how long a shared SSH master lingers
+    remote_command_seconds = Default(120.0, Scaling.TIME, "How long a command on another machine may run.")
+    remote_connect_seconds = Default(16.0, Scaling.TIME, "How long opening an SSH connection waits.")
+    remote_control_persist_seconds = Default(
+        120.0, Scaling.TIME,
+        "How long a shared SSH connection lingers after its last use, so the next command reuses it.",
+    )
 
     # The control_screen timeout stack, which has to stay ordered rather than merely equal. The
     # script's own ceiling is the one anybody would want to raise; the surface's guard and its
     # worker thread each sit a margin above it, so a long script can never outlive the machinery
     # waiting on it — which used to drop the connection and leave the surface half-dead.
-    CONTROL_SCRIPT_SECONDS = (120.0, _Scale.TIMEOUT)
-    SURFACE_GUARD_MARGIN_SECONDS = (30.0, _Scale.TIMEOUT)
-    SCREENCAPTURE_SECONDS = (15.0, _Scale.TIMEOUT)
-    OPEN_URL_SECONDS = (5.0, _Scale.TIMEOUT)
+    control_script_seconds = Default(120.0, Scaling.TIME, "How long one screen-control script may run.")
+    surface_guard_margin_seconds = Default(
+        30.0, Scaling.TIME,
+        "How far above the script's own limit the machinery waiting on it sits, so raising that "
+        "limit can never make the guard fire first and leave the surface half-dead.",
+    )
+    screencapture_seconds = Default(15.0, Scaling.TIME, "How long capturing the screen waits.")
+    open_url_seconds = Default(5.0, Scaling.TIME, "How long handing a URL to the system browser waits.")
 
-    # Fixed, deliberately NOT scaled — per-field clip lengths, the element ref length, and the
-    # physical input-event pacing the OS needs for a synthesized click/keystroke/drag to register.
-    TYPE_CHUNK_SIZE = (20, _Scale.FIXED)                     # characters per synthesized keyboard event
-    DRAG_STEPS = (12, _Scale.FIXED)                          # interpolation segments a drag is split into
-    SCROLL_AMOUNT_PIXELS = (300, _Scale.FIXED)               # one wheel step for the native surface
-    SETTLE_STABLE_READS = (2, _Scale.FIXED)                  # identical reads that count a surface settled
-    CLICK_INTERVAL_SECONDS = (0.01, _Scale.FIXED)            # between successive synthesized clicks
-    DRAG_STEP_INTERVAL_SECONDS = (0.01, _Scale.FIXED)        # between interpolated drag-move events
-    TYPE_CHUNK_INTERVAL_SECONDS = (0.005, _Scale.FIXED)      # between typed chunks
-    FOCUS_SETTLE_SECONDS = (0.03, _Scale.FIXED)              # after focusing a field, before typing
-    AX_OVERVIEW_DEPTH = (4, _Scale.FIXED)                    # how deep an accessibility overview walks
-    AX_READY_PROBE_DEPTH = (2, _Scale.FIXED)                 # depth of the cheap "has the tree built" probe
-    AX_PREWARM_INTERVAL_SECONDS = (0.4, _Scale.FIXED)        # between front-app tree pre-warms
-    AX_READY_BACKOFF_SECONDS = (0.2, _Scale.FIXED)           # cap on the widening readiness backoff
+    # Fixed, deliberately NOT scaled — physical input-event pacing the OS needs for a synthesized
+    # click/keystroke/drag to register, fixed shapes, and pixel sizes.
+    type_chunk_size = Default(20, Scaling.NONE, "Characters sent per synthesized keyboard event.")
+    drag_steps = Default(12, Scaling.NONE, "Segments a drag is split into, so it looks like a hand moved it.")
+    scroll_amount_pixels = Default(300, Scaling.NONE, "Pixels one scroll step moves a native window.")
+    settle_stable_reads = Default(
+        2, Scaling.NONE,
+        "Identical consecutive reads that count a surface as having stopped changing.",
+    )
+    click_interval_seconds = Default(0.01, Scaling.NONE, "Pause between successive synthesized clicks.")
+    drag_step_interval_seconds = Default(0.01, Scaling.NONE, "Pause between the interpolated steps of a drag.")
+    type_chunk_interval_seconds = Default(0.005, Scaling.NONE, "Pause between typed chunks.")
+    focus_settle_seconds = Default(0.03, Scaling.NONE, "Pause after focusing a field, before typing into it.")
+    # Pixels, not a share of anybody's context — this sat in the text family, where raising
+    # `context_share.text` silently enlarged every screenshot.
+    stamped_image_side = Default(
+        2_048, Scaling.NONE,
+        "Longest side, in pixels, of a screenshot annotated with element labels.",
+    )
+    ax_overview_depth = Default(4, Scaling.NONE, "How deep an accessibility overview of a window walks.")
+    ax_ready_probe_depth = Default(
+        2, Scaling.NONE,
+        "How deep the cheap probe walks that asks whether an application's accessibility tree exists yet.",
+    )
+    ax_prewarm_interval_seconds = Default(
+        0.4, Scaling.NONE,
+        "Pause between pre-warming the frontmost application's accessibility tree.",
+    )
+    ax_ready_backoff_seconds = Default(
+        0.2, Scaling.NONE,
+        "Ceiling on the widening pause between accessibility readiness probes.",
+    )
 
-    def __new__(cls, baseline: float, scaling: _Scale) -> "Limit":
+    def __new__(cls, default: Default) -> "Tunable":
         """Give every member a value of its own.
 
         Without this, `Enum` treats two members declared with the same `(baseline, scaling)` pair
         as aliases of one member — and this enum is full of them, because plenty of unrelated
         limits happen to share a number. Sixteen of the fifty-five names below collapsed that way:
-        `Limit.CONNECT_TIMEOUT_MS is Limit.SNAPSHOT_TIMEOUT_MS` was true, and asking either for
+        `Tunable.connect_timeout_ms is Tunable.snapshot_timeout_ms` was true, and asking either for
         its `.name` returned whichever was declared first.
 
         It was harmless while every reader only wanted the number, since aliases agree on that by
@@ -188,9 +288,10 @@ class Limit(Enum):
         member._value_ = len(cls.__members__) + 1
         return member
 
-    def __init__(self, baseline: float, scaling: _Scale) -> None:
-        self.baseline = baseline
-        self.scaling = scaling
+    def __init__(self, default: Default) -> None:
+        self.default = default.value
+        self.scaling = default.scaling
+        self.about = default.about
 
 
 # Tokenizer-backed text budgeting. A real tokenizer maps a token budget to an accurate character
@@ -248,16 +349,23 @@ def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:
     return encoding.decode(tokens[:budget]), True
 
 
-def limit_names() -> tuple[str, ...]:
-    """Every name that may appear under ``tuning.limits``. The configuration validates against
+def tunable_names() -> tuple[str, ...]:
+    """Every name that may appear under ``tuning.defaults``. The configuration validates against
     this rather than accepting anything, so a typo is an error at load rather than a setting that
     looks applied and is not."""
-    return tuple(member.name for member in Limit)
+    return tuple(member.name for member in Tunable)
 
 
-def unknown_limit_names(names: Iterable[str]) -> list[str]:
-    known = set(limit_names())
+def unknown_tunable_names(names: Iterable[str]) -> list[str]:
+    known = set(tunable_names())
     return sorted(name for name in names if name not in known)
+
+
+class _ContextShare(NamedTuple):
+    """What proportion of the live context window one result may fill."""
+
+    text: float = _DEFAULT_TEXT_SHARE
+    results: float = _DEFAULT_RESULTS_SHARE
 
 
 class TuningConfiguration:
@@ -267,28 +375,29 @@ class TuningConfiguration:
 
     def __init__(
         self,
-        output_fraction: float = _DEFAULT_OUTPUT_FRACTION,
-        listing_fraction: float = _DEFAULT_LISTING_FRACTION,
-        settle_interval_seconds: float = 0.05,
-        settle_ceiling_seconds: float = 1.5,
-        timeout_scale: float = 1.0,
-        limits: Optional[dict] = None,
+        text: float = _DEFAULT_TEXT_SHARE,
+        results: float = _DEFAULT_RESULTS_SHARE,
+        timeout_multiplier: float = 1.0,
+        defaults: Optional[dict] = None,
+        settle_poll_seconds: float = 0.05,
+        settle_give_up_seconds: float = 1.5,
     ) -> None:
-        self.output_fraction = output_fraction
-        self.listing_fraction = listing_fraction
-        self.settle_interval_seconds = settle_interval_seconds
-        self.settle_ceiling_seconds = settle_ceiling_seconds
-        self.timeout_scale = timeout_scale
-        self.limits = dict(limits or {})
+        self.context_share = _ContextShare(text, results)
+        self.timeout_multiplier = timeout_multiplier
+        self.defaults = dict(defaults or {})
+        # Read only by the two screen surfaces. They live on the resolved policy rather than in
+        # `tuning:` because settling is what a *surface* does after an action, not a budget.
+        self.settle_poll_seconds = settle_poll_seconds
+        self.settle_give_up_seconds = settle_give_up_seconds
 
 
 @dataclass
 class Tuning:
     """Resolves the policy against a live context window. :meth:`amount` and :meth:`duration` take
-    a :class:`Limit` and an optional ``window``; when the window is omitted they read
+    a :class:`Tunable` and an optional ``window``; when the window is omitted they read
     :data:`current_context_window` (the calling agent's live window), falling back to the turn-zero
     seed while that is still unknown — so a call site simply asks
-    ``active_tuning().amount(Limit.ELEMENT_CAP)`` and gets the right value for whoever is running."""
+    ``active_tuning().amount(Tunable.output_tokens)`` and gets the right value for whoever is running."""
 
     policy: TuningConfiguration
 
@@ -301,53 +410,53 @@ class Tuning:
     def _window_scale(self, window: Optional[int]) -> float:
         return self._window(window) / REFERENCE_WINDOW
 
-    def _baseline(self, limit: Limit) -> float:
-        """A limit's baseline, or the override the configuration set for it.
+    def _default_for(self, tunable: Tunable) -> float:
+        """What this tunable ships at, or what the configuration replaced it with.
 
-        An override replaces the *baseline*, not the resolved value, so family scaling still
-        applies on top: ``ACTION_TIMEOUT_MS: 10000`` under ``timeout_scale: 2.0`` resolves to
-        twenty seconds, which is what somebody reaching for both would expect."""
-        override = getattr(self.policy, "limits", None)
+        An override replaces the *default*, not the resolved value, so family scaling still applies
+        on top: ``action_timeout_ms: 10000`` under ``timeout_multiplier: 2.0`` resolves to twenty
+        seconds, which is what somebody reaching for both would expect."""
+        override = getattr(self.policy, "defaults", None)
         if override:
-            value = override.get(limit.name)
+            value = override.get(tunable.name)
             if value is not None:
                 return float(value)
-        return float(limit.baseline)
+        return float(tunable.default)
 
-    def _raw(self, limit: Limit, window: Optional[int]) -> float:
-        """The scaled value of a limit, before it is rounded to an int or returned as a float."""
-        baseline = self._baseline(limit)
-        scaling = limit.scaling
-        if scaling is _Scale.OUTPUT:
-            knob = self.policy.output_fraction / _DEFAULT_OUTPUT_FRACTION
-            return max(1.0, baseline * self._window_scale(window) * knob)
-        if scaling is _Scale.LISTING:
-            knob = self.policy.listing_fraction / _DEFAULT_LISTING_FRACTION
-            return max(1.0, baseline * self._window_scale(window) * knob)
-        if scaling is _Scale.TIMEOUT:
-            return max(0.001, baseline * self.policy.timeout_scale)
-        return baseline
+    def _raw(self, tunable: Tunable, window: Optional[int]) -> float:
+        """The live value, before it is rounded to an int or returned as a float."""
+        shipped = self._default_for(tunable)
+        scaling = tunable.scaling
+        if scaling is Scaling.TEXT:
+            knob = self.policy.context_share.text / _DEFAULT_TEXT_SHARE
+            return max(1.0, shipped * self._window_scale(window) * knob)
+        if scaling is Scaling.RESULTS:
+            knob = self.policy.context_share.results / _DEFAULT_RESULTS_SHARE
+            return max(1.0, shipped * self._window_scale(window) * knob)
+        if scaling is Scaling.TIME:
+            return max(0.001, shipped * self.policy.timeout_multiplier)
+        return shipped
 
-    def amount(self, limit: Limit, window: Optional[int] = None) -> int:
+    def amount(self, tunable: Tunable, window: Optional[int] = None) -> int:
         """A limit as an integer — a token budget, an item count, a millisecond timeout, a length."""
-        return max(1, int(round(self._raw(limit, window))))
+        return max(1, int(round(self._raw(tunable, window))))
 
-    def duration(self, limit: Limit, window: Optional[int] = None) -> float:
+    def duration(self, tunable: Tunable, window: Optional[int] = None) -> float:
         """A limit as a float of seconds — a timeout or a physical input-pacing interval."""
-        return self._raw(limit, window)
+        return self._raw(tunable, window)
 
     def scale_timeout(self, seconds: float) -> float:
         """Apply the timeout knob to a caller-supplied or baseline IO timeout — the one place a
         command/connect/subprocess ceiling is adjusted for a slow (or fast) machine or link."""
-        return max(0.1, seconds * self.policy.timeout_scale)
+        return max(0.1, seconds * self.policy.timeout_multiplier)
 
     # Settlement interval and ceiling come straight from the policy (they are the user's knobs, not
-    # scaled baselines); the stable-read count is a fixed Limit.
-    def settle_interval(self) -> float:
-        return max(0.001, self.policy.settle_interval_seconds)
+    # scaled baselines); the stable-read count is an unscaled tunable.
+    def settle_poll(self) -> float:
+        return max(0.001, self.policy.settle_poll_seconds)
 
-    def settle_ceiling(self) -> float:
-        return max(0.0, self.policy.settle_ceiling_seconds)
+    def settle_give_up(self) -> float:
+        return max(0.0, self.policy.settle_give_up_seconds)
 
 
 # Process-global active policy, pushed in at startup and on every config reload. Defaults to the
@@ -361,22 +470,28 @@ def set_tuning(tuning: Tuning) -> None:
     _active = tuning
 
 
-def tuning_from_policy(policy: object) -> Tuning:
-    """Wrap a loaded config section (the Pydantic ``TuningConfiguration``, or any object exposing
-    the same attributes) into a :class:`Tuning`. Missing attributes fall back to the defaults, so
-    a partial or older config never breaks. Unknown names under ``limits`` are dropped here rather
-    than carried: the configuration layer rejects them at load, and anything reaching this far is a
-    caller that built a policy by hand."""
-    overrides = dict(getattr(policy, "limits", None) or {})
-    for name in unknown_limit_names(overrides):
+def tuning_from_policy(policy: object, screen_policy: object = None) -> Tuning:
+    """Wrap loaded config sections into a :class:`Tuning`.
+
+    ``policy`` is the ``tuning`` section; ``screen_policy`` is ``computer_control``, which owns the
+    two settle knobs — settling is what a *surface* does after an action, not a budget, and having
+    them under `tuning` made them look like one. Missing attributes fall back to what the code
+    ships with, so a partial policy built by hand never breaks.
+
+    Unknown names under ``defaults`` are dropped here rather than carried: the configuration layer
+    rejects them at load, so anything reaching this far was built in code."""
+    overrides = dict(getattr(policy, "defaults", None) or {})
+    for name in unknown_tunable_names(overrides):
         overrides.pop(name, None)
+    share = getattr(policy, "context_share", None)
+    settle = getattr(screen_policy, "settle", None)
     return Tuning(TuningConfiguration(
-        output_fraction=float(getattr(policy, "output_fraction", _DEFAULT_OUTPUT_FRACTION)),
-        listing_fraction=float(getattr(policy, "listing_fraction", _DEFAULT_LISTING_FRACTION)),
-        settle_interval_seconds=float(getattr(policy, "settle_interval_seconds", 0.05)),
-        settle_ceiling_seconds=float(getattr(policy, "settle_ceiling_seconds", 1.5)),
-        timeout_scale=float(getattr(policy, "timeout_scale", 1.0)),
-        limits=overrides,
+        text=float(getattr(share, "text", _DEFAULT_TEXT_SHARE)),
+        results=float(getattr(share, "results", _DEFAULT_RESULTS_SHARE)),
+        timeout_multiplier=float(getattr(policy, "timeout_multiplier", 1.0)),
+        defaults=overrides,
+        settle_poll_seconds=float(getattr(settle, "poll_seconds", 0.05)),
+        settle_give_up_seconds=float(getattr(settle, "give_up_seconds", 1.5)),
     ))
 
 
@@ -402,9 +517,9 @@ def settle(
     cheap, comparable signature of the surface (an element count, a snapshot, a scroll offset).
     Interval, ceiling, and stable-read count default to the active policy's settlement knobs."""
     active = active_tuning()
-    step = active.settle_interval() if interval is None else max(0.001, interval)
-    limit = active.settle_ceiling() if ceiling is None else max(0.0, ceiling)
-    needed = active.amount(Limit.SETTLE_STABLE_READS) if stable_reads is None else stable_reads
+    step = active.settle_poll() if interval is None else max(0.001, interval)
+    limit = active.settle_give_up() if ceiling is None else max(0.0, ceiling)
+    needed = active.amount(Tunable.settle_stable_reads) if stable_reads is None else stable_reads
     deadline = time.monotonic() + limit
     latest = read()
     repeats = 1

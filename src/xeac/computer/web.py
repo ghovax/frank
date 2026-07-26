@@ -37,7 +37,7 @@ from typing import Any, Optional
 
 from xeac.computer.retrieval import Document, element_text
 from xeac.computer.surface import Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range
-from xeac.base.tuning import Limit, active_tuning, settle
+from xeac.base.tuning import Tunable, active_tuning, settle
 
 message = message_loader("browser")
 
@@ -128,7 +128,7 @@ class _Session:
         # The page's recent network exchanges — full request/response, so a ``find`` can
         # surface the API endpoints behind a rendered view and ``evaluate`` can replay them. A
         # generous rolling window, bounded only so a long-lived page cannot grow the buffer forever.
-        self.exchanges: deque[dict] = deque(maxlen=active_tuning().amount(Limit.WEB_EXCHANGES))
+        self.exchanges: deque[dict] = deque(maxlen=active_tuning().amount(Tunable.web_exchanges))
         self._exchange_counter = count(1)
         # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that
         # never shows up as XHR). Keyed by a model-facing id, pruned oldest-first past the limit.
@@ -246,9 +246,9 @@ class _Session:
             # Observe a WebSocket's frames — the model can search them like any exchange, and act on
             # the socket in-page with ``evaluate`` (the page's own socket, or a new one it opens).
             identifier = f"ws{next(self._websocket_counter)}"
-            if len(self.websockets) >= active_tuning().amount(Limit.WEB_WEBSOCKETS):
+            if len(self.websockets) >= active_tuning().amount(Tunable.web_websockets):
                 self.websockets.pop(next(iter(self.websockets)))
-            record: dict[str, Any] = {"id": identifier, "url": websocket.url, "frames": deque(maxlen=active_tuning().amount(Limit.WEB_WEBSOCKET_FRAMES))}
+            record: dict[str, Any] = {"id": identifier, "url": websocket.url, "frames": deque(maxlen=active_tuning().amount(Tunable.web_websocket_frames))}
             self.websockets[identifier] = record
 
             def note(direction: str):
@@ -371,7 +371,7 @@ def _parse_snapshot(snapshot: str) -> tuple[list[Element], dict[str, str]]:
 
 def _snapshot(page) -> str:
     """The ref-carrying accessibility snapshot of the whole page (iframes inlined)."""
-    return page.locator("body").aria_snapshot(mode="ai", timeout=active_tuning().amount(Limit.SNAPSHOT_TIMEOUT_MS))
+    return page.locator("body").aria_snapshot(mode="ai", timeout=active_tuning().amount(Tunable.snapshot_timeout_ms))
 
 
 # Icon fonts render ligatures as Private Use Area characters that leak into a text read as garbage.
@@ -420,7 +420,7 @@ def _safe_url(page) -> str:
 def _await_quiet(page) -> None:
     """Let the DOM parse after an action without ever blocking on one stalled resource:
     ``domcontentloaded`` is the cheap signal the new document exists, bounded and swallowed."""
-    ceiling_ms = max(1, int(active_tuning().settle_ceiling() * 1000))
+    ceiling_ms = max(1, int(active_tuning().settle_give_up() * 1000))
     try:
         page.wait_for_load_state("domcontentloaded", timeout=ceiling_ms)
     except Exception:
@@ -490,14 +490,14 @@ class WebSurface(Surface):
         if websocket_url is None:
             raise ToolFailure(_not_connected_payload())
         try:
-            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=active_tuning().amount(Limit.CONNECT_TIMEOUT_MS))
+            connected = self._playwright.chromium.connect_over_cdp(websocket_url, timeout=active_tuning().amount(Tunable.connect_timeout_ms))
         except PlaywrightTimeout:
             raise ToolFailure(_stale_endpoint_payload())
         except PlaywrightError:
             raise ToolFailure(_not_connected_payload())
         context = connected.contexts[0] if connected.contexts else connected.new_context()
-        context.set_default_timeout(active_tuning().amount(Limit.ACTION_TIMEOUT_MS))
-        context.set_default_navigation_timeout(active_tuning().amount(Limit.NAVIGATION_TIMEOUT_MS))
+        context.set_default_timeout(active_tuning().amount(Tunable.action_timeout_ms))
+        context.set_default_navigation_timeout(active_tuning().amount(Tunable.navigation_timeout_ms))
         session = _Session(connected, context)
         for page in context.pages:
             session.adopt(page)
@@ -576,7 +576,7 @@ class WebSurface(Surface):
         frame = None
         try:
             handle = page.locator(f"aria-ref={element_ref}").element_handle(
-                timeout=active_tuning().amount(Limit.FRAME_RESOLVE_TIMEOUT_MS)
+                timeout=active_tuning().amount(Tunable.frame_resolve_timeout_ms)
             )
             frame = handle.content_frame() if handle is not None else None
         except Exception:
@@ -779,7 +779,7 @@ class WebSurface(Surface):
                 return {"ok": False, "error": "drag needs to_element — the element to drop onto."}
             session, page = self._live()
             try:
-                self._locator(page, ref).drag_to(self._locator(page, to_element), timeout=active_tuning().amount(Limit.DRAG_TIMEOUT_MS))
+                self._locator(page, ref).drag_to(self._locator(page, to_element), timeout=active_tuning().amount(Tunable.drag_timeout_ms))
             except Exception as error:
                 raise ToolFailure({"ok": False, "error": f"Could not drag {ref} to {to_element}: {_actionability_error(error)}"})
             return self._acted(session, page, f"Dragged {ref} onto {to_element}")
@@ -821,7 +821,7 @@ class WebSurface(Surface):
     def _primitive_read(self, ref: Optional[str] = None, *, frame: str = "", **_: Any) -> dict:
         def run() -> dict:
             session, page = self._live()
-            timeout = active_tuning().amount(Limit.READ_TEXT_TIMEOUT_MS)
+            timeout = active_tuning().amount(Tunable.read_text_timeout_ms)
             if ref is not None:
                 # An element id already names its own frame, so `frame` adds nothing here.
                 source = self._locator(page, ref).inner_text(timeout=timeout)

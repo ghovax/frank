@@ -4,14 +4,21 @@ Settings live in one YAML file, and until now the only way to change them was to
 file by hand or open the desktop app. This exposes the same values to the terminal, addressed
 by dotted path, so a setting can be inspected, changed, and scripted without either.
 
+What it lists comes from the *schema*, not from the file. Reading the file could only ever
+show what somebody had already written down — which is the part they know about — so every
+setting left at its default was invisible, and the way to discover one was to read the source.
+Walking the schema instead means a setting exists in the listing from the moment it exists in
+the code, along with what it ships at and what it is for.
+
 Changes apply to what starts *next*. A running session keeps the configuration it was built
 with — the same guarantee its permission mode carries — so nothing here can reach into work
 already in flight and change the rules underneath it.
 
-Output is plumbing, like every other verb: a listing is a JSON object of dotted path to
-value, and reading one setting prints that value bare. Values are printed as they are stored,
-credentials included — this reads a file the user owns, and deciding on their behalf what
-they may see of their own configuration is not this command's business.
+Output is plumbing, like every other verb: a listing is a JSON object keyed by dotted path,
+and reading one setting prints its value bare, with the explanation on stderr so a script
+reading stdout never has to strip it. Values are printed as they are stored, credentials
+included — this reads a file the user owns, and deciding on their behalf what they may see of
+their own configuration is not this command's business.
 """
 
 from __future__ import annotations
@@ -106,39 +113,19 @@ def _parse(raw: str) -> Any:
         return raw
 
 
-def _is_known(path: str) -> bool:
-    """Whether the schema defines this dotted path.
+def _known(path: str):
+    """The schema's entry for a dotted path, or ``None`` if it defines none.
 
     Without this, a typo — or a setting that has since been removed, like the default agent —
-    is written to the file, listed back, and silently does nothing, because a configuration
-    model ignores keys it does not know. A setting that cannot take effect should be refused
-    at the point it is set, not discovered when the behaviour never changes.
+    is written to the file, listed back, and silently does nothing. A setting that cannot take
+    effect should be refused at the point it is set, not discovered when the behaviour never
+    changes.
 
     Open-ended maps (`providers`, `mcp.servers`) accept any key at their level and are walked
     through into the model of their values, so `providers.anthropic.api_key` resolves."""
-    import typing
+    from xeac.base.configuration_schema import setting_for
 
-    from pydantic import BaseModel
-
-    from xeac.base.configuration import GlobalConfiguration
-
-    def descend(annotation: Any, segments: list[str]) -> bool:
-        if not segments:
-            return True
-        origin = typing.get_origin(annotation)
-        if origin is dict:
-            # Any key is valid here; the value type decides what may follow it.
-            value_type = typing.get_args(annotation)[1]
-            return descend(value_type, segments[1:])
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            field = annotation.model_fields.get(segments[0])
-            if field is None:
-                return False
-            return descend(field.annotation, segments[1:])
-        # A scalar: nothing may follow it.
-        return False
-
-    return descend(GlobalConfiguration, path.split("."))
+    return setting_for(path)
 
 
 def _validates(data: dict) -> str:
@@ -160,34 +147,69 @@ def _validates(data: dict) -> str:
     return ""
 
 
+def _everything(data: dict) -> dict:
+    """Every setting the schema defines, each with what it is for, what it ships at, and what
+    this machine currently runs on. The whole point of `--all`: what a person wants to know is
+    what they *could* change, and that is a property of the code, not of their file."""
+    from xeac.base.configuration_schema import leaf_settings
+
+    listing: dict[str, dict] = {}
+    for setting in leaf_settings():
+        try:
+            current = _read(data, setting.path)
+        except KeyError:
+            current = setting.default
+        entry: dict[str, Any] = {"default": setting.default, "current": current}
+        if setting.about:
+            entry["about"] = setting.about
+        if setting.open_ended:
+            entry["open_ended"] = True
+        listing[setting.path] = entry
+    return listing
+
+
 def run(arguments) -> int:
     data = _load()
 
+    if getattr(arguments, "all", False):
+        print(compact(_everything(data)))
+        return 0
+
     if arguments.setting is None:
-        # No argument: everything, as one object, so a person can discover what there is to
-        # change and a script can read it without parsing columns. A key the schema no longer
-        # defines is inert; it is still listed, because it is in the file and hiding it would
-        # make an unremovable setting invisible. `--unset` is how it goes away.
+        # No argument: what this machine has actually been set to, as one object — the short
+        # answer to "what have I changed?". `--all` is the long answer, and says so on stderr
+        # rather than on stdout, which carries the values. A key the schema no longer defines
+        # is inert; it is still listed, because it is in the file and hiding it would make an
+        # unremovable setting invisible. `--unset` is how it goes away.
         print(compact(dict(sorted(_flatten(data)))))
+        _note("(what is set; `xeac configure --all` lists every setting with its default)")
         return 0
 
     if arguments.value is None:
+        known = _known(arguments.setting)
         try:
             value = _read(data, arguments.setting)
+            source = "set in " + str(configuration_file_path())
         except KeyError:
-            # Two different absences, and conflating them was confusing: a real setting that
-            # simply is not in the file runs on the schema's default, while a name the schema
-            # does not have will never do anything at all. Neither prints to stdout — there is
-            # no value to print, and a reader must not mistake an explanation for one.
-            if _is_known(arguments.setting):
-                _note(f"{arguments.setting} is not set; its built-in default applies")
-                return 0
-            _note(f"xeac: no setting named {arguments.setting!r}")
-            return 1
+            if known is None:
+                # A name the schema does not have will never do anything at all. Nothing on
+                # stdout: there is no value to print, and a reader must not mistake an
+                # explanation for one.
+                _note(f"xeac: no setting named {arguments.setting!r}")
+                return 1
+            # A real setting simply not in the file runs on what the code ships. Printing that
+            # value rather than nothing is what makes reading a setting mean the same thing
+            # whether or not somebody happened to write it down.
+            value = known.default
+            source = "default"
         print(compact(value) if isinstance(value, (dict, list)) else value)
+        if known is not None and known.about:
+            _note(f"{known.about} ({source})")
+        else:
+            _note(f"({source})")
         return 0
 
-    if not _is_known(arguments.setting):
+    if _known(arguments.setting) is None:
         _note(f"xeac: no setting named {arguments.setting!r} — it would be written and ignored")
         return 1
     _write(data, arguments.setting, _parse(arguments.value))

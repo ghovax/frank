@@ -132,17 +132,20 @@ Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings →
 ## Configuration
 
 ```
-xeac configure                          # everything, as dotted paths
+xeac configure --all                    # every setting there is, with its default
+xeac configure                          # only what you have changed
 xeac configure agent.permission_mode    # read one
 xeac configure agent.permission_mode read_only
 xeac configure agent.permission_mode --unset
 ```
 
-With no argument it prints a JSON object of dotted path to value; with a setting it prints that setting's value bare. Values are printed as they are stored, credentials included: this reads a file you own, and deciding on your behalf what you may see of your own configuration is not this command's business.
+`--all` walks the **schema**, so it lists every setting that exists — not merely the ones somebody wrote down — as a JSON object of dotted path to `{about, default, current}`. That is usually what you want: reading the file can only show the part you already know about, and a setting left at its default was otherwise invisible.
+
+With no argument it prints a JSON object of dotted path to value for what is actually set. With a setting it prints that setting's value bare — the file's value if it has one, otherwise what the code ships with — and puts the explanation and where the value came from on stderr, so a script reading stdout never has to strip it. Values are printed as they are stored, credentials included: this reads a file you own, and deciding on your behalf what you may see of your own configuration is not this command's business.
 
 Values are interpreted the way the file holds them: `true`, `8` and `[]` land as a boolean, a number and a list rather than as the strings your shell handed over. `null` spells null; `none` does not, because it is a real value (`workspace.strategy: none` is the default) — use `--unset` to remove a setting.
 
-A value the schema would reject is refused with the reason, and the file is left as it was. The daemon reads this file at startup, so an invalid value would not fail the command that set it — it would fail every command after, including the one that would put it back.
+A name the schema does not define, or a value it would reject, is refused with the reason, and the file is left as it was. The daemon reads this file at startup, so an invalid value would not fail the command that set it — it would fail every command after, including the one that would put it back. A name that is merely *unknown* is worse still: it would be written, listed back, and quietly do nothing.
 
 Changes apply to what starts **next**. See the [Configuration guide](configuration.md) for what each setting means.
 

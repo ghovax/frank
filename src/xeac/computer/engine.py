@@ -24,7 +24,7 @@ from xeac.computer.retrieval import Document, element_text
 from xeac.computer.surface import (
     Element, Surface, ToolFailure, message_loader, resolve_caret, resolve_range,
 )
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 message = message_loader("computer")
 
@@ -144,12 +144,12 @@ class NativeSurface(Surface):
         snapshot = accessibility.snapshot_app(pid, **kwargs)
         if not _is_incomplete(snapshot):
             return snapshot
-        probe_depth = active_tuning().amount(Limit.AX_READY_PROBE_DEPTH) if maximum_depth is None else min(active_tuning().amount(Limit.AX_READY_PROBE_DEPTH), maximum_depth)
-        deadline = time.monotonic() + active_tuning().settle_ceiling()
-        delay = active_tuning().settle_interval()
+        probe_depth = active_tuning().amount(Tunable.ax_ready_probe_depth) if maximum_depth is None else min(active_tuning().amount(Tunable.ax_ready_probe_depth), maximum_depth)
+        deadline = time.monotonic() + active_tuning().settle_give_up()
+        delay = active_tuning().settle_poll()
         while time.monotonic() < deadline:
             time.sleep(delay)
-            delay = min(delay * 2, active_tuning().duration(Limit.AX_READY_BACKOFF_SECONDS))
+            delay = min(delay * 2, active_tuning().duration(Tunable.ax_ready_backoff_seconds))
             if self._tree_ready(pid, window, probe_depth):
                 return accessibility.snapshot_app(pid, **kwargs)
         return accessibility.snapshot_app(pid, **kwargs)
@@ -272,7 +272,7 @@ class NativeSurface(Surface):
                 if accessibility.set_selected_text(handle, text):
                     return {"ok": True, "did": f"Inserted {len(text)} chars", "via": "ax"}
                 AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-                time.sleep(active_tuning().duration(Limit.FOCUS_SETTLE_SECONDS))
+                time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
                 input_synthesis.type_text(entry.pid, text)
                 return {"ok": True, "did": f"Typed {len(text)} chars", "via": "synthesized"}
             if accessibility.attribute_settable(handle, accessibility.VALUE) \
@@ -285,7 +285,7 @@ class NativeSurface(Surface):
                         result["note"] = message("type_clamped")
                 return result
             AS.AXUIElementSetAttributeValue(handle, accessibility.FOCUSED, True)
-            time.sleep(active_tuning().duration(Limit.FOCUS_SETTLE_SECONDS))
+            time.sleep(active_tuning().duration(Tunable.focus_settle_seconds))
             input_synthesis.type_text(entry.pid, text)
             return {"ok": True, "did": f"Typed into {entry.name!r}", "via": "synthesized"}
 
@@ -311,7 +311,7 @@ class NativeSurface(Surface):
                 pid = entry.pid
             else:
                 pid = self._last_pid if self._last_pid is not None else self._resolve_pid("")
-            step = active_tuning().amount(Limit.SCROLL_AMOUNT_PIXELS)
+            step = active_tuning().amount(Tunable.scroll_amount_pixels)
             vectors = {"up": (0, step), "down": (0, -step), "left": (step, 0), "right": (-step, 0)}
             if direction not in vectors:
                 return {"ok": False, "error": "Give an element to bring into view, or a direction (up, down, left, right)."}

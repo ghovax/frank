@@ -45,6 +45,19 @@ def _codex_models():
     return codex
 
 
+def _merged_sandbox(current, posted: dict):
+    """The stored confinement with a posted patch laid over it, validated as a whole.
+
+    The schema refuses a key it does not define, so a patch naming a setting that no longer
+    exists fails here rather than being dropped and reported as saved — which is the point of
+    refusing it at all. Answered as a bad request, because that is what it is: the caller sent
+    a name this version has no setting for."""
+    try:
+        return _configuration.SandboxConfiguration.model_validate({**current.model_dump(), **posted})
+    except Exception as error:  # noqa: BLE001 — the validator's own message is the useful part
+        raise HTTPException(status_code=400, detail=f"invalid sandbox settings: {error}") from error
+
+
 
 
 @router.get("/system/full-disk-access")
@@ -286,9 +299,7 @@ async def update_settings(request: SettingsUpdateRequest):
         if request.web_fetch_proxy_url is not None:
             configuration.web_fetch.proxy_url = request.web_fetch_proxy_url
         if request.sandbox is not None:
-            configuration.sandbox = _configuration.SandboxConfiguration.model_validate(
-                {**configuration.sandbox.model_dump(), **request.sandbox}
-            )
+            configuration.sandbox = _merged_sandbox(configuration.sandbox, request.sandbox)
         if request.workspace_strategy is not None:
             configuration.workspace.strategy = request.workspace_strategy
         # Rebuild the providers map from the posted keys/base URLs, merging so a
@@ -320,8 +331,9 @@ async def update_sandbox(request: SandboxUpdateRequest):
     a live session would not be one."""
     assert state.global_configuration is not None
     async with state.configuration_lock:
-        merged = {**state.global_configuration.sandbox.model_dump(), **request.sandbox}
-        state.global_configuration.sandbox = _configuration.SandboxConfiguration.model_validate(merged)
+        state.global_configuration.sandbox = _merged_sandbox(
+            state.global_configuration.sandbox, request.sandbox
+        )
         await _persist_configuration(sandbox=request.sandbox)
     _publish_broadcast({"type": "settings_changed"})
     return {

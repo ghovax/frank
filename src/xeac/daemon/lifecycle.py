@@ -26,7 +26,7 @@ from xeac.daemon.pool import WarmWorker, WorkerPool
 from xeac.daemon.registry import EXITED, FAILED, RUNNING, SessionRecord, SessionRegistry
 from xeac.daemon.state import relay_to_session
 from xeac.protocol.metadata import Metadata
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ class SessionLifecycle:
         if worker.process.stdout is None:
             return False
         try:
-            line = await asyncio.wait_for(worker.process.stdout.readline(), timeout=active_tuning().duration(Limit.WORKER_ASSIGNMENT_SECONDS))
+            line = await asyncio.wait_for(worker.process.stdout.readline(), timeout=active_tuning().duration(Tunable.worker_assignment_seconds))
         except asyncio.TimeoutError:
             logger.error("Worker %d did not report ready in time", worker.pid)
             return False
@@ -289,7 +289,7 @@ class SessionLifecycle:
             with contextlib.suppress(ProcessLookupError):
                 worker.process.terminate()
         try:
-            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS))
+            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds))
             return
         except asyncio.TimeoutError:
             pass
@@ -297,7 +297,7 @@ class SessionLifecycle:
         with contextlib.suppress(ProcessLookupError):
             worker.process.kill()
         with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
-            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS))
+            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Tunable.sigterm_grace_seconds))
 
     def _unlink_socket(self, session_id: str) -> None:
         """Remove a dead session's socket file so nothing connects to a corpse."""

@@ -161,31 +161,50 @@ def save_api_keys(
     path.write_text(yaml.safe_dump(data, sort_keys=False))
 
 
-class ExaConfiguration(BaseModel):
-    api_key: str = ""
+class Section(BaseModel):
+    """A part of the configuration file.
+
+    Every section refuses a key it does not define. Without that, a typo — or a name that used
+    to work and no longer does — is accepted, written back, listed by `xeac configure`, and
+    quietly does nothing, because a model ignores what it does not recognise. A setting that
+    cannot take effect should say so at the moment it is written, not months later when
+    somebody notices the behaviour never changed.
+
+    The two exceptions are :class:`MCPServerConfiguration` and
+    :class:`RemoteAgentServerConfiguration`, which parse files this project does not own."""
+
+    model_config = {"extra": "forbid"}
+
+
+class ExaConfiguration(Section):
+    """Exa — the web-search tool's backend."""
+
+    api_key: str = Field("", description="Exa API key. The EXA_API_KEY environment variable wins over this.")
 
     @property
     def effective_api_key(self) -> str:
         return os.environ.get(environment_variables.EXA_API_KEY) or self.api_key
 
 
-class JinaConfiguration(BaseModel):
-    """Jina Reader (r.jina.ai) — the web-fetch tool's default engine. Optional: Jina
-    works keyless (lower rate limits); a key raises the quota."""
-    api_key: str = ""
+class JinaConfiguration(Section):
+    """Jina Reader — the web-fetch tool's default engine. It works without a key at a lower
+    rate limit, so this is optional."""
+
+    api_key: str = Field("", description="Jina API key, which raises the rate limit. JINA_API_KEY wins over this.")
 
     @property
     def effective_api_key(self) -> str:
         return os.environ.get(environment_variables.JINA_API_KEY) or self.api_key
 
 
-class FirecrawlConfiguration(BaseModel):
-    """Firecrawl — the web-fetch tool's fallback engine for pages Jina returns
-    thin/blocked. Optional: the fallback is skipped without a key. ``api_url`` points
-    at a self-hosted instance instead of the hosted API (edited in the file, not the
-    settings dialog)."""
-    api_key: str = ""
-    api_url: str = ""
+class FirecrawlConfiguration(Section):
+    """Firecrawl — the web-fetch tool's fallback engine, for pages Jina returns thin or
+    blocked. Without a key the fallback is simply skipped."""
+
+    api_key: str = Field("", description="Firecrawl API key. FIRECRAWL_API_KEY wins over this.")
+    api_url: str = Field(
+        "", description="A self-hosted Firecrawl instance to use instead of the hosted API."
+    )
 
     @property
     def effective_api_key(self) -> str:
@@ -196,19 +215,24 @@ class FirecrawlConfiguration(BaseModel):
         return os.environ.get(environment_variables.FIRECRAWL_API_URL) or self.api_url
 
 
-class WebFetchConfiguration(BaseModel):
-    """Optional proxy for the web-fetch tool's direct (browser-impersonating) tier
-    and the file-download tool — routes those requests through an HTTP/SOCKS proxy
-    for sites that block by IP reputation. Empty means direct. Bring your own (e.g. a
-    residential proxy); credentials may be embedded as ``http://user:pass@host:port``."""
-    proxy_url: str = ""
+class WebFetchConfiguration(Section):
+    """Fetching a page directly, for sites that refuse the reader engines."""
+
+    proxy_url: str = Field(
+        "",
+        description=(
+            "Route direct fetches and file downloads through an HTTP or SOCKS proxy, for sites "
+            "that block by address. Empty fetches directly. Credentials may be embedded as "
+            "http://user:pass@host:port."
+        ),
+    )
 
     @property
     def effective_proxy_url(self) -> str:
         return os.environ.get(environment_variables.XEAC_FETCH_PROXY) or self.proxy_url
 
 
-class FilesystemConfiguration(BaseModel):
+class FilesystemConfiguration(Section):
     """Which paths a tool's child process may read and write.
 
     The system is readable and is not listed here — `/usr` and `/etc` are not secrets, and denying
@@ -218,18 +242,30 @@ class FilesystemConfiguration(BaseModel):
     leave alone what every toolchain needs, so credential directories stay readable — breaking
     `git push` to protect a key is a trade made by someone who does not have to use the result."""
 
-    readable: list[str] = [
-        "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
-        "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
-    ]
-    writable: list[str] = ["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME", "~/.cache"]
-    deny: list[str] = [
-        "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
-        "~/Library/Mail", "~/Library/Messages", "~/Library/Safari",
-    ]
+    readable: list[str] = Field(
+        default=[
+            "~/.config", "~/.local", "~/.ssh", "~/.gitconfig", "~/.gitignore_global",
+            "~/.cargo", "~/.rustup", "~/.npmrc", "~/.nvm", "~/.pyenv", "~/.docker", "~/.netrc",
+        ],
+        description="Paths under your home a tool child may read. The system is readable and is not listed.",
+    )
+    writable: list[str] = Field(
+        default=["$WORKSPACE", "$TMPDIR", "$XDG_CACHE_HOME", "~/.cache"],
+        description=(
+            "Paths a tool child may write. Deliberately narrower than readable, because a wrong "
+            "write is the failure people actually meet. $WORKSPACE is the session's own directory."
+        ),
+    )
+    deny: list[str] = Field(
+        default=[
+            "~/Documents", "~/Desktop", "~/Downloads", "~/Pictures", "~/Movies", "~/Music",
+            "~/Library/Mail", "~/Library/Messages", "~/Library/Safari",
+        ],
+        description="Paths refused outright. Wins over readable and writable.",
+    )
 
 
-class SandboxConfiguration(BaseModel):
+class SandboxConfiguration(Section):
     """A session's confinement, enforced by the operating system rather than inferred from the
     text of a command. Every field but the two path/network ones is POSIX under its own name:
     ``limits`` are ``setrlimit(2)`` constants taking the integers that call takes, ``umask`` is
@@ -239,16 +275,32 @@ class SandboxConfiguration(BaseModel):
     create the session and says what is missing, which is the direct answer to how this setting
     came to exist: a key that claimed to confine and silently did not."""
 
-    enforce: Literal["required", "preferred", "off"] = "required"
-    filesystem: FilesystemConfiguration = FilesystemConfiguration()
-    network: bool = True
-    limits: dict[str, int] = {
-        "RLIMIT_CORE": 0,
-        "RLIMIT_FSIZE": 8 * 1024 * 1024 * 1024,
-        "RLIMIT_NPROC": 2048,
-    }
-    umask: Optional[str] = None
-    nice: int = 0
+    enforce: Literal["required", "preferred", "off"] = Field(
+        "required",
+        description=(
+            "What to do where no backend can enforce this. required refuses to create the "
+            "session and says what is missing; preferred runs with resource limits only and says "
+            "so; off does not confine at all."
+        ),
+    )
+    filesystem: FilesystemConfiguration = Field(
+        default_factory=FilesystemConfiguration,
+        description="Which paths a tool child may read and write.",
+    )
+    network: bool = Field(True, description="Whether a tool child may reach the network at all.")
+    limits: dict[str, int] = Field(
+        default={
+            "RLIMIT_CORE": 0,
+            "RLIMIT_FSIZE": 8 * 1024 * 1024 * 1024,
+            "RLIMIT_NPROC": 2048,
+        },
+        description="POSIX resource limits, by their setrlimit(2) names and in that call's own units.",
+    )
+    umask: Optional[str] = Field(
+        None,
+        description='Octal umask for tool children, as a string such as "0077". Null leaves it alone.',
+    )
+    nice: int = Field(0, description="Scheduling priority for tool children, as nice(2) takes it.")
 
     def to_profile(self):
         """This configuration as the :class:`xeac.base.confinement.Profile` the spawn path
@@ -269,27 +321,49 @@ class SandboxConfiguration(BaseModel):
         )
 
 
-class DaemonConfiguration(BaseModel):
+class DaemonConfiguration(Section):
     """How the daemon manages worker processes. Separate from `tuning` because this is process
     management rather than how patient or how large a tool is."""
 
-    # Blank workers parked so creating a session is a socket write rather than a Python cold
-    # start. Small because a warm worker costs real memory.
-    warm_floor: int = 2
-    # Counts warm *and* assigned workers together, and bounds pre-warming rather than sessions:
-    # a claim against an empty pool spawns on demand and never consults this, so a wide fan-out
-    # is served either way — it just pays a cold start per child past the spares.
-    warm_ceiling: int = 8
+    warm_floor: int = Field(
+        2,
+        description=(
+            "Blank workers kept parked, so creating a session is a socket write rather than a "
+            "Python cold start. Small because a warm worker costs real memory."
+        ),
+    )
+    warm_ceiling: int = Field(
+        8,
+        description=(
+            "The point past which the daemon stops pre-warming, counting warm and assigned "
+            "workers together. It bounds pre-warming rather than sessions: a claim against an "
+            "empty pool spawns on demand and never consults this, so a wide fan-out is always "
+            "served — it just pays a cold start per child past the spares."
+        ),
+    )
 
 
-class WorkspaceConfiguration(BaseModel):
-    strategy: Literal["none", "branch", "worktree"] = "none"
-    # Artifact versioning captures only the specific files the agent writes, so a write
-    # larger than this cap is recorded as a placeholder version rather than stored.
-    artifact_maximum_bytes: int = 128 * 1024 * 1024
+class WorkspaceConfiguration(Section):
+    """Where a session's tools actually run."""
+
+    strategy: Literal["none", "branch", "worktree"] = Field(
+        "none",
+        description=(
+            "none runs in the project directory itself; branch gives each session its own "
+            "branch; worktree gives each session its own git worktree, so parallel sessions "
+            "never tread on each other."
+        ),
+    )
+    artifact_maximum_bytes: int = Field(
+        128 * 1024 * 1024,
+        description=(
+            "Writes larger than this are recorded as a placeholder version rather than stored, "
+            "since artifact versioning keeps the files the agent writes."
+        ),
+    )
 
 
-class CompactionConfiguration(BaseModel):
+class CompactionConfiguration(Section):
     """Conversation memory management, modelled on Mastra's Observational Memory: as raw
     history grows, an Observer folds older turns into a dense, timestamped observation
     log kept at the front of the context; a Reflector condenses that log when it grows
@@ -299,57 +373,64 @@ class CompactionConfiguration(BaseModel):
     kept within the window automatically rather than relying on a tool-call ceiling to stop
     it first. Manual (button-triggered) compaction always works regardless of ``auto``."""
 
-    auto: bool = True
-    # Run the Observer when live context exceeds this fraction of the window.
-    observer_context_fraction: float = 0.6
-    # Run the Reflector when the observation log itself exceeds this fraction.
-    reflector_observation_fraction: float = 0.3
-    # Recent user turns always kept verbatim (never folded into observations).
-    keep_recent_turns: int = 6
+    auto: bool = Field(
+        True, description="Fold history automatically as it grows. Manual compaction works either way."
+    )
+    observer_context_fraction: float = Field(
+        0.6, description="Run the Observer once live context passes this share of the window."
+    )
+    reflector_observation_fraction: float = Field(
+        0.3, description="Run the Reflector once the observation log itself passes this share."
+    )
+    keep_recent_turns: int = Field(
+        6, description="Recent turns always kept verbatim, never folded into observations."
+    )
 
 
-class TuningConfiguration(BaseModel):
+class ContextShareConfiguration(Section):
+    """What proportion of the live context window one result may fill."""
+
+    text: float = Field(0.25, description="Share one result's text may fill — output, fetched pages.")
+    results: float = Field(0.15, description="Share a set of results may fill — matches, lines, records.")
+
+
+class TuningConfiguration(Section):
     """How large, how many, and how patient the tools are — the single home for what used to be
-    dozens of scattered magic numbers. Size and count caps are token budgets: the concrete limit a
-    tool applies is derived from the *live* model context window (see ``xeac.base.tuning``), so a
-    small model gets tight caps and a large one gets room. These two fractions scale the whole
-    output/listing family from calibrated defaults; timeouts scale only with ``timeout_scale``;
-    settlement is polling, not a fixed sleep, bounded by the interval and ceiling."""
+    dozens of scattered constants. Budgets are derived from the *live* model context window, so a
+    small model gets tight caps and a large one gets room; `context_share` says how much of that
+    window one result may take, and `timeout_multiplier` stretches every wait."""
 
-    # Share of the context window one tool's textual output may fill (read windows, command
-    # output, fetched pages, evaluate results). Higher enlarges every text cap proportionally.
-    output_fraction: float = 0.25
-    # Share of the window a structured listing may fill (page elements, find matches, grep/glob
-    # results, file lines). Higher lengthens every listing proportionally.
-    listing_fraction: float = 0.15
-    # How often to re-check whether a surface has settled after an action, in seconds.
-    settle_interval_seconds: float = 0.05
-    # The longest to wait for a surface to settle before proceeding anyway, in seconds.
-    settle_ceiling_seconds: float = 1.5
-    # Multiplier on every action, navigation, and IO timeout.
-    timeout_scale: float = 1.0
-    # Per-limit overrides, keyed by the name in `xeac.base.tuning.Limit` and given in that
-    # limit's own unit — the same shape `sandbox.limits` uses for `setrlimit` constants. An
-    # override replaces the *baseline*, so the fractions and `timeout_scale` still apply on top;
-    # `ACTION_TIMEOUT_MS: 10000` under `timeout_scale: 2.0` is twenty seconds. An unknown name is
-    # an error at load rather than a line that looks applied and is not.
-    limits: dict[str, float] = {}
+    context_share: ContextShareConfiguration = Field(
+        default_factory=ContextShareConfiguration,
+        description="What proportion of the live context window one result may fill.",
+    )
+    timeout_multiplier: float = Field(
+        1.0, description="Multiplier on every wait. 2.0 doubles them for a slow machine; 1.0 is neutral."
+    )
+    defaults: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Override one tunable by its own name, in its own unit — see `xeac configure --all`. "
+            "An override replaces the shipped default, so context_share and timeout_multiplier "
+            "still apply on top."
+        ),
+    )
 
-    @field_validator("limits")
+    @field_validator("defaults")
     @classmethod
-    def _known_limits(cls, value: dict[str, float]) -> dict[str, float]:
-        from xeac.base.tuning import unknown_limit_names
+    def _known_defaults(cls, value: dict[str, float]) -> dict[str, float]:
+        from xeac.base.tuning import unknown_tunable_names
 
-        unknown = unknown_limit_names(value)
+        unknown = unknown_tunable_names(value)
         if unknown:
             raise ValueError(
-                f"unknown tuning limit(s): {', '.join(unknown)}. "
-                "Run `xeac configure tuning.limits` to see the names that exist."
+                f"unknown tuning default(s): {', '.join(unknown)}. "
+                "Run `xeac configure --all` to see the names that exist."
             )
         return value
 
 
-class UserContextConfiguration(BaseModel):
+class UserContextConfiguration(Section):
     """Opt-in enrichment of the system prompt with a snapshot of *how the user works on
     this machine* — their most-visited directories, the shape of their home folder, files
     they have touched recently, the applications they have installed and are running, and
@@ -362,18 +443,39 @@ class UserContextConfiguration(BaseModel):
     prompt the user is already sending. Full URLs are reduced to hostnames and only
     counts are kept, so browsing content is never included. Enable it only when the
     behavioral boost is worth surfacing this data to the model."""
-    enabled: bool = False
+
+    enabled: bool = Field(
+        False,
+        description=(
+            "Put a snapshot of how you work — frequent folders, applications, sites — in the "
+            "system prompt. Off by default: it puts personally identifying information in front "
+            "of your model provider."
+        ),
+    )
 
 
-class ComputerControlConfiguration(BaseModel):
+class SettleConfiguration(Section):
+    """After an action, how long to wait for a surface to stop changing before reading it. Polling
+    rather than a fixed sleep, so a fast page costs one interval and a slow one costs the ceiling."""
+
+    poll_seconds: float = Field(0.05, description="How often to re-check whether the surface has settled.")
+    give_up_seconds: float = Field(1.5, description="The longest to wait before reading it anyway.")
+
+
+class ComputerControlConfiguration(Section):
     """Opt-in ability for the agent to control macOS apps through the `computer` tool —
     reading the accessibility tree and clicking/typing/navigating. Off by default because
     it lets the agent drive the whole machine; enabling it also requires the user to grant
     Accessibility access in System Settings."""
-    enabled: bool = False
+
+    enabled: bool = Field(False, description="Let the agent drive native macOS apps and your Chrome.")
+    settle: SettleConfiguration = Field(
+        default_factory=SettleConfiguration,
+        description="How long a screen surface is given to stop changing after an action.",
+    )
 
 
-class ComposioConfiguration(BaseModel):
+class ComposioConfiguration(Section):
     """Composio integration via its hosted MCP endpoint. When enabled, the harness
     points at Composio's "connect" MCP URL and exposes it as a normal
     streamable_http MCP server, so Composio's tools flow through the same
@@ -383,15 +485,18 @@ class ComposioConfiguration(BaseModel):
     discovers tools dynamically through COMPOSIO_SEARCH_TOOLS / COMPOSIO_GET_TOOL_SCHEMAS
     and runs them with COMPOSIO_MULTI_EXECUTE_TOOL, authorizing accounts via
     COMPOSIO_MANAGE_CONNECTIONS on first use."""
-    enabled: bool = False
-    # The hosted MCP URL from the Composio dashboard (MCP / "connect" page).
-    url: str = "https://connect.composio.dev/mcp"
-    # The API key shown next to the URL (sent as the x-consumer-api-key header).
-    # May also be supplied via COMPOSIO_API_KEY (env wins).
-    api_key: str = ""
-    # The MCP server name the tools appear under (call_mcp_tool's `server`).
-    server_name: str = "composio"
-    timeout_seconds: float = 60
+
+    enabled: bool = Field(False, description="Expose Composio's hosted gateway as one MCP server.")
+    url: str = Field(
+        "https://connect.composio.dev/mcp",
+        description='The hosted MCP URL from the Composio dashboard\'s "connect" page.',
+    )
+    api_key: str = Field(
+        "",
+        description="The API key shown beside that URL. COMPOSIO_API_KEY wins over this.",
+    )
+    server_name: str = Field("composio", description="The MCP server name its tools appear under.")
+    timeout_seconds: float = Field(60, description="How long one call to that gateway waits.")
 
     @property
     def effective_api_key(self) -> str:
@@ -399,6 +504,12 @@ class ComposioConfiguration(BaseModel):
 
 
 class MCPServerConfiguration(BaseModel):
+    """One MCP server, from an ``mcp.json`` entry.
+
+    Deliberately permissive about keys it does not model: ``mcp.json`` is a format this project
+    reads rather than owns, and a server declared for several tools carries whatever fields any
+    of them wanted. Refusing those would make a working file unloadable."""
+
     enabled: bool = True
     transport: Literal["stdio", "streamable_http"] = "stdio"
     stateful: bool = True
@@ -411,8 +522,14 @@ class MCPServerConfiguration(BaseModel):
     timeout_seconds: float = 30
 
 
-class MCPConfiguration(BaseModel):
-    servers: dict[str, MCPServerConfiguration] = {}
+class MCPConfiguration(Section):
+    """The MCP servers available to a session, loaded from ``mcp.json`` in the ``.agents`` roots
+    rather than from the configuration file — a list that changes on its own schedule and is
+    watched for live reload."""
+
+    servers: dict[str, MCPServerConfiguration] = Field(
+        default={}, description="Declared MCP servers, by name. Read from mcp.json, not from this file."
+    )
 
     def enabled_servers(self) -> dict[str, MCPServerConfiguration]:
         return {
@@ -453,7 +570,8 @@ class RemoteAgentAuthConfiguration(BaseModel):
 
 
 class RemoteAgentServerConfiguration(BaseModel):
-    """One registered external A2A agent (a ``remote-agents.json`` entry)."""
+    """One registered external A2A agent (a ``remote-agents.json`` entry). Permissive about
+    unmodelled keys for the same reason :class:`MCPServerConfiguration` is."""
 
     enabled: bool = True
     card_url: str = ""
@@ -467,11 +585,14 @@ class RemoteAgentServerConfiguration(BaseModel):
     allowed_profiles: list[str] = []
 
 
-class RemoteAgentsConfiguration(BaseModel):
+class RemoteAgentsConfiguration(Section):
     """The set of external A2A agents the harness may delegate to, loaded from
-    ``remote-agents.json`` in the ``.agents`` roots."""
+    ``remote-agents.json`` in the ``.agents`` roots rather than from the configuration file."""
 
-    agents: dict[str, RemoteAgentServerConfiguration] = {}
+    agents: dict[str, RemoteAgentServerConfiguration] = Field(
+        default={},
+        description="Registered remote agents, by name. Read from remote-agents.json, not from this file.",
+    )
 
     def enabled_agents(self) -> dict[str, RemoteAgentServerConfiguration]:
         return {
@@ -501,19 +622,26 @@ class RemoteAgentsConfiguration(BaseModel):
         return cls(agents=agents)
 
 
-class A2AServerConfiguration(BaseModel):
+class A2AServerConfiguration(Section):
     """Inbound authentication for this harness's own A2A endpoints. Off by default so the
     localhost bundled server stays zero-config; enabling any field advertises the matching
     security scheme on the AgentCard and enforces it on ``/a2a`` requests (the well-known
     card and signed file URLs stay public)."""
 
-    # Shared secret required in a header (``${ENV}`` expanded at load).
-    api_key: str = ""
-    api_key_header: str = "X-API-Key"
-    # When set, ``Authorization: Bearer <JWT>`` is validated against this JWKS.
-    oauth2_jwks_url: str = ""
-    oauth2_issuer: str = ""
-    oauth2_audience: str = ""
+    api_key: str = Field(
+        "",
+        description=(
+            "Shared secret an inbound request must carry. ${VARIABLE} is expanded from the "
+            "environment at load, so the secret need not live in the file."
+        ),
+    )
+    api_key_header: str = Field("X-API-Key", description="The header that secret is read from.")
+    oauth2_jwks_url: str = Field(
+        "",
+        description="When set, an inbound bearer JWT is validated against this key set.",
+    )
+    oauth2_issuer: str = Field("", description="The issuer an inbound JWT must claim.")
+    oauth2_audience: str = Field("", description="The audience an inbound JWT must claim.")
 
     def enabled(self) -> bool:
         return bool(self.api_key or self.oauth2_jwks_url)
@@ -532,68 +660,138 @@ class A2AServerConfiguration(BaseModel):
         return (schemes or None, requirement or None)
 
 
-class TelemetryExporterConfiguration(BaseModel):
-    endpoint: str = ""
-    protocol: str = "http/protobuf"
-    headers: dict[str, str] = {}
+class TelemetryExporterConfiguration(Section):
+    """Where traces are sent."""
+
+    endpoint: str = Field("", description="The OTLP collector to export to. Empty exports nothing.")
+    protocol: str = Field("http/protobuf", description="The OTLP protocol that collector speaks.")
+    headers: dict[str, str] = Field(
+        default={},
+        description="Headers sent with each export, for a collector that authenticates. ${VARIABLE} is expanded.",
+    )
 
 
-class TelemetryConfiguration(BaseModel):
+class TelemetryConfiguration(Section):
     """OpenTelemetry export of agent traces to a user-chosen OTLP backend. Off until an
     endpoint is set, so nothing leaves the machine by default. Only span structure and
     usage/metadata are exported (no prompt or completion bodies)."""
 
-    enabled: bool = False
-    exporter: TelemetryExporterConfiguration = TelemetryExporterConfiguration()
-    sample_ratio: float = 1.0
+    enabled: bool = Field(False, description="Export traces at all.")
+    exporter: TelemetryExporterConfiguration = Field(
+        default_factory=TelemetryExporterConfiguration, description="Where traces are sent."
+    )
+    sample_ratio: float = Field(1.0, description="Share of traces exported. 1.0 exports every one.")
 
     def resolved_headers(self) -> dict[str, str]:
         return {key: os.path.expandvars(value) for key, value in self.exporter.headers.items()}
 
 
-class ProviderCredential(BaseModel):
-    """Credentials for one LLM provider. ``base_url`` is only meaningful for the
-    OpenAI-compatible providers (opencode and custom); first-party clouds leave it
-    blank because LiteLLM knows their endpoints."""
+class ProviderCredential(Section):
+    """Credentials for one model provider."""
 
-    api_key: str = ""
-    base_url: str = ""
+    api_key: str = Field(
+        "", description="This provider's API key. Its conventional environment variable wins over this."
+    )
+    base_url: str = Field(
+        "",
+        description=(
+            "Where to reach it, for an OpenAI-compatible provider. The first-party clouds leave "
+            "this blank, since their endpoints are already known."
+        ),
+    )
 
 
-class AgentDefaults(BaseModel):
-    """Defaults applied to a session whose creator did not specify them."""
+class AgentDefaults(Section):
+    """What a session gets when its creator did not say."""
 
-    permission_mode: Literal["default", "auto", "read_only"] = "default"
+    permission_mode: Literal["default", "auto", "read_only"] = Field(
+        "default",
+        description=(
+            "default asks before risky actions and allows safe ones; auto approves low-risk "
+            "actions and asks for the rest; read_only allows reads and denies every write and "
+            "side effect. A default, not a ceiling: `xeac create --mode` overrides it, and a "
+            "child is clamped against its parent either way."
+        ),
+    )
 
 
-class GlobalConfiguration(BaseModel):
+class GlobalConfiguration(Section):
     HOME_AGENTS_ROOT_DIRECTORY: ClassVar[str] = "~/.agents"
     AGENTS_ROOT_DIRECTORY: ClassVar[str] = ".agents"
     AGENTS_DIRECTORY: ClassVar[str] = ".agents/agents"
     SKILLS_DIRECTORY: ClassVar[str] = ".agents/skills"
 
-    providers: dict[str, ProviderCredential] = {}
-    exa: ExaConfiguration = ExaConfiguration()
-    jina: JinaConfiguration = JinaConfiguration()
-    firecrawl: FirecrawlConfiguration = FirecrawlConfiguration()
-    web_fetch: WebFetchConfiguration = WebFetchConfiguration()
-    sandbox: SandboxConfiguration = SandboxConfiguration()
-    daemon: DaemonConfiguration = DaemonConfiguration()
-    workspace: WorkspaceConfiguration = WorkspaceConfiguration()
-    compaction: CompactionConfiguration = CompactionConfiguration()
-    user_context: UserContextConfiguration = UserContextConfiguration()
-    computer_control: ComputerControlConfiguration = ComputerControlConfiguration()
-    tuning: TuningConfiguration = TuningConfiguration()
-    composio: ComposioConfiguration = ComposioConfiguration()
-    mcp: MCPConfiguration = MCPConfiguration()
-    remote_agents: RemoteAgentsConfiguration = RemoteAgentsConfiguration()
-    a2a: A2AServerConfiguration = A2AServerConfiguration()
-    telemetry: TelemetryConfiguration = TelemetryConfiguration()
-    # What a session runs under when its creator does not say. An agent profile that declares
-    # its own stricter mode still wins: this is a floor for sessions created without one, not
-    # a way to loosen a profile that was written to be careful.
-    agent: AgentDefaults = AgentDefaults()
-    maximum_history_age_days: int = 30
+    providers: dict[str, ProviderCredential] = Field(
+        default={},
+        description=(
+            "Credentials per model provider, keyed by provider name — anthropic, openai, google, "
+            "openrouter, xai and the rest; xeac.base.providers holds the full list with each "
+            "one's environment variable. Which model a session runs is chosen by its agent "
+            "profile, so nothing here nominates one."
+        ),
+    )
+    exa: ExaConfiguration = Field(default_factory=ExaConfiguration, description="The web-search backend.")
+    jina: JinaConfiguration = Field(
+        default_factory=JinaConfiguration, description="The default page-fetching engine."
+    )
+    firecrawl: FirecrawlConfiguration = Field(
+        default_factory=FirecrawlConfiguration, description="The fallback page-fetching engine."
+    )
+    web_fetch: WebFetchConfiguration = Field(
+        default_factory=WebFetchConfiguration, description="Fetching a page directly."
+    )
+    sandbox: SandboxConfiguration = Field(
+        default_factory=SandboxConfiguration,
+        description="What a session's tool children may do, enforced by the operating system.",
+    )
+    daemon: DaemonConfiguration = Field(
+        default_factory=DaemonConfiguration, description="How the daemon manages worker processes."
+    )
+    workspace: WorkspaceConfiguration = Field(
+        default_factory=WorkspaceConfiguration, description="Where a session's tools run."
+    )
+    compaction: CompactionConfiguration = Field(
+        default_factory=CompactionConfiguration, description="How conversation history is folded as it grows."
+    )
+    user_context: UserContextConfiguration = Field(
+        default_factory=UserContextConfiguration,
+        description="Whether the system prompt describes how you work on this machine.",
+    )
+    computer_control: ComputerControlConfiguration = Field(
+        default_factory=ComputerControlConfiguration, description="Driving the screen."
+    )
+    tuning: TuningConfiguration = Field(
+        default_factory=TuningConfiguration,
+        description="How large, how many, and how patient the tools are.",
+    )
+    composio: ComposioConfiguration = Field(
+        default_factory=ComposioConfiguration, description="Composio's hosted MCP gateway."
+    )
+    mcp: MCPConfiguration = Field(
+        default_factory=MCPConfiguration, description="MCP servers, read from mcp.json."
+    )
+    remote_agents: RemoteAgentsConfiguration = Field(
+        default_factory=RemoteAgentsConfiguration,
+        description="Agents on other hosts, read from remote-agents.json.",
+    )
+    a2a: A2AServerConfiguration = Field(
+        default_factory=A2AServerConfiguration,
+        description="Inbound authentication, for a daemon other machines can reach.",
+    )
+    telemetry: TelemetryConfiguration = Field(
+        default_factory=TelemetryConfiguration, description="OpenTelemetry export."
+    )
+    agent: AgentDefaults = Field(
+        default_factory=AgentDefaults,
+        description=(
+            "What a session runs under when its creator does not say. An agent profile that "
+            "declares its own stricter mode still wins: this is a floor for sessions created "
+            "without one, not a way to loosen a profile written to be careful."
+        ),
+    )
+    maximum_history_age_days: int = Field(
+        30, description="How long a finished session stays in the store before it is pruned."
+    )
 
     @classmethod
     def load(cls) -> GlobalConfiguration:
@@ -608,7 +806,7 @@ class GlobalConfiguration(BaseModel):
     def from_yaml(cls, path: str | Path) -> GlobalConfiguration:
         with open(path) as file_handle:
             data = yaml.safe_load(file_handle)
-        configuration = cls(**data)
+        configuration = cls(**(data or {}))
         configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
         configuration.remote_agents = RemoteAgentsConfiguration.from_dotagents_roots(configuration.agents_root_directories())
         configuration.a2a.api_key = os.path.expandvars(configuration.a2a.api_key)

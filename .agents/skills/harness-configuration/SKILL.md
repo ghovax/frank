@@ -9,11 +9,14 @@ enabled: true
 
 Use this skill when the user wants to change how the harness itself is set up. There are **three surfaces onto one file** (`~/.config/xeac/configuration.yaml`): `xeac configure` from the terminal, Settings in the desktop app, and editing the file directly — the daemon watches it and picks up a hand edit live. Always read the relevant existing file before editing.
 
-The authoritative models live in `src/xeac/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/xeac/base/providers.py` (the provider registry and key/base-url resolution). The daemon's composition root — where the shared resources are wired up — is `src/xeac/daemon/composition.py`.
+**Start with `xeac configure --all`.** It walks the schema, not the file, so it lists every setting that exists — including the ones nobody has written down — each with what it is for, what it ships at, and what this machine currently runs on. Reading the file only ever shows the part already known about. A name the schema does not define is refused rather than written and ignored, so a typo fails where it is made.
+
+The authoritative models live in `src/xeac/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/xeac/base/providers.py` (the provider registry and key/base-url resolution). Each setting's explanation is the `Field(description=...)` beside it, and each tunable's is the `Default(...)` beside it in `src/xeac/base/tuning.py` — those strings are what `xeac configure` prints and what the generated `configuration.example.yaml` is written from, so editing one changes both. Regenerate that file with `python scripts/generate_configuration_reference.py` after changing a description or a default. The daemon's composition root — where the shared resources are wired up — is `src/xeac/daemon/composition.py`.
 
 ## Where things live
 
-- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
+- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`, which is deliberately almost empty: everything has a default in the code, and a seed restating those defaults would freeze them, so an installation would keep overriding an improved default with a copy of the old value. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
+- `configuration.example.yaml` in the repository — the complete reference, **generated** from the schema. It cannot describe a setting the code does not have or miss one it does.
 - `~/.local/share/xeac/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `xeac daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
 - The rest is XDG too: logs in `~/.local/state/xeac/`, caches in `~/.cache/xeac/`, and sockets, the daemon's port and its token in the runtime directory.
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
@@ -181,7 +184,7 @@ Two things are deliberately **not** live, because they are fixed when a session 
 ## Verifying a change
 
 - Agents and skills: `xeac create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
-- Configuration: `xeac configure` prints every setting as a JSON object of dotted path to value, credentials included — it reads a file the user owns.
+- Configuration: `xeac configure --all` prints every setting the schema defines as a JSON object of dotted path to `{about, default, current}`; `xeac configure` alone prints only what has been changed. Credentials are included in both — it reads a file the user owns. `python scripts/generate_configuration_reference.py --check` fails if the committed reference has drifted from the schema.
 - Providers and models: `GET /models` lists them grouped by provider; a provider's models unlock once its key resolves.
 - MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools that folder sees. An unreachable server is listed with no tools and an `error` rather than failing the call.
 - End to end: `xeac create`, then `xeac send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.

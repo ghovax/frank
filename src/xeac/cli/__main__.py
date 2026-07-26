@@ -177,6 +177,9 @@ def _command_history(arguments: argparse.Namespace) -> int:
 def _command_configure(arguments: argparse.Namespace) -> int:
     from xeac.cli.commands import configure
 
+    if arguments.all and (arguments.setting or arguments.unset):
+        _note("xeac: --all lists everything and takes no setting")
+        return 1
     if arguments.unset:
         if not arguments.setting:
             _note("xeac: --unset needs a setting to remove")
@@ -326,6 +329,10 @@ def build_parser() -> argparse.ArgumentParser:
     configure.add_argument("setting", nargs="?", help="dotted path, e.g. agent.permission_mode")
     configure.add_argument("value", nargs="?", help="the new value; omit to read it")
     configure.add_argument("-u", "--unset", action="store_true", help="remove the setting instead")
+    configure.add_argument(
+        "-a", "--all", action="store_true",
+        help="list every setting the schema defines, with what it is for and what it ships at",
+    )
     configure.set_defaults(handler=_command_configure)
 
     remote = add("remote", help="list peers on other hosts, or hand one a message")

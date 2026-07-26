@@ -38,7 +38,7 @@ from a2a.client import Client, ClientConfig, ClientEvent, ClientFactory
 from a2a.client.card_resolver import A2ACardResolver
 from a2a.types import AgentCard, Message, TransportProtocol
 from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,7 @@ class _OAuth2ClientCredentials(httpx.Auth):
                 data["scope"] = " ".join(self._auth.scopes)
             # No redirects on the token endpoint either — a redirect could replay the
             # client_id/secret HTTP-Basic credentials to a host the config did not name.
-            async with httpx.AsyncClient(timeout=active_tuning().duration(Limit.CARD_RESOLVE_SECONDS), follow_redirects=False) as client:
+            async with httpx.AsyncClient(timeout=active_tuning().duration(Tunable.card_resolve_seconds), follow_redirects=False) as client:
                 response = await client.post(
                     self._auth.token_url,
                     data=data,
@@ -211,7 +211,7 @@ class _RemoteAgent:
             self._httpx = httpx.AsyncClient(
                 headers=headers or None,
                 auth=auth_flow,
-                timeout=active_tuning().duration(Limit.CARD_RESOLVE_SECONDS),
+                timeout=active_tuning().duration(Tunable.card_resolve_seconds),
                 follow_redirects=False,  # a redirect could bounce us off the trusted origin
             )
         return self._httpx
@@ -231,7 +231,7 @@ class _RemoteAgent:
         try:
             _assert_url_trusted(base, self.configuration)
             resolver = A2ACardResolver(self._httpx_client(), origin, agent_card_path=path)
-            card = await asyncio.wait_for(resolver.get_agent_card(), timeout=active_tuning().duration(Limit.CARD_RESOLVE_SECONDS))
+            card = await asyncio.wait_for(resolver.get_agent_card(), timeout=active_tuning().duration(Tunable.card_resolve_seconds))
             for url in _card_urls(card):
                 _assert_url_trusted(url, self.configuration)
         except RemoteAgentTrustError as exception:

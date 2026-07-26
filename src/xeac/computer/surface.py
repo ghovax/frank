@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from xeac.base.configuration import PromptLoader
-from xeac.base.tuning import Limit, active_tuning
+from xeac.base.tuning import Tunable, active_tuning
 
 
 def machinery_ceiling() -> float:
@@ -41,7 +41,7 @@ def machinery_ceiling() -> float:
     the failure that made three coincidentally-equal constants a bug rather than a tidiness
     problem."""
     tuning = active_tuning()
-    return tuning.duration(Limit.CONTROL_SCRIPT_SECONDS) + tuning.duration(Limit.SURFACE_GUARD_MARGIN_SECONDS)
+    return tuning.duration(Tunable.control_script_seconds) + tuning.duration(Tunable.surface_guard_margin_seconds)
 
 
 def message_loader(folder: str) -> Callable[..., str]:
