@@ -318,6 +318,14 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
 APPLICATION_BUNDLE_ID = "com.ghovax.daisy"
 
 
+def _command_web(arguments: argparse.Namespace) -> int:
+    """Serve the interface over HTTP. Imported on use — it pulls in uvicorn and starlette,
+    which every other verb has no reason to pay for."""
+    from daisy.cli.commands import web
+
+    return web.run(arguments)
+
+
 def _command_open(arguments: argparse.Namespace) -> int:
     """Bring the daemon up and launch the desktop app.
 
@@ -431,6 +439,18 @@ def build_parser() -> argparse.ArgumentParser:
     remote.add_argument("name", nargs="?", help="the registered peer; omit to list them")
     remote.add_argument("message", nargs="?", help="the message, or - to read stdin")
     remote.set_defaults(handler=_command_remote)
+
+    web = add("web", help="serve the interface over HTTP for a browser")
+    web.add_argument("-p", "--port", type=int, default=8824, help="port to listen on (default 8824)")
+    web.add_argument(
+        "--host", default="127.0.0.1",
+        help="address to bind (default 127.0.0.1; this surface drives the daemon, so keep it local)",
+    )
+    web.add_argument(
+        "--no-daemon", action="store_true",
+        help="serve without starting a daemon first",
+    )
+    web.set_defaults(handler=_command_web)
 
     open_app = add("open", help="start the daemon and launch the desktop app")
     open_app.add_argument(

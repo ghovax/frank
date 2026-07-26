@@ -129,6 +129,23 @@ A remote agent is not a session: it runs on someone else's machine, at their cos
 
 Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point Daisy at something inside your network.
 
+## The interface in a browser
+
+```
+daisy web                               # http://127.0.0.1:8824
+daisy web --port 9000
+daisy web --no-daemon                   # serve without starting one
+```
+
+Serves the same interface the desktop app embeds, so a browser is a client like any other — useful on a headless machine, over an SSH tunnel, or anywhere you would rather not install an application.
+
+It **proxies** the daemon rather than pointing the browser at it, and that is the whole design. Pointing would mean handing the daemon's capability token to a page, and would mean the page had to learn a port that is chosen fresh at every boot. Proxying attaches the token here, keeps it in this process, and puts everything on one origin — so there is no token in your browser's storage and no CORS to configure. Ordinary requests, the transcript's event stream, and the terminal's websocket all go the same way.
+
+> [!WARNING]
+> Whatever can reach this address can drive the daemon, because this server holds the token. It binds `127.0.0.1` for that reason. `--host` exists for tunnelling deliberately; if you use it, put authentication in front.
+
+Needs the interface to have been built (`cd web && bun run build` in a checkout). The packaged build carries it.
+
 ## The desktop app
 
 ```

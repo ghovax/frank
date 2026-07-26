@@ -118,6 +118,22 @@ _mcp = _os.path.join(_repo_root, ".agents", "mcp.json")
 if _os.path.isfile(_mcp):
     datas.append((_mcp, ".agents"))
 
+# The built interface, so `daisy web` works from an installed binary and not only from a
+# checkout. ~15 MB against a ~228 MB image, for the difference between "the desktop app is the
+# only way to see this" and "any browser is". Flattened from `web/out` to `web/` because the
+# `out` is Next.js's build directory name, not part of the layout the server expects. Absent
+# when the UI has not been built: the freeze still succeeds and `daisy web` says what to run.
+_interface = _os.path.join(_repo_root, "web", "out")
+if _os.path.isdir(_interface):
+    for _directory, _subdirectories, _filenames in _os.walk(_interface):
+        for _filename in _filenames:
+            if _filename == ".DS_Store":
+                continue
+            _source = _os.path.join(_directory, _filename)
+            datas.append((_source, _os.path.join("web", _os.path.relpath(_directory, _interface))))
+else:
+    print("[daisy-daemon.spec] web/out is absent; `daisy web` will not work from this build")
+
 # The automation tools' runtime-loaded assets: the message templates (.md), one folder per
 # surface (messages/browser, messages/computer), and the browser selection script (scripts/*.js).
 # The tools degrade without them, so bundle every file, preserving its folder, to be certain.

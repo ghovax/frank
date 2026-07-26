@@ -33,7 +33,7 @@ target="packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy"
 # was true of a stray .DS_Store. Both are pruned here rather than left to the caller's habits.
 if [ -z "${FORCE:-}" ] && [ -x "$target" ]; then
   newer_source="$(find packaging/entry.py packaging/daisy-daemon.spec pyproject.toml uv.lock \
-    src/daisy .agents/agents .agents/skills .agents/mcp.json \
+    src/daisy .agents/agents .agents/skills .agents/mcp.json web/out \
     -type d -name __pycache__ -prune -o \
     -type f ! -name '.DS_Store' ! -name '*.pyc' -newer "$target" -print -quit 2>/dev/null || true)"
   if [ -z "$newer_source" ]; then

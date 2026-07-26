@@ -9,8 +9,9 @@ import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifa
 // tokens*. Resolution order for the address:
 //   1. an explicit target set via `setApiBase` (a connection the user activated), then
 //   2. the endpoint the Tauri shell reports (`daemon_endpoint`), then
-//   3. a build-time default from NEXT_PUBLIC_DAISY_API_BASE, then
-//   4. the conventional local daemon address.
+//   3. `daisy web`'s runtime descriptor, when this page is served by it, then
+//   4. a build-time default from NEXT_PUBLIC_DAISY_API_BASE, then
+//   5. the conventional local daemon address.
 // The connection layer (profiles UI / local store) writes the explicit target.
 const DEFAULT_API_BASE =
   (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DAISY_API_BASE : "") || "http://127.0.0.1:8823";
@@ -49,7 +50,22 @@ let apiBaseWasChosen = Boolean(readStoredValue(API_BASE_STORAGE_KEY, ""));
 let daemonEndpointPromise: Promise<void> | null = null;
 
 async function resolveDaemonEndpoint(): Promise<void> {
-  if (!runningInTauri()) return;
+  if (!runningInTauri()) {
+    // Served by `daisy web`? That server proxies the daemon at its own origin, attaching the
+    // token itself, so the right base is the empty string — relative, same-origin, no token in
+    // the page and no need to know the daemon's ephemeral port. Any other static host does not
+    // answer this and falls through to the build-time default, unchanged.
+    try {
+      const response = await fetch("/__daisy/runtime.json", { cache: "no-store" });
+      if (response.ok) {
+        const runtime = await response.json();
+        if (runtime?.proxied && !apiBaseWasChosen) API_BASE = "";
+      }
+    } catch {
+      // Not served by it; nothing to learn.
+    }
+    return;
+  }
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     const endpoint = await invoke<{ url: string; token: string }>("daemon_endpoint");
@@ -97,7 +113,11 @@ function withDaemonToken(url: string, options?: ApiRequestOptions): string {
 }
 
 function websocketUrl(path: string, options?: ApiRequestOptions): string {
-  const base = apiBase(options);
+  // An empty base means this page is served by `daisy web`, which proxies the daemon at its
+  // own origin — so that origin is the base. `new URL(path, "/")` would throw: a relative
+  // string is not a valid base, and a websocket URL has to be absolute regardless.
+  const base = apiBase(options)
+    || (typeof window !== "undefined" ? window.location.origin : "");
   const url = new URL(path, `${base}/`);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return withDaemonToken(url.toString(), options);
