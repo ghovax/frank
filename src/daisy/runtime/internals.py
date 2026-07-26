@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
 from daisy.base.credentials import is_signed_in
+from daisy.base.cursor_credentials import is_signed_in as cursor_is_signed_in
 from daisy.base.configuration import GlobalConfiguration
 from daisy.base.configuration import PromptLoader
 from daisy.protocol.events import ToolStatus
@@ -82,15 +83,17 @@ def model_is_authorized(
     """Whether we currently hold credentials to call ``model_identifier``.
 
     The single authorization authority, mirroring how ``build_chat_model`` resolves
-    credentials so every LLM call site authorizes identically: the native
-    ``chatgpt`` subscription provider is unlocked by an OAuth sign-in (token store),
-    each LiteLLM provider by a configured key or one of its env vars, and ``custom``
-    is selectable on demand. Auxiliary calls (session titling, ...) consult this
-    before building a model instead of re-deriving the check per call site — which
-    is how titling used to silently exclude the OAuth-only chatgpt provider."""
+    credentials so every LLM call site authorizes identically: the two native
+    subscription providers (``chatgpt``, ``cursor``) are unlocked by an OAuth sign-in
+    (their token stores), each LiteLLM provider by a configured key or one of its env
+    vars, and ``custom`` is selectable on demand. Auxiliary calls (session titling, ...)
+    consult this before building a model instead of re-deriving the check per call site —
+    which is how titling used to silently exclude the OAuth-only chatgpt provider."""
     provider_identifier = model_identifier.split("/", 1)[0]
     if provider_identifier == "chatgpt":
         return is_signed_in()
+    if provider_identifier == "cursor":
+        return cursor_is_signed_in()
     if provider_identifier == "custom":
         return True
     return bool(resolve_api_key(provider_identifier, global_configuration.configured_provider_keys()))

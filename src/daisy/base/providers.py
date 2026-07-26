@@ -28,10 +28,12 @@ class ProviderDefinition:
     # addressed by the custom provider instead.
     selectable: bool = True
     # A "native" provider is not routed through LiteLLM at all — it has its own
-    # chat-model implementation and its own (non-API-key) auth. The experimental
-    # ``chatgpt`` subscription provider is the only one: it signs in over OAuth and
-    # calls Codex's Responses endpoint directly (see daisy.runtime.models.codex), so
-    # ``litellm_prefix`` is meaningless for it and credential resolution is bypassed.
+    # chat-model implementation and its own (non-API-key) auth. The two experimental
+    # subscription providers are the only ones: ``chatgpt`` signs in over OAuth and
+    # calls Codex's Responses endpoint directly (see daisy.runtime.models.codex), and
+    # ``cursor`` signs in over Cursor's own login flow and drives its agent service
+    # (see daisy.runtime.models.cursor). For both, ``litellm_prefix`` is meaningless
+    # and credential resolution is bypassed.
     native: bool = False
 
 
@@ -67,6 +69,17 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             # (Settings), not a stored key; routed through its own model client.
             identifier="chatgpt",
             name="ChatGPT Subscription Plan",
+            litellm_prefix="",
+            env_vars=(),
+            native=True,
+        ),
+        ProviderDefinition(
+            # Experimental: pay for model calls with a Cursor subscription instead of an
+            # API key, by using the login flow Cursor's own CLI uses. Unlocked by an
+            # OAuth sign-in (Settings), not a stored key; routed through its own model
+            # client, which reduces Cursor's agent service to a single chat turn.
+            identifier="cursor",
+            name="Cursor Subscription Plan",
             litellm_prefix="",
             env_vars=(),
             native=True,
