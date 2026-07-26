@@ -9,15 +9,21 @@
       pkgs = import nixpkgs { inherit system; };
     in {
       devShells.${system}.default = pkgs.mkShell {
-        # The full toolchain to develop and build XEAC, pinned by flake.lock and
+        # The full toolchain to develop and build Daisy, pinned by flake.lock and
         # isolated to this directory:
+        #   - uv           the Python harness's environment, and the PyInstaller freeze
         #   - bun          the web UI (Next.js) package manager and bundler
         #   - rustc/cargo  the Tauri desktop shell (Rust)
         #   - cargo-tauri  the `cargo tauri dev|build` subcommand
         #   - pkg-config   native dependency discovery during the Rust build
-        # The Python harness runs from a local .venv (see documentation/development.md);
-        # its PyInstaller freeze for the packaged app is driven by packaging/build-sidecar.sh.
+        #
+        # `uv` belongs here because both build steps need it and neither is optional: `uv sync`
+        # creates the harness's .venv, and packaging/build-daemon.sh runs the freeze through
+        # `uv run pyinstaller`. It was missing, so a clean checkout entering this shell still
+        # could not build the harness — the one thing the shell exists to make possible. uv
+        # fetches its own Python against .python-version, so no interpreter is pinned here.
         packages = with pkgs; [
+          uv
           bun
           rustc
           cargo
@@ -26,7 +32,7 @@
         ];
 
         shellHook = ''
-          echo "dev env loaded: bun $(bun --version), $(rustc --version)"
+          echo "dev env loaded: uv $(uv --version | cut -d' ' -f2), bun $(bun --version), $(rustc --version)"
         '';
       };
     };

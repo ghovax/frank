@@ -1,12 +1,15 @@
-// Connection orchestration used by the launcher gate and the status pill:
-// health-checking a backend, starting/stopping the bundled local server (via the
-// Rust commands), remembering the last target, and pointing the API client at a
-// chosen backend.
+// Connection orchestration used by the launcher gate and the status pill: health-checking a
+// backend, remembering the last target, and pointing the API client at a chosen one.
+//
+// Every target is reached the same way — a URL and a token, probed before use. "Local" is a
+// label for the one on this machine, not a different mechanism: the app never starts a daemon,
+// here or anywhere, so a local daemon that is not running is simply unreachable, exactly as a
+// remote host that is not answering is.
 
 import { setApiBase, getApiBase, invalidateDiscoveryCache, daemonStatus } from "@/lib/api";
 import { isTauri, setAppState, getAppState, touchConnection, listConnections, type ConnectionKind, type ConnectionProfile } from "@/lib/connection-store";
 
-// The conventional local daemon address. `xeacd` serves its control plane on this
+// The conventional local daemon address. `daisyd` serves its control plane on this
 // loopback port for GUI clients (the webview cannot open its unix socket), and this is
 // also the API client's built-in default.
 export const LOCAL_DEFAULT_URL = "http://127.0.0.1:8823";
@@ -131,19 +134,18 @@ export async function checkConnection(url: string, options: ConnectionProbeOptio
   }
 }
 
-// Ensure the local daemon is up and return its URL. In the desktop app this spawns
-// `xeacd` if nothing is listening yet; in a plain browser it just points at the
-// conventional local address (the user runs the daemon themselves).
-export async function startLocalServer(): Promise<string> {
-  if (!isTauri()) return LOCAL_DEFAULT_URL;
+// Where a daemon on this machine would be, and whether one is answering there.
+//
+// It looks; it does not start. A daemon is a program the user installs and runs, and this app
+// is a client of it exactly as it is a client of a daemon on another host — the only
+// difference being that this one needs no tunnel. The desktop shell knows the port the daemon
+// published, so it is asked; a plain browser falls back to the conventional address.
+export async function findLocalDaemon(): Promise<{ url: string; listening: boolean }> {
+  if (!isTauri()) {
+    return { url: LOCAL_DEFAULT_URL, listening: await checkConnection(LOCAL_DEFAULT_URL) };
+  }
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<string>("start_local_server");
-}
-
-export async function stopLocalServer(): Promise<void> {
-  if (!isTauri()) return;
-  const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("stop_local_server");
+  return invoke<{ url: string; listening: boolean }>("local_daemon");
 }
 
 export async function listSshHosts(): Promise<SshHost[]> {
@@ -212,7 +214,7 @@ export async function activateConnectionTarget(target: ConnectionTarget): Promis
 }
 
 export async function resolveReachableConnectionUrl(target: ConnectionTarget): Promise<string> {
-  if (target.kind === "local") return startLocalServer();
+  if (target.kind === "local") return (await findLocalDaemon()).url;
   if (target.kind === "ssh") return startSshTunnel({
     id: target.id,
     sshHostAlias: target.sshHostAlias,

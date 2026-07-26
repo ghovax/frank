@@ -1,10 +1,10 @@
 # Configuration
 
-Runtime configuration lives in **`$XDG_CONFIG_HOME/xeac/configuration.yaml`** (`~/.config/xeac/configuration.yaml` unless you have set `XDG_CONFIG_HOME`). It is created on first run from a built-in template and is the source of truth for credentials, permissions, and feature toggles. The repository never contains a filled-in copy.
+Runtime configuration lives in **`$XDG_CONFIG_HOME/daisy/configuration.yaml`** (`~/.config/daisy/configuration.yaml` unless you have set `XDG_CONFIG_HOME`). It is created on first run from a built-in template and is the source of truth for credentials, permissions, and feature toggles. The repository never contains a filled-in copy.
 
 Three ways to change it, all writing the same file:
 
-- `xeac configure` from the terminal — `xeac configure` lists everything, `xeac configure <setting>` reads one, `xeac configure <setting> <value>` sets it, `xeac configure <setting> --unset` removes it. A value the schema would reject is refused with the reason rather than written;
+- `daisy configure` from the terminal — `daisy configure --all` lists every setting that exists with what it is for, what it ships at, and what this machine runs on; `daisy configure` alone lists only what you have changed; `daisy configure <setting>` reads one; `daisy configure <setting> <value>` sets it; `daisy configure <setting> --unset` removes it. A name the schema does not define, or a value it would reject, is refused with the reason rather than written;
 - **Settings** in the desktop app;
 - editing the file directly, which the daemon watches and picks up live.
 
@@ -15,19 +15,23 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with — the same guarantee its permission mode carries — except for settings the daemon explicitly pushes out (the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild).
 
-A fully-commented template lives at [Example configuration](../configuration.example.yaml).
+**`daisy configure --all` is the complete reference.** It prints every setting the schema defines, each with what it is for, what it ships at, and what your machine currently runs on. There is deliberately no checked-in file saying the same thing: a second copy of the defaults is a second thing to keep true, and the one this repository used to carry had drifted — documenting renamed settings under their old names and missing ones that had been added. The command reads the running code, so it cannot.
+
+This document is the *narrative* — what the settings mean and how they relate. The command is the exhaustive list.
+
+Names the schema does not define are **refused**, not ignored. A setting that cannot take effect should say so where it is written, rather than being discovered when the behaviour never changes.
 
 ## Where everything lives
 
-XEAC follows the XDG Base Directory convention rather than one dot-directory:
+Daisy follows the XDG Base Directory convention rather than one dot-directory:
 
 | Path | What is there |
 |------|---------------|
-| `$XDG_CONFIG_HOME/xeac/` | `configuration.yaml` |
-| `$XDG_DATA_HOME/xeac/` | `history.db`, uploads, the file-URL signing secret |
-| `$XDG_STATE_HOME/xeac/` | logs |
-| `$XDG_CACHE_HOME/xeac/` | caches |
-| `$XDG_RUNTIME_DIR/xeac/` | the daemon's socket, port and token, and one socket per session |
+| `$XDG_CONFIG_HOME/daisy/` | `configuration.yaml` |
+| `$XDG_DATA_HOME/daisy/` | `history.db`, uploads, the file-URL signing secret |
+| `$XDG_STATE_HOME/daisy/` | logs |
+| `$XDG_CACHE_HOME/daisy/` | caches |
+| `$XDG_RUNTIME_DIR/daisy/` | the daemon's socket, port and token, and one socket per session |
 
 The runtime directory is `0700` and the token files inside it `0600`: on a shared machine, file permissions are what keep another user out of your sessions. When `XDG_RUNTIME_DIR` is unset — as on macOS — the fallback is a per-user directory under the system temporary directory.
 
@@ -49,7 +53,7 @@ providers:
   custom:      { api_key: "", base_url: "" }   # any OpenAI-compatible endpoint
 ```
 
-Around forty providers are registered, including Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot; the registry in `src/xeac/base/providers.py` is the full list, with the environment variable each one reads.
+Around forty providers are registered, including Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot; the registry in `src/daisy/base/providers.py` is the full list, with the environment variable each one reads.
 
 You can also **sign in with a ChatGPT subscription** instead of pasting a key (Settings → Providers). That provider is not a LiteLLM route: it calls Codex's endpoint directly with an OAuth token from the shared token store.
 
@@ -61,7 +65,7 @@ You can also **sign in with a ChatGPT subscription** instead of pasting a key (S
 exa:       { api_key: "" }          # search_web — env: EXA_API_KEY
 jina:      { api_key: "" }          # fetch_url, free tier — env: JINA_API_KEY
 firecrawl: { api_key: "", api_url: "" }  # env: FIRECRAWL_API_KEY, FIRECRAWL_API_URL
-web_fetch: { proxy_url: "" }        # outbound proxy — env: XEAC_FETCH_PROXY
+web_fetch: { proxy_url: "" }        # outbound proxy — env: DAISY_FETCH_PROXY
 ```
 
 `fetch_url` uses a tiered engine: Jina Reader first, then Firecrawl, then a direct fetch. Each tier is optional; an unset key skips it. `proxy_url` overrides the standard `HTTPS_PROXY`/`ALL_PROXY` for the fetch and download tools only.
@@ -85,7 +89,7 @@ When enabled, Composio is folded into the ordinary MCP set rather than being a s
 sandbox:   { enforce: "required" }   # what a tool child may do — see below
 workspace: { strategy: "none", artifact_maximum_bytes: 134217728 }
 agent:     { permission_mode: "default" }
-computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in
+computer_control: { enabled: false } # macOS screen tools (control_screen); opt-in — see below
 user_context:     { enabled: false } # a snapshot of how you work, in the prompt; opt-in
 ```
 
@@ -124,7 +128,7 @@ A session's confinement is resolved when it is **created** and cannot be widened
 
 `workspace.strategy` is one of `none`, `branch`, or `worktree`, and is resolved once when a session is created: a `worktree` session runs its tools in its own git worktree, so parallel sessions on one repository do not tread on each other.
 
-`agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `xeac create --mode` overrides it, and a child is clamped against its parent either way.
+`agent.permission_mode` is the mode a session gets when none is asked for. It is a default, not a ceiling — `daisy create --mode` overrides it, and a child is clamped against its parent either way.
 
 ### Permission modes
 
@@ -150,16 +154,48 @@ compaction:
 
 ## Tool tuning
 
-How much of a model's context tool output may occupy, and how patient the tools are. Raise `timeout_scale` on a slow machine or a slow network; lower the fractions to spend less context on tool results.
+How much of a model's context tool output may occupy, and how patient the tools are. Size and count caps are token budgets derived from the **live** model context window, so a small model gets tight caps and a large one gets room; `context_share` says what proportion of that window one result may fill. Timeouts do not depend on the window and answer only to `timeout_multiplier`.
 
 ```yaml
 tuning:
-  output_fraction: 0.25             # share of context one tool result may fill
-  listing_fraction: 0.15            # share for a directory or search listing
-  settle_interval_seconds: 0.05     # how often a screen action re-checks for settling
-  settle_ceiling_seconds: 1.5       # how long it waits before giving up on settling
-  timeout_scale: 1.0                # multiplier over every tool's default timeout
+  context_share:
+    text: 0.25                      # share one result's text may fill — output, fetched pages
+    results: 0.15                   # share a set of results may fill — matches, lines, records
+  timeout_multiplier: 1.0           # 2.0 doubles every wait for a slow machine; 1.0 is neutral
+  defaults:                         # override one value, by its own name and in its own unit
+    action_timeout_ms: 10000
+    grep_results: 1024
 ```
+
+Those three move whole families. `defaults` is the escape hatch for a single value: the keys are the names in `daisy.base.tuning.Tunable` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the value the code *ships with*, so `context_share` and `timeout_multiplier` still apply on top: `action_timeout_ms: 10000` under `timeout_multiplier: 2.0` resolves to twenty seconds.
+
+The names are lowercase because they are not constants. Each one is a default the file may replace, and the casing is the first thing that says so.
+
+`daisy configure --all` lists every tunable with what it is for, what it ships at, and what this machine currently runs on.
+
+Settling — how long a screen surface is given to stop changing after an action — lives with the surface rather than here, under [`computer_control.settle`](#screen-control).
+
+## Screen control
+
+```yaml
+computer_control:
+  enabled: false                    # drive native macOS apps and your own Chrome; opt-in
+  settle:
+    poll_seconds: 0.05              # how often to re-check whether the surface has settled
+    give_up_seconds: 1.5            # the longest to wait before reading it anyway
+```
+
+After an action, a surface is *polled* until it stops changing rather than slept on for a fixed guess: a fast page costs one interval and a slow one costs the ceiling. These two sit here rather than under `tuning` because settling is something a **surface** does, not a budget a tool spends.
+
+## The daemon
+
+```yaml
+daemon:
+  warm_floor: 2                     # blank workers parked, so creating a session is a socket write
+  warm_ceiling: 8                   # stop pre-warming once this many workers exist in total
+```
+
+`warm_ceiling` counts warm *and* assigned workers together and bounds pre-warming, not concurrency — a claim against an empty pool spawns on demand and never consults it, so a wide fan-out is always served; it just pays a cold start per child past the spares.
 
 ## MCP servers
 
@@ -172,7 +208,7 @@ remote_agents:
   agents: {}                        # normally written to .agents/remote-agents.json
 ```
 
-Agents on other hosts, resolved by their A2A card and reached with `xeac remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session — XEAC does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it — which is why it has its own verb rather than sharing `send`.
+Agents on other hosts, resolved by their A2A card and reached with `daisy remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session — Daisy does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it — which is why it has its own verb rather than sharing `send`.
 
 ## Inbound authentication
 
@@ -189,7 +225,7 @@ a2a:
 
 ## Telemetry
 
-Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — XEAC ships nothing anywhere on its own.
+Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — Daisy ships nothing anywhere on its own.
 
 ```yaml
 telemetry:
@@ -206,4 +242,4 @@ maximum_history_age_days: 30
 
 How long a finished session's transcript is kept.
 
-**There is no default agent setting**, here or anywhere. `xeac create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).
+**There is no default agent setting**, here or anywhere. `daisy create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).

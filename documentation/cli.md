@@ -1,10 +1,10 @@
-# The `xeac` command
+# The `daisy` command
 
-`xeac` is the primary way to drive XEAC. It adds nothing the control plane does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
+`daisy` is the primary way to drive Daisy. It adds nothing the control plane does not have — it is the ergonomic face of it — so anything you can do here you can also do from the desktop app or from another session.
 
 This command is for people. A session composes with its peers through [tools](tools.md#the-built-in-surface) over the same control plane, not by shelling out to this — a typed call can carry the caller's identity, which an argv string cannot, and a peer answers by messaging its parent rather than by being waited on.
 
-That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `xeac` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `xeac ps` from inside a session comes back `403 forbidden` — `xeac tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
+That is enforced rather than merely advised. The daemon takes the identity of a caller on its unix socket from the kernel, and every command a session runs inherits that session's process session, so `daisy` run from inside one is attributed to it and scoped the way its own tools are: it can create, message, inspect and end sessions in its own subtree, and nothing else. A machine-wide `daisy ps` from inside a session comes back `403 forbidden` — `daisy tree` on itself is the question it is allowed to ask. From your own terminal, nothing is scoped.
 
 The daemon starts itself on your first command. There is no separate "start the service" step.
 
@@ -13,17 +13,17 @@ The daemon starts itself on your first command. There is no separate "start the 
 A **session** is one OS process running one agent. You create it empty, send it work, and read what it produced. Creating and working are separate steps on purpose: the same session takes a second task, can be attached to, and can be inspected in between.
 
 ```sh
-id=$(xeac create --agent general-assistant --directory ~/code/project)
-xeac send "$id" "what does this project do?" --wait
-xeac ps
+id=$(daisy create --agent general-assistant --directory ~/code/project)
+daisy send "$id" "what does this project do?" --wait
+daisy ps
 ```
 
-`create` prints the bare session id on stdout, which is what makes `id=$(xeac create …)` work in a shell script.
+`create` prints the bare session id on stdout, which is what makes `id=$(daisy create …)` work in a shell script.
 
 ## Creating a session
 
 ```
-xeac create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TITLE]
+daisy create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TITLE]
 ```
 
 | Flag | What it does |
@@ -32,7 +32,7 @@ xeac create [-a AGENT] [-C DIRECTORY] [-m MODE] [-p PROJECT] [-P PARENT] [-t TIT
 | `-C`, `--directory` | The working directory. Project-local agents, skills and MCP servers are resolved from here. |
 | `-m`, `--mode` | `default`, `auto`, or `read_only`. Fixed for the session's life. |
 | `-p`, `--project` | The project this session belongs to. |
-| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$XEAC_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
+| `-P`, `--parent` | The session creating this one. The child is clamped to no looser a mode than its parent, and is reaped when the parent ends. Defaults to `$DAISY_SESSION_ID`, which every session exports — so this command run from inside a session creates a child of it rather than an orphan. |
 | `-t`, `--title` | A label for the session list. Left unset, the session names itself after its first message. |
 
 This is the **only** place a session's configuration is set. Its agent, its directory and its permission mode cannot be changed afterwards — that immutability is what makes a session's authority something you can reason about, rather than something a later call might widen.
@@ -42,13 +42,13 @@ A session created without a mode gets the configured default; a session created 
 ## Sending work
 
 ```
-xeac send <session> <message> [-w|--wait]
+daisy send <session> <message> [-w|--wait]
 ```
 
 Pass `-` as the message to read it from stdin, which is how you send a file or a heredoc:
 
 ```sh
-xeac send "$id" - <<'EOF'
+daisy send "$id" - <<'EOF'
 Review the diff on this branch. Report anything that changes behaviour
 without a test, and say what you would add.
 EOF
@@ -61,12 +61,12 @@ A message that arrives while the session is mid-turn is **injected into that tur
 ## Watching
 
 ```
-xeac ps [-a|--all]          # what exists; --all includes sessions that have ended
-xeac get <session>          # one session in detail
-xeac tree <session>         # a session and everything it created
-xeac attach <session>       # follow it live until you interrupt
-xeac wait <session>         # block until idle, then print the result
-xeac history <session> [-n N]
+daisy ps [-a|--all]          # what exists; --all includes sessions that have ended
+daisy get <session>          # one session in detail
+daisy tree <session>         # a session and everything it created
+daisy attach <session>       # follow it live until you interrupt
+daisy wait <session>         # block until idle, then print the result
+daisy history <session> [-n N]
 ```
 
 `ps` prints the session records as a JSON array. Three fields between them say what a session is doing, and they are separate because they answer different questions:
@@ -78,7 +78,7 @@ xeac history <session> [-n N]
 | `awaiting_input` | Parked on a permission request or a question. It needs *you*. |
 
 ```sh
-xeac ps | jq -r '.[] | select(.awaiting_input) | .id'
+daisy ps | jq -r '.[] | select(.awaiting_input) | .id'
 ```
 
 `attach` prints one JSON object per line as the session streams. Each carries a `kind`:
@@ -93,7 +93,7 @@ xeac ps | jq -r '.[] | select(.awaiting_input) | .id'
 It ends when the session does; interrupt it with Ctrl-C to stop watching without affecting the session. Because each frame is a complete line, `jq` and friends consume it incrementally:
 
 ```sh
-xeac attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
+daisy attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
 ```
 
 ## Answering a session
@@ -101,7 +101,7 @@ xeac attach "$id" | jq -r 'select(.kind == "live") | .message.text // empty'
 When a session needs permission it parks, `awaiting_input` goes true, and `attach` emits a frame carrying the request and its id. Answer it with that id:
 
 ```
-xeac approve <session> <request> [-d|--deny]
+daisy approve <session> <request> [-d|--deny]
 ```
 
 There is no "always allow" and no bypass mode: every decision is allow-once or deny. That is a deliberate constraint — an approval you grant once cannot silently widen into a standing grant.
@@ -109,7 +109,7 @@ There is no "always allow" and no bypass mode: every decision is allow-once or d
 ## Ending a session
 
 ```
-xeac kill <session>
+daisy kill <session>
 ```
 
 Ends the session and everything under it, children first, so a child never observes a dead parent.
@@ -121,38 +121,83 @@ The one way to survive is for a process to call `setsid` and leave the session, 
 ## Agents on other hosts
 
 ```
-xeac remote                        # the registered remote agents, with their live health
-xeac remote <name> <message>       # hand one a message and print what it produced
+daisy remote                        # the registered remote agents, with their live health
+daisy remote <name> <message>       # hand one a message and print what it produced
 ```
 
 A remote agent is not a session: it runs on someone else's machine, at their cost, with no shared history and no access to this filesystem. That is a different bargain from a peer session, so it is a different verb — you should never be unsure which side of the wire your work went to.
 
-Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point XEAC at something inside your network.
+Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point Daisy at something inside your network.
+
+## The interface in a browser
+
+```
+daisy web                               # http://127.0.0.1:8824
+daisy web --port 9000
+daisy web --no-daemon                   # serve without starting one
+```
+
+Serves the same interface the desktop app embeds, so a browser is a client like any other — useful on a headless machine, over an SSH tunnel, or anywhere you would rather not install an application.
+
+It **proxies** the daemon rather than pointing the browser at it, and that is the whole design. Pointing would mean handing the daemon's capability token to a page, and would mean the page had to learn a port that is chosen fresh at every boot. Proxying attaches the token here, keeps it in this process, and puts everything on one origin — so there is no token in your browser's storage and no CORS to configure. Ordinary requests, the transcript's event stream, and the terminal's websocket all go the same way.
+
+> [!WARNING]
+> Whatever can reach this address can drive the daemon, because this server holds the token. It binds `127.0.0.1` for that reason. `--host` exists for tunnelling deliberately; if you use it, put authentication in front.
+
+Needs the interface to have been built (`cd web && bun run build` in a checkout). The packaged build carries it.
+
+## The desktop app
+
+```
+daisy open                              # start the daemon if needed, then launch the app
+daisy open --no-daemon                  # just the window
+```
+
+The app is a **client**. It does not contain a daemon and does not start one — it finds one, reading the port and token `daisyd` publishes, and is powerless when there is none, exactly as it is when a remote host does not answer. So the convenience runs this way round: the command line, which owns the daemon, brings it up and then launches the window.
+
+The app is addressed by bundle identifier rather than by name, so renaming or moving it does not break this. If it is not installed, the command says so rather than half-working. macOS only.
+
+## The daemon
+
+```
+daisy daemon status                     # what it is running, and where
+daisy daemon start                      # start one if none is running
+daisy daemon stop                       # stop it, and its sessions with it
+daisy daemon restart                    # stop, wait for the process to go, start again
+daisy daemon endpoint                   # the loopback port and capability token
+```
+
+`restart` **ends every live session**: workers are the daemon's children and shutdown reaps them. It exists because macOS caches the Accessibility trust check per process, so a daemon that was already running when you granted the permission never sees it — and its workers are re-execs of it, so neither do they. The desktop app asks for the same thing over the control plane (`daemon.restart`), which is what makes the grant flow one click now that restarting the window no longer restarts the harness.
+
+`stop` and `restart` signal the process group rather than calling the API, because a daemon wedged badly enough to need stopping may not be answering its own socket.
 
 ## Configuration
 
 ```
-xeac configure                          # everything, as dotted paths
-xeac configure agent.permission_mode    # read one
-xeac configure agent.permission_mode read_only
-xeac configure agent.permission_mode --unset
+daisy configure --all                    # every setting there is, with its default
+daisy configure                          # only what you have changed
+daisy configure agent.permission_mode    # read one
+daisy configure agent.permission_mode read_only
+daisy configure agent.permission_mode --unset
 ```
 
-With no argument it prints a JSON object of dotted path to value; with a setting it prints that setting's value bare. Values are printed as they are stored, credentials included: this reads a file you own, and deciding on your behalf what you may see of your own configuration is not this command's business.
+`--all` walks the **schema**, so it lists every setting that exists — not merely the ones somebody wrote down — as a JSON object of dotted path to `{about, default, current}`. That is usually what you want: reading the file can only show the part you already know about, and a setting left at its default was otherwise invisible.
+
+With no argument it prints a JSON object of dotted path to value for what is actually set. With a setting it prints that setting's value bare — the file's value if it has one, otherwise what the code ships with — and puts the explanation and where the value came from on stderr, so a script reading stdout never has to strip it. Values are printed as they are stored, credentials included: this reads a file you own, and deciding on your behalf what you may see of your own configuration is not this command's business.
 
 Values are interpreted the way the file holds them: `true`, `8` and `[]` land as a boolean, a number and a list rather than as the strings your shell handed over. `null` spells null; `none` does not, because it is a real value (`workspace.strategy: none` is the default) — use `--unset` to remove a setting.
 
-A value the schema would reject is refused with the reason, and the file is left as it was. The daemon reads this file at startup, so an invalid value would not fail the command that set it — it would fail every command after, including the one that would put it back.
+A name the schema does not define, or a value it would reject, is refused with the reason, and the file is left as it was. The daemon reads this file at startup, so an invalid value would not fail the command that set it — it would fail every command after, including the one that would put it back. A name that is merely *unknown* is worse still: it would be written, listed back, and quietly do nothing.
 
 Changes apply to what starts **next**. See the [Configuration guide](configuration.md) for what each setting means.
 
 ## The daemon
 
 ```
-xeac daemon status      # is it up, how many sessions, how many warm workers
-xeac daemon start       # start it explicitly (any other command also will)
-xeac daemon stop        # stop it; its sessions are reaped with it
-xeac daemon endpoint    # the loopback port and capability token
+daisy daemon status      # is it up, how many sessions, how many warm workers
+daisy daemon start       # start it explicitly (any other command also will)
+daisy daemon stop        # stop it; its sessions are reaped with it
+daisy daemon endpoint    # the loopback port and capability token
 ```
 
 `status` never starts anything — a status check that silently launched the service could never report the absence it was asked about. Pass `--start` if you want that.
@@ -160,16 +205,16 @@ xeac daemon endpoint    # the loopback port and capability token
 `endpoint` prints a secret, which is why it is a verb you ask for rather than something `status` volunteers. It is what you need to point a desktop client at a daemon over SSH:
 
 ```sh
-ssh workstation xeac daemon endpoint
+ssh workstation daisy daemon endpoint
 ```
 
 ## Output, exit codes, and pipes
 
-**Everything on stdout is plumbing.** A read prints the control plane's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(xeac create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
+**Everything on stdout is plumbing.** A read prints the control plane's payload as JSON; a stream prints one JSON object per line; a verb whose answer *is* a single value prints that value bare, which is what makes `id=$(daisy create …)` work. There is no formatting layer, no colour, and no `--json` flag to remember — there is nothing else it could have been. Anything that wants a table pipes to `jq`, and anything that parses this never has to guess which mode it is in.
 
 It is minified, and every JSON object is exactly one line — no indentation, and real UTF-8 rather than `\uXXXX` escapes. Agents drive these verbs constantly and pay for indentation by the token; pipe through `jq .` when you want it laid out for a person.
 
-Diagnostics go to stderr and outcomes go to the exit code, so neither can contaminate the data. `xeac configure some.setting` on a stderr-suppressed pipeline prints the value or nothing at all; it never prints an apology you would then have to parse around.
+Diagnostics go to stderr and outcomes go to the exit code, so neither can contaminate the data. `daisy configure some.setting` on a stderr-suppressed pipeline prints the value or nothing at all; it never prints an apology you would then have to parse around.
 
 | Exit code | Meaning |
 |-----------|---------|
@@ -177,7 +222,7 @@ Diagnostics go to stderr and outcomes go to the exit code, so neither can contam
 | `1` | The call failed — no such session, the daemon is unreachable, an unknown setting. |
 | `2` | The arguments were wrong (argparse). |
 | `130` | Interrupted with Ctrl-C. |
-| `141` | A pipe closed under it (`xeac ps \| head`). |
+| `141` | A pipe closed under it (`daisy ps \| head`). |
 
 ## What each verb calls
 
@@ -199,6 +244,6 @@ The CLI is the ergonomic face of the control plane, and it is allowed to be idio
 
 ## Talking to a session directly
 
-`xeac` reaches the daemon over its unix socket, and a data-plane command goes straight to the owning session's own socket. You can do the same thing yourself: each session serves [A2A](https://github.com/google/A2A) on `$XDG_RUNTIME_DIR/xeac/sessions/<id>.sock`, and `create` returns the capability token that authorises driving it. Discovery is open — a session's card at `/.well-known/agent-card.json` says what it is — but every other call must present the token.
+`daisy` reaches the daemon over its unix socket and posts every command to it, `send` included; the daemon relays to the owning session. You can also address a session yourself, which is what makes the relay a hop rather than a wall: each one serves [A2A](https://github.com/google/A2A) on `$XDG_RUNTIME_DIR/daisy/sessions/<id>.sock`, and `create` returns the capability token that authorises driving it. Discovery is open — a session's card at `/.well-known/agent-card.json` says what it is — but every other call must present the token.
 
 That is the whole composition model. A peer is not a special kind of thing; it is a session, addressed the way you address any session.

@@ -12,7 +12,7 @@ import { getAppState, isTauri, setAppState } from "@/lib/connection-store";
 import { DEFAULT_LOCALE, MESSAGES, isLocale, type Locale } from "./messages";
 
 const LOCALE_KEY = "locale";
-const LOCALE_LS_KEY = "xeac.locale";
+const LOCALE_LS_KEY = "daisy.locale";
 
 interface LocaleContextValue {
   locale: Locale;

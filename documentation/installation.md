@@ -1,51 +1,71 @@
 # Installation
 
-XEAC targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`control_screen`) and the packaged app are macOS-specific. The harness itself is portable Python, but the desktop experience is built for the Mac.
+Daisy targets **macOS on Apple Silicon (`aarch64`)**. The screen-control tools (`control_screen`) and the packaged app are macOS-specific. The harness itself is portable Python, but the desktop experience is built for the Mac.
 
 ## Option 1 — Download the app
 
-1. Open the [**Releases**](https://github.com/ghovax/daisy/releases) page and download the latest `XEAC_<version>_aarch64.dmg`.
-2. Open the `.dmg` and drag **XEAC** into **Applications**.
+1. Open the [**Releases**](https://github.com/ghovax/daisy/releases) page and download the latest `DAISY_<version>_aarch64.dmg`.
+2. Open the `.dmg` and drag **Daisy** into **Applications**.
 3. Launch it.
 
 ### Gatekeeper
 
 The app is **self-signed, not Apple-notarized**. macOS Gatekeeper refuses the first launch with an "unidentified developer" or "damaged" message. This is expected. Clear it once, either way:
 
-- **Right-click** `XEAC.app` → **Open** → **Open** in the dialog, or
+- **Right-click** `Daisy.app` → **Open** → **Open** in the dialog, or
 - from a terminal:
 
   ```sh
-  xattr -dr com.apple.quarantine /Applications/XEAC.app
+  xattr -dr com.apple.quarantine /Applications/Daisy.app
   ```
 
 Notarized builds are planned. Until then this one-time step is required.
 
 ### Permissions the app may ask for
 
-- **Accessibility** — required for the screen-control tools (`control_screen`) to read and act on native apps. XEAC prompts you and deep-links to the right settings pane. Grant it to XEAC.
-- **Chrome remote debugging** — required for the screen-control tools to drive your own Chrome. XEAC shows a one-click prompt that opens `chrome://inspect`. Enable the remote-debugging toggle once.
+- **Accessibility** — required for the screen-control tools (`control_screen`) to read and act on native apps. Daisy prompts you and deep-links to the right settings pane. Grant it to Daisy.
+- **Chrome remote debugging** — required for the screen-control tools to drive your own Chrome. Daisy shows a one-click prompt that opens `chrome://inspect`. Enable the remote-debugging toggle once.
 
 Neither is needed for plain chat or the file, shell, and web tools.
 
 ## Option 2 — Build from source
 
-You need the [Nix](https://nixos.org) package manager (the repo ships a flake devshell that pins bun, Rust, and the Tauri CLI), and optionally [direnv](https://direnv.net).
+Daisy is **two artifacts**, built independently, because the app is a *client* of the daemon rather than its container. The daemon is the harness — the `daisy` command, `daisyd`, and every session worker in one signed image. The app is a window that finds a daemon and talks to it. Build them in either order; neither build triggers the other.
 
-```sh
-git clone https://github.com/ghovax/daisy.git
-cd xeac
+You need [Nix](https://nixos.org) (the flake devshell pins everything else, `uv` included) and optionally [direnv](https://direnv.net).
 
-# Enter the toolchain (bun, rustc, cargo, cargo-tauri, pkg-config)
-direnv allow            # or, without direnv:  nix develop
+### Every step, and what you should see
 
-# Install web dependencies
-cd web && bun install && cd ..
+| # | Run | What it does | You should see | Takes |
+|---|---|---|---|---|
+| 1 | `git clone https://github.com/ghovax/daisy.git && cd daisy` | | | seconds |
+| 2 | `direnv allow` — or `nix develop` | Loads uv, bun, rustc, cargo, cargo-tauri, pkg-config | `dev env loaded: uv 0.x, bun 1.x, rustc 1.x` | first time, minutes |
+| 3 | `uv sync` | Creates `.venv` with the project **and the dev group**, so PyInstaller arrives here | Resolution and install log | ~1 min |
+| 4 | `cd web && bun install && cd ..` | UI dependencies | | ~1 min |
+| 5 | `packaging/build-daemon.sh` | Freezes the harness, then smoke-tests it in an isolated set of XDG directories | `freezing the harness…` → `ok: daisyd answers on its own socket` → the install commands it prints | **several minutes** |
+| 6 | `packaging/create-signing-cert.sh` — **once per machine** | Makes the persistent identity "Daisy Local Codesign" | A keychain prompt | seconds |
+| 7 | `packaging/sign-app.sh "packaging/dist/Daisy Computer Use.app"` | Signs the daemon `--deep` with its entitlements | `signed …`, then `Identifier=` and `Authority=` | seconds |
+| 8 | `ditto "packaging/dist/Daisy Computer Use.app" "/Applications/Daisy Computer Use.app"` | Installs the harness | | seconds |
+| 9 | `ln -sf "/Applications/Daisy Computer Use.app/Contents/MacOS/daisy" /usr/local/bin/daisy` | Puts `daisy` and `daisyd` on your `PATH` | May need `sudo` | seconds |
+| 10 | `cd web && bun run tauri:build` | Rust compile plus a static export. **No Python in this step** | `Daisy.app` and a `.dmg` under `web/src-tauri/target/release/bundle/` | first time, ~10 min |
+| 11 | `packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app` | Signs the app plainly — same identity, so both fold into one Accessibility row | `signed …` | seconds |
+| 12 | `ditto` that `Daisy.app` to `/Applications` | Installs the window. **Required** before `daisy open` can find it by identifier | | seconds |
+| 13 | `daisy open` | Starts the daemon, launches the app | `{"opened":"com.ghovax.daisy","daemon":true}`; first run seeds `~/.config/daisy/configuration.yaml` | seconds |
+| 14 | `daisy configure providers.anthropic.api_key <key>` | A model to run on | The key echoed back | |
 
-# Build the desktop app (also freezes the Python harness into a bundled helper)
-cd web && bun run tauri:build
-```
+### Things that will catch you
 
-The build produces `web/src-tauri/target/release/bundle/macos/XEAC.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds) and packaging details, see [Development guide](development.md#building-and-signing).
+| Symptom | Cause | Fix |
+|---|---|---|
+| `daisy: nothing on this system claims com.ghovax.daisy` | You built `Daisy.app` but left it in the Tauri target directory. macOS resolves `-b` through LaunchServices, which does not know about it there | Step 12 — `ditto` it to `/Applications` |
+| The app opens but only ever shows the connection picker | No daemon is running. The app never starts one | `daisy daemon start`, or use `daisy open` |
+| Computer control keeps asking for Accessibility after every rebuild | The daemon serving you is the checkout's (`uv run daisy`), whose code identity is the Python interpreter, not the signed image | `daisy daemon status` reports `image.frozen`. If it is `false`, stop that daemon and start the installed one |
+| Two `daisy` on your `PATH` behave differently | The checkout's and the installed one share `~/.config/daisy/` and the runtime directory, so whichever daemon started first owns it | `which -a daisy`, and check `daisy daemon status` → `image.executable` |
+| `ln -sf … /usr/local/bin/daisy` is denied | `/usr/local/bin` is root-owned | `sudo ln -sf …`, or symlink into `~/.local/bin` and put that on `PATH` |
+| `packaging/build-daemon.sh` says "daemon up to date" after you changed something | The freshness guard decided nothing that goes into the freeze had changed | `FORCE=1 packaging/build-daemon.sh` |
 
-You also need a local Python environment for the harness itself (a `.venv` with the project installed) — see [Development guide](development.md#running-it).
+Signing (steps 6, 7, 11) is optional for a build that merely runs, and required for a **stable Accessibility grant**: without it every rebuild is a new code identity and macOS asks again. Both artifacts carry the same `CFBundleName` and identifier, which is why one certificate over both keeps them a single **Daisy** row — see [Development guide](development.md#building-and-signing).
+
+## Coming from a build named XEAC
+
+The harness was briefly called XEAC and is now Daisy again. Nothing migrates: Daisy reads `~/.config/daisy/` and `~/.local/share/daisy/`, so it starts with a freshly seeded configuration and an empty transcript store. Your old configuration and transcripts are still at `~/.config/xeac/configuration.yaml` and `~/.local/share/xeac/history.db` if you want to move them across by hand. Your agents, skills, memories and MCP servers are unaffected — they live in `~/.agents/`, which was never named after the product. The desktop app's bundle identifier changed too, so macOS will ask for the Accessibility grant once more the first time you use the screen tools.

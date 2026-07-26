@@ -7,15 +7,18 @@ enabled: true
 
 # Configure the Agentic Harness
 
-Use this skill when the user wants to change how the harness itself is set up. There are **three surfaces onto one file** (`~/.config/xeac/configuration.yaml`): `xeac configure` from the terminal, Settings in the desktop app, and editing the file directly — the daemon watches it and picks up a hand edit live. Always read the relevant existing file before editing.
+Use this skill when the user wants to change how the harness itself is set up. There are **three surfaces onto one file** (`~/.config/daisy/configuration.yaml`): `daisy configure` from the terminal, Settings in the desktop app, and editing the file directly — the daemon watches it and picks up a hand edit live. Always read the relevant existing file before editing.
 
-The authoritative models live in `src/xeac/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/xeac/base/providers.py` (the provider registry and key/base-url resolution). The daemon's composition root — where the shared resources are wired up — is `src/xeac/daemon/composition.py`.
+**Start with `daisy configure --all`.** It walks the schema, not the file, so it lists every setting that exists — including the ones nobody has written down — each with what it is for, what it ships at, and what this machine currently runs on. Reading the file only ever shows the part already known about. A name the schema does not define is refused rather than written and ignored, so a typo fails where it is made.
+
+The authoritative models live in `src/daisy/base/configuration.py` (`GlobalConfiguration`, `AgentConfiguration`) and `src/daisy/base/providers.py` (the provider registry and key/base-url resolution). Each setting's explanation is the `Field(description=...)` beside it, and each tunable's is the `Default(...)` beside it in `src/daisy/base/tuning.py` — those strings are exactly what `daisy configure` prints, so a new setting is documented by writing one and needs nothing else. There is no reference file to regenerate and no listing to add it to. The daemon's composition root — where the shared resources are wired up — is `src/daisy/daemon/composition.py`.
 
 ## Where things live
 
-- `~/.config/xeac/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/xeac/base/configuration.yaml`. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
-- `~/.local/share/xeac/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `xeac daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
-- The rest is XDG too: logs in `~/.local/state/xeac/`, caches in `~/.cache/xeac/`, and sockets, the daemon's port and its token in the runtime directory.
+- `~/.config/daisy/configuration.yaml` — provider credentials, Exa, sandbox, Composio, permissions, tuning, telemetry. Seeded on first run from the packaged `src/daisy/base/configuration.yaml`, which is deliberately almost empty: everything has a default in the code, and a seed restating those defaults would freeze them, so an installation would keep overriding an improved default with a copy of the old value. Note what is *not* there: no default agent. Naming the profile is required — `--agent` from the CLI, the `agent` argument of a session's `create_session` tool — and no profile is nominated to stand in for an unstated one.
+- There is no checked-in reference file. `daisy configure --all` is the complete list, read from the running code, so it cannot describe a setting the code does not have or miss one it does.
+- `~/.local/share/daisy/history.db` — session transcripts (SQLite, WAL). Not configuration; never edit by hand, and never open it from a session: the daemon is the sole writer, and workers persist by posting to it. If the schema ever goes stale after an upgrade, `daisy daemon stop` and delete it — it rebuilds (transcripts are replayable, not irreplaceable).
+- The rest is XDG too: logs in `~/.local/state/daisy/`, caches in `~/.cache/daisy/`, and sockets, the daemon's port and its token in the runtime directory.
 - `.agents/` (project) and `~/.agents/` (global) — agents, skills, MCP servers, and memories. Project entries override global entries with the same name.
 
 ## Providers, credentials, and the model
@@ -42,7 +45,7 @@ providers:
 
 **Key/base-url resolution** (`providers.py`): an explicit configured value (file or UI) **wins**; otherwise the provider's conventional env var is read (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`/`GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`). `base_url` only matters for the OpenAI-compatible providers (`opencode`, `custom`); first-party clouds ignore it.
 
-**Three ways to change this, all live:** `xeac configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
+**Three ways to change this, all live:** `daisy configure providers.anthropic.api_key <key>`, the Settings dialog, or editing the file — the daemon watches it and reloads. A credential change asks running sessions to rebuild their runtime on the next turn, so it takes effect without restarting anything.
 
 A profile pinned to a provider you have no credentials for fails on its first call. It does not borrow another profile's model: an agent is defined by its own configuration, and nothing else's.
 
@@ -51,14 +54,14 @@ A profile pinned to a provider you have no credentials for fails on its first ca
 Permission behaviour is one of **three** modes, defaulted per-agent in frontmatter (`permission_mode:`) and fixed for a session when it is created:
 
 - `default` — the user-configured per-command rules (allow / ask / deny) from the bash allow-rules.
-- `auto` — those rules **plus** a classifier that auto-approves bash calls it judges safe and escalates the rest. It is rule-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — a classifier failure falls back to escalation. Its prompt is `src/xeac/runtime/prompts/permission_classifier.md`.
+- `auto` — those rules **plus** a classifier that auto-approves bash calls it judges safe and escalates the rest. It is rule-aware (a configured `deny` stays a hard deny; `read_only` stays a hard block) and conservative — a classifier failure falls back to escalation. Its prompt is `src/daisy/runtime/prompts/permission_classifier.md`.
 - `read_only` — hard-block every write (investigation and review sessions).
 
 There is **no bypass mode** and no standing "always allow": the only runtime decisions are allow-once and deny. A session's mode cannot be changed after creation, and a session created by another is clamped to no looser a mode than its parent — so a peer can never be used to escape the mode you are in.
 
 ## Sandbox
 
-`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `xeac configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one — the same guarantee the permission mode carries.
+`sandbox:` is what a session's tool children may actually do, enforced by the OS (`sandbox-exec` on macOS, Landlock plus a network namespace on Linux) rather than guessed from the text of a command. `enforce` is `required` (refuse to create a session where no backend can enforce it), `preferred` (POSIX limits only) or `off`; `filesystem.readable`/`writable`/`deny` govern the home directory, which is closed by default while the system stays readable; `limits` are `setrlimit(2)` constants under their own names. Set it from the UI, with `daisy configure sandbox.enforce off`, or in the YAML. Unlike most settings this is **not** live: a session's confinement is fixed when it is created and clamped against its creator, so a change reaches the next session rather than a running one — the same guarantee the permission mode carries.
 
 ## Agents
 
@@ -131,7 +134,7 @@ Remote (HTTP):
 }
 ```
 
-`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **`mcp.json` is watched and reloads live** — the daemon watches the `.agents` roots recursively, so adding or changing a server takes effect without restarting anything. Discovery and connection live in `src/xeac/base/mcp_client.py`. Note that the daemon keeps its own pool for the GUI's server browser while each session connects its own for its tool calls: connections are stateful, and a stdio server cannot be shared across processes.
+`enabled: false` keeps an entry but turns it off; `"type"` is accepted as an alias for `"transport"`. Servers default to `stateful: true`: for `stdio` the subprocess stays alive across calls; for `streamable_http` the MCP session id is preserved and the server's GET SSE stream is listened to. MCP progress/notification events are forwarded into the active A2A stream. Set `stateful: false` only for servers that require one fresh session per operation. **`mcp.json` is watched and reloads live** — the daemon watches the `.agents` roots recursively, so adding or changing a server takes effect without restarting anything. Discovery and connection live in `src/daisy/base/mcp_client.py`. Note that the daemon keeps its own pool for the GUI's server browser while each session connects its own for its tool calls: connections are stateful, and a stdio server cannot be shared across processes.
 
 ### MCP render artifacts
 
@@ -174,14 +177,14 @@ Durable project/user context: `.agents/memories/*.md` and `~/.agents/memories/*.
 
 ## What reaches a running session, and what does not
 
-The daemon watches the configuration file and the `.agents` roots, so **everything reloads live** — agents, skills, memories, `mcp.json`, `remote-agents.json`, credentials, and the sandbox, computer-control and user-context toggles, whether changed through `xeac configure`, the Settings dialog, or a hand edit. A change that affects a session's runtime asks live sessions to rebuild it on their next turn.
+The daemon watches the configuration file and the `.agents` roots, so **everything reloads live** — agents, skills, memories, `mcp.json`, `remote-agents.json`, credentials, and the sandbox, computer-control and user-context toggles, whether changed through `daisy configure`, the Settings dialog, or a hand edit. A change that affects a session's runtime asks live sessions to rebuild it on their next turn.
 
-Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **permission mode** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's authority is decided once, in the open, at `xeac create`.
+Two things are deliberately **not** live, because they are fixed when a session is created and cannot be widened afterwards: its **permission mode** and its **working directory**. Changing the configured defaults affects the next session, never a running one. That is the guarantee, not a limitation — a session's authority is decided once, in the open, at `daisy create`.
 
 ## Verifying a change
 
-- Agents and skills: `xeac create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
-- Configuration: `xeac configure` prints every setting as a JSON object of dotted path to value, credentials included — it reads a file the user owns.
+- Agents and skills: `daisy create --agent <name>` refuses an unknown profile and lists the ones that exist. A session's `create_session` tool enumerates the same catalogue in its schema, so an unknown name cannot be asked for at all. The GUI reads it from `GET /agents/cards`.
+- Configuration: `daisy configure --all` prints every setting the schema defines as a JSON object of dotted path to `{about, default, current}`; `daisy configure` alone prints only what has been changed. Credentials are included in both — it reads a file the user owns.
 - Providers and models: `GET /models` lists them grouped by provider; a provider's models unlock once its key resolves.
 - MCP: `GET /mcp/tools?working_directory=<path>` lists the servers and tools that folder sees. An unreachable server is listed with no tools and an `error` rather than failing the call.
-- End to end: `xeac create`, then `xeac send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.
+- End to end: `daisy create`, then `daisy send <id> "…" --wait`. A missing key fails the turn with a credentials error rather than hanging.

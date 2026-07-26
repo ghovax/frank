@@ -1,47 +1,50 @@
 #!/usr/bin/env bash
-# Sign a built XEAC.app with the local self-signed identity (packaging/create-signing-cert.sh)
-# so its bundled computer-use server has a STABLE code identity across rebuilds.
+# Sign the two Daisy artifacts with the local self-signed identity
+# (packaging/create-signing-cert.sh), so the daemon has a STABLE code identity across rebuilds.
 #
-# The server — not the app — is the process that calls the macOS Accessibility API, and TCC
-# lists whichever process exercises the permission. The server ships as a nested helper bundle,
-# "XEAC Computer Use.app", whose Info.plist carries the *same* CFBundleName ("XEAC") and
-# identifier (com.ghovax.xeac) as the desktop app. Signed with the same persistent cert, it
-# satisfies the same designated requirement, so it folds into the app's single "XEAC"
-# Accessibility entry — no separate "xeac-server" — and that grant stays valid across rebuilds
-# (vs. a fresh ad-hoc hash every time). Full Disk Access and the properly-iconed entry persist
-# with it too.
+# There are two now, and only one of them matters for permissions. The daemon — not the desktop
+# app — is the process that calls the macOS Accessibility API, because a session worker is a
+# re-exec of it, and TCC lists whichever process exercises the permission. The daemon ships as
+# "Daisy Computer Use.app", whose Info.plist carries the *same* CFBundleName ("Daisy") and
+# identifier (com.ghovax.daisy) as the desktop app. Signed with the same persistent cert it
+# satisfies the same designated requirement, so it folds into a single "Daisy" entry in
+# Accessibility — no separate "daisy" row — and that grant survives rebuilds, where a fresh
+# ad-hoc hash every build would not. Full Disk Access and the properly-iconed entry persist
+# with it.
+#
+# The desktop app used to carry the daemon inside itself, which is why this script used to undo
+# Tauri's symlink flattening: PyInstaller's codesignable layout cross-symlinks Contents/Frameworks
+# and Contents/Resources, Tauri's resource copier dereferenced every one of those, and the app
+# ballooned about fivefold. Nothing bundles the daemon now, so nothing dereferences anything, and
+# that whole repair step is gone along with the coupling that made it necessary.
 set -euo pipefail
 
-APP="${1:?usage: sign-app.sh <path-to-XEAC.app>}"
-IDENTITY="XEAC Local Codesign"
-HELPER="$APP/Contents/Resources/server-bin/XEAC Computer Use.app"
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+IDENTITY="Daisy Local Codesign"
 
-# Undo Tauri's symlink flattening. PyInstaller lays the frozen server out as a codesignable macOS
-# bundle: real Mach-Os in Contents/Frameworks, real Python in Contents/Resources, and each side
-# symlinks the other so the import root sees one merged tree — so `du` on the pristine bundle is
-# ~380 MB. Tauri's resource copier dereferences those symlinks when it bundles the helper, turning
-# every one into a full second copy and ballooning the app to ~1.8 GB. `ditto` preserves symlinks,
-# so re-copying the pristine helper from server-bin (untouched by Tauri) restores the ~380 MB tree
-# before we sign it in place.
-pristine="$repo_root/web/src-tauri/server-bin/XEAC Computer Use.app"
-if [ -d "$pristine" ] && [ -d "$HELPER" ]; then
-  echo "restoring symlink-preserving helper (undo Tauri deref)"
-  rm -rf "$HELPER"
-  ditto "$pristine" "$HELPER"
-fi
+usage() {
+  echo "usage: sign-app.sh <path-to-Daisy.app | path-to-Daisy Computer Use.app> [...]" >&2
+  echo "  Sign either artifact, or both. The daemon takes --deep to catch its PyInstaller" >&2
+  echo "  dylibs; the app has no nested code to descend into." >&2
+  exit 1
+}
 
-# Sign inside-out: the nested helper first, then the outer app. `--deep` on the app alone does
-# NOT descend into a bundle nested under Contents/Resources/ (it only follows Frameworks/ and the
-# standard nested-code locations), so signing just the app leaves the helper — the very process
-# TCC tracks for Accessibility — ad-hoc, which is exactly the fresh-hash-every-build problem this
-# script exists to prevent. So sign the helper explicitly (`--deep`, to catch its own PyInstaller
-# dylibs), then re-seal the app so its signature covers the helper's new hash. Each bundle takes
-# its identifier from its own Info.plist (both com.ghovax.xeac); no hardened runtime, so the
-# helper's dylibs still load.
-codesign --force --deep --sign "$IDENTITY" "$HELPER"
-codesign --force --sign "$IDENTITY" "$APP"
+[ "$#" -ge 1 ] || usage
 
-echo "signed $APP"
-codesign -dv "$HELPER" 2>&1 | grep -iE "Identifier=|Authority=" | sed 's/^/  helper: /'
-codesign -dv "$APP" 2>&1 | grep -iE "Identifier=|Authority=" | sed 's/^/  app:    /'
+for bundle in "$@"; do
+  [ -d "$bundle" ] || { echo "not a bundle: $bundle" >&2; exit 1; }
+  case "$(basename "$bundle")" in
+    # The daemon: --deep so its own PyInstaller dylibs are covered. No hardened runtime, so
+    # they still load; the entitlements it needs travel with it (packaging/Entitlements.plist).
+    *"Computer Use.app")
+      codesign --force --deep --entitlements "$(dirname "${BASH_SOURCE[0]}")/Entitlements.plist" \
+        --sign "$IDENTITY" "$bundle"
+      ;;
+    # The desktop app: a plain Tauri shell with no nested code and no need to send Apple Events
+    # or load unvalidated libraries — both of those were the bundled daemon's requirements.
+    *)
+      codesign --force --sign "$IDENTITY" "$bundle"
+      ;;
+  esac
+  echo "signed $bundle"
+  codesign -dv "$bundle" 2>&1 | grep -iE "Identifier=|Authority=" | sed 's/^/  /'
+done

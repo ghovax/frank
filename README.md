@@ -1,44 +1,46 @@
-# XEAC
+# Daisy
 
 **An open agent harness where every session is a process you can address.**
 
-The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in XEAC all of it is yours to edit. Drive it from the terminal, from the bundled macOS app, or from another agent.
+The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in Daisy all of it is yours to edit. Drive it from the terminal, from the macOS app, or from another agent.
+
+A session here is *executable*, because it is a real OS process with a pid you can kill; *addressable*, because it has its own unix socket and its own capability token; and *composable*, because sessions create and message each other through the same control plane you use. Those three properties are the whole design, and everything below follows from them.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Platform: macOS (Apple Silicon)](https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-black) ![Built with Tauri, Next.js, LangChain](https://img.shields.io/badge/built%20with-Tauri%2C%20Next.js%2C%20LangChain-6E56CF)
 
 ## What it is
 
-Everything in XEAC is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket, so anything holding its address can talk to it — you from the terminal, the desktop app, or another session.
+Everything in Daisy is a **session**: one OS process running one agent, created empty and then driven by messages over its life. A session serves [A2A](https://github.com/google/A2A) on its own unix socket, and every client — you from the terminal, the desktop app, another session — reaches it through the daemon, which relays. One path in, so a caller is identified and scoped in exactly one place.
 
 Three parts, kept apart:
 
-- **`xeacd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and holds a pool of warm workers so spawning a session is a socket write rather than a Python cold start. It runs no agents itself.
-- **`xeac`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
-- **The app** — a native macOS client (Tauri + Next.js) over the same API.
+- **`daisyd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and parks a couple of warm workers so spawning a session is usually a socket write rather than a Python cold start. It runs no agents itself.
+- **`daisy`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `open` the desktop app, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
+- **The app** — a native macOS client (Tauri + Next.js) over the same API. A *client*: it finds a daemon and talks to it, and contains no harness of its own. `daisy open` starts one and launches the window together.
 
-Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `xeac ps`, you can attach to it, and it is reaped when its parent ends.
+Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `daisy ps`, you can attach to it, and it is reaped when its parent ends.
 
 ## Why own the harness
 
-The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. XEAC lets you change that layer:
+The harness writes the system prompt, defines the tools, manages context, and sets what the agent may do. The same model does different work under different harnesses — OpenCode versus Claude Code or Codex, say. Daisy lets you change that layer:
 
 - **Tune the guardrails.** Permission modes and per-command allow/deny rules are config; the engine that enforces them is open code, so you can change how permissioning works when the settings aren't enough ([Permissions](documentation/configuration.md#permission-modes)).
-- **The agent can work on XEAC itself.** Its prompt says it's running XEAC; open the XEAC repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
+- **The agent can work on Daisy itself.** Its prompt says it's running Daisy; open the Daisy repo as the project and it can read and edit the harness, then you rebuild ([Architecture](documentation/architecture.md)).
 - **The agent can start with context about you** — an opt-in snapshot of your machine and habits, off by default ([What it sends](SECURITY.md#what-the-agent-sends-to-your-model-provider)).
 
 ## How it compares
 
-The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex), both more mature than XEAC. As of 2026 both also drive a real, logged-in browser and control native macOS apps, and Codex is likewise open source and runs on non-OpenAI models — so this compares approaches, not things only XEAC does.
+The closest tools are [Claude Code](https://code.claude.com) and [OpenAI Codex](https://github.com/openai/codex), both more mature than Daisy. As of 2026 both also drive a real, logged-in browser and control native macOS apps, and Codex is likewise open source and runs on non-OpenAI models — so this compares approaches, not things only Daisy does.
 
-| | XEAC | Claude Code | OpenAI Codex |
+| | Daisy | Claude Code | OpenAI Codex |
 |---|---|---|---|
 | **License** | Open source (MIT) | Proprietary | Open-source CLI (Apache-2.0); cloud and models are OpenAI's |
 | **Models** | Any provider, or a ChatGPT login, per session — the screen tools included | Claude first; third-party providers for coding on the CLI and VS Code, but its browser and computer use need an Anthropic plan | GPT-5 Codex by default; the CLI can also point at OpenRouter, Ollama, LM Studio, or any compatible endpoint |
 | **Where it runs** | A harness you self-host — local, a VM, a container, or over SSH — with a native app pointed at it | Proprietary client; long tasks run on Anthropic's cloud | Local CLI, IDEs, and a desktop app; async tasks run on OpenAI's cloud |
 | **Screen control** | Native macOS apps and your own Chrome, read as ranked accessibility/DOM elements from a plain-language search — screenshots only when you ask | Your real Chrome session, plus macOS computer use driven by downscaled screenshots (research preview, Pro/Max) | In-app and Chrome-extension browser, plus background macOS computer use driven by screenshots |
-| **Reach** | Terminal-first (`xeac`), plus a desktop app over the same API; every session is scriptable and attachable | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
+| **Reach** | Terminal-first (`daisy`), plus a desktop app over the same API; every session is scriptable and attachable | Terminal, VS Code, JetBrains, desktop, web, mobile, Slack, CI, GitHub review; macOS and Windows | CLI, IDEs, desktop, cloud/web, Chrome, GitHub review; macOS and Windows |
 
-Three design choices distinguish XEAC:
+Three design choices distinguish Daisy:
 
 - **Structure, not screenshots.** It reads the screen as a semantic search over the accessibility tree and DOM, returning a few ranked elements where the rivals reason over screenshots — a query costs a handful of elements, not a downscaled image.
 - **A session is a process, not a coroutine.** Each session runs in its own OS process behind its own socket, so it is crash-isolated, addressable, and killable. A session creates a peer by creating another session and messaging it over the same API a person uses, instead of through a bespoke in-process delegation tool.
@@ -46,11 +48,11 @@ Three design choices distinguish XEAC:
 
 The trade-off: it needs an accessibility tree or DOM to read, where a screenshot approach works on anything drawn on screen. See [Tools](documentation/tools.md).
 
-Elsewhere they lead: more polish, more places to run, deeper ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. XEAC is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent on a vendor's cloud, use theirs.
+Elsewhere they lead: more polish, more places to run, deeper ecosystems — Claude Code's subagents, hooks, plugins, and Agent SDK; Codex's cloud tasks, 90+ plugins, and automatic PR review. All three gate actions behind approvals and a sandbox. Daisy is the small, open, model-agnostic option you host yourself; for a mature multi-surface agent on a vendor's cloud, use theirs.
 
 ## Install
 
-XEAC targets **macOS on Apple Silicon**. Download the latest `.dmg` from the [Releases](https://github.com/ghovax/daisy/releases) page and drag **XEAC** to Applications; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
+Daisy targets **macOS on Apple Silicon**, and ships as two pieces: the harness (the `daisy` command and its daemon) and the app that talks to it. Download the latest release, install both, and `daisy open`; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
 
 See the [Installation guide](documentation/installation.md) for both paths in full.
 
@@ -59,18 +61,18 @@ See the [Installation guide](documentation/installation.md) for both paths in fu
 From the terminal:
 
 ```
-xeac create --agent general-assistant --directory ~/code/project   # prints a session id
-xeac send <id> "what does this project do?" --wait
-xeac ps                                                            # what is running, and what waits on you
-xeac attach <id>                                                   # follow it live
+daisy create --agent general-assistant --directory ~/code/project   # prints a session id
+daisy send <id> "what does this project do?" --wait
+daisy ps                                                            # what is running, and what waits on you
+daisy attach <id>                                                   # follow it live
 ```
 
 A session composes over the same API rather than over this command: `create_session` makes a peer and hands it a brief, `message_session` reaches a session in either direction, `end_session` stops one. Same daemon, same sockets, same tree — the tool carries the caller's identity, which an argv string cannot, so a peer is always a child of whoever made it, and its answer comes back as a message.
 
 The daemon starts itself on the first command. From the app:
 
-1. **Launch XEAC.** The daemon starts automatically; the app connects to it.
-2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your XEAC configuration file — see the [Example configuration](configuration.example.yaml).
+1. **Launch Daisy.** The daemon starts automatically; the app connects to it.
+2. **Add a model key.** Open **Settings → Providers**, paste a key for any provider (or sign in with ChatGPT), and pick a model. Keys live in your Daisy configuration file — see the [Configuration guide](documentation/configuration.md), or run `daisy configure --all` to see every setting there is.
 3. **Start a conversation.** Type a task. Approve tool calls as they come up, or relax the [permission mode](documentation/configuration.md#permission-modes) once you trust a flow.
 
 The screen-control tools need a one-time Accessibility grant and Chrome's remote-debugging toggle — see the [Installation guide](documentation/installation.md#permissions-the-app-may-ask-for).
@@ -80,7 +82,7 @@ The screen-control tools need a one-time Accessibility grant and Chrome's remote
 
 ## Where things live
 
-XEAC follows the XDG convention rather than a single dot-directory: configuration in `~/.config/xeac`, durable state in `~/.local/share/xeac`, sockets in the runtime directory (which the OS clears on logout, so a crashed daemon leaves nothing behind), logs in `~/.local/state/xeac`, and caches in `~/.cache/xeac`.
+Daisy follows the XDG convention rather than a single dot-directory: configuration in `~/.config/daisy`, durable state in `~/.local/share/daisy`, sockets in the runtime directory (which the OS clears on logout, so a crashed daemon leaves nothing behind), logs in `~/.local/state/daisy`, and caches in `~/.cache/daisy`.
 
 Sessions are reachable only by whoever holds their handle: `create` mints a capability token, and every call to a session's socket must present it. The daemon's own API is guarded the same way, by a token it writes 0600 into the runtime directory. *Which* session is calling is not left to that token, though — a session runs as the same user and could read the file. On the unix socket the daemon asks the kernel for the peer's pid and resolves it to a session through the process session every worker leads, so a call is attributed to whoever actually made it.
 
@@ -89,7 +91,7 @@ Sessions are reachable only by whoever holds their handle: `create` mints a capa
 
 ## Documentation
 
-The full guides — installation, the [`xeac` command](documentation/cli.md), configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
+The full guides — installation, the [`daisy` command](documentation/cli.md), configuration, architecture, authoring agents and skills, the tool surface, and development — live in the **[Documentation](documentation/README.md)**, which indexes them and sketches the project layout.
 
 ## Built with
 

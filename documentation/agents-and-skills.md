@@ -1,6 +1,6 @@
 # Agents, skills, memory, and MCP
 
-Everything that shapes how XEAC behaves — its agents, their reusable skills, its memory, and its tool servers — is **plain Markdown and JSON on disk**. There are two layers, and they merge by name:
+Everything that shapes how Daisy behaves — its agents, their reusable skills, its memory, and its tool servers — is **plain Markdown and JSON on disk**. There are two layers, and they merge by name:
 
 - **Global:** `~/.agents/` — available everywhere.
 - **Project-local:** `.agents/` in the working directory you point an agent at.
