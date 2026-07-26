@@ -1,6 +1,6 @@
 # Development
 
-XEAC has three parts: the **Python harness** (one executable entered as `xeac`, `xeacd`, or a worker), the **Next.js web UI**, and the **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
+Daisy has three parts: the **Python harness** (one executable entered as `daisy`, `daisyd`, or a worker), the **Next.js web UI**, and the **Tauri desktop shell**. In development you run the daemon and the UI directly. The packaged app is built only for releases.
 
 ## Toolchain
 
@@ -21,19 +21,19 @@ uv sync                 # create .venv and install the project + dependencies
 The CLI starts the daemon on its first command, so usually there is nothing to launch:
 
 ```sh
-uv run xeac create --agent general-assistant --directory ~/code/project
-uv run xeac send <id> "what does this project do?" --wait
+uv run daisy create --agent general-assistant --directory ~/code/project
+uv run daisy send <id> "what does this project do?" --wait
 ```
 
-The [`xeac` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:
+The [`daisy` command](cli.md) is the full surface. To run the daemon in the foreground instead — the fastest way to watch a traceback — start it by name:
 
 ```sh
-uv run python -m xeac xeacd
+uv run python -m daisy daisyd
 ```
 
-One image, three entry points, chosen by the first argument: `xeac` (the CLI), `xeacd` (the daemon), `worker` (a session). A bare launch lands in the CLI, which is why the daemon has to be asked for. `xeac daemon stop` takes down a foreground daemon and its sessions with it.
+One image, three entry points, chosen by the first argument: `daisy` (the CLI), `daisyd` (the daemon), `worker` (a session). A bare launch lands in the CLI, which is why the daemon has to be asked for. `daisy daemon stop` takes down a foreground daemon and its sessions with it.
 
-It listens on a unix socket in your runtime directory and on an ephemeral loopback port for GUI clients; `xeac daemon endpoint` reports the port and the capability token. State follows the XDG convention — configuration in `~/.config/xeac/`, durable state in `~/.local/share/xeac/`, logs in `~/.local/state/xeac/` — all created on first run. Add provider keys via `xeac configure`, the configuration file, or environment variables; see the [Configuration guide](configuration.md).
+It listens on a unix socket in your runtime directory and on an ephemeral loopback port for GUI clients; `daisy daemon endpoint` reports the port and the capability token. State follows the XDG convention — configuration in `~/.config/daisy/`, durable state in `~/.local/share/daisy/`, logs in `~/.local/state/daisy/` — all created on first run. Add provider keys via `daisy configure`, the configuration file, or environment variables; see the [Configuration guide](configuration.md).
 
 ## Running the web UI
 
@@ -52,7 +52,7 @@ Useful scripts (in `web/`):
 
 Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime) and the invariant that `computer/` is never imported at module level — a parked worker that has loaded PyObjC is not safe to fork.
 
-A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `xeac configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
+A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `daisy configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
 
 ## Running the desktop app in dev
 
@@ -68,7 +68,7 @@ cd web
 bun run tauri:build
 ```
 
-This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helper with PyInstaller — a no-op when nothing changed, and it smoke-tests the frozen daemon before the build proceeds) and produces `web/src-tauri/target/release/bundle/macos/XEAC.app` plus a `.dmg` under `bundle/dmg/`.
+This runs `packaging/build-sidecar.sh` (freezes the harness into a bundled helper with PyInstaller — a no-op when nothing changed, and it smoke-tests the frozen daemon before the build proceeds) and produces `web/src-tauri/target/release/bundle/macos/Daisy.app` plus a `.dmg` under `bundle/dmg/`.
 
 ### Stable code-signing (recommended)
 
@@ -79,7 +79,7 @@ The screen-control tools (`control_screen`) need the macOS **Accessibility** gra
 packaging/create-signing-cert.sh
 
 # after each build: restore symlinks (undo Tauri's dereferencing) and sign
-packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/XEAC.app
+packaging/sign-app.sh web/src-tauri/target/release/bundle/macos/Daisy.app
 ```
 
 `sign-app.sh` also restores the frozen helper's symlink layout, which brings the app back from ~440 MB to ~230 MB (Tauri's resource copier otherwise dereferences PyInstaller's symlinks and doubles the bundle). The identity is self-signed, so Gatekeeper still warns on other machines until a build is Apple-notarized.
@@ -90,4 +90,4 @@ The repository ships **no committed test suite** — changes are verified ad hoc
 
 ## Project layout
 
-See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness is in `src/xeac/` (with `server.py` as the frozen build's entry point), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.
+See the [documentation index](README.md#the-shape-of-the-project) for the directory map. The harness is in `src/daisy/` (with `server.py` as the frozen build's entry point), the UI in `web/src/`, and the Tauri shell in `web/src-tauri/`.

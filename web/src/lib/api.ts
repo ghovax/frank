@@ -1,7 +1,7 @@
 import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifact-annotations";
 
 // Where the daemon lives, and what proves we may talk to it. The CLI and agents reach
-// `xeacd` over its unix socket, but a webview has no such transport, so the daemon also
+// `daisyd` over its unix socket, but a webview has no such transport, so the daemon also
 // serves its control plane on a loopback TCP listener for GUI clients, gated by a
 // capability token. Both the address and the token are resolved at runtime rather than
 // baked in, because the desktop app can point at the local daemon or at a remote one
@@ -9,13 +9,13 @@ import type { ArtifactAnnotationRecord, ArtifactImageAnnotation } from "./artifa
 // tokens*. Resolution order for the address:
 //   1. an explicit target set via `setApiBase` (a connection the user activated), then
 //   2. the endpoint the Tauri shell reports (`daemon_endpoint`), then
-//   3. a build-time default from NEXT_PUBLIC_XEAC_API_BASE, then
+//   3. a build-time default from NEXT_PUBLIC_DAISY_API_BASE, then
 //   4. the conventional local daemon address.
 // The connection layer (profiles UI / local store) writes the explicit target.
 const DEFAULT_API_BASE =
-  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_XEAC_API_BASE : "") || "http://127.0.0.1:8823";
-const API_BASE_STORAGE_KEY = "xeac.apiBase";
-const API_TOKEN_STORAGE_KEY = "xeac.apiToken";
+  (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_DAISY_API_BASE : "") || "http://127.0.0.1:8823";
+const API_BASE_STORAGE_KEY = "daisy.apiBase";
+const API_TOKEN_STORAGE_KEY = "daisy.apiToken";
 
 function runningInTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -519,10 +519,10 @@ export async function refreshRemoteAgent(name: string): Promise<{ health: string
 
 // Metadata key understood by a session's A2A surface.
 // A2A convention: an extension places its attributes under one URI-namespaced key in
-// the message `metadata` map, not as bare top-level keys. Mirrors XEAC_METADATA_KEY
+// the message `metadata` map, not as bare top-level keys. Mirrors DAISY_METADATA_KEY
 // / Metadata in the backend's protocol layer.
-export const XEAC_METADATA_KEY = "urn:xeac:ext:turn:v1";
-export const CONTENT_BLOCK_METADATA_KEY = "urn:xeac:ext:content-block:v1";
+export const DAISY_METADATA_KEY = "urn:daisy:ext:turn:v1";
+export const CONTENT_BLOCK_METADATA_KEY = "urn:daisy:ext:content-block:v1";
 
 export type PermissionMode = "default" | "auto" | "read_only";
 export type WorkspaceStrategy = "none" | "branch" | "worktree";
@@ -729,7 +729,7 @@ export async function fetchFullDiskAccess(): Promise<boolean> {
   }
 }
 
-// Open System Settings to the Full Disk Access pane so the user can add XEAC in one hop.
+// Open System Settings to the Full Disk Access pane so the user can add Daisy in one hop.
 export async function openFullDiskAccessSettings(): Promise<void> {
   await apiFetch(`/system/full-disk-access/open`, { method: "POST" }).catch(() => {});
 }
@@ -746,7 +746,7 @@ export async function fetchAccessibility(): Promise<boolean> {
   }
 }
 
-// Trigger the system Accessibility prompt and open its pane so the user can grant XEAC.
+// Trigger the system Accessibility prompt and open its pane so the user can grant Daisy.
 export async function openAccessibilitySettings(): Promise<void> {
   await apiFetch(`/system/accessibility/open`, { method: "POST" }).catch(() => {});
 }
@@ -789,7 +789,7 @@ export interface ModelsResponse {
   providers: ProviderOption[];
 }
 
-// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/xeac).
+// API credentials stored in the daemon's configuration.yaml (under $XDG_CONFIG_HOME/daisy).
 export async function fetchSettings(): Promise<Settings> {
   const response = await apiFetch(`/settings`);
   if (!response.ok) {
@@ -1628,7 +1628,7 @@ export interface A2APart {
 // A turn's control-state lives under one URI-namespaced key in `Task.metadata`, which is
 // A2A's convention for an extension's attributes. The names inside it are plain: the
 // namespace has already said whose they are.
-export const TURN_STATE_KEY = "urn:xeac:ext:turn:v1";
+export const TURN_STATE_KEY = "urn:daisy:ext:turn:v1";
 
 // What opened a turn. `peer` is a message from another session — a peer reporting its
 // result, or a parent following up — and is emphatically not the user speaking.

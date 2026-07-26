@@ -181,7 +181,7 @@ function friendlyErrorFromData(data: Record<string, unknown>): FriendlyError {
       case "network_error":
         return { title: "Connection interrupted", message: "The model connection dropped before the turn finished. Check the connection and retry." };
       case "server_error":
-        return { title: "Server request failed", message: "XEAC could not start the turn. Check the daemon log and try again." };
+        return { title: "Server request failed", message: "Daisy could not start the turn. Check the daemon log and try again." };
       case "request_too_large":
         return { title: "Request is too large", message: "The agent's model could not accept this much context. Start a smaller follow-up or configure a model with more capacity." };
       case "request_rejected":
@@ -1511,7 +1511,7 @@ export function useChat(
           pushErrorMessage(stateRef.current, {
             code: "server_error",
             title: "Server request failed",
-            message: "XEAC could not start the turn. Check the daemon log and try again.",
+            message: "Daisy could not start the turn. Check the daemon log and try again.",
           });
           // Let the attach close drive the wind-down when there is one, so the queue is
           // drained exactly once however the turn failed.

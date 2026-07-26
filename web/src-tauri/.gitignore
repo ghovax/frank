@@ -1,4 +1,4 @@
 # Rust build output and Tauri-generated code/schemas.
 /target
 /gen/schemas
-/server-bin/xeacd
+/server-bin/daisyd

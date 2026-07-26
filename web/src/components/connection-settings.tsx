@@ -14,7 +14,7 @@ import { Box, Button, EmptyState, Field, Flex, Image, Input, Text, Textarea, VSt
 import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { LuCheck, LuLaptop, LuNetwork, LuPlug, LuPlus, LuRotateCcw, LuServer, LuTrash2 } from "react-icons/lu";
-import xeacIcon from "@/app/icon.png";
+import daisyIcon from "@/app/icon.png";
 import { toaster } from "@/components/ui/toaster";
 import { SectionHeader } from "@/components/ui/section-header";
 import {
@@ -52,7 +52,7 @@ export function ConnectionSettings({
   // (gate) or switches the live session and closes the dialog (switcher).
   onConnected: (target: ConnectionTarget) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  // "page" shows the XEAC brand lockup for the full-screen fallback; "dialog" drops
+  // "page" shows the Daisy brand lockup for the full-screen fallback; "dialog" drops
   // it since the dialog already has a titled header.
   variant?: "page" | "dialog";
 }) {
@@ -69,7 +69,7 @@ export function ConnectionSettings({
   const [savingSshConnection, setSavingSshConnection] = useState(false);
   const [deletingConnectionId, setDeletingConnectionId] = useState<string | null>(null);
   const [newUrl, setNewUrl] = useState("");
-  // Every `xeacd` mints its own capability token at boot and publishes it in its runtime
+  // Every `daisyd` mints its own capability token at boot and publishes it in its runtime
   // directory. That directory is on the *remote* machine, so this client cannot read it —
   // the user pastes the token in, once, when saving the connection.
   const [newToken, setNewToken] = useState("");
@@ -83,7 +83,7 @@ export function ConnectionSettings({
   const [sshIdentityFile, setSshIdentityFile] = useState("");
   const [sshLocalPort, setSshLocalPort] = useState("");
   // No default: the daemon binds an ephemeral port, so there is no conventional number to
-  // guess. `xeac daemon endpoint` on that host reports the port and the token together.
+  // guess. `daisy daemon endpoint` on that host reports the port and the token together.
   const [sshRemotePort, setSshRemotePort] = useState("");
   const [sshContext, setSshContext] = useState("");
 
@@ -231,7 +231,7 @@ export function ConnectionSettings({
 
   const handleAddSshConnection = useCallback(async () => {
     const alias = sshAlias.trim();
-    // The port is not optional: `xeacd` binds an ephemeral one, so a tunnel with a guessed
+    // The port is not optional: `daisyd` binds an ephemeral one, so a tunnel with a guessed
     // number forwards to nothing.
     if (!alias || !sshRemotePort.trim()) return;
     const startedAt = performance.now();
@@ -307,9 +307,9 @@ export function ConnectionSettings({
       {variant === "page" && (
         <VStack gap={3}>
           <Flex align="center" gap={2.5}>
-            <Image src={xeacIcon.src} alt="" boxSize={14} borderRadius="xl" flexShrink={0} />
+            <Image src={daisyIcon.src} alt="" boxSize={14} borderRadius="xl" flexShrink={0} />
             <Text fontSize="4xl" fontWeight="bold" fontFamily="var(--font-display)" lineHeight="1" letterSpacing="tight">
-              XEAC
+              Daisy
             </Text>
           </Flex>
           <Text fontSize="sm" color="fg.muted" textAlign="center">

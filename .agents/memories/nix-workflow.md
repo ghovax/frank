@@ -26,7 +26,7 @@ Each project has a `flake.nix` (isolated devshell) and `.envrc`:
 - **Never install runtimes globally.** Language runtimes (node, python, go, rust, etc.) belong in the per-project devshell or are invoked through the project flake's tools.
 - Local secrets (API keys) are loaded from a gitignored `.env` via `dotenv_if_exists .env`.
 
-**This project (xeac):**
+**This project (daisy):**
 - Root `flake.nix` provides `bun` (the JS runtime/package-manager for the web UI).
 - `web/flake.nix` provides `nodejs_22` (for the web UI build toolchain).
 - Python is managed via `uv` through `pyproject.toml`.

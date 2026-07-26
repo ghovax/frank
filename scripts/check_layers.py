@@ -1,6 +1,6 @@
 """Enforce the package layering, and the two engineering invariants that ride on it.
 
-The architecture's spine is that the daemon never imports the runtime: `xeacd` spawns
+The architecture's spine is that the daemon never imports the runtime: `daisyd` spawns
 worker processes, and the workers carry the heavy runtime (LangChain, LiteLLM, model
 clients). Keeping the control plane free of those imports is what lets the warm pool
 pre-fork workers cheaply. The second invariant is that `computer` is only ever imported
@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGE = "xeac"
+PACKAGE = "daisy"
 
 # What each layer may import. A layer may always import itself.
 ALLOWED: dict[str, set[str]] = {
@@ -54,7 +54,7 @@ def _layer_of(path: Path, source_root: Path) -> str | None:
 
 
 def _imported_layers(tree: ast.AST) -> list[tuple[str, int, bool]]:
-    """Every `xeac.<layer>` import: the layer, its line, and whether it is module level."""
+    """Every `daisy.<layer>` import: the layer, its line, and whether it is module level."""
     found: list[tuple[str, int, bool]] = []
 
     class Visitor(ast.NodeVisitor):

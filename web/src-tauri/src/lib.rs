@@ -1,4 +1,4 @@
-// The Rust core of the XEAC desktop app.
+// The Rust core of the Daisy desktop app.
 //
 // Responsibilities beyond hosting the webview:
 //   1. Register the front-end-local SQLite store (connection profiles + UI prefs),
@@ -6,7 +6,7 @@
 //   2. Supervise the bundled harness server for "local" mode: spawn it on request,
 //      and reap it when the app truly quits (not when the window is merely closed).
 //   3. Behave like a proper macOS menu-bar app: a tray menu (New Chat, Recent
-//      Conversations, Open XEAC, Quit), and a close button that hides the window
+//      Conversations, Open Daisy, Quit), and a close button that hides the window
 //      and keeps the app (and its server) alive in the dock until the user quits.
 //
 // The window chrome — hidden titlebar with native macOS traffic lights overlaid on
@@ -32,12 +32,12 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 const LOCAL_HOST: &str = "127.0.0.1";
 // Only a fallback: the daemon picks a free port at startup and publishes it.
 const LOCAL_PORT: u16 = 8823;
-const TRAY_ID: &str = "xeac-tray";
+const TRAY_ID: &str = "daisy-tray";
 const MAIN_WINDOW: &str = "main";
 // The embedded native webview used to preview external websites at full browser
 // fidelity (real engine, top-level navigation — X-Frame-Options never applies). It
 // floats over the app's preview panel, positioned to that panel's rect by the UI.
-const PREVIEW_WEBVIEW: &str = "xeac-preview";
+const PREVIEW_WEBVIEW: &str = "daisy-preview";
 // Where the preview webview parks when hidden — far off-screen so it stays alive
 // (scripts, media, session) without being visible. Cheaper and less flickery than
 // tearing it down and rebuilding on every open/close.
@@ -58,7 +58,7 @@ struct LocalServer(Mutex<Option<u32>>);
 // The daemon — and the worker processes it re-execs from the same image — are what call the
 // macOS Accessibility API, and Accessibility checks the *calling* process's code identity.
 // Both are signed with the same identity as the app (see packaging/sign-app.sh), so granting
-// "XEAC" once covers the whole fleet as a single clean entry. A worker launched by any other
+// "Daisy" once covers the whole fleet as a single clean entry. A worker launched by any other
 // path would be a different subject and would prompt the user for its own grant.
 //
 // The child is made a session leader so quitting can signal the whole group: the daemon's
@@ -81,7 +81,7 @@ fn spawn_local_server(executable: &std::path::Path) -> std::io::Result<u32> {
         libc::posix_spawnattr_setflags(&mut attributes, libc::POSIX_SPAWN_SETSID as i16);
         // One image, three entry points: the daemon has to be asked for by name, or the
         // process would land in the CLI and exit immediately.
-        let subcommand = CString::new("xeacd").expect("static string");
+        let subcommand = CString::new("daisyd").expect("static string");
         let argv = [path.as_ptr(), subcommand.as_ptr(), std::ptr::null()];
         let mut pid: libc::pid_t = 0;
         let code = libc::posix_spawn(
@@ -142,11 +142,11 @@ fn runtime_directory() -> PathBuf {
     if let Some(directory) = std::env::var_os("XDG_RUNTIME_DIR") {
         let path = PathBuf::from(directory);
         if path.is_absolute() {
-            return path.join("xeac");
+            return path.join("daisy");
         }
     }
     let uid = unsafe { libc::getuid() };
-    std::env::temp_dir().join(format!("xeac-{uid}"))
+    std::env::temp_dir().join(format!("daisy-{uid}"))
 }
 
 // The daemon's loopback port and capability token, which it writes on startup. The desktop
@@ -196,16 +196,16 @@ fn server_executable<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> 
         .map_err(|error| format!("could not resolve resource dir: {error}"))?;
     Ok(resources
         .join("server-bin")
-        .join("XEAC Computer Use.app")
+        .join("Daisy Computer Use.app")
         .join("Contents")
         .join("MacOS")
-        .join("xeac"))
+        .join("daisy"))
 }
 
 // Stamp file recording the pid of the local server we spawned, so the next launch
 // can reap one orphaned by a hard crash (paths that can't run our cleanup).
 fn pid_stamp_path() -> PathBuf {
-    runtime_directory().join("xeacd.pid")
+    runtime_directory().join("daisyd.pid")
 }
 
 fn reap_stale_server() {
@@ -404,13 +404,13 @@ fn start_local_server(
     if !executable.exists() {
         return Err(format!(
             "The bundled daemon is not available (expected at {}). Start the harness \
-             yourself with `uv run python -m xeac xeacd`, or connect to a remote server instead.",
+             yourself with `uv run python -m daisy daisyd`, or connect to a remote server instead.",
             executable.display()
         ));
     }
 
     let pid = spawn_local_server(&executable)
-        .map_err(|error| format!("failed to start xeacd: {error}"))?;
+        .map_err(|error| format!("failed to start daisyd: {error}"))?;
     let _ = std::fs::write(pid_stamp_path(), pid.to_string());
     *guard = Some(pid);
     Ok(local_base_url())
@@ -425,12 +425,12 @@ fn start_local_server(
 fn daemon_endpoint() -> Result<serde_json::Value, String> {
     let (port_path, token_path) = daemon_endpoint_files();
     let port = std::fs::read_to_string(&port_path)
-        .map_err(|error| format!("xeacd has not published a port yet: {error}"))?
+        .map_err(|error| format!("daisyd has not published a port yet: {error}"))?
         .trim()
         .parse::<u16>()
-        .map_err(|error| format!("xeacd published an unreadable port: {error}"))?;
+        .map_err(|error| format!("daisyd published an unreadable port: {error}"))?;
     let token = std::fs::read_to_string(&token_path)
-        .map_err(|error| format!("xeacd has not published a token yet: {error}"))?
+        .map_err(|error| format!("daisyd has not published a token yet: {error}"))?
         .trim()
         .to_string();
     Ok(serde_json::json!({ "url": format!("http://{LOCAL_HOST}:{port}"), "token": token }))
@@ -571,8 +571,8 @@ fn build_tray_menu<R: Runtime>(
     recents: &[RecentItem],
 ) -> tauri::Result<Menu<R>> {
     let new_chat = MenuItem::with_id(app, "new_chat", "New Chat", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Open XEAC", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit XEAC", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open Daisy", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Daisy", true, None::<&str>)?;
     let separator_one = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
 
@@ -620,14 +620,14 @@ fn handle_tray_menu<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "new_chat" => {
             show_main_window(app);
-            let _ = app.emit("xeac://new-chat", ());
+            let _ = app.emit("daisy://new-chat", ());
         }
         "open" => show_main_window(app),
         "quit" => app.exit(0),
         "recent_none" => {}
         session_id => {
             show_main_window(app);
-            let _ = app.emit("xeac://open-session", session_id.to_string());
+            let _ = app.emit("daisy://open-session", session_id.to_string());
         }
     }
 }
@@ -707,7 +707,7 @@ pub fn run() {
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(tray_icon)
                 .icon_as_template(true)
-                .tooltip("XEAC")
+                .tooltip("Daisy")
                 .menu(&menu)
                 .on_menu_event(|app, event| handle_tray_menu(app, event.id().as_ref()))
                 .build(app)?;
@@ -723,7 +723,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("error while building the XEAC desktop app")
+        .expect("error while building the Daisy desktop app")
         .run(|app_handle, event| match event {
             // Clicking the dock icon while hidden brings the window back.
             tauri::RunEvent::Reopen { .. } => show_main_window(app_handle),

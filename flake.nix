@@ -9,7 +9,7 @@
       pkgs = import nixpkgs { inherit system; };
     in {
       devShells.${system}.default = pkgs.mkShell {
-        # The full toolchain to develop and build XEAC, pinned by flake.lock and
+        # The full toolchain to develop and build Daisy, pinned by flake.lock and
         # isolated to this directory:
         #   - bun          the web UI (Next.js) package manager and bundler
         #   - rustc/cargo  the Tauri desktop shell (Rust)

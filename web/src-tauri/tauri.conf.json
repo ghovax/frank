@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "XEAC",
+  "productName": "Daisy",
   "version": "0.1.0",
-  "identifier": "com.ghovax.xeac",
+  "identifier": "com.ghovax.daisy",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:3000",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "XEAC",
+        "title": "Daisy",
         "width": 1320,
         "height": 860,
         "minWidth": 840,

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Sign a built XEAC.app with the local self-signed identity (packaging/create-signing-cert.sh)
+# Sign a built Daisy.app with the local self-signed identity (packaging/create-signing-cert.sh)
 # so its bundled computer-use server has a STABLE code identity across rebuilds.
 #
 # The server — not the app — is the process that calls the macOS Accessibility API, and TCC
 # lists whichever process exercises the permission. The server ships as a nested helper bundle,
-# "XEAC Computer Use.app", whose Info.plist carries the *same* CFBundleName ("XEAC") and
-# identifier (com.ghovax.xeac) as the desktop app. Signed with the same persistent cert, it
-# satisfies the same designated requirement, so it folds into the app's single "XEAC"
-# Accessibility entry — no separate "xeac-server" — and that grant stays valid across rebuilds
+# "Daisy Computer Use.app", whose Info.plist carries the *same* CFBundleName ("Daisy") and
+# identifier (com.ghovax.daisy) as the desktop app. Signed with the same persistent cert, it
+# satisfies the same designated requirement, so it folds into the app's single "Daisy"
+# Accessibility entry — no separate "daisy-server" — and that grant stays valid across rebuilds
 # (vs. a fresh ad-hoc hash every time). Full Disk Access and the properly-iconed entry persist
 # with it too.
 set -euo pipefail
 
-APP="${1:?usage: sign-app.sh <path-to-XEAC.app>}"
-IDENTITY="XEAC Local Codesign"
-HELPER="$APP/Contents/Resources/server-bin/XEAC Computer Use.app"
+APP="${1:?usage: sign-app.sh <path-to-Daisy.app>}"
+IDENTITY="Daisy Local Codesign"
+HELPER="$APP/Contents/Resources/server-bin/Daisy Computer Use.app"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Undo Tauri's symlink flattening. PyInstaller lays the frozen server out as a codesignable macOS
@@ -24,7 +24,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # every one into a full second copy and ballooning the app to ~1.8 GB. `ditto` preserves symlinks,
 # so re-copying the pristine helper from server-bin (untouched by Tauri) restores the ~380 MB tree
 # before we sign it in place.
-pristine="$repo_root/web/src-tauri/server-bin/XEAC Computer Use.app"
+pristine="$repo_root/web/src-tauri/server-bin/Daisy Computer Use.app"
 if [ -d "$pristine" ] && [ -d "$HELPER" ]; then
   echo "restoring symlink-preserving helper (undo Tauri deref)"
   rm -rf "$HELPER"
@@ -37,7 +37,7 @@ fi
 # TCC tracks for Accessibility — ad-hoc, which is exactly the fresh-hash-every-build problem this
 # script exists to prevent. So sign the helper explicitly (`--deep`, to catch its own PyInstaller
 # dylibs), then re-seal the app so its signature covers the helper's new hash. Each bundle takes
-# its identifier from its own Info.plist (both com.ghovax.xeac); no hardened runtime, so the
+# its identifier from its own Info.plist (both com.ghovax.daisy); no hardened runtime, so the
 # helper's dylibs still load.
 codesign --force --deep --sign "$IDENTITY" "$HELPER"
 codesign --force --sign "$IDENTITY" "$APP"

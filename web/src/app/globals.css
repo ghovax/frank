@@ -49,11 +49,11 @@ samp {
   font-family: var(--app-font-mono);
 }
 
-.xeac-terminal-surface {
+.daisy-terminal-surface {
   background: var(--chakra-colors-bg);
 }
 
-.xeac-terminal-surface .xterm {
+.daisy-terminal-surface .xterm {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -63,24 +63,24 @@ samp {
   -webkit-user-select: none;
 }
 
-.xeac-terminal-surface .xterm,
-.xeac-terminal-surface .xterm-screen,
-.xeac-terminal-surface .xterm-viewport {
+.daisy-terminal-surface .xterm,
+.daisy-terminal-surface .xterm-screen,
+.daisy-terminal-surface .xterm-viewport {
   background-color: var(--chakra-colors-bg) !important;
 }
 
-.xeac-terminal-surface .xterm-screen {
+.daisy-terminal-surface .xterm-screen {
   z-index: 31;
   cursor: text;
 }
 
-.xeac-terminal-surface .xterm-viewport {
+.daisy-terminal-surface .xterm-viewport {
   z-index: 30;
   box-sizing: border-box;
 }
 
-.xeac-terminal-surface .xterm:focus,
-.xeac-terminal-surface .xterm-helper-textarea:focus {
+.daisy-terminal-surface .xterm:focus,
+.daisy-terminal-surface .xterm-helper-textarea:focus {
   outline: none;
 }
 

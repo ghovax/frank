@@ -1,21 +1,21 @@
 ---
 name: harness-layout
 title: Repository layout — packages, and the .agents protocol
-description: Where XEAC's code lives, what each package may import, and this repository's .agents layout for project-local agents, skills, memories, and MCP servers.
+description: Where Daisy's code lives, what each package may import, and this repository's .agents layout for project-local agents, skills, memories, and MCP servers.
 importance: high
 tags: configuration, dotagents, mcp, layering
 ---
 
 ## The package tree
 
-One executable, three entry points, selected by the first argument in `src/xeac/__main__.py`: `xeac` (the CLI), `xeacd` (the daemon), and `worker` (a session). `server.py` at the repository root is the same entry for the frozen build.
+One executable, three entry points, selected by the first argument in `src/daisy/__main__.py`: `daisy` (the CLI), `daisyd` (the daemon), and `worker` (a session). `server.py` at the repository root is the same entry for the frozen build.
 
 ```
-src/xeac/
+src/daisy/
 ├── base/        configuration, XDG paths, skills, permission modes, MCP client, file leases
 ├── protocol/    A2A cards, DTOs, the wire contract
-├── cli/         the `xeac` command and its renderers
-├── daemon/      xeacd: registry, lifecycle, worker pool, brokers, persistence
+├── cli/         the `daisy` command and its renderers
+├── daemon/      daisyd: registry, lifecycle, worker pool, brokers, persistence
 ├── worker/      a session process: its socket server and its executor
 ├── runtime/     the agent loop, prompts, tools, models
 ├── computer/    macOS screen-control bridges (native apps + Chrome)
@@ -42,4 +42,4 @@ Non-trivial local MCP examples live in `examples/mcp/<server-id>/` with a `serve
 
 ## Runtime state
 
-XDG, never the repository: configuration in `~/.config/xeac/`, `history.db` and uploads in `~/.local/share/xeac/`, logs in `~/.local/state/xeac/`, caches in `~/.cache/xeac/`, and the daemon's socket, port, token and per-session sockets in the runtime directory (`0700`, cleared by the OS on logout).
+XDG, never the repository: configuration in `~/.config/daisy/`, `history.db` and uploads in `~/.local/share/daisy/`, logs in `~/.local/state/daisy/`, caches in `~/.cache/daisy/`, and the daemon's socket, port, token and per-session sockets in the runtime directory (`0700`, cleared by the OS on logout).
