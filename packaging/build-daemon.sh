@@ -21,7 +21,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-target="packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy"
+# Where the executable lands, which is not the same shape on every platform. The spec ends in
+# `BUNDLE(...)`, and PyInstaller only honours that on macOS — everywhere else it stops after
+# `COLLECT` and leaves a plain directory. Assuming the bundle meant a Linux build froze
+# correctly for two minutes and then failed its own smoke test on a path that was never going
+# to exist, reporting "the frozen daemon exited before it was ready" over an `env: No such file
+# or directory`. The freeze was fine; the post-condition was wrong.
+case "$(uname -s)" in
+  Darwin) target="packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy" ;;
+  *)      target="packaging/dist/daisy/daisy" ;;
+esac
 
 # Freshness guard: skip the freeze when the binary already exists and nothing that goes into it
 # is newer. `find -newer` prints the first newer file, so empty means fresh.
@@ -67,12 +76,16 @@ smoke_log="$smoke_root/daemon.log"
 
 # The binary is a single image with three entry points, so the daemon has to be asked for by
 # name; launching it bare would land in the CLI and exit immediately.
+if [ ! -x "$target" ]; then
+  echo "failed: pyinstaller did not produce $target" >&2
+  exit 1
+fi
 env XDG_RUNTIME_DIR="$smoke_root/run" \
     XDG_CONFIG_HOME="$smoke_root/config" \
     XDG_DATA_HOME="$smoke_root/data" \
     XDG_STATE_HOME="$smoke_root/state" \
     XDG_CACHE_HOME="$smoke_root/cache" \
-  "$repo_root/packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy" daisyd >"$smoke_log" 2>&1 &
+  "$repo_root/$target" daisyd >"$smoke_log" 2>&1 &
 daemon_pid=$!
 
 # Readiness is this daemon publishing its handshake and answering on its socket — not a fixed
@@ -106,7 +119,8 @@ kill "$daemon_pid" 2>/dev/null || true
 wait "$daemon_pid" 2>/dev/null || true
 daemon_pid=""
 
-cat <<'NEXT'
+if [ "$(uname -s)" = "Darwin" ]; then
+  cat <<'NEXT'
 
 built: packaging/dist/Daisy Computer Use.app
 
@@ -116,3 +130,18 @@ Then install it and put the command on your PATH:
   ditto "packaging/dist/Daisy Computer Use.app" "/Applications/Daisy Computer Use.app"
   ln -sf "/Applications/Daisy Computer Use.app/Contents/MacOS/daisy" /usr/local/bin/daisy
 NEXT
+else
+  # No bundle, no signing, and no Accessibility to preserve — those are macOS concerns. What a
+  # Linux build gets is the same three-entry-point image, which is all the CLI and daemon need.
+  cat <<'NEXT'
+
+built: packaging/dist/daisy/daisy
+
+Put it on your PATH:
+  ln -sf "$PWD/packaging/dist/daisy/daisy" ~/.local/bin/daisy
+
+The .app wrapper and code signing are macOS-only: they exist for the Accessibility grant,
+which has no counterpart here. The desktop app is macOS-only too — `daisy web` is the
+interface on this platform.
+NEXT
+fi
