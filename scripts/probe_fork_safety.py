@@ -6,23 +6,40 @@ pages are paid for once. On Linux this is measured and works: a worker costs abo
 megabytes of private memory instead of the two hundred and sixty it costs today. macOS is the
 open question, and it is open for one specific reason.
 
-Apple's position is that `fork()` without a following `exec()` is unsupported once a process
-has initialised most frameworks. The failure is not subtle when it happens — the child dies
-with "may have been in progress in another thread when fork() was called" — but whether it
-happens depends entirely on what the parent touched before forking. Daisy's layering check
-already forbids importing `computer/` at module level, with that exact reason written next to
-it, so the intended arrangement is that the fork server never loads PyObjC and the child loads
-it afterwards. That is the supported direction. This measures whether it is actually true.
+Apple's position, stated by DTS in the developer forums, is that `fork()` without `exec()`
+works reliably only if you stay within POSIX; the moment Objective-C or any higher-level
+framework is involved you are outside what is supported. The concrete mechanism is a check
+added in macOS 10.13: the Objective-C runtime registers `pthread_atfork` handlers, notes that
+a fork happened without an exec, and then **aborts if the child triggers `+initialize` on a
+class that was not already initialised in the parent** — "may have been in progress in another
+thread when fork() was called". CPython drew the same conclusion and changed multiprocessing's
+default start method on macOS to `spawn` in 3.8.
+
+Note which direction that runs, because it is the opposite of the intuitive one. Loading PyObjC
+lazily *in the child* is the failure mode, not the safe path. The safe direction is to have
+everything initialised *before* the fork — which is why the usual advice is to preload.
+
+That matters here because Daisy's layering check forbids importing `computer/` at module level
+with the comment "a parked worker that has loaded PyObjC is not safe to fork". Under the
+mechanism above that comment has it backwards: a parent that has fully initialised PyObjC is
+the *safer* one. The invariant is still right for its original purpose — keeping the runtime
+out of the daemon — but it is not the fork-safety guarantee it reads as.
+
+The remaining question is empirical, because the abort is conservative: it fires whenever a
+class is first initialised after a fork, whether or not another thread was really mid-init. In
+a strictly single-threaded fork server no other thread can exist, so the hazard the check
+guards against is impossible — but the check does not know that and may abort anyway.
 
 Three cases, and the third is the control:
 
   1. Fork from a parent holding the heavy stack, and have the child load PyObjC and call the
-     Accessibility API. This is the arrangement Daisy would use. It must pass.
+     Accessibility API. This is the arrangement a naive fork server would use, and on the
+     reading above it is **expected to fail**.
   2. The same child then runs an asyncio event loop and binds a socket, because a worker is a
      socket server and inheriting a broken runtime would show up here rather than at import.
-  3. Fork from a parent that has *already* used PyObjC. This is expected to fail, and it is
-     included so a pass in case 1 means something: if case 3 also passes, this machine is not
-     exercising the hazard and case 1 proves less than it appears to.
+  3. Fork from a parent that has *already* used PyObjC — the preloaded arrangement. If case 1
+     fails and case 3 passes, preloading is the workable shape. If both fail, macOS cannot host
+     a fork server at all and should keep exec'd workers.
 
 Run it on the Mac that matters:
 
@@ -73,8 +90,10 @@ def _run_child(work) -> dict:
     return json.loads(raw.decode())
 
 
-def case_worker_after_fork() -> dict:
-    """The arrangement Daisy would use: heavy stack in the parent, PyObjC only in the child."""
+def case_pyobjc_after_fork() -> dict:
+    """The naive arrangement: heavy stack in the parent, PyObjC first touched in the child.
+
+    Expected to FAIL. This is the direction the 10.13 check exists to catch."""
     import litellm  # noqa: F401  — the 137 MB this whole exercise is about
 
     gc.collect()
@@ -104,7 +123,10 @@ def case_worker_after_fork() -> dict:
 
 
 def case_pyobjc_before_fork() -> dict:
-    """The control. Expected to fail; a pass means this machine is not exercising the hazard."""
+    """The preloaded arrangement: the parent initialises PyObjC, then forks.
+
+    Expected to PASS. If it does, a fork server on macOS must preload the frameworks rather
+    than avoid them — the opposite of what the layering comment implies."""
     from ApplicationServices import AXIsProcessTrusted
 
     AXIsProcessTrusted()  # initialise the frameworks in the *parent*
@@ -125,27 +147,30 @@ def main() -> int:
 
     print(f"macOS {platform.mac_ver()[0]} on {platform.machine()}, python {sys.version.split()[0]}\n")
 
-    print("1. worker forked from a heavy parent, PyObjC loaded in the child")
-    first = case_worker_after_fork()
+    print("1. PyObjC first touched in the CHILD after fork (expected FAIL)")
+    first = case_pyobjc_after_fork()
     print(f"   {'PASS' if first.get('ok') else 'FAIL'}  {json.dumps(first)}\n")
 
-    print("2. control: parent used PyObjC before forking (expected to FAIL)")
+    print("2. PyObjC preloaded in the PARENT before forking (expected PASS)")
     second = case_pyobjc_before_fork()
     print(f"   {'PASS' if second.get('ok') else 'FAIL'}  {json.dumps(second)}\n")
 
-    verdict = textwrap.dedent(f"""
+    lazy_ok, preload_ok = first.get("ok") is True, second.get("ok") is True
+    print(textwrap.dedent(f"""
         VERDICT
-          fork server viable on this machine : {first.get('ok') is True}
-          hazard actually exercised here     : {second.get('ok') is not True}
-    """).strip()
-    print(verdict)
-    if first.get("ok") and second.get("ok"):
-        print(
-            "\n  Both passed, which is weaker than it looks: this machine did not reproduce the\n"
-            "  documented hazard, so case 1 passing is not evidence that avoiding PyObjC in the\n"
-            "  parent is what made it work. Treat as inconclusive."
-        )
-    return 0 if first.get("ok") else 1
+          lazy PyObjC in the child works : {lazy_ok}
+          preloaded PyObjC works         : {preload_ok}
+    """).strip())
+    if preload_ok:
+        print("\n  A macOS fork server is possible, but it must PRELOAD the frameworks in the\n"
+              "  parent. Avoiding them is the failing direction.")
+    elif lazy_ok:
+        print("\n  Unexpected: the documented hazard did not reproduce here. Treat as\n"
+              "  inconclusive rather than as permission to ship a fork server.")
+    else:
+        print("\n  Neither arrangement works. macOS should keep exec'd workers; the fork\n"
+              "  server is a Linux-only optimisation.")
+    return 0 if (lazy_ok or preload_ok) else 1
 
 
 if __name__ == "__main__":
