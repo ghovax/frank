@@ -71,7 +71,7 @@ def _capture_artifacts(
     """The callback injected into the agent runtime, called after a write-ish tool call.
     Non-blocking: build a request, enqueue, and return so the agent's turn never waits on
     git. Takes keyword arguments (not a request object) so the runtime stays decoupled from
-    the server's internal request type."""
+    the daemon's internal request type."""
     if state.capture_queue is None:
         return
     request = CaptureRequest(

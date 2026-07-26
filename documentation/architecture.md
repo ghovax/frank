@@ -70,7 +70,9 @@ Everything goes to the daemon, `send` included — `daisy` opens the daemon's un
 
 A [Tauri](https://tauri.app) shell around a [Next.js](https://nextjs.org) UI (static export; Chakra UI). It is a **client** — it holds no agent logic. It renders conversations, manages settings, previews artifacts, and chooses which daemon to talk to.
 
-Because a webview cannot open a unix socket, the app uses the daemon's loopback listener and the daemon relays data-plane commands to the owning session. The packaged app bundles a frozen copy of the harness (PyInstaller, via `packaging/build-sidecar.sh`) and starts `daisyd` automatically, so a fresh install works with zero setup.
+Because a webview cannot open a unix socket, the app uses the daemon's loopback listener and the daemon relays data-plane commands to the owning session.
+
+The app does not contain a daemon and does not start one. It finds one — reading the port and token `daisyd` publishes into the runtime directory — and is powerless when there is none, exactly as it is when a remote host does not answer. "Local" is a label for the daemon on this machine, not a different mechanism: connecting to it is the same act as connecting over a tunnel, minus the tunnel. The daemon is a separate installable (`packaging/build-daemon.sh`), signed with the same identity as the app so the two share one macOS Accessibility grant. `daisy open` brings the daemon up and launches the window in one command, which is the dependency running from the command line to the app rather than the other way round.
 
 ## Connections: local, remote, SSH
 

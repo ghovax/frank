@@ -32,7 +32,7 @@ def packaged_configuration_yaml() -> str:
 
 
 def _bundled_dotagents_root() -> Path:
-    """The ``.agents`` directory shipped with the server itself. The bundled
+    """The ``.agents`` directory shipped with the harness itself. The bundled
     agents under it are always available as a base layer, so every working
     directory sees at least the shipped profiles even when it has no ``.agents``
     of its own. Located by walking up from this file to the nearest ancestor
@@ -865,8 +865,8 @@ class GlobalConfiguration(Section):
     #
     # The home root (``~/.agents``) is always global. Project-relative roots
     # (``.agents`` and friends) are resolved against the *session's working
-    # directory* rather than the server's launch CWD, so a session working
-    # outside the directory the server happens to have been started in is never
+    # directory* rather than the harness's launch CWD, so a session working
+    # outside the directory the harness happens to have been started in is never
     # advertised that directory's agents/skills/memories/MCP servers — and the
     # paths it is handed are valid for where it actually runs. Each ``*_for``
     # method mirrors its CWD-relative counterpart above; prefer these everywhere
@@ -874,7 +874,7 @@ class GlobalConfiguration(Section):
 
     def _local_base(self, working_directory: str) -> Path:
         """The directory project-relative ``.agents`` roots resolve against — the
-        working directory, or the server's CWD as a last resort when none is given."""
+        working directory, or the harness's CWD as a last resort when none is given."""
         return Path(working_directory).expanduser() if working_directory else Path.cwd()
 
     def _resolve_local(self, working_directory: str, directory: str) -> Path:

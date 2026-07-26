@@ -129,6 +129,31 @@ A remote agent is not a session: it runs on someone else's machine, at their cos
 
 Registered in `~/.agents/remote-agents.json` by card URL, or from **Settings → Remote agents**. Their cards are resolved in the background, and a card that redirects to a private or loopback address is refused unless you opt in with `allow_private` — a remote agent's own card cannot be used to point Daisy at something inside your network.
 
+## The desktop app
+
+```
+daisy open                              # start the daemon if needed, then launch the app
+daisy open --no-daemon                  # just the window
+```
+
+The app is a **client**. It does not contain a daemon and does not start one — it finds one, reading the port and token `daisyd` publishes, and is powerless when there is none, exactly as it is when a remote host does not answer. So the convenience runs this way round: the command line, which owns the daemon, brings it up and then launches the window.
+
+The app is addressed by bundle identifier rather than by name, so renaming or moving it does not break this. If it is not installed, the command says so rather than half-working. macOS only.
+
+## The daemon
+
+```
+daisy daemon status                     # what it is running, and where
+daisy daemon start                      # start one if none is running
+daisy daemon stop                       # stop it, and its sessions with it
+daisy daemon restart                    # stop, wait for the process to go, start again
+daisy daemon endpoint                   # the loopback port and capability token
+```
+
+`restart` **ends every live session**: workers are the daemon's children and shutdown reaps them. It exists because macOS caches the Accessibility trust check per process, so a daemon that was already running when you granted the permission never sees it — and its workers are re-execs of it, so neither do they. The desktop app asks for the same thing over the control plane (`daemon.restart`), which is what makes the grant flow one click now that restarting the window no longer restarts the harness.
+
+`stop` and `restart` signal the process group rather than calling the API, because a daemon wedged badly enough to need stopping may not be answering its own socket.
+
 ## Configuration
 
 ```

@@ -1,4 +1,4 @@
-"""The server's SQLAlchemy layer: the declarative ``Base``, the ORM records that map the
+"""The daemon's SQLAlchemy layer: the declarative ``Base``, the ORM records that map the
 history database's tables, and the lightweight additive schema-reconciliation applied on
 startup.
 

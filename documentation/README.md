@@ -18,7 +18,7 @@ Design plans for larger changes — the sequential, commit-associated record of 
 
 ```
 daisy/
-├── server.py                 # entry point for the frozen build (all three roles)
+├── packaging/entry.py                 # entry point for the frozen build (all three roles)
 ├── src/daisy/
 │   ├── __main__.py           # argv dispatch: daisy, daisyd, worker
 │   ├── base/                 # configuration, XDG paths, skills, permission modes

@@ -151,7 +151,7 @@ async def bash(
         process_id = process.pid
         # `process_group=0` puts the shell in its own group with pgid == pid, so killpg reaps
         # the whole subtree. Persist the group id so a crash-orphaned subtree (survived a
-        # SIGKILL of the server) is reaped on the next startup. No-op UPDATE when the job is
+        # SIGKILL of the harness) is reaped on the next startup. No-op UPDATE when the job is
         # not durably tracked (no context).
         try:
             get_background_job_store().record_process_group(job_id, os.getpgid(process_id))

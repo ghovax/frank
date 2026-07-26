@@ -62,7 +62,7 @@ def _merged_sandbox(current, posted: dict):
 
 @router.get("/system/full-disk-access")
 async def full_disk_access_status():
-    """Whether the server process can read Full-Disk-Access-protected data (Screen Time,
+    """Whether the daemon process can read Full-Disk-Access-protected data (Screen Time,
     Safari history). Drives the Settings banner + button for the user-context feature."""
     return {"granted": await asyncio.to_thread(_projects._full_disk_access_granted)}
 
@@ -76,7 +76,7 @@ async def open_full_disk_access_settings():
 
 @router.get("/system/accessibility")
 async def accessibility_status():
-    """Whether the server can control other apps (read the AX tree, synthesize input) —
+    """Whether the daemon can control other apps (read the AX tree, synthesize input) —
     the permission the computer-use tool needs. Drives the Settings banner/button."""
     return {"granted": await asyncio.to_thread(_system._accessibility_granted)}
 

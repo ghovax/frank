@@ -19,13 +19,12 @@ import {
   activateConnection,
   checkConnection,
   getLastTargetId,
-  LOCAL_DEFAULT_URL,
   LOCAL_TARGET_ID,
+  findLocalDaemon,
   resolveReachableConnectionUrl,
-  startLocalServer,
   waitForConnection,
 } from "@/lib/connection";
-import { isTauri, listConnections, type ConnectionProfile } from "@/lib/connection-store";
+import { listConnections, type ConnectionProfile } from "@/lib/connection-store";
 import { ConnectionSettings } from "@/components/connection-settings";
 import { toaster } from "@/components/ui/toaster";
 
@@ -62,17 +61,17 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
 
   const connectToLocal = useCallback(async (): Promise<boolean> => {
     try {
-      const url = await startLocalServer();
-      const ok = isTauri()
-        ? await waitForConnection(url)
-        : await checkConnection(url, { timeoutMs: 2000 });
-      if (!ok) {
+      // One look, not a wait. The twenty-second poll this used to do was waiting on a daemon
+      // the app had just launched; nothing is being launched now, so a daemon either answers
+      // or it is not running, and pretending otherwise only delays saying so.
+      const { url, listening } = await findLocalDaemon();
+      if (!listening) {
         toaster.create({
           type: "error",
-          title: translation("couldntConnect"),
-          description: isTauri()
-            ? translation("localServerNotStarted")
-            : translation("noServerAt", { url: LOCAL_DEFAULT_URL.replace(/^https?:\/\//, "") }),
+          title: translation("noLocalDaemon"),
+          description: translation("noLocalDaemonHint", {
+            url: url.replace(/^https?:\/\//, ""),
+          }),
           closable: true,
         });
         return false;
@@ -119,7 +118,7 @@ export function ConnectionGate({ children }: { children: React.ReactNode }) {
   }, [translation]);
 
   // Auto-connect on every route — no route works without a backend (except the
-  // gallery, which skips the loop so it never spawns a server or toasts failures).
+  // gallery, which skips the loop so it never probes a daemon or toasts failures).
   useEffect(() => {
     if (pathname?.startsWith("/gallery")) return;
     let cancelled = false;

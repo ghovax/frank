@@ -3,7 +3,7 @@
 import { Alert, Box, Button, Dialog, EmptyState, Flex, IconButton, Input, Portal, Spinner, Text, VStack } from "@chakra-ui/react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LuEye, LuEyeOff, LuKeyRound, LuPlug, LuPlus, LuSearch, LuServer, LuTrash2, LuUsers } from "react-icons/lu";
-import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
+import { fetchAccessibility, fetchAgentConfiguration, fetchFullDiskAccess, fetchSettings, openAccessibilitySettings, openFullDiskAccessSettings, restartApp, restartDaemon, saveAgentConfiguration, saveSettings, subscribeEvents, updateCompactionSettings, updateComputerControlSetting, updateUserContextSetting, type AgentConfiguration, type AgentSummary, type ModelOption, type PermissionMode, type ProviderOption, type RecentModel, type SandboxEnforce } from "@/lib/api";
 import type { ConnectionTarget } from "@/lib/connection";
 import { ConnectionSettings } from "./connection-settings";
 import { ConnectionSwitcher } from "./connection-switcher";
@@ -781,7 +781,19 @@ export function SettingsDialog({
       cancelLabel={translation("restartLater")}
       confirmLabel={translation("restartConfirm")}
       maxW="420px"
-      onConfirm={() => void restartApp()}
+      onConfirm={() => void (async () => {
+        // Two processes, two restarts. The daemon is the one macOS has to re-evaluate — the
+        // trust check is cached per process and its workers are re-execs of it — and it is no
+        // longer this app's child, so restarting the window alone would leave the grant unseen.
+        // Restart it first, then reload the window against the successor.
+        try {
+          await restartDaemon();
+        } catch {
+          // A daemon that cannot be asked is one the user will have to restart themselves;
+          // reloading the window is still the right second half, so carry on.
+        }
+        await restartApp();
+      })()}
     >
       {translation("restartBody")}
     </ConfirmDialog>

@@ -46,7 +46,7 @@ _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 # token budget, so it stays fixed.
 MINIMUM_USEFUL_FETCH_CHARS = 64
 
-# Web-fetch engines, injected by the server on startup and on every settings change
+# Web-fetch engines, injected by the harness on startup and on every settings change
 # (mirroring the Exa client). Jina Reader is the always-available default (works
 # keyless); the Firecrawl client is optional and only set when a key is configured.
 _jina_api_key: str = ""

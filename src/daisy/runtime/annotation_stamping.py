@@ -9,7 +9,7 @@ values the JSON metadata uses, so the model correlates "annotation 2 says …"
 with the visible "2" on the image.
 
 Everything here is synchronous, pure image work (Pillow); the executor calls it
-off-loop via ``asyncio.to_thread`` per the server's blocking-work discipline.
+off-loop via ``asyncio.to_thread`` per the harness's blocking-work discipline.
 The stamped copy is harness machinery: it is inlined into the turn silently and
 never narrated to the user.
 """
@@ -23,7 +23,7 @@ from typing import Any, Optional
 from daisy.base.tuning import Tunable, active_tuning
 
 # Sources the stamper can read pixels from: a local file path (the common case —
-# artifact images reference files on the server) or an inline data URI.
+# artifact images reference files on the harness) or an inline data URI.
 # Remote http(s) sources are deliberately not fetched here: turn assembly must
 # not block on the network, and the structured annotation JSON still gives the
 # model the full facts for those.

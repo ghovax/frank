@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.get("/home")
 async def home_directory():
-    """The server user's home directory and its folder name — the default project
+    """The daemon user's home directory and its folder name — the default project
     the UI selects before anything else is chosen."""
     home = str(Path.home())
     return {"path": home, "name": _project_name(home)}

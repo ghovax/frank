@@ -22,7 +22,10 @@ out of the path between two peers; it only carries what a human's client cannot 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
+import sys
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
@@ -465,6 +468,56 @@ async def _daemon_status(_params: dict) -> dict:
     }
 
 
+async def _daemon_restart(_params: dict) -> dict:
+    """Replace this daemon with a fresh one, and say what that costs.
+
+    It exists for one reason: macOS caches the Accessibility trust check per process, so a
+    daemon that was already running when the user granted the permission never sees it, and its
+    workers are re-execs of it, so neither do they. The desktop app used to get this for free by
+    killing the daemon it owned and relaunching itself. It no longer owns one, so the daemon has
+    to be able to do it on request.
+
+    **Every live session ends.** Workers are this process's children and shutdown reaps them;
+    there is no version of this that keeps them. The count is returned so a caller can say so
+    before asking, and `daisy daemon restart` and the settings dialog both do.
+
+    The re-exec is scheduled rather than immediate so this response reaches the client first —
+    otherwise the caller sees a dropped connection and cannot tell success from a crash."""
+    assert state.registry is not None
+    live = len(state.registry.live())
+
+    async def replace() -> None:
+        # `execv` rather than spawn-and-exit, for two reasons. It keeps the pid, so the lock
+        # file's descriptor carries over and a successor never races the predecessor for it —
+        # the failure mode a naive stop-then-start hits, where the new daemon dies on a lock the
+        # old one has not released yet and nothing is left running. And it replaces the address
+        # space, which is where the Accessibility trust result was cached, so the successor asks
+        # the current TCC database rather than remembering the old answer. That second point is
+        # the whole purpose of this method and can only be confirmed on macOS.
+        #
+        # The sleep is long enough for the response to be written and flushed, short enough that
+        # nobody is left wondering.
+        await asyncio.sleep(0.5)
+        if state.lifecycle is not None:
+            with contextlib.suppress(Exception):
+                await state.lifecycle.aclose()
+        os.execv(sys.executable, [sys.executable, *_daemon_argv()])
+
+    asyncio.get_running_loop().create_task(replace())
+    return {"restarting": True, "sessions_ended": live}
+
+
+def _daemon_argv() -> list[str]:
+    """How to re-enter this program as the daemon.
+
+    Mirrors `pool.worker_command`: in the frozen application the executable *is* the image and
+    takes the entry point as its first argument, while from a checkout it is an interpreter that
+    needs `-m daisy` first. Getting this wrong would re-exec into the CLI, which exits."""
+    if getattr(sys, "frozen", False):
+        return ["daisyd"]
+    return ["-m", "daisy", "daisyd"]
+
+
 METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "session.create": _session_create,
     "session.list": _session_list,
@@ -482,6 +535,7 @@ METHODS: dict[str, Callable[[dict], Awaitable[dict]]] = {
     "remote.send": _remote_send,
     "turn.get": _turn_get,
     "daemon.status": _daemon_status,
+    "daemon.restart": _daemon_restart,
 }
 
 
@@ -639,7 +693,7 @@ async def events(request: Request) -> EventSourceResponse:
                 if event is None:
                     # The daemon is going down and has closed the bus. Ending here is what lets
                     # it finish: a server draining its connections cannot outwait a stream that
-                    # is waiting on the server.
+                    # is waiting on the daemon.
                     break
                 yield {"data": compact(event)}
         finally:

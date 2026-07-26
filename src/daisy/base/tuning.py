@@ -460,7 +460,7 @@ class Tuning:
 
 
 # Process-global active policy, pushed in at startup and on every config reload. Defaults to the
-# calibrated baselines so imports before the server wires it up still behave.
+# calibrated baselines so imports before the harness wires it up still behave.
 _active: Tuning = Tuning(TuningConfiguration())
 
 

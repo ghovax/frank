@@ -43,7 +43,7 @@ class Broadcaster:
 
     def close(self) -> None:
         """End every subscriber's stream. Used when the daemon is going down: an open SSE
-        response keeps the server from finishing its shutdown, so the streams have to be told
+        response keeps the daemon from finishing its shutdown, so the streams have to be told
         to end before the servers are asked to stop, not after."""
         for queue in list(self._subscribers):
             queue.put_nowait(None)

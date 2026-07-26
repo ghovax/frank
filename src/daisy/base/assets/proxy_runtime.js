@@ -6,7 +6,7 @@
 // cross-origin history.replaceState no longer throws.
 //
 // BASE (the page's real origin) and PROXY (our proxy prefix) are filled in
-// per-page by the server, which substitutes the two placeholder tokens below
+// per-page by the harness, which substitutes the two placeholder tokens below
 // with JSON-encoded string literals before injecting this script.
 (function () {
   var BASE = __DAISY_PROXY_BASE__;

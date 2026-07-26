@@ -71,7 +71,7 @@ def _create_project(request: ProjectCreateRequest) -> dict[str, Any]:
 def _ensure_default_project() -> None:
     """Guarantee the app has a location-backed grouping on a fresh install.
 
-    The initial location targets the server user's home directory. This is a no-op once any
+    The initial location targets the daemon user's home directory. This is a no-op once any
     project exists, so it never changes user-created groupings.
     """
     assert state.session_factory is not None
@@ -112,7 +112,7 @@ def _full_disk_access_granted() -> bool:
     """Whether *this* process can read Full-Disk-Access-protected data, tested by trying to
     read a byte of the user's TCC database (a canonical FDA-gated file). Reflects the reality
     the user-context probe faces: in the packaged app FDA is attributed to Daisy.app (the
-    responsible parent of the server), so this flips true once the user grants it. Any
+    responsible parent of the daemon), so this flips true once the user grants it. Any
     permission/OS error means no access."""
     protected = Path.home() / "Library" / "Application Support" / "com.apple.TCC" / "TCC.db"
     try:

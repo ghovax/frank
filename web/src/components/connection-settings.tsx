@@ -22,10 +22,9 @@ import {
   checkConnection,
   listSshHosts,
   LOCAL_CONNECTION_TARGET,
-  LOCAL_DEFAULT_URL,
   LOCAL_TARGET_ID,
   resolveReachableConnectionUrl,
-  startLocalServer,
+  findLocalDaemon,
   waitForConnection,
   type ConnectionTarget,
   type SshHost,
@@ -132,19 +131,14 @@ export function ConnectionSettings({
     setConnectingTarget(LOCAL_TARGET_ID);
     setFailedTarget(null);
     try {
-      const url = await startLocalServer();
-      const ok = isTauri()
-        ? await waitForConnection(url)
-        : await checkConnection(url, { timeoutMs: 2000 });
-      if (!ok) {
+      const { url, listening } = await findLocalDaemon();
+      if (!listening) {
         setFailedTarget(LOCAL_TARGET_ID);
         setConnectingTarget(null);
         toaster.create({
           type: "error",
-          title: translation("couldNotConnect"),
-          description: isTauri()
-            ? translation("localServerDidNotStart")
-            : translation("noServerResponding", { url: LOCAL_DEFAULT_URL.replace(/^https?:\/\//, "") }),
+          title: translation("noLocalDaemon"),
+          description: translation("noLocalDaemonHint", { url: url.replace(/^https?:\/\//, "") }),
           closable: true,
         });
         return;
@@ -330,10 +324,10 @@ export function ConnectionSettings({
             onClick={connectLocal}
             disabled={localActive || connecting}
             loading={connectingTarget === LOCAL_TARGET_ID}
-            loadingText={isTauri() ? translation("startingLocalServer") : translation("lookingForLocalServer")}
+            loadingText={translation("lookingForLocalDaemon")}
           >
             {localActive ? <LuCheck /> : failedTarget === LOCAL_TARGET_ID ? <LuRotateCcw /> : <LuLaptop />}
-            {localActive ? translation("connectedToLocalServer") : failedTarget === LOCAL_TARGET_ID ? translation("retryLocalServer") : translation("connectLocalServer")}
+            {localActive ? translation("connectedToLocalDaemon") : failedTarget === LOCAL_TARGET_ID ? translation("retryLocalDaemon") : translation("connectLocalDaemon")}
           </Button>
 
           <VStack gap={2} align="stretch">

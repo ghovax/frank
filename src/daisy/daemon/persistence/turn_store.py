@@ -376,7 +376,7 @@ class AppendOnlyTaskStore(TaskStore):
                         parts=[Part(root=DataPart(data={
                             "kind": "error",
                             "code": "turn_interrupted",
-                            "message": "This turn was interrupted because the server restarted.",
+                            "message": "This turn was interrupted because the daemon restarted.",
                         }))],
                         message_id=uuid.uuid4().hex,
                         task_id=turn_id,

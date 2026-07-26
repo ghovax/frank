@@ -2,7 +2,7 @@
 
 **An open agent harness where every session is a process you can address.**
 
-The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in Daisy all of it is yours to edit. Drive it from the terminal, from the bundled macOS app, or from another agent.
+The harness is the code between the model and your machine — turn loop, tools, prompts, permissions — and in Daisy all of it is yours to edit. Drive it from the terminal, from the macOS app, or from another agent.
 
 A session here is *executable*, because it is a real OS process with a pid you can kill; *addressable*, because it has its own unix socket and its own capability token; and *composable*, because sessions create and message each other through the same control plane you use. Those three properties are the whole design, and everything below follows from them.
 
@@ -15,8 +15,8 @@ Everything in Daisy is a **session**: one OS process running one agent, created 
 Three parts, kept apart:
 
 - **`daisyd`** — a thin daemon. It keeps the registry of sessions, supervises their processes, owns the databases as the sole writer, brokers the shared resources, and parks a couple of warm workers so spawning a session is usually a socket write rather than a Python cold start. It runs no agents itself.
-- **`daisy`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
-- **The app** — a native macOS client (Tauri + Next.js) over the same API.
+- **`daisy`** — the command. `create` a session, `send` it work, `ps` what is running, `attach` to watch, `tree` to see what created what, `approve` what it asks for, `configure` what the next one starts with, `open` the desktop app, `kill` to end a subtree. It adds nothing the control plane does not have; it is the ergonomic face of it — see the [CLI guide](documentation/cli.md).
+- **The app** — a native macOS client (Tauri + Next.js) over the same API. A *client*: it finds a daemon and talks to it, and contains no harness of its own. `daisy open` starts one and launches the window together.
 
 Sessions compose the same way you do. A session that needs a peer calls `create_session`, which reaches the same control plane your terminal does — one API, whether the caller is a person, the desktop app, or an agent. The peer reports back by sending its parent a message, so an answer is a message rather than something reconstructed from a transcript. A child is a real session: it appears in `daisy ps`, you can attach to it, and it is reaped when its parent ends.
 
@@ -52,7 +52,7 @@ Elsewhere they lead: more polish, more places to run, deeper ecosystems — Clau
 
 ## Install
 
-Daisy targets **macOS on Apple Silicon**. Download the latest `.dmg` from the [Releases](https://github.com/ghovax/daisy/releases) page and drag **Daisy** to Applications; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
+Daisy targets **macOS on Apple Silicon**, and ships as two pieces: the harness (the `daisy` command and its daemon) and the app that talks to it. Download the latest release, install both, and `daisy open`; the build is self-signed, so Gatekeeper warns on first launch. Or build from source with the Nix-pinned toolchain.
 
 See the [Installation guide](documentation/installation.md) for both paths in full.
 

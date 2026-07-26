@@ -42,13 +42,23 @@ direnv allow            # or, without direnv:  nix develop
 # Install web dependencies
 cd web && bun install && cd ..
 
-# Build the desktop app (also freezes the Python harness into a bundled helper)
+# Build the daemon — this is the harness: the CLI, `daisyd`, and every session worker
+packaging/build-daemon.sh
+
+# Build the desktop app — a Tauri shell with no Python in it
 cd web && bun run tauri:build
 ```
 
-The build produces `web/src-tauri/target/release/bundle/macos/Daisy.app` and a `.dmg` under `bundle/dmg/`. For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds) and packaging details, see [Development guide](development.md#building-and-signing).
+Two artifacts, built independently, because the app is a **client** of the daemon rather than its container: `packaging/dist/Daisy Computer Use.app` (the harness) and `web/src-tauri/target/release/bundle/macos/Daisy.app` plus a `.dmg` (the window). Install the first and put its command on your `PATH`:
 
-You also need a local Python environment for the harness itself (a `.venv` with the project installed) — see [Development guide](development.md#running-it).
+```sh
+ditto "packaging/dist/Daisy Computer Use.app" "/Applications/Daisy Computer Use.app"
+ln -sf "/Applications/Daisy Computer Use.app/Contents/MacOS/daisy" /usr/local/bin/daisy
+```
+
+Then `daisy open` starts the daemon if it is not running and launches the app. The app on its own finds a daemon and talks to it; with none running it says so and offers the connection picker, so start one first — that is the whole relationship between them.
+
+For a stable code-signing identity (so the Accessibility grant for the screen-control tools survives rebuilds), sign both with the same certificate — see [Development guide](development.md#building-and-signing).
 
 ## Coming from a build named XEAC
 

@@ -3,7 +3,7 @@
 Any place the harness fetches a URL a peer influenced — an inbound ``FileWithUri``, a
 client-registered push-notification webhook, a remote agent's advertised card URL — must
 refuse a target that resolves into a private/loopback/link-local range, or the peer can
-make the server reach internal services (cloud metadata, an intranet host) on its behalf.
+make the harness reach internal services (cloud metadata, an intranet host) on its behalf.
 
 The check resolves the hostname and inspects the *resolved IP addresses*, not the hostname
 string — a DNS name pointing at ``169.254.169.254`` is exactly the bypass a string check

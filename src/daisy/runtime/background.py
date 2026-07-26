@@ -13,7 +13,7 @@ Two properties this guarantees, both required by the runtime:
   it never blocks the event loop (nothing awaits it except an abort-responsive,
   timeout-bounded wait). A job that raises is captured when its result is drained
   and turned into an error payload, so an exception never propagates into the
-  turn loop or crashes the server.
+  turn loop or crashes the harness.
 * **Extensibility.** Adding a new kind of background work is one row in
   :data:`BACKGROUND_PRESENTATION` plus a single ``spawn`` call — no new registry,
   manager, or dispatch layer.

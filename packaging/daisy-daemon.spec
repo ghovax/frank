@@ -1,8 +1,12 @@
-# PyInstaller spec that freezes Daisy into one self-contained binary the desktop app
-# bundles. It is a single image with three entry points — `daisy` (the CLI), `daisyd`
-# (the daemon) and `worker` (a session) — selected by the first argument, because a
-# worker must be a re-exec of the *same signed binary* for macOS to treat it as the
-# same code identity and keep one Accessibility grant covering every session.
+# PyInstaller spec that freezes Daisy into one self-contained binary you install. It is a
+# single image with three entry points — `daisy` (the CLI), `daisyd` (the daemon) and
+# `worker` (a session) — selected by the first argument, because a worker must be a re-exec
+# of the *same signed binary* for macOS to treat it as the same code identity and keep one
+# Accessibility grant covering every session.
+#
+# The desktop app used to bundle the result of this as a resource and spawn it. It no longer
+# does: the app is a client of a daemon it neither contains nor starts, so this produces the
+# daemon's own installable artifact.
 #
 # The dependency tree is heavy and full of *dynamic* imports (litellm loads
 # providers by name, uvicorn[standard] picks loops/protocols at runtime, langchain
@@ -70,12 +74,12 @@ for package in _collect:
         binaries += package_binaries
         hiddenimports += package_hiddenimports
     except Exception as error:  # noqa: BLE001 - a missing optional package must not abort the freeze
-        print(f"[daisy-server.spec] skipping {package}: {error}")
+        print(f"[daisy-daemon.spec] skipping {package}: {error}")
 
 # The shipped agents/skills/MCP defaults live in the repo-root `.agents/` — a SIBLING of
 # the `harness` package, so `collect_all("daisy")` never sees them. Bundle them at the
 # frozen root as `.agents/...` so `_bundled_dotagents_root()` (frozen-aware, sys._MEIPASS)
-# finds them: this is the server-shipped base layer of agents the app always has, and the
+# finds them: this is the harness-shipped base layer of agents the app always has, and the
 # source the app seeds editable copies from on first run. `memories` is user data — not shipped.
 import os as _os
 _repo_root = _os.path.dirname(SPECPATH)  # SPECPATH is the packaging/ dir holding this spec
@@ -96,7 +100,7 @@ def _bundle_tree(relative):
     """
     absolute = _os.path.join(_repo_root, relative)
     if not _os.path.isdir(absolute):
-        print(f"[daisy-server.spec] WARNING: bundled resource missing: {absolute}")
+        print(f"[daisy-daemon.spec] WARNING: bundled resource missing: {absolute}")
         return
     for directory, subdirectories, filenames in _os.walk(absolute):
         subdirectories[:] = [name for name in subdirectories if name not in _skip_directory_names]
@@ -142,7 +146,7 @@ for distribution in [
     try:
         datas += copy_metadata(distribution)
     except Exception as error:  # noqa: BLE001
-        print(f"[daisy-server.spec] no metadata for {distribution}: {error}")
+        print(f"[daisy-daemon.spec] no metadata for {distribution}: {error}")
 
 # uvicorn[standard] resolves these at runtime by string; name them explicitly too.
 hiddenimports += [
@@ -157,7 +161,7 @@ hiddenimports += [
 ]
 
 analysis = Analysis(
-    ["../server.py"],
+    ["entry.py"],
     pathex=["."],
     binaries=binaries,
     datas=datas,
@@ -192,14 +196,15 @@ collection = COLLECT(
     name="daisy",
 )
 
-# Wrap the frozen server as a background helper .app. The server — not the desktop app — is
-# the process that calls the macOS Accessibility API for the computer-use tool, and TCC lists
+# Wrap the frozen image as a background .app. A session worker — not the desktop app — is the
+# process that calls the macOS Accessibility API for the computer-use tool, and TCC lists
 # whichever process actually exercises the permission. As a bare executable it would show only
-# its filename ("daisy-server"); as a bundle, macOS resolves it to this Info.plist. It carries
-# the *same* CFBundleName and bundle identifier as the desktop app, so it folds into the app's
-# single "Daisy" Accessibility entry rather than adding a second one. The bundle file itself is
-# named "Daisy Computer Use.app" for clarity on disk. A pure background helper (LSUIElement),
-# launched by the desktop app and never shown in the Dock.
+# its filename; as a bundle, macOS resolves it to this Info.plist. It carries the *same*
+# CFBundleName and bundle identifier as the desktop app, so the two fold into a single "Daisy"
+# Accessibility entry rather than adding a second one — which is why this survives the app no
+# longer bundling it, and why both are signed with the same certificate. The bundle file is
+# named "Daisy Computer Use.app" for clarity on disk. LSUIElement, so running the daemon never
+# puts an icon in the Dock.
 app = BUNDLE(
     collection,
     name="Daisy Computer Use.app",

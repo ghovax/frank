@@ -109,9 +109,9 @@ def _card_for(agent_name: str, working_directory: str = ""):
     """Build an agent's AgentCard from its config and the skills available to it.
 
     When a ``working_directory`` is given, skills are scoped to that path (home
-    globals plus the path's own ``.agents``, deduped) rather than the server's
+    globals plus the path's own ``.agents``, deduped) rather than the daemon's
     launch directory — so a card advertises the skills a session in that folder
-    can actually find. Without one, the server-CWD scoping is used (startup mount)."""
+    can actually find. Without one, the daemon-CWD scoping is used (startup mount)."""
     assert state.global_configuration is not None
     configuration = load_agent_configuration(agent_name, state.global_configuration.agent_directories())
     skill_roots = (

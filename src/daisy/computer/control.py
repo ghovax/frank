@@ -3,7 +3,7 @@ the live surface. The model's Python runs in :mod:`daisy.computer.control_child`
 child that holds no state — and every ``click``/``type``/``evaluate`` it makes arrives here as a
 JSON request, is performed against the real surface on its serial worker (trusted input, full
 actionability), and is answered. A wall-clock timeout kills the child; rlimits bound its CPU and
-memory; a crash or runaway loop dies with it and never touches the server.
+memory; a crash or runaway loop dies with it and never touches the worker.
 
 The bridge is generic over a ``dispatch`` coroutine ``(name, args, kwargs) -> result`` so the
 executor can be exercised without a browser or a Mac in the loop — the surface wiring lives in the

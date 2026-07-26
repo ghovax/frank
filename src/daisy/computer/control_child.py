@@ -2,7 +2,7 @@
 state: every primitive the script calls (``click``, ``type``, ``evaluate``, …) is a stub that
 sends one JSON request to the parent, blocks for the JSON reply, and returns it. The parent
 performs the real, trusted action on the live surface and answers. Keeping the child this thin is
-what makes it disposable — a runaway loop or a crash dies here without touching the server, and a
+what makes it disposable — a runaway loop or a crash dies here without touching the worker, and a
 wall-clock timeout in the parent simply kills it.
 
 The script runs with **REPL semantics**: every statement executes, and the value of a trailing

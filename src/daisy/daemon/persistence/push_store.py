@@ -48,8 +48,8 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     def __init__(self, engine: AsyncEngine, *, allow_private_webhooks: bool = False):
         self._engine = engine
-        # A client registers the URL the server will POST task updates to. Without a guard a
-        # peer could register an internal/loopback webhook and turn the server into a blind
+        # A client registers the URL the daemon will POST task updates to. Without a guard a
+        # peer could register an internal/loopback webhook and turn the daemon into a blind
         # SSRF + task-data exfiltration channel, durable across restarts. Registration is
         # refused for a non-public host unless the operator explicitly opts in.
         self._allow_private_webhooks = allow_private_webhooks
@@ -84,7 +84,7 @@ class PersistentPushNotificationConfigurationStore(PushNotificationConfigStore):
 
     async def set_info(self, turn_id: str, notification_config: PushNotificationConfig) -> None:
         await self._ensure_initialized()
-        # Refuse a webhook the server must not be pointed at (internal/loopback) before it is
+        # Refuse a webhook the daemon must not be pointed at (internal/loopback) before it is
         # ever persisted or POSTed — the anti-SSRF guard on inbound-influenced fetch targets.
         try:
             assert_public_url(notification_config.url, allow_private=self._allow_private_webhooks)

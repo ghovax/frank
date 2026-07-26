@@ -21,7 +21,7 @@ router = APIRouter()
 async def agents(working_directory: str = ""):
     """List agent profiles for the UI selector, scoped to the selected folder:
     the home globals plus that folder's own ``.agents/agents`` (deduped), never
-    the directory the server was launched in. Passing ``working_directory`` is
+    the directory the daemon was launched in. Passing ``working_directory`` is
     what makes the list track the chosen folder."""
     assert state.global_configuration is not None
     if working_directory:
@@ -78,7 +78,7 @@ async def agent_cards(working_directory: str = ""):
 
     Skills are scoped to ``working_directory`` when given: the home globals plus
     that path's own ``.agents`` skills (deduped), and crucially *not* the skills of
-    the directory the server happens to have been launched in. The UI passes the
+    the directory the daemon happens to have been launched in. The UI passes the
     selected project path so the advertised skills match what a session there can
     actually find, refreshing whenever the user picks a different folder."""
     assert state.global_configuration is not None

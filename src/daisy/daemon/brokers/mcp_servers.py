@@ -9,7 +9,7 @@ from daisy.daemon import state
 
 
 async def _reload_mcp() -> None:
-    """Re-read mcp.json and apply the server set live: reconcile the client manager
+    """Re-read mcp.json and apply the daemon set live: reconcile the client manager
     (start new servers, stop removed/disabled ones, keep unchanged ones connected)
     and drop cached runtimes so the next turn rebuilds its tools with the new set.
     No server restart required."""

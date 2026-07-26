@@ -94,7 +94,7 @@ _MODELS_DEV_PROVIDER_MAP: dict[str, str] = {
 def _catalog() -> list[ModelDefinition]:
     """Model catalog from models.dev's open-source API.
 
-    Best-effort — returns an empty list when the API is unreachable so the server
+    Best-effort — returns an empty list when the API is unreachable so the harness
     can still start without a model catalog.
     """
     MODELS_DEV_URL = "https://models.dev/api.json"

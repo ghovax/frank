@@ -25,11 +25,13 @@ and pay for the indentation by the token. `jq .` puts it back for a person.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from typing import Any
 
 from daisy.cli.client import DaemonError, call, daemon_is_up, ensure_daemon, stream
 from daisy.base.serialization import compact
+from daisy.base.tuning import Tunable, active_tuning
 
 
 def _emit(payload: Any) -> None:
@@ -265,7 +267,93 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
             return 1
         _emit({"stopping": pid})
         return 0
+    if arguments.action == "restart":
+        # Stop, wait for the socket to go, start again.
+        #
+        # This ends every live session, and says so rather than letting it be discovered:
+        # workers are the daemon's children, and shutdown reaps them. It exists because macOS
+        # caches the Accessibility trust check per process, so a daemon that was running before
+        # the grant never sees it — and now that the desktop app no longer owns the daemon,
+        # restarting the window is not a way to restart the harness.
+        import os
+        import signal
+        import time
+
+        from daisy.base.paths import runtime_directory
+
+        pidfile = runtime_directory() / "daisyd.pid"
+        try:
+            pid = int(pidfile.read_text().strip())
+        except (OSError, ValueError):
+            # Nothing to restart is not a failure when the intent is "be running afterwards".
+            ensure_daemon()
+            _emit({"restarted": False, "running": True})
+            return 0
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+
+        # Wait for the *process*, not for its socket. The socket file goes early in shutdown
+        # while the daemon is still reaping sessions and still holding `daisyd.lock` through an
+        # open descriptor, and a successor started in that window dies on "Another daisyd holds
+        # the lock but never started serving" — leaving nothing running at all, which is the one
+        # outcome a restart must not produce. A pid that no longer exists is the real signal.
+        deadline = time.monotonic() + active_tuning().duration(Tunable.daemon_startup_seconds)
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                break
+            time.sleep(0.1)
+        else:
+            _note(f"daisy: daisyd ({pid}) did not exit; not starting a second one")
+            return 1
+        ensure_daemon()
+        _emit({"restarted": True, "running": True})
+        return 0
     return 1
+
+
+# The desktop app's bundle identifier, which is how it is launched. Addressing it by identifier
+# rather than by name means the application can be renamed or moved and this still finds it.
+APPLICATION_BUNDLE_ID = "com.ghovax.daisy"
+
+
+def _command_open(arguments: argparse.Namespace) -> int:
+    """Bring the daemon up and launch the desktop app.
+
+    The dependency runs this way — command line to window — and that is the whole reason this
+    is comfortable. The app used to start the daemon, which meant carrying a frozen copy of the
+    harness inside itself and owning its lifetime. Launching an application is not owning it:
+    nothing is bundled, nothing is supervised, and if the app is not installed this says so and
+    exits rather than half-working.
+
+    The daemon comes up first because the app is useless without one, and starting it is
+    something the command line does anyway. `--no-daemon` is for wanting only the window."""
+    import shutil
+    import subprocess
+
+    if not arguments.no_daemon:
+        ensure_daemon()
+    launcher = shutil.which("open")
+    if launcher is None:
+        _note("daisy: `open` is not available; the desktop app is macOS-only")
+        return 1
+    result = subprocess.run(
+        [launcher, "-b", APPLICATION_BUNDLE_ID],
+        capture_output=True,
+        text=True,
+        timeout=active_tuning().duration(Tunable.open_url_seconds),
+    )
+    if result.returncode != 0:
+        # `open -b` fails when nothing on the system claims the identifier, which is exactly
+        # the not-installed case and worth naming rather than passing through a terse error.
+        _note(
+            f"daisy: could not launch the desktop app ({APPLICATION_BUNDLE_ID}). "
+            "Install Daisy.app, or see documentation/installation.md."
+        )
+        return 1
+    _emit({"opened": APPLICATION_BUNDLE_ID, "daemon": not arguments.no_daemon})
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -340,8 +428,18 @@ def build_parser() -> argparse.ArgumentParser:
     remote.add_argument("message", nargs="?", help="the message, or - to read stdin")
     remote.set_defaults(handler=_command_remote)
 
+    open_app = add("open", help="start the daemon and launch the desktop app")
+    open_app.add_argument(
+        "--no-daemon", action="store_true",
+        help="launch the app without starting a daemon first",
+    )
+    open_app.set_defaults(handler=_command_open)
+
     daemon = add("daemon", help="inspect or start the daemon")
-    daemon.add_argument("action", choices=["status", "start", "stop", "endpoint"], nargs="?", default="status")
+    daemon.add_argument(
+        "action", choices=["status", "start", "stop", "restart", "endpoint"],
+        nargs="?", default="status",
+    )
     daemon.add_argument("-s", "--start", action="store_true", help="start the daemon if it is not running")
     daemon.set_defaults(handler=_command_daemon)
 

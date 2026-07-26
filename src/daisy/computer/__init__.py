@@ -8,5 +8,5 @@ Playwright) and the native one in :mod:`daisy.computer.engine` (the macOS access
 
 Submodules are imported by the code that needs them, not here: the macOS surface pulls
 ``ApplicationServices`` and only loads where it can, while the retrieval and control layers are
-platform-neutral and import anywhere the server runs.
+platform-neutral and import anywhere a worker runs.
 """

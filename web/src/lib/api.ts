@@ -751,8 +751,18 @@ export async function openAccessibilitySettings(): Promise<void> {
   await apiFetch(`/system/accessibility/open`, { method: "POST" }).catch(() => {});
 }
 
-// Quit and relaunch the desktop app (Tauri command). macOS only reflects a new Accessibility
-// grant to the bundled server on a fresh launch, so the grant flow offers a one-click restart.
+// Restart the daemon so it picks up a new Accessibility grant, then reload the window against
+// it. Two steps, because they are two processes: macOS caches the trust check per process, and
+// the daemon is no longer the app's child, so restarting the window alone would change nothing.
+// The daemon replaces itself and every live session ends with it — `sessions_ended` says how
+// many, so a caller can warn before asking.
+export async function restartDaemon(): Promise<{ sessions_ended: number }> {
+  const result = await rpc<{ restarting: boolean; sessions_ended: number }>("daemon.restart", {});
+  return { sessions_ended: result?.sessions_ended ?? 0 };
+}
+
+// Quit and relaunch the desktop app (Tauri command), so the webview reconnects to whatever
+// daemon is listening now. On its own this restarts nothing but the window.
 export async function restartApp(): Promise<void> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");

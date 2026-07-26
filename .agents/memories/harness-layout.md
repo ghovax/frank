@@ -8,7 +8,7 @@ tags: configuration, dotagents, mcp, layering
 
 ## The package tree
 
-One executable, three entry points, selected by the first argument in `src/daisy/__main__.py`: `daisy` (the CLI), `daisyd` (the daemon), and `worker` (a session). `server.py` at the repository root is the same entry for the frozen build.
+One executable, three entry points, selected by the first argument in `src/daisy/__main__.py`: `daisy` (the CLI), `daisyd` (the daemon), and `worker` (a session). `packaging/entry.py` at the repository root is the same entry for the frozen build.
 
 ```
 src/daisy/
@@ -36,7 +36,7 @@ Two layers merge by name — `~/.agents/` (global) and `.agents/` in the working
 - `.agents/mcp.json` — MCP servers, not auto-discovered from any folder.
 - `.agents/remote-agents.json` — peers on other hosts. Read from every `.agents` root, but the Settings editor only ever writes the home one.
 
-Non-trivial local MCP examples live in `examples/mcp/<server-id>/` with a `server.py` and sibling templates or assets.
+Non-trivial local MCP examples live in `examples/mcp/<server-id>/` with a `packaging/entry.py` and sibling templates or assets.
 
 `enabledBuiltinTools` is an allow-list over the **whole** tool surface, not a subset of optional extras: an empty list means no restriction, and naming one tool denies every other. It is narrowed at build time to tools that exist, so a profile naming a tool that has since been removed does not silently disarm itself.
 
