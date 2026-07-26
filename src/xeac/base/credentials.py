@@ -43,6 +43,7 @@ from typing import Optional
 import httpx
 
 from xeac.base.paths import data_directory
+from xeac.base.tuning import Limit, active_tuning
 
 # Codex's public OAuth client and endpoints. The client id is not a secret — it is
 # the same value the Codex CLI ships — and reusing it is exactly what makes the
@@ -59,10 +60,6 @@ REDIRECT_URI = f"http://localhost:{REDIRECT_PORT}{REDIRECT_PATH}"
 SCOPE = "openid profile email offline_access"
 
 AUTH_FILENAME = "chatgpt_auth.json"
-
-# Refresh the access token when it is within this many seconds of expiry, so a turn
-# never starts with a token about to die mid-stream.
-_REFRESH_LEEWAY_SECONDS = 300
 
 # Serializes token refreshes: many concurrent turns can each notice an expiring
 # token at once, and we want exactly one refresh + write, not a stampede.
@@ -82,7 +79,7 @@ class ChatGPTTokens:
     email: str
     expires_at: float
 
-    def is_expired(self, leeway_seconds: float = _REFRESH_LEEWAY_SECONDS) -> bool:
+    def is_expired(self, leeway_seconds: float = active_tuning().duration(Limit.CREDENTIAL_REFRESH_LEEWAY_SECONDS)) -> bool:
         return time.time() >= (self.expires_at - leeway_seconds)
 
 

@@ -46,6 +46,10 @@ sandbox:
   enforce: "required"
   network: true
 
+daemon:
+  warm_floor: 2
+  warm_ceiling: 8
+
 workspace:
   strategy: "none"
 

@@ -26,13 +26,9 @@ from xeac.daemon.pool import WarmWorker, WorkerPool
 from xeac.daemon.registry import EXITED, FAILED, RUNNING, SessionRecord, SessionRegistry
 from xeac.daemon.state import relay_to_session
 from xeac.protocol.metadata import Metadata
+from xeac.base.tuning import Limit, active_tuning
 
 logger = logging.getLogger(__name__)
-
-# How long a worker has to acknowledge its assignment and report a listening socket.
-_ASSIGNMENT_TIMEOUT_SECONDS = 60.0
-# How long a reaped process gets to exit on SIGTERM before it is killed outright.
-_TERMINATE_GRACE_SECONDS = 3.0
 
 
 def _daemon_token() -> str:
@@ -140,7 +136,7 @@ class SessionLifecycle:
         if worker.process.stdout is None:
             return False
         try:
-            line = await asyncio.wait_for(worker.process.stdout.readline(), timeout=_ASSIGNMENT_TIMEOUT_SECONDS)
+            line = await asyncio.wait_for(worker.process.stdout.readline(), timeout=active_tuning().duration(Limit.WORKER_ASSIGNMENT_SECONDS))
         except asyncio.TimeoutError:
             logger.error("Worker %d did not report ready in time", worker.pid)
             return False
@@ -293,7 +289,7 @@ class SessionLifecycle:
             with contextlib.suppress(ProcessLookupError):
                 worker.process.terminate()
         try:
-            await asyncio.wait_for(worker.process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
+            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS))
             return
         except asyncio.TimeoutError:
             pass
@@ -301,7 +297,7 @@ class SessionLifecycle:
         with contextlib.suppress(ProcessLookupError):
             worker.process.kill()
         with contextlib.suppress(asyncio.TimeoutError, ProcessLookupError):
-            await asyncio.wait_for(worker.process.wait(), timeout=_TERMINATE_GRACE_SECONDS)
+            await asyncio.wait_for(worker.process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS))
 
     def _unlink_socket(self, session_id: str) -> None:
         """Remove a dead session's socket file so nothing connects to a corpse."""

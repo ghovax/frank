@@ -50,6 +50,7 @@ from xeac.base.credentials import (
 )
 from xeac.base.message_content import content_blocks_to_message_content, message_text
 from xeac.base.serialization import compact
+from xeac.base.tuning import Limit, active_tuning
 
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 # The account's live, plan-specific model catalog. Same host/auth as the responses
@@ -449,8 +450,6 @@ class ChatCodexModel(BaseChatModel):
 # Live per-account model discovery. The subscription serves a plan-specific subset,
 # so this is the authoritative "which models actually work" source; the models.dev
 # filter is the offline superset the UI greys against.
-
-_MODELS_CACHE_TTL_SECONDS = 60.0
 _models_cache: Optional[tuple[float, dict[str, dict[str, Any]]]] = None
 _models_cache_lock = asyncio.Lock()
 
@@ -462,10 +461,10 @@ async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
     so callers fall back to the static list. Cached briefly because the ``/models``
     endpoint is polled by the UI and this must not be a network round-trip each time."""
     global _models_cache
-    if _models_cache is not None and time.monotonic() - _models_cache[0] < _MODELS_CACHE_TTL_SECONDS:
+    if _models_cache is not None and time.monotonic() - _models_cache[0] < active_tuning().duration(Limit.MODEL_CATALOGUE_TTL_SECONDS):
         return _models_cache[1]
     async with _models_cache_lock:
-        if _models_cache is not None and time.monotonic() - _models_cache[0] < _MODELS_CACHE_TTL_SECONDS:
+        if _models_cache is not None and time.monotonic() - _models_cache[0] < active_tuning().duration(Limit.MODEL_CATALOGUE_TTL_SECONDS):
             return _models_cache[1]
         result: dict[str, dict[str, Any]] = {}
         try:

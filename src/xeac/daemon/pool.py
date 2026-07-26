@@ -29,6 +29,8 @@ import sys
 from dataclasses import dataclass
 from typing import Optional
 
+from xeac.base.tuning import Limit, active_tuning
+
 logger = logging.getLogger(__name__)
 
 # How many blank workers to keep parked, and the point past which the daemon stops parking
@@ -38,9 +40,6 @@ logger = logging.getLogger(__name__)
 # daemon already serving eight has better uses for the memory than more spares.
 DEFAULT_WARM_FLOOR = 2
 DEFAULT_WARM_CEILING = 8
-
-# How long a blank worker may take to report that it is ready before it is treated as broken.
-_READY_TIMEOUT_SECONDS = 60.0
 
 
 @dataclass
@@ -178,9 +177,11 @@ class WorkerPool:
         )
 
     @staticmethod
-    async def _await_exit(worker: WarmWorker, timeout: float = 3.0) -> None:
+    async def _await_exit(worker: WarmWorker) -> None:
         try:
-            await asyncio.wait_for(worker.process.wait(), timeout=timeout)
+            await asyncio.wait_for(
+                worker.process.wait(), timeout=active_tuning().duration(Limit.SIGTERM_GRACE_SECONDS)
+            )
         except (asyncio.TimeoutError, ProcessLookupError):
             with contextlib.suppress(ProcessLookupError):
                 worker.process.kill()

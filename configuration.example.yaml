@@ -147,6 +147,17 @@ tuning:
   settle_interval_seconds: 0.05
   settle_ceiling_seconds: 1.5
   timeout_scale: 1.0
+  # Override a single limit by its own name (see xeac.base.tuning.Limit) and in its own unit.
+  # An override replaces the baseline, so the fractions and timeout_scale still apply on top.
+  # An unknown name is an error at load. `xeac configure tuning.limits` lists them.
+  limits: {}
+
+# How the daemon manages worker processes. `warm_ceiling` counts warm and assigned workers
+# together and bounds pre-warming rather than concurrency: a claim against an empty pool spawns
+# on demand, so a wide fan-out is always served — it just pays a cold start past the spares.
+daemon:
+  warm_floor: 2
+  warm_ceiling: 8
 
 # ---------------------------------------------------------------------------
 # Not here: MCP servers and remote peers

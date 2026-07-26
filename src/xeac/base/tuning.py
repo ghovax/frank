@@ -35,7 +35,7 @@ import contextvars
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Optional, TypeVar
+from typing import Callable, Iterable, Optional, TypeVar
 
 # The live model context window (in tokens) for the tool call currently executing. The agent
 # runtime sets this around each tool dispatch and resets it after; ``asyncio.to_thread`` copies
@@ -87,6 +87,7 @@ class Limit(Enum):
     OUTPUT_TOKENS = (16_000, _Scale.OUTPUT)        # one tool's inline output (bash, model result)
     FETCH_TOKENS = (24_000, _Scale.OUTPUT)         # a fetched web page's inline text
     MAXIMUM_LINE_CHARS = (2_048, _Scale.OUTPUT)    # a single over-long line clipped (minified blob)
+    STAMPED_IMAGE_SIDE = (2_048, _Scale.OUTPUT)    # longest side of an annotated screenshot
 
     # Listing budgets, in item COUNTS, scaled by the window and listing_fraction.
     READ_LINES = (2_000, _Scale.LISTING)           # lines a read returns on a non-positive limit
@@ -95,6 +96,11 @@ class Limit(Enum):
     GLOB_RESULTS = (1_000, _Scale.LISTING)         # files a glob returns
     WEB_SEARCH_MAXIMUM = (10, _Scale.LISTING)      # ceiling on requested web-search results
     REMOTE_LISTING = (32_768, _Scale.LISTING)      # remote paths listed before glob matching
+    # What a browser session keeps of the page's own traffic, so a `find` can surface the API
+    # behind a rendered view. Budgets like any other listing: a bigger window affords more.
+    WEB_EXCHANGES = (250, _Scale.LISTING)          # recent request/response pairs held per session
+    WEB_WEBSOCKETS = (32, _Scale.LISTING)          # live sockets tracked at once
+    WEB_WEBSOCKET_FRAMES = (200, _Scale.LISTING)   # frames retained per socket
 
     # Timeouts. Milliseconds (read with amount) for Playwright, seconds (read with duration) for the
     # subprocess/AX/settle IO; both scale only with timeout_scale.
@@ -109,7 +115,12 @@ class Limit(Enum):
     # aria-ref does not error, it waits, and `frames()` resolves every iframe it found — so one that
     # has gone would otherwise hold up the whole listing.
     FRAME_RESOLVE_TIMEOUT_MS = (2_000, _Scale.TIMEOUT)
-    SIGTERM_GRACE_SECONDS = (2.0, _Scale.TIMEOUT)            # after SIGTERM, before SIGKILL, on cancel
+    # After SIGTERM, before SIGKILL — for a cancelled command and for a reaped session alike.
+    # `daemon/lifecycle.py` used to carry its own `_TERMINATE_GRACE_SECONDS = 3.0` for the second
+    # case, which was the same concept under a second name, at a different value, and outside the
+    # timeout scale. The more generous of the two won: a session being wound down has more to
+    # flush than a single command being cancelled.
+    SIGTERM_GRACE_SECONDS = (3.0, _Scale.TIMEOUT)
     RIPGREP_SECONDS = (30.0, _Scale.TIMEOUT)
     # How long a backgroundable tool waits inline before it hands the work to the background
     # runner (a non-killing wait window, the model-overridable `timeout` tool parameter's
@@ -119,6 +130,29 @@ class Limit(Enum):
     SLOW_TOOL_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)   # fetch_url / download_file: short window
     WEB_SEARCH_SYNC_WINDOW_SECONDS = (10.0, _Scale.TIMEOUT)  # web_search: short window
     AX_MESSAGING_SECONDS = (2.0, _Scale.TIMEOUT)             # per-AX-message ceiling against a hung app
+
+    # The control plane and the processes it supervises.
+    WORKER_READY_SECONDS = (60.0, _Scale.TIMEOUT)            # a warm worker reporting its socket
+    WORKER_ASSIGNMENT_SECONDS = (60.0, _Scale.TIMEOUT)       # a worker accepting its assignment
+    DAEMON_STARTUP_SECONDS = (45.0, _Scale.TIMEOUT)          # `xeac` waiting for a daemon it started
+    CONTROL_PLANE_CALL_SECONDS = (60.0, _Scale.TIMEOUT)      # one session's call to the daemon
+    MODEL_CATALOGUE_TTL_SECONDS = (60.0, _Scale.TIMEOUT)     # before re-fetching the model list
+    CREDENTIAL_REFRESH_LEEWAY_SECONDS = (300.0, _Scale.TIMEOUT)  # refresh a token this long before expiry
+    FILE_URL_TTL_SECONDS = (600.0, _Scale.TIMEOUT)           # how long a signed file URL stays valid
+    MCP_CONNECT_SECONDS = (20.0, _Scale.TIMEOUT)             # connecting to one MCP server
+    CARD_RESOLVE_SECONDS = (20.0, _Scale.TIMEOUT)            # fetching a remote agent's card
+
+    # Commands on another machine, where patience is a property of the network.
+    REMOTE_COMMAND_SECONDS = (120.0, _Scale.TIMEOUT)
+    REMOTE_CONNECT_SECONDS = (16.0, _Scale.TIMEOUT)
+    REMOTE_CONTROL_PERSIST_SECONDS = (120.0, _Scale.TIMEOUT)  # how long a shared SSH master lingers
+
+    # The control_screen timeout stack, which has to stay ordered rather than merely equal. The
+    # script's own ceiling is the one anybody would want to raise; the surface's guard and its
+    # worker thread each sit a margin above it, so a long script can never outlive the machinery
+    # waiting on it — which used to drop the connection and leave the surface half-dead.
+    CONTROL_SCRIPT_SECONDS = (120.0, _Scale.TIMEOUT)
+    SURFACE_GUARD_MARGIN_SECONDS = (30.0, _Scale.TIMEOUT)
     SCREENCAPTURE_SECONDS = (15.0, _Scale.TIMEOUT)
     OPEN_URL_SECONDS = (5.0, _Scale.TIMEOUT)
 
@@ -132,6 +166,27 @@ class Limit(Enum):
     DRAG_STEP_INTERVAL_SECONDS = (0.01, _Scale.FIXED)        # between interpolated drag-move events
     TYPE_CHUNK_INTERVAL_SECONDS = (0.005, _Scale.FIXED)      # between typed chunks
     FOCUS_SETTLE_SECONDS = (0.03, _Scale.FIXED)              # after focusing a field, before typing
+    AX_OVERVIEW_DEPTH = (4, _Scale.FIXED)                    # how deep an accessibility overview walks
+    AX_READY_PROBE_DEPTH = (2, _Scale.FIXED)                 # depth of the cheap "has the tree built" probe
+    AX_PREWARM_INTERVAL_SECONDS = (0.4, _Scale.FIXED)        # between front-app tree pre-warms
+    AX_READY_BACKOFF_SECONDS = (0.2, _Scale.FIXED)           # cap on the widening readiness backoff
+
+    def __new__(cls, baseline: float, scaling: _Scale) -> "Limit":
+        """Give every member a value of its own.
+
+        Without this, `Enum` treats two members declared with the same `(baseline, scaling)` pair
+        as aliases of one member — and this enum is full of them, because plenty of unrelated
+        limits happen to share a number. Sixteen of the fifty-five names below collapsed that way:
+        `Limit.CONNECT_TIMEOUT_MS is Limit.SNAPSHOT_TIMEOUT_MS` was true, and asking either for
+        its `.name` returned whichever was declared first.
+
+        It was harmless while every reader only wanted the number, since aliases agree on that by
+        definition. It stopped being harmless when the configuration began keying overrides on the
+        name: an override for one would have silently moved its unrelated twins, and a name that
+        lost the race would have been rejected as unknown."""
+        member = object.__new__(cls)
+        member._value_ = len(cls.__members__) + 1
+        return member
 
     def __init__(self, baseline: float, scaling: _Scale) -> None:
         self.baseline = baseline
@@ -193,8 +248,20 @@ def clip_to_tokens(text: str, budget: int) -> tuple[str, bool]:
     return encoding.decode(tokens[:budget]), True
 
 
+def limit_names() -> tuple[str, ...]:
+    """Every name that may appear under ``tuning.limits``. The configuration validates against
+    this rather than accepting anything, so a typo is an error at load rather than a setting that
+    looks applied and is not."""
+    return tuple(member.name for member in Limit)
+
+
+def unknown_limit_names(names: Iterable[str]) -> list[str]:
+    known = set(limit_names())
+    return sorted(name for name in names if name not in known)
+
+
 class TuningConfiguration:
-    """The 5-knob policy, structurally compatible with the Pydantic model in ``configuration.py``
+    """The knob policy, structurally compatible with the Pydantic model in ``configuration.py``
     (which is what is actually loaded). Kept as a plain attribute holder here so ``tuning`` has no
     import dependency on the config module; :func:`set_tuning` accepts either."""
 
@@ -205,12 +272,14 @@ class TuningConfiguration:
         settle_interval_seconds: float = 0.05,
         settle_ceiling_seconds: float = 1.5,
         timeout_scale: float = 1.0,
+        limits: Optional[dict] = None,
     ) -> None:
         self.output_fraction = output_fraction
         self.listing_fraction = listing_fraction
         self.settle_interval_seconds = settle_interval_seconds
         self.settle_ceiling_seconds = settle_ceiling_seconds
         self.timeout_scale = timeout_scale
+        self.limits = dict(limits or {})
 
 
 @dataclass
@@ -232,18 +301,32 @@ class Tuning:
     def _window_scale(self, window: Optional[int]) -> float:
         return self._window(window) / REFERENCE_WINDOW
 
+    def _baseline(self, limit: Limit) -> float:
+        """A limit's baseline, or the override the configuration set for it.
+
+        An override replaces the *baseline*, not the resolved value, so family scaling still
+        applies on top: ``ACTION_TIMEOUT_MS: 10000`` under ``timeout_scale: 2.0`` resolves to
+        twenty seconds, which is what somebody reaching for both would expect."""
+        override = getattr(self.policy, "limits", None)
+        if override:
+            value = override.get(limit.name)
+            if value is not None:
+                return float(value)
+        return float(limit.baseline)
+
     def _raw(self, limit: Limit, window: Optional[int]) -> float:
         """The scaled value of a limit, before it is rounded to an int or returned as a float."""
+        baseline = self._baseline(limit)
         scaling = limit.scaling
         if scaling is _Scale.OUTPUT:
             knob = self.policy.output_fraction / _DEFAULT_OUTPUT_FRACTION
-            return max(1.0, limit.baseline * self._window_scale(window) * knob)
+            return max(1.0, baseline * self._window_scale(window) * knob)
         if scaling is _Scale.LISTING:
             knob = self.policy.listing_fraction / _DEFAULT_LISTING_FRACTION
-            return max(1.0, limit.baseline * self._window_scale(window) * knob)
+            return max(1.0, baseline * self._window_scale(window) * knob)
         if scaling is _Scale.TIMEOUT:
-            return max(0.001, limit.baseline * self.policy.timeout_scale)
-        return float(limit.baseline)
+            return max(0.001, baseline * self.policy.timeout_scale)
+        return baseline
 
     def amount(self, limit: Limit, window: Optional[int] = None) -> int:
         """A limit as an integer — a token budget, an item count, a millisecond timeout, a length."""
@@ -280,14 +363,20 @@ def set_tuning(tuning: Tuning) -> None:
 
 def tuning_from_policy(policy: object) -> Tuning:
     """Wrap a loaded config section (the Pydantic ``TuningConfiguration``, or any object exposing
-    the same five attributes) into a :class:`Tuning`. Missing attributes fall back to the defaults,
-    so a partial or older config never breaks."""
+    the same attributes) into a :class:`Tuning`. Missing attributes fall back to the defaults, so
+    a partial or older config never breaks. Unknown names under ``limits`` are dropped here rather
+    than carried: the configuration layer rejects them at load, and anything reaching this far is a
+    caller that built a policy by hand."""
+    overrides = dict(getattr(policy, "limits", None) or {})
+    for name in unknown_limit_names(overrides):
+        overrides.pop(name, None)
     return Tuning(TuningConfiguration(
         output_fraction=float(getattr(policy, "output_fraction", _DEFAULT_OUTPUT_FRACTION)),
         listing_fraction=float(getattr(policy, "listing_fraction", _DEFAULT_LISTING_FRACTION)),
         settle_interval_seconds=float(getattr(policy, "settle_interval_seconds", 0.05)),
         settle_ceiling_seconds=float(getattr(policy, "settle_ceiling_seconds", 1.5)),
         timeout_scale=float(getattr(policy, "timeout_scale", 1.0)),
+        limits=overrides,
     ))
 
 

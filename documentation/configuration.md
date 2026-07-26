@@ -159,7 +159,22 @@ tuning:
   settle_interval_seconds: 0.05     # how often a screen action re-checks for settling
   settle_ceiling_seconds: 1.5       # how long it waits before giving up on settling
   timeout_scale: 1.0                # multiplier over every tool's default timeout
+  limits:                           # override one value, by its own name and in its own unit
+    ACTION_TIMEOUT_MS: 10000
+    GREP_RESULTS: 1024
 ```
+
+The five knobs above scale whole families. `limits` is the escape hatch for a single value: keys are the names in `xeac.base.tuning.Limit` — the same idea as `sandbox.limits` using `setrlimit` constant names — and an unknown name is an error at load rather than a line that looks applied and is not. An override replaces the *baseline*, so the fractions and `timeout_scale` still apply on top: `ACTION_TIMEOUT_MS: 10000` under `timeout_scale: 2.0` resolves to twenty seconds. `xeac configure tuning.limits` lists what exists.
+
+## The daemon
+
+```yaml
+daemon:
+  warm_floor: 2                     # blank workers parked, so creating a session is a socket write
+  warm_ceiling: 8                   # stop pre-warming once this many workers exist in total
+```
+
+`warm_ceiling` counts warm *and* assigned workers together and bounds pre-warming, not concurrency — a claim against an empty pool spawns on demand and never consults it, so a wide fan-out is always served; it just pays a cold start per child past the spares.
 
 ## MCP servers
 

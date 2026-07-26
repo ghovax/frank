@@ -328,16 +328,6 @@ def prime_accessibility(pid: int) -> None:
     enable_rich_accessibility(root)
 
 
-# The pre-warm watcher. A daemon that switches on rich accessibility for whatever app is frontmost, a
-# beat before the model reads it. Because a built tree persists, priming the front app (and each app
-# the user switches to) means a ``find`` almost always meets a tree that is already up, so the
-# read path's wait for the async build seldom runs at all. It is a plain polling daemon, not an
-# AXObserver, on purpose: there is no single "tree built" notification to observe, and an observer
-# would cost a CFRunLoop on this thread to buy nothing the one cheap NSWorkspace query per tick does
-# not. The wait is moved off the model's critical path, not deleted — the build is still async.
-_PREWARM_INTERVAL_SECONDS = 0.4
-
-
 class _Prewarmer:
     def __init__(self) -> None:
         self._thread: Optional[threading.Thread] = None
@@ -359,7 +349,7 @@ class _Prewarmer:
                     prime_accessibility(pid)
             except Exception:
                 pass
-            time.sleep(_PREWARM_INTERVAL_SECONDS)
+            time.sleep(active_tuning().duration(Limit.AX_PREWARM_INTERVAL_SECONDS))
 
 
 _prewarmer = _Prewarmer()

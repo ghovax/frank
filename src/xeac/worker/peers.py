@@ -24,12 +24,9 @@ from typing import Any, Optional
 import httpx
 
 from xeac.protocol.metadata import Metadata
+from xeac.base.tuning import Limit, active_tuning
 
 logger = logging.getLogger(__name__)
-
-# Every call here is a control-plane round trip — create, send, read, kill — and none of them
-# waits on a peer's *work*. Nothing in this module blocks on another session thinking.
-_CALL_TIMEOUT_SECONDS = 60.0
 
 
 class PeerSessionError(RuntimeError):
@@ -66,7 +63,7 @@ class PeerSessions:
             self._client = httpx.AsyncClient(
                 transport=httpx.AsyncHTTPTransport(uds=self._socket_path),
                 base_url="http://daemon",
-                timeout=_CALL_TIMEOUT_SECONDS,
+                timeout=active_tuning().duration(Limit.CONTROL_PLANE_CALL_SECONDS),
                 headers={"Authorization": f"Bearer {self._token}"},
             )
         return self._client

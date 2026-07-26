@@ -35,16 +35,6 @@ _WINDOW_CHROME_SUBROLES = frozenset({
     "AXCloseButton", "AXMinimizeButton", "AXFullScreenButton", "AXZoomButton",
 })
 
-# The readiness probe walks only this shallow while waiting out an Electron tree's async build: it
-# needs to see that *some* content exists past the window chrome, and a non-empty container surfaces
-# as a region stand-in at the depth bound (see accessibility._collect), so a couple of levels suffice
-# and spare the deep walk on every poll. The full read still uses the caller's requested depth.
-_READY_PROBE_DEPTH = 2
-# The backoff loop checks immediately, then waits a widening interval — starting at the tuning's
-# settle interval and doubling up to this cap — so a fast-building app is caught in milliseconds and
-# a slow one is not hammered with full-tree reads.
-_MAXIMUM_BACKOFF_SECONDS = 0.2
-
 # Semantic AX actions, tried before any synthesized input, split by the click count so a click maps
 # to the macOS convention: one click activates (AXPress), a double click opens (AXOpen).
 _ACTIVATE_ACTIONS = ("AXPress",)
@@ -154,12 +144,12 @@ class NativeSurface(Surface):
         snapshot = accessibility.snapshot_app(pid, **kwargs)
         if not _is_incomplete(snapshot):
             return snapshot
-        probe_depth = _READY_PROBE_DEPTH if maximum_depth is None else min(_READY_PROBE_DEPTH, maximum_depth)
+        probe_depth = active_tuning().amount(Limit.AX_READY_PROBE_DEPTH) if maximum_depth is None else min(active_tuning().amount(Limit.AX_READY_PROBE_DEPTH), maximum_depth)
         deadline = time.monotonic() + active_tuning().settle_ceiling()
         delay = active_tuning().settle_interval()
         while time.monotonic() < deadline:
             time.sleep(delay)
-            delay = min(delay * 2, _MAXIMUM_BACKOFF_SECONDS)
+            delay = min(delay * 2, active_tuning().duration(Limit.AX_READY_BACKOFF_SECONDS))
             if self._tree_ready(pid, window, probe_depth):
                 return accessibility.snapshot_app(pid, **kwargs)
         return accessibility.snapshot_app(pid, **kwargs)

@@ -45,7 +45,7 @@ _reply: Any = None
 
 
 def _apply_limits(limits: dict[str, int]) -> None:
-    """Bound CPU seconds and address space, best effort — a runaway computation dies on its own even
+    """Bound CPU seconds, best effort — a runaway computation dies on its own even
     before the parent's wall-clock kill, and a memory bomb cannot take the host down."""
     try:
         import resource
@@ -53,9 +53,6 @@ def _apply_limits(limits: dict[str, int]) -> None:
         cpu_seconds = limits.get("cpu_seconds")
         if cpu_seconds:
             resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
-        address_space = limits.get("address_space_bytes")
-        if address_space:
-            resource.setrlimit(resource.RLIMIT_AS, (address_space, address_space))
     except Exception:
         pass
 

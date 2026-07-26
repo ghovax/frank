@@ -20,15 +20,20 @@ from typing import Any, Awaitable, Callable, Optional
 from xeac.base import confinement
 from xeac.computer.surface import message_loader
 from xeac.base.serialization import compact
+from xeac.base.tuning import Limit, active_tuning
 
 # Model-facing control messages live in messages/control/*.md, loaded here so the child (which
 # holds no XEAC code) can report bare facts and leave the prose to the loader.
 message = message_loader("control")
 
-# Defaults for the child's resource ceilings, sized so a normal script never notices them and a
-# pathological one dies before it can hurt the host. The wall-clock timeout is the hard stop.
-_DEFAULT_TIMEOUT_SECONDS = 120.0
-_DEFAULT_ADDRESS_SPACE_BYTES = 2 * 1024 * 1024 * 1024
+def _script_ceiling() -> float:
+    """The child's wall-clock limit, and the base of an ordered stack.
+
+    The surface's guard and its worker thread each sit a margin above this, so a script can
+    never outlive the machinery waiting on it. They used to be three independent constants that
+    happened to be equal, which meant raising one made the guard fire first, drop the connection
+    and leave the surface half-dead."""
+    return active_tuning().duration(Limit.CONTROL_SCRIPT_SECONDS)
 
 Dispatch = Callable[[str, list, dict], Awaitable[Any]]
 
@@ -37,20 +42,22 @@ async def run_control_script(
     script: str,
     dispatch: Dispatch,
     *,
-    timeout: float = _DEFAULT_TIMEOUT_SECONDS,
-    address_space_bytes: int = _DEFAULT_ADDRESS_SPACE_BYTES,
+    timeout: Optional[float] = None,
     profile: Any = None,
     workspace: str = "",
 ) -> dict:
     """Execute ``script`` in a child process, servicing its primitive calls via ``dispatch``, and
     return the child's result dict (``{ok, value?, stdout?, error?, traceback?}``). On timeout the
     child is killed and a timeout payload is returned instead."""
+    timeout = timeout if timeout is not None else _script_ceiling()
     request_read, request_write = os.pipe()   # child → parent (primitive calls)
     reply_read, reply_write = os.pipe()        # parent → child (configuration, then results)
 
     configuration = {
         "script": script,
-        "limits": {"cpu_seconds": int(timeout) + 5, "address_space_bytes": address_space_bytes},
+        # CPU seconds only. Address space is the confinement profile's `RLIMIT_AS` now — this
+        # used to set it too, from its own constant, so two mechanisms raced for one rlimit.
+        "limits": {"cpu_seconds": int(timeout) + 5},
     }
 
     # Launch the child by file path, not ``-m xeac.computer.control_child``: running it as a module

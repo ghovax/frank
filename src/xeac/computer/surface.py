@@ -29,6 +29,19 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from xeac.base.configuration import PromptLoader
+from xeac.base.tuning import Limit, active_tuning
+
+
+def machinery_ceiling() -> float:
+    """How long the machinery around a control script waits on it.
+
+    A margin above the script's own ceiling, deliberately, so the two stay ordered however they
+    are configured. When the guard fires first it drops the connection and calls `on_recover`,
+    which leaves the surface half-dead while the script it was waiting on is still running —
+    the failure that made three coincidentally-equal constants a bug rather than a tidiness
+    problem."""
+    tuning = active_tuning()
+    return tuning.duration(Limit.CONTROL_SCRIPT_SECONDS) + tuning.duration(Limit.SURFACE_GUARD_MARGIN_SECONDS)
 
 
 def message_loader(folder: str) -> Callable[..., str]:
@@ -163,7 +176,8 @@ class SerialWorker:
             except BaseException as error:  # noqa: BLE001 (marshalled to the caller)
                 future.set_exception(error)
 
-    def submit(self, operation: Callable[[], Any], timeout: float = 120.0) -> Any:
+    def submit(self, operation: Callable[[], Any], timeout: Optional[float] = None) -> Any:
+        timeout = timeout if timeout is not None else machinery_ceiling()
         self._ensure_thread()
         future: concurrent.futures.Future = concurrent.futures.Future()
         self._queue.put((operation, future))
@@ -181,10 +195,12 @@ class Surface:
         self.worker = SerialWorker(worker_name)
         self.message = message
 
-    def guard(self, operation: Callable[[], dict], *, timeout: float = 120.0) -> dict:
+    def guard(self, operation: Callable[[], dict], *, timeout: Optional[float] = None) -> dict:
         """Submit one operation to the worker and shape every outcome into an honest payload. A
         ``ToolFailure`` becomes its payload; anything unexpected becomes ``recover``'s payload after
         the surface is given a chance to drop dead state."""
+
+        timeout = timeout if timeout is not None else machinery_ceiling()
 
         def guarded() -> dict:
             try:

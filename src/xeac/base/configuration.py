@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from xeac.base.paths import configuration_file_path, database_file_path  # noqa: F401 — re-exported
 from xeac.base.permission_mode import PermissionMode
@@ -110,6 +110,7 @@ def save_api_keys(
     user_context_enabled: bool | None = None,
     computer_control_enabled: bool | None = None,
     tuning: dict | None = None,
+    daemon: dict | None = None,
     provider_keys: dict[str, str] | None = None,
     provider_base_urls: dict[str, str] | None = None,
 ) -> None:
@@ -139,6 +140,8 @@ def save_api_keys(
         data.setdefault("compaction", {}).update(compaction)
     if tuning is not None:
         data.setdefault("tuning", {}).update(tuning)
+    if daemon is not None:
+        data.setdefault("daemon", {}).update(daemon)
     if user_context_enabled is not None:
         data.setdefault("user_context", {})["enabled"] = user_context_enabled
     if computer_control_enabled is not None:
@@ -266,6 +269,19 @@ class SandboxConfiguration(BaseModel):
         )
 
 
+class DaemonConfiguration(BaseModel):
+    """How the daemon manages worker processes. Separate from `tuning` because this is process
+    management rather than how patient or how large a tool is."""
+
+    # Blank workers parked so creating a session is a socket write rather than a Python cold
+    # start. Small because a warm worker costs real memory.
+    warm_floor: int = 2
+    # Counts warm *and* assigned workers together, and bounds pre-warming rather than sessions:
+    # a claim against an empty pool spawns on demand and never consults this, so a wide fan-out
+    # is served either way — it just pays a cold start per child past the spares.
+    warm_ceiling: int = 8
+
+
 class WorkspaceConfiguration(BaseModel):
     strategy: Literal["none", "branch", "worktree"] = "none"
     # Artifact versioning captures only the specific files the agent writes, so a write
@@ -312,6 +328,25 @@ class TuningConfiguration(BaseModel):
     settle_ceiling_seconds: float = 1.5
     # Multiplier on every action, navigation, and IO timeout.
     timeout_scale: float = 1.0
+    # Per-limit overrides, keyed by the name in `xeac.base.tuning.Limit` and given in that
+    # limit's own unit — the same shape `sandbox.limits` uses for `setrlimit` constants. An
+    # override replaces the *baseline*, so the fractions and `timeout_scale` still apply on top;
+    # `ACTION_TIMEOUT_MS: 10000` under `timeout_scale: 2.0` is twenty seconds. An unknown name is
+    # an error at load rather than a line that looks applied and is not.
+    limits: dict[str, float] = {}
+
+    @field_validator("limits")
+    @classmethod
+    def _known_limits(cls, value: dict[str, float]) -> dict[str, float]:
+        from xeac.base.tuning import unknown_limit_names
+
+        unknown = unknown_limit_names(value)
+        if unknown:
+            raise ValueError(
+                f"unknown tuning limit(s): {', '.join(unknown)}. "
+                "Run `xeac configure tuning.limits` to see the names that exist."
+            )
+        return value
 
 
 class UserContextConfiguration(BaseModel):
@@ -543,6 +578,7 @@ class GlobalConfiguration(BaseModel):
     firecrawl: FirecrawlConfiguration = FirecrawlConfiguration()
     web_fetch: WebFetchConfiguration = WebFetchConfiguration()
     sandbox: SandboxConfiguration = SandboxConfiguration()
+    daemon: DaemonConfiguration = DaemonConfiguration()
     workspace: WorkspaceConfiguration = WorkspaceConfiguration()
     compaction: CompactionConfiguration = CompactionConfiguration()
     user_context: UserContextConfiguration = UserContextConfiguration()

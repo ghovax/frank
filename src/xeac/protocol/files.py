@@ -25,6 +25,7 @@ import jwt
 from a2a.types import FilePart, FileWithBytes, FileWithUri, Part
 
 from xeac.base.net_trust import UntrustedHostError, pin_to_ip, resolve_public_ips
+from xeac.base.tuning import Limit, active_tuning
 
 # Ceiling on a single ingested file so a hostile or buggy peer cannot exhaust disk with one
 # part; larger files are refused.
@@ -32,7 +33,7 @@ DEFAULT_MAXIMUM_FILE_BYTES = 50 * 1024 * 1024
 
 # Lifetime of an emitted signed file URL. Short, because a peer fetches a referenced file
 # promptly; a stale link 404s and can be re-issued.
-DEFAULT_URL_TTL_SECONDS = 600
+
 
 # A file at or below this size is emitted inline as bytes rather than a URL, so a small
 # attachment reaches the peer even if it cannot fetch back from this server.
@@ -179,7 +180,8 @@ class FileUrlSigner:
         """Whether ``file_path`` is under the servable root and can be URL-served."""
         return self._within_root(file_path)
 
-    def sign(self, file_path: str, *, ttl_seconds: int = DEFAULT_URL_TTL_SECONDS) -> str:
+    def sign(self, file_path: str, *, ttl_seconds: Optional[int] = None) -> str:
+        ttl_seconds = ttl_seconds if ttl_seconds is not None else active_tuning().amount(Limit.FILE_URL_TTL_SECONDS)
         if not self._within_root(file_path):
             raise PathNotServableError(f"{file_path!r} is outside the servable file root")
         token = jwt.encode(
@@ -221,7 +223,7 @@ def build_file_part(
     attachment: dict[str, Any],
     signer: FileUrlSigner,
     *,
-    ttl_seconds: int = DEFAULT_URL_TTL_SECONDS,
+    ttl_seconds: Optional[int] = None,
     inline_maximum_bytes: int = DEFAULT_INLINE_MAXIMUM_BYTES,
 ) -> Optional[Part]:
     """Turn a stored attachment into a ``FilePart``, or ``None`` if the file has no readable

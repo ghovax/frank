@@ -46,11 +46,6 @@ message = message_loader("browser")
 # freeze spec.
 _APPLY_SELECTION_JS = (Path(__file__).parent / "scripts" / "apply_selection.js").read_text()
 
-# How many of a socket's most recent frames to keep, and how many live sockets to track. These bound
-# the *live capture's* memory — a page open for hours, or a high-rate feed — by dropping the oldest
-# background traffic; they never truncate a body or a result the model is actually looking at.
-_WEBSOCKET_FRAME_LIMIT = 200
-_WEBSOCKET_LIMIT = 32
 
 
 def _decode_body(text: str, content_type: str = "") -> Any:
@@ -133,7 +128,7 @@ class _Session:
         # The page's recent network exchanges — full request/response, so a ``find`` can
         # surface the API endpoints behind a rendered view and ``evaluate`` can replay them. A
         # generous rolling window, bounded only so a long-lived page cannot grow the buffer forever.
-        self.exchanges: deque[dict] = deque(maxlen=250)
+        self.exchanges: deque[dict] = deque(maxlen=active_tuning().amount(Limit.WEB_EXCHANGES))
         self._exchange_counter = count(1)
         # Live WebSockets and their recent frames (chat, live data, trading feeds — the traffic that
         # never shows up as XHR). Keyed by a model-facing id, pruned oldest-first past the limit.
@@ -251,9 +246,9 @@ class _Session:
             # Observe a WebSocket's frames — the model can search them like any exchange, and act on
             # the socket in-page with ``evaluate`` (the page's own socket, or a new one it opens).
             identifier = f"ws{next(self._websocket_counter)}"
-            if len(self.websockets) >= _WEBSOCKET_LIMIT:
+            if len(self.websockets) >= active_tuning().amount(Limit.WEB_WEBSOCKETS):
                 self.websockets.pop(next(iter(self.websockets)))
-            record: dict[str, Any] = {"id": identifier, "url": websocket.url, "frames": deque(maxlen=_WEBSOCKET_FRAME_LIMIT)}
+            record: dict[str, Any] = {"id": identifier, "url": websocket.url, "frames": deque(maxlen=active_tuning().amount(Limit.WEB_WEBSOCKET_FRAMES))}
             self.websockets[identifier] = record
 
             def note(direction: str):

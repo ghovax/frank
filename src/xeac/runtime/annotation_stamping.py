@@ -20,6 +20,7 @@ import base64
 import io
 from pathlib import Path
 from typing import Any, Optional
+from xeac.base.tuning import Limit, active_tuning
 
 # Sources the stamper can read pixels from: a local file path (the common case —
 # artifact images reference files on the server) or an inline data URI.
@@ -31,7 +32,7 @@ _DATA_URI_PREFIX = "data:"
 # Longest image side after downscaling. Keeps the inlined copy cheap in tokens
 # and bytes while staying comfortably readable; annotation positions are placed
 # from ratios, so scaling costs no precision.
-_MAXIMUM_STAMPED_SIDE = 2048
+
 # Hard ceiling on the encoded stamped image, mirroring the attachment inlining
 # cap — anything larger is dropped rather than ballooning the request.
 _MAXIMUM_STAMPED_BYTES = 20 * 1024 * 1024
@@ -114,8 +115,8 @@ def stamp_annotations(image_bytes: bytes, annotations: list[dict]) -> Optional[b
     except Exception:
         return None
     image = image.convert("RGBA")
-    if max(image.size) > _MAXIMUM_STAMPED_SIDE:
-        image.thumbnail((_MAXIMUM_STAMPED_SIDE, _MAXIMUM_STAMPED_SIDE), Image.LANCZOS)
+    if max(image.size) > active_tuning().amount(Limit.STAMPED_IMAGE_SIDE):
+        image.thumbnail((active_tuning().amount(Limit.STAMPED_IMAGE_SIDE), active_tuning().amount(Limit.STAMPED_IMAGE_SIDE)), Image.LANCZOS)
     width, height = image.size
     diameter = max(_MARKER_REFERENCE_DIAMETER, round(min(width, height) * 0.066))
     radius = diameter // 2

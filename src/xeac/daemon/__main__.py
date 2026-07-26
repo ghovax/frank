@@ -299,7 +299,10 @@ async def _serve() -> int:
     await _open_stores()
 
     state.registry = SessionRegistry()
-    state.pool = WorkerPool()
+    state.pool = WorkerPool(
+        floor=state.global_configuration.daemon.warm_floor,
+        ceiling=state.global_configuration.daemon.warm_ceiling,
+    )
     state.lifecycle = SessionLifecycle(
         state.registry,
         state.pool,
