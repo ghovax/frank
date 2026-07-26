@@ -4,6 +4,8 @@ Send a message to another session: one you created, or the one that created you.
 
 Sending it does not end your turn and does not stop you working. Send when you have the answer, then finish however you normally would.
 
-Downward, this is how you follow up with a peer you created — a correction, a narrowing, an extra question. A message to a session that is *already working* is steered into its current turn at the next safe point rather than queued behind it, so you can redirect a peer mid-task without waiting for it to finish. A message to an idle session simply starts its next turn.
+Downward, this is how you brief a peer you created and how you follow up with it. `create_session` makes a peer and stops there; **the message you send next is what sets it working**, so it carries the whole brief — the goal, the paths, the constraints, and the shape of the answer you want back. A peer cannot see your conversation, so anything you leave out is gone.
+
+Afterwards the same tool is how you correct, narrow, or add to what you asked. A message to a session that is *already working* is steered into its current turn at the next safe point rather than queued behind it, so you can redirect a peer mid-task without waiting for it to finish. A message to an idle session simply starts its next turn.
 
 Returns as soon as the message is accepted. There is nothing to wait for and nothing to poll: any reply arrives on its own as a new message to you.

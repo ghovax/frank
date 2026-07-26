@@ -107,11 +107,18 @@ def _unavailable(code: str) -> str:
 
 async def _create_session(
     agent: str,
-    message: str,
     working_directory: str = "",
     permission_mode: str = "",
     title: str = "",
 ) -> str:
+    """Make a peer, and nothing else.
+
+    Creating and briefing used to be one call, which made this the only tool that could half
+    succeed: a failed send returned an error *and* a live session, so a caller reading the
+    error had already leaked a process it was not told to clean up. Every other layer has
+    always kept them apart — the daemon's `session.create` takes no message, and a person types
+    `daisy create` then `daisy send` — so the tool was the one place a session composed with a
+    peer differently from the way a person does."""
     access = _access
     if access is None:
         return _unavailable("create_session_error")
@@ -125,13 +132,6 @@ async def _create_session(
     except Exception as exception:  # noqa: BLE001 — surfaced to the model as a tool result
         return compact({"code": "create_session_error", "status": "error", "message": str(exception)})
     session_id = str(record.get("id") or "")
-    try:
-        await access.send(session_id, message)
-    except Exception as exception:  # noqa: BLE001
-        return compact({
-            "code": "create_session_error", "status": "error",
-            "session": session_id, "message": str(exception),
-        })
     return compact({
         "code": "session_created",
         "status": "ok",
@@ -235,7 +235,6 @@ def build_create_session_tool(agent_names: list[str]) -> BaseTool:
             Literal[names],  # type: ignore[valid-type]
             Field(description="The agent profile the peer runs."),
         ),
-        message=(str, Field(description="The brief to send it.")),
         working_directory=(
             str,
             Field(default="", description="Where the peer works. Defaults to your working directory."),

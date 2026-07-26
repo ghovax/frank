@@ -42,7 +42,7 @@ There are no dedicated `find_files`/`search_content` tools; for literal file-nam
 
 | Tool | What it does |
 |------|--------------|
-| `create_session` | Create a peer session and give it work. Its `agent` argument enumerates the profiles actually installed, so an unknown name cannot be asked for. Returns as soon as the peer exists. |
+| `create_session` | Create an idle peer session. Its `agent` argument enumerates the profiles actually installed, so an unknown name cannot be asked for. Returns as soon as the peer exists. |
 | `message_session` | Message another session — one you created, or the one that created you. A session already mid-turn has the message *steered* into that turn at its next safe point; an idle one starts a new turn. |
 | `read_session` | One session's state: its profile, whether its process is alive, whether a turn is in flight, whether it is waiting on a human. |
 | `list_sessions` | The sessions this one created. Its own subtree, not the machine's. |
