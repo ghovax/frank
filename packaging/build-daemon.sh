@@ -51,35 +51,60 @@ uv run pyinstaller \
   packaging/daisy-daemon.spec
 
 echo "smoke-testing the frozen daemon"
+# In a sandbox of its own, and this is the whole point rather than tidiness.
+#
+# A daemon started here with the caller's XDG directories finds the lock already held by
+# whatever daemon the developer is running, logs "Another daisyd already holds the runtime
+# directory; standing down", and exits **0**. The old probe then found the *existing* daemon's
+# socket answering and printed "ok" — a green smoke test for a binary it had never exercised,
+# and green precisely in the case that is most common now that the app expects you to have a
+# daemon running. Isolating every XDG root means this binary is the only thing that could
+# possibly answer, so the probe tests what it claims to. It also stops a build from seeding the
+# developer's real configuration or writing to their transcript store.
+smoke_root="$(mktemp -d "${TMPDIR:-/tmp}/daisy-smoke.XXXXXX")"
+trap 'kill "${daemon_pid:-}" 2>/dev/null || true; rm -rf "$smoke_root"' EXIT
+smoke_log="$smoke_root/daemon.log"
+
 # The binary is a single image with three entry points, so the daemon has to be asked for by
 # name; launching it bare would land in the CLI and exit immediately.
-"$repo_root/packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy" daisyd >/tmp/daisy-daemon-smoke.log 2>&1 &
+env XDG_RUNTIME_DIR="$smoke_root/run" \
+    XDG_CONFIG_HOME="$smoke_root/config" \
+    XDG_DATA_HOME="$smoke_root/data" \
+    XDG_STATE_HOME="$smoke_root/state" \
+    XDG_CACHE_HOME="$smoke_root/cache" \
+  "$repo_root/packaging/dist/Daisy Computer Use.app/Contents/MacOS/daisy" daisyd >"$smoke_log" 2>&1 &
 daemon_pid=$!
-trap 'kill "$daemon_pid" 2>/dev/null || true' EXIT
-# Readiness is the daemon publishing its handshake in the runtime directory and answering on
-# its socket — not a fixed port, because the loopback port is chosen at startup. Poll rather
-# than sleeping once: a frozen binary's first boot unpacks itself and imports a heavy graph,
-# which can take far longer than any fixed wait.
-runtime_directory="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/daisy"
-[ -d "$runtime_directory" ] || runtime_directory="${TMPDIR:-/tmp}/daisy-$(id -u)"
+
+# Readiness is this daemon publishing its handshake and answering on its socket — not a fixed
+# port, because the loopback port is chosen at startup. Poll rather than sleeping once: a frozen
+# binary's first boot unpacks itself and imports a heavy graph, which can take far longer than
+# any fixed wait.
+socket="$smoke_root/run/daisy/daisyd.sock"
 ready=""
-for _ in $(seq 1 40); do
+for _ in $(seq 1 60); do
   sleep 1
-  if [ -S "$runtime_directory/daisyd.sock" ] \
-     && curl -fsS -m 5 --unix-socket "$runtime_directory/daisyd.sock" http://daemon/health >/dev/null 2>&1; then
+  # Liveness first. A dead child can never become ready, and checking the socket first is how
+  # the old version came to trust one it did not own.
+  if ! kill -0 "$daemon_pid" 2>/dev/null; then
+    echo "failed: the frozen daemon exited before it was ready" >&2
+    sed 's/^/  /' "$smoke_log" >&2 || true
+    exit 1
+  fi
+  if [ -S "$socket" ] \
+     && curl -fsS -m 5 --unix-socket "$socket" http://daemon/health >/dev/null 2>&1; then
     ready=1
     break
   fi
-  kill -0 "$daemon_pid" 2>/dev/null || break
 done
-if [ -n "$ready" ]; then
-  echo "ok: daisyd answers on its socket"
-else
-  echo "failed: daisyd did not become ready; see /tmp/daisy-daemon-smoke.log" >&2
+if [ -z "$ready" ]; then
+  echo "failed: daisyd did not become ready" >&2
+  sed 's/^/  /' "$smoke_log" >&2 || true
   exit 1
 fi
+echo "ok: daisyd answers on its own socket"
 kill "$daemon_pid" 2>/dev/null || true
-trap - EXIT
+wait "$daemon_pid" 2>/dev/null || true
+daemon_pid=""
 
 cat <<'NEXT'
 

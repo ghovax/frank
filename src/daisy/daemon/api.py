@@ -465,6 +465,12 @@ async def _daemon_status(_params: dict) -> dict:
         },
         "socket": str(state.daemon_socket),
         "port": state.daemon_port,
+        # Which image is actually serving. Once the daemon is installed there are two `daisy`
+        # on a developer's PATH — the signed bundle and the checkout's `uv run daisy` — and they
+        # share a runtime directory, so whichever started first owns it. That is invisible
+        # otherwise, and it decides whether computer control has a stable Accessibility grant:
+        # the frozen image is one code identity across rebuilds, an interpreter is not.
+        "image": {"executable": sys.executable, "frozen": bool(getattr(sys, "frozen", False))},
     }
 
 

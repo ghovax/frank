@@ -76,7 +76,11 @@ packaging/build-daemon.sh          # FORCE=1 to rebuild when the freshness guard
 cd web && bun run tauri:build
 ```
 
-The first freezes the harness with PyInstaller into `packaging/dist/Daisy Computer Use.app`, smoke-tests it by launching `daisyd` and waiting for it to answer on its socket, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/Daisy.app` plus a `.dmg` under `bundle/dmg/`.
+The first freezes the harness with PyInstaller into `packaging/dist/Daisy Computer Use.app`, smoke-tests it, and is a no-op when nothing that goes into it has changed. The second produces `web/src-tauri/target/release/bundle/macos/Daisy.app` plus a `.dmg` under `bundle/dmg/`.
+
+The smoke test runs the frozen daemon under a **throwaway set of XDG directories**, which is load-bearing rather than tidy. With your own directories it would find the lock held by whatever daemon you are already running, stand down, exit `0`, and the probe would then find *that* daemon's socket answering — a green result for a binary it never exercised, in exactly the case that is most common. Isolation means the binary under test is the only thing that can answer, and it also keeps a build from seeding your configuration or writing to your transcript store.
+
+For the full step-by-step with expected output, see [Installation](installation.md#every-step-and-what-you-should-see).
 
 ### Stable code-signing (recommended)
 

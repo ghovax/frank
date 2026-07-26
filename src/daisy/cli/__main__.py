@@ -345,11 +345,15 @@ def _command_open(arguments: argparse.Namespace) -> int:
         timeout=active_tuning().duration(Tunable.open_url_seconds),
     )
     if result.returncode != 0:
-        # `open -b` fails when nothing on the system claims the identifier, which is exactly
-        # the not-installed case and worth naming rather than passing through a terse error.
+        # `open -b` resolves through LaunchServices, which knows about applications in the
+        # standard locations. A freshly built Daisy.app sitting in the Tauri target directory
+        # has usually never been registered, so this failure most often means "built but not
+        # installed" rather than "not built" — worth saying, because the two look identical
+        # from here and the fix is one `ditto`.
         _note(
-            f"daisy: could not launch the desktop app ({APPLICATION_BUNDLE_ID}). "
-            "Install Daisy.app, or see documentation/installation.md."
+            f"daisy: nothing on this system claims {APPLICATION_BUNDLE_ID}. If you have built "
+            "Daisy.app but not installed it, macOS will not find it by identifier — move it to "
+            "/Applications first. See documentation/installation.md."
         )
         return 1
     _emit({"opened": APPLICATION_BUNDLE_ID, "daemon": not arguments.no_daemon})
