@@ -15,7 +15,9 @@ This document is the reference for the file itself.
 
 A change applies to whatever starts **next**. A running session keeps the configuration it was built with — the same guarantee its permission mode carries — except for settings the daemon explicitly pushes out (the sandbox, computer control, and the user-context snapshot each ask live sessions to rebuild).
 
-The complete reference — every setting, its default, and what it is for — lives at [Example configuration](../configuration.example.yaml). That file is *generated* from the schema by `scripts/generate_configuration_reference.py`, so it cannot describe a setting the code does not have or miss one it does; the explanations in it come from the same `Field(description=...)` that `xeac configure` prints. It is a reference, not a starting point: copying it wholesale would pin every value to this release's defaults, which is exactly what the short seeded file avoids.
+**`xeac configure --all` is the complete reference.** It prints every setting the schema defines, each with what it is for, what it ships at, and what your machine currently runs on. There is deliberately no checked-in file saying the same thing: a second copy of the defaults is a second thing to keep true, and the one this repository used to carry had drifted — documenting renamed settings under their old names and missing ones that had been added. The command reads the running code, so it cannot.
+
+This document is the *narrative* — what the settings mean and how they relate. The command is the exhaustive list.
 
 Names the schema does not define are **refused**, not ignored. A setting that cannot take effect should say so where it is written, rather than being discovered when the behaviour never changes.
 

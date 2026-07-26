@@ -11,8 +11,7 @@
 # To read one:                      xeac configure daemon.warm_floor
 # To put it back:                   xeac configure daemon.warm_floor --unset
 #
-# configuration.example.yaml in the repository lists every setting with its default and what it
-# is for. A name that is not in the schema is refused rather than written and ignored.
+# A name that is not in the schema is refused rather than written and ignored.
 
 # Model provider credentials. Each also resolves from that provider's conventional environment
 # variable, which wins over anything written here. Which model a session runs is chosen by its

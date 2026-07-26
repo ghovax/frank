@@ -74,8 +74,4 @@ dev = [
     "pyinstaller>=6.21.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
-    # Emits YAML with comments attached to keys, which PyYAML cannot do at all — it is what
-    # `scripts/generate_configuration_reference.py` writes the configuration reference with.
-    # Build-time only: nothing in `src/` imports it, and the runtime keeps reading PyYAML.
-    "ruamel.yaml>=0.18",
 ]

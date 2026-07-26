@@ -52,7 +52,7 @@ Useful scripts (in `web/`):
 
 Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime) and the invariant that `computer/` is never imported at module level — a parked worker that has loaded PyObjC is not safe to fork.
 
-`scripts/generate_configuration_reference.py` writes `configuration.example.yaml` from the configuration schema, and `--check` fails when the committed file has drifted from it. Run it after adding a setting, renaming one, changing a default, or editing a `Field(description=...)` or a `Default(...)` — the reference is generated precisely so it cannot describe a setting the code does not have.
+A new setting needs nothing beyond its `Field(description=...)` — no reference file to update, no listing to add it to. `xeac configure --all` walks the schema, so a setting is discoverable from the moment it exists. Write the description as the sentence you would want printed at a terminal, because that is exactly where it goes.
 
 ## Running the desktop app in dev
 

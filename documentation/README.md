@@ -33,9 +33,8 @@ xeac/
 ├── .agents/                  # bundled agents, skills, memories, MCP config
 ├── web/                      # the desktop app (Next.js UI + Tauri shell in src-tauri/)
 ├── packaging/                # PyInstaller freeze + signing for the packaged app
-├── scripts/                  # layering check, event-schema and configuration-reference generation
-├── examples/                 # example MCP servers
-└── configuration.example.yaml   # generated from the configuration schema
+├── scripts/                  # layering check, event-schema generation
+└── examples/                 # example MCP servers
 ```
 
 The layering is enforced by `scripts/check_layers.py`: `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, and the daemon never imports the runtime — that is what keeps it light enough to pre-fork workers from.

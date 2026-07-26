@@ -34,6 +34,6 @@ This is deliberate on my part as the maintainer, and I implement it knowingly. T
 
 ### Never commit credentials
 
-API keys and other secrets belong in `~/.config/xeac/configuration.yaml` (outside the repo) or in environment variables — never in a tracked file. `~/.config/xeac/` is gitignored for this reason, and `configuration.example.yaml` ships with empty values only.
+API keys and other secrets belong in `~/.config/xeac/configuration.yaml` (outside the repo) or in environment variables — never in a tracked file. `~/.config/xeac/` lives outside the repository for this reason, and the packaged template the harness seeds it from carries empty values only.
 
 If a key has been exposed, **rotate it at the provider** immediately. Removing it from git history does not un-leak a key that was already pushed.
