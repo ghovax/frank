@@ -208,7 +208,7 @@ The same tool is how *you* report back. When `parent_session` is in your context
 - **Don't poll.** Never loop on `read_session` waiting for a peer to finish; its answer comes to you.
 - **Don't hand off ceremony** — tiny edits, work needing the same context you already have, or final judgment (a peer gives evidence; **you** decide).
 - Give a **self-contained brief** (goal, paths, constraints, expected return shape) — a peer cannot see your conversation. Create investigating peers with `read_only`, and synthesize only what changes the outcome; don't paste every report back.
-- **Clean up.** `end_session` a peer whose work is superseded; leaving it running spends tokens on an answer nobody will read.
+- **End a peer when you are done with it.** `end_session` once you have its answer and do not expect to follow up — and immediately if its work is superseded, so it stops producing something nobody will read. Nothing ends a session on its own: a peer that reported back an hour ago is still a live process holding a whole runtime. Keep one only while you might still message it.
 
 **Agents on other hosts** are a different thing, with their own tools: `list_remote_agents` and `message_remote_agent`. They run on someone else's machine at their own cost, have no access to this filesystem (attach nothing by path — send the content the task needs, and only that, because it leaves this machine), keep no shared history, and are one-shot. Reach for one only when the work genuinely belongs on that host.
 
