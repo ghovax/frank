@@ -552,6 +552,16 @@
     "usageHoursShort": "{count}h",
     "usageMinutesShort": "{count}m"
   },
+  "CursorAuthControl": {
+    "signInError": "Could not start sign-in.",
+    "title": "Cursor subscription",
+    "signOut": "Sign out",
+    "signIn": "Sign in with Cursor",
+    "waitingForBrowser": "Waiting for browser…",
+    "signedIn": "Signed in",
+    "signedInAs": "Signed in as {account}",
+    "planNotice": "Uses your Cursor plan through the Cursor CLI sign-in. Unofficial and may change."
+  },
   "LocationForm": {
     "local": "Local",
     "remote": "Remote (SSH)",

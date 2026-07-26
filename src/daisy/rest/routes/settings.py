@@ -9,6 +9,9 @@ from fastapi import HTTPException
 from daisy.base.credentials import ChatGPTLoginFlow
 from daisy.base.credentials import clear_tokens
 from daisy.base.credentials import load_tokens
+from daisy.base.cursor_credentials import CursorLoginFlow
+from daisy.base.cursor_credentials import clear_tokens as cursor_clear_tokens
+from daisy.base.cursor_credentials import load_tokens as cursor_load_tokens
 from daisy.base.models import MODELS
 from daisy.base.models import ModelDefinition
 from daisy.base.models import available_models
@@ -43,6 +46,47 @@ def _codex_models():
     from daisy.runtime.models import codex
 
     return codex
+
+
+def _cursor_models():
+    """The Cursor-subscription model surface, imported on use, for the same reason."""
+    from daisy.runtime.models import cursor
+
+    return cursor
+
+
+def _live_additions(
+    provider_identifier: str,
+    live: dict[str, dict],
+    routable,
+    modalities: tuple[str, ...],
+) -> list[ModelDefinition]:
+    """Catalog entries for live subscription models the static list does not name.
+
+    A subscription's real model list is an account fact discovered at runtime, and it
+    moves faster than any list checked into the tree — so whatever the account serves and
+    this version has never heard of still becomes pickable, with the live name and
+    context window rather than a guess. Capabilities are the provider's, not the model's:
+    the live lists carry no modality metadata, so what a route can carry at all is the
+    honest answer, and it is the conservative one."""
+    known = {
+        model.identifier.split("/", 1)[1]
+        for model in MODELS
+        if model.provider == provider_identifier
+    }
+    return [
+        ModelDefinition(
+            identifier=f"{provider_identifier}/{model_id}",
+            name=meta["name"],
+            provider=provider_identifier,
+            attachment=len(modalities) > 1,
+            vision="image" in modalities,
+            input_modalities=modalities,
+            context_length=meta["context"],
+        )
+        for model_id, meta in live.items()
+        if model_id not in known and routable(model_id)
+    ]
 
 
 def _merged_sandbox(current, posted: dict):
@@ -98,32 +142,28 @@ async def list_models_endpoint():
     assert state.global_configuration is not None
     configured_keys = state.global_configuration.configured_provider_keys()
     available_identifiers = {model.identifier for model in available_models(configured_keys)}
-    # The chatgpt provider lists the models.dev-derived superset but is only
-    # *available* per-model against the account's live subscription catalog, so the
-    # picker can grey the ones this plan does not serve. Live models the static
-    # filter has not caught (real gpt-* only) are appended so nothing is missed.
-    live_chatgpt = await _codex_models().fetch_subscription_models()
-    live_slugs = set(live_chatgpt)
+    # The two subscription providers list a static superset but are only *available*
+    # per-model against the account's live catalog, so the picker can grey the ones a
+    # plan does not serve. Both are asked at once — they are independent network calls
+    # and this endpoint is polled.
+    live_chatgpt, live_cursor = await asyncio.gather(
+        _codex_models().fetch_subscription_models(),
+        _cursor_models().fetch_subscription_models(),
+    )
     catalog = list(MODELS)
-    known_chatgpt_slugs = {
-        model.identifier.split("/", 1)[1] for model in MODELS if model.provider == "chatgpt"
-    }
-    for slug, meta in live_chatgpt.items():
-        if slug in known_chatgpt_slugs or not slug.startswith("gpt-"):
-            continue
-        catalog.append(ModelDefinition(
-            identifier=f"chatgpt/{slug}",
-            name=meta["name"],
-            provider="chatgpt",
-            attachment=True,
-            vision=True,
-            input_modalities=("text", "image"),
-            context_length=meta["context"],
-        ))
+    # Live models the static list has not caught are appended so nothing a plan serves is
+    # missed. For chatgpt that means real gpt-* only, because the live Codex catalog also
+    # names models this harness does not route; for cursor every entry is routable.
+    catalog.extend(_live_additions(
+        "chatgpt", live_chatgpt, lambda slug: slug.startswith("gpt-"), ("text", "image"),
+    ))
+    # Cursor's agent service takes a text turn, so nothing there claims image input.
+    catalog.extend(_live_additions("cursor", live_cursor, lambda _model_id: True, ("text",)))
+    live_by_provider = {"chatgpt": set(live_chatgpt), "cursor": set(live_cursor)}
 
     def _is_available(model: ModelDefinition) -> bool:
-        if model.provider == "chatgpt":
-            return model.identifier.split("/", 1)[1] in live_slugs
+        if (live := live_by_provider.get(model.provider)) is not None:
+            return model.identifier.split("/", 1)[1] in live
         return model.identifier in available_identifiers
 
     models = [
@@ -224,6 +264,68 @@ async def chatgpt_auth_signout():
     await asyncio.to_thread(clear_tokens)
     _codex_models().clear_subscription_models_cache()
     _codex_models().clear_usage_snapshot()
+    await _reset_all_runtimes()
+    _publish_broadcast({"type": "settings_changed"})
+    return {"ok": True}
+
+
+@router.get("/auth/cursor")
+async def cursor_auth_status():
+    """Whether a Cursor subscription is signed in, and for which account — so the settings
+    dialog and the model picker can show sign-in state and unlock the ``cursor``
+    provider's models.
+
+    No usage snapshot, unlike the ChatGPT status: Cursor's agent service does not report
+    the account's remaining allowance anywhere on the calls this makes, so there is
+    nothing to show. It surfaces when the allowance runs out, as a stream error, which is
+    the only signal the protocol gives."""
+    tokens = await asyncio.to_thread(cursor_load_tokens)
+    return {"signed_in": tokens is not None, "account": tokens.account if tokens else ""}
+
+
+@router.post("/auth/cursor/start")
+async def cursor_auth_start():
+    """Begin a Cursor sign-in: return the login URL for the client to open in a browser
+    and start polling for its completion in the background.
+
+    There is no callback server and no port to bind, because Cursor's flow has no
+    redirect — the daemon polls Cursor with the ``uuid`` and verifier it minted until the
+    browser side completes. So unlike the ChatGPT sign-in this cannot fail at the start;
+    it either completes, is superseded, or times out. The UI learns of completion via the
+    ``settings_changed`` broadcast (or by polling GET /auth/cursor)."""
+    previous = state.cursor_login_flow
+    if previous is not None:
+        # A second sign-in supersedes the first, and the first must stop polling rather
+        # than race to write a token the user has already replaced.
+        await previous.close()
+    flow = CursorLoginFlow()
+    state.cursor_login_flow = flow
+
+    async def _await_completion() -> None:
+        try:
+            await flow.wait()
+            _cursor_models().clear_subscription_models_cache()
+            await _reset_all_runtimes()
+            _publish_broadcast({"type": "settings_changed"})
+        except Exception:  # noqa: BLE001 — timeout/denial/cancellation just leaves us signed out
+            pass
+        finally:
+            if state.cursor_login_flow is flow:
+                state.cursor_login_flow = None
+
+    spawn_background_task(_await_completion())
+    return {"authorize_url": flow.authorize_url}
+
+
+@router.delete("/auth/cursor")
+async def cursor_auth_signout():
+    """Sign out: clear the stored tokens and reset runtimes so the ``cursor`` provider
+    re-locks immediately."""
+    if state.cursor_login_flow is not None:
+        await state.cursor_login_flow.close()
+        state.cursor_login_flow = None
+    await asyncio.to_thread(cursor_clear_tokens)
+    _cursor_models().clear_subscription_models_cache()
     await _reset_all_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"ok": True}

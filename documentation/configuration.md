@@ -55,7 +55,7 @@ providers:
 
 Around forty providers are registered, including Cerebras, Together, Fireworks, Perplexity, Moonshot, Nebius, Cloudflare and GitHub Copilot; the registry in `src/daisy/base/providers.py` is the full list, with the environment variable each one reads.
 
-You can also **sign in with a ChatGPT subscription** instead of pasting a key (Settings → Providers). That provider is not a LiteLLM route: it calls Codex's endpoint directly with an OAuth token from the shared token store.
+You can also **sign in with a ChatGPT or a Cursor subscription** instead of pasting a key (Settings → Providers). Neither is a LiteLLM route and neither appears in the block above, because neither has a key to store: `chatgpt` calls Codex's Responses endpoint with an OAuth token from `~/.daisy/chatgpt_auth.json`, and `cursor` calls Cursor's agent service with one from `~/.daisy/cursor_auth.json`. Both files are written mode 0600 and kept out of `configuration.yaml` deliberately — that file is digest-synced and would thrash on every silent token refresh. Which models each plan actually serves is discovered live from the account, so a model the plan does not include stays greyed in the picker; and both are unofficial routes that the vendor can withdraw at any time.
 
 **Which model a session uses** is not set here — it belongs to the agent profile, in that agent's `configuration.json` under `preset`. See [Agents and skills](agents-and-skills.md#agents). A profile pinned to a provider you have no credentials for fails on its first call rather than borrowing another profile's model: an agent is defined by its own configuration and nothing else.
 

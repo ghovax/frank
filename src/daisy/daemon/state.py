@@ -116,6 +116,7 @@ composio_servers: dict = {}
 agent_cards: dict = {}
 capture_queue: Any = None
 chatgpt_login_flow: Any = None
+cursor_login_flow: Any = None
 proxy_client: Any = None
 main_loop: Any = None
 

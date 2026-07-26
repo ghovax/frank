@@ -924,6 +924,38 @@ export async function signOutChatGPT(): Promise<void> {
   await apiFetch(`/auth/chatgpt`, { method: "DELETE" });
 }
 
+// Cursor-subscription sign-in state for the `cursor` provider. The same shape as the
+// ChatGPT status minus the usage meters: Cursor's agent service reports no remaining
+// allowance on any call this makes, so there is nothing to meter. `account` is whatever
+// the token names its subject as — an email when the claim carries one.
+export interface CursorAuthStatus {
+  signed_in: boolean;
+  account: string;
+}
+
+export async function fetchCursorAuthStatus(): Promise<CursorAuthStatus> {
+  const response = await apiFetch(`/auth/cursor`);
+  if (!response.ok) return { signed_in: false, account: "" };
+  return response.json();
+}
+
+// Begin sign-in: the server returns Cursor's login URL to open in a browser and starts
+// polling Cursor for completion. There is no redirect in this flow, so nothing lands back
+// here — completion arrives via a `settings_changed` broadcast (or by re-polling
+// fetchCursorAuthStatus).
+export async function startCursorLogin(): Promise<{ authorize_url: string }> {
+  const response = await apiFetch(`/auth/cursor/start`, { method: "POST" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.detail || "Could not start Cursor sign-in.");
+  }
+  return response.json();
+}
+
+export async function signOutCursor(): Promise<void> {
+  await apiFetch(`/auth/cursor`, { method: "DELETE" });
+}
+
 export async function fetchArtifactAnnotations(contextId: string): Promise<ArtifactAnnotationRecord[]> {
   if (!contextId) return [];
   const response = await apiFetch(`/sessions/${encodeURIComponent(contextId)}/artifact-annotations`);
