@@ -1,7 +1,7 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T18:35:00Z
-commit: 98560a9
+updated: 2026-07-27T18:52:00Z
+commit: 4509f83
 ---
 
 # What Must Be Resident
@@ -13,6 +13,8 @@ A session worker is not sandboxed. Its **tool children** are. `_apply_posix` is 
 Once that is clear, "do we need a server?" stops being one question and becomes two independent ones. **Who must be resident?** — nobody, the client that created the sessions, or a machine-wide daemon. **What does a session cost?** — an object, a copy-on-write fork, a cold process held for life, or a durable record with a process only while it works. Today is the most expensive cell on both axes at once: a machine-wide daemon *and* a cold 264 MB process held for a session's entire life, idle or not.
 
 This plan keeps the daemon, because two use cases earn it and nothing else can serve them — a session that outlives the terminal that started it, and a harness reached from another machine. It makes everything else cheaper: the runtime becomes re-entrant, workers become copies instead of cold starts, an idle session stops being a process the moment it goes idle, and the browser surface stops depending on the thing that supervises agents.
+
+And it finishes the job re-entrancy starts. A runtime that can run twice in one process is still not embeddable while every durable thing it writes goes to a path we chose — a library session that runs one background command creates a SQLite database under the caller's data directory today, and there is no argument that stops it. Part VII turns each of those into an interface: the model, the turn record, the checkpoint, the job store, the audit stream and the approval decision. Where the ecosystem already has an interface we adopt it; where it does not we declare a `Protocol`, so an embedder's own object plugs in by having the right methods rather than by inheriting ours.
 
 That last one is deliberately a severing rather than a split. An earlier draft moved the REST surface into its own process; that would have obliged the desktop app to start and supervise a backend, which is precisely the coupling [`client-and-daemon.md`](./client-and-daemon.md) removed. The dependency was the problem, not the process. Cut it, and the app keeps finding one daemon and starting nothing, while splitting later becomes a deployment choice available for free.
 
@@ -211,7 +213,7 @@ The A2A `Task.artifacts` type stays, and it is not the same thing: it is the pro
 | `web/src/lib/api.ts` | 52 references: every artifact call |
 | `web/src/components/attachment-chips.tsx`, `chat-message.tsx`, `chat-input.tsx`, `tool-call.tsx`, `tool-group.tsx`, `panel-tiles.tsx`, `ui/panel.tsx`, `ui/panel-tab.tsx`, `ui/segmented-toggle.tsx`, `background-jobs-panel.tsx` | 77 references between them |
 | `web/src/lib/tool-display.ts` | The `open_artifact` label and icon |
-| `web/messages/en.json`, `ja.json` | 18 and 16 keys respectively — **and that asymmetry is itself a defect.** `xeac-migration.md:396` records the catalogues as verified exact mirrors, so two keys have drifted and the deletion is where it gets noticed |
+| `web/messages/en.json`, `ja.json` | The artifact keys, plus every key the deletion orphans. **The 18/16 asymmetry an earlier draft recorded here was a miscount** — it counted grep hits, not keys; the catalogues are exact mirrors, and `xeac-migration.md:396` was right. The real finding is twenty-nine orphaned keys, and two more that were already orphaned, which is what `scripts/check_translations.py` now exists to prevent |
 
 **No wire event goes with this**, so no schema regeneration is implied. `protocol/events.py` defines no artifact event; `ARTIFACT_EVENT_KIND` (`protocol/metadata.py:21`) is an inbound *part kind*, and the tool result rides the ordinary `_tool_result_part` path. `bun run check:events` should still be run to prove that.
 
@@ -232,6 +234,55 @@ Deleting a feature that was documented is not finished when the code is gone. Th
 | 44 | Rewrite the agent-facing memories | `.agents/memories/harness-layout.md`, `.agents/memories/desktop-build.md:36` | `harness-layout.md` describes three entry points, a worker pool, and the invariant as *"a pre-warmed worker must not have loaded PyObjC"* — the right rule stated for the wrong mechanism. `desktop-build.md:36` says `daemon.restart` **ends live sessions**, which #24 makes false. Agents working on this repository read these, so a stale one is not a stale document, it is wrong instructions |
 | 45 | Restate the fork invariant in the development guide | `documentation/development.md:53` | It reads "a parked worker that has loaded PyObjC is not safe to fork", describing a fork that has never happened. It becomes a statement about the prototype, and gains the half that actually bit: single-threaded, measured natively |
 
+## Part VII — The library's seams are interfaces
+
+Part I made the runtime re-entrant and #6 gave it a front door. That is enough to *run* the harness in your process and not enough to *embed* it in your program, because everything the harness writes down still goes exactly one place, chosen by us, at a path the caller cannot name.
+
+The evidence, measured rather than assumed. A `Session` constructed and its runtime built touch nothing on disk — good. Then the first backgrounded command creates `background.db`, `-wal`, `-shm` and `.lock` under the caller's XDG data directory, through `get_background_job_store()`, a module-level singleton reading a fixed path. A script that runs one bash command in the background leaves a SQLite database behind, and there is no argument that prevents it.
+
+The same shape repeats. The chat model is `build_chat_model(...)` from configuration at `runtime.py:451`, so an embedder who already has a `BaseChatModel` — configured, instrumented, rate-limited, mocked in their tests — cannot use it. A gated tool call can only be answered by consuming `Suspended` and calling `resume()`, so `ask()` raises rather than asking. And the conversation checkpoint lives on the daemon's SQLite task store, so a library session cannot resume at all.
+
+### The rule
+
+**A seam is an interface, not a class of ours.** Where an interface already exists in the ecosystem we adopt it and make it injectable; where none does we declare a `typing.Protocol` (PEP 544) and ship at most one obvious default behind it. `Protocol` is the point: it is *structural*, so an embedder's existing object satisfies it by having the right methods — no base class to inherit, no registry to join, no import of Daisy in their type. That is what "plug and play for any approach anyone else might use" means concretely, and it is why this is deliberately **not** a set of `MemoryX`/`FileX`/`SqliteX` classes. Those would be a taxonomy of our opinions where the deliverable is the shape of the hole.
+
+Two of these seams are already right, and they are the pattern the rest follow: `SessionAccess` (`runtime/tools/sessions.py:71`) and `LocationExecutor` are `Protocol`s, injected, with the daemon supplying the real one. Nothing new is being invented here — the pattern is being finished.
+
+No dependency is added. `typing.Protocol` is standard library, and the two adopted interfaces come from packages already required.
+
+### The seams
+
+| Seam | Today | Becomes | Default when unset |
+|---|---|---|---|
+| **Model** | `build_chat_model()` from configuration only (`runtime.py:451`) | Accept a LangChain **`BaseChatModel`** directly. **Adopted, not invented** — it is already the interface every provider in this tree implements | Built from configuration, as now |
+| **Turn record** | `AppendOnlyTaskStore(engine)` over a fixed `history.db` | Accept an a2a **`TaskStore`**. **Adopted** — a2a already declares the ABC and Daisy already implements it; only the wiring is hard-coded | The daemon's append-only SQLite store |
+| **Checkpoints** | `save_turn_state`/`load_checkpoint`/`load_session_state` bolted onto the task store | New `Checkpoints` Protocol: `save(session_id, state)` / `load(session_id)`. This is what makes a library session resumable at all | In memory |
+| **Background jobs** | `get_background_job_store()` — module singleton, fixed SQLite path, created on first job | New `JobStore` Protocol, narrowed to what `runtime/background.py` actually calls | In memory — **the library stops writing to the caller's disk** |
+| **Observation** | `on_record_event` / `on_record_message` — two ad-hoc callbacks **with no supplier anywhere** | One `Observer` Protocol taking a frozen `Observation(session_id, kind, at, data)`. Returns `Awaitable[None] | None`, the tolerance `MCPEventCallback` already uses in this tree | None — the events are dropped, as they are today |
+| **Approvals** | `Suspended` + `resume()` only; `Session.ask()` raises | New `Approvals` Protocol: `decide(request) -> Approval`, shaped from the existing `SuspensionGate` rather than invented | None — yield `Suspended`, exactly today's behaviour |
+| **Peers** | `SessionAccess` Protocol, injected | Unchanged. Renamed to `peers=` on the public surface | None — the composition tools are absent |
+| **Execution** | `LocationExecutor` Protocol, injected | Unchanged | Local execution |
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 46 | Declare the four new Protocols in `base/ports.py`, re-exported from `daisy/__init__.py`; every one `@runtime_checkable` | new `base/ports.py` | `base` is the lowest layer, so `runtime`, `worker` and `daemon` may all depend on them and the layer table needs no exemption. Re-exporting means an embedder writes `from daisy import Approvals` and never learns the internal layout. `runtime_checkable` buys one thing: a constructor that says *which method is missing* instead of failing at the first call |
+| 47 | `AgentRuntime` accepts `model`, `checkpoints`, `jobs`, `observer`, `approvals`; `build_chat_model` becomes the fallback rather than the only path | `runtime/runtime.py:395-451` | The constructor already takes `session_access`, `mcp_manager`, `sandbox`, `locations` and `file_lease_manager` by injection. These are the five that were left as globals, singletons or dead callbacks |
+| 48 | **Delete `on_record_event` and `on_record_message`.** `_record_event`/`_record_message` route to the `Observer` | `runtime/runtime.py:399-400,425-426,864-872` | A **fifth** permanently-`None` injection point, alongside the four in `SessionExecutor`. `bash_auto_approved`, `mcp_auto_approved`, `screen_auto_approved` and `goal_updated` are an audit trail that has never had a reader — the fix is to give it a named home, not to keep two callbacks nobody wires |
+| 49 | `runtime/background.py` takes its store by argument; `get_background_job_store()` and its module singleton go | `runtime/background.py:42`, `base/background_store.py` | This is the one that writes to the caller's disk unasked. The existing SQLite implementation survives as what the worker passes in |
+| 50 | Split the checkpoint methods off the task store into a `Checkpoints` implementation the daemon supplies | `daemon/persistence/turn_store.py:400-497` | `save_turn_state`, `load_checkpoint` and `load_session_state` are on `AppendOnlyTaskStore` because they share a database, not because they are A2A. Off the class, the A2A store is exactly a2a's `TaskStore` and can be swapped for one |
+| 51 | `Approvals` is consulted before a gate suspends; absent, the turn suspends as now | `runtime/turnloop.py:589`, `runtime/permissions.py` | The suspend/resume dance is right for a client with a human on the other end and wrong for a script. `Session.ask()` stops raising when approvals are supplied |
+| 52 | `Session` takes every port as a keyword argument; `session_access` is renamed `peers` | `src/daisy/__init__.py` | Individual keywords rather than a bag, as `httpx.Client(transport=…, auth=…)` does: each is typed, discoverable and independently defaulted. The rename is the public name matching what the thing is |
+| 53 | The layering checker learns that `base/ports.py` may be imported by every layer, and that nothing may import a *concrete* store where a port exists | `scripts/check_layers.py` | Items 46–52 are a class, exactly as 1–5 were. Without a rule the next fixed path arrives the same way this one did |
+| 54 | Document the ports with a worked example per seam | new `documentation/library.md` (#41) | An interface nobody can find is a class nobody can replace. The guide is where "bring your own model / store / approver" stops being folklore |
+
+### What this is deliberately not
+
+It is not a persistence framework. There is no registry, no entry-point discovery, no `daisy.plugins` namespace, no configuration key naming an implementation by dotted path. You pass an object; it either has the methods or it does not. Anything more would be machinery in front of a constructor argument.
+
+It is not a taxonomy of implementations. One default per port, where a default is needed at all — in-memory for `Checkpoints` and `JobStore`, nothing for `Observer` and `Approvals`. The SQLite implementations already exist and stay where they are, supplied by the daemon, which is the layer that has a database.
+
+And it does not abstract what is already a value. The confinement `Profile` is a frozen dataclass the caller constructs and hands over; `GlobalConfiguration` is a pydantic model `Session` already accepts. Neither needs an interface, and giving them one would be the forest this section exists to avoid.
+
 ## Verification
 
 There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `tests/` contains no test files — so verification is built here rather than inherited, as it was for `xeac-migration.md`. The order matters: each stage depends on the one before it being true.
@@ -246,7 +297,8 @@ There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `te
 | **A permission gate survives sleeping** | The best case of Part III | Drive a turn to `input-required`, assert the worker is gone, answer it, assert the turn resumes |
 | **Fan-out** | The economics claimed here | Create twelve peers; assert the fleet's total footprint is closer to one prototype than to twelve workers |
 | **Reaping** | Supervision still works without `waitpid` | Kill a session's process directly; assert the prototype reports it and the daemon marks the session failed. Kill the prototype; assert live sessions are unaffected and a new session still starts |
-| **The wipe** | Part V took the right things | `grep -ri artifact` over `src/` and `web/src/` returns only `turn_artifacts`, `task.artifacts` and `add_artifact`. `bun run build` and `bun run check:events` pass |
+| **The wipe** | Part V took the right things | `grep -ri artifact` over `src/` and `web/src/` returns only `turn_artifacts`, `task.artifacts` and `add_artifact`. `bun run build`, `bun run check:events` and `scripts/check_translations.py` pass |
+| **The seams** | Part VII made them replaceable rather than merely named | For each port, drive a turn with a caller-supplied implementation and assert it was used: a stub `BaseChatModel`, a list-appending `Observer`, an auto-allowing `Approvals`, a dict `Checkpoints` a second `Session` resumes from. Then assert the negative that motivated it — a library session that runs a background job creates **no** file under the caller's XDG directories |
 
 These are throwaway tests in the sense `xeac-migration.md` used the term — written to prove this change, not to become a suite. A real suite is separate work with a separate goal.
 
@@ -262,6 +314,9 @@ An existing `history.db` carries four artifact tables and a `sessions` row shape
 |---|---|---|
 | The warm worker pool, its floor, ceiling and both configuration keys | `daemon/pool.py`, `base/configuration.py` | 60 ms leaves nothing to pre-warm |
 | Eight module-global setters and their read sites | `runtime/tools/registry.py`, `file_operations.py`, `sessions.py`, `base/tuning.py` | Configuration and per-runtime state pretending to be process state |
+| `on_record_event`, `on_record_message`, `get_background_job_store` and its module singleton | `runtime/runtime.py:399-400`, `base/background_store.py` | Two callbacks nobody supplies and one singleton nobody can redirect. Replaced by the `Observer` and `JobStore` ports (#48, #49) |
+| `model_context`, and the MCP client's artifact extraction | `runtime/tools/file_operations.py`, `base/mcp_client.py` | `model_context` claimed to be what the model sees while sitting in the same payload as the full result; nothing has ever read it. The extraction fed the deleted panel, and its render-payload stripper would otherwise have silently discarded tool output |
+| Thirty-one orphaned message keys | `web/messages/*.json` | Twenty-nine stranded by Part V, two that predate it |
 | The module-level `signal.signal()` and `atexit.register()` | `runtime/tools/registry.py:849-856` | A library must not seize a process's signals |
 | `_on_new_context`, `_session_permission_mode_for`, `_ensure_mcp_servers`, `_ensure_session_workspace`, `_claim_persisted_work_habits_acknowledgement` | `worker/session.py:122-131` | Genuinely superseded: the mode is fixed at create, the workspace is resolved at create, MCP is per-session |
 | `services/sessions.py:_claim_work_habits_acknowledgement` and `SessionLifecycleRecord` | `daemon/services/sessions.py:21`, `persistence/database.py:56` | No caller; the worker keeps its own in-memory flag |
@@ -308,7 +363,9 @@ A session's capability token becomes recomputable from a master key rather than 
 | **Two writers to `workspace.db`** | The worker and whatever serves `rest` are both writers | They already share `base/sqlite_lock.py`'s cross-process `flock`; `background.db` has worked this way all along |
 | **`rest` drifts back into importing `daemon`** | It is the path of least resistance, and it is how the surface grew inside the daemon in the first place | The layering checker, with both exemptions removed (#34) |
 | **The artifact deletion misses a tendril, or takes the wrong one** | It reaches nineteen files across five layers plus two i18n catalogues, and *artifact* also names the A2A deliverable, which stays. A missed reference is an import error; a wrong one silently removes a turn's result | `turn_artifacts`, `task.artifacts` and `updater.add_artifact` must survive untouched, and a turn must still produce a `result` artifact. Everything else matching `artifact` outside `protocol/` and the turn store should be gone — grep is the check, and the layering checker plus `bun run build` catch the rest |
-| **The i18n catalogues have already drifted** | `en.json` holds 18 artifact keys and `ja.json` holds 16, against `xeac-migration.md:396` recording them as exact mirrors | Compare key counts after the deletion, not just the artifact ones — the drift predates this work and the wipe is where it surfaces |
+| **A deletion strands message keys instead of drifting them** | The catalogues turned out to be exact mirrors, so the failure mode is not drift between languages — it is copy for surfaces that no longer exist, which nothing renders and nobody can identify later. Part V stranded twenty-nine keys | `scripts/check_translations.py`, run by `bun run build`: identical key sets across languages, and every key referenced under `web/src` |
+| **A port is declared and then bypassed** | The concrete store still exists and still works; reaching for it directly is easier than threading an argument, which is exactly how `get_background_job_store()` became a singleton | The layering checker forbids importing a concrete store where a port exists (#53). The negative assertion in the verification table — no files under the caller's XDG directories — fails loudly if anything reaches past the port |
+| **`Protocol` gives no compile-time guarantee** | Structural typing means a near-miss signature type-checks nowhere and fails at the first call, possibly deep in a turn | Every port is `@runtime_checkable` and validated at the constructor, so a missing method is named at `Session(...)` rather than surfacing as an `AttributeError` mid-turn |
 | **A partially-migrated registry** | Two registries becoming one touches `ps`, the sidebar, the reaper and attribution together | They are merged in one change; there is no interval in which both exist |
 
 ## Left open
