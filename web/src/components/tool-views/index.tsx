@@ -675,6 +675,15 @@ function SessionReferenceCallView({ args }: { args: Record<string, unknown> }) {
   );
 }
 
+// A peer's activity, coloured the way the sidebar colours the same thing.
+const PEER_ACTIVITY_PALETTE: Record<string, string> = {
+  working: "blue",
+  waiting: "orange",
+  idle: "gray",
+  asleep: "gray",
+  ended: "gray",
+};
+
 // One row per session, so a listing reads as a list of peers rather than as nested JSON.
 function SessionListResultView({ data }: { data: Record<string, unknown> }) {
   const translation = useTranslations("ToolViews");
@@ -686,10 +695,14 @@ function SessionListResultView({ data }: { data: Record<string, unknown> }) {
         <InlineField key={index} label={asString(session.agent)}>
           <Flex align="center" gap={1.5} wrap="wrap">
             <Mono>{asString(session.id)}</Mono>
-            <Pill colorPalette={STATUS_PALETTE[taskLifecycleKind(asString(session.status))]}>
-              {asString(session.status)}
+            {/* `activity` is what a peer is doing right now, derived by the daemon on every
+                read: working, waiting on a person, idle, asleep (no process — the next
+                message forks one), or ended. It replaced a `status` field that tried to be
+                both this and whether the session still exists, and a separate `busy` that
+                had to be merged in to answer "is it working". */}
+            <Pill colorPalette={PEER_ACTIVITY_PALETTE[asString(session.activity)] ?? "gray"}>
+              {asString(session.activity) || asString(session.lifecycle)}
             </Pill>
-            {session.busy ? <Pill colorPalette="blue">{translation("peerBusy")}</Pill> : null}
             {session.awaiting_input ? <Pill colorPalette="orange">{translation("peerWaiting")}</Pill> : null}
           </Flex>
         </InlineField>

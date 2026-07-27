@@ -475,7 +475,6 @@
     "peerSession": "セッション",
     "peerMessage": "メッセージ",
     "peerStatus": "状態",
-    "peerBusy": "実行中",
     "peerWaiting": "待機中",
     "noPeerSessions": "ピアセッションはありません"
   },

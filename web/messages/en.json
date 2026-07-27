@@ -475,7 +475,6 @@
     "peerSession": "Session",
     "peerMessage": "Message",
     "peerStatus": "Status",
-    "peerBusy": "working",
     "peerWaiting": "waiting",
     "noPeerSessions": "No peer sessions"
   },

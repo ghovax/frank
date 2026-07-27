@@ -33,75 +33,8 @@ def _reset_work_habits_acknowledgements() -> None:
         state.session_store.reset_work_habits_acknowledgements()
 
 
-def _session_agent_for(session_id: str) -> str:
-    """Read a session's owning agent from its record (``""`` when unknown). Lets an
-    on-demand action reach the right executor even before that agent has a live
-    runtime this process (e.g. a session reopened after a restart)."""
-    if state.session_factory is None or not session_id:
-        return ""
-    database_session = state.session_factory()
-    try:
-        record = database_session.get(SessionRecord, session_id)
-        return (record.agent or "") if record is not None else ""
-    except Exception:
-        return ""
-    finally:
-        database_session.close()
-
-
-def _session_working_directory_for(session_id: str) -> str:
-    """Read a session's source working directory from its record."""
-    if state.session_factory is None or not session_id:
-        return ""
-    database_session = state.session_factory()
-    try:
-        record = database_session.get(SessionRecord, session_id)
-        return (record.working_directory or "") if record is not None else ""
-    except Exception:
-        return ""
-    finally:
-        database_session.close()
-
-
-
 def _normalize_permission_mode(mode: str) -> str:
     return mode if mode in {"default", "auto", "read_only"} else "default"
-
-
-def _session_permission_mode_for(session_id: str) -> str:
-    """Read a context's persisted permission mode for frontend hydration and
-    runtime rebuilds. Missing/invalid values fall back to the agent default."""
-    if state.session_factory is None or not session_id:
-        return "default"
-    database_session = state.session_factory()
-    try:
-        record = database_session.get(SessionRecord, session_id)
-        return _normalize_permission_mode(record.permission_mode or "default") if record is not None else "default"
-    except Exception:
-        return "default"
-    finally:
-        database_session.close()
-
-
-def _set_session_permission_mode(session_id: str, mode: str) -> bool:
-    """Persist a session permission mode. Returns whether the session exists."""
-    if state.session_factory is None or not session_id:
-        return False
-    normalized = _normalize_permission_mode(mode)
-    with sqlite_write_lock():
-        database_session = state.session_factory()
-        try:
-            record = database_session.get(SessionRecord, session_id)
-            if record is None:
-                return False
-            record.permission_mode = normalized
-            database_session.commit()
-            return True
-        except Exception:
-            database_session.rollback()
-            return False
-        finally:
-            database_session.close()
 
 
 def _session_workspace_from_record(record: SessionRecord) -> SessionWorkspace:
@@ -120,10 +53,6 @@ def _session_workspace_from_record(record: SessionRecord) -> SessionWorkspace:
         head=cast(str, record.workspace_head) or "",
         error=cast(str, record.workspace_error) or "",
     )
-
-
-def _record_session_visible(session_id: str) -> None:
-    _publish_broadcast({"type": "sessions_changed"})
 
 
 def _ensure_session_workspace(

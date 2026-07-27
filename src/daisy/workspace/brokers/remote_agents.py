@@ -7,9 +7,7 @@ from daisy.base.configuration import GlobalConfiguration
 from daisy.protocol.client import RemoteAgentAuth
 from daisy.protocol.client import RemoteAgentConfiguration
 from daisy.protocol.client import RemoteAgentManager
-import asyncio
 from daisy.workspace import state
-from daisy.workspace.services.broadcast import _publish_broadcast
 
 
 def _remote_agent_dataclasses() -> dict[str, RemoteAgentConfiguration]:
@@ -50,12 +48,3 @@ async def _reload_remote_agents() -> None:
         await state.reset_runtimes()
         state.broadcaster.publish({"type": "remote_agents_changed"})
 
-
-async def _poll_remote_agent_health(interval_seconds: float = 300.0) -> None:
-    """Periodically re-resolve remote agent cards so their health stays current in the UI
-    even while idle, broadcasting on each pass so open panels refresh."""
-    while True:
-        await asyncio.sleep(interval_seconds)
-        if state.remote_agent_manager is not None and state.remote_agent_manager.has_agents():
-            await state.remote_agent_manager.refresh_all()
-            _publish_broadcast({"type": "remote_agents_changed"})
