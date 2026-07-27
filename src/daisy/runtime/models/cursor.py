@@ -181,17 +181,51 @@ def _list_arguments(values: list[str]) -> Optional[dict[str, Any]]:
     return {"command": f"ls -la {shlex.quote(path)}", "read_only": True} if path else None
 
 
-# Cursor's built-in tools, and the harness tool each becomes. Absent from this table, and so
-# declined rather than translated: `delete`, because turning a delete request into a synthesized
-# `rm` means this code decided to remove a file; `diagnostics`, which has no counterpart; and
-# `grep`, whose arguments (output modes, context lines, type filters, multiline) do not survive
-# being flattened into one command line, and whose nearest harness tool searches by meaning
-# rather than by pattern.
+def _background_shell_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``BackgroundShellSpawnArgs{command, working_directory}`` → ``bash`` in the background,
+    which is the same tool the harness already has for exactly this."""
+    arguments = _shell_arguments(values)
+    return {**arguments, "background": True} if arguments else None
+
+
+def _fetch_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``FetchArgs{url}`` → ``fetch_url``."""
+    return {"url": values[0]} if values and values[0] else None
+
+
+def _list_resources_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``ListMcpResourcesExecArgs{server}`` → ``list_mcp_resources``, whose parameter is spelled
+    the same because both are naming the same thing."""
+    return {"server": values[0]} if values and values[0] else None
+
+
+def _read_resource_arguments(values: list[str]) -> Optional[dict[str, Any]]:
+    """``ReadMcpResourceExecArgs{server, uri}`` → ``read_mcp_resource``, again field for field."""
+    server, uri = (values + ["", ""])[:2]
+    return {"server": server, "uri": uri} if server and uri else None
+
+
+# Cursor's built-in tools, and the harness tool each becomes. Every exec the server can send is
+# either here or refused by name; nothing is left unanswered, because an unanswered exec is an
+# agent waiting forever.
+#
+# Absent deliberately: `delete`, because turning a delete request into a synthesized `rm` would
+# mean this code decided to remove a file; `diagnostics`, which has no counterpart; `grep`, whose
+# arguments (output modes, context lines, type filters, multiline) do not survive being flattened
+# into one command line and whose nearest harness tool searches by meaning rather than by pattern;
+# `record_screen`, which has no counterpart; `computer_use`, because Cursor describes it as a list
+# of low-level actions while the harness's screen control takes a plain-language instruction, and
+# bridging those would be invention rather than translation; and `write_shell_stdin`, which
+# addresses a background shell by an id only a client that spawned it would hold.
 _BUILTIN_TRANSLATIONS: dict[str, tuple[str, Callable[[list[str]], Optional[dict[str, Any]]]]] = {
     "shell": ("bash", _shell_arguments),
+    "background_shell": ("bash", _background_shell_arguments),
     "read": ("read_file", _read_arguments),
     "write": ("write_file", _write_arguments),
     "ls": ("bash", _list_arguments),
+    "fetch": ("fetch_url", _fetch_arguments),
+    "list_mcp_resources": ("list_mcp_resources", _list_resources_arguments),
+    "read_mcp_resource": ("read_mcp_resource", _read_resource_arguments),
 }
 
 
@@ -762,13 +796,9 @@ class ChatCursorModel(BaseChatModel):
         explicitly matters as much as refusing: the agent waits on an exec it asked for, so
         silence would stall the turn rather than move the model on to a tool it does have."""
         builtin = request.builtin
-        if builtin is not None and builtin.rejected_field:
-            leading = request.arguments[:builtin.rejected_leading]
+        if builtin is not None:
             result_field = builtin.result_field
-            result = wire.rejected_result(builtin.rejected_field, leading, _BUILTIN_REFUSAL)
-        elif builtin is not None:
-            # grep has no rejection variant in its result, only an error.
-            result_field, result = builtin.result_field, wire.grep_error_result(_BUILTIN_REFUSAL)
+            result = wire.refused_result(builtin, request.arguments, _BUILTIN_REFUSAL)
         elif request.args_field == 10:  # request_context_args — answerable, and harmless
             result_field = 10
             # RequestContextResult.success → RequestContextSuccess.request_context

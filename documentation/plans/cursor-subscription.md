@@ -1,6 +1,6 @@
 ---
 created: 2026-07-26T23:52:40Z
-updated: 2026-07-27T02:26:00Z
+updated: 2026-07-27T02:48:00Z
 commit: 98560a9
 ---
 
@@ -87,7 +87,33 @@ The three clients disagree, and each got something right. This is what was taken
 
 Two entries deserve more than a row.
 
-**Built-in tools.** Cursor's agent reaches for its own shell, read, write, ls, grep and delete regardless of what the client offered, because its toolset is decided server-side. All three plugins run them inside the plugin, which is coherent for a model gateway and not available here: a model client executing a shell command has no permission mode, no confinement boundary, and no session to attribute the work to, and nothing in the transcript would record a tool the harness never dispatched. The earlier version of this declined all of them, which was safe and unhelpful — a model that habitually reaches for `read` got refused over and over. Now a built-in with a counterpart among the harness's own tools is *translated* into a call on that tool and handed back like any other: `shell` becomes `bash`, `read` becomes `read_file`, `write` becomes `write_file`, `ls` becomes a read-only `bash` listing. The agent gets what it asked for, and it happens where the harness can govern it. Three are still declined, and deliberately: `delete`, because turning a delete request into a synthesized `rm` would mean this code decided to remove a file; `diagnostics`, which has no counterpart; and `grep`, whose arguments — output modes, context lines, type filters, multiline — do not survive being flattened into one command line, and whose nearest harness tool searches by meaning rather than by pattern. A translation is also refused when the running agent was not given the tool it would map to, because inventing a capability an agent was configured without is worse than saying no.
+**Built-in tools.** Cursor's agent can announce thirty-two different tools, but only fifteen of them are things it asks the *client* to run — the rest it does server-side, which is why a web search or a semantic search never reaches this code at all. Those fifteen, plus the harness's own tools coming back and one question about the machine, are the seventeen exec kinds a run has to be able to answer. Answering all of them is not tidiness: an exec left unanswered is an agent waiting for a result that never comes, so a missing kind costs a stalled turn, and building the table below is what revealed that seven of them had no answer at all.
+
+Cursor's agent reaches for these regardless of what the client offered, because its toolset is decided server-side. All three plugins run them inside the plugin, which is coherent for a model gateway and not available here: a model client executing a shell command has no permission mode, no confinement boundary, and no session to attribute the work to, and nothing in the transcript would record a tool the harness never dispatched. The earlier version of this declined all of them, which was safe and unhelpful — a model that habitually reaches for `read` got refused over and over. Now a built-in with a counterpart among the harness's own tools is *translated* into a call on that tool and handed back like any other. The agent gets what it asked for, and it happens where the harness can govern it.
+
+| Cursor asks for | Becomes | Note |
+|---|---|---|
+| `shell` | `bash` | the command is the model's own text |
+| `shell_stream` | `bash` | same tool; only the result variant differs |
+| `background_shell_spawn` | `bash` background | the harness already has exactly this |
+| `read` | `read_file` | |
+| `write` | `write_file` | an empty body is a real write, so only a missing path disqualifies it |
+| `ls` | `bash` read-only | a fixed `ls -la`; only the directory comes from the agent |
+| `fetch` | `fetch_url` | |
+| `list_mcp_resources` | `list_mcp_resources` | field for field, same spelling |
+| `read_mcp_resource` | `read_mcp_resource` | field for field |
+| `mcp` | the call itself | the harness's own tools coming back; no translation needed |
+| `request_context` | answered directly | a question about the machine, not a tool |
+| `delete` | **refused** | synthesizing an `rm` would mean this code decided to remove a file |
+| `grep` | **refused** | output modes, context lines, type filters and multiline do not survive being flattened into one command line, and the nearest harness tool searches by meaning rather than by pattern |
+| `diagnostics` | **refused** | no counterpart |
+| `record_screen` | **refused** | no counterpart |
+| `computer_use` | **refused** | Cursor describes it as a list of low-level actions while the harness's screen control takes a plain-language instruction; bridging those would be invention rather than translation |
+| `write_shell_stdin` | **refused** | addresses a background shell by an id only a client that spawned it would hold |
+
+A translation is also refused when the running agent was not given the tool it would map to, because inventing a capability an agent was configured without is worse than saying no — which is also what makes the screen-control case self-resolving, since that tool is opt-in and simply absent when it is off.
+
+Every refusal uses the variant the protocol provides for it, and the protocol is not consistent about the name: `rejected` for tools a client may decline, `error` for ones it may only fail, `failure` for one. All three have the same shape from here — some identifying strings, then a reason — so one builder covers them, and what varies is a field number and how many strings precede the reason. `read_mcp_resource` is the case that forced that to be explicit: it takes a server and a uri, but its refusal names only the uri.
 
 **Backend fallback.** Cursor moves this service between hosts, and Yukaii keeps the two agent hosts behind an environment flag because its runtime could not reach them. Here they are simply tried, in order, and only when a run fails *before producing anything* — a run that has already emitted text is never retried, because replaying it would duplicate its output.
 

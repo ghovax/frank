@@ -487,57 +487,76 @@ class BuiltinExec:
 
     The agent reaches for these regardless of what the client offered, because its toolset is
     decided server-side. Every field here exists to answer one of two questions: how to hand the
-    request to the harness so it runs under the harness's rules, and how to decline it in the
+    request to the harness so it runs under the harness's rules, and how to refuse it in the
     protocol's own terms when it cannot be handed over at all.
 
-    ``result_field`` and ``rejected_field`` locate the refusal — the result's field number inside
-    ``ExecClientMessage``, and the "rejected" variant's number inside that result.
-    ``rejected_leading`` is how many identifying strings the rejected message carries before its
-    reason (the command and directory, or a path), which are echoed back so the agent's own
-    transcript names what it was refused."""
+    ``result_field`` is the result's number inside ``ExecClientMessage``. ``refusal_field`` is the
+    number, inside that result, of the variant that means "not done" — the protocol calls it
+    ``rejected`` for tools a client may decline, ``error`` for ones it may only fail, and
+    ``failure`` for one. All three have the same shape from here: some identifying strings, then a
+    reason.
+
+    ``argument_fields`` are the args-message field numbers worth reading. ``refusal_indexes`` are
+    which of those, in order, the refusal wants before its reason — a separate list because the
+    two do not always agree. ``read_mcp_resource`` takes a server and a uri but its refusal names
+    only the uri."""
 
     label: str
     result_field: int
-    rejected_field: int
-    rejected_leading: int
-    # The field numbers, within this exec's args message, of the strings worth reading — in the
-    # order the rejected message wants them, so one list serves both answering and refusing.
+    refusal_field: int
     argument_fields: tuple[int, ...] = ()
+    refusal_indexes: tuple[int, ...] = ()
 
 
-# Keyed by the args field number in ``ExecServerMessage``.
+# Every exec the server can ask a client to run, keyed by its args field number in
+# ``ExecServerMessage``. Completeness is the point rather than tidiness: an exec left unanswered
+# is an agent waiting for a result that never comes, so a kind missing from this table costs a
+# stalled turn. ``mcp_args`` (11) and ``request_context_args`` (10) are absent because neither is
+# a built-in tool — the first is the harness's own tools coming back, the second is a question
+# about the machine.
 BUILTIN_EXECS: dict[int, BuiltinExec] = {
-    # ShellResult.rejected → ShellRejected{command, working_directory, reason}
-    2: BuiltinExec("shell", 2, 4, 2, (1, 2)),
-    # shell_stream_args answers on shell_result too
-    14: BuiltinExec("shell", 2, 4, 2, (1, 2)),
-    # WriteResult.rejected → WriteRejected{path, reason}; args are {path, file_text}
-    3: BuiltinExec("write", 3, 6, 1, (1, 2)),
-    # DeleteResult.rejected → DeleteRejected{path, reason}
-    4: BuiltinExec("delete", 4, 6, 1, (1,)),
-    # GrepResult has no rejection variant, only an error — hence rejected_field 0
-    5: BuiltinExec("grep", 5, 0, 0, (1, 2, 3)),
-    # ReadResult.rejected → ReadRejected{path, reason}
-    7: BuiltinExec("read", 7, 3, 1, (1,)),
-    # LsResult.rejected → LsRejected{path, reason}
-    8: BuiltinExec("ls", 8, 3, 1, (1,)),
-    # DiagnosticsResult.rejected → DiagnosticsRejected{path, reason}
-    9: BuiltinExec("diagnostics", 9, 3, 1, (1,)),
+    # ShellRejected{command, working_directory, reason}
+    2: BuiltinExec("shell", 2, 4, (1, 2), (0, 1)),
+    # shell_stream_args answers on shell_stream, whose rejected variant sits at 5
+    14: BuiltinExec("shell", 14, 5, (1, 2), (0, 1)),
+    # WriteRejected{path, reason}; args are {path, file_text}
+    3: BuiltinExec("write", 3, 6, (1, 2), (0,)),
+    # DeleteRejected{path, reason}
+    4: BuiltinExec("delete", 4, 6, (1,), (0,)),
+    # GrepError{error} — no identifying string precedes the reason
+    5: BuiltinExec("grep", 5, 2, (1, 2, 3), ()),
+    # ReadRejected{path, reason}
+    7: BuiltinExec("read", 7, 3, (1,), (0,)),
+    # LsRejected{path, reason}
+    8: BuiltinExec("ls", 8, 3, (1,), (0,)),
+    # DiagnosticsRejected{path, reason}
+    9: BuiltinExec("diagnostics", 9, 3, (1,), (0,)),
+    # BackgroundShellSpawnRejected{command, working_directory, reason}
+    16: BuiltinExec("background_shell", 16, 3, (1, 2), (0, 1)),
+    # ListMcpResourcesExecRejected{reason}
+    17: BuiltinExec("list_mcp_resources", 17, 3, (1,), ()),
+    # ReadMcpResourceExecRejected{uri, reason} — args are {server, uri}, so the refusal wants
+    # the second of them and not the first
+    18: BuiltinExec("read_mcp_resource", 18, 3, (1, 2), (1,)),
+    # FetchError{url, error}
+    20: BuiltinExec("fetch", 20, 2, (1,), (0,)),
+    # RecordScreenFailure{error}
+    21: BuiltinExec("record_screen", 21, 4, (), ()),
+    # ComputerUseError{error, …}
+    22: BuiltinExec("computer_use", 22, 2, (), ()),
+    # WriteShellStdinError{error}
+    23: BuiltinExec("write_shell_stdin", 23, 2, (), ()),
 }
 
 
-def rejected_result(rejected_field: int, leading: list[str], reason: str) -> bytes:
-    """A tool result whose only populated variant is its rejection.
+def refused_result(builtin: BuiltinExec, arguments: list[str], reason: str) -> bytes:
+    """A tool result whose only populated variant is the one meaning "not done".
 
-    ``leading`` echoes back the identifying strings the rejected message starts with
-    (the command, or the path) so the agent's own transcript names what it was refused."""
-    body = b"".join(text(index + 1, value) for index, value in enumerate(leading))
-    return blob(rejected_field, body + text(len(leading) + 1, reason))
-
-
-def grep_error_result(message: str) -> bytes:
-    """agent.v1.GrepResult carrying an error — grep has no rejection variant."""
-    return blob(2, text(1, message))
+    The identifying strings the variant names are echoed back before the reason, so the agent's
+    own transcript records what it was refused rather than just that something was."""
+    leading = [arguments[index] for index in builtin.refusal_indexes if index < len(arguments)]
+    body = b"".join(text(position + 1, value) for position, value in enumerate(leading))
+    return blob(builtin.refusal_field, body + text(len(leading) + 1, reason))
 
 
 # Parsing the server's side.
