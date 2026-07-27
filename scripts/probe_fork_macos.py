@@ -1,23 +1,32 @@
-"""Fork viability probe — macOS only. Run this on the target machine before building anything.
+"""Fork viability probe — macOS only. Run this on the target machine.
 
-`documentation/plans/what-must-be-resident.md` proposes a **prototype**: a resident process that
-imports the runtime once, freezes its heap, and forks a session worker per request. The whole
-design was measured on Linux against the real import graph — 264 MB parked, ~12 MB per forked
-session, ~60 ms to a serving socket, 88% saved on a twelve-session fan-out — and three things
-could not be measured there. All three are macOS-specific, and one of them decides whether the
-design is viable at all:
+`documentation/plans/what-must-be-resident.md` proposes a **prototype**: a resident process
+that imports the runtime once, freezes its heap, and forks a session worker per request. The
+design rests on one invariant — **the prototype is genuinely single-threaded when it forks** —
+and on three macOS questions Linux cannot answer: whether a child may initialise CoreFoundation
+after the fork, whether the TCC Accessibility grant follows a fork, and whether `sandbox-exec`
+still works from a forked child.
 
-  1. **CoreFoundation after a fork.** macOS aborts a process that calls into CF after forking if
-     CF was already initialised before it. `scripts/check_layers.py` keeps `daisy.computer` (and
-     therefore PyObjC) out of every module-level import, so the prototype never initialises CF —
-     which means the child initialises it *fresh*, post-fork. That should be legal. Test 2 is the
-     load-bearing check, and the module census before it reports the condition that would kill
-     the design outright: CF having reached the prototype's import set anyway.
-  2. **TCC / Accessibility.** A forked child carries the parent's executable, code signature and
-     responsible process, so the grant should be inherited — plausibly better than a re-exec,
-     which is what the fleet relies on today. Test 3 compares child and parent.
-  3. **`sandbox-exec` from a forked child.** It is an exec, so nothing fork-specific should
-     apply. Test 4 confirms rather than assumes.
+All three now have answers, and they are the ones the plan hoped for. This probe exists to
+re-establish them on any machine, and — more importantly — to catch the invariant breaking
+again, because the first version of this file could not.
+
+**Two lessons are built into the checks below, both learned the hard way.**
+
+`threading.enumerate()` cannot see native threads. The first version used it, reported "1
+thread", and passed a parent that actually had three: `src/daisy/base/models.py` ran a blocking
+`httpx.get` at import time, and on macOS that fetch spawns two persistent native network
+threads. The child then died with `+[__NSPlaceholderSet initialize] may have been in progress
+in another thread when fork() was called` — the *multi-threaded-fork* ObjC abort, which reads
+like the CoreFoundation verdict and is not it. So the thread count here comes from mach
+`task_threads`, which counts what `fork(2)` actually cares about.
+
+A `sys.modules` census cannot see linked dylibs. CoreFoundation, Foundation, CoreGraphics and
+SystemConfiguration are in the image before any Daisy import — they ship linked into the
+interpreter. A census that looks for them by module name therefore always reports "none" and
+provides no safety at all. Linkage turns out to be harmless (only *initialisation* matters), so
+the dyld census below is informational, and the blocking check is on the PyObjC **bridge**
+modules, which is what `daisy.computer` would drag in.
 
     PYTHONPATH=src uv run python scripts/probe_fork_macos.py
 
@@ -26,7 +35,9 @@ Exit status is 0 when every test passes, 1 on failure, 2 when not run on macOS.
 
 from __future__ import annotations
 
+import ctypes
 import gc
+import importlib.abc
 import json
 import os
 import subprocess
@@ -35,17 +46,130 @@ import time
 
 FAILURES: list[str] = []
 
-# Anything whose import initialises the Objective-C runtime or CoreFoundation. If one of these
-# is loaded in the prototype, forking it is undefined behaviour on macOS.
-FRAMEWORK_ROOTS = {
+# The PyObjC *bridge* modules. Their presence means something imported `daisy.computer`, or a
+# dependency reached for a framework, at module level — which initialises the Objective-C
+# runtime in the prototype and makes forking it undefined behaviour.
+PYOBJC_BRIDGES = {
     "objc", "Foundation", "AppKit", "Quartz", "CoreFoundation", "ApplicationServices",
-    "CoreServices", "CoreGraphics", "WebKit", "Cocoa",
+    "CoreServices", "CoreGraphics", "WebKit", "Cocoa", "SystemConfiguration",
 }
 
+# Frameworks worth naming in the informational dyld listing.
+FRAMEWORK_HINTS = (
+    "CoreFoundation", "Foundation", "CoreGraphics", "AppKit", "ApplicationServices",
+    "SystemConfiguration", "Security", "CFNetwork",
+)
+
+
+# ---------------------------------------------------------------- counting what fork() sees
+
+_mach: tuple = ()
+
+
+def _mach_bindings() -> tuple:
+    """Bound on first use, not at import: these symbols only exist on Darwin, and binding them
+    at module level would make the probe fail its own platform guard before it could print it."""
+    global _mach
+    if _mach:
+        return _mach
+    libc = ctypes.CDLL(None)
+    task = ctypes.c_uint.in_dll(libc, "mach_task_self_").value
+    libc.task_threads.argtypes = [
+        ctypes.c_uint, ctypes.POINTER(ctypes.POINTER(ctypes.c_uint)), ctypes.POINTER(ctypes.c_uint)
+    ]
+    libc.mach_port_deallocate.argtypes = [ctypes.c_uint, ctypes.c_uint]
+    libc.vm_deallocate.argtypes = [ctypes.c_uint, ctypes.c_void_p, ctypes.c_size_t]
+    libc._dyld_image_count.restype = ctypes.c_uint32
+    libc._dyld_get_image_name.restype = ctypes.c_char_p
+    libc._dyld_get_image_name.argtypes = [ctypes.c_uint32]
+    _mach = (libc, task)
+    return _mach
+
+
+def os_thread_count() -> int:
+    """Native threads in this task, via mach. This is the number `fork(2)` cares about;
+    `threading.enumerate()` only knows about threads CPython created itself.
+
+    Every port the kernel hands back is deallocated, and so is the array — a probe that leaked
+    a mach port per call would change the thing it is measuring."""
+    libc, task = _mach_bindings()
+    listing = ctypes.POINTER(ctypes.c_uint)()
+    count = ctypes.c_uint(0)
+    if libc.task_threads(task, ctypes.byref(listing), ctypes.byref(count)) != 0:
+        return -1
+    total = count.value
+    for index in range(total):
+        libc.mach_port_deallocate(task, listing[index])
+    libc.vm_deallocate(
+        task, ctypes.cast(listing, ctypes.c_void_p), total * ctypes.sizeof(ctypes.c_uint)
+    )
+    return total
+
+
+def loaded_frameworks() -> list[str]:
+    """Frameworks present as loaded mach-O images. Informational: being linked is expected and
+    harmless, and is precisely why a `sys.modules` census can never answer this."""
+    libc, _ = _mach_bindings()
+    found: set[str] = set()
+    for index in range(libc._dyld_image_count()):
+        name = (libc._dyld_get_image_name(index) or b"").decode(errors="replace")
+        for hint in FRAMEWORK_HINTS:
+            if f"/{hint}.framework/" in name:
+                found.add(hint)
+    return sorted(found)
+
+
+# ------------------------------------------------------- attributing threads to their import
+
+_thread_events: list[tuple[int, str, int, int]] = []
+_depth = 0
+
+
+class _AttributingFinder(importlib.abc.MetaPathFinder):
+    """Wraps every loader so a module that changes the native thread count is named.
+
+    Deltas nest — a parent's delta includes its children's — so the *deepest* entry is the true
+    culprit and the shallower ones are its importers."""
+
+    def find_spec(self, fullname, path=None, target=None):
+        for finder in sys.meta_path:
+            if finder is self:
+                continue
+            spec = finder.find_spec(fullname, path, target)
+            if spec is not None and spec.loader is not None:
+                spec.loader = _AttributingLoader(spec.loader, fullname)
+                return spec
+        return None
+
+
+class _AttributingLoader(importlib.abc.Loader):
+    def __init__(self, inner, name: str) -> None:
+        self._inner, self._name = inner, name
+
+    def create_module(self, spec):
+        return self._inner.create_module(spec)
+
+    def exec_module(self, module) -> None:
+        global _depth
+        before = os_thread_count()
+        _depth += 1
+        try:
+            self._inner.exec_module(module)
+        finally:
+            _depth -= 1
+            after = os_thread_count()
+            if after != before:
+                _thread_events.append((_depth, self._name, before, after))
+
+    def __getattr__(self, item):
+        return getattr(self._inner, item)
+
+
+# ----------------------------------------------------------------------------- test harness
 
 def run_child(name: str, body, timeout: float = 90.0) -> bool:
-    """Fork, run `body` in the child, report what happened. Times out rather than hanging —
-    a CoreFoundation abort produces no output at all, which is itself the answer."""
+    """Fork, run `body` in the child, report what happened. Times out rather than hanging — an
+    ObjC or CoreFoundation abort produces no output, and the signal is the answer."""
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:
@@ -75,11 +199,12 @@ def run_child(name: str, body, timeout: float = 90.0) -> bool:
             break
         buffer += chunk
     os.close(read_fd)
-    status = ""
+    signalled = ""
     try:
         _, raw = os.waitpid(pid, os.WNOHANG)
         if os.WIFSIGNALED(raw):
-            status = f" [killed by signal {os.WTERMSIG(raw)}]"
+            number = os.WTERMSIG(raw)
+            signalled = f" [killed by signal {number}{' — abort, look for an objc[] line above' if number == 6 else ''}]"
     except (ChildProcessError, OSError):
         pass
     try:
@@ -87,7 +212,7 @@ def run_child(name: str, body, timeout: float = 90.0) -> bool:
         os.waitpid(pid, 0)
     except (ProcessLookupError, ChildProcessError):
         pass
-    text = buffer.decode(errors="replace") or f"NO OUTPUT in {timeout:.0f}s{status}"
+    text = buffer.decode(errors="replace") or f"NO OUTPUT in {timeout:.0f}s{signalled}"
     ok = text.startswith("OK")
     print(f"[{'PASS' if ok else 'FAIL'}] {name}\n        {text.strip()[:700]}\n")
     if not ok:
@@ -126,30 +251,46 @@ def main() -> int:
         return 2
 
     print(f"=== fork viability probe — macOS, python {sys.version.split()[0]} ===\n")
+    print(f"interpreter alone: {os_thread_count()} OS thread(s)\n")
 
-    # The prototype's exact state: the whole runtime, frozen, and nothing else.
+    # The prototype's exact state: the whole runtime, frozen, and nothing else — imported under
+    # instrumentation so a thread can be attributed to the module that started it.
+    sys.meta_path.insert(0, _AttributingFinder())
     started = time.monotonic()
     import daisy.worker.session  # noqa: F401
     import_seconds = time.monotonic() - started
+    sys.meta_path.pop(0)
     gc.collect()
     gc.freeze()
 
     import threading
 
-    frameworks = sorted({m for m in sys.modules if m.split(".")[0] in FRAMEWORK_ROOTS})
-    threads = [t.name for t in threading.enumerate()]
+    native = os_thread_count()
+    bridges = sorted({m for m in sys.modules if m.split(".")[0] in PYOBJC_BRIDGES})
     print(f"prototype parked: {rss_mb():.1f} MB   import={import_seconds:.2f}s   "
           f"modules={len(sys.modules)}   frozen={gc.get_freeze_count()}")
-    print(f"threads: {len(threads)} {threads}")
-    print(f"CoreFoundation / PyObjC modules loaded: {frameworks or 'none'}")
-    if frameworks:
-        print("  ^^ BLOCKER. A prototype that has already initialised CoreFoundation cannot be\n"
-              "     forked safely on macOS. Find the module-level import and make it lazy.")
-        FAILURES.append("prototype loaded CoreFoundation")
-    if len(threads) > 1:
-        print("  ^^ BLOCKER. Forking a multi-threaded parent inherits any lock those threads\n"
-              "     hold. The prototype must park on a blocking accept(), not on a thread pool.")
-        FAILURES.append("prototype is multi-threaded")
+    print(f"OS threads (mach task_threads): {native}      <-- the number fork(2) cares about")
+    print(f"python threads (threading):     {threading.active_count()}"
+          f"      <-- cannot see native threads; never trust this alone")
+    print(f"frameworks linked into the image: {', '.join(loaded_frameworks()) or 'none'}")
+    print("  (informational — linkage is expected and harmless; only initialisation matters)")
+    print(f"PyObjC bridge modules imported: {bridges or 'none'}")
+
+    if _thread_events:
+        print("\nmodules whose import changed the native thread count "
+              "(deepest entry is the culprit; shallower ones are its importers):")
+        for depth, name, before, after in sorted(_thread_events, key=lambda event: -event[0]):
+            print(f"    depth={depth:<3} {name:<52} {before} -> {after}")
+
+    if native > 1:
+        print(f"\n  ^^ BLOCKER. Forking a parent with {native} native threads inherits any lock\n"
+              "     those threads hold, and the child aborts on its first ObjC/CF call. The\n"
+              "     attribution above names the import to make lazy.")
+        FAILURES.append(f"prototype has {native} native threads")
+    if bridges:
+        print("\n  ^^ BLOCKER. A prototype that has already initialised the Objective-C runtime\n"
+              "     cannot be forked safely. Find the module-level import and make it lazy.")
+        FAILURES.append("prototype imported the PyObjC bridge")
     print()
 
     # 1. Does a forked child run the runtime at all?
@@ -257,13 +398,16 @@ def main() -> int:
     print("=" * 74)
     if FAILURES:
         print(f"FAILED ({len(FAILURES)}): {', '.join(FAILURES)}")
-        print("\nTest 2 failing means the prototype design is not viable on macOS and the plan's\n"
-              "Part II must be abandoned. Anything else failing is a fixable detail.")
+        print("\nRead the failures in order. A multi-threaded parent confounds tests 2 and 3 —\n"
+              "fix that first, because an ObjC multi-threaded-fork abort looks exactly like the\n"
+              "CoreFoundation verdict and is not it. Only test 2 failing from a genuinely\n"
+              "single-threaded parent means the prototype design is not viable on macOS.")
         return 1
     print("All tests passed — the prototype design is viable on this machine.")
     print(json.dumps({
         "parked_rss_mb": round(rss_mb(), 1),
         "import_seconds": round(import_seconds, 2),
+        "os_threads": native,
         "frozen_objects": gc.get_freeze_count(),
     }, indent=2))
     return 0
