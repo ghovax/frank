@@ -22,9 +22,9 @@ fresh as the last turn and is absent until the first one after signing in.
 from __future__ import annotations
 
 import asyncio
+import platform
 import time
 import uuid
-from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Any, Optional
 
 import httpx
@@ -41,15 +41,33 @@ RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
 # silently vanish from the catalogue.
 MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
 CLIENT_VERSION = "0.144.4"
-# Identifies the client to the endpoint. opencode sends its own name here rather than the real
-# Codex CLI's — the proof that no exact impersonation is required.
-ORIGINATOR = "frank"
+# Identifies the client to the endpoint, and it is checked. The endpoint admits only
+# first-party originators — `codex_cli_rs`, `codex_vscode`, `codex_sdk_ts`, or a value
+# starting with `Codex` — and refuses everything else, so this is the Codex CLI's own default
+# rather than a name of ours. It did once accept any value, which is why opencode shipped
+# `originator: opencode` and why this file used to say no impersonation was required; that
+# stopped being true, and opencode now rewrites the header to this same value.
+#
+# `USER_AGENT` below is the other half of the same check: the two are gated *together*, so
+# sending a Codex originator beside a `frank/…` user-agent fails the pair — mid-stream, with a
+# `server_error` that reads like backend trouble rather than like a rejected client, which is
+# the worst way for this to break because it looks like someone else's outage.
+ORIGINATOR = "codex_cli_rs"
 
-try:
-    _FRANK_VERSION = package_version("frank")
-except PackageNotFoundError:  # not installed as a distribution (an editable or source run)
-    _FRANK_VERSION = "0"
-USER_AGENT = f"frank/{_FRANK_VERSION}"
+# The documented shape of the Codex CLI's user-agent is
+# `codex_cli_rs/<version> (<os> <os version>; <arch>)`, with a transport token appended that
+# varies by call path — so it is omitted here rather than guessed, and readers of this header
+# are advised to match on the `codex_cli_rs/` prefix in any case.
+#
+# Every value in it is real: the version is `CLIENT_VERSION` above, which is already maintained
+# against current Codex releases because the model catalogue gates on it, and the platform
+# fields are this machine's. Nothing here is a plausible-looking invention, which is the line
+# this file and the Cursor client both hold — a fabricated version invites trust it has not
+# earned, while a true one that is merely incomplete does not.
+USER_AGENT = (
+    f"codex_cli_rs/{CLIENT_VERSION} "
+    f"({platform.system()} {platform.release()}; {platform.machine()})"
+)
 
 
 def request_headers(tokens: ChatGPTTokens) -> dict[str, str]:

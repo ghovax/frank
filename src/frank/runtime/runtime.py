@@ -22,6 +22,7 @@ from frank.base.configuration import (
 from langchain_core.language_models.chat_models import BaseChatModel
 from frank.runtime.models.litellm import ChatLiteLLMModel
 from frank.runtime.models.codex import ChatCodexModel
+from frank.runtime.models.cursor import ChatCursorModel
 from frank.base.file_leases import FileLeaseManager
 from frank.base.models import find_model, resolve_litellm
 from frank.locations.resolver import LocationAddress, executor_for, location_uri_for
@@ -127,21 +128,36 @@ def build_chat_model(
     model_identifier: str,
     global_configuration: GlobalConfiguration,
     agent_configuration: AgentConfiguration,
+    working_directory: str,
 ) -> BaseChatModel:
     """Build the chat model for a provider-qualified (``provider/model``) id.
 
     Almost every provider flows through one ``ChatLiteLLMModel`` (LiteLLM owns each
-    provider's auth, base URL, request format, and reasoning normalization). The one
-    exception is the experimental ``chatgpt`` subscription provider, which is not a
-    LiteLLM route at all: it uses its own ``ChatCodexModel``, reading its OAuth token
-    from the shared token store (no api_key/api_base) and calling Codex's Responses
-    endpoint directly."""
+    provider's auth, base URL, request format, and reasoning normalization). The
+    exceptions are the two experimental subscription providers, which are not LiteLLM
+    routes at all: ``chatgpt`` uses ``ChatCodexModel`` against Codex's Responses
+    endpoint, and ``cursor`` uses ``ChatCursorModel`` against Cursor's agent service.
+    Both read their OAuth token from their own store rather than taking an api_key.
+
+    ``working_directory`` is only consulted by the cursor provider, whose request context
+    wants to know where the client believes it is running. It is required even so: a default
+    would exist only to spare a caller from passing what it already has, and the caller that
+    took the default would be the one silently telling Cursor it is running nowhere."""
     provider_identifier, model_suffix = model_identifier.split("/", 1)
     if provider_identifier == "chatgpt":
         catalog_entry = find_model(model_identifier)
         return ChatCodexModel(
             model=model_suffix,
             reasoning_effort=agent_configuration.reasoning_effort,
+            context_length=catalog_entry.context_length if catalog_entry else 0,
+        )
+    if provider_identifier == "cursor":
+        catalog_entry = find_model(model_identifier)
+        # No reasoning_effort: a Cursor model id carries its effort as part of the id, so
+        # the user's model choice already said it and a second setting could only disagree.
+        return ChatCursorModel(
+            model=model_suffix,
+            workspace=working_directory,
             context_length=catalog_entry.context_length if catalog_entry else 0,
         )
     resolved = resolve_litellm(
@@ -512,7 +528,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # tracer and rate limiter in that ecosystem — so accepting one is the whole of the model
         # seam, with no interface of ours in the middle.
         self._llm = model if model is not None else build_chat_model(
-            effective_model, global_configuration, agent_configuration
+            effective_model, global_configuration, agent_configuration, self._working_directory
         )
 
         self._file_lease_manager = file_lease_manager

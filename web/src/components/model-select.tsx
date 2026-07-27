@@ -25,6 +25,7 @@ import {
   type Settings,
 } from "@/lib/api";
 import { ChatGPTAuthControl } from "@/components/chatgpt-auth";
+import { CursorAuthControl } from "@/components/cursor-auth";
 
 interface ModelSelectProps {
   models: ModelOption[];
@@ -50,8 +51,8 @@ interface ProviderItem {
 interface ModelItem {
   value: string;
   label: string;
-  // Whether the provider currently serves this model (has a key, or — for the
-  // chatgpt subscription — the plan includes it). Unavailable models are listed
+  // Whether the provider currently serves this model (has a key, or — for a
+  // subscription provider — the plan includes it). Unavailable models are listed
   // but greyed and non-selectable.
   available: boolean;
 }
@@ -190,9 +191,11 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   // The user-declared custom provider has no catalog models: skip the model
   // dropdown entirely and go straight to a free-form model id plus an endpoint.
   const selectedProviderIsCustom = selectedProvider === "custom";
-  // The experimental ChatGPT-subscription provider signs in over OAuth instead of
-  // taking an API key, so it swaps the key field for a sign-in control.
+  // The two experimental subscription providers sign in over OAuth instead of taking an
+  // API key, so each swaps the key field for its own sign-in control.
   const selectedProviderIsChatGPT = selectedProvider === "chatgpt";
+  const selectedProviderIsCursor = selectedProvider === "cursor";
+  const selectedProviderIsSubscription = selectedProviderIsChatGPT || selectedProviderIsCursor;
   const inCustomMode = customMode || selectedProviderIsCustom;
   const selectedModelIsInProvider = !!selectedModel && providerForModel(selectedModel, models) === selectedProvider;
   const typedModel = modelSuffix.trim() ? `${selectedProvider}/${modelSuffix.trim()}` : "";
@@ -212,15 +215,15 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
   // Whether Apply is allowed: a model is picked AND its provider can actually serve
   // it. Rather than blocking selection, we let any model be chosen and only enable
   // Apply once the credential is in hand — a key typed here, an already-unlocked
-  // provider (stored/env key), the keyless custom endpoint, or, for ChatGPT, a
-  // signed-in plan that includes the specific model.
+  // provider (stored/env key), the keyless custom endpoint, or, for a subscription
+  // provider, a signed-in plan that includes the specific model.
   const activeModelOption = models.find((model) => model.id === activeSelectedModel);
   const providerUnlocked = models.some((model) => model.provider === selectedProvider && model.available);
   const keyEntered = selectedProviderKey.trim().length > 0;
   const canApply = (() => {
     if (!activeSelectedModel) return false;
     if (selectedProviderIsCustom) return true;
-    if (selectedProviderIsChatGPT) return !!activeModelOption?.available;
+    if (selectedProviderIsSubscription) return !!activeModelOption?.available;
     if (activeModelOption) return activeModelOption.available || keyEntered;
     return providerUnlocked || keyEntered; // a typed model id on a keyed provider
   })();
@@ -259,9 +262,9 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
         await saveSettings({
           exa_api_key: settings.exa_api_key ?? "",
           composio_api_key: settings.composio_api_key ?? "",
-          // The ChatGPT provider has no API key — its credential is the OAuth
-          // sign-in, saved out-of-band — so never write a provider key for it.
-          provider_keys: selectedProviderIsChatGPT
+          // A subscription provider has no API key — its credential is the OAuth
+          // sign-in, saved out-of-band — so never write a provider key for one.
+          provider_keys: selectedProviderIsSubscription
             ? {}
             : { [selectedProvider]: selectedProviderKey.trim() },
           provider_base_urls: selectedProviderIsCustom ? { custom: customBaseUrl.trim() } : {},
@@ -473,6 +476,8 @@ export function ModelSelect({ models, providers, value, onChange, recent = [], f
                   <Box>
                     {selectedProviderIsChatGPT ? (
                       <ChatGPTAuthControl />
+                    ) : selectedProviderIsCursor ? (
+                      <CursorAuthControl />
                     ) : (
                       <SecretField
                         label={translation("providerApiKey", { provider: selectedProviderLabel })}

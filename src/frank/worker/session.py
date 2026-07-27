@@ -840,7 +840,8 @@ class SessionExecutor(AgentExecutor):
                 return
             titling_configuration = configuration.model_copy(update={"reasoning_effort": "low"})
             model = build_chat_model(
-                model_identifier, self._global_configuration, titling_configuration
+                model_identifier, self._global_configuration, titling_configuration,
+                self._runtime_working_directory,
             ).bind_tools([SessionTitle], tool_choice="auto")
             prompt = PromptLoader(Path(__file__).resolve().parent.parent / "runtime" / "prompts")
             response = await model.ainvoke([

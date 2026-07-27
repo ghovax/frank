@@ -29,9 +29,16 @@ import contextlib
 import sys
 from typing import Any
 
+from tenacity import Retrying, RetryError, retry_if_exception_type, stop_after_delay, wait_fixed
+
 from frank.cli.client import DaemonError, call, daemon_is_up, ensure_daemon, stream
 from frank.base.serialization import compact
 from frank.base.tuning import Tunable, active_tuning
+
+
+class _StillRunning(Exception):
+    """A process being waited on has not exited yet. Raised so a retry keeps waiting, rather
+    than being a return value a caller could forget to check."""
 
 
 def _emit(payload: Any) -> None:
@@ -273,7 +280,6 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         # restarting the window is not a way to restart the harness.
         import os
         import signal
-        import time
 
         from frank.base.paths import runtime_directory
 
@@ -293,14 +299,26 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
         # open descriptor, and a successor started in that window dies on "Another frankd holds
         # the lock but never started serving" — leaving nothing running at all, which is the one
         # outcome a restart must not produce. A pid that no longer exists is the real signal.
-        deadline = time.monotonic() + active_tuning().duration(Tunable.daemon_startup_seconds)
-        while time.monotonic() < deadline:
+        tuning = active_tuning()
+
+        def check_exited() -> None:
+            """Return once the process is gone; raise while it is still there, which is what the
+            retry below retries on."""
             try:
                 os.kill(pid, 0)
             except (ProcessLookupError, PermissionError):
-                break
-            time.sleep(0.1)
-        else:
+                return
+            raise _StillRunning
+
+        try:
+            for attempt in Retrying(
+                retry=retry_if_exception_type(_StillRunning),
+                wait=wait_fixed(tuning.duration(Tunable.daemon_probe_interval_seconds)),
+                stop=stop_after_delay(tuning.duration(Tunable.daemon_startup_seconds)),
+            ):
+                with attempt:
+                    check_exited()
+        except RetryError:
             _note(f"frank: frankd ({pid}) did not exit; not starting a second one")
             return 1
         ensure_daemon()

@@ -57,6 +57,7 @@ push_configuration_store: Any = None
 push_sender: Any = None
 terminal_manager: Any = None
 chatgpt_login_flow: Any = None
+cursor_login_flow: Any = None
 
 # Where the daemon is listening, for the surfaces that must hand out an address.
 daemon_port: int = 0
@@ -97,6 +98,7 @@ __all__ = [
     "async_engine",
     "broadcaster",
     "chatgpt_login_flow",
+    "cursor_login_flow",
     "composio_servers",
     "configuration_lock",
     "daemon_port",
