@@ -21,8 +21,9 @@ baseline and how it scales — no parallel wall of module constants and one-line
 Two typed getters resolve any of them against the live window: :meth:`Tuning.amount` (an integer:
 tokens, counts, milliseconds, characters) and :meth:`Tuning.duration` (a float of seconds).
 
-Delivery mirrors the rest of the harness. The static *policy* is process-global, pushed in by
-:func:`set_tuning` at startup and on every config reload (exactly like ``set_exa_client``). The
+Delivery mirrors the rest of the harness, and neither half is process-global. The static
+*policy* is bound per task by :func:`set_tuning` at startup and on every config reload, so a
+process hosting more than one session gives each its own. The
 dynamic *budget* — the live context window — is threaded per call through
 :data:`current_context_window`, a context variable the running agent sets around each tool
 execution; it is copied into worker threads by ``asyncio.to_thread``, so both the async tools and
@@ -459,15 +460,21 @@ class Tuning:
         return max(0.0, self.policy.settle_give_up_seconds)
 
 
-# Process-global active policy, pushed in at startup and on every config reload. Defaults to the
-# calibrated baselines so imports before the harness wires it up still behave.
-_active: Tuning = Tuning(TuningConfiguration())
+# The active policy, bound per task rather than per process. A process may host more than one
+# session — a worker running a compaction alongside a user's turn today, an embedder running
+# several tomorrow — and each is entitled to its own tuning. The default is the calibrated
+# baseline, so a tool invoked before anything binds one still behaves.
+_active: contextvars.ContextVar[Tuning] = contextvars.ContextVar(
+    "daisy_active_tuning", default=Tuning(TuningConfiguration())
+)
 
 
 def set_tuning(tuning: Tuning) -> None:
-    """Install the process-global tuning policy (called at startup and on each config reload)."""
-    global _active
-    _active = tuning
+    """Bind the tuning policy for this task and everything it spawns.
+
+    Returns nothing on purpose: callers install a policy for the life of a session rather than
+    scoping it, and the context variable's default covers anything that runs before they do."""
+    _active.set(tuning)
 
 
 def tuning_from_policy(policy: object, screen_policy: object = None) -> Tuning:
@@ -496,8 +503,8 @@ def tuning_from_policy(policy: object, screen_policy: object = None) -> Tuning:
 
 
 def active_tuning() -> Tuning:
-    """The process-global tuning policy."""
-    return _active
+    """The tuning policy bound for this task, or the calibrated baseline."""
+    return _active.get()
 
 
 _Reading = TypeVar("_Reading")

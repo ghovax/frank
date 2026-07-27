@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import sys
 import uuid
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
@@ -498,6 +499,10 @@ class SessionExecutor(AgentExecutor):
             # message needs an address.
             parent_session=self._parent,
             sandbox=self._sandbox,
+            # The two things the runtime cannot derive from configuration: how this session
+            # reaches its peers, and the MCP connections this worker owns.
+            session_access=self._peers,
+            mcp_manager=self._mcp_manager,
         )
         stream_event_callback = self._on_stream_event
         if stream_event_callback is not None:
@@ -691,31 +696,19 @@ class SessionExecutor(AgentExecutor):
     async def start(self) -> None:
         """Prepare the session before its socket opens.
 
-        Deliberately does not build the runtime: that costs a model client and an MCP
-        connect, and a session created but never messaged should pay for neither. What does
-        happen here is the process-global installation the tools read from — the tuning
-        policy, the search client, telemetry — because those are read at call time from
-        module state and a tool must never run against defaults the user did not choose."""
+        Deliberately does not build the runtime: that costs a model client and an MCP connect,
+        and a session created but never messaged should pay for neither.
+
+        What happens here is the two installations that are genuinely process-wide — telemetry,
+        which exports for the whole process, and the tuning policy, which every tool reads — plus
+        this session's own MCP connections, whose lifetime the worker owns. Everything else the
+        tools need travels with the runtime in its tool context, so a settings change cannot be
+        half-applied and two turns cannot see each other's confinement.
+        """
         from daisy.base.telemetry import configure as configure_telemetry
         from daisy.base.tuning import set_tuning, tuning_from_policy
-        from daisy.runtime.tools.file_operations import (
-            set_firecrawl_client,
-            set_jina_api_key,
-            set_proxy_url,
-        )
-        from daisy.runtime.tools.registry import set_confinement, set_exa_client, set_mcp_client_manager
-
-        # What every tool child of this worker is confined to. Process-global because a
-        # worker serves exactly one session, so process scope is session scope.
-        set_confinement(self._sandbox, self._runtime_working_directory or self._working_directory)
-        from daisy.runtime.tools.sessions import set_session_access
 
         configuration = self._global_configuration
-
-        # The peer-session tools are declared in the runtime, which has no session identity of
-        # its own; this is what gives them one. Installed before the socket opens, so the very
-        # first turn can already compose.
-        set_session_access(self._peers)
         set_tuning(tuning_from_policy(configuration.tuning))
 
         telemetry = configuration.telemetry
@@ -726,38 +719,16 @@ class SessionExecutor(AgentExecutor):
             sample_ratio=telemetry.sample_ratio,
         )
 
-        exa_key = configuration.exa.effective_api_key
-        if exa_key:
-            from exa_py import Exa
-
-            set_exa_client(Exa(api_key=exa_key))
-
-        # `fetch_url` reads a page through tiers — Jina, then Firecrawl, then a direct fetch —
-        # and each tier is engaged by a client installed here. Without this the two keyed tiers
-        # were never wired at all, so a configured Jina or Firecrawl key silently bought
-        # nothing and every fetch fell through to the direct path.
-        set_jina_api_key(configuration.jina.effective_api_key)
-        set_proxy_url(configuration.web_fetch.effective_proxy_url)
-        firecrawl_key = configuration.firecrawl.effective_api_key
-        if firecrawl_key:
-            from firecrawl import AsyncFirecrawl
-
-            api_url = configuration.firecrawl.effective_api_url
-            set_firecrawl_client(
-                AsyncFirecrawl(api_key=firecrawl_key, api_url=api_url) if api_url
-                else AsyncFirecrawl(api_key=firecrawl_key)
-            )
-
-        # Each session connects its own MCP servers. The daemon keeps a pool of its own for
-        # the GUI's server browser, but connections are stateful and a session's tool calls
-        # belong to the session's process — sharing one pool across processes is not something
-        # a stdio server can offer.
+        # Each session connects its own MCP servers. The daemon keeps a pool of its own for the
+        # browser's server list, but connections are stateful and a session's tool calls belong
+        # to the session's process — sharing one pool across processes is not something a stdio
+        # server can offer. The manager is handed to each runtime this session builds; the
+        # worker keeps it because the worker is what closes it.
         servers = configuration.mcp.enabled_servers()
         if servers:
             from daisy.base.mcp_client import MCPClientManager
 
             self._mcp_manager = MCPClientManager(servers)
-            set_mcp_client_manager(self._mcp_manager)
             # Connected in the background: a hung server must not delay the session's socket,
             # and tool gating keys on the manager existing rather than on live connections.
             self._mcp_connect = asyncio.create_task(self._mcp_manager.start())
@@ -978,6 +949,13 @@ class SessionExecutor(AgentExecutor):
         self.teardown_context(self._session_id)
         with contextlib.suppress(Exception):
             cancel_all_background_jobs()
+        # The browser surface holds a connection to the user's Chrome if a screen tool ever
+        # ran. Closed here, by the session that opened it, rather than from an `atexit` hook
+        # the module used to register on import — imported lazily, so a session that never
+        # touched the screen does not load PyObjC just to shut down.
+        if "daisy.computer.web" in sys.modules:
+            with contextlib.suppress(Exception):
+                sys.modules["daisy.computer.web"].close()
         if self._mcp_connect is not None and not self._mcp_connect.done():
             self._mcp_connect.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):

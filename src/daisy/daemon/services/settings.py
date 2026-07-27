@@ -15,12 +15,6 @@ from daisy.daemon import state
 from daisy.daemon.services.sessions import _reset_work_habits_acknowledgements
 
 
-def _rebuild_web_fetch_clients(_configuration: GlobalConfiguration) -> None:
-    """A no-op in the daemon, kept as the seam where credentials used to be pushed into tool
-    clients. Those clients are process-global inside a *worker*, and a worker reads the
-    configuration when it starts, so there is nothing for the control plane to push."""
-
-
 async def _apply_live_credentials() -> None:
     """Re-provision what the daemon itself owns after a configuration change.
 

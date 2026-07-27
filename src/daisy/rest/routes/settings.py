@@ -12,6 +12,12 @@ from daisy.base.credentials import load_tokens
 from daisy.base.models import MODELS
 from daisy.base.models import ModelDefinition
 from daisy.base.models import available_models
+from daisy.base.subscription import (
+    clear_subscription_models_cache,
+    clear_usage_snapshot,
+    fetch_subscription_models,
+    get_usage_snapshot,
+)
 from daisy.base.providers import PROVIDERS
 import asyncio
 from daisy.protocol.dtos import (
@@ -31,18 +37,6 @@ from daisy.daemon.services.settings import _apply_live_credentials, _persist_con
 from daisy.daemon.services.projects import _reset_all_runtimes
 
 router = APIRouter()
-
-
-def _codex_models():
-    """The ChatGPT-subscription model surface, imported on use.
-
-    It lives in the runtime, which the daemon deliberately does not import at startup — that
-    weight is what the pre-started worker exists to carry. These three endpoints are the only
-    ones that need it, so they pay for it when they are called rather than making every daemon
-    boot pay for it."""
-    from daisy.runtime.models import codex
-
-    return codex
 
 
 def _merged_sandbox(current, posted: dict):
@@ -102,7 +96,7 @@ async def list_models_endpoint():
     # *available* per-model against the account's live subscription catalog, so the
     # picker can grey the ones this plan does not serve. Live models the static
     # filter has not caught (real gpt-* only) are appended so nothing is missed.
-    live_chatgpt = await _codex_models().fetch_subscription_models()
+    live_chatgpt = await fetch_subscription_models()
     live_slugs = set(live_chatgpt)
     catalog = list(MODELS)
     known_chatgpt_slugs = {
@@ -172,7 +166,7 @@ async def chatgpt_auth_status():
     return {
         "signed_in": tokens is not None,
         "email": tokens.email if tokens else "",
-        "usage": _codex_models().get_usage_snapshot() if tokens is not None else None,
+        "usage": get_usage_snapshot() if tokens is not None else None,
     }
 
 
@@ -200,8 +194,8 @@ async def chatgpt_auth_start():
     async def _await_completion() -> None:
         try:
             await flow.wait()
-            _codex_models().clear_subscription_models_cache()
-            _codex_models().clear_usage_snapshot()
+            clear_subscription_models_cache()
+            clear_usage_snapshot()
             await _reset_all_runtimes()
             _publish_broadcast({"type": "settings_changed"})
         except Exception:  # noqa: BLE001 — timeout/denial just leaves us signed out
@@ -222,8 +216,8 @@ async def chatgpt_auth_signout():
         await state.chatgpt_login_flow.close()
         state.chatgpt_login_flow = None
     await asyncio.to_thread(clear_tokens)
-    _codex_models().clear_subscription_models_cache()
-    _codex_models().clear_usage_snapshot()
+    clear_subscription_models_cache()
+    clear_usage_snapshot()
     await _reset_all_runtimes()
     _publish_broadcast({"type": "settings_changed"})
     return {"ok": True}

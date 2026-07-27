@@ -42,13 +42,14 @@ already applies.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Optional, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import Field, create_model
 
 from daisy.base.configuration import PromptLoader
 from daisy.base.serialization import compact
+from daisy.runtime.tools import context as tool_context
 
 # A tool's description is the guidance a model reads to decide whether and how to call it —
 # model-facing prose, and so it lives in a prompt template like every other piece of it. The
@@ -72,8 +73,9 @@ class SessionAccess(Protocol):
     """What a session needs in order to work with its peers.
 
     Implemented by the worker, which is the layer that holds the session's identity and its
-    connection to the daemon; injected here so the runtime can offer the tools without
-    importing the layer above it."""
+    connection to the daemon. It reaches the tools through the bound tool context, so the
+    runtime can offer them without importing the layer above it and without a module global
+    that would make two sessions in one process share one identity."""
 
     session_id: str
     working_directory: str
@@ -86,15 +88,6 @@ class SessionAccess(Protocol):
     async def end(self, session_id: str) -> dict: ...
     async def remote_list(self) -> list[dict]: ...
     async def remote_send(self, name: str, text: str) -> dict: ...
-
-
-_access: Optional[SessionAccess] = None
-
-
-def set_session_access(access: SessionAccess | None) -> None:
-    """Install the session's view of its peers. Called once by the worker at startup."""
-    global _access
-    _access = access
 
 
 def _unavailable(code: str) -> str:
@@ -119,7 +112,7 @@ async def _create_session(
     always kept them apart — the daemon's `session.create` takes no message, and a person types
     `daisy create` then `daisy send` — so the tool was the one place a session composed with a
     peer differently from the way a person does."""
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("create_session_error")
     try:
@@ -144,7 +137,7 @@ async def _create_session(
 
 
 async def _message_session(session: str, message: str) -> str:
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("message_session_error")
     try:
@@ -158,7 +151,7 @@ async def _message_session(session: str, message: str) -> str:
 
 
 async def _read_session(session: str) -> str:
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("read_session_error")
     try:
@@ -172,7 +165,7 @@ async def _read_session(session: str) -> str:
 
 
 async def _list_sessions() -> str:
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("list_sessions_error")
     try:
@@ -183,7 +176,7 @@ async def _list_sessions() -> str:
 
 
 async def _end_session(session: str) -> str:
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("end_session_error")
     try:
@@ -197,7 +190,7 @@ async def _end_session(session: str) -> str:
 
 
 async def _list_remote_agents() -> str:
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("list_remote_agents_error")
     try:
@@ -208,7 +201,7 @@ async def _list_remote_agents() -> str:
 
 
 async def _message_remote_agent(name: str, message: str) -> str:
-    access = _access
+    access = tool_context.current().session_access
     if access is None:
         return _unavailable("message_remote_agent_error")
     try:

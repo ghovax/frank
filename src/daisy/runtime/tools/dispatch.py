@@ -19,6 +19,7 @@ from daisy.runtime.internals import _model_result_status
 from daisy.runtime.internals import _model_visible_tool_result
 from daisy.runtime.internals import _tool_timing_metadata
 from daisy.runtime.internals import _utc_timestamp
+from daisy.runtime.tools import context as tool_context
 from daisy.runtime.background import bind_background_jobs
 from daisy.runtime.background import bind_tool_call_id
 from daisy.runtime.background import unbind_background_jobs
@@ -468,6 +469,12 @@ class _ToolsMixin:
         # first model call reports usage.
         current_context_window.set(self._context_window)
 
+        # The session-shaped state the module-level tools read at call time: confinement,
+        # capability clients, and this session's view of its peers. Bound per call rather than
+        # installed per process, so two turns open at once — a compaction alongside a user's —
+        # cannot see each other's.
+        tool_context.bind(self._tool_context)
+
         # Coerce any list/dict argument the model passed as a JSON string into its native
         # value up front, so validation and dispatch both see the real container.
         schema = self._tool_schemas.get(tool_name)
@@ -562,10 +569,10 @@ class _ToolsMixin:
                 # confinement recipe. It used to be prepended as `cd <dir> && …`, which made the
                 # working directory shell text inside a command the model wrote — and therefore
                 # something the same command could `cd` straight back out of.
-                from daisy.runtime.tools.registry import active_confinement, set_confinement
-
-                profile, _ = active_confinement()
-                set_confinement(profile, str(directory_path))
+                # A derived context, not a mutation: this used to rewrite the process-wide
+                # confinement profile, so a `bash` call naming its own directory narrowed the
+                # sandbox of every other turn open in the same worker.
+                tool_context.bind(self._tool_context.for_directory(str(directory_path)))
         read_only = tool_arguments.get("read_only", False)
         if isinstance(read_only, str):
             read_only = read_only.lower() == "true"
@@ -1435,11 +1442,9 @@ class _ToolsMixin:
                 return {key: value for key, value in outcome.items() if key != "ok"}
             return outcome
 
-        from daisy.runtime.tools.registry import active_confinement
-
-        confinement_profile, confinement_workspace = active_confinement()
+        active = tool_context.current()
         result = await control.run_control_script(
-            script, dispatch, profile=confinement_profile, workspace=confinement_workspace,
+            script, dispatch, profile=active.sandbox, workspace=active.workspace,
         )
         if acted_on and isinstance(result, dict):
             result.setdefault("acted_on", acted_on)

@@ -1,26 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import os
 import signal
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
-from exa_py import Exa
 from langchain.tools import tool
 from pydantic import Field
 
 from daisy.base.identifiers import new_id
-from daisy.runtime.background import current_background_jobs, cancel_all_background_jobs, current_tool_call_id
+from daisy.runtime.background import current_background_jobs, current_tool_call_id
 from daisy.base.background_store import get_background_job_store
 from daisy.base.tuning import Tunable, active_tuning, clip_to_tokens
 from daisy.base.serialization import compact
-
-_exa_client: Exa | None = None
-_mcp_client_manager: Any | None = None
+from daisy.runtime.tools import context as tool_context
 
 # bash is synchronous by default: the model chooses whether a command backgrounds
 # (background=true), so backgrounding is never a surprise it has to reason about.
@@ -37,38 +32,11 @@ _mcp_client_manager: Any | None = None
 # tuning timeout multiplier at each call site.
 
 
-def set_exa_client(client: Exa | None) -> None:
-    global _exa_client
-    _exa_client = client
-
-
-def set_mcp_client_manager(manager: Any | None) -> None:
-    global _mcp_client_manager
-    _mcp_client_manager = manager
-
-
 def _require_mcp_client_manager():
-    if _mcp_client_manager is None:
+    manager = tool_context.current().mcp_manager
+    if manager is None:
         raise RuntimeError("MCP is not configured.")
-    return _mcp_client_manager
-
-
-# The confinement every child spawned from this process runs under, and the workspace its
-# `$WORKSPACE` resolves to. Process-global for the same reason the Exa client and the MCP manager
-# are: a worker serves exactly one session, so process scope *is* session scope here. Set once,
-# from the assignment the daemon already resolved and clamped.
-_confinement_profile: Any | None = None
-_confinement_workspace: str = ""
-
-
-def set_confinement(profile: Any | None, workspace: str = "") -> None:
-    global _confinement_profile, _confinement_workspace
-    _confinement_profile = profile
-    _confinement_workspace = workspace
-
-
-def active_confinement() -> tuple[Any | None, str]:
-    return _confinement_profile, _confinement_workspace
+    return manager
 
 
 @tool
@@ -104,7 +72,8 @@ async def bash(
     """
     from daisy.base import confinement as _confinement
 
-    profile, workspace = active_confinement()
+    active = tool_context.current()
+    profile, workspace = active.sandbox, active.workspace
     # The tool's own log has to land somewhere the profile permits, or bash fails on its
     # bookkeeping rather than on anything that was asked of it. A profile that permits no
     # writable directory at all leaves the workspace as the only candidate — and if that is
@@ -283,7 +252,7 @@ async def search_web(
         justification: A concise, user-facing description of why this search is needed.
         result_count: Number of results to return (1-10, default 5).
     """
-    client = _exa_client
+    client = tool_context.current().exa_client
     if client is None:
         return compact({"code": "web_search_error", "status": "error", "message": "Web search is not configured."})
 
@@ -843,15 +812,9 @@ def load_skill(name: str, justification: str = Field(..., description="A concise
     raise NotImplementedError("Dispatched by AgentRuntime._execute_tool.")
 
 
-def cancel_all_background_tasks() -> None:
-    cancel_all_background_jobs()
-
-
-def _cleanup_on_exit():
-    cancel_all_background_tasks()
-
-
-atexit.register(_cleanup_on_exit)
-
-for termination_signal in (signal.SIGTERM, signal.SIGHUP):
-    signal.signal(termination_signal, lambda signum, frame: (cancel_all_background_tasks(), sys.exit(1)))
+# Background jobs are cancelled by whoever owns the process: the worker's entry point on
+# shutdown, and `SessionExecutor.aclose` when a session ends. This module used to register an
+# `atexit` hook and install process-wide SIGTERM and SIGHUP handlers that called `sys.exit(1)`,
+# at import — which made importing the harness enough to seize a host program's signals, and
+# killed a forked child the moment it was signalled. A library configures nothing it was not
+# asked to configure.

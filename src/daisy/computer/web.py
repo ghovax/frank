@@ -25,7 +25,6 @@ one worker thread.
 """
 from __future__ import annotations
 
-import atexit
 import json
 import os
 import re
@@ -993,8 +992,10 @@ SURFACE = WebSurface()
 
 
 def close() -> None:
-    """Drop our connection (e.g. on server stop). The user's Chrome is left running."""
+    """Drop our connection to the browser. The user's Chrome is left running.
+
+    Called by whoever opened the surface — the session's teardown — rather than from an
+    `atexit` hook registered at import. Importing a module must not install process-wide
+    cleanup on a host program that never asked for it, and a hook registered at import fires
+    in every forked child as well as in the process that actually connected."""
     SURFACE.shutdown()
-
-
-atexit.register(close)

@@ -18,10 +18,8 @@ works; this mirrors that with ``originator: daisy``.) See
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
-import uuid
 from importlib.metadata import PackageNotFoundError, version as _package_version
 from typing import Any, AsyncIterator, Callable, Optional, Sequence, cast
 
@@ -44,33 +42,18 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from daisy.base.credentials import (
     ChatGPTAuthError,
-    ChatGPTTokens,
     load_tokens,
     valid_tokens,
 )
 from daisy.base.message_content import content_blocks_to_message_content, message_text
 from daisy.base.serialization import compact
+from daisy.base.subscription import (
+    RESPONSES_URL,
+    cached_subscription_models,
+    capture_usage_headers,
+    request_headers,
+)
 from daisy.base.tuning import Tunable, active_tuning
-
-RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
-# The account's live, plan-specific model catalog. Same host/auth as the responses
-# endpoint; `client_version` gates each model by its `minimal_client_version`, hiding
-# any model whose floor is above what we claim. This is a *floor to clear*, not a
-# cosmetic string: newer models raise their floor over time (gpt-5.4 needs 0.98,
-# gpt-5.5 needs 0.124, the gpt-5.6-* family needs 0.144), so this must track a
-# current Codex CLI version or the newer models silently vanish from the catalog.
-MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
-CLIENT_VERSION = "0.144.4"
-# Identifies the client to the endpoint. opencode sends its own name here rather
-# than the real Codex CLI's — the proof that no exact impersonation is required.
-ORIGINATOR = "daisy"
-
-try:
-    _DAISY_VERSION = _package_version("daisy")
-except PackageNotFoundError:  # not installed as a distribution (editable/source run)
-    _DAISY_VERSION = "0"
-USER_AGENT = f"daisy/{_DAISY_VERSION}"
-
 
 class ChatCodexModel(BaseChatModel):
     """A ``BaseChatModel`` backed by the ChatGPT-subscription Codex endpoint.
@@ -214,22 +197,8 @@ class ChatCodexModel(BaseChatModel):
         return payload
 
     @staticmethod
-    def _headers_from_tokens(tokens: ChatGPTTokens) -> dict[str, str]:
-        # Mirrors the header set opencode's working codex plugin sends: bearer token,
-        # the account to bill, an originator/User-Agent naming us, a per-request
-        # session id, and the streaming content negotiation.
-        return {
-            "Authorization": f"Bearer {tokens.access_token}",
-            "ChatGPT-Account-Id": tokens.account_id,
-            "originator": ORIGINATOR,
-            "User-Agent": USER_AGENT,
-            "session-id": str(uuid.uuid4()),
-            "Content-Type": "application/json",
-            "Accept": "text/event-stream",
-        }
-
     async def _headers(self) -> dict[str, str]:
-        return self._headers_from_tokens(await valid_tokens())
+        return request_headers(await valid_tokens())
 
     @staticmethod
     def _http_error(status: int, body: str) -> Exception:
@@ -385,7 +354,7 @@ class ChatCodexModel(BaseChatModel):
                 if response.status_code >= 400:
                     body = (await response.aread()).decode("utf-8", "replace")
                     raise self._http_error(response.status_code, body)
-                _capture_usage_headers(response.headers)
+                capture_usage_headers(response.headers)
                 async for line in response.aiter_lines():
                     chunk = self._line_to_chunk(line, state)
                     if chunk is not None:
@@ -432,153 +401,16 @@ class ChatCodexModel(BaseChatModel):
         if tokens is None or tokens.is_expired():
             raise ChatGPTAuthError("Not signed in to ChatGPT (or the session expired).")
         payload = self._build_payload(messages, stream=True, **kwargs)
-        headers = self._headers_from_tokens(tokens)
+        headers = request_headers(tokens)
         state: dict[str, Any] = {"saw_tool_call": False}
         aggregate: Optional[ChatGenerationChunk] = None
         with httpx.Client(timeout=self.timeout) as client:
             with client.stream("POST", RESPONSES_URL, json=payload, headers=headers) as response:
                 if response.status_code >= 400:
                     raise self._http_error(response.status_code, response.read().decode("utf-8", "replace"))
-                _capture_usage_headers(response.headers)
+                capture_usage_headers(response.headers)
                 for line in response.iter_lines():
                     chunk = self._line_to_chunk(line, state)
                     if chunk is not None:
                         aggregate = chunk if aggregate is None else aggregate + chunk
         return self._aggregate_to_result(aggregate)
-
-
-# Live per-account model discovery. The subscription serves a plan-specific subset,
-# so this is the authoritative "which models actually work" source; the models.dev
-# filter is the offline superset the UI greys against.
-_models_cache: Optional[tuple[float, dict[str, dict[str, Any]]]] = None
-_models_cache_lock = asyncio.Lock()
-
-
-async def fetch_subscription_models() -> dict[str, dict[str, Any]]:
-    """The account's live Codex model catalog as ``{slug: {"name", "context"}}``.
-
-    Returns an empty dict when signed out or on any failure (network, auth, parse),
-    so callers fall back to the static list. Cached briefly because the ``/models``
-    endpoint is polled by the UI and this must not be a network round-trip each time."""
-    global _models_cache
-    if _models_cache is not None and time.monotonic() - _models_cache[0] < active_tuning().duration(Tunable.model_catalogue_ttl_seconds):
-        return _models_cache[1]
-    async with _models_cache_lock:
-        if _models_cache is not None and time.monotonic() - _models_cache[0] < active_tuning().duration(Tunable.model_catalogue_ttl_seconds):
-            return _models_cache[1]
-        result: dict[str, dict[str, Any]] = {}
-        try:
-            tokens = await valid_tokens()
-            headers = {
-                key: value
-                for key, value in ChatCodexModel._headers_from_tokens(tokens).items()
-                if key != "Accept"  # a plain JSON GET, not an SSE stream
-            }
-            async with httpx.AsyncClient(timeout=15) as client:
-                response = await client.get(
-                    MODELS_URL, params={"client_version": CLIENT_VERSION}, headers=headers,
-                )
-                response.raise_for_status()
-                for entry in response.json().get("models", []):
-                    slug = entry.get("slug")
-                    if not slug:
-                        continue
-                    result[slug] = {
-                        "name": entry.get("display_name") or slug,
-                        "context": int(entry.get("context_window") or entry.get("max_context_window") or 0),
-                    }
-        except (ChatGPTAuthError, httpx.HTTPError, ValueError, KeyError):
-            result = {}
-        _models_cache = (time.monotonic(), result)
-        return result
-
-
-def cached_subscription_models() -> dict[str, dict[str, Any]]:
-    """The last live catalog fetched, without a network round-trip (``{}`` if never
-    fetched). For sync callers that only want the freshest *known* value — the UI
-    polls ``/models`` constantly, so this is warm in practice."""
-    return _models_cache[1] if _models_cache is not None else {}
-
-
-def clear_subscription_models_cache() -> None:
-    """Drop the cached live catalog so the next ``/models`` reflects a fresh sign-in
-    or sign-out immediately rather than waiting out the TTL."""
-    global _models_cache
-    _models_cache = None
-
-
-# Live per-account usage limits. Every /responses reply carries the account's rate
-# limit state in ``x-codex-*`` headers (the short rolling window and the weekly
-# window ChatGPT surfaces), so we snapshot the latest as turns run and expose it to
-# the UI. There is no cheaper source — the /models GET does not carry these headers
-# — so the snapshot is only as fresh as the last turn, and stays None until the
-# first turn after sign-in.
-
-_usage_snapshot: Optional[dict[str, Any]] = None
-
-
-def _header_float(value: Optional[str]) -> Optional[float]:
-    try:
-        return float(value) if value not in (None, "") else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _header_int(value: Optional[str]) -> Optional[int]:
-    parsed = _header_float(value)
-    return int(parsed) if parsed is not None else None
-
-
-def _header_bool(value: Optional[str]) -> bool:
-    return (value or "").strip().lower() in ("true", "1", "yes")
-
-
-def _capture_usage_headers(headers: httpx.Headers) -> None:
-    """Snapshot the account's rate-limit state from a /responses reply's ``x-codex-*``
-    headers. A no-op when they are absent (some error paths omit them), so it never
-    clobbers a good snapshot with an empty one."""
-    global _usage_snapshot
-    if "x-codex-primary-window-minutes" not in headers and "x-codex-plan-type" not in headers:
-        return
-    now = int(time.time())
-    windows: list[dict[str, Any]] = []
-    for key in ("primary", "secondary"):
-        window_minutes = _header_int(headers.get(f"x-codex-{key}-window-minutes")) or 0
-        if window_minutes <= 0:
-            continue  # this window is not active for the account right now
-        resets_at = _header_int(headers.get(f"x-codex-{key}-reset-at"))
-        if resets_at is None:
-            after = _header_int(headers.get(f"x-codex-{key}-reset-after-seconds"))
-            resets_at = now + after if after is not None else None
-        windows.append({
-            # The label is derived on the client from window_minutes, localized —
-            # the 5h/weekly mapping is not pinned to primary/secondary, and the core
-            # stays presentation- and locale-agnostic.
-            "key": key,
-            "used_percent": _header_float(headers.get(f"x-codex-{key}-used-percent")) or 0.0,
-            "window_minutes": window_minutes,
-            "resets_at": resets_at,
-        })
-    _usage_snapshot = {
-        "plan_type": headers.get("x-codex-plan-type", ""),
-        "active_limit": headers.get("x-codex-active-limit", ""),
-        "captured_at": now,
-        "credits": {
-            "has_credits": _header_bool(headers.get("x-codex-credits-has-credits")),
-            "balance": _header_float(headers.get("x-codex-credits-balance")),
-            "unlimited": _header_bool(headers.get("x-codex-credits-unlimited")),
-        },
-        "windows": windows,
-    }
-
-
-def get_usage_snapshot() -> Optional[dict[str, Any]]:
-    """The most recent rate-limit snapshot captured from a turn, or None when no
-    turn has run since sign-in (the headers only ride on /responses replies)."""
-    return _usage_snapshot
-
-
-def clear_usage_snapshot() -> None:
-    """Drop the snapshot on sign-out/sign-in so stale limits don't linger."""
-    global _usage_snapshot
-    _usage_snapshot = None

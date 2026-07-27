@@ -34,6 +34,7 @@ from daisy.base.tuning import Tunable, active_tuning, clip_to_tokens
 from daisy.base.identifiers import new_id
 from daisy.locations.executor import LocationExecutor
 from daisy.base.serialization import compact
+from daisy.runtime.tools import context as tool_context
 
 _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 
@@ -46,30 +47,9 @@ _VALIDATION_PROMPT_LOADER = _PromptLoader(Path(__file__).parent / "prompts")
 # token budget, so it stays fixed.
 MINIMUM_USEFUL_FETCH_CHARS = 64
 
-# Web-fetch engines, injected by the harness on startup and on every settings change
-# (mirroring the Exa client). Jina Reader is the always-available default (works
-# keyless); the Firecrawl client is optional and only set when a key is configured.
-_jina_api_key: str = ""
-_firecrawl_client = None  # firecrawl.AsyncFirecrawl | None — kept untyped to avoid the import
-# Optional proxy for the browser-impersonating direct tier and file downloads (for
-# sites that block by IP). Empty means direct.
-_proxy_url: str = ""
-
-
-def set_jina_api_key(api_key: str) -> None:
-    global _jina_api_key
-    _jina_api_key = api_key or ""
-
-
-def set_firecrawl_client(client) -> None:
-    global _firecrawl_client
-    _firecrawl_client = client
-
-
-def set_proxy_url(proxy_url: str) -> None:
-    global _proxy_url
-    _proxy_url = proxy_url or ""
-
+# Web-fetch engines come from the bound tool context, built per runtime from the session's
+# configuration. Jina Reader is the always-available default (it works keyless); Firecrawl is
+# optional and present only when a key is configured.
 # read_file ingests these natively as images (pixels attached for vision models)
 # instead of decoding their bytes as text. Matches the formats every routed
 # vision provider accepts.
@@ -760,7 +740,7 @@ def _fetch_engines():
     """The fetch engines to try, in order. Firecrawl is only offered when a client
     is configured; Jina and the direct GET are always available."""
     yield ("jina", _fetch_via_jina)
-    if _firecrawl_client is not None:
+    if tool_context.current().firecrawl_client is not None:
         yield ("firecrawl", _fetch_via_firecrawl)
     yield ("direct", _fetch_direct)
 
@@ -796,8 +776,9 @@ async def _fetch_via_jina(url: str, fmt: str, timeout: int) -> str:
     import httpx
 
     headers = {"X-Return-Format": _JINA_RETURN_FORMAT[fmt]}
-    if _jina_api_key:
-        headers["Authorization"] = f"Bearer {_jina_api_key}"
+    jina_api_key = tool_context.current().jina_api_key
+    if jina_api_key:
+        headers["Authorization"] = f"Bearer {jina_api_key}"
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         response = await client.get(f"https://r.jina.ai/{url}", headers=headers)
         response.raise_for_status()
@@ -808,7 +789,8 @@ async def _fetch_via_firecrawl(url: str, fmt: str, timeout: int) -> str:
     """Fetch through Firecrawl's full-browser scrape (the configured client). Returns
     HTML for ``html``, otherwise its clean markdown."""
     scrape_format = "html" if fmt == "html" else "markdown"
-    document = await _firecrawl_client.scrape(url, formats=[scrape_format], timeout=timeout * 1000)
+    client = tool_context.current().firecrawl_client
+    document = await client.scrape(url, formats=[scrape_format], timeout=timeout * 1000)
     content = document.html if fmt == "html" else document.markdown
     return content or ""
 
@@ -822,8 +804,9 @@ async def _impersonated_get(url: str, timeout: int):
     from curl_cffi import AsyncSession
 
     session_kwargs: dict[str, object] = {"impersonate": "chrome", "timeout": timeout}
-    if _proxy_url:
-        session_kwargs["proxies"] = {"http": _proxy_url, "https": _proxy_url}
+    proxy_url = tool_context.current().proxy_url
+    if proxy_url:
+        session_kwargs["proxies"] = {"http": proxy_url, "https": proxy_url}
     async with AsyncSession(**session_kwargs) as session:
         response = await session.get(url)
         response.raise_for_status()
@@ -879,7 +862,4 @@ __all__ = [
     "write_file",
     "fetch_url",
     "download_file",
-    "set_jina_api_key",
-    "set_firecrawl_client",
-    "set_proxy_url",
 ]

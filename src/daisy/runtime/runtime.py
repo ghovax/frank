@@ -49,6 +49,7 @@ from daisy.runtime.tools.registry import (
     load_skill as load_skill_tool,
     wait_for as wait_for_tool,
 )
+from daisy.runtime.tools.context import ToolContext
 from daisy.runtime.tools.sessions import remote_agent_tools, session_tools
 from daisy.runtime.background import (
     BackgroundJobs,
@@ -132,8 +133,13 @@ def _build_tools(
     agent_configuration: AgentConfiguration,
     global_configuration: GlobalConfiguration,
     working_directory: str = "",
+    *,
+    can_reach_peers: bool = False,
 ) -> list[BaseTool]:
-    tools = _all_available_tools(agent_configuration, global_configuration, working_directory)
+    tools = _all_available_tools(
+        agent_configuration, global_configuration, working_directory,
+        can_reach_peers=can_reach_peers,
+    )
     allowed = _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in tools})
     return [tool for tool in tools if not allowed or tool.name in allowed]
 
@@ -174,6 +180,8 @@ def _all_available_tools(
     agent_configuration: AgentConfiguration,
     global_configuration: GlobalConfiguration,
     working_directory: str = "",
+    *,
+    can_reach_peers: bool = False,
 ) -> list[BaseTool]:
     available = [
         bash_tool,
@@ -208,15 +216,68 @@ def _all_available_tools(
             list_mcp_resources_tool,
             read_mcp_resource_tool,
         ])
-    # Peer sessions: the one composition path. Offered only when there is a profile to run,
-    # since a `create_session` whose enumeration is empty is a tool that cannot succeed.
-    available.extend(session_tools(_installed_agent_names(global_configuration, working_directory)))
-    # Agents on other hosts are a different bargain — someone else's machine, someone else's
-    # cost, no access to this filesystem — so they are separate verbs, and they appear only
-    # when the user has actually registered one.
-    if global_configuration.remote_agents.agents:
-        available.extend(remote_agent_tools())
+    # Peer sessions: the one composition path. Offered only when there is a profile to run
+    # *and* a control plane to reach — a `create_session` with an empty enumeration, or with no
+    # way to address what it creates, is a tool that cannot succeed, and offering one costs
+    # context and invites an attempt. A library session has no control plane, so it composes by
+    # calling the harness again rather than by creating a peer.
+    if can_reach_peers:
+        available.extend(
+            session_tools(_installed_agent_names(global_configuration, working_directory))
+        )
+        # Agents on other hosts are a different bargain — someone else's machine, someone
+        # else's cost, no access to this filesystem — so they are separate verbs, and they
+        # appear only when the user has actually registered one.
+        if global_configuration.remote_agents.agents:
+            available.extend(remote_agent_tools())
     return available
+
+
+def _build_tool_context(
+    global_configuration: GlobalConfiguration,
+    *,
+    sandbox,
+    workspace: str,
+    session_access: Any = None,
+    mcp_manager: Any = None,
+) -> ToolContext:
+    """The session-shaped state this runtime's tools read.
+
+    The capability clients are derived from configuration rather than installed into the
+    runtime, because that is what they are: a key in the configuration file is the whole of
+    what makes web search or a Firecrawl fetch available. Reading them from a global meant a
+    settings change could be half-applied — the configuration updated and the client not, or
+    the reverse. The two arguments that are *not* configuration are the two the runtime cannot
+    derive: which session this is, and the MCP connections somebody else owns the lifetime of.
+    """
+    exa_client = None
+    exa_key = global_configuration.exa.effective_api_key
+    if exa_key:
+        from exa_py import Exa
+
+        exa_client = Exa(api_key=exa_key)
+
+    firecrawl_client = None
+    firecrawl_key = global_configuration.firecrawl.effective_api_key
+    if firecrawl_key:
+        from firecrawl import AsyncFirecrawl
+
+        api_url = global_configuration.firecrawl.effective_api_url
+        firecrawl_client = (
+            AsyncFirecrawl(api_key=firecrawl_key, api_url=api_url) if api_url
+            else AsyncFirecrawl(api_key=firecrawl_key)
+        )
+
+    return ToolContext(
+        sandbox=sandbox,
+        workspace=workspace,
+        exa_client=exa_client,
+        mcp_manager=mcp_manager,
+        firecrawl_client=firecrawl_client,
+        jina_api_key=global_configuration.jina.effective_api_key,
+        proxy_url=global_configuration.web_fetch.effective_proxy_url,
+        session_access=session_access,
+    )
 
 
 class TaskItem(BaseModel):
@@ -350,6 +411,8 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         locations: list[dict] | None = None,
         parent_session: str = "",
         sandbox=None,
+        session_access: Any = None,
+        mcp_manager: Any = None,
     ):
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
@@ -394,7 +457,10 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         )
 
         self._file_lease_manager = file_lease_manager
-        self._tools = _build_tools(agent_configuration, global_configuration, self._working_directory)
+        self._tools = _build_tools(
+            agent_configuration, global_configuration, self._working_directory,
+            can_reach_peers=session_access is not None,
+        )
         # Concrete tools are bound natively — the provider sees each tool's real
         # JSON schema and can constrain argument decoding to it, and it emits
         # several tool calls in one response when work is parallel. (The old
@@ -477,6 +543,18 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         # would overflow. Zero until the first call reports usage.
         self._latest_context_tokens: int = 0
         self._context_window: int = 0
+        # What the module-level tools read at call time. Built here, from this runtime's own
+        # configuration and the two things only the layer above can supply — how this session
+        # reaches its peers, and the MCP connections it owns the lifecycle of. It used to be
+        # eight process globals installed by the worker at startup, which held only because a
+        # worker serves one session; `dispatch` rewrote one of them mid-turn.
+        self._tool_context = _build_tool_context(
+            global_configuration,
+            sandbox=self._sandbox,
+            workspace=self._working_directory,
+            session_access=session_access,
+            mcp_manager=mcp_manager,
+        )
 
     def _build_locations(self, locations: list[dict] | None, *, permission_mode_default: PermissionMode) -> None:
         """Build the resolved-location map from the project's location records. Each entry

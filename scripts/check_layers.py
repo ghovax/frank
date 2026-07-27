@@ -1,4 +1,4 @@
-"""Enforce the package layering, and the two engineering invariants that ride on it.
+"""Enforce the package layering, and the engineering invariants that ride on it.
 
 The architecture's spine is that the daemon never imports the runtime: `daisyd` spawns
 worker processes, and the workers carry the heavy runtime (LangChain, LiteLLM, model
@@ -7,7 +7,21 @@ pre-fork workers cheaply. The second invariant is that `computer` is only ever i
 inside a function: it pulls in PyObjC and CoreFoundation, and a module-level import would
 make forking a pre-warmed worker unsafe on macOS.
 
-Neither invariant is visible in a diff, so both are checked mechanically here.
+Two more invariants join them. Nothing under `runtime` may take session state from a caller
+and park it in a module global — the setter pattern — because the runtime is a library: an
+embedder imports it, and one process may host more than one session, so the last caller would
+win and everyone else would silently get their neighbour's configuration. That was not
+theoretical. The confinement profile lived in a module global, and a `bash` call naming its own
+working directory rewrote it mid-turn, narrowing every other open turn's sandbox in the same
+process. Session state belongs on the runtime or in a context variable. Memoization is
+untouched by the rule: a cache written by the function that reads it, from something it
+computed, is shared harmlessly.
+
+And no module outside a composition root may install a signal handler or an exit hook at
+import. Importing a library must not seize the host program's signals, and the tool registry
+did exactly that — which also killed a forked child the instant it was signalled.
+
+None of these invariants is visible in a diff, so all of them are checked mechanically here.
 
 One exemption, and only one: a package's `__main__.py` is its composition root. Assembling a
 program is precisely the act of reaching across layers — the daemon's entry point serves the
@@ -42,9 +56,10 @@ ALLOWED: dict[str, set[str]] = {
     # the import cost the pre-forked worker exists to carry.
     "daemon": {"base", "protocol", "locations"},
     "cli": {"base", "protocol"},
-    # `rest` is the GUI edge and sits above everything; it serves artifact, terminal, and
-    # filesystem features that genuinely need the leaves.
-    "rest": {"base", "protocol", "daemon", "locations", "computer", "runtime"},
+    # `rest` is the browser edge and sits above everything. It does not reach `runtime`: the
+    # account state the settings surface needs — the subscription catalogue and the usage
+    # snapshot — lives in `base`, beside the credentials it describes.
+    "rest": {"base", "protocol", "daemon", "locations", "computer"},
 }
 
 
@@ -85,6 +100,77 @@ def _imported_layers(tree: ast.AST) -> list[tuple[str, int, bool]]:
     return found
 
 
+# Calls that configure the whole process. A library performs none of them at import.
+_PROCESS_WIDE_CALLS = {
+    ("signal", "signal"): "installs a process-wide signal handler",
+    ("atexit", "register"): "registers a process-wide exit hook",
+}
+
+
+def _injected_module_state(tree: ast.AST) -> list[tuple[str, int]]:
+    """Functions that store an argument into a module global — the setter pattern.
+
+    The distinction this draws is between *injection* and *memoization*, and it is the whole
+    reason the check is worth having. A memo is written by the function that reads it, from
+    something it computed or fetched, and two sessions sharing one is harmless. A setter takes
+    a value from its caller and parks it at module scope, which means the last caller wins and
+    every other session in the process silently gets their neighbour's configuration.
+
+    Eight of these installed the confinement profile, the search client, the MCP manager, the
+    web-fetch clients and the session's own identity. They held only because a worker served
+    exactly one session, and they stopped holding the moment anything else imported the
+    runtime.
+    """
+    found: list[tuple[str, int]] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        declared: set[str] = set()
+        for inner in ast.walk(node):
+            if isinstance(inner, ast.Global):
+                declared.update(inner.names)
+        if not declared:
+            continue
+        parameters = {
+            argument.arg
+            for group in (node.args.posonlyargs, node.args.args, node.args.kwonlyargs)
+            for argument in group
+        }
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Assign):
+                continue
+            assigned = {
+                target.id for target in inner.targets if isinstance(target, ast.Name)
+            } & declared
+            if not assigned:
+                continue
+            # The value is a parameter, or trivially derived from one (`value or ""`).
+            sources = {
+                sub.id for sub in ast.walk(inner.value) if isinstance(sub, ast.Name)
+            }
+            if sources & parameters:
+                name = sorted(assigned)[0]
+                found.append((
+                    f"`{node.name}` stores its argument into the module global `{name}`",
+                    inner.lineno,
+                ))
+    return found
+
+
+def _process_wide_configuration(tree: ast.AST) -> list[tuple[str, int]]:
+    """Import-time calls that configure the whole process."""
+    found: list[tuple[str, int]] = []
+    for node in tree.body:
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Call):
+                continue
+            parts = ast.unparse(inner.func).split(".")
+            if len(parts) == 2 and (parts[0], parts[1]) in _PROCESS_WIDE_CALLS:
+                found.append((_PROCESS_WIDE_CALLS[(parts[0], parts[1])], inner.lineno))
+    return found
+
+
 def main() -> int:
     source_root = ROOT / "src" / PACKAGE
     if not source_root.is_dir():
@@ -111,11 +197,31 @@ def main() -> int:
             location = f"{path.relative_to(ROOT)}:{line}"
             if not composition_root and imported != layer and imported not in allowed:
                 violations.append(f"{location}: {layer} may not import {imported}")
-            # PyObjC/CoreFoundation must not be loaded before a worker forks.
+            # PyObjC initialises CoreFoundation, and a prototype that has done so cannot be
+            # forked safely on macOS.
             if imported == "computer" and module_level and layer != "computer":
                 violations.append(
                     f"{location}: `computer` imported at module level — it must stay "
-                    "inside a function so a pre-forked worker never loads PyObjC"
+                    "inside a function so the forking prototype never initialises CoreFoundation"
+                )
+
+        # The runtime is a library: an embedder imports it, and one process may host more
+        # than one session, so nothing in it may take session state from a caller and park it
+        # at module scope.
+        if layer == "runtime":
+            for description, line in _injected_module_state(tree):
+                violations.append(
+                    f"{path.relative_to(ROOT)}:{line}: {description} — session state belongs "
+                    "on the runtime or in a context variable"
+                )
+
+        # No layer configures the whole process at import. A composition root may, because
+        # that is what a program's entry point is for.
+        if not composition_root:
+            for description, line in _process_wide_configuration(tree):
+                violations.append(
+                    f"{path.relative_to(ROOT)}:{line}: {description} at import — "
+                    "only a composition root may configure the process"
                 )
 
     if violations:
