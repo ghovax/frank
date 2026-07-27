@@ -55,6 +55,7 @@ from typing import Any, AsyncIterator, cast
 import asyncio
 import shlex
 import time
+from daisy.base.configuration import PermissionDenied
 from daisy.base.serialization import compact
 
 logger = logging.getLogger(__name__)
@@ -481,7 +482,7 @@ class _ToolsMixin:
 
         try:
             self._permissions.check_tool(tool_name, **tool_arguments)
-        except PermissionError as exception:
+        except PermissionDenied as exception:
             yield Error(id=tool_call_identifier, message=str(exception), tool=tool_name)
             return
 
@@ -612,6 +613,24 @@ class _ToolsMixin:
         read_only = tool_arguments.get("read_only", False)
         if isinstance(read_only, str):
             read_only = read_only.lower() == "true"
+
+        # An agent may be forbidden from backgrounding work — a long-lived shell subtree
+        # outlives the turn that started it, which is exactly what some agents should not be
+        # able to do. The check existed and had no caller, so the setting has never done
+        # anything; refusing here turns the model's request into a tool error it can adapt to,
+        # rather than silently running the command in the foreground it did not ask for.
+        wants_background = tool_arguments.get("background", False)
+        if isinstance(wants_background, str):
+            wants_background = wants_background.lower() == "true"
+        if wants_background:
+            try:
+                self._permissions.check_bash_background()
+            except PermissionDenied as denial:
+                yield Error(
+                    id=tool_call_identifier, code="background_not_allowed",
+                    message=str(denial), tool=tool_name,
+                )
+                return
 
         # Permission (sandbox reads, read-only enforcement, risk approval) was
         # resolved by the preflight pass and applied above; an approved bash call

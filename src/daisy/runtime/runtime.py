@@ -179,7 +179,14 @@ def _build_tools(
     allowed = _live_allow_list(
         agent_configuration.tools_enabled, {tool.name for tool in tools} - supplied,
     )
-    return [tool for tool in tools if tool.name in supplied or not allowed or tool.name in allowed]
+    # `disabled` applies to the harness's tools and to the caller's alike: a program that
+    # supplies a tool and then switches it off for one agent means it, and the allow-list
+    # exemption above is about a *profile* not knowing the tool exists, not about the caller.
+    return [
+        tool for tool in tools
+        if agent_configuration.tools.is_enabled(tool.name)
+        and (tool.name in supplied or not allowed or tool.name in allowed)
+    ]
 
 
 def _live_allow_list(configured: list[str], existing: set[str]) -> set[str]:
@@ -460,6 +467,7 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         transcript: Any = None,
         tools: Sequence[BaseTool] = (),
         tool_risk: str = "medium",
+        permissions: Any = None,
     ):
         self._session_id = session_id
         # The session that created this one, empty when a person did. Reaches the model in the
@@ -535,7 +543,10 @@ class AgentRuntime(_ToolsMixin, _PermissionsMixin, _CompactionMixin, _TurnLoopMi
         self._bound_llm = self._llm.bind_tools(self._tools)
         # The evaluator gates against the same narrowed allow-list the tool set was built
         # from, so a profile naming a tool that no longer exists cannot refuse everything.
-        self._permissions = PermissionEvaluator(
+        # A caller's own evaluator replaces the rule engine entirely. `Approvals` answers a
+        # gate once the engine has decided there should be one; this decides whether there is
+        # one at all, which is the difference between a policy and a decision.
+        self._permissions = permissions if permissions is not None else PermissionEvaluator(
             agent_configuration.model_copy(update={
                 "tools_enabled": sorted(
                     _live_allow_list(agent_configuration.tools_enabled, {tool.name for tool in self._tools})

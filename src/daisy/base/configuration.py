@@ -594,44 +594,6 @@ class RemoteAgentsConfiguration(Section):
         return cls(agents=agents)
 
 
-class A2AServerConfiguration(Section):
-    """Inbound authentication for this harness's own A2A endpoints. Off by default so the
-    localhost bundled server stays zero-config; enabling any field advertises the matching
-    security scheme on the AgentCard and enforces it on ``/a2a`` requests (the well-known
-    card and signed file URLs stay public)."""
-
-    api_key: str = Field(
-        "",
-        description=(
-            "Shared secret an inbound request must carry. ${VARIABLE} is expanded from the "
-            "environment at load, so the secret need not live in the file."
-        ),
-    )
-    api_key_header: str = Field("X-API-Key", description="The header that secret is read from.")
-    oauth2_jwks_url: str = Field(
-        "",
-        description="When set, an inbound bearer JWT is validated against this key set.",
-    )
-    oauth2_issuer: str = Field("", description="The issuer an inbound JWT must claim.")
-    oauth2_audience: str = Field("", description="The audience an inbound JWT must claim.")
-
-    def enabled(self) -> bool:
-        return bool(self.api_key or self.oauth2_jwks_url)
-
-    def card_security(self) -> tuple[Optional[dict], Optional[list[dict]]]:
-        """The ``securitySchemes`` map and ``security`` requirement (a logical OR) to
-        advertise on the card for whatever inbound auth is configured."""
-        schemes: dict[str, dict] = {}
-        requirement: list[dict] = []
-        if self.api_key:
-            schemes["apiKey"] = {"type": "apiKey", "in": "header", "name": self.api_key_header}
-            requirement.append({"apiKey": []})
-        if self.oauth2_jwks_url:
-            schemes["bearer"] = {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
-            requirement.append({"bearer": []})
-        return (schemes or None, requirement or None)
-
-
 class TelemetryExporterConfiguration(Section):
     """Where traces are sent."""
 
@@ -743,10 +705,6 @@ class GlobalConfiguration(Section):
         default_factory=RemoteAgentsConfiguration,
         description="Agents on other hosts, read from remote-agents.json.",
     )
-    a2a: A2AServerConfiguration = Field(
-        default_factory=A2AServerConfiguration,
-        description="Inbound authentication, for a daemon other machines can reach.",
-    )
     telemetry: TelemetryConfiguration = Field(
         default_factory=TelemetryConfiguration, description="OpenTelemetry export."
     )
@@ -757,9 +715,6 @@ class GlobalConfiguration(Section):
             "declares its own stricter mode still wins: this is a floor for sessions created "
             "without one, not a way to loosen a profile written to be careful."
         ),
-    )
-    maximum_history_age_days: int = Field(
-        30, description="How long a finished session stays in the store before it is pruned."
     )
 
     @classmethod
@@ -786,7 +741,6 @@ class GlobalConfiguration(Section):
         configuration = cls(**(data or {}))
         configuration.mcp = MCPConfiguration.from_dotagents_roots(configuration.agents_root_directories())
         configuration.remote_agents = RemoteAgentsConfiguration.from_dotagents_roots(configuration.agents_root_directories())
-        configuration.a2a.api_key = os.path.expandvars(configuration.a2a.api_key)
         return configuration
 
     def configured_provider_keys(self) -> dict[str, str]:
@@ -1126,7 +1080,40 @@ class BashToolConfiguration(BaseModel):
 
 
 class ToolsConfiguration(BaseModel):
+    """Which of the harness's tools an agent has, and how the ones with settings behave.
+
+    Only `bash` has settings of its own, because only `bash` has anything to configure beyond
+    existing — a per-command permission table and whether it may background work. Every other
+    tool is on or off, which `disabled` says uniformly rather than by inventing a section per
+    tool that would carry one field.
+
+    Two ways to narrow the roster, and they are complements rather than duplicates.
+    `tools_enabled` on the agent is an *allow-list*: naming one tool means naming all of them,
+    which is right for an agent defined by a small capability set. `disabled` is a *deny-list*:
+    it takes the full roster and removes from it, which is right when an agent should have
+    everything except shell access. Using both means a tool must survive each.
+    """
+
     bash: BashToolConfiguration = BashToolConfiguration()
+    disabled: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tools this agent may not use, by name. The complement of the profile's "
+            "tools_enabled allow-list, for an agent that should have everything except a few."
+        ),
+    )
+
+    def is_enabled(self, tool_name: str) -> bool:
+        """Whether this agent may use `tool_name` at all.
+
+        `bash.enabled` is honoured here rather than being a second mechanism: it predates
+        `disabled`, it is what the settings interface writes, and a switch that a person can
+        see and set must actually do something."""
+        if tool_name in self.disabled:
+            return False
+        if tool_name == "bash" and not self.bash.enabled:
+            return False
+        return True
 
 
 class AgentConfiguration(BaseModel):
@@ -1137,7 +1124,6 @@ class AgentConfiguration(BaseModel):
     description: str = ""
     role: str = ""
     enabled: bool = True
-    connection_type: str = "internal"
     # Names of the skills (files in the skills directory) this agent may use.
     # Empty means every available skill is offered to the agent by default.
     skills: list[str] = []
@@ -1199,8 +1185,6 @@ class AgentConfiguration(BaseModel):
         default_identifier = path.parent.name if path.name.upper() == "AGENT.MD" else path.stem
         frontmatter.setdefault("name", default_identifier)
         frontmatter.setdefault("title", frontmatter["name"])
-        if "connection-type" in frontmatter:
-            frontmatter["connection_type"] = frontmatter.pop("connection-type")
 
         # The per-agent JSON sidecar lives next to the markdown profile.
         configuration_path = path.with_name("configuration.json")
@@ -1235,8 +1219,20 @@ class PermissionEvaluator:
             self._configuration.tools_enabled
             and tool_name not in self._configuration.tools_enabled
         ):
-            raise PermissionError(
+            raise PermissionDenied(
                 f"Tool '{tool_name}' is not enabled for agent '{self._configuration.identifier}'"
+            )
+
+    def check_tool_not_disabled(self, tool_name: str) -> None:
+        """Refuse a tool the agent's profile has switched off.
+
+        Checked at call time as well as when the roster is built, for the same reason
+        `check_tool_enabled` is: the roster decides what the model is *offered*, and a model
+        may call a tool it was never offered. A gate that only filtered the roster would be a
+        suggestion."""
+        if not self._configuration.tools.is_enabled(tool_name):
+            raise PermissionDenied(
+                f"Tool '{tool_name}' is disabled for agent '{self._configuration.identifier}'"
             )
 
     def evaluate_bash_permission(self, command: str, unmatched: str = "allow") -> str:
@@ -1244,16 +1240,28 @@ class PermissionEvaluator:
 
     def check_bash_background(self) -> None:
         if not self._configuration.tools.bash.background_allowed:
-            raise PermissionError("Background bash execution is not allowed")
+            raise PermissionDenied("Background bash execution is not allowed")
 
     def check_tool(self, tool_name: str, /, **arguments) -> None:
         # tool_name is positional-only so that a tool whose own arguments include a
         # key named "tool_name" (e.g. call_mcp_tool) does not collide with it.
         self.check_tool_enabled(tool_name)
+        self.check_tool_not_disabled(tool_name)
 
 
-class PermissionError(RuntimeError):
-    pass
+class PermissionDenied(RuntimeError):
+    """A tool call refused by policy — not by the operating system.
+
+    Named apart from the builtin `PermissionError` deliberately, and this is not cosmetic. It
+    used to *be* called `PermissionError`, shadowing the builtin inside this module while
+    subclassing `RuntimeError` rather than it, so the two handlers written to catch a policy
+    denial — `except PermissionError` in the tool dispatcher, which resolved to the builtin —
+    caught nothing at all. A `tools_enabled` violation escaped as an unhandled error instead of
+    becoming the tool denial the model was supposed to see.
+
+    The builtin means EACCES: the kernel said no. This means the harness said no. Two different
+    facts deserve two different names.
+    """
 
 
 class PromptLoader:
@@ -1403,6 +1411,7 @@ class _SidecarBash(BaseModel):
 class _SidecarTools(BaseModel):
     model_config = {"extra": "allow", "populate_by_name": True}
     enabled_builtin_tools: Optional[list[str]] = Field(default=None, alias="enabledBuiltinTools")
+    disabled: Optional[list[str]] = None
     bash: Optional[_SidecarBash] = None
 
 
@@ -1450,6 +1459,8 @@ class AgentSidecar(BaseModel):
             if self.tools.enabled_builtin_tools is not None:
                 overrides["tools_enabled"] = self.tools.enabled_builtin_tools
             tools: dict[str, Any] = {}
+            if self.tools.disabled is not None:
+                tools["disabled"] = self.tools.disabled
             if self.tools.bash is not None:
                 bash = {
                     key: value
@@ -1495,6 +1506,9 @@ class AgentSidecar(BaseModel):
 
     def set_tools_enabled(self, tools_enabled: list[str]) -> None:
         self._ensure_tools().enabled_builtin_tools = tools_enabled
+
+    def set_tools_disabled(self, tools_disabled: list[str]) -> None:
+        self._ensure_tools().disabled = tools_disabled
 
     def grant_bash_patterns(self, patterns: Iterable[str]) -> bool:
         """Add each pattern to the bash allow-list as ``allow``, never overriding an existing

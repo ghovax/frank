@@ -6,7 +6,6 @@ address can discover what it is and what it can do without any out-of-band regis
 
 from __future__ import annotations
 
-from typing import Optional
 
 from a2a.types import (
     AgentCapabilities,
@@ -26,9 +25,6 @@ def build_agent_card(
     configuration: AgentConfiguration,
     available_skills: list[Skill],
     base_url: str,
-    *,
-    security_schemes: Optional[dict] = None,
-    security: Optional[list[dict]] = None,
 ) -> AgentCard:
     """Compile an agent's markdown definition into the AgentCard its session advertises.
 
@@ -38,7 +34,6 @@ def build_agent_card(
     The agent's available skills (discovered from the skills directory) are
     advertised on the card; if there are none, a single default skill describing
     the agent's role is synthesised so the card always carries at least one skill.
-    ``security_schemes``/``security`` are set when inbound auth is enabled.
     """
     display_name = configuration.display_name
     capability = (
@@ -92,7 +87,5 @@ def build_agent_card(
                 required=False,
             )],
         ),
-        security_schemes=security_schemes or None,
-        security=security or None,
         skills=skills,
     )

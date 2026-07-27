@@ -50,6 +50,7 @@ class AgentConfigurationResponse(BaseModel):
     reasoning_effort: str = "high"
     permission_mode: Literal["default", "auto", "read_only"]
     tools_enabled: list[str]
+    tools_disabled: list[str]
     bash: AgentBashConfigurationResponse
     path: str
 
@@ -66,6 +67,7 @@ class AgentConfigurationUpdateRequest(BaseModel):
     reasoning_effort: str | None = None
     permission_mode: Literal["default", "auto", "read_only"] | None = None
     tools_enabled: list[str] | None = None
+    tools_disabled: list[str] | None = None
     bash: AgentBashConfigurationRequest | None = None
 
 

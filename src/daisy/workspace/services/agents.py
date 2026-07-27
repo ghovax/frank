@@ -122,10 +122,8 @@ def _card_for(agent_name: str, working_directory: str = ""):
     )
     all_skills = load_skills(skill_roots)
     agent_skills = skills_for_agent(all_skills, configuration.skills)
-    security_schemes, security = state.global_configuration.a2a.card_security()
     return configuration, build_agent_card(
         configuration, agent_skills, _catalogue_base_url(),
-        security_schemes=security_schemes, security=security,
     )
 
 
@@ -155,6 +153,7 @@ def _agent_configuration_payload(agent_name: str, working_directory: str) -> Age
         reasoning_effort=configuration.reasoning_effort,
         permission_mode=configuration.permission_mode,
         tools_enabled=configuration.tools_enabled,
+        tools_disabled=list(configuration.tools.disabled),
         bash=AgentBashConfigurationResponse(
             enabled=configuration.tools.bash.enabled,
             background_allowed=configuration.tools.bash.background_allowed,
@@ -190,6 +189,8 @@ def _apply_agent_configuration_update(sidecar: dict[str, Any], request: AgentCon
         model.permission_mode = request.permission_mode
     if request.tools_enabled is not None:
         model.set_tools_enabled(request.tools_enabled)
+    if request.tools_disabled is not None:
+        model.set_tools_disabled(request.tools_disabled)
     if request.bash is not None:
         model.set_bash(
             enabled=request.bash.enabled if request.bash.enabled is not None else ...,

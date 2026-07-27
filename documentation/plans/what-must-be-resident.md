@@ -389,6 +389,27 @@ Parts VII and VIII made everything the harness *writes* and *reads* replaceable.
 | 76 | The battery gains a stage for each: a caller's tool is called, a caller's transcript receives the turn, a caller's tracer sees the span, and the disk stays empty unless a workspace was asked for | `scripts/verify/stages.py` | Every other seam is checked by exercising it; these are not exceptions |
 
 
+## Part XI — Settings that lie, and the agent as a value
+
+Part X made the harness extensible. Auditing what was still fixed found a different class of
+defect entirely, and a worse one: not things a caller could not change, but **settings a person
+could see and change that changed nothing**. A missing capability is visible. A switch that does
+nothing leaves someone believing the machine is in a state it is not.
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 77 | **`tools.bash.enabled` is enforced** — the roster honours it and the gate refuses it | `runtime/runtime.py`, `base/configuration.py` | It was serialised, editable in the settings interface, and **never consulted**. Switching shell access off left the agent running shell commands. A security switch that does nothing is worse than an absent one |
+| 78 | **`check_bash_background()` gains a caller** | `runtime/tools/dispatch.py` | Same defect, same file, same shape as `reap_orphaned_processes`: a written check nothing called, so `background_allowed` has never done anything |
+| 79 | **`tools.disabled`** — a deny-list beside the `tools_enabled` allow-list, on the wire and in the sidecar | `base/configuration.py`, `protocol/dtos.py`, `workspace/services/agents.py`, `web/src/lib/api.ts` | `tools_enabled` means "name every tool you want", which is the wrong shape for "everything except shell". Complements rather than duplicates: a tool must survive both |
+| 80 | **`PermissionError` becomes `PermissionDenied`** | `base/configuration.py`, `runtime/tools/dispatch.py` | It shadowed the builtin while subclassing `RuntimeError` rather than it, so `except PermissionError` in the dispatcher resolved to the *builtin* and caught nothing. **A `tools_enabled` violation escaped as an unhandled error instead of becoming the tool denial the model should see.** The builtin means EACCES — the kernel said no; this means the harness said no |
+| 81 | **Delete the A2A inbound-auth section** — `api_key`, `api_key_header`, `oauth2_*`, `card_security()`, and the card's `security`/`securitySchemes` | `base/configuration.py`, `protocol/card.py`, `workspace/services/agents.py`, `documentation/configuration.md` | The docstring claimed it "enforces it on `/a2a` requests". There is no inbound `/a2a` request surface and no enforcement anywhere — the card advertised a security scheme nothing checked. Advertising protection you do not provide is worse than advertising none |
+| 82 | Delete `maximum_history_age_days` and `connection_type` | `base/configuration.py`, the guides | No pruning exists; nothing has branched on the internal/remote distinction since remote agents got their own configuration |
+| 83 | **`Session(agent=AgentConfiguration(...))`** documented, and the under-specified case says what to do | `documentation/library.md` | The capability already existed and was undiscoverable — the guide only ever showed a name |
+| 84 | **`permissions=`** — a caller's own evaluator replaces the rule engine | `runtime/runtime.py`, `src/daisy/__init__.py` | `Approvals` answers a gate once the engine has decided there should be one. This decides whether there is one at all, which is the difference between a policy and a decision |
+| 85 | The layering checker gains a rule: **a configuration field nothing reads** | `scripts/check_layers.py` | Three of the above are one defect class, and it is invisible in a diff. Deliberately under-reporting — it cannot tell "consulted" from "copied", but it can tell "named nowhere", and that caught `oauth2_issuer`, `oauth2_audience` and `maximum_history_age_days` immediately |
+| 86 | A battery stage for the agent as a value | `scripts/verify/stages.py` | An `AgentConfiguration` built in code, its allow-list, its deny-list, `bash.enabled=False` actually removing shell access, and the gate refusing at call time as well as the roster filtering |
+
+
 ## Verification
 
 There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `tests/` contains no test files — so verification is built here rather than inherited. It is **executable**, in `scripts/verify`, not a table of intentions:

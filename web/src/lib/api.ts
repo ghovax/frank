@@ -545,6 +545,7 @@ export interface AgentConfiguration {
   reasoning_effort: string;
   permission_mode: PermissionMode;
   tools_enabled: string[];
+  tools_disabled: string[];
   bash: AgentBashConfiguration;
   path: string;
 }
@@ -555,6 +556,7 @@ export interface SaveAgentConfigurationPayload {
   reasoning_effort?: string;
   permission_mode?: PermissionMode;
   tools_enabled?: string[];
+  tools_disabled?: string[];
   bash?: Partial<AgentBashConfiguration>;
 }
 

@@ -48,6 +48,7 @@ about whom.
 from __future__ import annotations
 
 import ast
+import re
 from typing import Iterator
 import sys
 from pathlib import Path
@@ -280,6 +281,74 @@ def _foreign_configuration(source: str) -> list[tuple[str, int]]:
     return found
 
 
+def _inert_configuration_fields(source_root: Path) -> list[str]:
+    """Configuration fields that nothing outside the schema ever reads.
+
+    A setting a person can see and change, that changes nothing, is worse than an absent one:
+    they believe the machine is in a state it is not. `tools.bash.enabled` was exactly this —
+    serialised, editable in the settings interface, and never consulted when the tool roster
+    was built, so switching shell access off left the agent running shell commands.
+
+    Only fields declared in `base/configuration.py` are checked, and a field counts as read if
+    its name appears anywhere else in the tree — including elsewhere in the schema file, since
+    a section that computes something from a field is reading it.
+
+    Deliberately the under-reporting direction. A name that collides with an unrelated
+    identifier is silently forgiven, and a field read *only* to be serialised back out counts
+    as read even though nothing acts on it — which is precisely the shape `bash.enabled` had.
+    A checker cannot tell "consulted" from "copied"; what it can tell is "named nowhere at
+    all", and that is worth catching on its own.
+
+    `ClassVar` constants and ALL-CAPS names are skipped: those are structure, not settings, and
+    nobody is misled by one.
+    """
+    schema = source_root / "base" / "configuration.py"
+    if not schema.is_file():
+        return []
+    tree = ast.parse(schema.read_text(encoding="utf-8"))
+    declared: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for statement in node.body:
+            if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
+                continue
+            name = statement.target.id
+            if name.startswith("_") or name in _CONFIGURATION_FIELD_EXEMPT:
+                continue
+            if name.isupper() or "ClassVar" in ast.unparse(statement.annotation):
+                continue
+            declared.setdefault(name, statement.lineno)
+
+    corpus_lines: list[str] = []
+    for path in sorted(source_root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        text = path.read_text(encoding="utf-8")
+        if path != schema:
+            corpus_lines.append(text)
+            continue
+        # The schema counts too, minus each declaration itself — otherwise every field would
+        # trivially "read" its own definition.
+        declaration_lines = set(declared.values())
+        corpus_lines.extend(
+            line for number, line in enumerate(text.split("\n"), start=1)
+            if number not in declaration_lines
+        )
+    corpus = "\n".join(corpus_lines)
+    return [
+        f"base/configuration.py:{line}: `{name}` is declared and nothing reads it — "
+        "a setting that changes nothing is worse than one that is absent"
+        for name, line in sorted(declared.items(), key=lambda item: item[1])
+        if not re.search(rf"\b{re.escape(name)}\b", corpus)
+    ]
+
+
+# Field names that are structural rather than settings: wire aliases, and the section names
+# that are read by attribute on a model built from them.
+_CONFIGURATION_FIELD_EXEMPT = frozenset({"model_config"})
+
+
 # Clients whose synchronous request methods block the import that calls them. Matched on the
 # module alias rather than the object, because that is what is knowable statically.
 _NETWORK_MODULES = {"httpx", "requests", "urllib", "socket"}
@@ -388,6 +457,8 @@ def main() -> int:
                 f"{path.relative_to(ROOT)}:{line}: {description} at import — "
                 "move it behind a function so the caller decides when to pay for it"
             )
+
+    violations.extend(_inert_configuration_fields(source_root))
 
     if violations:
         print(f"{len(violations)} layering violation(s):\n")

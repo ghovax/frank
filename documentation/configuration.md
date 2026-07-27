@@ -200,19 +200,6 @@ remote_agents:
 
 Agents on other hosts, resolved by their A2A card and reached with `daisy remote`. Normally registered in `~/.agents/remote-agents.json` or from Settings rather than written here. A remote agent is not a session — Daisy does not own its lifecycle, cannot set its permission mode, and keeps no transcript of it — which is why it has its own verb rather than sharing `send`.
 
-## Inbound authentication
-
-Only relevant if you expose a daemon beyond loopback. The daemon's own surfaces are already gated by its capability token; this configures A2A's inbound auth on top.
-
-```yaml
-a2a:
-  api_key: ""
-  api_key_header: "X-API-Key"
-  oauth2_jwks_url: ""
-  oauth2_issuer: ""
-  oauth2_audience: ""
-```
-
 ## Telemetry
 
 Off by default. When enabled, spans and token usage are exported over OTLP to an endpoint you choose — Daisy ships nothing anywhere on its own.
@@ -223,13 +210,5 @@ telemetry:
   exporter: { endpoint: "", protocol: "http/protobuf", headers: {} }
   sample_ratio: 1.0
 ```
-
-## History
-
-```yaml
-maximum_history_age_days: 30
-```
-
-How long a finished session's transcript is kept.
 
 **There is no default agent setting**, here or anywhere. `daisy create --agent` is required, and no profile is nominated as the one to fall back to — a default would mean work running under an agent nobody chose, and would make every other profile's behaviour depend on that one. Which agent runs is always stated. Add your own under `~/.agents/agents/<id>/` or `.agents/agents/<id>/` in a working directory — see [Agents and skills](agents-and-skills.md).

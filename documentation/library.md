@@ -55,7 +55,9 @@ is a library you cannot embed.
 | `providers` | `{"anthropic": "sk-..."}` or `{"custom": {"api_key": ..., "base_url": ...}}` | Whatever the machine is configured with | Provider credentials, in code |
 | `model_identifier` | `"provider/model"` | The agent profile's own | Which model this session runs, overriding the profile |
 | `configuration` | `GlobalConfiguration` | Read from XDG, **without creating it** | Providers, tuning, agent directories |
+| `agent` | `str` name **or** an `AgentConfiguration` you build | — (required) | The agent itself: prompt, model, permission mode, which built-in tools it has |
 | `tools` | LangChain [`BaseTool`](https://python.langchain.com/docs/concepts/tools/) | None | Tools the agent gains, on top of the harness's |
+| `permissions` | A `PermissionEvaluator`-shaped object | The built-in rule engine | Whether a call is gated at all |
 | `tool_risk` | `"none"`/`"low"`/`"medium"`/`"high"` | `"medium"` | What a supplied tool is gated at |
 | `transcript` | `daisy.Transcript` | `MemoryTranscript` | Where the record of completed turns goes |
 | `credentials` | `daisy.Credentials` | A `0600` file under XDG | Where account tokens live (bypassed entirely by `model=`) |
@@ -118,6 +120,49 @@ A supplied tool goes through the *same* preamble every built-in does — permiss
 - **It is gated at `tool_risk`, which defaults to `"medium"`.** The permission engine classifies by tool name and has never heard of yours, so there is no honest way to infer what it does; defaulting to *ask* means adding a tool cannot silently widen what a session may do. `tool_risk="none"` says otherwise deliberately.
 - **It cannot shadow a built-in.** A tool named `bash` that is not this harness's `bash` would be a confinement surprise, not an extension point, so a name collision resolves to ours.
 - **The agent profile's `tools_enabled` list does not filter it.** That list narrows the *harness's* capabilities and was written before your program existed; a supplied tool would otherwise vanish for every agent that names an explicit list.
+
+### Building the agent itself
+
+`agent=` takes a name to load from disk *or* an `AgentConfiguration` you construct. With a
+constructed one, nothing on the machine is consulted — the agent is a value your program owns:
+
+```python
+from daisy import Session
+from daisy.base.configuration import AgentConfiguration, BashToolConfiguration, ToolsConfiguration
+
+reviewer = AgentConfiguration(
+    name="reviewer",
+    provider="anthropic",
+    model="claude-sonnet-4",
+    system_prompt="You review code. Be terse.",
+    permission_mode="read_only",
+    tools_enabled=["read_file", "search_code"],       # an allow-list
+    tools=ToolsConfiguration(
+        disabled=["fetch_url"],                        # …or a deny-list
+        bash=BashToolConfiguration(enabled=False, background_allowed=False),
+    ),
+)
+
+async with Session(reviewer, directory=".") as session:
+    print(await session.ask("what changed and is it safe?"))
+```
+
+Under-specify it and the error says what to do rather than failing obscurely:
+
+```
+ValueError: Agent 'reviewer' names no model. Set `provider` and `model` in its profile, pass
+`model_identifier="provider/model"` to `daisy.Session`, or hand the runtime a `model=` of your own.
+```
+
+**Narrowing the built-in tools** has two complementary forms. `tools_enabled` is an allow-list,
+so naming one tool means naming all of them — right for an agent defined by a small capability
+set. `tools.disabled` is a deny-list — right when an agent should have everything *except*
+shell access. Both are enforced twice: the roster decides what the model is offered, and the
+gate decides what it may run, because a model can call a tool it was never offered.
+
+`permissions=` replaces the rule engine outright, for a program whose policy is its own.
+`Approvals` answers a gate once the engine has decided there should be one; `permissions=`
+decides whether there is one at all.
 
 ### The transcript
 

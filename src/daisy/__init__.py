@@ -172,6 +172,7 @@ class Session:
         # run them.
         tools: Sequence[Any] = (),
         tool_risk: str = "medium",
+        permissions: Any = None,
         locations: Optional[list[dict]] = None,
         # A git worktree per session. Off by default and deliberately: it writes to disk, and a
         # library that does that unasked is the thing every other default here avoids.
@@ -205,6 +206,7 @@ class Session:
         self._credentials = _require(Credentials, credentials, "credentials")
         self._tools = list(tools)
         self._tool_risk = tool_risk
+        self._permissions = permissions
         self._locations = locations
         self._workspace = workspace
         self._tracer_provider = tracer_provider
@@ -298,6 +300,7 @@ class Session:
                 transcript=self._transcript,
                 tools=self._tools,
                 tool_risk=self._tool_risk,
+                permissions=self._permissions,
                 locations=self._resolved_locations(),
             )
         return self._runtime

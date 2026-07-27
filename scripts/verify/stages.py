@@ -751,6 +751,86 @@ def extension() -> Outcome:
         discard(roots)
 
 
+def agent_component() -> Outcome:
+    """The agent is a value the caller can build, and its tool settings are enforced.
+
+    Five claims: an `AgentConfiguration` constructed in code is accepted with nothing on the
+    machine consulted; `tools_enabled` narrows the roster; `tools.disabled` narrows it the
+    other way; `bash.enabled=False` actually removes shell access — it was serialised, shown
+    in the settings interface, and never consulted; and an under-specified agent fails with a
+    sentence that says what to do.
+    """
+    roots = make_roots()
+    os.environ.update(roots)
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+    async def drive() -> Outcome:
+        from daisy import Session
+        from daisy.base.configuration import (
+            AgentConfiguration, BashToolConfiguration, ToolsConfiguration,
+        )
+
+        built = AgentConfiguration(
+            name="verify-reviewer", provider="anthropic", model="claude-sonnet-4",
+            system_prompt="You review code.", tools_enabled=["read_file", "search_code", "bash"],
+        )
+        session = Session(built, directory=".")
+        allow_listed = sorted(tool.name for tool in session.runtime._tools)
+        prompt_used = "You review code" in (session.runtime._system_prompt or "")
+        await session.aclose()
+
+        # bash switched off, and a second tool denied by name.
+        narrowed = AgentConfiguration(
+            name="verify-narrow", provider="anthropic", model="claude-sonnet-4",
+            tools=ToolsConfiguration(
+                disabled=["fetch_url"],
+                bash=BashToolConfiguration(enabled=False, background_allowed=False),
+            ),
+        )
+        session = Session(narrowed, directory=".")
+        offered = sorted(tool.name for tool in session.runtime._tools)
+        # The gate refuses too, not only the roster: a model may call what it was never offered.
+        from daisy.base.configuration import PermissionDenied
+
+        gated = []
+        for name in ("bash", "fetch_url"):
+            try:
+                session.runtime._permissions.check_tool(name)
+            except PermissionDenied:
+                gated.append(name)
+        await session.aclose()
+
+        try:
+            Session(AgentConfiguration(name="verify-bare"), directory=".").runtime
+            guidance = ""
+        except ValueError as error:
+            guidance = str(error)
+
+        observations = {
+            "allow_listed": allow_listed,
+            "prompt_used": prompt_used,
+            "narrowed_offered": offered,
+            "bash_removed": "bash" not in offered,
+            "disabled_removed": "fetch_url" not in offered,
+            "gated_at_call_time": gated,
+            "guidance": guidance,
+        }
+        passed = (
+            allow_listed == ["bash", "read_file", "search_code"]
+            and prompt_used
+            and "bash" not in offered
+            and "fetch_url" not in offered
+            and sorted(gated) == ["bash", "fetch_url"]
+            and "names no model" in guidance
+        )
+        return Outcome("agent-component", passed, observations=observations)
+
+    try:
+        return asyncio.run(drive())
+    finally:
+        discard(roots)
+
+
 def fan_out() -> Outcome:
     """Twelve sessions cost closer to one prototype than to twelve workers.
 
@@ -954,6 +1034,7 @@ STAGES = {
     "library": library_ports,
     "catalogue": catalogue,
     "extension": extension,
+    "agent-component": agent_component,
     "prototype": prototype,
     "macos-fork": macos_fork,
     "daemon": daemon_boot,
