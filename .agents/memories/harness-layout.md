@@ -25,7 +25,7 @@ src/daisy/
 └── rest/        the browser edge — reaches `workspace`, never `daemon`
 ```
 
-`scripts/check_layers.py` enforces the layering — `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `rest` above the daemon — and four invariants:
+The layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `rest` above the daemon. Four invariants ride on it, none of them visible in a diff:
 
 - **The daemon never imports `runtime`.** That weight is what the prototype carries, and it is why the prototype is a separate process the daemon talks to over a socket rather than something it calls.
 - **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which cannot survive a `fork()` on macOS.

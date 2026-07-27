@@ -40,7 +40,7 @@ daisy/
 └── examples/                 # example MCP servers
 ```
 
-The layering is enforced by `scripts/check_layers.py`: `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `workspace` beside them and `rest` above it. Two rules do most of the work.
+The layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with `workspace` beside them and `rest` above it. Two rules do most of the work.
 
 **The daemon never imports the runtime.** That keeps the control plane small, and it is why the *prototype* — the process every session is forked out of — lives in `worker/` and is reached over a socket rather than being a function the daemon calls: whatever forks a session must already have paid for the runtime import, and the daemon must never be that.
 

@@ -1,4 +1,4 @@
-"""`daisy web`: serve the interface over HTTP, so a browser is a client like any other.
+"""`daisy serve`: serve the interface over HTTP, so a browser is a client like any other.
 
 The desktop app is a window around a static site that talks to the daemon. Nothing about that
 site needs a window — but until now the only way to see it was to install a Tauri application,
@@ -55,7 +55,7 @@ def interface_directory() -> Optional[Path]:
     Two places, because there are two ways to be running. A frozen build carries the export
     inside itself, next to the other bundled data. A checkout has it wherever `bun run build`
     put it, which is `web/out` relative to the repository root — found by walking up from this
-    file rather than by assuming a working directory, so `daisy web` works from anywhere."""
+    file rather than by assuming a working directory, so `daisy serve` works from anywhere."""
     if getattr(sys, "frozen", False):
         bundled = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)) / "web"
         return bundled if (bundled / "index.html").is_file() else None

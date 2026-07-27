@@ -19,7 +19,7 @@ Then follow the [Development guide](documentation/development.md) to run the dae
 - **Never commit secrets.** API keys go in `~/.config/daisy/configuration.yaml` or environment variables, never in a tracked file. See [Security notes](SECURITY.md).
 - **Match the surrounding code.** Follow the existing naming, comment density, and structure; don't introduce a new style.
 - **Keep changes focused.** One logical change per pull request, with a clear description of what and why.
-- Run the checks that apply to your change before opening a PR: `uv run ruff check` and `python scripts/check_layers.py` for the harness, `bun run lint` and `bun run build` in `web/`. The layering check enforces two invariants that are invisible in a diff — the daemon never imports the runtime, and `computer/` is never imported at module level.
+- Run the checks that apply to your change before opening a PR: `uv run ruff check` for the harness, `bun run lint` and `bun run build` in `web/`. Two invariants are invisible in a diff and worth checking by hand — the daemon never imports the runtime, and `computer/` is never imported at module level, because both are what keep the prototype safe to fork.
 
 ## Reporting bugs and proposing features
 

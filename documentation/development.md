@@ -52,7 +52,7 @@ Useful scripts (in `web/`):
 - `bun run build` — production static export (to `web/out`).
 - `bun run build:events` — regenerate the TypeScript event schema from the Python models (`scripts/generate_event_schema.py`). Run this whenever the event contract changes.
 
-Outside `web/`, `scripts/check_layers.py` enforces the package layering (`base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime) and three invariants that are all really one invariant about the prototype, the process every session is forked out of:
+Outside `web/` the package layering is `base` → `protocol` → `computer`/`locations` → `runtime` → `worker`, with the daemon never importing the runtime. Three invariants ride on it, and they are all really one invariant about the prototype, the process every session is forked out of — none is visible in a diff, so each is worth checking by hand when you touch its area:
 
 - **`computer/` is never imported at module level.** It pulls in PyObjC, which initialises CoreFoundation, which genuinely cannot survive a `fork()` on macOS.
 - **Nothing reaches the network at import.** This is the half that actually bit. A catalogue fetch at module scope left two *native* threads in the process, and a multi-threaded process cannot legally fork — the child aborted inside the Objective-C runtime with a message naming CoreFoundation, which is not what was wrong. `threading.enumerate()` cannot see those threads; only the kernel's count can, which is why the prototype measures with mach `task_threads` and refuses to fork when the answer is not 1.
@@ -117,9 +117,8 @@ The symlink is what puts `daisy` and `daisyd` on your `PATH`, both entering the 
 The repository ships **no unit-test suite**, but it does ship a **verification battery** — the specific, falsifiable claims the architecture rests on, each checked by doing it:
 
 ```sh
-uv run python -m scripts.verify              # everything, in dependency order
-uv run python -m scripts.verify prototype    # one stage
-uv run python -m scripts.verify --list
+uv run ruff check src/ scripts/
+cd web && bun run build          # regenerates and diffs the event schema, then type-checks
 ```
 
 Each stage gets its own temporary XDG roots and its own daemon and cleans up after itself, so a run touches nothing of yours. Exit status is the number of failures.

@@ -314,33 +314,28 @@ def _command_daemon(arguments: argparse.Namespace) -> int:
 APPLICATION_BUNDLE_ID = "com.ghovax.daisy"
 
 
-def _command_web(arguments: argparse.Namespace) -> int:
-    """Serve the interface over HTTP. Imported on use — it pulls in uvicorn and starlette,
-    which every other verb has no reason to pay for."""
-    from daisy.cli.commands import web
-
-    return web.run(arguments)
-
-
 def _command_serve(arguments: argparse.Namespace) -> int:
-    """Start the control plane.
+    """Make Daisy available: a control plane, and the interface in front of it.
 
-    Named `serve` rather than `daemon start` because starting the API is not "inspecting the
-    daemon", which is what the rest of that noun group does — and because `serve` is the name
-    every comparable tool uses for exactly this. `daemon` keeps `status`, `stop`, `restart` and
-    `endpoint`, which are all genuinely about a daemon that is already there.
+    One verb rather than two, because starting the daemon and serving the interface were never
+    separately useful. Every other command starts a daemon on demand anyway, so a command whose
+    only job was to start one early was a command for a problem nobody had — and having both
+    `serve` and `web` meant two names for "make this reachable", which is exactly the kind of
+    second vocabulary this surface exists to remove.
 
-    Detached by default, since a control plane whose lifetime is a terminal window is not much
-    of a control plane. `--foreground` runs it here, which is what you want when you are
-    watching its log or running it under a supervisor that expects to own the process.
+    It runs in the foreground, because it is a server. That is also what a supervisor wants, so
+    the old `--foreground` flag has nothing left to mean.
+
+    The interface **proxies** the daemon rather than pointing a browser at it: the capability
+    token is attached here and never reaches the page, the daemon's ephemeral port stays this
+    process's business, and everything is one origin, so there is no CORS to configure.
+
+    Imported on use — it pulls in uvicorn and starlette, which every other verb has no reason
+    to pay for.
     """
-    if arguments.foreground:
-        from daisy.daemon.__main__ import main as daemon_main
+    from daisy.cli.commands import serve
 
-        return daemon_main([])
-    ensure_daemon()
-    _emit({"running": True})
-    return 0
+    return serve.run(arguments)
 
 
 def _command_run(arguments: argparse.Namespace) -> int:
@@ -580,21 +575,21 @@ def build_parser() -> argparse.ArgumentParser:
     remote.add_argument("message", nargs="?", help="the message, or - to read stdin")
     remote.set_defaults(handler=_command_remote)
 
-    web = add("web", help="serve the interface over HTTP for a browser")
-    web.add_argument("-p", "--port", type=int, default=8824, help="port to listen on (default 8824)")
-    web.add_argument(
+    serve = add("serve", help="make Daisy available: the control plane and the browser interface")
+    serve.add_argument("-p", "--port", type=int, default=8824, help="port to listen on (default 8824)")
+    serve.add_argument(
         "--host", default="127.0.0.1",
         help="address to bind (default 127.0.0.1; this surface drives the daemon, so keep it local)",
     )
-    web.add_argument(
+    serve.add_argument(
         "--no-daemon", action="store_true",
-        help="serve without starting a daemon first",
+        help="do not start a control plane; serve against one that is already running",
     )
-    web.add_argument(
+    serve.add_argument(
         "--no-open", action="store_true",
         help="do not open a browser; print the address and serve (for a headless box)",
     )
-    web.set_defaults(handler=_command_web)
+    serve.set_defaults(handler=_command_serve)
 
     open_app = add("app", help="start the daemon and launch the desktop app")
     open_app.add_argument(
@@ -602,13 +597,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="launch the app without starting a daemon first",
     )
     open_app.set_defaults(handler=_command_open)
-
-    serve = add("serve", help="start the control plane and keep it running")
-    serve.add_argument(
-        "-f", "--foreground", action="store_true",
-        help="run the daemon in this terminal instead of detaching it",
-    )
-    serve.set_defaults(handler=_command_serve)
 
     run = add("run", help="run one turn and print the answer, without a daemon")
     run.add_argument("prompt", nargs="?", help="what to ask, or - to read stdin")

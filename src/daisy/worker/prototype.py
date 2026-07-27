@@ -58,8 +58,8 @@ hope for:
 
 `daisy.computer` pulls in PyObjC, which initialises CoreFoundation, which is the one thing
 that genuinely cannot survive a fork on macOS. The invariant that it is only ever imported
-inside a function is checked by `scripts/check_layers.py`, and this is the process it
-protects. The same check forbids network calls at import, for condition 1.
+inside a function is a rule this process depends on, and the reason it exists. The same goes
+for network calls at import, for condition 1.
 """
 
 from __future__ import annotations
@@ -152,8 +152,8 @@ def _settle_proxy_environment() -> dict[str, str]:
     different thing entirely.
 
     This is the second instance of the class the hazard register predicted, and the first that
-    came from a third-party package rather than our own code: `scripts/check_layers.py` forbids
-    network calls at import in `src/`, and it cannot see inside `litellm`.
+    came from a third-party package rather than our own code. A rule against network calls at
+    import can only ever cover this repository; it cannot see inside `litellm`.
 
     The fix is to make `getproxies_environment()` truthy before anything imports `litellm`, so
     the `or` short-circuits and `_scproxy` is never reached. Resolving the *real* configuration
@@ -571,9 +571,8 @@ def main() -> int:
             "the runtime import left %d native threads; the prototype cannot fork safely. "
             "Something imported at module scope started one — most likely a network call, or "
             "on macOS a proxy lookup reaching SystemConfiguration through _scproxy. "
-            "`scripts/check_layers.py` catches the first inside src/; it cannot see inside a "
-            "third-party package, which is where this last came from. Run the `macos-fork` "
-            "verification stage: it attributes the change to the exact module import.",
+            "The last one came from a third-party package, which no rule over this repository "
+            "can see. Bisect the imports in `_load_runtime` against this same counter to find it.",
             threads,
         )
         return 1

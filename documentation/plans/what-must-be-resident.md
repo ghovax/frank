@@ -412,53 +412,39 @@ nothing leaves someone believing the machine is in a state it is not.
 
 ## Verification
 
-There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `tests/` contains no test files — so verification is built here rather than inherited. It is **executable**, in `scripts/verify`, not a table of intentions:
+There was no test suite when this began — `pyproject.toml` set `testpaths = ["tests"]` and `tests/` held no test files — so verification was built here rather than inherited.
 
-```sh
-uv run python -m scripts.verify              # everything, in dependency order
-uv run python -m scripts.verify prototype    # one stage
-uv run python -m scripts.verify --list
-```
+**The battery has since been deleted, and this section is what it leaves behind.** It was written to prove *this* change, not to become a suite, which is how `xeac-migration.md` used the term and how it was described here from the first draft. Keeping it would have meant maintaining fifteen stages of harness-driving code whose job was finished. The checks it wrapped are still worth running; they are run ephemerally, when something in their area changes, rather than carried.
 
-Each stage gets its own temporary XDG roots and its own daemon, and takes them away afterwards, so a run touches nothing of the developer's. Exit status is the number of failures.
+It is recorded rather than quietly dropped because the claims below were *checked*, and a reader who cannot see the checks should at least be able to see what they were and what they said. The last full run, on Linux x86-64 at commit `c96f372`, was **14 passing and 1 skipped**:
 
-| Stage | The claim it checks | Status |
+| Stage | The claim it checked | Last result |
 |---|---|---|
-| `structure` | Layering holds, every module imports alone, both message catalogues agree and have no orphans | **Passing** |
-| `reentrancy` | Two contexts in one process keep their own confinement — the `dispatch.py` regression | **Passing** |
-| `artifact-wipe` | Every deleted symbol and file is gone, and the A2A deliverable that shares the name is not | **Passing** |
-| `library` | Every seam is replaceable (caller's model answers the turn, caller's observer records, caller's approver decides, a second `Session` resumes from the caller's store), an incomplete port is rejected by name, and **nothing is written to the caller's XDG directories** | **Passing** |
-| `catalogue` | The prompt's material is a seam: a caller's agents, skills, memories and prompt templates are used, and a poisoned `$HOME` is **not read** | **Passing** |
-| `socket-paths` | Every unix socket the harness can construct is bindable on the strictest platform — the 104-byte macOS `sun_path` limit, under a modelled `/var/folders/…/T/` root. Checks the *class*, not an instance: a session socket was 117 bytes and **no session could bind on macOS at all** while every Linux run stayed green | **Passing** |
-| `extension` | A caller's own tool is offered, called with the right arguments and recorded in the caller's transcript; the caller's credential store and tracer are the ones used; a supplied tool cannot shadow a built-in | **Passing** |
-| `agent-component` | An `AgentConfiguration` built in code is honoured — prompt, tools, permission mode — with nothing read from the machine, and `tools.bash.enabled` is actually enforced | **Passing** |
-| `prototype` | Single-threaded by mach `task_threads`, heap frozen, forks, child reports ready and its exit, still single-threaded afterwards | **Passing** |
-| `macos-fork` | The three questions only macOS can answer: CoreFoundation initialises after the fork, the TCC grant follows it, and `sandbox-exec` still confines from a forked child. **Skips off macOS**, which is why it is the one stage a Linux run cannot claim | **macOS only** |
-| `daemon` | The daemon boots, brings the prototype up, and reports both invariants through `daemon.status` | **Passing** |
-| `session` | A session survives a daemon restart, comes back `live`/`asleep`, its derived token still authorises it, reads do not wake it, a message does | **Passing** |
-| `reaping` | `SIGKILL` a session's process; the prototype reports it and the daemon marks the session failed — which is the whole point of reporting, since the daemon cannot `waitpid` it | **Passing** |
-| `prototype-death` | Kill the prototype; live sessions are untouched, it restarts, and a new session still starts | **Passing** |
+| `structure` | Layering holds, every module imports alone, both message catalogues agree and have no orphans | Passed |
+| `reentrancy` | Two contexts in one process keep their own confinement — the `dispatch.py` regression | Passed |
+| `artifact-wipe` | Every deleted symbol and file is gone, and the A2A deliverable that shares the name is not | Passed |
+| `library` | Every seam is replaceable (caller's model answers the turn, caller's observer records, caller's approver decides, a second `Session` resumes from the caller's store), an incomplete port is rejected by name, and **nothing is written to the caller's XDG directories** | Passed |
+| `catalogue` | The prompt's material is a seam: a caller's agents, skills, memories and prompt templates are used, and a poisoned `$HOME` is **not read** | Passed |
+| `socket-paths` | Every unix socket the harness can construct is bindable on the strictest platform — the 104-byte macOS `sun_path` limit, under a modelled `/var/folders/…/T/` root. Checks the *class*, not an instance: a session socket was 117 bytes and **no session could bind on macOS at all** while every Linux run stayed green | Passed |
+| `extension` | A caller's own tool is offered, called with the right arguments and recorded in the caller's transcript; the caller's credential store and tracer are the ones used; a supplied tool cannot shadow a built-in | Passed |
+| `agent-component` | An `AgentConfiguration` built in code is honoured — prompt, tools, permission mode — with nothing read from the machine, and `tools.bash.enabled` is actually enforced | Passed |
+| `prototype` | Single-threaded by mach `task_threads`, heap frozen, forks, child reports ready and its exit, still single-threaded afterwards | Passed |
+| `macos-fork` | The three questions only macOS can answer: CoreFoundation initialises after the fork, the TCC grant follows it, and `sandbox-exec` still confines from a forked child. **Skips off macOS**, which is why it is the one stage a Linux run cannot claim | Skipped off macOS |
+| `daemon` | The daemon boots, brings the prototype up, and reports both invariants through `daemon.status` | Passed |
+| `session` | A session survives a daemon restart, comes back `live`/`asleep`, its derived token still authorises it, reads do not wake it, a message does | Passed |
+| `reaping` | `SIGKILL` a session's process; the prototype reports it and the daemon marks the session failed — which is the whole point of reporting, since the daemon cannot `waitpid` it | Passed |
+| `prototype-death` | Kill the prototype; live sessions are untouched, it restarts, and a new session still starts | Passed |
 | `fan-out` | The economics, against **PSS** rather than RSS | **Passing — 74.8 %** |
 
-### What a container cannot check, and only a real machine can
+Three of those claims remain **unproven on real hardware**, and no Linux run can close them: that a forked child may initialise CoreFoundation, that the TCC Accessibility grant follows a fork, and that `sandbox-exec` still confines from a forked child. The `macos-fork` stage existed to answer exactly those and skipped on every machine this work was done on.
 
-Two claims are genuinely unverifiable here, and they are the reason to run this locally at least once:
+What is still checked, and is not a suite:
 
-| Claim | Why it needs a real machine |
+| Check | What it is for |
 |---|---|
-| **The fork is safe on macOS** | The failure mode is an abort inside the Objective-C runtime, and the thread count that predicts it is invisible to `threading.enumerate()`. Linux passing tells you nothing about it — the invariant has already been broken once by an import-time HTTP call, and on Linux that broke nothing at all |
-| **Confinement is enforced** | This container has no Landlock, so every run here uses `sandbox.enforce: preferred` and the sandbox is never actually applied. Whether `sandbox-exec` still works from a forked child is a question only macOS answers |
-
-Everything else in the battery is platform-independent and has been run.
-
-### What the battery found
-
-Written to confirm the work and it did not: it found two real defects, which is the argument for having it.
-
-| Found | What it was |
-|---|---|
-| **Sleeping was indistinguishable from crashing** | The prototype reports a child's exit identically whether the daemon asked for it or not, so the first working sleep marked every slept session `failed`. Fixed by tracking the sessions being deliberately stopped |
-| **`gc.unfreeze()` in the forked child** | Added on the reasoning that the child should collect its own garbage normally. It is the exact opposite: the permanent generation holds the parent's import graph, and putting it back under the collector means the child's first full collection writes a mark bit into every page and un-shares the whole image — the decay `gc.freeze()` exists to prevent, now paid per child |
+| `uv run ruff check src/ scripts/` | A `@staticmethod` that kept its `self`, an unused import, a name bound and never read. `[tool.ruff]` pins the rule set, because Ruff's default widens between releases and an unpinned check means a different check per machine |
+| `cd web && bun run build` | Regenerates the event schema from the Pydantic models and diffs it against the committed TypeScript, then type-checks the interface. A wire contract that has drifted from its generator is the one class here that no amount of reading catches |
+| `cargo check --manifest-path web/src-tauri/Cargo.toml` | The desktop shell still builds |
 
 ## Data on disk
 
