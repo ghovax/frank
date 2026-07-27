@@ -1,6 +1,6 @@
 ---
 created: 2026-07-27T16:27:43Z
-updated: 2026-07-27T17:40:00Z
+updated: 2026-07-27T18:05:00Z
 commit: 98560a9
 ---
 
@@ -208,7 +208,44 @@ The A2A `Task.artifacts` type stays, and it is not the same thing: it is the pro
 | `web/src/lib/tool-display.ts` | The `open_artifact` label and icon |
 | `web/messages/en.json`, `ja.json` | 18 and 16 keys respectively — **and that asymmetry is itself a defect.** `xeac-migration.md:396` records the catalogues as verified exact mirrors, so two keys have drifted and the deletion is where it gets noticed |
 
-`bun run check:events` and the schema regeneration must land in the same commit if any wire event goes with this.
+**No wire event goes with this**, so no schema regeneration is implied. `protocol/events.py` defines no artifact event; `ARTIFACT_EVENT_KIND` (`protocol/metadata.py:21`) is an inbound *part kind*, and the tool result rides the ordinary `_tool_result_part` path. `bun run check:events` should still be run to prove that.
+
+## Part VI — Configuration and documentation
+
+Deleting a feature that was documented is not finished when the code is gone. These are the surfaces that describe things this plan removes, and each of them lies the moment its subject does.
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 31 | Delete `daemon.warm_floor` and `daemon.warm_ceiling` from the schema and the shipped template | `base/configuration.py:328,335`, `base/configuration.yaml:10-12` | The pool goes in #11. **The template uses `daemon.warm_floor` as its worked example** for `daisy configure` in the header comment, so deleting the key silently breaks the one thing that teaches the command |
+| 32 | Remove the warm-pool paragraph and both keys from the guides | `documentation/architecture.md:57`, `documentation/configuration.md:194-195` | `architecture.md` describes the floor, the ceiling and the spawn-on-empty fallback in a paragraph that becomes wholly false |
+| 33 | Add the prototype to the architecture diagram and prose; correct the request lifecycle | `documentation/architecture.md:5-37,100-107` | The diagram shows a daemon that assigns a warm worker. It will show a daemon that asks a prototype to fork one, and a session that may have no process until it is messaged |
+| 34 | Remove `open_artifact` and the artifact panel from the guides and the skill | `documentation/tools.md`, `development.md`, `installation.md`, `configuration.md`, `architecture.md`, **`.agents/skills/harness-configuration/SKILL.md` (8 mentions)** | The skill is loaded by agents working on the harness, so a stale one teaches a tool that no longer exists — worse than a stale document a person reads |
+| 35 | Correct the daemon-restart warning now that sessions survive it | `documentation/cli.md`, `documentation/architecture.md:98` | `daisy daemon restart` currently documents ending every live session, which #21 makes untrue |
+| 36 | Document the library entry point | `documentation/README.md`, a new guide | #6 adds a supported way to embed the harness. An entry point nobody documents is an entry point nobody uses |
+
+## Verification
+
+There is no test suite — `pyproject.toml` sets `testpaths = ["tests"]` and `tests/` contains no test files — so verification is built here rather than inherited, as it was for `xeac-migration.md`. The order matters: each stage depends on the one before it being true.
+
+| Stage | What it proves | How |
+|---|---|---|
+| **Structure** | The layering held and nothing was dropped | `scripts/check_layers.py`, with the two new rules from #7 and #30. A symbol-inventory diff against the pre-change tree, where every removed public symbol appears on the deletion list |
+| **The invariant** | The prototype is single-threaded and forkable | `scripts/probe_fork_macos.py`, unmodified, exit 0. **This gates Part II**, and it is the one check that must run on macOS rather than in CI |
+| **Re-entrancy** | Part I actually removed the shared state | Two `AgentRuntime` instances in one process, with different sandbox profiles, each running a `bash` call — the second must not observe the first's confinement. This is the regression that `dispatch.py:565` can reintroduce |
+| **A turn** | The harness still works end to end | Create a session, send a message, watch it complete over `attach`. The path most likely to be broken by Part I, because every tool client moved |
+| **Sleep and wake** | Part III is real | Send a message, wait for idle, assert no worker process exists, send a second message, assert the reply arrives and the conversation continued. Then the same across a daemon restart |
+| **A permission gate survives sleeping** | The best case of Part III | Drive a turn to `input-required`, assert the worker is gone, answer it, assert the turn resumes |
+| **Fan-out** | The economics claimed here | Create twelve peers; assert the fleet's total footprint is closer to one prototype than to twelve workers |
+| **Reaping** | Supervision still works without `waitpid` | Kill a session's process directly; assert the prototype reports it and the daemon marks the session failed. Kill the prototype; assert live sessions are unaffected and a new session still starts |
+| **The wipe** | Part V took the right things | `grep -ri artifact` over `src/` and `web/src/` returns only `turn_artifacts`, `task.artifacts` and `add_artifact`. `bun run build` and `bun run check:events` pass |
+
+These are throwaway tests in the sense `xeac-migration.md` used the term — written to prove this change, not to become a suite. A real suite is separate work with a separate goal.
+
+## Data on disk
+
+Zero backward compatibility, stated concretely rather than left to be discovered.
+
+An existing `history.db` carries four artifact tables and a `sessions` row shape that #16 replaces. Nothing migrates them: the artifact tables are dropped, and the registry merge rewrites `sessions`. Existing **turns, checkpoints and session state are preserved** — they are the durable record and the whole point of the store — so a person's transcripts survive while their artifact history, which has always been empty, does not. `workspace.db` is created empty on first start and the projects, locations, terminal states and model history are copied across once, because those are cheap to move and annoying to lose.
 
 ## Deleted
 
